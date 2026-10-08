@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTIVE_RUN_MODELS,
-  getBuiltInModelRouteCandidates,
-  getProvidersForModel,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
   isPiExecutionRoute,
-  isPiPolicyAdmittedRoute,
+  isPiAdmittedRoute,
   isPiRouteRuntimeCapable,
+  piCatalogModel,
   piRouteCatalogIdentities,
+  type PiExecutionRouteArgs,
 } from "@okouai/core/pi-execution";
+import {
+  SEEDED_MODEL_CATALOG,
+  SEEDED_ROUTED_MODELS,
+  seededProviderTypes,
+} from "@okouai/core/__tests__/seeded-model-catalog";
 import {
   PI_CATALOG_PROVIDERS,
   PI_RUNTIME_RESOLVABLE_MODELS,
@@ -25,20 +27,6 @@ import { resolvePiAgentModel } from "./model";
  * module and the runtime disagree about any admitted route.
  */
 function resolvesInRuntime(identity: PiRuntimeIdentity): boolean {
-  if (identity.provider === "anthropic") {
-    return (
-      resolvePiAgentModel({
-        dialect: "anthropic-messages",
-        transport: "sse",
-        provider: "anthropic",
-        baseUrl: "https://api.anthropic.com",
-        apiKey: "capability-probe",
-        model: identity.model,
-        catalogModel: identity.model,
-        requestHeaders: {},
-      }) !== null
-    );
-  }
   if (identity.provider === "openai-codex") {
     return (
       resolvePiAgentModel({
@@ -79,6 +67,15 @@ interface AdmittedRoute {
   readonly codexServiceTier: "fast" | undefined;
 }
 
+function routeArgs(route: AdmittedRoute): PiExecutionRouteArgs {
+  return {
+    catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, route.selectedModel),
+    modelProviderType: route.modelProviderType,
+    runtimeProviderType: route.runtimeProviderType,
+    codexServiceTier: route.codexServiceTier,
+  };
+}
+
 function label(route: AdmittedRoute, identity: PiRuntimeIdentity): string {
   return [
     route.selectedModel,
@@ -89,29 +86,22 @@ function label(route: AdmittedRoute, identity: PiRuntimeIdentity): string {
 }
 
 /**
- * Routes admitted by model policy and route rules, enumerated before the
+ * Routes admitted by catalog eligibility and route rules, enumerated before the
  * capability gate. Enumerating after it would let a dropped capability entry
  * remove its own route from the comparison instead of failing this test.
  */
-function policyAdmittedRoutes(): readonly AdmittedRoute[] {
+function admittedRoutes(): readonly AdmittedRoute[] {
   const routes: AdmittedRoute[] = [];
-  for (const selectedModel of ACTIVE_RUN_MODELS) {
+  for (const selectedModel of SEEDED_ROUTED_MODELS) {
     const providers = new Set<string>([
-      ...getProvidersForModel(selectedModel),
-      "custom-anthropic-messages",
-      "custom-openai-responses",
+      "built-in",
+      "codex-oauth-token",
+      "claude-code-oauth-token",
     ]);
     for (const modelProviderType of providers) {
       const runtimes =
         modelProviderType === "built-in"
-          ? [
-              "built-in",
-              ...getBuiltInModelRouteCandidates(selectedModel).map(
-                (candidate) => {
-                  return candidate.providerType;
-                },
-              ),
-            ]
+          ? ["built-in", "openrouter-codex"]
           : [modelProviderType];
       for (const runtimeProviderType of runtimes) {
         for (const codexServiceTier of [undefined, "fast"] as const) {
@@ -121,7 +111,7 @@ function policyAdmittedRoutes(): readonly AdmittedRoute[] {
             runtimeProviderType,
             codexServiceTier,
           };
-          if (isPiPolicyAdmittedRoute(route)) {
+          if (isPiAdmittedRoute(routeArgs(route))) {
             routes.push(route);
           }
         }
@@ -144,11 +134,11 @@ describe("pinned Pi runtime capability", () => {
   });
 
   it("agrees with the resolver on every admitted model and route", () => {
-    const routes = policyAdmittedRoutes();
+    const routes = admittedRoutes();
     expect(routes.length).toBeGreaterThan(0);
     const disagreements: string[] = [];
     for (const route of routes) {
-      const identities = piRouteCatalogIdentities(route);
+      const identities = piRouteCatalogIdentities(routeArgs(route));
       for (const identity of identities) {
         if (!resolvesInRuntime(identity)) {
           disagreements.push(`unresolvable ${label(route, identity)}`);
@@ -156,7 +146,7 @@ describe("pinned Pi runtime capability", () => {
       }
       const resolvable =
         identities.length > 0 && identities.every(resolvesInRuntime);
-      if (resolvable !== isPiRouteRuntimeCapable(route)) {
+      if (resolvable !== isPiRouteRuntimeCapable(routeArgs(route))) {
         disagreements.push(
           `gate disagrees for ${route.selectedModel} | ${route.modelProviderType} | ${route.runtimeProviderType}`,
         );
@@ -165,20 +155,16 @@ describe("pinned Pi runtime capability", () => {
     expect(disagreements).toStrictEqual([]);
   });
 
-  it("resolves Claude Opus 5.5 through the native catalog", () => {
-    expect(
-      resolvesInRuntime({ provider: "anthropic", model: "claude-opus-5-5" }),
-    ).toBe(true);
-    for (const modelProviderType of getProvidersForModel("claude-opus-5-5")) {
+  it("never admits Claude Opus 5.5 as a Pi execution route", () => {
+    for (const modelProviderType of seededProviderTypes("claude-opus-5-5")) {
       expect(
         isPiExecutionRoute({
-          selectedModel: "claude-opus-5-5",
+          catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "claude-opus-5-5"),
           modelProviderType,
           runtimeProviderType: modelProviderType,
           codexServiceTier: undefined,
-          piEnabled: true,
         }),
-      ).toBe(modelProviderType !== "claude-code-oauth-token");
+      ).toBe(false);
     }
   });
 
@@ -186,23 +172,21 @@ describe("pinned Pi runtime capability", () => {
     "resolves %s through the pinned Pi catalog",
     (model) => {
       const identities: readonly PiRuntimeIdentity[] = [
-        { provider: "openai", model },
         { provider: "openai-codex", model },
         { provider: "openrouter", model: `openai/${model}` },
       ];
       for (const identity of identities) {
         expect(resolvesInRuntime(identity)).toBe(true);
       }
-      for (const modelProviderType of getProvidersForModel(model)) {
+      for (const modelProviderType of seededProviderTypes(model)) {
         expect(
           isPiExecutionRoute({
-            selectedModel: model,
+            catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, model),
             modelProviderType,
             runtimeProviderType: modelProviderType,
             codexServiceTier: undefined,
-            piEnabled: true,
           }),
-        ).toBe(true);
+        ).toBe(modelProviderType === "codex-oauth-token");
       }
     },
   );

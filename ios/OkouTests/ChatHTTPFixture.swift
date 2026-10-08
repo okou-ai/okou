@@ -6,7 +6,7 @@ import Synchronization
 struct ChatHTTPResponse: Sendable {
   var status = 200
   var body: String
-  var headers = ["Content-Type": "application/json", "X-Chat-Event-Schema-Version": "7"]
+  var headers = ["Content-Type": "application/json"]
 }
 
 /// HTTP boundary fixture. Production decoding, pagination, and commands remain real.
@@ -99,4 +99,56 @@ func chatRequestBody(_ request: URLRequest) -> Data {
     result.append(contentsOf: buffer.prefix(count))
   }
   return result
+}
+
+/// `/api/model-catalog` fixture with one retired model.
+func modelCatalogResponse() -> ChatHTTPResponse {
+  let entries: [(model: String, displayName: String, replacedBy: String?)] = [
+    ("okou-1.0", "Auto", nil),
+    ("gpt-5.6-sol", "GPT-5.6 Sol", nil),
+    ("claude-opus-5-5", "Claude Opus 5.5", nil),
+    ("claude-opus-4-8", "Claude Opus 4.8", "claude-opus-5-5"),
+  ]
+  let models = entries.enumerated().map { index, entry -> String in
+    let (model, displayName, replacedBy) = entry
+    let replacement = replacedBy.map { "\"\($0)\"" } ?? "null"
+    return """
+      {"model":"\(model)","displayName":"\(displayName)","sortOrder":\(index),\
+      "replacedBy":\(replacement),"resolvedModel":"\(replacedBy ?? model)"}
+      """
+  }
+  return ChatHTTPResponse(
+    body:
+      "{\"systemDefaultModel\":\"okou-1.0\",\"models\":[\(models.joined(separator: ","))],\"routes\":[]}"
+  )
+}
+
+/// A connected personal-subscription row in a `/api/run-models` response.
+struct SubscriptionRunModel {
+  let model: String
+  let providerType: String
+  var serviceTier: String?
+  var availability = "available"
+}
+
+/// `/api/run-models` fixture: Auto plus the member's connected subscription rows.
+func runModelsResponse(_ subscriptions: [SubscriptionRunModel] = []) -> ChatHTTPResponse {
+  let auto = """
+    {"model":null,"modelLabel":"Auto","modelProviderId":null,\
+    "memberEffective":{"providerType":"built-in","runtimeProviderType":"openrouter-codex",\
+    "credentialScope":"org","availability":"available","accountSelection":"not_applicable"}}
+    """
+  let rows = subscriptions.map { row -> String in
+    let tier = row.serviceTier.map { "\"\($0)\"" } ?? "null"
+    return """
+      {"model":"\(row.model)","modelLabel":"\(row.model)","modelProviderId":null,\
+      "memberEffective":{"providerType":"\(row.providerType)","runtimeProviderType":"\(row.providerType)",\
+      "credentialScope":"member","availability":"\(row.availability)","accountSelection":"capture_required"},\
+      "subscriptionOptions":{"efforts":["low","medium","high"],"serviceTier":\(tier)}}
+      """
+  }
+  return ChatHTTPResponse(
+    body:
+      "{\"models\":[\(([auto] + rows).joined(separator: ","))]}"
+  )
 }

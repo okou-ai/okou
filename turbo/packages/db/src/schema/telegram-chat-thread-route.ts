@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import {
-  check,
   index,
   pgTable,
   timestamp,
@@ -11,7 +10,6 @@ import {
 
 import { chatThreads } from "./chat-thread";
 import { telegramOfficialUserLinks } from "./telegram-official-user-link";
-import { telegramUserLinks } from "./telegram-user-link";
 
 /**
  * Stable mapping from a Telegram reply-chain anchor to the canonical Okou chat
@@ -21,20 +19,14 @@ export const telegramChatThreadRoutes = pgTable(
   "telegram_chat_thread_routes",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    telegramUserLinkId: uuid("telegram_user_link_id").references(
-      () => {
-        return telegramUserLinks.id;
-      },
-      { onDelete: "cascade" },
-    ),
-    telegramOfficialUserLinkId: uuid(
-      "telegram_official_user_link_id",
-    ).references(
-      () => {
-        return telegramOfficialUserLinks.id;
-      },
-      { onDelete: "cascade" },
-    ),
+    telegramOfficialUserLinkId: uuid("telegram_official_user_link_id")
+      .notNull()
+      .references(
+        () => {
+          return telegramOfficialUserLinks.id;
+        },
+        { onDelete: "cascade" },
+      ),
     chatId: varchar("chat_id", { length: 255 }).notNull(),
     rootMessageId: varchar("root_message_id", { length: 255 }).notNull(),
     chatThreadId: uuid("chat_thread_id")
@@ -49,22 +41,13 @@ export const telegramChatThreadRoutes = pgTable(
   },
   (table) => {
     return [
-      uniqueIndex("idx_telegram_chat_thread_routes_chat_user_link")
-        .on(table.telegramUserLinkId, table.chatId, table.rootMessageId)
-        .where(sql`telegram_user_link_id IS NOT NULL`),
+      index("idx_telegram_chat_thread_routes_thread").on(table.chatThreadId),
       uniqueIndex("idx_telegram_chat_thread_routes_chat_official_link")
         .on(table.telegramOfficialUserLinkId, table.chatId, table.rootMessageId)
         .where(sql`telegram_official_user_link_id IS NOT NULL`),
-      index("idx_telegram_chat_thread_routes_user_link")
-        .on(table.telegramUserLinkId)
-        .where(sql`telegram_user_link_id IS NOT NULL`),
       index("idx_telegram_chat_thread_routes_official_user_link")
         .on(table.telegramOfficialUserLinkId)
         .where(sql`telegram_official_user_link_id IS NOT NULL`),
-      check(
-        "chk_telegram_chat_thread_routes_one_owner",
-        sql`(telegram_user_link_id IS NOT NULL) <> (telegram_official_user_link_id IS NOT NULL)`,
-      ),
     ];
   },
 );

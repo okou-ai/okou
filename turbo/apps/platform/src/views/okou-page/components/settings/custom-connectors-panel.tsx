@@ -1,10 +1,4 @@
-import {
-  useGet,
-  useLoadable,
-  useLastLoadable,
-  useLastResolved,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { EllipsisVertical } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -17,21 +11,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@okouai/ui";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   closeCustomConnectorDialog$,
   connectCustomConnectorAuthorizationWithDialog$,
   customConnectorAuthorizedAgentsById$,
   customConnectorDialog$,
-  customConnectors$,
   openCustomConnectorAccessDialog$,
   openCustomConnectorDeleteDialog$,
   openCustomConnectorEditDialog$,
 } from "../../../../signals/okou-page/settings/custom-connectors.ts";
-import { isOrgAdmin$ } from "../../../../signals/org.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { CustomConnectorIcon } from "./custom-connector-icon.tsx";
@@ -43,7 +32,6 @@ import {
   ConnectorAgentAccessButton,
   connectorAgentAccessStatus,
 } from "./connector-agent-access-button.tsx";
-import { noConnectorImg } from "../../platform-assets.ts";
 import { customConnectorTarget } from "./custom-connector-display.ts";
 import { connectorOverviewAccountSummaryByTarget$ } from "../../../../signals/okou-page/connector-accounts.ts";
 import { ConnectorAccountManagerDialog } from "./connector-account-manager-dialog.tsx";
@@ -63,10 +51,7 @@ import {
   openCustomAccountManager$,
 } from "../../../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { connectorConnectionPending$ } from "../../../../signals/connector-connection-progress.ts";
-import {
-  connectorDirectoryEnabled$,
-  focusCreatedDirectoryConnector$,
-} from "../../../../signals/okou-page/settings/connector-directory-route.ts";
+import { focusCreatedDirectoryConnector$ } from "../../../../signals/okou-page/settings/connector-directory-route.ts";
 
 function connectsDirectlyWithAuthorization(
   connector: CustomConnectorResponse,
@@ -332,7 +317,6 @@ function CustomConnectorRow({
   onManageAccounts,
 }: CustomConnectorRowProps) {
   const focusCreated = useSet(focusCreatedDirectoryConnector$);
-  const directoryEnabled = useGet(connectorDirectoryEnabled$);
   const connecting = useGet(connectorConnectionPending$);
   const adminCanDelete = isAdmin;
   const accountCount = accountSummary?.accountCount ?? 0;
@@ -356,9 +340,9 @@ function CustomConnectorRow({
   return (
     <div
       className="relative isolate"
-      data-custom-connector-id={directoryEnabled ? connector.id : undefined}
-      ref={directoryEnabled ? focusCreated : undefined}
-      tabIndex={directoryEnabled ? -1 : undefined}
+      data-custom-connector-id={connector.id}
+      ref={focusCreated}
+      tabIndex={-1}
     >
       <CustomConnectorActivationCard
         connectorLabel={connector.displayName}
@@ -387,7 +371,7 @@ function CustomConnectorDialogs({
 }) {
   const dialog = useGet(customConnectorDialog$);
   const closeDialog = useSet(closeCustomConnectorDialog$);
-  const accountSummariesLoadable = useLoadable(
+  const accountSummariesLoadable = useLastLoadable(
     connectorOverviewAccountSummaryByTarget$,
   );
   const accessAccountSummary =
@@ -423,34 +407,6 @@ function CustomConnectorDialogs({
   );
 }
 
-function CustomConnectorEmptyState({ isAdmin }: { readonly isAdmin: boolean }) {
-  const { t } = useTranslation();
-  return (
-    <div
-      className={surfaceVariants({
-        className: "py-12 flex flex-col items-center gap-3",
-      })}
-    >
-      <img
-        src={noConnectorImg}
-        alt={t(($) => {
-          return $.connectors.catalog.noConnectorsAlt;
-        })}
-        className="h-20 w-20 object-contain opacity-80"
-      />
-      <p className="text-sm text-muted-foreground text-center">
-        {isAdmin
-          ? t(($) => {
-              return $.connectors.custom.emptyAdmin;
-            })
-          : t(($) => {
-              return $.connectors.custom.emptyMember;
-            })}
-      </p>
-    </div>
-  );
-}
-
 export function CustomConnectorGrid({
   connectors,
   isAdmin,
@@ -464,7 +420,7 @@ export function CustomConnectorGrid({
    */
   readonly className?: string;
 }) {
-  const accountSummariesLoadable = useLoadable(
+  const accountSummariesLoadable = useLastLoadable(
     connectorOverviewAccountSummaryByTarget$,
   );
   const accountSummaryStatus = connectorAccountSummaryStatus(
@@ -649,30 +605,6 @@ function CustomAccountDialogs() {
         />
       ) : null}
     </>
-  );
-}
-
-export function CustomConnectorsPanel() {
-  const connectors = useLastResolved(customConnectors$);
-  const userManagedConnectors = connectors?.filter((connector) => {
-    return !isIntegrationManagedCustomConnector(connector);
-  });
-  const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
-
-  return (
-    <section className="flex flex-col gap-3">
-      {userManagedConnectors?.length === 0 ? (
-        <CustomConnectorEmptyState isAdmin={isAdmin} />
-      ) : null}
-      {userManagedConnectors && userManagedConnectors.length > 0 ? (
-        <CustomConnectorGrid
-          connectors={userManagedConnectors}
-          isAdmin={isAdmin}
-        />
-      ) : null}
-      <CustomConnectorDialogs />
-      <CustomAccountDialogs />
-    </section>
   );
 }
 

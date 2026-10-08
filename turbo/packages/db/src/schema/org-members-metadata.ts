@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   pgTable,
   text,
   boolean,
@@ -49,13 +51,18 @@ export const orgMembersMetadata = pgTable(
     serviceTier: varchar("service_tier", {
       length: 32,
     }).$type<ChatThreadServiceTier>(),
-    /** Member default for built-in video generation. Seeds new chat threads. */
-    selectedVideoModel: varchar("selected_video_model", { length: 255 }),
-    /** Member default for built-in image generation. Seeds new chat threads. */
+    /** Member setting for built-in image generation; null uses the default. */
     selectedImageModel: varchar("selected_image_model", { length: 255 }),
-    /** Voice input v2 model selected in Debug preferences. */
-    voiceInputModel: varchar("voice_input_model", { length: 255 }),
     onboardingDone: boolean("onboarding_done").notNull().default(false),
+    /**
+     * When this member finished the source-first onboarding in this org.
+     *
+     * Only a non-admin member's own completion writes it; an admin's completion
+     * stays organization-wide in `org_metadata.onboarding_complete`. Null means
+     * this member has not finished it, not that they must: members who already
+     * use the workspace are never sent through onboarding.
+     */
+    onboardingCompletedAt: timestamp("onboarding_completed_at"),
     /**
      * When Morning Brief collection ownership was revoked for this member.
      *
@@ -78,6 +85,12 @@ export const orgMembersMetadata = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
-    return [primaryKey({ columns: [table.orgId, table.userId] })];
+    return [
+      primaryKey({ columns: [table.orgId, table.userId] }),
+      check(
+        "chk_org_members_metadata_service_tier",
+        sql`${table.serviceTier} IS NULL OR ${table.serviceTier} = 'priority'`,
+      ),
+    ];
   },
 );

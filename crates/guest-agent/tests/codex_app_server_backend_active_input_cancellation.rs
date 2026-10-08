@@ -18,8 +18,8 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 const RUN_ID: &str = "codex-app-server-backend-active-input-cancellation-test";
-const DELIVERY_ID: &str = "2532261d-b0e1-471e-b93d-1acae383d001";
-const LATE_DELIVERY_ID: &str = "2532261d-b0e1-471e-b93d-1acae383d002";
+const EVENT_ID: &str = "2532261d-b0e1-471e-b93d-1acae383d001";
+const LATE_EVENT_ID: &str = "2532261d-b0e1-471e-b93d-1acae383d002";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn cancellation_preserves_a_steer_response_already_in_flight()
@@ -42,31 +42,27 @@ async fn cancellation_preserves_a_steer_response_already_in_flight()
     }
     let runtime = common::guest_runtime_from_process_env()?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
-    let receipt = server.mock(|when, then| {
+    let steered = server.mock(|when, then| {
         when.method(POST)
             .path(format!(
-                "/api/runners/runs/{RUN_ID}/active-inputs/deliveries/{DELIVERY_ID}/receipt"
+                "/api/runners/runs/{RUN_ID}/steerable-inputs/{EVENT_ID}/steered"
             ))
             .header("Authorization", "Bearer test-token")
             .json_body(json!({}));
         then.status(200)
             .header("Content-Type", "application/json")
-            .json_body(json!({ "outcome": "delivered" }));
+            .json_body(json!({ "outcome": "steered" }));
     });
-    let journal_path = guest_contracts::runtime_paths::active_input_receipt_journal_file(
-        runtime.paths.runtime_dir(),
-    );
-    let active_input = ActiveInputRuntime::new_with_receipts(
+    let active_input = ActiveInputRuntime::new_enabled(
         RUN_ID,
         &runtime.config.prompt,
-        &journal_path,
         HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)?,
-    )?;
+    );
     let active_input_controller = active_input.controller();
     assert_eq!(
         active_input_controller.handle_control_payload(
             &guest_contracts::active_input::encode_active_input(
-                DELIVERY_ID,
+                EVENT_ID,
                 "settle this steer before stopping",
             )?,
         ),
@@ -108,7 +104,7 @@ async fn cancellation_preserves_a_steer_response_already_in_flight()
     assert_eq!(
         active_input_controller.handle_control_payload(
             &guest_contracts::active_input::encode_active_input(
-                LATE_DELIVERY_ID,
+                LATE_EVENT_ID,
                 "do not admit this after cancellation",
             )?,
         ),
@@ -125,24 +121,13 @@ async fn cancellation_preserves_a_steer_response_already_in_flight()
         .expect("Codex cancellation should quiesce")?;
 
     assert_eq!(
-        result.active_input_delivery_ids,
-        vec![DELIVERY_ID.to_string()]
-    );
-    assert_eq!(
         result
             .cli_termination
             .expect("cancellation should retain termination attribution")
             .reason,
         CliTerminationReason::UserCancellation
     );
-    receipt.assert_calls(1);
-    assert!(
-        guest_contracts::active_input_receipts::read_active_input_receipt_journal(
-            &journal_path,
-            RUN_ID,
-        )?
-        .is_empty()
-    );
+    steered.assert_calls(1);
 
     Ok(())
 }

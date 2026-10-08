@@ -40,12 +40,16 @@ interface MaintainerFilterOption {
   readonly count: number;
 }
 
-function compareByName(a: FeatureSwitchKey, b: FeatureSwitchKey): number {
-  return a.localeCompare(b, undefined, { sensitivity: "base" });
-}
-
-function sortedFeatureSwitchKeys(): FeatureSwitchKey[] {
-  return Object.values(FeatureSwitchKey).sort(compareByName);
+function sortedFeatureSwitchKeys(
+  metadata: FeatureSwitchMetadataByKey,
+): FeatureSwitchKey[] {
+  return Object.values(FeatureSwitchKey).sort((a, b) => {
+    return (metadata[a].displayName ?? a).localeCompare(
+      metadata[b].displayName ?? b,
+      undefined,
+      { sensitivity: "base" },
+    );
+  });
 }
 
 function maintainerLabel(email: string): string {
@@ -140,7 +144,9 @@ function LabFeatureGroup(props: {
             <li key={key}>
               <label className="flex cursor-pointer items-center justify-between px-4 py-3 transition-colors hover:bg-state-hover">
                 <div className="flex min-w-0 flex-col gap-1 pr-4">
-                  <span className="text-sm text-foreground">{key}</span>
+                  <span className="text-sm text-foreground">
+                    {featureMetadata.displayName ?? key}
+                  </span>
                   {featureMetadata.description && (
                     <span className="text-xs text-muted-foreground">
                       {featureMetadata.description}
@@ -265,7 +271,7 @@ export function LabPage() {
   const busy = resetting || toggling;
   const pageSignal = useGet(pageSignal$);
   const metadata = getFeatureSwitchMetadata();
-  const sorted = sortedFeatureSwitchKeys();
+  const sorted = sortedFeatureSwitchKeys(metadata);
   const maintainerOptions = maintainerFilterOptions({
     keys: sorted,
     metadata,

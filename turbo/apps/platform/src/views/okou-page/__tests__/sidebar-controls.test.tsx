@@ -34,6 +34,7 @@ import {
 } from "./sidebar-test-helpers.tsx";
 
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -47,7 +48,9 @@ import { pathname } from "../../../signals/location.ts";
 import {
   changeChatThreadList,
   changeChatThreadReadCursor,
+  createChatEvent,
 } from "../../../mocks/mock-helpers.ts";
+import { mockNow } from "../../../lib/time.ts";
 
 test("Move to the next relevant agent with a shortcut", async () => {
   prepareAgents();
@@ -550,7 +553,68 @@ test.each(["thread list", "read cursor"] as const)(
   },
 );
 
-test("Rename a conversation from the sidebar", async () => {
+test.each([false, true])(
+  "Refresh the latest unread state after a message burst with a failed leading fetch: %s",
+  async (failLeadingRefresh) => {
+    mockMobileLayout();
+    prepareDefaultAgent();
+    mockSidebarThreadStory([
+      createThread(EXISTING_THREAD_ID, "Burst conversation"),
+    ]);
+    mockNow(0, context.signal);
+    const refreshStarted = context.mocks.deferred<void>();
+    const releaseRefresh = context.mocks.deferred<void>();
+    let hasUnread = false;
+    let blockRefresh = false;
+    context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
+      // Capture the external server state before the request is delayed.
+      const unread = hasUnread;
+      if (blockRefresh) {
+        blockRefresh = false;
+        refreshStarted.resolve();
+        await releaseRefresh.promise;
+        if (failLeadingRefresh) {
+          return respond(503, { error: "Indicators temporarily unavailable" });
+        }
+      }
+      return respond(200, {
+        agents: unread ? { [AGENT_ID]: "unread" } : {},
+        threads: unread ? { [EXISTING_THREAD_ID]: "unread" } : {},
+        unreadAt: unread
+          ? { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" }
+          : {},
+      });
+    });
+
+    // The direct transport runs the production Worker handler synchronously,
+    // so the entire burst is delivered before releasing the in-flight fetch.
+    await setupSidebarPage({ context, path: "/agents" });
+    const threadLink = () => {
+      return threadLinkByTitle("Burst conversation", mobileSidebar());
+    };
+    await waitFor(() => {
+      expect(threadLink()).toHaveAccessibleName("Burst conversation");
+    });
+
+    blockRefresh = true;
+    createChatEvent(EXISTING_THREAD_ID);
+    await refreshStarted.promise;
+    hasUnread = true;
+    for (let index = 0; index < 20; index++) {
+      createChatEvent(EXISTING_THREAD_ID);
+    }
+
+    // Advance the scheduling clock before unblocking the request: no sleeps
+    // or timer mocks are needed to exercise the single trailing execution.
+    mockNow(1000, context.signal);
+    releaseRefresh.resolve();
+    await waitFor(() => {
+      expect(threadLink()).toHaveAccessibleName("Burst conversation Unread");
+    });
+  },
+);
+
+test("Open a conversation with double-click and rename it from the sidebar menu", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -559,12 +623,23 @@ test("Rename a conversation from the sidebar", async () => {
 
   await setupSidebarPage({
     context,
-    path: `/chats/${EXISTING_THREAD_ID}`,
+    path: `/chats/${INCIDENT_THREAD_ID}`,
   });
 
   await waitFor(() => {
     expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
     expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
+  });
+
+  await userEvent
+    .setup()
+    .dblClick(threadLinkByTitle("Release plan", sidebar()));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+    expect(threadLinkByTitle("Release plan", sidebar())).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   openThreadMenu("Release plan");

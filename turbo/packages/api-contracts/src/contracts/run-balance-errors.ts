@@ -3,7 +3,7 @@ import type { RunFailureReasonToken } from "./run-failure-reasons";
 import { z } from "zod";
 
 export const PROVIDER_INSUFFICIENT_CREDITS_MESSAGE =
-  "Your connected model provider account has insufficient balance.";
+  "Your connected subscription account has insufficient balance.";
 export const MODEL_UNAVAILABLE_MESSAGE = "The current model is unavailable.";
 
 const providerErrorSchema = z.object({

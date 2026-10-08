@@ -1,9 +1,5 @@
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import {
   chatThreadsContract,
   chatThreadEventsContract,
   type ChatThreadEvent,
@@ -16,6 +12,7 @@ import { createAuthedContractClient } from "../../signals/api-client-base.ts";
 import type { ApiClientFactory } from "../../signals/api-client.ts";
 import { CHAT_IDB_VERSION } from "../../signals/external/chat-idb-schema.ts";
 import {
+  mockChatThreadSnapshotResponse,
   chatEventRowsResponse,
   testContext,
 } from "../../signals/__tests__/test-helpers.ts";
@@ -84,11 +81,11 @@ function snapshotThread(title: string): ChatThreadSnapshotProjection {
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
     pinnedAt: null,
+    archived: false,
     renamedAt: null,
     selectedModel: null,
     serviceTier: null,
     computerUseHostId: null,
-    selectedVideoModel: null,
   };
 }
 
@@ -103,7 +100,6 @@ function renamedThreadEvent(seqId: number, title: string): ChatThreadEvent {
     selectedModel: null,
     serviceTier: null,
     computerUseHostId: null,
-    selectedVideoModel: null,
     createdAt: CREATED_AT,
   };
 }
@@ -197,53 +193,6 @@ test("treat a headerless 426 from chat event rows as an upgrade request", async 
     reason: "force-upgrade-required",
   });
 });
-
-test.each(["catch-up", "rows", "snapshot"] as const)(
-  "still reject a successful %s response missing the schema header",
-  async (operation) => {
-    const { runtime, events } = startRuntime();
-    const threadId = crypto.randomUUID();
-    if (operation === "catch-up") {
-      context.mocks.http.post("*/api/chat/events/catch-up", () => {
-        return Response.json({
-          events: { [threadId]: [] },
-          notFoundThreads: [],
-        });
-      });
-    } else if (operation === "rows") {
-      context.mocks.http.get("*/api/chat-threads/:threadId/event-rows", () => {
-        return Response.json(chatEventRowsResponse([], { sinceSeqId: 0 }));
-      });
-    } else {
-      context.mocks.http.get(
-        "*/api/chat-threads/:threadId/event-snapshot",
-        () => {
-          return Response.json({
-            url: SNAPSHOT_URL,
-            lastEventId: null,
-            lastSeqId: 0,
-            expiresInSeconds: 3600,
-          });
-        },
-      );
-    }
-    const request =
-      operation === "catch-up"
-        ? runtime.catchUpChatEvents([threadId], context.signal)
-        : runtime.query(
-            {
-              dataKey: chatEventKey(threadId),
-              afterSeqId: null,
-              consistency: "catch-up",
-            },
-            context.signal,
-          );
-    await expect(request).rejects.toThrow(
-      "Unexpected Chat Event schema version null",
-    );
-    expect(events).toStrictEqual([]);
-  },
-);
 
 test("Keep cached chat data isolated by user and workspace", async () => {
   const firstIdentity = identity();
@@ -487,38 +436,29 @@ test("Rebuild chat data after its saved cursor expires", async () => {
     const rebuiltRow = chatEventRow(dataKey.threadId, 10);
     const tailRow = chatEventRow(dataKey.threadId, 11);
     let expired = false;
-    context.mocks.api(
-      chatThreadEventsContract.snapshot,
-      ({ request, respond }) => {
-        expect(request.headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER)).toBe(
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-        );
-        if (!expired) {
-          return respond(404, {
-            error: {
-              code: "CHAT_EVENT_SNAPSHOT_NOT_FOUND",
-              message: "Chat event snapshot not found",
-            },
-          });
-        }
-        return respond(200, {
-          url: SNAPSHOT_URL,
-          expiresInSeconds: 900,
-          lastEventId: rebuiltRow.id,
-          lastSeqId: 10,
+    context.mocks.api(chatThreadEventsContract.snapshot, ({ respond }) => {
+      if (!expired) {
+        return respond(404, {
+          error: {
+            code: "CHAT_EVENT_SNAPSHOT_NOT_FOUND",
+            message: "Chat event snapshot not found",
+          },
         });
-      },
-    );
+      }
+      return respond(200, {
+        url: SNAPSHOT_URL,
+        expiresInSeconds: 900,
+        lastEventId: rebuiltRow.id,
+        lastSeqId: 10,
+      });
+    });
     context.mocks.http.get(SNAPSHOT_URL, () => {
       return new Response(snapshotNdjson([rebuiltRow]));
     });
     let returnedExpiry = false;
     context.mocks.api(
       chatThreadEventsContract.rows,
-      ({ query, request, query: requestQuery, respond }) => {
-        expect(request.headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER)).toBe(
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-        );
+      ({ query, query: requestQuery, respond }) => {
         if (!expired) {
           return respond(
             200,
@@ -577,13 +517,16 @@ test("Rebuild chat data after its saved cursor expires", async () => {
     let returnExpiry = false;
     context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
       const current = snapshotVersion === 1;
-      return respond(200, {
-        chatThreads: [
-          snapshotThread(current ? "old snapshot" : "new snapshot"),
-        ],
-        latestEventId: crypto.randomUUID(),
-        latestSeqId: current ? 1 : 10,
-      });
+      return respond(
+        200,
+        mockChatThreadSnapshotResponse(context, {
+          chatThreads: [
+            snapshotThread(current ? "old snapshot" : "new snapshot"),
+          ],
+          latestEventId: crypto.randomUUID(),
+          latestSeqId: current ? 1 : 10,
+        }),
+      );
     });
     context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
       if (returnExpiry && query.sinceSeqId === oldEvent.seqId) {
@@ -767,7 +710,7 @@ test("Serve remote chat data without Sentry reports when IndexedDB write transac
     return respond(200, chatEventRowsResponse([remoteRow], query));
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, snapshot);
+    return respond(200, mockChatThreadSnapshotResponse(context, snapshot));
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

@@ -2,6 +2,10 @@ import type { WorkflowOwnerProfile } from "@okouai/api-contracts/contracts/workf
 import { userCache } from "@okouai/db/schema/user-cache";
 import { eq } from "drizzle-orm";
 
+import {
+  createWorkflowOwnerProfileNegativeCache,
+  WORKFLOW_OWNER_PROFILE_CACHE_LIMIT,
+} from "../../lib/workflow-owner-profile-negative-cache";
 import { singleton } from "../../lib/singleton";
 import { now, nowDate } from "../../lib/time";
 import { isClerkResourceNotFound, type ClerkClient } from "../external/clerk";
@@ -9,8 +13,6 @@ import type { Db } from "../external/db";
 import { awaitWithSignal, settle } from "../utils";
 
 const POSITIVE_TTL_MS = 15 * 60 * 1000;
-const NEGATIVE_TTL_MS = 60 * 1000;
-const MAX_OWNERS = 512;
 
 interface Refresh {
   readonly controller: AbortController;
@@ -24,7 +26,7 @@ interface Refresh {
 // or when their final request consumer aborts. Cold instances start empty.
 const ownerProfiles = singleton(() => {
   return {
-    missing: new Map<string, number>(),
+    missing: createWorkflowOwnerProfileNegativeCache(),
     refreshing: new Map<string, Refresh>(),
   };
 });
@@ -63,14 +65,7 @@ async function refreshProfile(
   }
   const user = result.ok ? result.value : null;
   if (!user) {
-    const missing = ownerProfiles().missing;
-    if (missing.size >= MAX_OWNERS) {
-      const oldest = missing.keys().next().value;
-      if (oldest !== undefined) {
-        missing.delete(oldest);
-      }
-    }
-    missing.set(ownerUserId, now() + NEGATIVE_TTL_MS);
+    ownerProfiles().missing.record(ownerUserId, now());
     return null;
   }
 
@@ -108,12 +103,7 @@ export async function loadWorkflowOwnerProfile(
 ): Promise<WorkflowOwnerProfile | null | undefined> {
   signal.throwIfAborted();
   const cache = ownerProfiles();
-  for (const [id, expiresAt] of cache.missing) {
-    if (expiresAt <= now()) {
-      cache.missing.delete(id);
-    }
-  }
-  if (cache.missing.has(ownerUserId)) {
+  if (cache.missing.has(ownerUserId, now())) {
     return null;
   }
 
@@ -121,7 +111,7 @@ export async function loadWorkflowOwnerProfile(
   if (!refresh) {
     // Bound retained refreshes as well as negative results. Reject excess work
     // transiently; never evict another caller's active refresh or cache an error.
-    if (cache.refreshing.size >= MAX_OWNERS) {
+    if (cache.refreshing.size >= WORKFLOW_OWNER_PROFILE_CACHE_LIMIT) {
       return undefined;
     }
     const controller = new AbortController();

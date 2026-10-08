@@ -1,4 +1,3 @@
-import { PI_NATIVE_CREDENTIAL_PLACEHOLDER } from "../contracts/pi-native";
 import {
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
@@ -32,7 +31,6 @@ import {
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
   PI_MODEL_CONFIG_LEGACY_GENERATION,
-  PI_MODEL_CONFIG_NATIVE_GENERATION,
   RESUME_SESSION_HISTORY_MAX_BYTES,
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
   RUNNER_HOSTNAME_MAX_LENGTH,
@@ -86,8 +84,6 @@ const codexOauthPlaceholderNames = [
 type CodexOauthPlaceholderName = (typeof codexOauthPlaceholderNames)[number];
 
 const modelProviderEnvPlaceholderNames = [
-  "ANTHROPIC_API_KEY",
-  "ANTHROPIC_AUTH_TOKEN",
   "CLAUDE_CODE_OAUTH_TOKEN",
   "OPENAI_API_KEY",
   "CHATGPT_ACCESS_TOKEN",
@@ -366,22 +362,6 @@ export const rustConstantBindings = [
     rustConstName: "PI_MODEL_CONFIG_DIALECT_TIER_GENERATION",
     value: rustU32(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
     rustDoc: ["Additive Pi generation with dialect-constrained request tiers."],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "PI_MODEL_CONFIG_NATIVE_GENERATION",
-    value: rustU32(PI_MODEL_CONFIG_NATIVE_GENERATION),
-    rustDoc: [
-      "Native Messages and Bedrock reader generation; activation is separate.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "PI_NATIVE_CREDENTIAL_PLACEHOLDER",
-    value: rustString(PI_NATIVE_CREDENTIAL_PLACEHOLDER),
-    rustDoc: [
-      "Opaque native Pi sandbox marker; never a real signing credential.",
-    ],
   },
   {
     rustModulePath: ["runners"],

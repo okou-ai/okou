@@ -2,6 +2,8 @@ import {
   cloudflareAccessContract,
   type CreateCloudflareAccessConfigRequest,
   type UpdateCloudflareAccessRequest,
+  type ConvertCloudflareAccessRequest,
+  type DeleteCloudflareAccessRequest,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { command } from "ccstate";
 import { cloudflareAccessErrorResponse } from "../../lib/cloudflare-access-error";
@@ -9,15 +11,21 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
+import { clerk$, createClerkReadContext } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import {
-  createCloudflareAccessConfig,
-  deleteCloudflareAccessConfig,
-  listCloudflareAccessConfigs,
-  updateCloudflareAccessConfig,
+  createCloudflareAccessConfig$,
+  convertCloudflareAccessToPersonal$,
+  convertCloudflareAccessToOrganization$,
+  deleteCloudflareAccessConfig$,
+  listCloudflareAccessConfigs$,
+  previewCloudflareAccessConversion$,
+  previewCloudflareAccessDeletion$,
+  updateCloudflareAccessConfig$,
 } from "../services/cloudflare-access.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { loadUserDisplayNames } from "../services/user-profile-directory.service";
 
 const ownerAuth = {
   requireOrganization: true,
@@ -34,33 +42,27 @@ const encryptionContext$ = command(async ({ get }, signal: AbortSignal) => {
   return context;
 });
 
-const listConfigs$ = command(
-  async ({ get }, view: "legacy" | "scoped", signal: AbortSignal) => {
-    const configs = await listCloudflareAccessConfigs(
-      get(db$),
-      get(organizationAuthContext$),
-      view,
-    );
-    signal.throwIfAborted();
-    return configs;
-  },
-);
+const listConfigs$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const configs = await set(
+    listCloudflareAccessConfigs$,
+    get(organizationAuthContext$),
+  );
+  signal.throwIfAborted();
+  return configs;
+});
 
 const createConfig$ = command(
   async (
     { get, set },
     body: CreateCloudflareAccessConfigRequest,
-    view: "legacy" | "scoped",
     signal: AbortSignal,
   ) => {
     const featureContext = await set(encryptionContext$, signal);
-    const config = await createCloudflareAccessConfig({
-      db: set(writeDb$),
+    const config = await set(createCloudflareAccessConfig$, {
       owner: get(organizationAuthContext$),
       body,
       id: body.id,
       featureContext,
-      view,
     });
     signal.throwIfAborted();
     return config;
@@ -72,17 +74,14 @@ const updateConfig$ = command(
     { get, set },
     configId: string,
     body: UpdateCloudflareAccessRequest,
-    view: "legacy" | "scoped",
     signal: AbortSignal,
   ) => {
     const featureContext = await set(encryptionContext$, signal);
-    const result = await updateCloudflareAccessConfig({
-      db: set(writeDb$),
+    const result = await set(updateCloudflareAccessConfig$, {
       owner: get(organizationAuthContext$),
       configId,
       body,
       featureContext,
-      view,
     });
     signal.throwIfAborted();
     return result;
@@ -93,29 +92,22 @@ const deleteConfig$ = command(
   async (
     { get, set },
     configId: string,
-    expectedRevision: number,
-    view: "legacy" | "scoped",
+    body: DeleteCloudflareAccessRequest,
     signal: AbortSignal,
   ) => {
-    const result = await deleteCloudflareAccessConfig({
-      db: set(writeDb$),
+    const result = await set(deleteCloudflareAccessConfig$, {
       owner: get(organizationAuthContext$),
       configId,
-      expectedRevision,
-      view,
+      body,
     });
     signal.throwIfAborted();
     return result;
   },
 );
 
-const list$ = command(async ({ get, set }, signal: AbortSignal) => {
+const list$ = command(async ({ set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const view =
-    get(queryOf(cloudflareAccessContract.list)).view === "scoped"
-      ? "scoped"
-      : "legacy";
-  const configs = await set(listConfigs$, view, signal);
+  const configs = await set(listConfigs$, signal);
   return { status: 200 as const, body: { configs } };
 });
 
@@ -126,18 +118,10 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const view =
-    get(queryOf(cloudflareAccessContract.create)).view === "scoped"
-      ? "scoped"
-      : "legacy";
-  const config = await set(createConfig$, body.data, view, signal);
+  const config = await set(createConfig$, body.data, signal);
   if (!config.ok) {
     return cloudflareAccessErrorResponse(
-      config.kind === "forbidden"
-        ? 403
-        : config.kind === "not_found"
-          ? 404
-          : 409,
+      config.kind === "forbidden" ? 403 : 409,
       config.code,
       config.message,
     );
@@ -155,11 +139,7 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { configId } = get(pathParamsOf(cloudflareAccessContract.update));
-  const view =
-    get(queryOf(cloudflareAccessContract.update)).view === "scoped"
-      ? "scoped"
-      : "legacy";
-  const result = await set(updateConfig$, configId, body.data, view, signal);
+  const result = await set(updateConfig$, configId, body.data, signal);
   return result.ok
     ? { status: 200 as const, body: result.value }
     : cloudflareAccessErrorResponse(
@@ -181,19 +161,125 @@ const delete$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { configId } = get(pathParamsOf(cloudflareAccessContract.delete));
-  const view =
-    get(queryOf(cloudflareAccessContract.delete)).view === "scoped"
-      ? "scoped"
-      : "legacy";
-  const result = await set(
-    deleteConfig$,
-    configId,
-    body.data.expectedRevision,
-    view,
-    signal,
-  );
+  const result = await set(deleteConfig$, configId, body.data, signal);
   return result.ok
     ? { status: 204 as const, body: undefined }
+    : cloudflareAccessErrorResponse(
+        result.kind === "not_found"
+          ? 404
+          : result.kind === "forbidden"
+            ? 403
+            : 409,
+        result.code,
+        result.message,
+      );
+});
+
+const promote$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const body = await get(
+    bodyResultOf(cloudflareAccessContract.convertToOrganization),
+  );
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const { configId } = get(
+    pathParamsOf(cloudflareAccessContract.convertToOrganization),
+  );
+  const result = await set(convertCloudflareAccessToOrganization$, {
+    owner: get(organizationAuthContext$),
+    configId,
+    expectedRevision: body.data.expectedRevision,
+  });
+  signal.throwIfAborted();
+  return result.ok
+    ? { status: 200 as const, body: result.value }
+    : cloudflareAccessErrorResponse(
+        result.kind === "not_found"
+          ? 404
+          : result.kind === "forbidden"
+            ? 403
+            : 409,
+        result.code,
+        result.message,
+      );
+});
+
+const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const { configId } = get(
+    pathParamsOf(cloudflareAccessContract.impactPreview),
+  );
+  const { operation } = get(queryOf(cloudflareAccessContract.impactPreview));
+  const owner = get(organizationAuthContext$);
+  const result =
+    operation === "convert"
+      ? await set(previewCloudflareAccessConversion$, { owner, configId })
+      : await set(previewCloudflareAccessDeletion$, { owner, configId });
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return cloudflareAccessErrorResponse(
+      result.kind === "not_found" ? 404 : 403,
+      result.code,
+      result.message,
+    );
+  }
+  const { value } = result;
+  const names = await loadUserDisplayNames(
+    set(writeDb$),
+    get(clerk$),
+    value.affectedOwnerIds,
+    createClerkReadContext(),
+    signal,
+  );
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: {
+      expectedRevision: value.expectedRevision,
+      ownHostCount: value.ownHostCount,
+      otherHostCount: value.otherHostCount,
+      affectedOwners: value.affectedOwnerIds.map((userId) => {
+        return { userId, displayName: names.get(userId) ?? null };
+      }),
+      impactSnapshot: value.impactSnapshot,
+    },
+  };
+});
+
+const convertConfig$ = command(
+  async (
+    { get, set },
+    configId: string,
+    body: ConvertCloudflareAccessRequest,
+    signal: AbortSignal,
+  ) => {
+    const result = await set(convertCloudflareAccessToPersonal$, {
+      owner: get(organizationAuthContext$),
+      configId,
+      body,
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
+const convert$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const body = await get(
+    bodyResultOf(cloudflareAccessContract.convertToPersonal),
+  );
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const { configId } = get(
+    pathParamsOf(cloudflareAccessContract.convertToPersonal),
+  );
+  const result = await set(convertConfig$, configId, body.data, signal);
+  return result.ok
+    ? { status: 200 as const, body: result.value }
     : cloudflareAccessErrorResponse(
         result.kind === "not_found"
           ? 404
@@ -221,5 +307,17 @@ export const cloudflareAccessRoutes: readonly RouteEntry[] = [
   {
     route: cloudflareAccessContract.delete,
     handler: authRoute(ownerAuth, delete$),
+  },
+  {
+    route: cloudflareAccessContract.convertToOrganization,
+    handler: authRoute(ownerAuth, promote$),
+  },
+  {
+    route: cloudflareAccessContract.impactPreview,
+    handler: authRoute(ownerAuth, impactPreview$),
+  },
+  {
+    route: cloudflareAccessContract.convertToPersonal,
+    handler: authRoute(ownerAuth, convert$),
   },
 ];

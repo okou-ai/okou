@@ -296,7 +296,7 @@ value on the path — there is no caller-supplied owner, Agent, account, calenda
 ID, query or URL. The membership generation is what stops a member who left and
 rejoined from releasing content the previous membership started collecting.
 After each external membership answer, one short local transaction rechecks
-erasure, the complete canonical binding and Brief-Agent visibility; it contains
+the complete canonical binding and Brief-Agent visibility; it contains
 no network call and does not promise cross-system atomicity or retroactive
 recall.
 
@@ -310,7 +310,7 @@ call this same collector internally under occurrence ownership.
 
 ## Rollout, scale and compatibility
 
-`simpleMorningBrief` stays default-off, and the preview route is unavailable in
+`FeatureSwitchKey.NativeMorningBrief` stays default-off, and the preview route is unavailable in
 production regardless of it. Existing Settings and the legacy scheduler remain
 authoritative; nothing here changes a user's preference, schedule, timezone or
 thread.

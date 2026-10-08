@@ -1,5 +1,10 @@
 # Morning Brief platform-funded generation
 
+> Historical Native design record: preview and execution entrypoints were
+> removed in retirement stage 2. Expired historical generation content still
+> needs purging; an unknown provider outcome must never be retried. See
+> [deployment compatibility](deployment-compatibility.md).
+
 The `simple-morning-brief` pipeline replaces the Morning Brief Official Workflow
 Run with a server-side pipeline. [The collection contract](morning-brief-collection.md)
 owns how source data is admitted, claimed and read. This document owns the next
@@ -39,7 +44,7 @@ real invocation and requires it unchanged.
 route table, so an operator can really invoke it on a development server or a
 protected preview deployment. `isPreviewEndpointAllowed` runs before
 authentication, so production answers `404` without doing any auth work, and it
-stays `404` even when `simpleMorningBrief` is enabled for the caller. On a
+stays `404` even when `FeatureSwitchKey.NativeMorningBrief` is enabled for the caller. On a
 preview deployment the request additionally needs the deployment's
 protection-bypass secret, which is environment protection and never owner
 authentication.
@@ -534,7 +539,7 @@ Persistence is two independent writes, in this order and with bounded retries of
 the _same_ observed values:
 
 1. **The receipt**, keyed by the opaque attempt id with a conflict-free insert.
-   It takes no erasure admission and no owner lock, so it still records a real
+   It takes no owner lock, so it still records a real
    charge when the owner is already gone, and a retry — including one that races
    an earlier attempt that actually committed — leaves exactly one cost record
    and never replaces a committed observation with a weaker one.

@@ -1,5 +1,8 @@
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
+import {
+  mockConnectorAgentAccess,
+  mockOAuthCompletions,
+} from "./connector-page-test-helpers.ts";
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
@@ -133,6 +136,9 @@ function installCustomConnectorApi(args: {
   });
   context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
     return respond(200, { grants });
+  });
+  mockConnectorAgentAccess(context, () => {
+    return { grants };
   });
   context.mocks.api(
     agentCustomConnectorsContract.update,
@@ -550,6 +556,9 @@ test("Connect a single available connector without an unnecessary chooser", asyn
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [slug] });
   });
+  mockConnectorAgentAccess(context, () => {
+    return { enabledConnectorSlugs: [slug] };
+  });
   installActionConversation({
     lines: [
       connectorActionUrl({
@@ -787,6 +796,9 @@ test("Reconnect an expired connector before resuming the task", async () => {
   });
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [slug] });
+  });
+  mockConnectorAgentAccess(context, () => {
+    return { enabledConnectorSlugs: [slug] };
   });
   installActionConversation({
     lines: [

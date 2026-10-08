@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
+import { inviteOrgMemberRequestSchema } from "@okouai/api-contracts/contracts/org-members";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { onRejection, settle } from "../utils.ts";
@@ -32,12 +33,24 @@ const dropInvite$ = command(({ get, set }, email: string) => {
   });
 });
 
-/** An address already in flight or already accepted is not sent again. */
+/**
+ * Whether the address is one the invite route would accept, judged by the
+ * route's own body schema so the step never forwards a refusal the browser
+ * could have caught.
+ */
+export function sourcesFirstInviteEmailValid(email: string): boolean {
+  return inviteOrgMemberRequestSchema.shape.email.safeParse(email).success;
+}
+
+/**
+ * A well-formed address is sent once: one already in flight or already
+ * accepted is not sent again.
+ */
 export function sourcesFirstInviteSendable(
   invites: readonly SourcesFirstInvite[],
   email: string,
 ): boolean {
-  if (email === "") {
+  if (!sourcesFirstInviteEmailValid(email)) {
     return false;
   }
   return invites.every((invite) => {

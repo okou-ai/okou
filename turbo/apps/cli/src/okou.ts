@@ -11,6 +11,12 @@ import {
 import { getOkouToken } from "./lib/okou-env.js";
 import { artifactCommand } from "./commands/artifact/index.js";
 import { installPaidToolPolicy } from "./lib/command/paid-tools.js";
+import {
+  observePiCliEntryImports,
+  startPiCliObservation,
+} from "./lib/pi-startup-timing.js";
+
+observePiCliEntryImports();
 
 interface CommandDefinition {
   name: string;
@@ -42,7 +48,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   credit: ["billing:read", "billing:write"],
   upgrade: null,
   model: null,
-  "model-provider": null,
+  subscription: ["subscription:read", "subscription:switch"],
   search: null,
   chat: [
     "chat-event:read",
@@ -53,11 +59,14 @@ const COMMAND_CAPABILITY_MAP: Record<
   resource: null,
   github: ["github:read", "github:write"],
   slack: ["slack:read", "slack:write"],
+  discord: ["discord:read", "discord:write"],
   feishu: "feishu:write",
   lark: "lark:write",
   teams: "teams:write",
   telegram: ["telegram:read", "telegram:write"],
   phone: ["phone:read", "phone:write"],
+  imessage: ["phone:read", "phone:write"],
+  sms: "phone:write",
   whoami: null,
   "computer-use": "computer-use:write",
   browser: ["browser:read", "browser:write"],
@@ -75,19 +84,12 @@ const COMMAND_CAPABILITY_MAP: Record<
   "people-search": "people-search:read",
   "web-search": "web-search:read",
   social: "social:read",
-  "image-recognition": "image-recognition:write",
   finance: "finance:read",
   seo: "seo:read",
   banking: "banking:read",
 };
 
-const RUN_ONLY_COMMANDS = new Set([
-  "mcp",
-  "ssh",
-  "vnc",
-  "run",
-  "image-recognition",
-]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "run"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
@@ -128,16 +130,17 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "model",
-    description: "List available models and model-switching guidance",
+    description: "List and select Auto or personal subscription models",
     load: async () => {
       return (await import("./commands/model")).modelCommand;
     },
   },
   {
-    name: "model-provider",
-    description: "Inspect model provider routing",
+    name: "subscription",
+    description:
+      "Inspect and switch personal subscriptions; create user-confirmed reset links",
     load: async () => {
-      return (await import("./commands/model-provider")).modelProviderCommand;
+      return (await import("./commands/subscription")).subscriptionCommand;
     },
   },
   {
@@ -206,6 +209,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
+    name: "discord",
+    description:
+      "List channels, read history, and send messages as the Discord bot",
+    load: async () => {
+      return (await import("./commands/discord")).discordCommand;
+    },
+  },
+  {
     name: "lark",
     description: "Send messages and transfer files through Lark",
     load: async () => {
@@ -230,16 +241,31 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
     name: "telegram",
     description:
-      "Inspect bots, send messages, upload files, and download files from Telegram",
+      "Send messages and files through the official Okou Telegram bot",
     load: async () => {
       return (await import("./commands/telegram")).telegramCommand;
     },
   },
   {
     name: "phone",
-    description: "Send AgentPhone messages, upload files, and download media",
+    description:
+      "Send messages and files to your connected phone, and download media",
     load: async () => {
       return (await import("./commands/phone")).phoneCommand;
+    },
+  },
+  {
+    name: "imessage",
+    description: "Send messages and read group history",
+    load: async () => {
+      return (await import("./commands/imessage")).imessageCommand;
+    },
+  },
+  {
+    name: "sms",
+    description: "Send text messages",
+    load: async () => {
+      return (await import("./commands/sms")).smsCommand;
     },
   },
   {
@@ -392,14 +418,6 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
-    name: "image-recognition",
-    description: "Recognize one image through a managed multimodal model",
-    load: async () => {
-      return (await import("./commands/image-recognition"))
-        .imageRecognitionCommand;
-    },
-  },
-  {
     name: "finance",
     description: "Query financial instruments through managed Okou finance",
     load: async () => {
@@ -507,7 +525,15 @@ export async function registerRequestedCommand(
   argv: string[] = process.argv,
 ): Promise<void> {
   const requestedCommandName = getRequestedCommandName(argv);
-  const requestedCommand = await loadRequestedCommand(requestedCommandName);
+  const finishImport = startPiCliObservation("cli_command_import");
+  let importOutcome: "success" | "error" = "error";
+  let requestedCommand: Command | undefined;
+  try {
+    requestedCommand = await loadRequestedCommand(requestedCommandName);
+    importOutcome = "success";
+  } finally {
+    finishImport(importOutcome);
+  }
   registerCommands(prog, requestedCommand ? [requestedCommand] : undefined);
 
   if (
@@ -553,6 +579,11 @@ export function buildHelpText(
     ),
     "  Send a Slack message?  okou slack message send --help",
     ...commandExampleIfVisible(
+      "discord",
+      "  Use Discord?          okou discord --help",
+      payload,
+    ),
+    ...commandExampleIfVisible(
       "feishu",
       "  Send Feishu?          okou feishu message send --help",
       payload,
@@ -572,15 +603,16 @@ export function buildHelpText(
     "  Download Teams?       okou teams download-file --help",
     "  Upload GitHub?        okou github upload-file --help",
     "  Download GitHub?      okou github download-file --help",
-    "  List Telegram bots?    okou telegram bot list",
     "  Send Telegram?         okou telegram message send --help",
     "  Upload Telegram?       okou telegram upload-file --help",
     "  Download Telegram?     okou telegram download-file --help",
-    "  Send AgentPhone?       okou phone message --help",
-    "  Upload AgentPhone?     okou phone upload-file --help",
-    "  Download AgentPhone?   okou phone download-file --help",
+    "  Read group history?   okou imessage group history --help",
+    "  Send iMessage?        okou imessage message send --help",
+    "  Send SMS?             okou sms message send --help",
+    "  Upload phone file?    okou phone upload-file --help",
+    "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",
-    "  Model routing?        okou model-provider ls",
+    "  Subscriptions?        okou subscription list",
     "  Update yourself?       okou agent --help",
     "  Manage workflows?     okou workflow --help",
     ...commandExampleIfVisible(
@@ -597,7 +629,6 @@ export function buildHelpText(
     "  List generators?       okou generate --help",
     '  Generate image?        okou generate image --raw-prompt "..."',
     '  Generate website?      okou generate website --prompt "..."',
-    '  Generate voice?        okou generate voice --prompt "..."',
     ...(canWriteHost
       ? ["  Host a static site?    okou host ./dist --site my-site --spa"]
       : []),
@@ -632,11 +663,6 @@ export function buildHelpText(
     ...commandExampleIfVisible(
       "social",
       "  Analyze social data?   okou social transcript https://youtu.be/dQw4w9WgXcQ --json",
-      payload,
-    ),
-    ...commandExampleIfVisible(
-      "image-recognition",
-      '  Recognize an image?    okou image-recognition --file ./image.png --prompt "Describe it"',
       payload,
     ),
     ...commandExampleIfVisible(
@@ -704,7 +730,14 @@ if (
   process.argv[1]?.endsWith("okou.ts") ||
   process.argv[1]?.endsWith("okou")
 ) {
-  await configureGlobalProxyFromEnv();
+  const finishProxy = startPiCliObservation("cli_proxy");
+  let proxyOutcome: "success" | "error" = "error";
+  try {
+    await configureGlobalProxyFromEnv();
+    proxyOutcome = "success";
+  } finally {
+    finishProxy(proxyOutcome);
+  }
   await registerRequestedCommand(program);
   program.parse();
 }

@@ -1,3 +1,8 @@
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+} from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
 import {
   resolveChatEventRecommendedFollowups,
@@ -5,15 +10,13 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
-import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
-  openRouterBodySchema,
   userMessages,
   assistantEvent,
 } from "./helpers/chat-events-fixture";
@@ -23,7 +26,7 @@ const {
   api,
   chat,
   chatCallbacks,
-  entitledChatActor,
+  entitledNativeChatActor,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
@@ -39,11 +42,12 @@ async function waitForThreadTitle(
   threadId: string,
   title: string | null,
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       return await readThreadTitleFromEvents(actor, threadId);
-    })
-    .toBe(title);
+    })(),
+  ).resolves.toBe(title);
 }
 
 async function readThreadTitleFromEvents(
@@ -91,7 +95,7 @@ function recommendedFollowupEvents(
 
 describe("CHAT-02: incomplete-round context", () => {
   it("injects incomplete rounds and truncates old content chronologically", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
@@ -116,13 +120,11 @@ describe("CHAT-02: incomplete-round context", () => {
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     await failChatRun(first.runId, firstClaim.sandboxHeaders, "boom one");
-    const firstBinding = await readThreadSessionBinding(
+    const establishedSession = await readCompletedRunSessionId(
       context,
-      first.threadId,
+      actor,
+      anchor.runId,
     );
-    if (!firstBinding.agent_session_id) {
-      throw new Error("Expected the failed run to retain its session binding");
-    }
 
     const longPrompt = `second ${"x".repeat(4100)}`;
     const second = await sendChatRun(actor, {
@@ -132,25 +134,11 @@ describe("CHAT-02: incomplete-round context", () => {
     });
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     await failChatRun(second.runId, secondClaim.sandboxHeaders, "boom two");
-    await expect(
-      readThreadSessionBinding(context, first.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: firstBinding.agent_session_id,
-      agent_session_run_id: second.runId,
-      run_session_id: firstBinding.agent_session_id,
-    });
 
     const third = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "retry after two failures",
-    });
-    await expect(
-      readThreadSessionBinding(context, first.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: firstBinding.agent_session_id,
-      agent_session_run_id: third.runId,
-      run_session_id: firstBinding.agent_session_id,
     });
     const thirdRun = await api.readRun(actor, third.runId);
     const appended = thirdRun.appendSystemPrompt ?? "";
@@ -167,74 +155,95 @@ describe("CHAT-02: incomplete-round context", () => {
     expect(thirdClaim.claim.resumeSession?.sessionId).toBe(
       `bdd-cli-${anchor.runId}`,
     );
-    await cancelChatRun(actor, third.runId);
+    await completeChatRunOk(third.runId, thirdClaim.sandboxHeaders);
+    await expect(
+      readCompletedRunSessionId(context, actor, third.runId),
+    ).resolves.toBe(establishedSession);
   }, 90_000);
 });
 
 describe("CHAT-02: prior rounds and thread titles", () => {
   it("leaves prior completed rounds to the session, generates the thread title, and accepts immutable follow-up revokes", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    mockOptionalEnv("OPENROUTER_API_KEY", "title-key");
+    mockGoogleText();
     let upstreamAuthorization: string | null = null;
     let titleRequests = 0;
-    let titleRequestBody: z.infer<typeof openRouterBodySchema> | undefined;
-    let followupRequestBody: z.infer<typeof openRouterBodySchema> | undefined;
+    let titleRequestBody: ReturnType<typeof vertexTextRequest> | undefined;
+    let followupRequestBody: ReturnType<typeof vertexTextRequest> | undefined;
     server.use(
-      http.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        async ({ request }) => {
-          upstreamAuthorization = request.headers.get("authorization");
-          const payload = openRouterBodySchema.parse(await request.json());
-          const systemContent = payload.messages[0]?.content ?? "";
-          if (systemContent.includes("recommended follow-up messages")) {
-            followupRequestBody = payload;
-            return HttpResponse.json({
-              choices: [
-                {
-                  finish_reason: "stop",
-                  message: {
-                    content: JSON.stringify([
-                      { prompt: "Summarize the migration steps", kind: "talk" },
-                    ]),
-                  },
-                },
-              ],
-            });
-          }
-          if (systemContent.includes("Generate a short, descriptive title")) {
-            titleRequests += 1;
-            titleRequestBody = payload;
-            return HttpResponse.json({
-              choices: [
-                {
-                  finish_reason: "stop",
-                  message: { content: "**Migration Plan**" },
-                },
-              ],
-            });
-          }
+      http.post(VERTEX_TEXT_URL, async ({ request }) => {
+        upstreamAuthorization = request.headers.get("authorization");
+        const payload = vertexTextRequest(await request.json(), request.url);
+        const systemContent = payload.messages[0]?.content ?? "";
+        if (systemContent.includes("recommended follow-up messages")) {
+          followupRequestBody = payload;
           return HttpResponse.json({
-            choices: [
+            candidates: [
               {
-                finish_reason: "stop",
-                message: { content: "Generated summary" },
+                finishReason: "STOP",
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify([
+                        {
+                          prompt: "Summarize the migration steps",
+                          kind: "talk",
+                        },
+                      ]),
+                    },
+                  ],
+                },
               },
             ],
           });
-        },
-      ),
+        }
+        if (systemContent.includes("Generate a short, descriptive title")) {
+          titleRequests += 1;
+          titleRequestBody = payload;
+          return HttpResponse.json({
+            candidates: [
+              {
+                finishReason: "STOP",
+                content: {
+                  parts: [
+                    {
+                      text: "**Migration Plan**",
+                    },
+                  ],
+                },
+              },
+            ],
+          });
+        }
+        return HttpResponse.json({
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: "Generated summary",
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }),
     );
 
     const firstPrompt = "plan the API migration";
     const first = await sendChatRun(actor, { agentId, prompt: firstPrompt });
     await waitForThreadTitle(actor, first.threadId, "Migration Plan");
     expect(titleRequests).toBe(1);
-    expect(upstreamAuthorization).toBe("Bearer title-key");
+    expect(upstreamAuthorization).toBe("Bearer synthetic-google-token");
     expect(titleRequestBody).toMatchObject({
-      model: "google/gemini-3.1-flash-lite",
-      max_tokens: 2048,
-      reasoning: { effort: "minimal" },
+      model: "gemini-3.1-flash-lite",
+      generationConfig: {
+        maxOutputTokens: 2048,
+        thinkingConfig: { thinkingLevel: "MINIMAL" },
+      },
     });
 
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
@@ -265,9 +274,11 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     }
     expect(recommender.eventType).toBe("output.followups");
     expect(followupRequestBody).toMatchObject({
-      model: "google/gemini-3.8-flash",
-      max_tokens: 2048,
-      reasoning: { effort: "low" },
+      model: "gemini-3.8-flash",
+      generationConfig: {
+        maxOutputTokens: 2048,
+        thinkingConfig: { thinkingLevel: "LOW" },
+      },
     });
     const futureFollowups = resolveChatEventRecommendedFollowups(recommender);
     expect(futureFollowups.length).toBeGreaterThan(0);
@@ -345,10 +356,8 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       [201],
     );
     expect(retriedFollowup.body).toStrictEqual(normalFollowup.body);
-    const normalFollowupRunId = normalFollowup.body.runId;
-    if (normalFollowupRunId === null) {
-      throw new Error("Expected recommended follow-up send to create a run");
-    }
+    expect(normalFollowup.body.runId).toBeNull();
+    await flushWaitUntilForTest();
     const afterFollowup = await waitForThreadMessages(
       actor,
       first.threadId,
@@ -356,11 +365,19 @@ describe("CHAT-02: prior rounds and thread titles", () => {
         return userMessages(messages).some((message) => {
           return (
             message.revokesEventId === recommendedFollowupQueueEventId &&
-            message.runId === normalFollowupRunId
+            message.runId !== undefined
           );
         });
       },
     );
+    const normalFollowupRunId = userMessages(afterFollowup.events).find(
+      (message) => {
+        return message.revokesEventId === recommendedFollowupQueueEventId;
+      },
+    )?.runId;
+    if (normalFollowupRunId === undefined) {
+      throw new Error("Expected the recommended follow-up to launch a run");
+    }
     expect(afterFollowup.events).toContainEqual(
       expect.objectContaining({
         id: recommendedFollowupQueueEventId,
@@ -379,36 +396,37 @@ describe("CHAT-02: prior rounds and thread titles", () => {
   }, 90_000);
 
   it("steers an active-run recommended follow-up", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    mockOptionalEnv("OPENROUTER_API_KEY", "followup-steer-key");
+    mockGoogleText();
     server.use(
-      http.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        async ({ request }) => {
-          const payload = openRouterBodySchema.parse(await request.json());
-          const systemContent = payload.messages[0]?.content ?? "";
-          return HttpResponse.json({
-            choices: [
-              {
-                finish_reason: "stop",
-                message: {
-                  content: systemContent.includes(
-                    "recommended follow-up messages",
-                  )
-                    ? JSON.stringify([
-                        {
-                          prompt: "Use the recommended follow-up",
-                          kind: "talk",
-                        },
-                      ])
-                    : "Follow-up steer",
-                },
+      http.post(VERTEX_TEXT_URL, async ({ request }) => {
+        const payload = vertexTextRequest(await request.json(), request.url);
+        const systemContent = payload.messages[0]?.content ?? "";
+        return HttpResponse.json({
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: systemContent.includes(
+                      "recommended follow-up messages",
+                    )
+                      ? JSON.stringify([
+                          {
+                            prompt: "Use the recommended follow-up",
+                            kind: "talk",
+                          },
+                        ])
+                      : "Follow-up steer",
+                  },
+                ],
               },
-            ],
-          });
-        },
-      ),
+            },
+          ],
+        });
+      }),
     );
 
     const completed = await sendChatRun(actor, {
@@ -465,22 +483,18 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       throw new Error("Expected the recommended follow-up to succeed");
     }
     expect(followup.body.runId).toBeNull();
-    const reservation = await api.reserveRunnerActiveInputs(
-      activeClaim.claim.sandboxToken,
-      active.runId,
-    );
-    if (reservation.outcome !== "reserved") {
-      throw new Error("Expected the recommended follow-up to be reserved");
-    }
-    expect(reservation.eventIds).toStrictEqual([eventId]);
-    expect(reservation.prompt).toBe("steer the recommended follow-up");
     await expect(
-      api.recordRunnerActiveInputDelivery(
+      api.nextSteerableInput(activeClaim.claim.sandboxToken, active.runId),
+    ).resolves.toStrictEqual({
+      input: { eventId, prompt: "steer the recommended follow-up" },
+    });
+    await expect(
+      api.declareSteeredInput(
         activeClaim.claim.sandboxToken,
         active.runId,
-        reservation.deliveryId,
+        eventId,
       ),
-    ).resolves.toStrictEqual({ outcome: "delivered" });
+    ).resolves.toStrictEqual({ outcome: "steered" });
 
     const afterFollowup = await waitForThreadMessages(
       actor,

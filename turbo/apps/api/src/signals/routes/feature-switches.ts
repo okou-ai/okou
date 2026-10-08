@@ -68,6 +68,19 @@ const updateFeatureSwitchesInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
+    // Reject the persisted key even without a registry entry: an older API
+    // must never observe a newly written true override during promotion.
+    if (bodyResult.data.switches.simpleMorningBrief === true) {
+      return {
+        status: 400 as const,
+        body: {
+          error: {
+            code: "BAD_REQUEST",
+            message: "Native Morning Brief is retiring and cannot be enabled",
+          },
+        },
+      };
+    }
 
     const switches = await set(
       updateUserFeatureSwitches$,

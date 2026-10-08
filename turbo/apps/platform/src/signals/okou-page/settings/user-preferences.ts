@@ -8,7 +8,6 @@ import {
 import { apiClient$ } from "../../api-client.ts";
 import { resolveInitialLocaleFallbackFromBrowser } from "../../../i18n/locale-fallback.ts";
 import { isSupportedLocale } from "../../../i18n/resources.ts";
-import { retryMorningBriefPreference$ } from "./morning-brief-preference.ts";
 import { accept } from "../../../lib/accept.ts";
 
 // ---------------------------------------------------------------------------
@@ -49,14 +48,16 @@ export const userPreferences$ = computed(
     const createClient = get(apiClient$);
     const client = createClient(userPreferencesContract);
     const result = await accept(client.get(), [200, 409]);
-    // New App -> old API: an older API may return 200 with a missing field.
-    // Remove after that API is neither serving nor retained for rollback; #36270.
-    if (
-      result.status === 200 &&
-      result.body.timezone !== null &&
-      isValidTimeZone(result.body.timezone) &&
-      result.body.locale !== null
-    ) {
+    // Initialization is idempotent: it fills missing timezone and locale and
+    // creates the member's memory, which run creation requires.
+    if (result.status === 200 && result.body.memoryInitialized) {
+      if (
+        result.body.timezone === null ||
+        !isValidTimeZone(result.body.timezone) ||
+        result.body.locale === null
+      ) {
+        throw new Error("Preferences returned an uninitialized state");
+      }
       return {
         ...result.body,
         timezone: result.body.timezone,
@@ -75,26 +76,10 @@ export const userPreferences$ = computed(
     );
     if (
       initialized.body.timezone === null ||
-      !isValidTimeZone(initialized.body.timezone)
+      !isValidTimeZone(initialized.body.timezone) ||
+      initialized.body.locale === null
     ) {
       throw new Error("Initialization returned invalid preferences");
-    }
-    if (initialized.body.locale === null) {
-      // New App -> old API: initialize may return without locale.
-      // Remove after that API is neither serving nor retained for rollback; #36270.
-      const updated = await accept(client.update({ body: { locale } }), [200]);
-      if (
-        updated.body.timezone === null ||
-        !isValidTimeZone(updated.body.timezone) ||
-        updated.body.locale === null
-      ) {
-        throw new Error("Locale initialization returned invalid preferences");
-      }
-      return {
-        ...updated.body,
-        timezone: updated.body.timezone,
-        locale: updated.body.locale,
-      };
     }
     return {
       ...initialized.body,
@@ -126,8 +111,5 @@ export const updateUserPreference$ = command(
     signal.throwIfAborted();
 
     set(reloadUserPreferences$);
-    if (update.timezone !== undefined) {
-      set(retryMorningBriefPreference$);
-    }
   },
 );

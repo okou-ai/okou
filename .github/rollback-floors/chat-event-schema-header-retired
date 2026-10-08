@@ -1,0 +1,4 @@
+The first-parent main commit that adds this marker is the minimum API rollback
+version after App and CLI stopped sending X-Chat-Event-Schema-Version. Older
+APIs require that header and reject every Chat Event read with 400. See
+docs/deployment-compatibility.md.

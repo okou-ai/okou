@@ -10,18 +10,23 @@ import {
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
-
+import { randomUUID } from "node:crypto";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { server } from "../../../../mocks/server";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createConnectorBddApi } from "./api-bdd-connectors";
-import { createRunsApi } from "./api-bdd-runs";
+import { createRunsApi, type RunModel } from "./api-bdd-runs";
 import { createRouteMocks } from "./route-test";
 import { readProjectedChatEvents } from "./chat-event-test-reader";
 import { chatThreadGetRoutes } from "../../chat-threads-get";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
+import { createAppWithRoutes } from "../../../../app-factory-core";
+import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
+import { now } from "../../../../lib/time";
+import { webhooksWorkflowAutomationsRoutes } from "../../webhooks-workflow-automations";
 import { workflowsRoutes } from "../../workflows";
 
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -132,14 +137,15 @@ export function createWorkflowsBddApi(context: TestContext) {
 
     /**
      * Production Given for a workflow-owning org: billing entitlement through
-     * the Stripe invoice webhook (which also completes onboarding) and an org
-     * default model policy through the model-provider routes. The optional
-     * timezone flows through the public user-preferences route.
+     * the Stripe invoice webhook (which also completes onboarding), a connected
+     * personal Claude subscription, and the owner's selected model. The
+     * optional timezone flows through the public user-preferences route.
      */
     async setupWorkflowOrg(
       options: {
         readonly timezone?: string;
         readonly tier?: "pro" | "team";
+        readonly model?: RunModel;
       } = {},
     ): Promise<{
       readonly actor: ApiTestUser;
@@ -154,7 +160,9 @@ export function createWorkflowsBddApi(context: TestContext) {
       if (options.timezone) {
         await bdd.updateUserTimezone(actor, options.timezone);
       }
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensurePersonalSubscriptionModel(actor, {
+        model: options.model,
+      });
       bdd.acceptAgentStorageWrites();
       return { actor, ...entitlement };
     },
@@ -278,6 +286,75 @@ export function createWorkflowsBddApi(context: TestContext) {
         [200],
       );
       return response.body;
+    },
+
+    /**
+     * Starts a real event-triggered run: a webhook-received automation on a
+     * new workflow, fired by a signed POST to its public webhook route.
+     */
+    async startEventAutomationRun(
+      actor: ApiTestUser,
+      agentId: string,
+    ): Promise<{ readonly runId: string; readonly threadId: string }> {
+      const workflowId = await api.createWorkflow(actor, {
+        agentId,
+        name: `event-${randomUUID().slice(0, 8)}`,
+      });
+      const created = await accept(
+        setupApp({ context, routes: workflowAutomationsRoutes })(
+          workflowAutomationsContract,
+        ).create({
+          headers: authenticate(actor),
+          params: { workflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      );
+      const automation = created.body;
+      if (
+        automation.kind !== "event" ||
+        automation.eventType !== "webhook-received" ||
+        !automation.webhookUrl ||
+        !automation.webhookSecret ||
+        !automation.chatThreadId
+      ) {
+        throw new Error("Expected a thread-bound webhook automation");
+      }
+      const token = new URL(automation.webhookUrl).pathname.split("/").at(-1);
+      if (!token) {
+        throw new Error("Expected a webhook URL token");
+      }
+      const rawBody = JSON.stringify({ event: "start an event run" });
+      const timestamp = Math.floor(now() / 1000);
+      const response = await createAppWithRoutes({
+        signal: context.signal,
+        routes: webhooksWorkflowAutomationsRoutes,
+      }).request(`/api/webhooks/workflow-automations/${token}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Okou-Timestamp": String(timestamp),
+          "X-Okou-Signature": computeHmacSignature(
+            rawBody,
+            automation.webhookSecret,
+            timestamp,
+          ),
+        },
+        body: rawBody,
+      });
+      if (response.status !== 200) {
+        throw new Error(`Expected the webhook to fire, got ${response.status}`);
+      }
+      await flushWaitUntilForTest();
+      authenticate(actor);
+      const events = await api.readThreadEvents(automation.chatThreadId);
+      const fired = events.find((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      });
+      if (!fired?.runId) {
+        throw new Error("Expected the webhook automation to start a run");
+      }
+      return { runId: fired.runId, threadId: automation.chatThreadId };
     },
 
     async readThreadSelectedModel(threadId: string): Promise<string | null> {

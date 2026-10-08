@@ -7,6 +7,7 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
 
@@ -37,10 +38,7 @@ test("A Clerk UI load failure offers a visible refresh without a partial auth fo
     .mockImplementation(() => {});
   expect(alert).toHaveTextContent("Oops! Something went sideways");
   expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
-  expect(screen.getByTestId("app-skeleton")).toHaveAttribute(
-    "aria-hidden",
-    "true",
-  );
+  expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
   const refresh = queryAllByRoleFast("button", alert).find((button) => {
     return button.textContent === "Refresh";
   });

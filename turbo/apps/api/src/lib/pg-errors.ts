@@ -40,8 +40,23 @@ export function isStatementTimeout(error: unknown): boolean {
   );
 }
 
-export function isUniqueViolation(error: unknown): boolean {
-  return pgErrorCode(error) === PG_UNIQUE_VIOLATION;
+export function isUniqueViolation(
+  error: unknown,
+  constraint?: string,
+): boolean {
+  if (pgErrorCode(error) !== PG_UNIQUE_VIOLATION) {
+    return false;
+  }
+  if (constraint === undefined) {
+    return true;
+  }
+  return (
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint === constraint
+  );
 }
 
 /**

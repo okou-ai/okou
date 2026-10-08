@@ -22,9 +22,6 @@ pub mod runners {
             pub base_url: String,
             /// Environment variable containing the provider credential.
             pub env_key: String,
-            /// Optional static HTTP headers for provider requests.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub http_headers: Option<std::collections::BTreeMap<String, String>>,
             /// Optional override for Codex's built-in OpenAI authentication requirement.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub requires_openai_auth: Option<bool>,
@@ -35,47 +32,6 @@ pub mod runners {
             /// Optional opaque Codex model catalog supplied by the API.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub model_catalog: Option<serde_json::Value>,
-        }
-
-        /// Pi session checkpoint used as the first-turn base.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiLaunchConfigApiFirstTurnBaseSession {
-            /// Pi session identifier.
-            pub session_id: String,
-            /// Nullable lowercase SHA-256 of the base session JSONL.
-            pub sha256: Option<String>,
-        }
-
-        /// API-mediated first-turn configuration for Pi.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiLaunchConfigApiFirstTurn {
-            /// Pi API first-turn contract version.
-            pub schema_version: i64,
-            /// Digest identifying the runtime resource snapshot.
-            pub resource_snapshot_digest: String,
-            /// URL of the first-turn resource manifest.
-            pub manifest_url: String,
-            /// URL of the first-turn session JSONL.
-            pub session_url: String,
-            /// Unix timestamp in milliseconds for first-turn expiry.
-            pub deadline_at: i64,
-            /// Checkpoint used as the base Pi session.
-            pub base_session: PiLaunchConfigApiFirstTurnBaseSession,
-            /// First sandbox event sequence number for the resumed session.
-            pub sandbox_event_sequence_start: u64,
-            /// Exact pi-agent-runtime release the API prepared this turn with;
-            /// the guest execs the rootfs-installed CLI only on an exact match.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub required_pi_agent_runtime_version: Option<String>,
-            /// Lowest installed Okou CLI release allowed to run this launch payload.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub min_cli_version: Option<String>,
-            /// Digest of the session construction the API prepared this turn with;
-            /// when present it replaces the runtime version as the parity key.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub required_pi_session_construction_digest: Option<String>,
         }
 
         /// Frozen exact-version Pi memory recall selection.
@@ -154,8 +110,6 @@ pub mod runners {
         pub struct PiLaunchConfig {
             /// Pi launch contract version.
             pub schema_version: i64,
-            /// Configuration for the API-mediated first turn.
-            pub api_first_turn: PiLaunchConfigApiFirstTurn,
             /// Optional frozen memory-summary selection for API and Sandbox parity.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub memory_recall: Option<PiLaunchConfigMemoryRecall>,
@@ -167,21 +121,9 @@ pub mod runners {
         /// Model providers supported by the Pi runtime contract.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigProvider {
-            /// DeepSeek provider.
-            #[serde(rename = "deepseek")]
-            Deepseek,
-            /// Moonshot AI provider.
-            #[serde(rename = "moonshotai")]
-            Moonshotai,
-            /// OpenAI provider.
-            #[serde(rename = "openai")]
-            Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
-            /// Vercel AI Gateway provider.
-            #[serde(rename = "vercel-ai-gateway")]
-            VercelAiGateway,
             /// Codex provider.
             #[serde(rename = "codex")]
             Codex,
@@ -224,25 +166,12 @@ pub mod runners {
         /// Environment variables supported for Pi provider credentials.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigApiKeyEnv {
-            /// Anthropic authentication token.
-            #[serde(rename = "ANTHROPIC_AUTH_TOKEN")]
-            ANTHROPICAUTHTOKEN,
             /// OpenAI-compatible API key.
             #[serde(rename = "OPENAI_API_KEY")]
             OPENAIAPIKEY,
             /// ChatGPT access token.
             #[serde(rename = "CHATGPT_ACCESS_TOKEN")]
             CHATGPTACCESSTOKEN,
-        }
-
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
         }
 
         /// API-owned non-secret Pi model configuration.
@@ -268,9 +197,6 @@ pub mod runners {
             pub api_key_env: PiModelConfigApiKeyEnv,
             /// API-owned credential secret backing the environment entry.
             pub credential_secret_name: String,
-            /// Optional non-secret custom gateway credential header policy.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub credential_header: Option<PiModelConfigCredentialHeader>,
         }
 
         /// Native Pi request dialects supported by this generation.
@@ -287,12 +213,6 @@ pub mod runners {
         /// Native Pi catalog providers supported by this generation.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigV2Provider {
-            /// DeepSeek provider.
-            #[serde(rename = "deepseek")]
-            Deepseek,
-            /// OpenAI public API provider.
-            #[serde(rename = "openai")]
-            Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
@@ -335,16 +255,6 @@ pub mod runners {
             Priority,
         }
 
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV2CredentialBindingApiKeyCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
-        }
-
         /// One non-secret execution-edge credential binding.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "kind", rename_all_fields = "camelCase")]
@@ -356,9 +266,6 @@ pub mod runners {
                 environment: String,
                 /// API-owned encrypted secret containing the value.
                 secret_name: String,
-                /// Optional non-secret custom gateway header policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                credential_header: Option<PiModelConfigV2CredentialBindingApiKeyCredentialHeader>,
             },
             /// ChatGPT access-token binding.
             #[serde(rename = "access-token")]
@@ -418,12 +325,6 @@ pub mod runners {
         /// Native Pi catalog providers for this dialect.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigV3OpenaiResponsesProvider {
-            /// DeepSeek provider.
-            #[serde(rename = "deepseek")]
-            Deepseek,
-            /// OpenAI public API provider.
-            #[serde(rename = "openai")]
-            Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
@@ -463,16 +364,6 @@ pub mod runners {
             Priority,
         }
 
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV3OpenaiResponsesCredentialBindingApiKeyCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
-        }
-
         /// One non-secret execution-edge credential binding.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "kind", rename_all_fields = "camelCase")]
@@ -484,10 +375,6 @@ pub mod runners {
                 environment: String,
                 /// API-owned encrypted secret containing the value.
                 secret_name: String,
-                /// Optional non-secret custom gateway header policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                credential_header:
-                    Option<PiModelConfigV3OpenaiResponsesCredentialBindingApiKeyCredentialHeader>,
             },
             /// ChatGPT access-token binding.
             #[serde(rename = "access-token")]
@@ -557,16 +444,6 @@ pub mod runners {
             Fast,
         }
 
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV3OpenaiCodexResponsesCredentialBindingApiKeyCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
-        }
-
         /// One non-secret execution-edge credential binding.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "kind", rename_all_fields = "camelCase")]
@@ -578,11 +455,6 @@ pub mod runners {
                 environment: String,
                 /// API-owned encrypted secret containing the value.
                 secret_name: String,
-                /// Optional non-secret custom gateway header policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                credential_header: Option<
-                    PiModelConfigV3OpenaiCodexResponsesCredentialBindingApiKeyCredentialHeader,
-                >,
             },
             /// ChatGPT access-token binding.
             #[serde(rename = "access-token")]
@@ -656,464 +528,6 @@ pub mod runners {
                 /// Bounded non-secret credential bindings materialized only at an execution edge.
                 credential_bindings: Vec<PiModelConfigV3OpenaiCodexResponsesCredentialBinding>,
             },
-        }
-
-        /// Frozen native catalog vocabulary.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesCatalogModel {
-            /// Native wire value claude-fable-5-1.
-            #[serde(rename = "claude-fable-5-1")]
-            ClaudeFable51,
-            /// Native wire value claude-opus-5-5.
-            #[serde(rename = "claude-opus-5-5")]
-            ClaudeOpus55,
-            /// Native wire value claude-opus-5.
-            #[serde(rename = "claude-opus-5")]
-            ClaudeOpus5,
-            /// Native wire value claude-opus-4-8.
-            #[serde(rename = "claude-opus-4-8")]
-            ClaudeOpus48,
-            /// Native wire value claude-sonnet-5.
-            #[serde(rename = "claude-sonnet-5")]
-            ClaudeSonnet5,
-            /// Native wire value claude-sonnet-4-6.
-            #[serde(rename = "claude-sonnet-4-6")]
-            ClaudeSonnet46,
-        }
-
-        /// Selected credential owner.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesCredentialOwner {
-            /// Native wire value builtin.
-            #[serde(rename = "builtin")]
-            Builtin,
-            /// Native wire value organization.
-            #[serde(rename = "organization")]
-            Organization,
-            /// Native wire value member.
-            #[serde(rename = "member")]
-            Member,
-        }
-
-        /// Model-token billing owner.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesBillingOwner {
-            /// Native wire value builtin.
-            #[serde(rename = "builtin")]
-            Builtin,
-            /// Native wire value user.
-            #[serde(rename = "user")]
-            User,
-        }
-
-        /// Native thinking level.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesThinkingLevel {
-            /// Native wire value off.
-            #[serde(rename = "off")]
-            Off,
-            /// Native wire value minimal.
-            #[serde(rename = "minimal")]
-            Minimal,
-            /// Native wire value low.
-            #[serde(rename = "low")]
-            Low,
-            /// Native wire value medium.
-            #[serde(rename = "medium")]
-            Medium,
-            /// Native wire value high.
-            #[serde(rename = "high")]
-            High,
-            /// Native wire value xhigh.
-            #[serde(rename = "xhigh")]
-            Xhigh,
-            /// Native wire value max.
-            #[serde(rename = "max")]
-            Max,
-        }
-
-        /// Native cache retention policy.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesRequestPolicyCacheRetention {
-            /// Native wire value short.
-            #[serde(rename = "short")]
-            Short,
-        }
-
-        /// Fixed native request policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV4AnthropicMessagesRequestPolicy {
-            /// Exactly one native HTTP attempt.
-            pub max_attempts: i64,
-            /// Existing short cache retention.
-            pub cache_retention: PiModelConfigV4AnthropicMessagesRequestPolicyCacheRetention,
-        }
-
-        /// Native framing protocol.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesTransport {
-            /// Native wire value sse.
-            #[serde(rename = "sse")]
-            Sse,
-        }
-
-        /// Trusted native catalog provider.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesProvider {
-            /// Native wire value anthropic.
-            #[serde(rename = "anthropic")]
-            Anthropic,
-        }
-
-        /// Concrete native Messages route.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesRoute {
-            /// Native wire value anthropic-api-key.
-            #[serde(rename = "anthropic-api-key")]
-            AnthropicApiKey,
-            /// Native wire value openrouter-api-key.
-            #[serde(rename = "openrouter-api-key")]
-            OpenrouterApiKey,
-            /// Native wire value vercel-ai-gateway.
-            #[serde(rename = "vercel-ai-gateway")]
-            VercelAiGateway,
-            /// Native wire value custom-anthropic-messages.
-            #[serde(rename = "custom-anthropic-messages")]
-            CustomAnthropicMessages,
-            /// Native wire value azure-foundry.
-            #[serde(rename = "azure-foundry")]
-            AzureFoundry,
-        }
-
-        /// Native header ownership.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV4AnthropicMessagesCredentialBindingCredentialHeader {
-            /// Credential header name.
-            pub name: String,
-            /// Exactly one secret placeholder.
-            pub value_template: String,
-        }
-
-        /// Non-secret native credential reference.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV4AnthropicMessagesCredentialBinding {
-            /// Native API-key binding.
-            pub kind: String,
-            /// Sandbox marker environment name.
-            pub environment: String,
-            /// Trusted execution-edge secret reference.
-            pub secret_name: String,
-            /// Exact configured credential header policy.
-            pub credential_header:
-                PiModelConfigV4AnthropicMessagesCredentialBindingCredentialHeader,
-        }
-
-        /// Frozen native catalog vocabulary.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamCatalogModel {
-            /// Native wire value claude-fable-5-1.
-            #[serde(rename = "claude-fable-5-1")]
-            ClaudeFable51,
-            /// Native wire value claude-opus-5-5.
-            #[serde(rename = "claude-opus-5-5")]
-            ClaudeOpus55,
-            /// Native wire value claude-opus-5.
-            #[serde(rename = "claude-opus-5")]
-            ClaudeOpus5,
-            /// Native wire value claude-opus-4-8.
-            #[serde(rename = "claude-opus-4-8")]
-            ClaudeOpus48,
-            /// Native wire value claude-sonnet-5.
-            #[serde(rename = "claude-sonnet-5")]
-            ClaudeSonnet5,
-            /// Native wire value claude-sonnet-4-6.
-            #[serde(rename = "claude-sonnet-4-6")]
-            ClaudeSonnet46,
-        }
-
-        /// Selected credential owner.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamCredentialOwner {
-            /// Native wire value builtin.
-            #[serde(rename = "builtin")]
-            Builtin,
-            /// Native wire value organization.
-            #[serde(rename = "organization")]
-            Organization,
-            /// Native wire value member.
-            #[serde(rename = "member")]
-            Member,
-        }
-
-        /// Model-token billing owner.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamBillingOwner {
-            /// Native wire value builtin.
-            #[serde(rename = "builtin")]
-            Builtin,
-            /// Native wire value user.
-            #[serde(rename = "user")]
-            User,
-        }
-
-        /// Native thinking level.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamThinkingLevel {
-            /// Native wire value off.
-            #[serde(rename = "off")]
-            Off,
-            /// Native wire value minimal.
-            #[serde(rename = "minimal")]
-            Minimal,
-            /// Native wire value low.
-            #[serde(rename = "low")]
-            Low,
-            /// Native wire value medium.
-            #[serde(rename = "medium")]
-            Medium,
-            /// Native wire value high.
-            #[serde(rename = "high")]
-            High,
-            /// Native wire value xhigh.
-            #[serde(rename = "xhigh")]
-            Xhigh,
-            /// Native wire value max.
-            #[serde(rename = "max")]
-            Max,
-        }
-
-        /// Native cache retention policy.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamRequestPolicyCacheRetention {
-            /// Native wire value short.
-            #[serde(rename = "short")]
-            Short,
-        }
-
-        /// Fixed native request policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV4BedrockConverseStreamRequestPolicy {
-            /// Exactly one native HTTP attempt.
-            pub max_attempts: i64,
-            /// Existing short cache retention.
-            pub cache_retention: PiModelConfigV4BedrockConverseStreamRequestPolicyCacheRetention,
-        }
-
-        /// Native framing protocol.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamTransport {
-            /// Native wire value aws-event-stream.
-            #[serde(rename = "aws-event-stream")]
-            AwsEventStream,
-        }
-
-        /// Trusted native catalog provider.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamProvider {
-            /// Native wire value amazon-bedrock.
-            #[serde(rename = "amazon-bedrock")]
-            AmazonBedrock,
-        }
-
-        /// Native Bedrock route.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamRoute {
-            /// Native wire value aws-bedrock.
-            #[serde(rename = "aws-bedrock")]
-            AwsBedrock,
-        }
-
-        /// Explicit Bedrock authentication mode.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamAuthMode {
-            /// Native wire value bearer.
-            #[serde(rename = "bearer")]
-            Bearer,
-            /// Native wire value sigv4.
-            #[serde(rename = "sigv4")]
-            Sigv4,
-        }
-
-        /// Non-secret native credential reference.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "kind", rename_all_fields = "camelCase")]
-        pub enum PiModelConfigV4BedrockConverseStreamCredentialBinding {
-            /// Native wire value aws-bearer-token.
-            #[serde(rename = "aws-bearer-token")]
-            AwsBearerToken {
-                /// Sandbox marker environment name.
-                environment: String,
-                /// Trusted execution-edge secret reference.
-                secret_name: String,
-            },
-            /// Native wire value aws-access-key-id.
-            #[serde(rename = "aws-access-key-id")]
-            AwsAccessKeyId {
-                /// Sandbox marker environment name.
-                environment: String,
-                /// Trusted execution-edge secret reference.
-                secret_name: String,
-            },
-            /// Native wire value aws-secret-access-key.
-            #[serde(rename = "aws-secret-access-key")]
-            AwsSecretAccessKey {
-                /// Sandbox marker environment name.
-                environment: String,
-                /// Trusted execution-edge secret reference.
-                secret_name: String,
-            },
-            /// Native wire value aws-session-token.
-            #[serde(rename = "aws-session-token")]
-            AwsSessionToken {
-                /// Sandbox marker environment name.
-                environment: String,
-                /// Trusted execution-edge secret reference.
-                secret_name: String,
-            },
-        }
-
-        /// Strict native reader contract; existing launch writers remain unchanged.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "dialect", rename_all_fields = "camelCase")]
-        pub enum PiModelConfigV4 {
-            /// Native Messages over SSE.
-            #[serde(rename = "anthropic-messages")]
-            AnthropicMessages {
-                /// Independent Pi model configuration generation.
-                schema_version: i64,
-                /// Exact public inference base URL.
-                base_url: String,
-                /// Configured upstream model, deployment or profile.
-                model: String,
-                /// Trusted logical model for native catalog capabilities.
-                catalog_model: PiModelConfigV4AnthropicMessagesCatalogModel,
-                /// Owner of the selected credential bundle.
-                credential_owner: PiModelConfigV4AnthropicMessagesCredentialOwner,
-                /// Owner of model-token billing.
-                billing_owner: PiModelConfigV4AnthropicMessagesBillingOwner,
-                /// Captured model thinking policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                thinking_level: Option<PiModelConfigV4AnthropicMessagesThinkingLevel>,
-                /// Fixed native request attempt and cache policy.
-                request_policy: PiModelConfigV4AnthropicMessagesRequestPolicy,
-                /// Native framing protocol.
-                transport: PiModelConfigV4AnthropicMessagesTransport,
-                /// Trusted catalog provider identity.
-                provider: PiModelConfigV4AnthropicMessagesProvider,
-                /// Selected concrete provider route.
-                route: PiModelConfigV4AnthropicMessagesRoute,
-                /// Non-secret references resolved at the execution edge.
-                credential_bindings: Vec<PiModelConfigV4AnthropicMessagesCredentialBinding>,
-            },
-            /// Native Converse over AWS event-stream.
-            #[serde(rename = "bedrock-converse-stream")]
-            BedrockConverseStream {
-                /// Independent Pi model configuration generation.
-                schema_version: i64,
-                /// Exact public inference base URL.
-                base_url: String,
-                /// Configured upstream model, deployment or profile.
-                model: String,
-                /// Trusted logical model for native catalog capabilities.
-                catalog_model: PiModelConfigV4BedrockConverseStreamCatalogModel,
-                /// Owner of the selected credential bundle.
-                credential_owner: PiModelConfigV4BedrockConverseStreamCredentialOwner,
-                /// Owner of model-token billing.
-                billing_owner: PiModelConfigV4BedrockConverseStreamBillingOwner,
-                /// Captured model thinking policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                thinking_level: Option<PiModelConfigV4BedrockConverseStreamThinkingLevel>,
-                /// Fixed native request attempt and cache policy.
-                request_policy: PiModelConfigV4BedrockConverseStreamRequestPolicy,
-                /// Native framing protocol.
-                transport: PiModelConfigV4BedrockConverseStreamTransport,
-                /// Trusted catalog provider identity.
-                provider: PiModelConfigV4BedrockConverseStreamProvider,
-                /// Selected concrete provider route.
-                route: PiModelConfigV4BedrockConverseStreamRoute,
-                /// Frozen AWS region.
-                region: String,
-                /// Selected explicit Bedrock authentication mode.
-                auth_mode: PiModelConfigV4BedrockConverseStreamAuthMode,
-                /// Non-secret references resolved at the execution edge.
-                credential_bindings: Vec<PiModelConfigV4BedrockConverseStreamCredentialBinding>,
-            },
-        }
-
-        /// DTOs for durable active-input delivery.
-        pub mod active_inputs {
-            /// DTOs for recording active-input acceptance receipts.
-            pub mod receipt {
-                /// API outcome after recording active-input acceptance.
-                #[derive(
-                    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-                )]
-                #[serde(tag = "outcome")]
-                pub enum Response {
-                    /// The delivery receipt was accepted idempotently.
-                    #[serde(rename = "delivered")]
-                    Delivered,
-                    /// The delivery can no longer be accepted.
-                    #[serde(rename = "rejected")]
-                    Rejected,
-                }
-            }
-
-            /// DTOs for reserving or retrieving active-input delivery.
-            pub mod reserve {
-                /// Reason an active-input reservation was rejected.
-                #[derive(
-                    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-                )]
-                pub enum ResponseRejectedReason {
-                    /// The delivery-aware control payload exceeds the frame limit.
-                    #[serde(rename = "payload_too_large")]
-                    PayloadTooLarge,
-                    /// The target run is no longer running.
-                    #[serde(rename = "run_not_running")]
-                    RunNotRunning,
-                }
-
-                /// API outcome when reserving or retrieving active input.
-                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-                #[serde(tag = "outcome", rename_all_fields = "camelCase")]
-                pub enum Response {
-                    /// A stable delivery batch is ready for Guest delivery.
-                    #[serde(rename = "reserved")]
-                    Reserved {
-                        /// Stable identity for the reserved delivery batch.
-                        delivery_id: String,
-                        /// Ordered source chat-event identities in the batch.
-                        event_ids: Vec<String>,
-                        /// Materialized prompt sent to the active Guest.
-                        prompt: String,
-                    },
-                    /// No pending active input is available.
-                    #[serde(rename = "empty")]
-                    Empty,
-                    /// The run is terminal and has no open delivery.
-                    #[serde(rename = "terminal")]
-                    Terminal,
-                    /// An open delivery remains held for a non-running run.
-                    #[serde(rename = "held")]
-                    Held {
-                        /// Stable identity for the reserved delivery batch.
-                        delivery_id: String,
-                        /// Ordered source chat-event identities in the batch.
-                        event_ids: Vec<String>,
-                    },
-                    /// Pending input cannot currently be reserved.
-                    #[serde(rename = "rejected")]
-                    Rejected {
-                        /// Reason the pending input could not be reserved.
-                        reason: ResponseRejectedReason,
-                    },
-                }
-            }
         }
 
         /// Authenticated Run cancellation reconciliation DTOs.
@@ -1223,6 +637,41 @@ pub mod runners {
                 /// The runner observed an upstream transport failure.
                 #[serde(rename = "upstream_transport")]
                 UpstreamTransport,
+            }
+        }
+
+        /// DTOs for steering prompts and run-targeted budgets into a running run.
+        pub mod steerable_inputs {
+            /// DTOs for reading the next steerable prompt or run-targeted budget.
+            pub mod next {
+                /// Prompt or run-targeted budget the run may steer.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct ResponseInput {
+                    /// Source chat-event identity to declare steered.
+                    pub event_id: String,
+                    /// Materialized prompt sent to the active Guest.
+                    pub prompt: String,
+                }
+
+                /// Next prompt or run-targeted budget a running run may steer.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct Response {
+                    /// Steerable input, or absent when nothing can be steered.
+                    pub input: Option<ResponseInput>,
+                }
+            }
+
+            /// DTOs for declaring a prompt or run-targeted budget steered.
+            pub mod steered {
+                /// API outcome after declaring a prompt or run-targeted budget steered.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct Response {
+                    /// The input is consumed by this run, idempotently.
+                    pub outcome: String,
+                }
             }
         }
     }
@@ -1963,9 +1412,8 @@ pub mod runners {
             pub runner_identity: CheckRequestRunnerIdentity,
             /// Configuration generation returned by credential resolution.
             pub expected_generation: i64,
-            /// Expected explicit transport snapshot; omission preserves legacy direct-only checks.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub expected_transport: Option<CheckRequestExpectedTransport>,
+            /// Expected explicit transport snapshot.
+            pub expected_transport: CheckRequestExpectedTransport,
         }
 
         /// Current authorization snapshot, not a reservation or guarantee of exclusive control.
@@ -1997,29 +1445,80 @@ pub mod runners {
         /// Authentication method advertised by this Runner.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum ResolveRequestSupportedProfileAuthMethod {
+            /// No inner RFB client authentication; require explicit saved X509None.
+            #[serde(rename = "none")]
+            None,
             /// Classic VNC password authentication.
             #[serde(rename = "vnc_password")]
             VncPassword,
             /// Plain username/password authentication.
             #[serde(rename = "username_password")]
             UsernamePassword,
+            /// QEMU-specific SCRAM-SHA-256 authentication.
+            #[serde(rename = "qemu_scram_sha256")]
+            QemuScramSha256,
+            /// RSA-AES password-only subtype with 255-byte fields.
+            #[serde(rename = "rsa_aes_password")]
+            RsaAesPassword,
+            /// RSA-AES username/password subtype with 255-byte fields.
+            #[serde(rename = "rsa_aes_username_password")]
+            RsaAesUsernamePassword,
             /// Apple DH username/password authentication with 63-byte fields.
             #[serde(rename = "apple_dh_username_password")]
             AppleDhUsernamePassword,
+            /// Apple Direct SRP username/password authentication with bounded UTF-8 fields.
+            #[serde(rename = "apple_srp_username_password")]
+            AppleSrpUsernamePassword,
+            /// Apple RSA/SRP username/password authentication with a 234-byte username bound.
+            #[serde(rename = "apple_rsa_srp_username_password")]
+            AppleRsaSrpUsernamePassword,
+            /// Required TLS client certificate with X509None.
+            #[serde(rename = "client_certificate")]
+            ClientCertificate,
+            /// Required TLS client certificate and classic VNC password.
+            #[serde(rename = "client_certificate_vnc_password")]
+            ClientCertificateVncPassword,
         }
 
         /// Security profile advertised by this Runner.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum ResolveRequestSupportedProfileSecurityType {
+            /// VeNCrypt X509None; no inner client authentication.
+            #[serde(rename = "x509_none")]
+            X509None,
             /// VeNCrypt X509Vnc.
             #[serde(rename = "x509_vnc")]
             X509Vnc,
             /// VeNCrypt X509Plain.
             #[serde(rename = "x509_plain")]
             X509Plain,
+            /// QEMU X509SASL subtype 263 with verified TLS.
+            #[serde(rename = "qemu_x509_sasl")]
+            QemuX509Sasl,
+            /// Pinned RSA-AES type 5; full-session AES-128 EAX.
+            #[serde(rename = "rsa_aes_ra2")]
+            RsaAesRa2,
+            /// Pinned RSA-AES type 129; full-session AES-256 EAX.
+            #[serde(rename = "rsa_aes_ra2_256")]
+            RsaAesRa2256,
+            /// Pinned RSA-AES type 6; verified SSH-loopback only.
+            #[serde(rename = "rsa_aes_ra2ne")]
+            RsaAesRa2ne,
+            /// Pinned RSA-AES type 130; verified SSH-loopback only.
+            #[serde(rename = "rsa_aes_ra2ne_256")]
+            RsaAesRa2ne256,
+            /// Apple bare type 2, requiring SSH to Mac loopback.
+            #[serde(rename = "apple_vnc_password")]
+            AppleVncPassword,
             /// Apple DH type 30, requiring SSH to Mac loopback.
             #[serde(rename = "apple_dh")]
             AppleDh,
+            /// Apple Direct SRP type 36, requiring SSH to Mac loopback.
+            #[serde(rename = "apple_srp")]
+            AppleSrp,
+            /// Apple RSA/SRP type 33, requiring SSH to Mac loopback.
+            #[serde(rename = "apple_rsa_srp")]
+            AppleRsaSrp,
         }
 
         /// Transport supported for this exact profile tuple.
@@ -2041,9 +1540,8 @@ pub mod runners {
             pub auth_method: ResolveRequestSupportedProfileAuthMethod,
             /// Supported security policy.
             pub security_type: ResolveRequestSupportedProfileSecurityType,
-            /// Supported transport; omission is the legacy direct-only capability.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub transport_type: Option<ResolveRequestSupportedProfileTransportType>,
+            /// Supported transport for this exact tuple.
+            pub transport_type: ResolveRequestSupportedProfileTransportType,
         }
 
         /// Resolve one saved VNC policy supported by this Runner.
@@ -2056,293 +1554,6 @@ pub mod runners {
             pub runner_identity: ResolveRequestRunnerIdentity,
             /// Exact supported tuples; empty means no supported policy.
             pub supported_profiles: Vec<ResolveRequestSupportedProfile>,
-        }
-
-        /// Typed private VNC credential.
-        pub enum ResolveResponseResolvedAuthentication {
-            /// Classic VNC password challenge response.
-            VncPassword {
-                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
-                password: crate::SecretUtf8Text<1023>,
-            },
-            /// Username/password authentication inside verified TLS.
-            UsernamePassword {
-                /// Bounded Plain username, preserving exact UTF-8 bytes.
-                username: String,
-                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
-                password: crate::SecretUtf8Text<1023>,
-            },
-            /// Apple DH username/password fields; the Runner validates 63-byte bounds.
-            AppleDhUsernamePassword {
-                /// Bounded Plain username, preserving exact UTF-8 bytes.
-                username: String,
-                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
-                password: crate::SecretUtf8Text<1023>,
-            },
-        }
-
-        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedAuthentication {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
-                #[derive(serde::Deserialize)]
-                enum Kind {
-                    #[serde(rename = "vnc_password")]
-                    VncPassword,
-                    #[serde(rename = "username_password")]
-                    UsernamePassword,
-                    #[serde(rename = "apple_dh_username_password")]
-                    AppleDhUsernamePassword,
-                }
-                #[derive(serde::Deserialize)]
-                #[serde(field_identifier)]
-                enum Field {
-                    #[serde(rename = "method")]
-                    Outcome,
-                    #[serde(rename = "password")]
-                    Password,
-                    #[serde(rename = "username")]
-                    Username,
-                }
-                struct Visitor;
-                impl<'de> serde::de::Visitor<'de> for Visitor {
-                    type Value = ResolveResponseResolvedAuthentication;
-                    fn expecting(
-                        &self,
-                        formatter: &mut std::fmt::Formatter<'_>,
-                    ) -> std::fmt::Result {
-                        formatter.write_str("a private authority response object")
-                    }
-                    fn visit_map<M: serde::de::MapAccess<'de>>(
-                        self,
-                        mut map: M,
-                    ) -> Result<Self::Value, M::Error> {
-                        let mut outcome = None::<Kind>;
-                        let mut password = None::<crate::SecretUtf8Text<1023>>;
-                        let mut username = None::<String>;
-                        while let Some(field) = map.next_key::<Field>()? {
-                            match field {
-                                Field::Outcome => {
-                                    if outcome.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    outcome = Some(map.next_value()?);
-                                }
-                                Field::Password => {
-                                    if password.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    password = Some(map.next_value()?);
-                                }
-                                Field::Username => {
-                                    if username.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    username = Some(map.next_value()?);
-                                }
-                            }
-                        }
-                        match (outcome, password, username) {
-                            (Some(Kind::VncPassword), Some(password), None) => {
-                                Ok(ResolveResponseResolvedAuthentication::VncPassword { password })
-                            }
-                            (Some(Kind::UsernamePassword), Some(password), Some(username)) => {
-                                Ok(ResolveResponseResolvedAuthentication::UsernamePassword {
-                                    username,
-                                    password,
-                                })
-                            }
-                            (
-                                Some(Kind::AppleDhUsernamePassword),
-                                Some(password),
-                                Some(username),
-                            ) => Ok(
-                                ResolveResponseResolvedAuthentication::AppleDhUsernamePassword {
-                                    username,
-                                    password,
-                                },
-                            ),
-                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
-                        }
-                    }
-                }
-                deserializer.deserialize_map(Visitor)
-            }
-        }
-
-        /// Exact trust source; insecure verification is not representable.
-        pub enum ResolveResponseResolvedSecurityX509VncTrust {
-            /// Use system trust roots.
-            System,
-            /// Use the explicitly saved custom CA bundle.
-            CustomCa {
-                /// Owner-provided CA bundle, private to this connection.
-                ca_bundle: String,
-            },
-        }
-
-        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedSecurityX509VncTrust {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
-                #[derive(serde::Deserialize)]
-                enum Kind {
-                    #[serde(rename = "system")]
-                    System,
-                    #[serde(rename = "custom_ca")]
-                    CustomCa,
-                }
-                #[derive(serde::Deserialize)]
-                #[serde(field_identifier)]
-                enum Field {
-                    #[serde(rename = "mode")]
-                    Outcome,
-                    #[serde(rename = "caBundle")]
-                    CaBundle,
-                }
-                struct Visitor;
-                impl<'de> serde::de::Visitor<'de> for Visitor {
-                    type Value = ResolveResponseResolvedSecurityX509VncTrust;
-                    fn expecting(
-                        &self,
-                        formatter: &mut std::fmt::Formatter<'_>,
-                    ) -> std::fmt::Result {
-                        formatter.write_str("a private authority response object")
-                    }
-                    fn visit_map<M: serde::de::MapAccess<'de>>(
-                        self,
-                        mut map: M,
-                    ) -> Result<Self::Value, M::Error> {
-                        let mut outcome = None::<Kind>;
-                        let mut ca_bundle = None::<String>;
-                        while let Some(field) = map.next_key::<Field>()? {
-                            match field {
-                                Field::Outcome => {
-                                    if outcome.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    outcome = Some(map.next_value()?);
-                                }
-                                Field::CaBundle => {
-                                    if ca_bundle.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    ca_bundle = Some(map.next_value()?);
-                                }
-                            }
-                        }
-                        match (outcome, ca_bundle) {
-                            (Some(Kind::System), None) => {
-                                Ok(ResolveResponseResolvedSecurityX509VncTrust::System)
-                            }
-                            (Some(Kind::CustomCa), Some(ca_bundle)) => {
-                                Ok(ResolveResponseResolvedSecurityX509VncTrust::CustomCa {
-                                    ca_bundle,
-                                })
-                            }
-                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
-                        }
-                    }
-                }
-                deserializer.deserialize_map(Visitor)
-            }
-        }
-
-        /// Saved security policy, independent of future engine capabilities.
-        pub enum ResolveResponseResolvedSecurity {
-            /// VeNCrypt X509Vnc with verified TLS.
-            X509Vnc {
-                /// Required verified TLS trust policy.
-                trust: ResolveResponseResolvedSecurityX509VncTrust,
-            },
-            /// VeNCrypt X509Plain with verified TLS.
-            X509Plain {
-                /// Required verified TLS trust policy.
-                trust: ResolveResponseResolvedSecurityX509VncTrust,
-            },
-            /// Apple DH type 30; only the separately verified SSH channel protects the RFB session.
-            AppleDh,
-        }
-
-        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedSecurity {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
-                #[derive(serde::Deserialize)]
-                enum Kind {
-                    #[serde(rename = "x509_vnc")]
-                    X509Vnc,
-                    #[serde(rename = "x509_plain")]
-                    X509Plain,
-                    #[serde(rename = "apple_dh")]
-                    AppleDh,
-                }
-                #[derive(serde::Deserialize)]
-                #[serde(field_identifier)]
-                enum Field {
-                    #[serde(rename = "type")]
-                    Outcome,
-                    #[serde(rename = "trust")]
-                    Trust,
-                }
-                struct Visitor;
-                impl<'de> serde::de::Visitor<'de> for Visitor {
-                    type Value = ResolveResponseResolvedSecurity;
-                    fn expecting(
-                        &self,
-                        formatter: &mut std::fmt::Formatter<'_>,
-                    ) -> std::fmt::Result {
-                        formatter.write_str("a private authority response object")
-                    }
-                    fn visit_map<M: serde::de::MapAccess<'de>>(
-                        self,
-                        mut map: M,
-                    ) -> Result<Self::Value, M::Error> {
-                        let mut outcome = None::<Kind>;
-                        let mut trust = None::<ResolveResponseResolvedSecurityX509VncTrust>;
-                        while let Some(field) = map.next_key::<Field>()? {
-                            match field {
-                                Field::Outcome => {
-                                    if outcome.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    outcome = Some(map.next_value()?);
-                                }
-                                Field::Trust => {
-                                    if trust.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    trust = Some(map.next_value()?);
-                                }
-                            }
-                        }
-                        match (outcome, trust) {
-                            (Some(Kind::X509Vnc), Some(trust)) => {
-                                Ok(ResolveResponseResolvedSecurity::X509Vnc { trust })
-                            }
-                            (Some(Kind::X509Plain), Some(trust)) => {
-                                Ok(ResolveResponseResolvedSecurity::X509Plain { trust })
-                            }
-                            (Some(Kind::AppleDh), None) => {
-                                Ok(ResolveResponseResolvedSecurity::AppleDh)
-                            }
-                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
-                        }
-                    }
-                }
-                deserializer.deserialize_map(Visitor)
-            }
         }
 
         /// Secret-free transport snapshot selected by an exact capability tuple.
@@ -2440,25 +1651,481 @@ pub mod runners {
             }
         }
 
+        /// Typed private VNC credential.
+        pub enum ResolveResponseResolvedTransportAuthentication {
+            /// Classic VNC password challenge response.
+            VncPassword {
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Username/password authentication inside verified TLS.
+            UsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Apple DH username/password fields; the Runner validates 63-byte bounds.
+            AppleDhUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Apple Direct SRP username/password fields; the Runner validates 255/1023-byte bounds.
+            AppleSrpUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Apple RSA/SRP username/password fields; the Runner validates 234/1023-byte bounds.
+            AppleRsaSrpUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// RSA-AES password-only subtype; native validates 255 UTF-8 bytes.
+            RsaAesPassword {
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// RSA-AES username/password subtype; native validates 255 UTF-8 bytes per field.
+            RsaAesUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Bounded ASCII SCRAM-SHA-256 credential for QEMU X509SASL.
+            QemuScramSha256 {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// No inner client authentication or secret.
+            None,
+            /// Required client identity; no inner RFB credential.
+            ClientCertificate {
+                /// Bounded base64-encoded DER client certificate chain.
+                certificate_chain_der: Vec<String>,
+                /// Base64-encoded unencrypted PKCS#8 key, private and zeroizing.
+                private_key_pkcs8_der: crate::SecretUtf8Text<24576>,
+            },
+            /// Required client identity and classic VNC password.
+            ClientCertificateVncPassword {
+                /// Bounded base64-encoded DER client certificate chain.
+                certificate_chain_der: Vec<String>,
+                /// Base64-encoded unencrypted PKCS#8 key, private and zeroizing.
+                private_key_pkcs8_der: crate::SecretUtf8Text<24576>,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportAuthentication {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "vnc_password")]
+                    VncPassword,
+                    #[serde(rename = "username_password")]
+                    UsernamePassword,
+                    #[serde(rename = "apple_dh_username_password")]
+                    AppleDhUsernamePassword,
+                    #[serde(rename = "apple_srp_username_password")]
+                    AppleSrpUsernamePassword,
+                    #[serde(rename = "apple_rsa_srp_username_password")]
+                    AppleRsaSrpUsernamePassword,
+                    #[serde(rename = "rsa_aes_password")]
+                    RsaAesPassword,
+                    #[serde(rename = "rsa_aes_username_password")]
+                    RsaAesUsernamePassword,
+                    #[serde(rename = "qemu_scram_sha256")]
+                    QemuScramSha256,
+                    #[serde(rename = "none")]
+                    None,
+                    #[serde(rename = "client_certificate")]
+                    ClientCertificate,
+                    #[serde(rename = "client_certificate_vnc_password")]
+                    ClientCertificateVncPassword,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "method")]
+                    Outcome,
+                    #[serde(rename = "password")]
+                    Password,
+                    #[serde(rename = "username")]
+                    Username,
+                    #[serde(rename = "certificateChainDer")]
+                    CertificateChainDer,
+                    #[serde(rename = "privateKeyPkcs8Der")]
+                    PrivateKeyPkcs8Der,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedTransportAuthentication;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut password = None::<crate::SecretUtf8Text<1023>>;
+                        let mut username = None::<String>;
+                        let mut certificate_chain_der = None::<Vec<String>>;
+                        let mut private_key_pkcs8_der = None::<crate::SecretUtf8Text<24576>>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::Password => {
+                                    if password.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    password = Some(map.next_value()?);
+                                }
+                                Field::Username => {
+                                    if username.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    username = Some(map.next_value()?);
+                                }
+                                Field::CertificateChainDer => {
+                                    if certificate_chain_der.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    certificate_chain_der = Some(map.next_value()?);
+                                }
+                                Field::PrivateKeyPkcs8Der => {
+                                    if private_key_pkcs8_der.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    private_key_pkcs8_der = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, password, username, certificate_chain_der, private_key_pkcs8_der) {
+                            (Some(Kind::VncPassword), Some(password), None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::VncPassword { password }),
+                            (Some(Kind::UsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::UsernamePassword { username, password }),
+                            (Some(Kind::AppleDhUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword { username, password }),
+                            (Some(Kind::AppleSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword { username, password }),
+                            (Some(Kind::AppleRsaSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword { username, password }),
+                            (Some(Kind::RsaAesPassword), Some(password), None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::RsaAesPassword { password }),
+                            (Some(Kind::RsaAesUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::RsaAesUsernamePassword { username, password }),
+                            (Some(Kind::QemuScramSha256), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::QemuScramSha256 { username, password }),
+                            (Some(Kind::None), None, None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::None),
+                            (Some(Kind::ClientCertificate), None, None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificate { certificate_chain_der, private_key_pkcs8_der }),
+                            (Some(Kind::ClientCertificateVncPassword), Some(password), None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificateVncPassword { certificate_chain_der, private_key_pkcs8_der, password }),
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Exact trust source; insecure verification is not representable.
+        pub enum ResolveResponseResolvedTransportSecurityX509VncTrust {
+            /// Use system trust roots.
+            System,
+            /// Use the explicitly saved custom CA bundle.
+            CustomCa {
+                /// Owner-provided CA bundle, private to this connection.
+                ca_bundle: String,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportSecurityX509VncTrust {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "system")]
+                    System,
+                    #[serde(rename = "custom_ca")]
+                    CustomCa,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "mode")]
+                    Outcome,
+                    #[serde(rename = "caBundle")]
+                    CaBundle,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedTransportSecurityX509VncTrust;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut ca_bundle = None::<String>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::CaBundle => {
+                                    if ca_bundle.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    ca_bundle = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, ca_bundle) {
+                            (Some(Kind::System), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurityX509VncTrust::System)
+                            }
+                            (Some(Kind::CustomCa), Some(ca_bundle)) => Ok(
+                                ResolveResponseResolvedTransportSecurityX509VncTrust::CustomCa {
+                                    ca_bundle,
+                                },
+                            ),
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Saved security policy, independent of future engine capabilities.
+        pub enum ResolveResponseResolvedTransportSecurity {
+            /// Pinned type 5; full-session AES-128 EAX.
+            RsaAesRa2 {
+                /// Independent full RSA wire-key SHA256, never CA trust.
+                server_key_sha256: String,
+            },
+            /// Pinned type 129; full-session AES-256 EAX.
+            RsaAesRa2256 {
+                /// Independent full RSA wire-key SHA256, never CA trust.
+                server_key_sha256: String,
+            },
+            /// Pinned type 6; authentication-only over verified SSH-loopback.
+            RsaAesRa2ne {
+                /// Independent full RSA wire-key SHA256, never CA trust.
+                server_key_sha256: String,
+            },
+            /// Pinned type 130; authentication-only over verified SSH-loopback.
+            RsaAesRa2ne256 {
+                /// Independent full RSA wire-key SHA256, never CA trust.
+                server_key_sha256: String,
+            },
+            /// VeNCrypt X509Vnc with verified TLS.
+            X509Vnc {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
+            },
+            /// VeNCrypt X509Plain with verified TLS.
+            X509Plain {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
+            },
+            /// Verified TLS without inner RFB client authentication.
+            X509None {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
+            },
+            /// QEMU X509SASL subtype 263 and SCRAM-SHA-256 over verified TLS.
+            QemuX509Sasl {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
+            },
+            /// Apple bare type 2; only the separately verified SSH channel protects the RFB session.
+            AppleVncPassword,
+            /// Apple DH type 30; only the separately verified SSH channel protects the RFB session.
+            AppleDh,
+            /// Apple Direct SRP type 36; only the separately verified SSH channel protects the RFB session.
+            AppleSrp,
+            /// Apple RSA/SRP type 33; only the separately verified SSH channel protects the RFB session.
+            AppleRsaSrp,
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportSecurity {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "rsa_aes_ra2")]
+                    RsaAesRa2,
+                    #[serde(rename = "rsa_aes_ra2_256")]
+                    RsaAesRa2256,
+                    #[serde(rename = "rsa_aes_ra2ne")]
+                    RsaAesRa2ne,
+                    #[serde(rename = "rsa_aes_ra2ne_256")]
+                    RsaAesRa2ne256,
+                    #[serde(rename = "x509_vnc")]
+                    X509Vnc,
+                    #[serde(rename = "x509_plain")]
+                    X509Plain,
+                    #[serde(rename = "x509_none")]
+                    X509None,
+                    #[serde(rename = "qemu_x509_sasl")]
+                    QemuX509Sasl,
+                    #[serde(rename = "apple_vnc_password")]
+                    AppleVncPassword,
+                    #[serde(rename = "apple_dh")]
+                    AppleDh,
+                    #[serde(rename = "apple_srp")]
+                    AppleSrp,
+                    #[serde(rename = "apple_rsa_srp")]
+                    AppleRsaSrp,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "type")]
+                    Outcome,
+                    #[serde(rename = "serverKeySha256")]
+                    ServerKeySha256,
+                    #[serde(rename = "trust")]
+                    Trust,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedTransportSecurity;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut server_key_sha256 = None::<String>;
+                        let mut trust =
+                            None::<ResolveResponseResolvedTransportSecurityX509VncTrust>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::ServerKeySha256 => {
+                                    if server_key_sha256.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    server_key_sha256 = Some(map.next_value()?);
+                                }
+                                Field::Trust => {
+                                    if trust.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    trust = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, server_key_sha256, trust) {
+                            (Some(Kind::RsaAesRa2), Some(server_key_sha256), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2 {
+                                    server_key_sha256,
+                                })
+                            }
+                            (Some(Kind::RsaAesRa2256), Some(server_key_sha256), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2256 {
+                                    server_key_sha256,
+                                })
+                            }
+                            (Some(Kind::RsaAesRa2ne), Some(server_key_sha256), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2ne {
+                                    server_key_sha256,
+                                })
+                            }
+                            (Some(Kind::RsaAesRa2ne256), Some(server_key_sha256), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2ne256 {
+                                    server_key_sha256,
+                                })
+                            }
+                            (Some(Kind::X509Vnc), None, Some(trust)) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::X509Vnc { trust })
+                            }
+                            (Some(Kind::X509Plain), None, Some(trust)) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::X509Plain { trust })
+                            }
+                            (Some(Kind::X509None), None, Some(trust)) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::X509None { trust })
+                            }
+                            (Some(Kind::QemuX509Sasl), None, Some(trust)) => Ok(
+                                ResolveResponseResolvedTransportSecurity::QemuX509Sasl { trust },
+                            ),
+                            (Some(Kind::AppleVncPassword), None, None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::AppleVncPassword)
+                            }
+                            (Some(Kind::AppleDh), None, None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::AppleDh)
+                            }
+                            (Some(Kind::AppleSrp), None, None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::AppleSrp)
+                            }
+                            (Some(Kind::AppleRsaSrp), None, None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::AppleRsaSrp)
+                            }
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
         /// Private credential handoff. Never Debug, clone, serialize, persist or send to guest.
         pub enum ResolveResponse {
             /// Current authority is unavailable; no credential delivered.
             Unavailable,
             /// Runner does not support the exact saved profile.
             UnsupportedProfile,
-            /// Legacy direct credential and policy; the VNC server controls connection admission.
-            Resolved {
-                /// Current private destination.
-                host: String,
-                /// Current destination port.
-                port: u64,
-                /// Current saved configuration generation.
-                generation: i64,
-                /// Credential for the explicitly saved method.
-                authentication: ResolveResponseResolvedAuthentication,
-                /// Explicit saved transport and trust policy; never downgrade.
-                security: ResolveResponseResolvedSecurity,
-            },
             /// Current credential, policy and explicit generation-bound transport.
             ResolvedTransport {
                 /// Current private destination.
@@ -2471,10 +2138,25 @@ pub mod runners {
                 server_name: String,
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
-                /// Credential for the explicitly saved method.
-                authentication: ResolveResponseResolvedAuthentication,
+                /// Exact saved method, with no credential for X509None.
+                authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
-                security: ResolveResponseResolvedSecurity,
+                security: ResolveResponseResolvedTransportSecurity,
+            },
+            /// Apple classic VNC password with verified SSH-to-Mac-loopback transport only.
+            ResolvedAppleVncPassword {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
+                /// Exact saved method, with no credential for X509None.
+                authentication: ResolveResponseResolvedTransportAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedTransportSecurity,
             },
             /// Apple DH credential and verified SSH-to-Mac-loopback transport only.
             ResolvedAppleDh {
@@ -2486,10 +2168,55 @@ pub mod runners {
                 generation: i64,
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
-                /// Credential for the explicitly saved method.
-                authentication: ResolveResponseResolvedAuthentication,
+                /// Exact saved method, with no credential for X509None.
+                authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
-                security: ResolveResponseResolvedSecurity,
+                security: ResolveResponseResolvedTransportSecurity,
+            },
+            /// Apple Direct SRP credential and verified SSH-to-Mac-loopback transport only.
+            ResolvedAppleSrp {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
+                /// Exact saved method, with no credential for X509None.
+                authentication: ResolveResponseResolvedTransportAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedTransportSecurity,
+            },
+            /// Apple RSA/SRP credential and verified SSH-to-Mac-loopback transport only.
+            ResolvedAppleRsaSrp {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
+                /// Exact saved method, with no credential for X509None.
+                authentication: ResolveResponseResolvedTransportAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedTransportSecurity,
+            },
+            /// Exact RSA-AES mode, independent wire pin and bounded credential.
+            ResolvedRsaAes {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
+                /// Exact saved method, with no credential for X509None.
+                authentication: ResolveResponseResolvedTransportAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedTransportSecurity,
             },
         }
 
@@ -2502,12 +2229,18 @@ pub mod runners {
                     Unavailable,
                     #[serde(rename = "unsupported_profile")]
                     UnsupportedProfile,
-                    #[serde(rename = "resolved")]
-                    Resolved,
                     #[serde(rename = "resolved_transport")]
                     ResolvedTransport,
+                    #[serde(rename = "resolved_apple_vnc_password")]
+                    ResolvedAppleVncPassword,
                     #[serde(rename = "resolved_apple_dh")]
                     ResolvedAppleDh,
+                    #[serde(rename = "resolved_apple_srp")]
+                    ResolvedAppleSrp,
+                    #[serde(rename = "resolved_apple_rsa_srp")]
+                    ResolvedAppleRsaSrp,
+                    #[serde(rename = "resolved_rsa_aes")]
+                    ResolvedRsaAes,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2520,14 +2253,14 @@ pub mod runners {
                     Port,
                     #[serde(rename = "generation")]
                     Generation,
-                    #[serde(rename = "authentication")]
-                    Authentication,
-                    #[serde(rename = "security")]
-                    Security,
                     #[serde(rename = "serverName")]
                     ServerName,
                     #[serde(rename = "transport")]
                     Transport,
+                    #[serde(rename = "authentication")]
+                    Authentication,
+                    #[serde(rename = "security")]
+                    Security,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -2546,10 +2279,11 @@ pub mod runners {
                         let mut host = None::<String>;
                         let mut port = None::<u64>;
                         let mut generation = None::<i64>;
-                        let mut authentication = None::<ResolveResponseResolvedAuthentication>;
-                        let mut security = None::<ResolveResponseResolvedSecurity>;
                         let mut server_name = None::<String>;
                         let mut transport = None::<ResolveResponseResolvedTransportTransport>;
+                        let mut authentication =
+                            None::<ResolveResponseResolvedTransportAuthentication>;
+                        let mut security = None::<ResolveResponseResolvedTransportSecurity>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -2584,22 +2318,6 @@ pub mod runners {
                                     }
                                     generation = Some(map.next_value()?);
                                 }
-                                Field::Authentication => {
-                                    if authentication.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    authentication = Some(map.next_value()?);
-                                }
-                                Field::Security => {
-                                    if security.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    security = Some(map.next_value()?);
-                                }
                                 Field::ServerName => {
                                     if server_name.is_some() {
                                         return Err(serde::de::Error::custom(
@@ -2616,6 +2334,22 @@ pub mod runners {
                                     }
                                     transport = Some(map.next_value()?);
                                 }
+                                Field::Authentication => {
+                                    if authentication.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    authentication = Some(map.next_value()?);
+                                }
+                                Field::Security => {
+                                    if security.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    security = Some(map.next_value()?);
+                                }
                             }
                         }
                         match (
@@ -2623,10 +2357,10 @@ pub mod runners {
                             host,
                             port,
                             generation,
-                            authentication,
-                            security,
                             server_name,
                             transport,
+                            authentication,
+                            security,
                         ) {
                             (Some(Kind::Unavailable), None, None, None, None, None, None, None) => {
                                 Ok(ResolveResponse::Unavailable)
@@ -2642,30 +2376,14 @@ pub mod runners {
                                 None,
                             ) => Ok(ResolveResponse::UnsupportedProfile),
                             (
-                                Some(Kind::Resolved),
-                                Some(host),
-                                Some(port),
-                                Some(generation),
-                                Some(authentication),
-                                Some(security),
-                                None,
-                                None,
-                            ) => Ok(ResolveResponse::Resolved {
-                                host,
-                                port,
-                                generation,
-                                authentication,
-                                security,
-                            }),
-                            (
                                 Some(Kind::ResolvedTransport),
                                 Some(host),
                                 Some(port),
                                 Some(generation),
-                                Some(authentication),
-                                Some(security),
                                 Some(server_name),
                                 Some(transport),
+                                Some(authentication),
+                                Some(security),
                             ) => Ok(ResolveResponse::ResolvedTransport {
                                 host,
                                 port,
@@ -2676,15 +2394,83 @@ pub mod runners {
                                 security,
                             }),
                             (
+                                Some(Kind::ResolvedAppleVncPassword),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                None,
+                                Some(transport),
+                                Some(authentication),
+                                Some(security),
+                            ) => Ok(ResolveResponse::ResolvedAppleVncPassword {
+                                host,
+                                port,
+                                generation,
+                                transport,
+                                authentication,
+                                security,
+                            }),
+                            (
                                 Some(Kind::ResolvedAppleDh),
                                 Some(host),
                                 Some(port),
                                 Some(generation),
-                                Some(authentication),
-                                Some(security),
                                 None,
                                 Some(transport),
+                                Some(authentication),
+                                Some(security),
                             ) => Ok(ResolveResponse::ResolvedAppleDh {
+                                host,
+                                port,
+                                generation,
+                                transport,
+                                authentication,
+                                security,
+                            }),
+                            (
+                                Some(Kind::ResolvedAppleSrp),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                None,
+                                Some(transport),
+                                Some(authentication),
+                                Some(security),
+                            ) => Ok(ResolveResponse::ResolvedAppleSrp {
+                                host,
+                                port,
+                                generation,
+                                transport,
+                                authentication,
+                                security,
+                            }),
+                            (
+                                Some(Kind::ResolvedAppleRsaSrp),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                None,
+                                Some(transport),
+                                Some(authentication),
+                                Some(security),
+                            ) => Ok(ResolveResponse::ResolvedAppleRsaSrp {
+                                host,
+                                port,
+                                generation,
+                                transport,
+                                authentication,
+                                security,
+                            }),
+                            (
+                                Some(Kind::ResolvedRsaAes),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                None,
+                                Some(transport),
+                                Some(authentication),
+                                Some(security),
+                            ) => Ok(ResolveResponse::ResolvedRsaAes {
                                 host,
                                 port,
                                 generation,
@@ -2998,9 +2784,6 @@ pub mod webhooks {
                 /// Optional outcome of the workspace reuse decision.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub workspace_reuse_result: Option<RequestWorkspaceReuseResult>,
-                /// Optional active-input delivery receipts recovered during completion.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub active_input_delivery_ids: Option<Vec<String>>,
                 /// Optional final checkpoint persisted atomically with completion.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub checkpoint: Option<RequestCheckpoint>,

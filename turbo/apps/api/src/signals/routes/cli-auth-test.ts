@@ -19,10 +19,10 @@ import {
 } from "@okouai/connectors/connector-auth-method";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { modelProviders } from "@okouai/db/schema/model-provider";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { command } from "ccstate";
-import { and, eq, notExists } from "drizzle-orm";
+import { and, eq, isNull, notExists } from "drizzle-orm";
 
 import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
@@ -42,19 +42,16 @@ import {
 } from "../services/cli-auth.service";
 import { upsertBuiltinConnectorTokenConnection$ } from "../services/connector-data.service";
 import { connectorActionResolverForSnapshot } from "../services/connector-action-resolver.service";
-import {
-  getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
-} from "../services/connector-catalog-runtime.service";
-import { upsertOrgMultiAuthModelProvider$ } from "../services/model-provider.service";
+import { loadConnectorRuntimeSlugSelection } from "../services/connector-catalog-slug-source.service";
+import { getConnectorRuntimeConnector } from "../services/connector-catalog-runtime.service";
+import { upsertPersonalModelProviderAccount$ } from "../services/model-provider-account.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   isCodexAuthJsonFreePlanError,
   isCodexAuthJsonShapeError,
   parseCodexAuthJson,
 } from "../services/codex-auth-json-parser";
 import { safeSync } from "../utils";
-
-const ORG_SENTINEL_USER_ID = "__org__";
 
 const testTokenQuery$ = queryOf(cliAuthTestTokenContract.create);
 const testConnectorBody$ = bodyResultOf(cliAuthTestConnectorContract.create);
@@ -241,7 +238,9 @@ const createTestConnector$ = command(
       );
     }
     const connectorSlug = connectorParsed.data;
-    const snapshot = await loadConnectorRuntimeSnapshot(get(db$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(get(db$), {
+      connectorSlugs: [connectorSlug],
+    });
     signal.throwIfAborted();
     if (getConnectorRuntimeConnector(snapshot, connectorSlug) === undefined) {
       return stringError(400, `Unknown connector slug: "${connectorSlug}"`);
@@ -389,7 +388,9 @@ const enableTestConnectors$ = command(
       );
     }
 
-    const snapshot = await loadConnectorRuntimeSnapshot(get(db$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(get(db$), {
+      connectorSlugs,
+    });
     signal.throwIfAborted();
     const unknownConnectorSlug = connectorSlugs.find((connectorSlug) => {
       return (
@@ -495,6 +496,80 @@ const enableTestConnectors$ = command(
   },
 );
 
+function seededCodexResponse(
+  orgId: string,
+  tokenExpiresAt: Date,
+  modelProviderAccountId: string,
+) {
+  return {
+    status: 200 as const,
+    body: {
+      ok: true as const,
+      orgId,
+      modelProviderAccountId,
+      tokenExpiresAt: tokenExpiresAt.toISOString(),
+    },
+  };
+}
+
+async function readSeededCodexAccountProfile(
+  db: Pick<Db, "select">,
+  owner: { readonly orgId: string; readonly userId: string },
+  accountId: string,
+  signal: AbortSignal,
+) {
+  const [account] = await db
+    .select({
+      accountEmail: modelProviderAccounts.accountEmail,
+      workspaceName: modelProviderAccounts.workspaceName,
+      planType: modelProviderAccounts.planType,
+    })
+    .from(modelProviderAccounts)
+    .where(
+      and(
+        eq(modelProviderAccounts.orgId, owner.orgId),
+        eq(modelProviderAccounts.userId, owner.userId),
+        eq(modelProviderAccounts.type, "codex-oauth-token"),
+        eq(modelProviderAccounts.externalAccountId, accountId),
+        isNull(modelProviderAccounts.disconnectedAt),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  return account;
+}
+
+async function updateSeededCodexAccountFlags(
+  db: Db,
+  accountId: string,
+  flags: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly tokenExpiresAt: Date;
+    readonly needsReconnect: boolean;
+    readonly lastRefreshErrorCode: string | null;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  await db
+    .update(modelProviderAccounts)
+    .set({
+      tokenExpiresAt: flags.tokenExpiresAt,
+      needsReconnect: flags.needsReconnect,
+      lastRefreshErrorCode: flags.lastRefreshErrorCode,
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(modelProviderAccounts.id, accountId),
+        eq(modelProviderAccounts.orgId, flags.orgId),
+        eq(modelProviderAccounts.userId, flags.userId),
+        eq(modelProviderAccounts.type, "codex-oauth-token"),
+      ),
+    );
+  signal.throwIfAborted();
+}
+
 const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!testEndpointAllowed(get(request$))) {
     return testEndpointNotFoundResponse();
@@ -524,6 +599,10 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     return stringError(400, "Test user has no org — run test-token first");
   }
 
+  const featureSwitchContext = await get(
+    userFeatureSwitchContext(orgId, userId),
+  );
+  signal.throwIfAborted();
   if ("authJson" in bodyResult.data) {
     const { authJson } = bodyResult.data;
     const parsedResult = safeSync(() => {
@@ -544,10 +623,13 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
 
     const parsed = parsedResult.ok;
-    await set(
-      upsertOrgMultiAuthModelProvider$,
+    const seededAccount = await set(
+      upsertPersonalModelProviderAccount$,
       {
         orgId,
+        userId,
+        mode: { kind: "replace-active" },
+        featureSwitchContext,
         type: "codex-oauth-token",
         authMethod: "auth_json",
         secretValues: {
@@ -565,23 +647,34 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
     signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: {
-        ok: true as const,
-        orgId,
-        tokenExpiresAt: parsed.tokenExpiresAt.toISOString(),
-      },
-    };
+    if ("status" in seededAccount) {
+      return stringError(400, seededAccount.body.error.message);
+    }
+    return seededCodexResponse(
+      orgId,
+      parsed.tokenExpiresAt,
+      seededAccount.provider.id,
+    );
   }
 
   const tokenExpiresAt = new Date(
     nowDate().getTime() + (bodyResult.data.expiresIn ?? 600) * 1000,
   );
-  await set(
-    upsertOrgMultiAuthModelProvider$,
+  // Legacy token inputs omit profile metadata. Preserve it only for the same
+  // caller-owned account; never borrow another account's or member's profile.
+  const existingAccount = await readSeededCodexAccountProfile(
+    get(db$),
+    { orgId, userId },
+    bodyResult.data.accountId,
+    signal,
+  );
+  const seededAccount = await set(
+    upsertPersonalModelProviderAccount$,
     {
       orgId,
+      userId,
+      mode: { kind: "replace-active" },
+      featureSwitchContext,
       type: "codex-oauth-token",
       authMethod: "auth_json",
       secretValues: {
@@ -590,38 +683,29 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
         CHATGPT_ACCOUNT_ID: bodyResult.data.accountId,
         CHATGPT_ID_TOKEN: bodyResult.data.idToken,
       },
-      metadata: { tokenExpiresAt },
+      metadata: { ...existingAccount, tokenExpiresAt },
     },
     signal,
   );
   signal.throwIfAborted();
 
-  const writeDb = set(writeDb$);
-  await writeDb
-    .update(modelProviders)
-    .set({
+  if ("status" in seededAccount) {
+    return stringError(400, seededAccount.body.error.message);
+  }
+  await updateSeededCodexAccountFlags(
+    set(writeDb$),
+    seededAccount.provider.id,
+    {
+      orgId,
+      userId,
       tokenExpiresAt,
       needsReconnect: bodyResult.data.needsReconnect ?? false,
       lastRefreshErrorCode: bodyResult.data.lastRefreshErrorCode ?? null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        eq(modelProviders.type, "codex-oauth-token"),
-      ),
-    );
-  signal.throwIfAborted();
-
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      orgId,
-      tokenExpiresAt: tokenExpiresAt.toISOString(),
     },
-  };
+    signal,
+  );
+
+  return seededCodexResponse(orgId, tokenExpiresAt, seededAccount.provider.id);
 });
 
 export const cliAuthTestRoutes: readonly RouteEntry[] = [

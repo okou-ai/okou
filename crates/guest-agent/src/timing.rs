@@ -35,7 +35,7 @@ fn warn_invalid_api_start_time_once(op_name: &str, api_start: &str) {
     );
 }
 
-fn current_epoch_ms() -> u64 {
+pub fn current_epoch_ms() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

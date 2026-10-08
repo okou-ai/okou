@@ -19,10 +19,7 @@ function researchAgent() {
     avatarUrl: null,
     description: "Investigates release risks",
     displayName: "Research Agent",
-    modelProviderId: null,
     ownerId: "test-user-123",
-    preferPersonalProvider: false,
-    selectedModel: null,
     sound: null,
     visibility: "private" as const,
   };

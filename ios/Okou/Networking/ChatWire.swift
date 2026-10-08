@@ -2,12 +2,37 @@ import Foundation
 
 // Current contracts: turbo/packages/api-contracts/src/contracts/chat-threads.ts.
 // These are the fields this client consumes; unrelated server fields are ignored.
-struct ThreadSnapshot: Decodable, Sendable {
-  let chatThreads: [ThreadProjection]
-  let latestSeqId: Int?
+enum ThreadSnapshot: Decodable, Sendable {
+  case inline([ThreadProjection], latestEventId: String?, latestSeqId: Int?)
+  case remote(URL, latestEventId: String?, latestSeqId: Int?)
+
+  private enum CodingKeys: String, CodingKey { case chatThreads, url, latestEventId, latestSeqId }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let latestEventId = try container.decodeIfPresent(String.self, forKey: .latestEventId)
+    let latestSeqId = try container.decodeIfPresent(Int.self, forKey: .latestSeqId)
+    if container.contains(.url) {
+      guard !container.contains(.chatThreads) else {
+        throw DecodingError.dataCorruptedError(
+          forKey: .url, in: container, debugDescription: "Ambiguous chat thread snapshot")
+      }
+      self = .remote(
+        try container.decode(URL.self, forKey: .url), latestEventId: latestEventId,
+        latestSeqId: latestSeqId)
+    } else {
+      self = .inline(
+        try container.decode([ThreadProjection].self, forKey: .chatThreads),
+        latestEventId: latestEventId, latestSeqId: latestSeqId)
+    }
+  }
 }
 
-struct ThreadProjection: Decodable, Sendable {
+struct ThreadSnapshotArchive: Codable, Sendable {
+  let chatThreads: [ThreadProjection]
+}
+
+struct ThreadProjection: Codable, Sendable {
   let id: String
   let agentId: String
   let title: String?
@@ -17,12 +42,21 @@ struct ThreadProjection: Decodable, Sendable {
   let sortAt: Date
   let pinnedAt: Date?
   let pinOrder: String?
+  let archived: Bool?
+  let renamedAt: Date?
+  let modelSettings: [String: ThreadModelSetting]?
+  let serviceTier: String?
+  let computerUseHostId: String?
+  let cloudBrowserEnabled: Bool?
 
   var thread: ChatThread {
     ChatThread(
       id: id, agentID: agentId, title: title ?? "", selectedModel: selectedModel,
       createdAt: createdAt, updatedAt: updatedAt, sortAt: sortAt,
-      pinnedAt: pinnedAt, pinOrder: pinOrder, indicator: nil)
+      pinnedAt: pinnedAt, pinOrder: pinOrder, renamedAt: renamedAt,
+      modelSettings: modelSettings ?? [:], serviceTier: serviceTier,
+      computerUseHostId: computerUseHostId, cloudBrowserEnabled: cloudBrowserEnabled ?? false,
+      isArchived: archived ?? false, indicator: nil)
   }
 }
 
@@ -31,25 +65,31 @@ struct ThreadEventsPage: Decodable, Sendable {
   let hasMore: Bool
 }
 
-struct ThreadEvent: Decodable, Sendable {
-  enum Kind: String, Decodable, Sendable {
-    case created, renamed, deleted, pinned, unpinned
-    case modelSelectionUpdated = "model_selection_updated"
-    case serviceTierUpdated = "service_tier_updated"
-    case computerUseHostUpdated = "computer_use_host_updated"
-    case videoModelUpdated = "video_model_updated"
-    case imageModelUpdated = "image_model_updated"
-    case sortTouched = "sort_touched"
-  }
+struct ThreadEvent: Codable, Sendable {
   let id: String
   let seqId: Int
-  let kind: Kind
+  let kind: ChatThreadChange.Kind
   let chatThreadId: String
   let agentId: String
+  let reassignedAgentId: String?
   let title: String?
   let selectedModel: String?
   let pinOrder: String?
+  let modelSettings: [String: ThreadModelSetting]?
+  let modelSettingsPatch: ThreadModelSettingsPatch?
+  let serviceTier: String?
+  let computerUseHostId: String?
+  let cloudBrowserEnabled: Bool?
   let createdAt: Date
+  var change: ChatThreadChange {
+    ChatThreadChange(
+      kind: kind, chatThreadId: chatThreadId, agentId: agentId,
+      reassignedAgentId: reassignedAgentId, title: title, selectedModel: selectedModel,
+      pinOrder: pinOrder, modelSettings: modelSettings, modelSettingsPatch: modelSettingsPatch,
+      serviceTier: serviceTier, computerUseHostId: computerUseHostId,
+      cloudBrowserEnabled: cloudBrowserEnabled, createdAt: createdAt)
+  }
+
 }
 
 struct ThreadMetadata: Decodable, Sendable {
@@ -90,32 +130,6 @@ struct EventRowsPage: Decodable, Sendable {
   let hasMore: Bool
 }
 
-enum ChatEventType: String, Decodable, Sendable {
-  case inputPrompt = "input.prompt"
-  case inputAutomation = "input.automation"
-  case inputGoal = "input.goal"
-  case inputBudget = "input.budget"
-  case inputRejected = "input.rejected"
-  case outputMessage = "output.message"
-  case outputError = "output.error"
-  case outputThinking = "output.thinking"
-  case outputFollowups = "output.followups"
-  case runQueued = "run.queued"
-  case runDequeued = "run.dequeued"
-  case runCompleted = "run.completed"
-  case runFailed = "run.failed"
-  case runCancelled = "run.cancelled"
-  case controlInterrupt = "control.interrupt"
-  case controlRevoke = "control.revoke"
-  case browserOpen = "browser.open"
-  case browserClose = "browser.close"
-  case goalOpen = "goal.open"
-  case goalClose = "goal.close"
-  case usageRecorded = "usage.recorded"
-
-  var isTerminal: Bool { self == .runCompleted || self == .runFailed || self == .runCancelled }
-}
-
 struct ChatEventRow: Decodable, Sendable {
   let id: String
   let chatThreadId: String
@@ -124,30 +138,27 @@ struct ChatEventRow: Decodable, Sendable {
   let seqId: Int
   let createdAt: Date
   let eventType: ChatEventType
-  let payload: Payload?
+  let payload: ChatEvent.Payload?
 
-  struct Payload: Decodable, Sendable {
-    let content: String?
-    let error: String?
-    let userMessage: UserMessage?
-  }
-  struct UserMessage: Decodable, Sendable {
-    let version: Int
-    let parts: [Part]
-    struct Part: Decodable, Sendable {
-      let type: String
-      let text: String?
-      let titleSnapshot: String?
-      let nameSnapshot: String?
-      let filenameSnapshot: String?
-      let workflowName: String?
-    }
+  var event: ChatEvent {
+    ChatEvent(
+      id: id, runId: runId, revokesEventId: revokesEventId,
+      createdAt: createdAt, eventType: eventType, payload: payload)
   }
 }
 
 struct AgentRecord: Decodable, Sendable {
   let agentId: String
   let isDefaultAgent: Bool
+  let displayName: String?
+}
+
+struct SidebarPreferences: Decodable, Sendable {
+  let pinnedAgentIds: [String]
+}
+
+struct SidebarFeatureSwitches: Decodable, Sendable {
+  let effectiveSwitches: [String: Bool]
 }
 
 struct ModelPreference: Decodable, Sendable {
@@ -160,13 +171,52 @@ struct ModelPreference: Decodable, Sendable {
   }
 }
 
-struct ModelPolicies: Decodable, Sendable {
-  let workspaceDefaultModel: String?
-  let policies: [Policy]
-  struct Policy: Decodable, Sendable {
+struct AvailableRunModels: Decodable, Sendable {
+  let models: [Model]
+  struct Model: Decodable, Sendable {
+    /// Nil is Auto; any other value is a selectable subscription model.
+    let model: String?
+    let memberEffective: MemberRoute
+    /// Present on personal-subscription rows only.
+    let subscriptionOptions: SubscriptionOptions?
+
+    struct MemberRoute: Decodable, Sendable {
+      let availability: String
+    }
+
+    struct SubscriptionOptions: Decodable, Sendable {
+      let serviceTier: String?
+    }
+
+    /// A member's connected subscription remains selectable when reconnecting.
+    /// Admission still validates the captured personal account before execution.
+    func hasUsableRoute() -> Bool {
+      switch memberEffective.availability {
+      case "available", "reconnect_required", "plan_restricted": return true
+      default: return false
+      }
+    }
+
+    /// Only subscription rows offer a service tier; Fast is `priority`.
+    func supportsServiceTier(_ tier: String) -> Bool {
+      tier == "priority" && subscriptionOptions?.serviceTier == "priority"
+    }
+  }
+}
+
+/// Personal-subscription metadata and replacement identities.
+struct ModelCatalog: Decodable, Sendable {
+  let models: [Model]
+
+  struct Model: Decodable, Sendable {
     let model: String
-    let isDefault: Bool
-    let routeStatus: String
+    /// The active model a stored selection of this model resolves to.
+    let resolvedModel: String
+  }
+
+  /// Maps a stored selection to its active model; unknown models are unavailable.
+  func resolve(_ model: String) -> String? {
+    models.first(where: { $0.model == model })?.resolvedModel
   }
 }
 
@@ -212,7 +262,8 @@ struct ConnectorSelections: Decodable, Sendable {
   }
 }
 
+/// The send route never returns a run: the input is queued and its run (or
+/// `input.rejected`) arrives later through the thread's event rows.
 struct ChatSendResponse: Decodable, Sendable {
-  let runId: String?
   let threadId: String
 }

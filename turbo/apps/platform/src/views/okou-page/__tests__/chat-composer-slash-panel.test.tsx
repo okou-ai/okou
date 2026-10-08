@@ -1,17 +1,15 @@
+import { workflowsCollectionContract } from "@okouai/api-contracts";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { workflowsCollectionContract } from "@okouai/api-contracts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import {
   fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   AGENT_ID,
   composerWorkflow,
@@ -20,9 +18,10 @@ import {
   findComposerEditor,
   mockAgent,
   mockBillingCapabilities,
-  mockOrgModelRoutes,
+  mockPersonalModelRoutes,
   tabByText,
 } from "./chat-composer-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
@@ -30,17 +29,15 @@ const THIRD_WORKFLOW_NAME = "axiom-traces";
 
 function setupModels(): void {
   mockAgent();
-  mockOrgModelRoutes("claude-fable-5-1");
+  mockPersonalModelRoutes();
   mockBillingCapabilities({
-    supportByok: true,
     restrictedBuiltInModels: false,
   });
   context.mocks.data.userModelPreference({
     selectedModel: "claude-fable-5-1",
     serviceTier: null,
     modelSettings: {},
-    selectedImageModel: "gpt-image-2",
-    selectedVideoModel: "dreamina-seedance-2-0-260128",
+    selectedImageModel: null,
     updatedAt: "2026-09-07T00:00:00.000Z",
   });
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
@@ -58,9 +55,6 @@ async function openSlashMenu(query = ""): Promise<void> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
-    },
   });
   const editor = await findComposerEditor();
   await fill(editor, `Draft /${query}`);
@@ -300,9 +294,6 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
-    },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Draft /axi");
@@ -316,6 +307,21 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
   expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveTextContent(
     `/${WORKFLOW_NAME}`,
   );
+});
+
+test("A query that matches no workflow says so in the workflow list", async () => {
+  await openSlashMenu("axi");
+  await waitFor(() => {
+    return slashButton(`/${WORKFLOW_NAME}`);
+  });
+
+  await fill(await findComposerEditor(), "Draft /zzz");
+
+  const menu = screen.getByTestId("slash-workflow-menu");
+  await expect(
+    within(menu).findByText("No matching workflows"),
+  ).resolves.toBeInTheDocument();
+  expect(querySlashButton(`/${WORKFLOW_NAME}`)).toBeNull();
 });
 
 test("Choosing a cover in the pane attaches that template without opening the picker", async () => {

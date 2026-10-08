@@ -15,15 +15,13 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 
 import { logger } from "../../lib/log";
-import type { ReadonlyDb } from "../external/db";
 import {
-  getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSelection,
+  type ConnectorRuntimeAuthLookup,
 } from "./connector-catalog-runtime.service";
 
 const log = logger("api:connector-credential-access");
@@ -66,6 +64,7 @@ export interface BuiltinConnectorCredentialReadGroup {
    * Single-statement and connector-locked callers do not need this condition.
    */
   readonly connectorStateRevision?: bigint;
+  readonly connectorUpdatedAt?: string;
   readonly names: readonly string[];
 }
 
@@ -88,15 +87,14 @@ export function builtinConnectorCredentialStorageIsCompatible(args: {
 }
 
 export function resolveStoredBuiltinConnectorRuntimeMethod(args: {
-  readonly snapshot: ConnectorRuntimeSelection;
+  readonly snapshot: ConnectorRuntimeAuthLookup;
   readonly stored: {
     readonly authMethodId: string;
     readonly connectorId: string;
     readonly connectorSlug: string;
   };
 }): ConnectorRuntimeMethod | undefined {
-  const runtimeConnector = getConnectorRuntimeConnector(
-    args.snapshot,
+  const runtimeConnector = args.snapshot.connectors.get(
     args.stored.connectorSlug,
   );
   if (
@@ -126,7 +124,7 @@ export function resolveStoredBuiltinConnectorRuntimeMethod(args: {
 }
 
 export function resolveBuiltinConnectorCredentialAccess(args: {
-  readonly snapshot: ConnectorRuntimeSelection;
+  readonly snapshot: ConnectorRuntimeAuthLookup;
   readonly stored: BuiltinConnectorCredentialStoredIdentity;
 }): BuiltinConnectorCredentialAccessResult {
   const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({
@@ -179,12 +177,12 @@ function assertDeclaredNames(args: {
 }
 
 function connectorIdentityExists(
-  db: ReadonlyDb,
   access: BuiltinConnectorCredentialAccess,
   connectorStateRevision: bigint | undefined,
+  connectorUpdatedAt: string | undefined,
 ): SQL {
   return exists(
-    db
+    new QueryBuilder()
       .select({ connectorId: builtinCredentialAccessConnector.id })
       .from(builtinCredentialAccessConnector)
       .where(
@@ -201,6 +199,12 @@ function connectorIdentityExists(
             builtinCredentialAccessConnector.storageVersion,
             access.storageVersion,
           ),
+          connectorUpdatedAt === undefined
+            ? undefined
+            : eq(
+                sql`${builtinCredentialAccessConnector.updatedAt}::text`,
+                connectorUpdatedAt,
+              ),
           connectorStateRevision === undefined
             ? undefined
             : eq(
@@ -216,7 +220,6 @@ function connectorIdentityExists(
 }
 
 export function builtinConnectorCredentialSecretReadCondition(args: {
-  readonly db: ReadonlyDb;
   readonly groups: readonly BuiltinConnectorCredentialReadGroup[];
 }): SQL | undefined {
   const conditions = args.groups.flatMap((group) => {
@@ -237,9 +240,9 @@ export function builtinConnectorCredentialSecretReadCondition(args: {
         inArray(secrets.name, names),
         eq(secrets.connectorId, group.access.connectorId),
         connectorIdentityExists(
-          args.db,
           group.access,
           group.connectorStateRevision,
+          group.connectorUpdatedAt,
         ),
       ),
     ];
@@ -248,7 +251,6 @@ export function builtinConnectorCredentialSecretReadCondition(args: {
 }
 
 export function builtinConnectorCredentialVariableReadCondition(args: {
-  readonly db: ReadonlyDb;
   readonly groups: readonly BuiltinConnectorCredentialReadGroup[];
 }): SQL | undefined {
   const conditions = args.groups.flatMap((group) => {
@@ -269,9 +271,9 @@ export function builtinConnectorCredentialVariableReadCondition(args: {
         inArray(variables.name, names),
         eq(variables.connectorId, group.access.connectorId),
         connectorIdentityExists(
-          args.db,
           group.access,
           group.connectorStateRevision,
+          group.connectorUpdatedAt,
         ),
       ),
     ];

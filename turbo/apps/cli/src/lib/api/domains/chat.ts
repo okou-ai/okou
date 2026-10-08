@@ -2,6 +2,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   type ChatEventSendBody,
   chatEventsContract,
+  chatThreadArchiveContract,
   chatThreadEventsContract,
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
@@ -16,13 +17,9 @@ import {
   type Indicators,
   type ChatSearchResponse,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-  type ChatEventCursor,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { getClientConfig, handleError } from "../core/client-factory";
 
 export interface ChatThreadSnapshot {
@@ -51,30 +48,6 @@ type ChatEventRowsPage =
     }
   | { readonly kind: "expired" };
 
-type ChatEventSchemaVersionHeaders = Readonly<{
-  [CHAT_EVENT_SCHEMA_VERSION_HEADER]: string;
-}>;
-
-const CHAT_EVENT_SCHEMA_VERSION_HEADERS: ChatEventSchemaVersionHeaders =
-  Object.freeze({
-    [CHAT_EVENT_SCHEMA_VERSION_HEADER]:
-      CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-  });
-
-function assertChatEventSchemaVersion(headers: Headers): void {
-  const version = headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER);
-  if (version !== CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString()) {
-    throw new Error(`Unexpected Chat Event schema version ${version}`);
-  }
-}
-
-function requireSupportedModel(model: string) {
-  if (!isSupportedRunModel(model)) {
-    throw new Error(`Unsupported chat model: ${model}`);
-  }
-  return model;
-}
-
 interface ChatThreadCreateResult {
   readonly threadId: string;
   readonly title: string | null;
@@ -85,7 +58,6 @@ interface ChatThreadCreateResult {
 interface ChatEventSendResult {
   readonly runId: string | null;
   readonly threadId: string;
-  readonly status?: string;
   readonly createdAt?: string;
 }
 
@@ -120,26 +92,20 @@ export async function getChatThreadSnapshot(): Promise<ChatThreadSnapshot> {
   const client = initClient(chatThreadsContract, config);
   const result = await client.snapshot();
   if (result.status === 200) {
-    if ("url" in result.body) {
-      const response = await fetch(result.body.url);
-      if (!response.ok) {
-        throw new Error(
-          `Failed to download chat thread snapshot: ${response.status.toString()}`,
-        );
-      }
-      const archive = chatThreadSnapshotArchiveSchema.parse(
-        await response.json(),
-      );
-      return {
-        chatThreads: archive.chatThreads,
-        latestEventId: result.body.latestEventId,
-        latestSeqId: result.body.latestSeqId,
-      };
+    if ("chatThreads" in result.body) {
+      return result.body;
     }
-    // New CLI -> old API or an unbackfilled DB row: remove this inline branch
-    // after the old API floor and legacy-row census gates pass (#36375).
+    const response = await fetch(result.body.url);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download chat thread snapshot: ${response.status.toString()}`,
+      );
+    }
+    const archive = chatThreadSnapshotArchiveSchema.parse(
+      await response.json(),
+    );
     return {
-      chatThreads: result.body.chatThreads,
+      chatThreads: archive.chatThreads,
       latestEventId: result.body.latestEventId,
       latestSeqId: result.body.latestSeqId,
     };
@@ -184,8 +150,10 @@ export async function getChatIndicators(): Promise<Indicators> {
 export async function createChatThread(options: {
   agentId: string;
   title: string;
-  model?: string;
+  /** Null selects Auto; omit to use the member default. */
+  model?: string | null;
   serviceTier?: ChatThreadServiceTier | null;
+  reasoningEffort?: ReasoningEffort;
 }): Promise<ChatThreadCreateResult> {
   const config = await getClientConfig();
   const client = initClient(chatThreadsContract, config);
@@ -193,12 +161,13 @@ export async function createChatThread(options: {
     body: {
       agentId: options.agentId,
       title: options.title,
-      ...(options.model === undefined
-        ? {}
-        : { model: requireSupportedModel(options.model) }),
+      ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.serviceTier === undefined
         ? {}
         : { serviceTier: options.serviceTier }),
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
     },
   });
   if (result.status === 201) {
@@ -226,6 +195,27 @@ export async function renameChatThread(options: {
     return { threadId: options.threadId, title: options.title };
   }
   handleError(result, "Failed to rename chat thread");
+}
+
+export async function setChatThreadArchived(options: {
+  threadId: string;
+  archived: boolean;
+}): Promise<{ threadId: string; archived: boolean }> {
+  const config = await getClientConfig();
+  const client = initClient(chatThreadArchiveContract, config);
+  const request = { params: { id: options.threadId } };
+  const result = options.archived
+    ? await client.archive(request)
+    : await client.unarchive(request);
+  if (result.status === 204) {
+    return { threadId: options.threadId, archived: options.archived };
+  }
+  handleError(
+    result,
+    options.archived
+      ? "Failed to archive chat thread"
+      : "Failed to unarchive chat thread",
+  );
 }
 
 export async function getChatThread(options: {
@@ -267,10 +257,8 @@ export async function getChatEventSnapshot(options: {
   const config = await getClientConfig();
   const client = initClient(chatThreadEventsContract, config);
   const result = await client.snapshot({
-    headers: CHAT_EVENT_SCHEMA_VERSION_HEADERS,
     params: { threadId: options.threadId },
   });
-  assertChatEventSchemaVersion(result.headers);
   if (result.status === 200) {
     return {
       kind: "snapshot",
@@ -300,7 +288,6 @@ export async function listChatEventRows(
   const config = await getClientConfig();
   const client = initClient(chatThreadEventsContract, config);
   const result = await client.rows({
-    headers: CHAT_EVENT_SCHEMA_VERSION_HEADERS,
     params: { threadId: options.threadId },
     query:
       options.sinceEventId === null
@@ -311,7 +298,6 @@ export async function listChatEventRows(
             limit: options.limit,
           },
   });
-  assertChatEventSchemaVersion(result.headers);
   if (result.status === 200) {
     return {
       kind: "rows",
@@ -329,19 +315,24 @@ export async function listChatEventRows(
 export async function updateChatThreadModelSelection(options: {
   threadId: string;
   model: string | null;
+  reasoningEffort?: ReasoningEffort;
 }): Promise<{ threadId: string; selectedModel: string | null }> {
   const config = await getClientConfig();
   const client = initClient(chatThreadModelSelectionContract, config);
-  const model =
-    options.model === null ? null : requireSupportedModel(options.model);
+  // The API validates the ID against the global model catalog.
   const result = await client.update({
     params: { id: options.threadId },
-    body: { model },
+    body: {
+      model: options.model,
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
+    },
   });
   if (result.status === 204) {
     return {
       threadId: options.threadId,
-      selectedModel: model,
+      selectedModel: options.model,
     };
   }
   handleError(result, "Failed to update chat thread model");

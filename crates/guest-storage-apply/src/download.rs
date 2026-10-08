@@ -3,7 +3,9 @@ use crate::archive;
 use crate::error::DownloadError;
 use crate::path::normalize_path;
 use crate::source;
-use crate::telemetry::{DownloadRunTelemetry, DownloadTaskTelemetry, RemoteArchiveTaskMetrics};
+use crate::telemetry::{
+    DownloadRunTelemetry, DownloadTaskTelemetry, LocalArchiveTaskMetrics, RemoteArchiveTaskMetrics,
+};
 use guest_telemetry::{log_error, log_info};
 use std::any::Any;
 use std::collections::VecDeque;
@@ -127,6 +129,7 @@ struct StartedDownload {
     start: Instant,
     opened_file_compressed_bytes: Option<u64>,
     remote_metrics: Option<RemoteArchiveTaskMetrics>,
+    local_metrics: Option<LocalArchiveTaskMetrics>,
 }
 
 impl StartedDownload {
@@ -141,6 +144,7 @@ impl StartedDownload {
         Self {
             id: download.id,
             remote_metrics: download.task.task.telemetry.remote_metrics(),
+            local_metrics: download.task.task.telemetry.local_metrics(),
             task: download.task,
             start,
             opened_file_compressed_bytes: None,
@@ -157,6 +161,7 @@ impl StartedDownload {
                     None,
                     self.opened_file_compressed_bytes,
                     self.remote_metrics.as_ref(),
+                    self.local_metrics.as_ref(),
                 );
                 log_info!(
                     LOG_TAG,
@@ -174,6 +179,7 @@ impl StartedDownload {
                     Some(&failure_detail),
                     self.opened_file_compressed_bytes,
                     self.remote_metrics.as_ref(),
+                    self.local_metrics.as_ref(),
                 );
                 log_error!(LOG_TAG, "{failure_detail}");
                 false
@@ -466,6 +472,7 @@ fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadEr
         download.task.effective_mount_path(),
         &mut download.opened_file_compressed_bytes,
         download.remote_metrics.as_mut(),
+        download.local_metrics.as_mut(),
     )
 }
 
@@ -474,6 +481,7 @@ fn download_and_extract(
     target_path: &Path,
     opened_file_compressed_bytes: &mut Option<u64>,
     remote_metrics: Option<&mut RemoteArchiveTaskMetrics>,
+    local_metrics: Option<&mut LocalArchiveTaskMetrics>,
 ) -> Result<(), DownloadError> {
     fs::create_dir_all(target_path).map_err(|e| {
         DownloadError::new(format!(
@@ -485,7 +493,14 @@ fn download_and_extract(
     let attempt_metrics = remote_metrics
         .is_some()
         .then(source::RemoteArchiveAttemptMetrics::default);
-    let reader = match source::open_archive(url, attempt_metrics.as_ref()) {
+    let local_attempt_metrics = local_metrics
+        .is_some()
+        .then(source::LocalArchiveAttemptMetrics::default);
+    let reader = match source::open_archive(
+        url,
+        attempt_metrics.as_ref(),
+        local_attempt_metrics.as_ref(),
+    ) {
         Ok(reader) => reader,
         Err(error) => {
             if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
@@ -500,6 +515,9 @@ fn download_and_extract(
     let extract_wall = extract_start.elapsed();
     if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
         metrics.record_attempt(attempt_metrics.snapshot(), extract_wall);
+    }
+    if let (Some(metrics), Some(attempt_metrics)) = (local_metrics, &local_attempt_metrics) {
+        metrics.record_extraction(attempt_metrics.body_read(), extract_wall);
     }
     result
 }

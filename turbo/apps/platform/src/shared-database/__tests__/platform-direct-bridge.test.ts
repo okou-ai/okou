@@ -10,6 +10,7 @@ import { expect, test, vi } from "vitest";
 
 import { setupPage } from "../../__tests__/page-helper.ts";
 import {
+  mockChatThreadSnapshotResponse,
   testContext,
   chatEventRowsResponse,
 } from "../../signals/__tests__/test-helpers.ts";
@@ -99,11 +100,11 @@ test("Preserve exact UTF-8 snapshot bytes across the worker protocol", async () 
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
     pinnedAt: null,
+    archived: false,
     renamedAt: null,
     selectedModel: null,
     serviceTier: null,
     computerUseHostId: null,
-    selectedVideoModel: null,
   };
   const snapshot = {
     chatThreads: [snapshotThread],
@@ -114,7 +115,7 @@ test("Preserve exact UTF-8 snapshot bytes across the worker protocol", async () 
     return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, snapshot);
+    return respond(200, mockChatThreadSnapshotResponse(context, snapshot));
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -505,11 +506,11 @@ test("Keep the chat list current with realtime thread changes", async () => {
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
     pinnedAt: null,
+    archived: false,
     renamedAt: null,
     selectedModel: null,
     serviceTier: null,
     computerUseHostId: null,
-    selectedVideoModel: null,
   };
   const rename = (seqId: number, title: string): ChatThreadEvent => {
     return {
@@ -522,7 +523,6 @@ test("Keep the chat list current with realtime thread changes", async () => {
       selectedModel: null,
       serviceTier: null,
       computerUseHostId: null,
-      selectedVideoModel: null,
       createdAt: CREATED_AT,
     };
   };
@@ -534,11 +534,14 @@ test("Keep the chat list current with realtime thread changes", async () => {
     return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [snapshotThread],
-      latestEventId: snapshotEventId,
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [snapshotThread],
+        latestEventId: snapshotEventId,
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
     return respond(200, {

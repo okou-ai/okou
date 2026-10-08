@@ -1,3 +1,8 @@
+import { createRunsApi } from "./api-bdd-runs";
+import {
+  createAuthDeviceApiActions,
+  mockCodexDeviceAuthProvider,
+} from "./api-bdd-auth-device";
 import { mockClerkUsers } from "./clerk-users";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -34,18 +39,15 @@ import {
   type GithubOauthConnectQuery,
   type GithubOauthInstallQuery,
 } from "@okouai/api-contracts/contracts/github-oauth";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { testSlackStateContract } from "@okouai/api-contracts/contracts/test-slack-state";
 import {
   integrationsAgentPhoneContract,
   type AgentPhoneConnectRequest,
+  type AgentPhoneGroupHistoryQuery,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { slackChannelsContract } from "@okouai/api-contracts/contracts/slack-channels";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
@@ -80,8 +82,6 @@ import { integrationsTelegramRoutes } from "../../integrations-telegram";
 import { integrationsTelegramMessageRoutes } from "../../integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "../../integrations-telegram-upload-complete";
 import { integrationsTelegramUploadInitRoutes } from "../../integrations-telegram-upload-init";
-import { modelPoliciesRoutes } from "../../model-policies";
-import { modelProvidersRoutes } from "../../model-providers";
 import { slackChannelsRoutes } from "../../slack-channels";
 import { slackCommandsRoutes } from "../../slack-commands";
 import { slackConnectRoutes } from "../../slack-connect";
@@ -110,8 +110,6 @@ const TEST_APP_ROUTES = Object.freeze([
   ...integrationsTelegramUploadCompleteRoutes,
   ...integrationsTelegramUploadInitRoutes,
   ...integrationsTelegramRoutes,
-  ...modelPoliciesRoutes,
-  ...modelProvidersRoutes,
   ...slackChannelsRoutes,
   ...slackCommandsRoutes,
   ...slackConnectRoutes,
@@ -164,22 +162,6 @@ interface TelegramLinkBody {
   readonly connectSignature?: TelegramConnectSignaturePayload;
 }
 
-interface TelegramRegisterBody {
-  readonly botToken: string;
-  readonly defaultAgentId?: string;
-  readonly reinstallBotId?: string;
-}
-
-interface TelegramSetupStatusBody {
-  readonly botToken: string;
-  readonly origin?: string;
-}
-
-interface TelegramUpdateBody {
-  readonly defaultAgentId?: string;
-  readonly selectedAgentId?: string | null;
-}
-
 interface SlackConnectBody {
   readonly workspaceId: string;
   readonly slackUserId: string;
@@ -205,7 +187,7 @@ type SlackIngressPath =
   | "/api/webhooks/slack/interactive";
 type SlackIngressStatus = 200 | 400 | 401 | 500 | 503;
 type SlackDownloadStatus = 200 | 400 | 401 | 404 | 413 | 502;
-type AgentPhoneWebhookStatus = 200 | 400 | 401 | 404;
+type AgentPhoneWebhookStatus = 200 | 400 | 401 | 404 | 500;
 type TelegramWebhookStatus = 200 | 400 | 401 | 404;
 
 type SlackIngressResponse = {
@@ -243,6 +225,11 @@ interface ForwardedInternalCallback {
 interface SlackAppInstallOptions {
   readonly teamId?: string;
   readonly installerSlackUserId?: string;
+  /** Bot token Slack returns from the install exchange. */
+  readonly botToken?: string;
+  /** Granted bot scopes; `null` models an exchange that reports none. */
+  readonly botScopes?: string | null;
+  readonly teamName?: string;
 }
 
 interface SlackAppInstallation {
@@ -264,6 +251,7 @@ interface SlackPickerSubmissionArgs {
   readonly slackUserId: string;
   readonly selectedValue: string;
   readonly channelId?: string;
+  readonly chatThreadId?: string;
 }
 
 function signedSlackHeaders(
@@ -323,7 +311,10 @@ function slackPickerSubmission(
       ...(args.channelId === undefined
         ? {}
         : {
-            private_metadata: JSON.stringify({ channelId: args.channelId }),
+            private_metadata: JSON.stringify({
+              channelId: args.channelId,
+              ...(args.chatThreadId ? { chatThreadId: args.chatThreadId } : {}),
+            }),
           }),
       state: {
         values: {
@@ -506,6 +497,9 @@ async function requestRawAgentPhoneWebhook(
     }
     case 404: {
       return { status: 404, ...result };
+    }
+    case 500: {
+      return { status: 500, ...result };
     }
     default: {
       throw new Error(
@@ -1055,13 +1049,20 @@ export function createBddIntegrationApi(context: TestContext) {
       if (actor) {
         authenticate(context, routeMocks, actor);
       }
+      const botScopes =
+        options.botScopes === undefined
+          ? SLACK_APP_BOT_SCOPES
+          : options.botScopes;
       context.mocks.slack.oauth.v2.access.mockResolvedValueOnce({
         ok: true,
-        access_token: `xoxb-bdd-${teamId}`,
+        access_token: options.botToken ?? `xoxb-bdd-${teamId}`,
         bot_user_id: botUserId,
-        team: { id: teamId, name: `BDD Slack App ${teamId}` },
+        team: {
+          id: teamId,
+          name: options.teamName ?? `BDD Slack App ${teamId}`,
+        },
         authed_user: { id: installerSlackUserId },
-        scope: SLACK_APP_BOT_SCOPES,
+        ...(botScopes === null ? {} : { scope: botScopes }),
       });
       const client = setupApp({ context, routes: slackOauthRoutes })(
         slackOauthContract,
@@ -1209,17 +1210,6 @@ export function createBddIntegrationApi(context: TestContext) {
       return response.body;
     },
 
-    agentPickerSubmission(
-      args: SlackPickerSubmissionArgs,
-    ): Record<string, unknown> {
-      return slackPickerSubmission(
-        "switch_agent_modal",
-        "agent_select_block",
-        "agent_select",
-        args,
-      );
-    },
-
     modelPickerSubmission(
       args: SlackPickerSubmissionArgs,
     ): Record<string, unknown> {
@@ -1263,7 +1253,7 @@ export function createBddIntegrationApi(context: TestContext) {
 
     async updateUserModelPreference(
       actor: ApiTestUser,
-      selectedModel: SupportedRunModel | null,
+      selectedModel: string | null,
       serviceTier: "priority" | null = null,
     ): Promise<void> {
       const client = setupApp({
@@ -1279,60 +1269,23 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
-    async configureSlackRunModelPolicies(actor: ApiTestUser): Promise<void> {
-      const providers = setupApp({ context, routes: modelProvidersRoutes })(
-        modelProvidersMainContract,
-      );
-      const anthropic = await accept(
-        providers.upsert({
-          headers: authenticate(context, routeMocks, actor),
-          body: { type: "anthropic-api-key", secret: "bdd-anthropic-key" },
-        }),
-        [200, 201],
-      );
-      const openai = await accept(
-        providers.upsert({
-          headers: authenticate(context, routeMocks, actor),
-          body: { type: "openai-api-key", secret: "bdd-openai-key" },
-        }),
-        [200, 201],
-      );
-      const snapshot = await accept(
-        setupApp({ context, routes: modelPoliciesRoutes })(
-          modelPoliciesMainContract,
-        ).list({ headers: authenticate(context, routeMocks, actor) }),
-        [200],
-      );
-      await accept(
-        setupApp({ context, routes: modelPoliciesRoutes })(
-          modelPoliciesMainContract,
-        ).update({
-          headers: authenticate(context, routeMocks, actor),
-          body: {
-            revision: snapshot.body.revision,
-            policies: [
-              {
-                model: "claude-sonnet-5",
-                isDefault: true,
-                defaultProviderType: "anthropic-api-key",
-                credentialScope: "org",
-                modelProviderId: anthropic.body.provider.id,
-              },
-              {
-                model: "gpt-5.6-sol",
-                isDefault: false,
-                defaultProviderType: "openai-api-key",
-                credentialScope: "org",
-                modelProviderId: openai.body.provider.id,
-              },
-            ],
-          },
-        }),
-        [200],
-      );
+    /** Native integration routing comes from connected personal subscriptions. */
+    async configureNativeSubscriptionModels(actor: ApiTestUser): Promise<void> {
+      await createRunsApi(context).ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
+      mockCodexDeviceAuthProvider();
+      const auth = createAuthDeviceApiActions(context);
+      const started = await auth.requestCodexStart(actor, "personal", [200], {
+        mode: "add",
+      });
+      if (started.status !== 200) {
+        throw new Error("Expected personal Codex auth start");
+      }
+      await auth.requestCodexComplete(actor, started.body.sessionToken, [200]);
     },
 
-    async enableAuditLinkSwitch(actor: ApiTestUser): Promise<void> {
+    async enableOkouDebug(actor: ApiTestUser): Promise<void> {
       await accept(
         setupApp({ context, routes: featureSwitchesRoutes })(
           featureSwitchesContract,
@@ -1531,90 +1484,6 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
-    async requestUpdateTelegramBot(
-      actor: ApiTestUser | null,
-      botId: string,
-      body: TelegramUpdateBody,
-      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-      return await accept(
-        client.updateBot({
-          headers: authenticate(context, routeMocks, actor),
-          params: { botId },
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestDisconnectTelegramBot(
-      actor: ApiTestUser | null,
-      botId: string,
-      statuses: readonly (204 | 401 | 403 | 404)[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-      return await accept(
-        client.disconnect({
-          headers: authenticate(context, routeMocks, actor),
-          params: { botId },
-        }),
-        statuses,
-      );
-    },
-
-    async requestRegisterTelegramBot(
-      actor: ApiTestUser | null,
-      body: TelegramRegisterBody,
-      statuses: readonly (
-        | 200
-        | 201
-        | 400
-        | 401
-        | 403
-        | 404
-        | 409
-        | 500
-        | 502
-      )[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-      return await accept(
-        client.register({
-          headers: authenticate(context, routeMocks, actor),
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestTelegramSetupStatus(
-      actor: ApiTestUser | null,
-      body: TelegramSetupStatusBody,
-      statuses: readonly (200 | 400 | 401 | 409)[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-      return await accept(
-        client.setupStatus({
-          headers: authenticate(context, routeMocks, actor),
-          body,
-        }),
-        statuses,
-      );
-    },
-
     async requestTelegramUploadInit(
       actor: ApiTestUser | null,
       body: TelegramUploadInitBody,
@@ -1749,6 +1618,24 @@ export function createBddIntegrationApi(context: TestContext) {
       return response.body;
     },
 
+    async requestAgentPhoneGroupHistory(
+      actor: ApiTestUser | null,
+      query: AgentPhoneGroupHistoryQuery,
+      statuses: readonly (200 | 400 | 401 | 404)[],
+    ) {
+      const client = setupApp({
+        context,
+        routes: integrationsAgentPhoneRoutes,
+      })(integrationsAgentPhoneContract);
+      return await accept(
+        client.groupHistory({
+          headers: authenticate(context, routeMocks, actor),
+          query,
+        }),
+        statuses,
+      );
+    },
+
     async requestStartAgentPhoneLink(
       actor: ApiTestUser | null,
       body: { readonly phoneHandle: string },
@@ -1807,8 +1694,6 @@ export function createBddIntegrationApi(context: TestContext) {
         readonly timestamp: number;
         readonly signature: string;
         readonly channel?: string;
-        readonly publicBrand?: PublicBrand;
-        readonly publicBrandSignature?: string;
       },
       statuses: readonly (200 | 400 | 401 | 409)[],
     ) {
@@ -1833,7 +1718,7 @@ export function createBddIntegrationApi(context: TestContext) {
         readonly "x-webhook-event"?: string;
         readonly "x-webhook-id"?: string;
       },
-      statuses: readonly (200 | 400 | 401 | 404)[],
+      statuses: readonly (200 | 400 | 401 | 404 | 500)[],
     ) {
       return await accept(
         requestRawAgentPhoneWebhook(context, body, headers),

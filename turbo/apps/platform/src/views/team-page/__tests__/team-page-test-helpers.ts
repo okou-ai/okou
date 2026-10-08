@@ -41,9 +41,6 @@ export function agentFixture(
     displayName,
     sound: "professional",
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
     ...overrides,
   };
@@ -119,7 +116,6 @@ export function mockConnectorOverview(
           return {
             slug: connector.slug,
             label: connector.label,
-            description: connector.description,
             icon: connector.icon,
             hasPermissions: connector.permissionSummary.hasPermissions,
           };

@@ -8,6 +8,7 @@ import {
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import { z } from "zod";
 import { localStorageSignals } from "../external/local-storage.ts";
+import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { jsonParseOr } from "../utils.ts";
 
 /**
@@ -19,15 +20,29 @@ import { jsonParseOr } from "../utils.ts";
 
 export type SourcesFirstFlow = "owner" | "member";
 
-export type SourcesFirstStep =
-  | "sources"
-  | "industry"
-  | "team"
-  | "experience"
-  | "skills"
-  | "profile"
-  | "slack"
-  | "ready";
+const sourcesFirstStepSchema = z.enum([
+  "sources",
+  "industry",
+  "team",
+  "experience",
+  "skills",
+  "slack",
+  "ready",
+]);
+
+export type SourcesFirstStep = z.infer<typeof sourcesFirstStepSchema>;
+
+export const SOURCES_FIRST_STEP_ROUTES: Readonly<
+  Record<SourcesFirstStep, RoutePath>
+> = {
+  industry: ROUTES.onboarding,
+  sources: ROUTES.onboardingSources,
+  team: ROUTES.onboardingTeam,
+  experience: ROUTES.onboardingExperience,
+  skills: ROUTES.onboardingSkills,
+  slack: ROUTES.onboardingSlack,
+  ready: ROUTES.onboardingReady,
+};
 
 export type SubscriptionProvider = OnboardingSubscriptionProvider;
 
@@ -105,6 +120,10 @@ const persistedDraftIdentitySchema = z.object({
   userId: z.string().min(1),
 });
 
+const persistedStepSchema = persistedDraftIdentitySchema.extend({
+  step: sourcesFirstStepSchema,
+});
+
 const persistedDraftSchema = persistedDraftIdentitySchema.extend({
   version: z.literal(2),
   industry: onboardingIndustrySchema.nullable(),
@@ -167,47 +186,72 @@ function restoredDraft(
 }
 
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
+const stepStorage = localStorageSignals("onboarding:sources-first-step");
+const onboardingStorages = [draftStorage, stepStorage] as const;
 const internalDraftIdentity$ = state<SourcesFirstDraftIdentity | null>(null);
 const internalDraft$ = state<SourcesFirstDraft>(emptyDraft());
 
-/** Restore before a page checks whether the selected plan adds the skills step. */
+/**
+ * Restore answers and return the saved step once per identity/app lifetime.
+ * Only the entry page resumes it; explicit step URLs and Back keep their target.
+ */
 export const restoreSourcesFirstDraft$ = command(
-  ({ get, set }, identity: SourcesFirstDraftIdentity): void => {
+  (
+    { get, set },
+    identity: SourcesFirstDraftIdentity,
+  ): SourcesFirstStep | null => {
     const active = get(internalDraftIdentity$);
     if (active?.orgId === identity.orgId && active.userId === identity.userId) {
-      return;
+      return null;
     }
 
     const saved = savedDraftForIdentity(get(draftStorage.get$), identity);
     set(internalDraftIdentity$, identity);
     set(internalDraft$, restoredDraft(saved));
+    const step = persistedStepSchema.safeParse(
+      jsonParseOr<unknown>(get(stepStorage.get$) ?? "null", null),
+    );
+    return step.success &&
+      step.data.orgId === identity.orgId &&
+      step.data.userId === identity.userId
+      ? step.data.step
+      : null;
+  },
+);
+
+export const saveSourcesFirstStep$ = command(
+  ({ get, set }, step: SourcesFirstStep): void => {
+    const identity = get(internalDraftIdentity$);
+    if (identity !== null) {
+      set(stepStorage.set$, JSON.stringify({ ...identity, step }));
+    }
   },
 );
 
 export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
   const identity = get(internalDraftIdentity$);
-  if (identity === null) {
-    set(internalDraft$, emptyDraft());
-    return;
+  if (identity !== null) {
+    for (const storage of onboardingStorages) {
+      const raw = get(storage.get$);
+      const parsed = persistedDraftIdentitySchema.safeParse(
+        raw === null ? null : jsonParseOr<unknown>(raw, null),
+      );
+      if (
+        parsed.success &&
+        parsed.data.orgId === identity.orgId &&
+        parsed.data.userId === identity.userId
+      ) {
+        set(storage.clear$);
+      }
+    }
   }
-  const raw = get(draftStorage.get$);
-  const parsed = persistedDraftIdentitySchema.safeParse(
-    raw === null ? null : jsonParseOr<unknown>(raw, null),
-  );
-  if (
-    parsed.success &&
-    parsed.data.orgId === identity.orgId &&
-    parsed.data.userId === identity.userId
-  ) {
-    set(draftStorage.clear$);
-  }
+  set(internalDraftIdentity$, null);
   set(internalDraft$, emptyDraft());
 });
 
 /**
- * Owner runs the full flow; a member invited into an existing org skips the
- * invite and Slack steps, matching the admin-only rule the Get started quests
- * already use.
+ * Owner runs the full flow; a member invited into an existing org runs the
+ * same steps except the invite, which only an admin can send.
  */
 const internalFlow$ = state<SourcesFirstFlow>("owner");
 
@@ -230,10 +274,13 @@ export const claimSourcesFirstStartEvent$ = command(({ get, set }): boolean => {
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
   readonly inviteEmail: string;
+  /** The field was left since it last changed, so its address is final. */
+  readonly inviteEmailLeft: boolean;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
   inviteEmail: "",
+  inviteEmailLeft: false,
 });
 
 export const sourcesFirstUi$ = computed((get) => {
@@ -306,9 +353,10 @@ const MEMBER_BASE_STEPS = [
 ] as const satisfies readonly SourcesFirstStep[];
 
 /**
- * Step order for one run. Members skip invite and Slack; answering the AI
- * experience question with a selected plan adds the skills step before the
- * profile. Both branches see their profile before Slack or their first task.
+ * Step order for one run. Members skip the invite; answering the AI
+ * experience question with a selected plan adds the skills step after it.
+ * Everyone reaches Slack: a member who cannot add it is told to ask an admin
+ * and can leave the step with Not now.
  */
 export function sourcesFirstSteps(
   flow: SourcesFirstFlow,
@@ -317,9 +365,7 @@ export function sourcesFirstSteps(
   const base = flow === "owner" ? OWNER_BASE_STEPS : MEMBER_BASE_STEPS;
   const skillSteps: readonly SourcesFirstStep[] =
     provider === null ? [] : ["skills"];
-  const slackStep: readonly SourcesFirstStep[] =
-    flow === "owner" ? ["slack"] : [];
-  return [...base, ...skillSteps, "profile", ...slackStep, "ready"];
+  return [...base, ...skillSteps, "slack", "ready"];
 }
 
 /** Progress markers: one per step of this run. */

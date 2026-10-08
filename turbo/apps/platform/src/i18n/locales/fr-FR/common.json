@@ -86,13 +86,9 @@
           "guidance": "Exécutez d'abord le diagnostic des crédits. Achetez des crédits uniquement lorsque le plan actuel le permet ; sinon, retournez le lien de mise à niveau du plan.",
           "title": "Crédits épuisés"
         },
-        "modelProviderUnavailable": {
-          "guidance": "Le fournisseur de modèle utilisé par ce fil a été supprimé. Démarrez un nouveau fil de discussion pour continuer.",
-          "title": "Fournisseur de modèle indisponible"
-        },
         "noModelProvider": {
-          "guidance": "Configurez un fournisseur de modèle pour commencer à exécuter des agents.",
-          "title": "Aucun fournisseur de modèle configuré"
+          "guidance": "Réessayez dans un instant ou connectez un abonnement personnel Claude Code ou Codex dans les paramètres.",
+          "title": "Aucun fournisseur de modèles n'est disponible pour cette exécution"
         },
         "paidPlanRequired": {
           "guidance": "La génération vidéo intégrée n'est pas disponible dans le plan actuel.",
@@ -361,13 +357,13 @@
     },
     "sources": {
       "agent": "Agent",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Événement d'automatisation",
       "automationSchedule": "Planification d'automatisation",
+      "discord": "Discord",
       "email": "Email",
       "feishu": "Feishu",
       "github": "GitHub",
-      "goal": "Objectif",
       "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
@@ -387,6 +383,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Impossible de charger les agents",
+      "backToChats": "Retour aux discussions",
+      "chatListUnavailable": "Impossible de charger les discussions",
+      "chats": "Discussions",
+      "me": "Moi",
+      "navigation": "Navigation principale",
+      "searchAgents": "Rechercher des agents",
+      "switchAgent": "Changer d’agent"
+    },
     "shortcutHelp": {
       "close": "Fermer les raccourcis clavier",
       "description": "Raccourcis disponibles sur cette page",
@@ -589,7 +595,8 @@
       "video": "Vidéo"
     },
     "metadata": {
-      "generated": "Généré le {{date}}"
+      "generated": "Généré le {{date}}",
+      "updated": "Mis à jour le {{date}}"
     },
     "preview": {
       "audioLabel": "Aperçu audio pour {{filename}}",
@@ -639,24 +646,8 @@
       "activeHtmlPreview": "Aperçu HTML actif de {{title}}",
       "all": "Tout",
       "avatar": "Avatar",
-      "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Retour aux avatars",
       "categories": "Catégories de modèles",
       "category": "Catégorie de modèle",
-      "chooseVoice": "Choisir une voix pour {{title}}",
-      "filters": {
-        "age": "Âge",
-        "all": "Tous",
-        "aspectRatio": "Format",
-        "clear": "Effacer",
-        "ethnicity": "Origine ethnique",
-        "gender": "Genre",
-        "language": "Langue",
-        "scene": "Scène",
-        "style": "Style",
-        "title": "Filtres",
-        "useCase": "Cas d’utilisation"
-      },
       "fullPreview": "Aperçu complet du site {{title}}",
       "htmlPreview": "Aperçu HTML de {{title}}",
       "illustration": "Illustration",
@@ -668,25 +659,18 @@
       "importedSlides_other": "{{count}} diapositives",
       "importFile": "Importer un modèle",
       "multiAccent": "Multi-accents",
-      "needPro": "Pro requis",
       "nextSlide": "Aperçu de la diapositive suivante",
       "noMatches": "Aucun résultat",
       "placeholder": "Espace réservé pour l'aperçu du site {{title}}",
-      "playVideo": "Lire l'aperçu vidéo du modèle {{title}}",
-      "previewAvatarVideo": "Prévisualiser la vidéo de l'avatar {{title}}",
       "previewCurrentSlide": "Aperçu de {{title}} à la diapositive actuelle",
       "previewSlide": "Aperçu de la diapositive {{slideNumber}}",
-      "previewVoice": "Écouter la voix {{title}}",
       "previewWebsite": "Aperçu du modèle de site Web {{title}}",
       "previousSlide": "Aperçu de la diapositive précédente",
-      "recommended": "Recommandé",
       "renameImportedTemplate": "Renommer le modèle",
       "searchConnector": "Rechercher des modèles",
       "searchConnectors": "Rechercher des modèles",
       "selectStyle": "Sélectionner le style {{style}}",
       "selectTemplate": "Sélectionner le modèle {{title}}",
-      "selectVideo": "Sélectionner le modèle vidéo {{title}}",
-      "selectVoice": "Sélectionner la voix {{title}}",
       "selectWebsite": "Sélectionner le modèle de site Web {{title}}",
       "selectWorkflow": "Sélectionner le modèle de workflow {{title}}",
       "showVariant": "Afficher la variante {{variantNumber}}",
@@ -719,7 +703,6 @@
       "tryDifferentSearch": "Essayez une recherche différente.",
       "use": "Utiliser",
       "useThisTemplate": "Utilisez ce modèle",
-      "viewVideoPlans": "Voir les offres pour le modèle vidéo {{title}}",
       "visibility": {
         "change": "Modifier",
         "changeLabel": "Modifier la visibilité du modèle",
@@ -1189,9 +1172,6 @@
       "downgradesOn": "Rétrogradations vers {{plan}} le {{date}}",
       "downgradeTo": "Rétrograder vers {{plan}}",
       "endsOn": "Se termine le {{date}}",
-      "features": {
-        "byok": "Apportez vos propres clés LLM"
-      },
       "free": {
         "name": "Gratuit"
       },
@@ -1206,18 +1186,13 @@
         "everythingInBuiltForTeams": "Tout {{plan}}, conçu pour les équipes",
         "included": "Inclus",
         "liveBrowser": "Suivez le navigateur d'un agent et prenez la main",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
         "moreConnectorsChannels": "Plus de connecteurs personnalisés et d'intégrations de canaux",
         "supportEmail": "Assistance par e-mail",
         "supportPriority": "Assistance prioritaire",
-        "videoGeneration": "Génération de vidéos et d’avatars",
         "voiceInput": "Saisie vocale : {{requests}} requêtes et {{minutes}} minutes par jour",
         "webhookAutomations": "Lancez une exécution depuis n'importe quel système par webhook"
       },
       "legacy": "Historique",
-      "limitedFree": {
-        "name": "Gratuit limité"
-      },
       "loadError": "Impossible de charger le statut de facturation.",
       "namedPlan": "Forfait {{plan}}",
       "noActivePlan": "Pas de forfait actif",
@@ -1445,7 +1420,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} ajoutés",
         "checkedIn": "Présence validée",
         "checkin": {
           "action": "Valider ma présence",
@@ -1459,8 +1433,12 @@
           "name": "Connecter un outil",
           "unit": "par connecteur"
         },
-        "earned": "{{amount}} obtenus",
         "howRewardsWork": "Comment fonctionnent les récompenses",
+        "imessage": {
+          "action": "Ajouter",
+          "description": "Écrivez à {{assistantName}} depuis votre iPhone",
+          "name": "Ajouter à iMessage"
+        },
         "inReview": "En cours d'examen",
         "intro": {
           "checkin": {
@@ -1506,6 +1484,9 @@
         "pendingState": "{{amount}} en attente",
         "rejected": {
           "alreadyRedeemed": "Publication déjà utilisée",
+          "authorAlreadyRewarded": "Compte déjà récompensé",
+          "authorUnavailable": "Auteur non vérifiable",
+          "officialAccount": "Les publications officielles de {{assistantName}} ne comptent pas",
           "postMustMention": "Doit mentionner {{assistantName}}"
         },
         "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
@@ -1516,7 +1497,6 @@
         },
         "shareDialog": {
           "description": "Envoyez une publication publique pour vérification. Une récompense validée par personne.",
-          "draft": "Je fais mon rapport concurrents du lundi avec {{assistantName}} : il lit les sources et me rend le tableau.",
           "helper": "La publication doit être publique et mentionner {{assistantName}}.",
           "inputLabel": "Lien de la publication",
           "openX": "Ouvrir X",
@@ -1531,7 +1511,8 @@
           "stepPaste": "Collez le lien",
           "stepWrite": "Rédigez la publication",
           "submit": "Envoyer",
-          "title": "Partager {{assistantName}} sur X"
+          "title": "Partager {{assistantName}} sur X",
+          "writingPrompt": "Racontez avec vos propres mots quelque chose que vous avez réellement essayé avec {{assistantName}}."
         },
         "slack": {
           "action": "Ajouter",
@@ -1766,12 +1747,17 @@
       "cancelFailed": "Impossible d’annuler la demande. Réessayez.",
       "cancelled": "Demande annulée",
       "cancelling": "Annulation…",
+      "checkFailed": "Impossible de vérifier le navigateur. Vos saisies sont conservées ; réessayez avant de les envoyer.",
       "completed": "Informations ajoutées",
+      "confirmRangeValue": "Utiliser la valeur actuelle",
       "continue": "Prévenir l’agent",
       "continuing": "Notification en cours…",
       "delivered": "Agent informé",
       "expired": "Demande expirée",
       "expiredDescription": "Le navigateur a été fermé ou cette demande n’est plus active.",
+      "fileLeave": "Conserver les fichiers du site inchangés",
+      "fileLimit": "Choisissez 3 fichiers au maximum (1 si le site n'en accepte qu'un), 10 Mio au total.",
+      "fileNotice": "Ajouter au navigateur transfère votre fichier vers ce site. Le site peut le téléverser ou soumettre le formulaire dès que la sélection change :",
       "loadFailed": "Impossible de charger cette demande",
       "loadFailedDescription": "Réessayez dans un instant.",
       "loadingDescription": "Vérification de cette demande…",
@@ -1789,29 +1775,6 @@
       "uncertain": "Vérifiez le navigateur",
       "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier avant de réessayer."
     },
-    "browserInteraction": {
-      "applying": "Finalisation de l’interaction avec le navigateur",
-      "applyingDescription": "Le navigateur finalise cette demande.",
-      "callbackFailed": "L’agent n’a pas été prévenu.",
-      "cancel": "Annuler",
-      "cancelFailed": "Impossible d’annuler cette demande. Réessayez.",
-      "cancelled": "Demande annulée",
-      "cancelling": "Annulation…",
-      "completed": "Interaction avec le navigateur terminée",
-      "completeFailed": "Impossible de terminer cette demande. Réessayez.",
-      "completing": "Finalisation…",
-      "continue": "Prévenir l’agent",
-      "continuing": "Notification en cours…",
-      "delivered": "Agent informé",
-      "description": "Ouvrez le navigateur, terminez cette étape, puis sélectionnez Terminé.",
-      "done": "Terminé",
-      "finish": "Terminer l’étape",
-      "stale": "Navigateur indisponible",
-      "staleDescription": "Demandez à l’agent de créer une nouvelle demande.",
-      "title": "Prenez le contrôle du navigateur",
-      "uncertain": "Vérifiez le navigateur",
-      "uncertainDescription": "L’interaction est peut-être terminée. Demandez à l’agent de vérifier avant de réessayer."
-    },
     "cards": {
       "viewDetails": "Voir les détails"
     },
@@ -1824,13 +1787,10 @@
         "addTemplate": "Ajouter un modèle",
         "imagePlaceholder": "Décrivez l’image à créer…",
         "presentationPlaceholder": "Quel est le sujet de votre présentation ?",
-        "settingsAdjusted": "Certains paramètres vidéo ont été adaptés à ce modèle",
         "slideCount": "Nombre de diapositives",
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
       },
-      "createWorkflow": "Créer un workflow",
-      "imageModelForThisChat": "Modèle d’image pour cette discussion",
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",
@@ -1845,12 +1805,10 @@
       "temporarilySwitchTo": "Passer temporairement à",
       "threadSuggestions": "Conversations",
       "useForFutureChats": "Utiliser ce modèle pour les prochaines discussions",
-      "videoModelForThisChat": "Modèle vidéo pour cette discussion",
       "workflows": {
         "empty": "Aucun workflow correspondant",
         "loading": "Chargement des workflows...",
-        "title": "Workflows",
-        "viewAll": "Afficher tous les workflows"
+        "title": "Workflows"
       }
     },
     "computerUse": {
@@ -1888,9 +1846,6 @@
       "add": "Ajouter {{connectorName}}",
       "addConnectors": "Ajouter des connecteurs",
       "authorized": "{{connectorName}} connecté et autorisé pour {{agentName}}",
-      "available_one": "Connecteurs disponibles à connecter ({{count}})",
-      "available_many": "Connecteurs disponibles à connecter ({{count}})",
-      "available_other": "Connecteurs disponibles à connecter ({{count}})",
       "back": "Retour",
       "configurePermissions": "Configurer les autorisations de {{connectorName}}",
       "customAuthorizeDescription": "Examiner, connecter et autoriser ce connecteur personnalisé pour l'agent.",
@@ -1943,10 +1898,8 @@
     "errors": {
       "genericTitle": "Cette exécution n’a pas pu se terminer",
       "loadMessages": "Échec du chargement des messages",
-      "noModelProviderAction": "Configurer un dans les paramètres de l'espace de travail",
-      "noModelProviderPrefix": "Aucun fournisseur de modèle configuré pour le moment.",
-      "providerDeletedAction": "Commencer une nouvelle discussion",
-      "providerDeletedPrefix": "Le fournisseur de modèle utilisé par cette discussion a été supprimé.",
+      "noModelProviderAction": "Gérer les abonnements",
+      "noModelProviderPrefix": "Aucun fournisseur de modèles n'est disponible pour cette exécution. Réessayez ou connectez un abonnement personnel.",
       "providerIncompatibleAction": "Commencer une nouvelle session",
       "providerIncompatiblePrefix": "Cette session a été commencée avec un fournisseur de modèle différent et ne peut pas être continuée avec le fournisseur actuel.",
       "recovery": {
@@ -1966,19 +1919,18 @@
         "fiveHourReset": "La limite de 5 h se réinitialise {{time}}",
         "inputTooLargeDescription": "Raccourcissez votre message et renvoyez-le.",
         "inputTooLargeTitle": "Votre message est trop volumineux",
-        "invalidApiKeyTitle": "La clé API doit être mise à jour",
+        "invalidApiKeyTitle": "La connexion de votre abonnement doit être mise à jour",
         "invalidCredentialsTitle": "La connexion au modèle doit être vérifiée",
         "newChat": "Nouvelle conversation",
         "newChatDescription": "Démarrez une nouvelle conversation et ajoutez les informations importantes à reprendre.",
         "openClaude": "Ouvrir Claude",
-        "originalAccount": "Abonnement personnel {{account}}",
-        "originalAccountUnavailable": "Abonnement personnel déconnecté",
-        "originalAccountUnknown": "Abonnement personnel non vérifié",
         "outputLimitDescription": "La réponse s’est arrêtée avant la fin. Choisissez « Continuer » pour reprendre.",
         "outputLimitTitle": "La réponse a atteint sa limite de longueur",
-        "providerBalanceDescription": "Vérifiez le crédit de votre compte fournisseur, puis réessayez.",
-        "providerBalanceTitle": "Le compte du fournisseur de modèles manque de crédit",
-        "providerConnectionDescription": "Ouvrez « Fournisseurs de modèles » pour reconnecter ou mettre à jour votre compte, puis réessayez.",
+        "personalAccount": "Abonnement personnel {{account}}",
+        "personalAccountDisconnected": "Abonnement personnel déconnecté",
+        "providerBalanceDescription": "Vérifiez l'utilisation ou le solde de crédit de votre compte d'abonnement, puis réessayez.",
+        "providerBalanceTitle": "Votre compte d'abonnement a besoin de plus de crédit",
+        "providerConnectionDescription": "Ouvrez « Paramètres > Modèles » pour reconnecter ou mettre à jour votre compte, puis réessayez.",
         "providerQueueTimeoutTitle": "Le modèle n’a pas démarré à temps",
         "providerRateLimitedTitle": "Il y a trop de demandes au modèle en ce moment",
         "providerServerErrorTitle": "Le fournisseur de modèles a rencontré une erreur temporaire",
@@ -2045,6 +1997,10 @@
       "newThread": "Nouveau chat",
       "reload": "Recharger les tâches"
     },
+    "lastReadMarker": {
+      "previouslyRead": "Vous avez lu jusqu’ici la dernière fois",
+      "unread": "Messages non lus"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -2084,11 +2040,13 @@
     "newChat": "Nouvelle discussion",
     "origins": {
       "agentphone": "iMessage",
+      "discord": "Discord",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Ouvrir la discussion",
       "openChatIn": "Ouvrir la conversation dans {{integration}}",
+      "openDiscordMessage": "Ouvrir le message d’origine dans Discord",
       "openFeishuChat": "Ouvrir le chat original dans Feishu",
       "openGithubMessage": "Ouvrir le problème ou la demande d'extraction d'origine dans GitHub",
       "openLarkChat": "Ouvrir le chat original dans Lark",
@@ -2130,12 +2088,11 @@
       "aboutAutomationEvent": "À propos de cet événement d'automatisation",
       "aboutQueuedMessage": "À propos de ce message en file d'attente",
       "automationEvent": "Événement d'automatisation",
-      "automationEventDescription": "Attend derrière les messages en file d'attente et s'exécute une fois que l'exécution en cours est terminée.",
+      "automationEventDescription": "Attend dans la file et s'exécute automatiquement dès qu'il peut démarrer.",
       "cancellationRecoveryPending": "Finalisation de l'exécution annulée avant la reprise du travail en file d'attente.",
       "event_one": "{{count}} événement",
       "event_many": "{{count}} événements",
       "event_other": "{{count}} événements",
-      "goal": "Objectif",
       "itemsWaiting": "{{items}} en attente",
       "itemsWaitingTogether": "{{messages}} et {{events}} en attente",
       "message_one": "{{count}} message",
@@ -2143,13 +2100,24 @@
       "message_other": "{{count}} messages",
       "pendingAutomationEvent": "Événement d'automatisation en attente",
       "queuedMessage": "Message en file d'attente",
-      "queuedMessageDescription": "Attend en ligne et envoie une fois l'exécution actuelle terminée.",
+      "queuedMessageDescription": "Attend dans la file et s'envoie automatiquement dès qu'il peut démarrer.",
       "removeQueuedMessage": "Supprimer le message en attente",
       "skipAutomationEvent": "Ignorer l'événement d'automatisation"
     },
-    "replaceDraft": {
-      "description": "Continuer effacera votre brouillon actuel dans la zone de saisie et démarrera un prompt de workflow.",
-      "title": "Remplacer le brouillon du compositeur ?"
+    "remoteAccess": {
+      "default": "Par défaut",
+      "defaultEnabled": "Activé par défaut pour les chats",
+      "enabledCount_one": "{{count}} activé",
+      "enabledCount_many": "{{count}} activés",
+      "enabledCount_other": "{{count}} activés",
+      "loadFailed": "Impossible de charger l'accès à distance.",
+      "loading": "Chargement de l'accès à distance…",
+      "off": "Désactivé",
+      "on": "Activé",
+      "requiresSsh": "Nécessite aussi l'accès à l'hôte SSH {{name}}.",
+      "retry": "Réessayer",
+      "title": "Accès à distance",
+      "unavailableSsh": "hôte SSH indisponible"
     },
     "run": {
       "collapseWorkHistory": "Réduire l'historique du travail",
@@ -2166,15 +2134,16 @@
         "wrappedUp": "Terminé à {{time}}"
       },
       "duration": {
-        "hoursShort_one": "{{count}}h",
-        "hoursShort_many": "{{count}}h",
-        "hoursShort_other": "{{count}}h",
-        "minutesShort_one": "{{count}}m",
-        "minutesShort_many": "{{count}}m",
-        "minutesShort_other": "{{count}}m",
-        "secondsShort_one": "{{count}}s",
-        "secondsShort_many": "{{count}}s",
-        "secondsShort_other": "{{count}}s"
+        "hoursMinutesShort": "{{hours}} h {{minutes}} min",
+        "hoursShort_one": "{{count}} h",
+        "hoursShort_many": "{{count}} h",
+        "hoursShort_other": "{{count}} h",
+        "minutesShort_one": "{{count}} min",
+        "minutesShort_many": "{{count}} min",
+        "minutesShort_other": "{{count}} min",
+        "secondsShort_one": "{{count}} s",
+        "secondsShort_many": "{{count}} s",
+        "secondsShort_other": "{{count}} s"
       },
       "expandWorkHistory": "Développer l'historique du travail",
       "fastModelName": "{{model}} Fast",
@@ -2238,11 +2207,15 @@
       "deleteTitle": "Supprimer la discussion ?",
       "draft": "Brouillon",
       "empty": "Commencez une conversation et elle apparaîtra ici",
+      "inbox": "Boîte de réception",
       "markUnread": "Marquer comme non lu",
       "movePinDown": "Déplacer vers le bas",
       "movePinUp": "Déplacer vers le haut",
+      "mute": "Mettre la discussion en sourdine",
+      "muted": "En sourdine",
       "newChatWith": "Nouvelle discussion avec {{agentName}}",
       "noArchived": "Aucune discussion archivée",
+      "noMuted": "Aucune discussion en sourdine",
       "noUnread": "Aucune discussion non lue",
       "openChatMenu": "Ouvrir le menu de discussion",
       "openListMenu": "Ouvrir le menu de la liste de discussion",
@@ -2254,17 +2227,13 @@
       "showArchivedChats": "Afficher les discussions archivées",
       "titlePlaceholder": "Titre de la discussion",
       "unarchive": "Désarchiver la discussion",
+      "unmute": "Réactiver les notifications",
       "unpin": "Détacher la discussion",
       "unread": "Non lu",
       "unreadOnly": "Non lu"
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "Créez un présentateur pour votre contenu",
-          "prompt": "Crée un présentateur avatar parlant pour ma prochaine vidéo.",
-          "title": "Créer un avatar"
-        },
         "illustration": {
           "description": "Obtenez un visuel fini dans le style voulu",
           "prompt": "Crée une illustration dans le style que je décris.",
@@ -2275,11 +2244,6 @@
           "prompt": "Crée une présentation à partir d'un sujet ou d'un document que je te donne.",
           "title": "Créer une présentation"
         },
-        "video": {
-          "description": "Transformez votre idée ou vos fichiers en vidéo finie",
-          "prompt": "Transforme mon idée ou mes fichiers en vidéo finie.",
-          "title": "Créer une vidéo"
-        },
         "website": {
           "description": "Créez et publiez une page partageable",
           "prompt": "Crée et publie une page web que je peux partager.",
@@ -2288,7 +2252,40 @@
       },
       "openTemplatesAria": "Parcourir les modèles",
       "startWithPrompt": "Créer",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Avec votre forfait Claude Max 5x/20x ou Codex",
+        "openSettingsAria": "Ouvrir les paramètres des modèles",
+        "title": "Tâches gratuites"
+      },
       "templates": "Modèles"
+    },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "Cette demande de réinitialisation a déjà été utilisée.",
+      "confirm_one": "{{count}} réinitialisation",
+      "confirm_many": "{{count}} réinitialisations",
+      "confirm_other": "{{count}} réinitialisations",
+      "confirmation": "La réinitialisation utilise un crédit. Seul un clic sur Réinitialiser envoie la demande.",
+      "confirmUnknown": "— réinitialisations",
+      "credits_one": "Réinitialisations restantes : {{count}}",
+      "credits_many": "Réinitialisations restantes : {{count}}",
+      "credits_other": "Réinitialisations restantes : {{count}}",
+      "creditsUnknown": "Réinitialisations restantes : inconnu",
+      "error": "Échec de la réinitialisation. Réessayez la même demande.",
+      "expiresAt": "Expiration des crédits : {{time}}",
+      "loadFailed": "Impossible de lire l’utilisation de l’abonnement.",
+      "loading": "Chargement de l’abonnement…",
+      "noCredit": "Aucun crédit de réinitialisation disponible.",
+      "nothingToReset": "Aucune fenêtre d’utilisation épuisée à réinitialiser.",
+      "reconnect": "Reconnectez cet abonnement dans Paramètres > Modèles.",
+      "reset": "Utilisation réinitialisée avec succès.",
+      "resetting": "Réinitialisation…",
+      "title": "Reset card",
+      "unavailable": "Cet abonnement n’est pas disponible dans l’espace de travail actuel.",
+      "unknown": "Inconnu",
+      "unsupported": "La réinitialisation manuelle n’est pas prise en charge ; l’utilisation se rétablit naturellement."
     },
     "taskChips": {
       "chooseTask": "Choisir une tâche",
@@ -2615,7 +2612,7 @@
         "back": "Parcourir les workflows",
         "browse": "Parcourir les workflows",
         "close": "Fermer",
-        "contextPrefix": "Ce qui compte pour moi : {{context}}",
+        "contextPrefix": "Ce qui compte pour moi : {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Chaque jour ou chaque semaine",
@@ -2906,29 +2903,17 @@
       "importedLoading": "Chargement des modèles importés…",
       "importedUnavailable": "Les modèles importés sont temporairement indisponibles.",
       "previewTemplate": "Aperçu du modèle {{title}}",
-      "previewVideo": "Aperçu du modèle vidéo {{title}}",
       "previewWebsite": "Aperçu du modèle de site web {{title}}",
       "previewWorkflow": "Aperçu du modèle de workflow {{title}}",
       "removeTemplate": "Supprimer le modèle {{title}}",
-      "removeVideo": "Supprimer le modèle vidéo {{title}}",
       "removeWebsite": "Supprimer le modèle de site web {{title}}",
       "removeWorkflow": "Supprimer le modèle de workflow {{title}}",
-      "retry": "Réessayer",
-      "videoOptions": "Options vidéo",
-      "videoOptionsAudio": "Générer l'audio",
-      "videoOptionsAudioOff": "Audio désactivé",
-      "videoOptionsAudioOn": "Audio activé",
-      "videoOptionsDuration": "Durée",
-      "videoOptionsLabel": "Options vidéo {{spec}}",
-      "videoOptionsModel": "Modèle",
-      "videoOptionsRatio": "Format",
-      "videoOptionsResolution": "Résolution"
+      "retry": "Réessayer"
     },
     "thread": {
       "ariaLabel": "Fil de discussion",
       "changeIcon": "Changer l'icône",
       "emoji": {
-        "archive": "Archiver",
         "done": "Terminé",
         "idea": "Idée",
         "no": "Non",
@@ -2967,6 +2952,7 @@
       "checkingLimit": "Vérification de la limite d'entrée vocale",
       "cleanupFailed": "Le texte a été ajouté, mais l’enregistrement sauvegardé n’a pas pu être supprimé.",
       "confirmRecording": "Terminé",
+      "detectionFailed": "La détection de la parole est indisponible. Votre enregistrement est conservé. Veuillez réessayer.",
       "discarding": "Suppression du brouillon vocal...",
       "input": "Entrée vocale",
       "inputLimitReached": "Limite d'entrée vocale atteinte. Passez à Pro ou Team pour des limites plus élevées.",
@@ -2975,6 +2961,7 @@
       "inputLimitReachedProMember": "Limite d'entrée vocale atteinte. Demandez à un administrateur de l'espace de travail de passer à Team pour obtenir des limites plus élevées.",
       "inputLimitReachedReset": "Limite d'entrée vocale atteinte. Veuillez attendre la réinitialisation de votre limite.",
       "microphoneAccessDenied": "L'accès au microphone a été refusé. Autorisez l'accès au microphone et réessayez.",
+      "noSpeechDetected": "Aucune parole détectée. Veuillez enregistrer à nouveau.",
       "openingMicrophone": "Ouverture du microphone...",
       "removeDraft": "Supprimer le brouillon vocal",
       "restoreFailed": "Impossible de charger votre brouillon vocal. Réessayez.",
@@ -2996,6 +2983,9 @@
   },
   "cloudflareAccess": {
     "add": "Ajouter Cloudflare Access",
+    "affectedMembers_one": "{{count}} membre",
+    "affectedMembers_many": "",
+    "affectedMembers_other": "{{count}} membres",
     "cancel": "Annuler",
     "changed": "Ce Cloudflare Access a changé pendant la modification. Vérifiez les derniers paramètres avant d’enregistrer.",
     "clientId": "ID client du Service Token",
@@ -3003,31 +2993,51 @@
     "clientSecret": "Secret client du Service Token",
     "clientSecretPlaceholder": "Collez le Client Secret du Service Token",
     "configuration": "Cloudflare Access",
+    "convert": "Rendre personnel",
+    "convertHelp": "Cette configuration Cloudflare Access de l’organisation deviendra votre propre configuration personnelle, même si une autre personne l’a créée. Le Service Token restera inchangé et vos hôtes SSH pourront rester connectés.",
+    "convertUncertain": "Impossible de confirmer la conversion. Vérifiez la configuration actuelle avant de réessayer.",
     "createNew": "Créer un Cloudflare Access",
     "delete": "Supprimer Cloudflare Access",
-    "deleteHelp": "Supprimer ce Cloudflare Access inutilisé ? Le Service Token enregistré ne pourra pas être récupéré.",
-    "description": "Accédez aux applications protégées avec des jetons de service Cloudflare Access.",
+    "deleteHelp": "Supprimer ce Cloudflare Access ? Le Service Token enregistré ne pourra pas être récupéré. Vous devez d'abord relier vos propres hôtes à une autre configuration.",
+    "deleteUncertain": "Impossible de confirmer la suppression. Vérifiez les conséquences actuelles avant de réessayer.",
     "edit": "Modifier Cloudflare Access",
-    "empty": "Aucun Cloudflare Access. Ajoutez un jeton de service pour accéder aux applications protégées.",
     "failed": "Impossible d’enregistrer la modification Cloudflare Access. Réessayez.",
-    "inUse": "Un hôte utilise ce Cloudflare Access. Vérifiez les hôtes concernés et changez leur configuration ou supprimez-les d’abord.",
-    "inUseHelp": "Sélectionnez un autre Cloudflare Access pour ces hôtes, passez-les explicitement en connexion directe ou supprimez-les avant de supprimer celui-ci.",
+    "forbidden": "Seuls les administrateurs de l'organisation peuvent modifier l'accès Cloudflare partagé.",
+    "hostCount_one": "{{count}} hôte SSH",
+    "hostCount_many": "{{count}} hôtes SSH",
+    "hostCount_other": "{{count}} hôtes SSH",
+    "impactChanged": "Les hôtes concernés ont changé. Vérifiez les conséquences actuelles avant de confirmer à nouveau.",
+    "impactConfirm": "Je comprends que les hôtes SSH de ces membres resteront enregistrés, mais ne pourront pas se connecter tant que leurs propriétaires ne les auront pas reliés à nouveau ou n'auront pas choisi explicitement l'accès direct.",
+    "impactSummary": "Impact : {{members}} et {{hosts}}. Les hôtes SSH restent enregistrés, mais ne peuvent plus se connecter tant que leurs propriétaires ne les relient pas ou ne choisissent pas explicitement l'accès direct. Aucun hôte ne bascule automatiquement en accès direct.",
+    "inUse": "Un hôte SSH utilise ce Cloudflare Access. Son propriétaire doit d'abord le réassocier ou le supprimer.",
+    "inUseHelp": "Vos hôtes SSH utilisent encore cette configuration. Reliez-les à une autre configuration, choisissez explicitement l'accès direct ou supprimez-les d'abord.",
     "invalidInput": "Certains paramètres Cloudflare Access ne sont pas valides. Vérifiez les champs et réessayez.",
     "keepChanges": "Appliquer mes modifications à cette version",
     "latest": "Derniers paramètres enregistrés",
     "loadFailed": "Impossible de charger Cloudflare Access. Réessayez.",
     "loading": "Chargement de Cloudflare Access…",
-    "manage": "Gérer Cloudflare Access",
+    "memberIdentifier": " (ID {{identifier}})",
     "missing": "Ce Cloudflare Access n’est plus disponible. Sélectionnez-en un autre ou créez-en un.",
     "name": "Nom",
     "namePlaceholder": "p. ex. Accès à la production",
+    "nameUnavailable": "Nom indisponible",
+    "organization": "Organisation",
+    "organizationHelp": "Tous les membres de cette organisation peuvent utiliser ce jeton de service. Seuls les administrateurs peuvent le modifier.",
+    "personal": "Personnel",
+    "promote": "Partager avec l'organisation",
+    "promoteConfirm": "Je comprends que tous les membres de l'organisation pourront utiliser ce Service Token.",
+    "promoteHelp": "Partagez votre Cloudflare Access personnel avec l'organisation. Le Service Token et vos liaisons d'hôtes SSH sont conservés.",
+    "promoteUncertain": "Impossible de confirmer la conversion. Fermez cette fenêtre et vérifiez la configuration actuelle avant de réessayer.",
     "replace": "Remplacer le Service Token",
     "resourceIdConflict": "Cet identifiant de ressource ne peut pas être utilisé. Fermez puis rouvrez le formulaire pour réessayer.",
     "retry": "Réessayer",
     "reviewHelp": "Votre brouillon est conservé. Confirmez les derniers paramètres enregistrés avant d’appliquer vos modifications.",
+    "reviewLatest": "Vérifier les conséquences actuelles",
     "revisionExhausted": "Cette configuration ne peut plus être mise à jour. Créez-en une nouvelle.",
     "save": "Enregistrer",
     "saveUncertain": "Nous n’avons pas pu confirmer si vos modifications ont été enregistrées. Réessayez le même enregistrement, ou fermez le formulaire et consultez la liste avant de les ajouter à nouveau.",
+    "scope": "Qui peut l'utiliser",
+    "sectionEmpty": "Aucune configuration ici pour le moment.",
     "select": "Sélectionner Cloudflare Access",
     "summary_one": "{{count}} Cloudflare Access configuré",
     "summary_many": "{{count}} Cloudflare Access configurés",
@@ -3035,10 +3045,10 @@
     "title": "Cloudflare Access",
     "tokenHelp": "Accédez aux applications protégées avec des jetons de service Cloudflare Access.",
     "unavailable": "Cloudflare Access n’est pas disponible pour ce compte.",
-    "unused": "Aucun hôte ne les utilise",
-    "usedBy_one": "Utilisée par {{count}} hôte :",
-    "usedBy_many": "Utilisée par {{count}} hôtes :",
-    "usedBy_other": "Utilisée par {{count}} hôtes :"
+    "unused": "Aucun de vos hôtes ne l'utilise",
+    "usedBy_one": "Utilisée par {{count}} de vos hôtes :",
+    "usedBy_many": "Utilisée par {{count}} de vos hôtes :",
+    "usedBy_other": "Utilisée par {{count}} de vos hôtes :"
   },
   "connectors": {
     "access": {
@@ -3156,7 +3166,6 @@
       "connectAria": "Connecter {{connector}}",
       "connected": "Connecté",
       "connectionExpired": "Connexion expirée",
-      "connectToContinue": "Connectez ce compte pour continuer",
       "managePermissions": "Gérer les autorisations",
       "managePermissionsFor": "Gérer les autorisations de {{connector}}",
       "optional": "Facultatif",
@@ -3226,7 +3235,6 @@
           "menu": "Ventes et Entreprise"
         }
       },
-      "categoriesAria": "Catégories de connecteurs",
       "description": "Connectez des services tiers pour que vos agents puissent les utiliser.",
       "descriptionWithCount": "Connectez {{value}} services pour que vos agents puissent les utiliser.",
       "directory": {
@@ -3245,8 +3253,6 @@
       "empty": {
         "agent": "Aucun connecteur pour cet agent",
         "connected": "Aucun connecteur connecté",
-        "matching": "{{message}} correspondant à \"{{search}}\"",
-        "notConnected": "Aucun connecteur restant à connecter",
         "search": "Aucun connecteur correspondant à \"{{search}}\"",
         "unshared": "Chaque connecteur est partagé avec un agent"
       },
@@ -3256,14 +3262,10 @@
         "all": "Tous",
         "allAgents": "Tous les agents",
         "aria": "Filtrer les connecteurs",
-        "connected": "Connecté",
-        "notConnected": "Non connecté",
-        "status": "Statut",
         "unshared": "Partagé avec aucun agent"
       },
       "filterWith": "Filtre : {{category}}",
       "iconUnavailable": "Icône du connecteur indisponible",
-      "newConnector": "Nouveau connecteur",
       "noConnectorsAlt": "Aucun connecteur",
       "otherCategory": "Autre",
       "remoteAccess": "Accès à distance",
@@ -3291,10 +3293,6 @@
         "seeMore_many": "Voir {{names}} et {{count}} autres",
         "seeMore_other": "Voir {{names}} et {{count}} autres",
         "top": "Connecteurs principaux"
-      },
-      "tabs": {
-        "builtin": "Intégré",
-        "custom": "Personnalisé"
       },
       "title": "Connecteurs",
       "unnamedAgent": "Sans nom"
@@ -3435,7 +3433,6 @@
       "edit": {
         "title": "Modifier le connecteur personnalisé"
       },
-      "emptyAdmin": "Pas encore de connecteurs personnalisés. Créez-en un pour enregistrer une API que tous les membres pourront utiliser.",
       "emptyMember": "Votre organisation n'a pas encore enregistré de connecteurs personnalisés.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -3523,7 +3520,7 @@
         "invalidSignature": "La signature de ce lien n'est pas valide.",
         "invalidTimestamp": "L'horodatage de ce lien n'est pas valide.",
         "invalidTitle": "Le lien de connexion est invalide",
-        "risk": "Les réponses SMS et MMS peuvent ne pas être livrées de manière fiable. Pour une expérience la plus fiable, utilisez iMessage avec ce numéro AgentPhone.",
+        "risk": "Les réponses SMS et MMS peuvent ne pas être livrées de manière fiable. Pour une expérience la plus fiable, utilisez iMessage avec ce numéro.",
         "successDescription": "{{phone}} est connecté. Envoyez un message texte pour commencer à discuter avec {{assistantName}}.",
         "successTitle": "Numéro de téléphone connecté"
       },
@@ -3606,21 +3603,12 @@
         "alreadyDescriptionNamed": "Vous êtes déjà connecté à {{bot}}. Envoyez un message sur Telegram pour commencer à discuter.",
         "alreadyTitle": "Déjà connecté à Telegram",
         "back": "Retour aux paramètres Telegram",
-        "botFallback": "ce bot",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Veuillez patienter pendant que nous vérifions votre connexion Telegram.",
         "checkingConnectionTitle": "Vérification de la connexion...",
-        "checkingDomain": "Vérification du statut du domaine...",
         "checkingSession": "Veuillez patienter pendant que nous vérifions votre session {{brandName}}.",
         "connectDescription": "Liez votre compte à ce bot Telegram afin de pouvoir interagir avec votre agent directement depuis Telegram.",
         "connectTitle": "Se connecter à Telegram",
         "continue": "Continuer avec Telegram",
-        "domainDescription": "La connexion web Telegram n'est pas activée pour {{bot}}.",
-        "domainIn": "Dans",
-        "domainInstructionsAfter": ", choisissez le bot, puis définissez le domaine sur:",
-        "domainKeepOpen": "Gardez cette page ouverte après avoir enregistré le domaine. Vous pouvez également vous connecter depuis Telegram avec /connect.",
-        "domainSend": ", envoyer",
-        "domainTitle": "Définir le domaine de connexion Telegram",
         "errorFallback": "Nous n'avons pas pu connecter Telegram. Réessayez depuis Telegram.",
         "invalidSignature": "La signature sur ce lien n'est pas valide.",
         "invalidTimestamp": "L'horodatage sur ce lien n'est pas valide.",
@@ -3630,9 +3618,7 @@
         "linkIncomplete": "Ouvrez un nouveau lien /connect depuis Telegram et réessayez.",
         "linkIncompleteTitle": "Le lien de connexion est incomplet",
         "open": "Ouvrir Telegram",
-        "openBotFather": "Ouvrir BotFather",
         "refresh": "Actualisez cette page et réessayez.",
-        "setDomainCommand": "/setdomain",
         "signInButton": "Connectez-vous à {{brandName}}",
         "signInCheckFailed": "Impossible de vérifier la connexion",
         "signInDescription": "Utilisez votre compte {{brandName}} avant de connecter cet utilisateur Telegram.",
@@ -3645,9 +3631,10 @@
       "agentphone": {
         "authorizedSender": "Expéditeur autorisé",
         "codeExpiry": "Expire dans 10 minutes",
+        "codeLabel": "Code",
         "connectAria": "Connecter le téléphone",
-        "connectDescription": "Scannez le code ou ouvrez Messages, puis envoyez le code prérempli.",
-        "connectTitle": "Connecter le téléphone",
+        "connectDescription": "Scannez avec votre appareil photo, puis envoyez le code prérempli.",
+        "connectTitle": "Écrivez à {{assistantName}} depuis votre iPhone",
         "copyAria": "Copier {{phone}}",
         "copyCodeAria": "Copier le code de connexion {{code}}",
         "copyCodeError": "Impossible de copier le code de connexion",
@@ -3658,80 +3645,16 @@
         "creatingCode": "Création du code de connexion…",
         "description": "Accès aux messages texte pour {{assistantName}}",
         "destination": "iMessage ou SMS à",
-        "manualSend": "ou envoyez",
-        "manualSendTo": "au",
         "openMessages": "Ouvrir Messages",
         "options": "Options de téléphone",
         "phoneLabel": "Téléphone",
         "qrTitle": "Scannez pour ouvrir Messages avec le code de connexion prérempli",
         "risk": "Utilisez iMessage lorsque c’est possible. Les réponses par SMS et MMS peuvent ne pas arriver de manière fiable.",
+        "sendToLabel": "Envoyer à",
         "tryAgain": "Réessayer"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activated": "Activé",
-          "activeCatalogDigest": "Synthèse du catalogue actif",
-          "activeVersion": "Version active",
-          "evaluated": "Évalué",
-          "evaluation": "Évaluation",
-          "executableCapabilityDigest": "Synthèse des capacités exécutables",
-          "failureCode": "Code d'échec",
-          "filteredAuthMethods": "Méthodes d'authentification filtrées",
-          "lastAttempt": "Dernière tentative",
-          "lastAttemptAt": "Dernière tentative à",
-          "lastSuccess": "Dernier succès",
-          "missingVersions": "Versions manquantes",
-          "rejectedCatalogDigest": "Synthèse du catalogue rejeté",
-          "rejectedVersion": "Version rejetée",
-          "rejectingBackend": "Rejet du backend",
-          "rejectionCache": "Cache de rejet",
-          "rejectionFailure": "Échec de rejet",
-          "syncState": "État de synchronisation",
-          "unownedSecrets": "Secrets non possédés",
-          "unownedVariables": "Variables non possédées",
-          "unresolvedBridgeCredentials": "Identifiants de pont non résolus"
-        },
-        "loading": "Chargement",
-        "none": "Aucun",
-        "notReused": "Non réutilisé",
-        "reused": "Réutilisé",
-        "sections": {
-          "compatibility": "Compatibilité",
-          "credentialStorage": "Stockage des identifiants",
-          "rejectedCandidate": "Candidat rejeté"
-        },
-        "title": "Catalogue de connecteurs",
-        "unavailable": "Indisponible",
-        "values": {
-          "accepted": "Accepté",
-          "current": "Actuel",
-          "digestMismatch": "Incohérence du digest",
-          "invalidArtifact": "Artéfact invalide",
-          "invalidCompression": "Compression invalide",
-          "invalidJson": "JSON invalide",
-          "invalidPointer": "Pointeur invalide",
-          "invalidReference": "Référence invalide",
-          "missingAccessProvider": "Fournisseur d'accès manquant",
-          "missingGrantProvider": "Fournisseur d'autorisation manquant",
-          "missingPlatformConfiguration": "Configuration de plateforme manquante",
-          "missingRevokeProvider": "Fournisseur de révocation manquant",
-          "neverSynced": "Jamais synchronisé",
-          "objectTooLarge": "Objet trop volumineux",
-          "providerContractMismatch": "Incompatibilité du contrat fournisseur",
-          "publicLeakage": "Fuite publique",
-          "rejected": "Rejeté",
-          "relationshipMismatch": "Incompatibilité relationnelle",
-          "sourceUnavailable": "Source indisponible",
-          "stale": "Périmé",
-          "unchanged": "Inchangé",
-          "unsupportedProtocol": "Protocole non pris en charge",
-          "unsupportedSchema": "Schéma non pris en charge"
-        }
-      },
       "errors": {
-        "githubAuthorizationWindow": "Échec de l'ouverture de la fenêtre d'autorisation",
-        "telegramDomain": "Le domaine n'est pas encore visible pour Telegram. Vérifiez BotFather et essayez à nouveau.",
-        "telegramPrivacy": "Le mode de confidentialité semble toujours activé. Désactivez-le dans BotFather, puis réessayez."
+        "githubAuthorizationWindow": "Échec de l'ouverture de la fenêtre d'autorisation"
       },
       "feishu": {
         "addBot": "Ajouter un bot",
@@ -3999,83 +3922,21 @@
         "uninstallTitle": "Désinstaller le bot Lark ?"
       },
       "telegram": {
-        "addBot": "Ajouter un bot",
-        "addDescription": "Complétez chaque étape de BotFather, puis créez le bot de l'espace de travail.",
-        "adding": "Ajout en cours...",
-        "addTitle": "Ajouter un bot Telegram",
-        "agentAria": "Agent par défaut pour {{bot}}",
         "backToIntegrations": "Retour aux intégrations",
         "botFallback": "Bot Telegram",
-        "bots": "Bots Telegram",
-        "botToken": "Token du bot",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "Vérification...",
-        "copied": "copié !",
-        "copyAria": "Copier {{value}}",
-        "copyTitle": "Cliquer pour copier",
-        "create": {
-          "description": "{{brandName}} enregistrera ce bot et configurera son webhook. Après la configuration, mentionnez le bot dans un groupe ou envoyez-lui un message direct pour parler avec l'agent sélectionné.",
-          "descriptionNamed": "{{brandName}} enregistrera {{bot}} et configurera son webhook. Après la configuration, mentionnez le bot dans un groupe ou envoyez-lui un message privé pour parler avec l'agent sélectionné.",
-          "title": "Prêt à créer l'intégration"
-        },
-        "defaultAgent": "Agent par défaut",
         "disconnectAria": "Déconnecter {{bot}}",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "Domaine détecté",
-          "instructionAfter": ", choisissez ce bot, et définissez le domaine sur",
-          "instructionEnd": ". Telegram utilise ce domaine pour permettre le flux de connexion pour ce bot.",
-          "instructionStart": "Dans {{botFather}}, envoyez",
-          "title": "Définir le domaine de connexion Telegram"
-        },
-        "emptyDescription": "Ajoutez un token de bot pour commencer à acheminer les messages Telegram vers un agent.",
-        "emptyTitle": "Pas encore de bots Telegram",
-        "invalidTokenDescription": "Réinstallez le bot avec un nouveau token de BotFather.",
         "loadError": "Impossible de charger les paramètres Telegram.",
         "moreOptions": "Plus d'options pour {{bot}}",
-        "newBotToken": "Nouveau token de bot",
         "notConnected": "Non connecté",
         "officialBot": "Bot Telegram officiel",
         "officialDescription": "Bot officiel fourni par {{brandName}}.",
         "officialMissing": "La configuration du bot officiel est manquante.",
-        "pageDescription": "Gérer le routage du bot pour cet espace de travail",
-        "privacy": {
-          "instructionAfter": ", choisissez ce bot, puis désactivez le mode confidentialité. Cela permet à l'agent de lire le contexte du groupe autour des mentions et des réponses.",
-          "instructionStart": "Dans {{botFather}}, envoyez",
-          "off": "Le mode confidentialité est désactivé",
-          "title": "Optionnel : désactiver le mode confidentialité"
-        },
-        "registerAria": "Enregistrer le bot Telegram",
-        "reinstall": "Réinstaller",
-        "reinstallDescription": "Collez le nouveau token BotFather pour {{bot}}. Le token doit appartenir à ce même bot.",
-        "reinstalling": "Réinstallation...",
-        "reinstallTargetFallback": "cet bot",
-        "reinstallTitle": "Réinstaller le bot Telegram",
-        "selectAgent": "Sélectionner un agent",
-        "steps": {
-          "back": "Retour",
-          "create": "Créer",
-          "domain": "Domaine",
-          "next": "Suivant",
-          "privacy": "Confidentialité",
-          "token": "Token"
-        },
-        "token": {
-          "instructionAfter": ", choisissez un nom et un nom d'utilisateur, puis collez le jeton ci-dessous.",
-          "open": "Ouvrir",
-          "send": ", envoyer",
-          "title": "Créer un jeton de bot dans BotFather",
-          "verified": "Jeton vérifié"
-        },
-        "tokenInvalid": "Jeton invalide",
-        "uninstallAria": "Désinstaller {{bot}}",
-        "uninstallDescription": "Cela supprime {{bot}} de l'espace de travail et déconnecte l'accès Telegram pour les utilisateurs qui l'utilisent. Cette action est irréversible.",
-        "uninstallTargetFallback": "cet bot",
-        "uninstallTitle": "Désinstaller le bot Telegram ?"
+        "pageDescription": "Gérer le routage du bot pour cet espace de travail"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone connecté",
-        "agentphoneDisconnected": "AgentPhone déconnecté",
+        "agentphoneConnected": "Numéro de téléphone connecté",
+        "agentphoneDisconnected": "Numéro de téléphone déconnecté",
         "slackConnected": "Slack connecté avec succès",
         "slackDisconnected": "Déconnecté de Slack",
         "slackInstalled": "Slack installé avec succès",
@@ -4087,12 +3948,7 @@
         "teamsInstalled": "Microsoft Teams installé avec succès",
         "teamsUninstalled": "Intégration Microsoft Teams désinstallée",
         "teamsUpdated": "Microsoft Teams mis à jour",
-        "telegramAgentUpdated": "Agent par défaut mis à jour",
-        "telegramBotAdded": "Bot Telegram ajouté",
-        "telegramBotReinstalled": "Bot Telegram réinstallé",
-        "telegramBotUninstalled": "Bot Telegram désinstallé",
-        "telegramDisconnected": "Compte Telegram déconnecté",
-        "telegramUpdatingAgent": "Mise à jour de l'agent par défaut..."
+        "telegramDisconnected": "Compte Telegram déconnecté"
       },
       "works": {
         "connected": "Connecté",
@@ -4117,9 +3973,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "La requête a échoué"
-    },
-    "realtime": {
-      "degraded": "Les mises à jour en direct ont rencontré un problème. Veuillez actualiser la page."
     }
   },
   "invitationRedirect": {
@@ -4200,132 +4053,66 @@
     }
   },
   "onboarding": {
-    "categories": {
-      "ceo": {
-        "description": "Briefings et vue d'ensemble",
-        "title": "CEO"
-      },
-      "data": {
-        "description": "Tableaux de bord, métriques, requêtes",
-        "title": "Données"
-      },
-      "engineering": {
-        "description": "Expédier, déboguer, automatiser le code",
-        "title": "Ingénieur"
-      },
-      "everyone": {
-        "description": "Email, calendrier, réunions",
-        "title": "Tout le monde"
-      },
-      "marketing": {
-        "description": "Contenu, SEO, campagnes",
-        "title": "Marketing"
-      },
-      "operations": {
-        "description": "Projets, planification, synchronisation",
-        "title": "Opérations"
-      },
-      "product": {
-        "description": "Spécifications, versions, retours",
-        "title": "Produit"
-      },
-      "sales": {
-        "description": "Pipeline et prospection",
-        "title": "Ventes"
-      },
-      "support": {
-        "description": "Tickets et aide client",
-        "title": "Support"
-      }
-    },
     "common": {
-      "back": "Retour",
-      "continue": "Continuer",
-      "dialogPreview": "Aperçu de {{title}}",
-      "gotIt": "Compris",
       "next": "Suivant",
-      "previewWorkflowDetails": "Aperçu des détails du workflow",
-      "selectTemplate": "Sélectionner ce modèle",
-      "selectThisTemplate": "Sélectionner ce modèle",
       "stepProgress": "Étape {{current}} sur {{total}}"
     },
     "documentTitles": {
-      "chooseImage": "Choisir un style d'image",
-      "choosePresentation": "Choisir un modèle de présentation",
-      "chooseVideo": "Choisissez un style de vidéo",
-      "chooseWorkflow": "Choisissez un workflow",
-      "make": "Bienvenue chez {{brandName}}",
-      "runImage": "Créez votre première image",
-      "runPresentation": "Créez votre première présentation",
-      "runVideo": "Créez votre première vidéo",
-      "runWorkflow": "Exécutez votre premier workflow"
+      "make": "Bienvenue chez {{brandName}}"
     },
     "make": {
-      "description": "Choisissez un point de départ, vous pourrez tout faire ensuite.",
-      "options": {
-        "explore": {
-          "description": "Connectez simplement mes outils",
-          "title": "Je vais explorer par moi-même"
-        },
-        "images": {
-          "description": "Créez des visuels de haute qualité",
-          "title": "Générer des images"
-        },
-        "presentation": {
-          "description": "Générer des diapositives et un présentateur",
-          "title": "Générer une présentation"
-        },
-        "slack": {
-          "description": "Discutez avec votre coéquipier IA dans votre espace de travail",
-          "title": "Discuter avec Okou sur Slack"
-        },
-        "video": {
-          "description": "Transformez vos idées en vidéo",
-          "title": "Production vidéo"
-        },
-        "website": {
-          "description": "Créez et publiez une page partageable",
-          "title": "Créer un site web"
-        },
-        "workflow": {
-          "description": "Explorer à partir de modèles prédéfinis",
-          "title": "Automatisation de workflow"
-        }
-      },
-      "projectTypeLabel": "Type de premier projet",
       "promptDescription": "Modifiez-le ci-dessous ou exécutez-le tel quel. {{assistantName}} prend le relais à partir d'ici. Vos outils restent en sandbox et rien ne quitte votre espace de travail.",
       "promptLabel": "Prompt d’onboarding",
-      "promptTitle": "Essayez ce prompt",
-      "title": "Que voulez-vous créer en premier"
-    },
-    "runAction": {
-      "checkingPlan": "Vérification du plan",
-      "runNow": "Exécuter maintenant",
-      "upgradePro": "Passez à Pro pour exécuter"
+      "promptTitle": "Essayez ce prompt"
     },
     "sourcesFirst": {
+      "chatChannels": {
+        "connectedTitle": "Votre messagerie est connectée",
+        "copy": "Écrivez à Okou ou ajoutez-le à la messagerie de votre équipe. Choisissez votre façon habituelle de travailler.",
+        "imessageConnected": "iMessage est connecté",
+        "imessageCopy": "Votre travail, à un message près.",
+        "imessageExpired": "Votre code de connexion a expiré.",
+        "imessageRefresh": "Obtenir un nouveau code",
+        "imessageScan": "Ouvrez l’appareil photo de votre iPhone, puis envoyez le message prérempli.",
+        "imessageTitle": "Écrivez à Okou sur iMessage",
+        "othersLabel": "Également disponible sur",
+        "title": "Okou, à un message de vous"
+      },
       "common": {
         "back": "Retour",
         "continue": "Continuer",
-        "finish": "Terminer la configuration",
-        "notNow": "Pas maintenant",
-        "skip": "Passer pour l'instant"
+        "notNow": "Pas maintenant"
+      },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "Détails de sécurité",
+        "status": {
+          "aligned": "Aligné",
+          "compliant": "Conforme",
+          "inProgress": "En cours"
+        },
+        "title": "La conformité d’Okou, pensée pour votre confiance"
       },
       "documentTitles": {
         "experience": "Votre expérience de l'IA",
         "industry": "Choisir votre domaine",
-        "profile": "Votre profil",
         "ready": "Okou est prêt",
         "skills": "Importer vos skills",
-        "slack": "Ajouter Okou à Slack",
         "sources": "Connecter votre travail",
-        "team": "Inviter un collègue"
+        "team": "Inviter un membre de l’équipe"
       },
       "experience": {
-        "copy": "Connectez l'offre que vous payez déjà : le travail s'exécute là-bas, pas sur vos crédits Okou.",
-        "no": "Non, c'est nouveau pour moi",
-        "noCopy": "Okou choisit une première tâche pour vous.",
-        "title": "Avez-vous déjà utilisé Codex ou Claude Code ?"
+        "copy": "Commencez avec des conseils ou utilisez votre abonnement Codex ou Claude Code existant.",
+        "no": "Je découvre les agents IA",
+        "noCopy": "Okou vous aide à trouver une première tâche utile.",
+        "title": "Comment souhaitez-vous commencer avec Okou ?",
+        "trust": "Les tâches utilisent votre abonnement Codex ou Claude Code au lieu des crédits Okou : faites-en plus sans vous soucier de la consommation. Connectez-le maintenant ou plus tard."
       },
       "industries": {
         "coaching": {
@@ -4374,34 +4161,60 @@
         }
       },
       "industry": {
-        "copy": "Okou s'en sert pour choisir votre première tâche et les sources dont elle part.",
+        "copy": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud. Choisissez votre domaine pour une première tâche adaptée.",
         "title": "Quel type de travail faites-vous ?"
       },
-      "profile": {
-        "communicationStyle": "Votre façon de communiquer",
-        "copy": "Un premier aperçu de votre travail à partir des comptes connectés.",
-        "failed": "Nous ne pouvons pas créer votre profil pour le moment. Réessayez ou continuez.",
-        "heading": "Votre profil",
-        "loading": "Création de votre profil à partir de vos comptes connectés…",
-        "priorities": "Priorités possibles",
-        "professionalIdentity": "Votre travail",
-        "retry": "Réessayer",
-        "title": "Voici ce que nous avons appris sur vous"
+      "prompt": {
+        "intro": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud."
       },
       "skills": {
         "copied": "Copié",
-        "copy": "Collez ce prompt dans votre propre session {{provider}} : il amène dans Okou les skills présentes sur votre machine.",
+        "copy": "Exécutez ce prompt dans {{provider}} pour importer les skills que vous avez déjà créées, afin qu’Okou puisse les utiliser dès le premier jour.",
         "copyError": "Le prompt n’a pas pu être copié.",
         "copyPrompt": "Copier le prompt",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Ouvrez l'app Claude et passez à l'onglet {{control}}",
+            "openAppNote": "Code s'exécute sur votre ordinateur et peut donc lire vos dossiers de skills.",
+            "stayLocal": "Gardez la session sur {{control}}",
+            "stayLocalNote": "Le chat et les sessions cloud ne voient pas les fichiers de votre ordinateur."
+          },
+          "codex": {
+            "keepOpen": "Laissez-la ouverte jusqu'à ce que vos skills apparaissent ci-dessous",
+            "openApp": "Ouvrez l'app Codex et lancez un {{control}}",
+            "openAppNote": "Utilisez l'app sur votre ordinateur pour qu'elle puisse lire vos dossiers de skills."
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "Copiez le prompt",
+          "label": "Où exécuter le prompt",
+          "paste": "Collez le prompt et envoyez-le",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "Masquer le prompt complet",
         "importedCopy": "Importé comme workflow Okou.",
+        "importedCount_one": "1 importée · en attente d’autres",
+        "importedCount_many": "{{count}} importées · en attente d’autres",
+        "importedCount_other": "{{count}} importées · en attente d’autres",
         "importedLabel": "Skills importées",
         "importedTitle": "Vos skills sont dans Okou",
         "preparing": "Ouverture de votre session d’import…",
         "promptCopy": "Il lit les skills de votre machine et les écrit dans Okou.",
         "promptLabel": "Prompt d’import de skills",
         "promptTitle": "Lancez ceci dans {{provider}}",
+        "showFullPrompt": "Afficher le prompt complet",
         "startError": "La session d’import n’a pas pu être ouverte.",
-        "title": "Amenez les skills que vous avez déjà écrites.",
+        "title": "Importez vos skills dans Okou",
         "tryAgain": "Réessayer",
         "waiting": "Les skills importées apparaissent ici au fur et à mesure."
       },
@@ -4410,44 +4223,18 @@
         "channelAdminRequired": "Demandez à un administrateur de l'espace de travail d'ajouter Okou à {{channel}}.",
         "channelUnavailable": "{{channel}} n'est pas encore disponible dans cet espace de travail.",
         "connectAction": "Connecter Slack",
-        "connectedCopy": "Ouvrez Slack et mentionnez @Okou pour lui confier une tâche.",
         "connectedStatus": "Ajouté à votre espace de travail",
-        "connectedTitle": "Slack est connecté",
-        "copy": "Ajoutez-le une fois, puis mentionnez @Okou là où le travail se fait déjà.",
         "name": "Slack",
         "otherAdded": "Ajouté",
         "otherImessage": "iMessage",
-        "othersLabel": "À ajouter plus tard, ou maintenant",
         "otherTeams": "Teams",
-        "otherTelegram": "Telegram",
-        "previewAppBadge": "APP",
-        "previewAsk": "sors les inscriptions de la semaine dernière par source, rapproche-les du compte publicitaire et mets le tableau dans une feuille.",
-        "previewAskAuthor": "Mia Chen",
-        "previewChannel": "# growth",
-        "previewChannelGeneral": "# general",
-        "previewChannelLaunch": "# launch",
-        "previewChannelsLabel": "Canaux",
-        "previewChannelTopic": "Les chiffres de la semaine et la prochaine livraison",
-        "previewComposer": "Message pour #growth",
-        "previewContext": "Le conseil est jeudi et je leur dois encore les chiffres de la semaine dernière.",
-        "previewContextAuthor": "Dan Rivera",
-        "previewContextTime": "9:06 AM",
-        "previewDirectMessagesLabel": "Messages directs",
-        "previewMention": "@Okou",
-        "previewReplies": "3 réponses",
-        "previewReply": "1 284 inscriptions la semaine dernière, soit 18 % de plus que 1 088. La feuille est dans le fil.",
-        "previewReplyAuthor": "Okou",
-        "previewReplyTime": "9:16 AM",
-        "previewTime": "9:14 AM",
-        "previewWorkspace": "Northwind",
-        "rowCopy": "Fonctionne dans chaque canal où vous l'ajoutez.",
-        "rowTitle": "Okou for Slack",
-        "title": "Confiez un travail à Okou sans quitter Slack."
+        "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Il travaille dans le cloud, depuis les outils que votre équipe utilise déjà. 10 fois plus de résultats, moins de friction, un coût plus bas. Connectez une source pour commencer.",
-        "note": "Vous choisissez les comptes à connecter.",
-        "title": "Okou est à vous, et partagé avec toute votre équipe."
+        "copy": "Plus Okou connaît votre travail, plus il devient intelligent. Connectez un outil que vous utilisez chaque jour pour commencer par une tâche tirée de votre vrai travail.",
+        "permissions": "Okou utilise un petit échantillon pour adapter votre première tâche. Vous décidez de ce que les Agents peuvent faire et pour combien de temps.",
+        "securityLink": "Comment Okou protège vos données",
+        "title": "Connecter un outil de travail"
       },
       "startingPrompt": {
         "exact": {
@@ -4781,1206 +4568,32 @@
         "connecting": "Connexion…",
         "failedNote": "Nous n'avons pas pu connecter {{provider}}. Vous pouvez réessayer ou le connecter plus tard.",
         "retry": "Réessayer",
-        "rowCopy": "S'exécute sur votre offre, pas sur vos crédits Okou.",
+        "rowCopy": "Connectez-le pour utiliser votre forfait plutôt que des crédits Okou.",
         "unconfirmedNote": "Nous n'avons pas pu vérifier votre connexion à {{provider}}. Vous pouvez réessayer ou le connecter plus tard."
       },
       "team": {
-        "copy": "Invitez un collègue maintenant, ou plus tard depuis le menu de l'espace de travail.",
+        "copy": "Invitez un membre de l’équipe à partager vos workflows, chacun connectant ses propres outils.",
+        "invalidEmail": "Saisissez une adresse e-mail valide",
         "invite": "Envoyer l'invitation",
         "invited": "Invité",
-        "label": "E-mail du collègue",
-        "note": "Ils rejoignent cet espace ; leurs comptes restent les leurs.",
+        "label": "E-mail du membre de l’équipe",
+        "note": "Il pourra commencer à travailler avec Okou immédiatement.",
         "notSent": "Non envoyée",
-        "panelTitle": "Inviter un collègue",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Inviter un membre de l’équipe",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Les comptes qu'ils connectent restent les leurs : rien n'est partagé sans eux.",
-          "workflows": "Tout le monde ici peut lancer les workflows déjà présents dans cet espace.",
-          "workspace": "Ils arrivent dans cet espace, avec les sources que vous venez de connecter."
+          "accounts": "Connecte ses propres outils quand il en a besoin.",
+          "workflows": "Peut exécuter tous les workflows de votre équipe.",
+          "workspace": "Rejoint votre espace de travail."
         },
         "sending": "Envoi…",
-        "title": "Amenez les personnes qui font ce travail avec vous."
+        "title": "Rendez Okou utile à toute votre équipe"
       },
       "welcome": {
-        "copy": "Commencez par une première tâche, choisie pour le travail que vous venez de connecter.",
-        "offerTitle": "La première heure de conseil est offerte, plus jusqu'à 100 crédits —",
+        "copy": "Examinez une tâche suggérée pour votre travail, adaptez-la à votre objectif, puis laissez Okou commencer.",
         "promptLabel": "Votre prompt de départ",
         "start": "Commencer avec Okou",
-        "title": "Okou est prêt pour vous"
-      }
-    },
-    "templatePicker": {
-      "image": {
-        "description": "Utilisez-le comme référence pour l'image que vous souhaitez créer.",
-        "selectTemplate": "Sélectionnez le modèle d'illustration {{title}}",
-        "showVariant": "Afficher la variante {{variant}} de {{title}}",
-        "title": "Choisissez un modèle d'illustration pour commencer"
-      },
-      "presentation": {
-        "description": "Utilisez-le comme référence pour le diaporama que vous voulez créer.",
-        "nextSlide": "Afficher la diapositive suivante",
-        "previousSlide": "Afficher la diapositive précédente",
-        "selectTemplate": "Sélectionner le modèle de présentation {{title}}",
-        "showSlide": "Afficher la diapositive {{slide}}",
-        "slideAlt": "Diapositive {{slide}} de {{title}}",
-        "title": "Choisissez un modèle de présentation pour commencer",
-        "viewTemplate": "Voir la présentation {{title}}"
-      },
-      "video": {
-        "description": "Utilisez-le comme référence pour la vidéo que vous souhaitez créer.",
-        "selectTemplate": "Sélectionnez le modèle de vidéo {{title}}",
-        "title": "Choisissez un modèle de vidéo pour commencer"
-      }
-    },
-    "templateRun": {
-      "image": {
-        "noteLabel": "Scène d'illustration personnalisée",
-        "notePlaceholder": "Ajoutez votre scène personnalisée pour la remixer avec votre propre illustration",
-        "previewLabel": "Aperçu du modèle d'illustration",
-        "title": "Sélectionnez une automatisation que vous souhaitez essayer"
-      },
-      "presentation": {
-        "noteLabel": "Contenu et instructions de la présentation",
-        "notePlaceholder": "Ajoutez le contenu et les instructions de votre présentation",
-        "previewLabel": "Aperçu du modèle de présentation",
-        "title": "Complétez votre présentation"
-      },
-      "video": {
-        "noteLabel": "Prompt vidéo personnalisé",
-        "notePlaceholder": "Ajoutez votre prompt personnalisé pour remixer votre propre vidéo",
-        "previewLabel": "Aperçu du modèle vidéo",
-        "title": "Personnalisez votre vidéo"
-      }
-    },
-    "templates": {
-      "illustration": {
-        "cozy-parlor": "Salon Confortable",
-        "crowd-ink": "Encre de Foule",
-        "editorial-flatfolk": "Flatfolk Éditorial",
-        "emboss-deboss": "Gaufrage et débossage",
-        "endpaper": "Garde d'ouvrage",
-        "flat-poster": "Affiche Plate",
-        "folk-muse": "Muse Populaire",
-        "folk-storybook": "Livre Populaire",
-        "grain-poster": "Affiche Granuleuse",
-        "grainy-duotone": "Duotone Granuleux",
-        "iberian-vignette": "Vignette Ibérique",
-        "ink-mascot": "Mascotte à l'Encre",
-        "ink-storefront": "Façade en Encre",
-        "inkdab": "Inkdab",
-        "inkstomp": "Inkstomp",
-        "iso-scene": "Scène Iso",
-        "jade-blockprint": "Tampon de Jade",
-        "light-pop-portrait": "Portrait Pop Léger",
-        "loose-contour": "Contour Détendu",
-        "mellow-pop": "Pop Doux",
-        "mosaic-still-life": "Nature Morte en Mosaïque",
-        "notion-illustration": "Illustration Notion",
-        "op-ed-cover": "Couverture Chronique",
-        "painterly-botanical": "Botanique Picturale",
-        "papernook": "Papernook",
-        "postcard-illustration": "Illustration Carte Postale",
-        "riso-relic": "Relique Riso",
-        "shadow-pop": "Pop Ombre",
-        "soft-vector": "Vecteur Doux",
-        "sticker-sheet": "Planche de Stickers",
-        "sunlit-gouache": "Gouache ensoleillée",
-        "tiny-wanderer": "Petit Vagabond"
-      },
-      "presentation": {
-        "bloom-pitch": "Petal pitch",
-        "blueprint-academy": "Drafting campus",
-        "botane-organic-deck": "Mauve garden",
-        "business-data-presentation": "Berry dashboard",
-        "crayon-learning-deck": "Crayon doodle",
-        "creative-agency-presentation": "Foliage gallery",
-        "data-report-presentation": "Candy charts",
-        "editorial-magazine-deck": "Paper magazine",
-        "landing-consulting-deck": "Neon browser",
-        "lumina-creative-studio": "Brush stickers",
-        "meridian": "Cobalt blocks",
-        "mosaic-geometric-pitch": "Bauhaus tiles",
-        "neo-brutalism": "Shadow shop",
-        "nocturne": "Midnight stage",
-        "pixel-glitch": "Arcade pixels",
-        "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy",
-        "prospectus": "Homepage pitch",
-        "schoolhouse": "Kraft poster",
-        "sticker-scrapbook": "Sticker notebook",
-        "strata": "Red staircase",
-        "taped-consulting": "Polaroid wall",
-        "vantage": "Numbered boardroom"
-      },
-      "video": {
-        "chinese-ink-art": "Peinture à l'encre chinoise",
-        "cyberpunk-anime": "Anime cyberpunk",
-        "epic-grandeur": "Grandeur épique",
-        "fashion-editorial": "Éditorial de mode",
-        "gourmet-documentary": "Documentaire gastronomique",
-        "hand-drawn-fantasy-anime": "Anime fantastique dessiné à la main",
-        "japanese-wabi-sabi": "Wabi-Sabi japonais",
-        "luxury-product": "Macro produit de luxe",
-        "shortform-viral": "Viral court format",
-        "sports-performance-ad": "Publicité de performance sportive"
-      }
-    },
-    "workflowDiagram": {
-      "preparedDescription": "{{assistantName}} prépare l'étape suivante à partir de vos outils.",
-      "preparedTitle": "Workflow préparé",
-      "reviewDescription": "{{assistantName}} termine le workflow et renvoie le résultat.",
-      "reviewTitle": "Prêt pour révision",
-      "source": "Source"
-    },
-    "workflowPicker": {
-      "categoryDescription": "Configurations prêtes à l'emploi que vous pouvez adapter à vos outils et objectifs.",
-      "categoryTitle": "Workflows — {{category}}",
-      "customDescription": "Décrivez ce que vous voulez et {{assistantName}} le construit avec vous.",
-      "customTitle": "Parlez à {{assistantName}} et créez le vôtre",
-      "description": "Choisissez un rôle pour afficher les workflows correspondants. Vous pourrez en changer à tout moment.",
-      "title": "Sur quoi travaillez-vous ?",
-      "workflowCardLabel": "{{title}} {{description}}"
-    },
-    "workflowPreview": {
-      "howItWorks": "Comment ça fonctionne",
-      "whatItDoes": "Ce que ça fait"
-    },
-    "workflowRun": {
-      "continueWithAssistant": "Continuer avec {{assistantName}}",
-      "createWorkflow": "Créer un workflow",
-      "customNoteLabel": "Décrivez votre workflow",
-      "customNotePlaceholder": "Décrivez ce que vous voulez que {{assistantName}} crée",
-      "customTitle": "Décrivez votre workflow",
-      "noteLabel": "Y a-t-il autre chose que vous aimeriez ajouter ?",
-      "notePlaceholder": "Y a-t-il autre chose que vous aimeriez ajouter ?",
-      "reviewTitle": "Vérifiez le brouillon de votre workflow"
-    },
-    "workflows": {
-      "alert-metric-moves-slack": {
-        "description": "Trouver les changements importants du site web et expliquer les causes probables.",
-        "scenario": "Un changement de métrique important compte le plus lorsque le contexte arrive avec lui. {{assistantName}} surveille Google Analytics et ajoute des preuves de recherche ou de canaux payants lorsque connectées.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les mesures de trafic et de conversion sélectionnées.",
-            "title": "Les métriques clés sont vérifiées"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne les causes probables et l'étape diagnostique suivante.",
-            "title": "Le changement est expliqué"
-          },
-          "two": {
-            "description": "{{assistantName}} compare les valeurs actuelles avec la plage attendue.",
-            "title": "Un mouvement inhabituel est trouvé"
-          }
-        },
-        "title": "Prévenir les changements de trafic et de conversion"
-      },
-      "auto-merge-github-prs": {
-        "description": "Examiner les demandes de fusion prêtes, attendre les vérifications automatiques, et fusionner les changements approuvés.",
-        "scenario": "La fusion d'une demande de fusion signifie surveiller les vérifications et relire la différence. {{assistantName}} détecte le label prêt à fusionner, examine le changement, attend les vérifications automatiques, et fusionne uniquement si vous l'approberez.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} détecte le label prêt à fusionner.",
-            "title": "Une demande de fusion est prête"
-          },
-          "three": {
-            "description": "{{assistantName}} fusionne uniquement après que les conditions de sécurité approuvées passent.",
-            "title": "Fusionnée selon votre règle"
-          },
-          "two": {
-            "description": "{{assistantName}} vérifie la différence et attend les vérifications automatiques requises.",
-            "title": "{{assistantName}} examine le changement"
-          }
-        },
-        "title": "Auto-fusion des demandes de fusion GitHub"
-      },
-      "blog-posts-to-x": {
-        "description": "Trouver les pages en déclin et les transformer en briefs de mise à jour priorisés.",
-        "scenario": "Le contenu existant a souvent plus de potentiel qu'un nouvel article. {{assistantName}} utilise Firecrawl et DataForSEO intégrés pour trouver les pages sous-performantes, cartographier la demande actuelle et recommander des mises à jour ciblées.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} crawl le site et identifie les candidats de rafraîchissement probables.",
-            "title": "Les pages existantes sont examinées"
-          },
-          "three": {
-            "description": "{{assistantName}} priorise les pages et spécifie les mises à jour nécessaires.",
-            "title": "Les briefs de rafraîchissement sont créés"
-          },
-          "two": {
-            "description": "{{assistantName}} vérifie les résultats de la recherche, les mots-clés et la couverture concurrentielle.",
-            "title": "La demande actuelle est cartographiée"
-          }
-        },
-        "title": "Élaborer un plan de rafraîchissement de contenu SEO"
-      },
-      "build-weekly-deck-gamma": {
-        "description": "Suivre les revenus, les dépenses, les créances et le flux de trésorerie dans des feuilles de calcul.",
-        "scenario": "Les revues financières ralentissent lorsque les chiffres doivent être reconstruits à la main. {{assistantName}} extrait les métriques QuickBooks approuvées et maintient un tableau de bord prêt à la prise de décision dans Google Sheets.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les revenus, les dépenses, les créances et le flux de trésorerie.",
-            "title": "Les données financières sont collectées"
-          },
-          "three": {
-            "description": "{{assistantName}} écrit la vue financière actuelle dans Google Sheets.",
-            "title": "Le tableau de bord est mis à jour"
-          },
-          "two": {
-            "description": "{{assistantName}} calcule les tendances, les exceptions et les totaux de rapport.",
-            "title": "Les métriques sont organisées"
-          }
-        },
-        "title": "Construire un tableau de bord financier QuickBooks"
-      },
-      "business-review-gamma": {
-        "description": "Combiner les données financières, de croissance et opérationnelles dans une seule revue.",
-        "scenario": "Une revue mensuelle doit expliquer l'entreprise, pas seulement répéter les tableaux de bord. {{assistantName}} combine QuickBooks, Google Analytics et Google Sheets et ajoute le contexte HubSpot lorsque disponible.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les métriques financières, de croissance et opérationnelles.",
-            "title": "Les données de l'entreprise sont collectées"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne une revue mensuelle concise prête à la décision.",
-            "title": "La revue est préparée"
-          },
-          "two": {
-            "description": "{{assistantName}} relie les tendances, les écarts par rapport au plan, les succès et les risques.",
-            "title": "L'analyse des performances"
-          }
-        },
-        "title": "Construire une revue mensuelle de l'entreprise"
-      },
-      "catch-calendar-conflicts": {
-        "description": "Détecter les double-prises et les fenêtres de programmation difficiles en amont.",
-        "scenario": "Les conflits de calendrier sont les plus faciles à résoudre avant la journée de la réunion. {{assistantName}} vérifie les nouveaux événements pour des chevauchements, des voyages et des conflits de préparation et explique les options.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit l'événement et le calendrier environnant.",
-            "title": "Un nouvel événement est vérifié"
-          },
-          "three": {
-            "description": "{{assistantName}} explique le conflit et peut rédiger une note Gmail.",
-            "title": "Les options de résolution sont retournées"
-          },
-          "two": {
-            "description": "{{assistantName}} détecte les chevauchements et les fenêtres de transition impossibles.",
-            "title": "Les conflits sont identifiés"
-          }
-        },
-        "title": "Détecter les conflits de calendrier Google"
-      },
-      "catch-leads-gmail": {
-        "description": "Résumer le mouvement de stade, les deals figés, les risques et les changements de prévision.",
-        "scenario": "Les revues de pipeline sont plus claires lorsque les changements arrivent avant la réunion. {{assistantName}} compare le pipeline HubSpot actuel avec la prise de vue précédente et retourne un résumé hebdomadaire concis.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collecte les deals, les stades, les responsables, les dates et l'activité.",
-            "title": "Le pipeline est lu"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne les actions suivantes et, optionnellement, met à jour des feuilles de calcul Google.",
-            "title": "Le résumé est créé"
-          },
-          "two": {
-            "description": "{{assistantName}} trouve les changements, les deals figés, les obstacles et les dérives de prévision.",
-            "title": "Le mouvement et les risques sont analysés"
-          }
-        },
-        "title": "Créer un résumé hebdomadaire du pipeline HubSpot"
-      },
-      "chase-overdue-asana-tasks": {
-        "description": "Préparer des rappels spécifiques aux propriétaires sans les envoyer automatiquement.",
-        "scenario": "Le travail en retard a besoin de contexte, pas de simples avertissements. {{assistantName}} regroupe les tâches Asana en retard par propriétaire et rédige un rappel concis Gmail pour chaque personne.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les tâches Asana en retard.",
-            "title": "Le travail en retard est trouvé"
-          },
-          "three": {
-            "description": "{{assistantName}} crée des rappels pour une revue humaine et ne les envoie jamais.",
-            "title": "Des brouillons Gmail sont préparés"
-          },
-          "two": {
-            "description": "{{assistantName}} prépare le contexte pertinent du projet et des obstacles.",
-            "title": "Les tâches sont regroupées par propriétaire"
-          }
-        },
-        "title": "Rédiger des rappels Gmail pour les tâches Asana en retard"
-      },
-      "check-posthog-signup-funnel": {
-        "description": "Comparer Google Ads et Meta Ads sur la même base de performance.",
-        "scenario": "Comparer les canaux payants est difficile lorsque chaque plateforme rapporte différemment. {{assistantName}} normalise les dépenses, les conversions, le CPA et le ROAS entre Google Ads et Meta Ads.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les deux plateformes pour la même période de rapport.",
-            "title": "Les données des annonces sont collectées"
-          },
-          "three": {
-            "description": "{{assistantName}} met en évidence l'efficacité, le rythme et éventuellement met à jour des feuilles de calcul.",
-            "title": "Les différences entre les canaux sont expliquées"
-          },
-          "two": {
-            "description": "{{assistantName}} calcule les métriques de dépenses, de conversions, de CPA et de ROAS comparables.",
-            "title": "Les performances sont normalisées"
-          }
-        },
-        "title": "Comparer les canaux d'acquisition payants"
-      },
-      "compare-google-ads-last-month": {
-        "description": "Suivre l'efficacité des médias payants, le rythme et les dérives de performance.",
-        "scenario": "Le budget peut déraper avant que le propriétaire de la campagne ne s'en rende compte. {{assistantName}} compare Google Ads et Meta Ads en termes de dépenses, de conversions, de coûts par conversion et de rendement en retour sur investissement et met en évidence les domaines nécessitant des actions.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les deux plateformes publicitaires pour la période sélectionnée.",
-            "title": "Les données de la campagne sont collectées"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne la comparaison et met à jour optionnellement des feuilles de calcul.",
-            "title": "Des actions sont recommandées"
-          },
-          "two": {
-            "description": "{{assistantName}} normalise les performances et identifie les dérives importantes.",
-            "title": "L'efficacité est comparée"
-          }
-        },
-        "title": "Comparer Google Ads et Meta Ads"
-      },
-      "daily-company-brief-slack": {
-        "description": "Combiner la croissance, le pipeline et le contexte financier optionnel.",
-        "scenario": "La vision de l'entreprise est répartie sur plusieurs systèmes. {{assistantName}} combine Google Analytics et HubSpot, ajoute le contexte QuickBooks lorsque disponible, et retourne les succès, les risques et les décisions qui comptent.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit la croissance, le pipeline et les données financières disponibles.",
-            "title": "Les signaux de l'entreprise sont rassemblés"
-          },
-          "three": {
-            "description": "{{assistantName}} résume les priorités dans le fil d'automatisation.",
-            "title": "Le point est retourné"
-          },
-          "two": {
-            "description": "{{assistantName}} relie les mouvements au sein de l'entreprise.",
-            "title": "Les succès et les risques sont identifiés"
-          }
-        },
-        "title": "Créer un point quotidien d'état de l'entreprise"
-      },
-      "daily-industry-news-slack": {
-        "description": "Surveiller la position de trésorerie QuickBooks et le risque de recouvrement.",
-        "scenario": "Les problèmes de trésorerie sont moins coûteux à gérer avant qu'ils ne deviennent urgents. {{assistantName}} vérifie le flux de trésorerie QuickBooks et les factures impayées, explique le risque majeur et peut rédiger des emails de suivi pour examen.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit le flux de trésorerie, les recettes et les factures impayées.",
-            "title": "Le risque financier est vérifié"
-          },
-          "three": {
-            "description": "{{assistantName}} explique le risque et peut préparer des suivi Gmail.",
-            "title": "L'alerte est retournée"
-          },
-          "two": {
-            "description": "{{assistantName}} met en évidence les solvabilités en retard et les signaux de pression sur la trésorerie.",
-            "title": "Les changements majeurs sont identifiés"
-          }
-        },
-        "title": "Alertes sur le flux de trésorerie et les factures impayées"
-      },
-      "draft-github-release-notes-notion": {
-        "description": "Transformer les demandes de fusion fusionnées en notes de version claires et destinées aux utilisateurs.",
-        "scenario": "Les notes de version ne devraient pas nécessiter de traduire un journal de commits à la main. {{assistantName}} collecte les demandes de fusion fusionnées depuis la dernière version et les transforme en un changelog concis dans Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collecte les demandes de fusion depuis la dernière version.",
-            "title": "Le travail fusionné est collecté"
-          },
-          "three": {
-            "description": "{{assistantName}} rédige la version provisoire des notes de version dans Notion.",
-            "title": "Les notes sont enregistrées"
-          },
-          "two": {
-            "description": "{{assistantName}} regroupe le travail et explique l'impact utilisateur.",
-            "title": "Les changements sont traduits"
-          }
-        },
-        "title": "Rédiger les notes de version GitHub dans Notion"
-      },
-      "draft-newsletter-mailchimp": {
-        "description": "Combiner Analytics et Search Console dans un rapport organique unique.",
-        "scenario": "La croissance organique se trouve à la croisée des données de trafic et de recherche. {{assistantName}} combine Google Analytics avec Search Console, explique les mouvements et les opportunités et enregistre optionnellement les travaux suivants dans Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit le comportement du site et les performances de la recherche.",
-            "title": "Les données organiques sont collectées"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne les priorités et enregistre optionnellement les travaux dans Notion.",
-            "title": "Le brief est créé"
-          },
-          "two": {
-            "description": "{{assistantName}} relie les pages d'accueil, les requêtes, les conversions et les tendances.",
-            "title": "La croissance est analysée"
-          }
-        },
-        "title": "Créer un brief de croissance organique"
-      },
-      "draft-replies-notion-faq": {
-        "description": "Basez les brouillons de support sur un FAQ Notion approuvé.",
-        "scenario": "La plupart des questions de support ont déjà une réponse approuvée quelque part. {{assistantName}} lit l'email, trouve la guidance pertinente Notion et élaborer une réponse solide pour examen.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit la conversation Gmail et le contexte du client.",
-            "title": "Une question de support arrive"
-          },
-          "three": {
-            "description": "{{assistantName}} prépare une réponse et ne l'envoie jamais automatiquement.",
-            "title": "Une réponse est établie"
-          },
-          "two": {
-            "description": "{{assistantName}} trouve la guidance pertinente Notion approuvée.",
-            "title": "Le FAQ est vérifié"
-          }
-        },
-        "title": "Élaborez des réponses de FAQ"
-      },
-      "file-gmail-invoices-drive": {
-        "description": "Stocker les fichiers de facture et enregistrer l'article correspondant aux comptes.",
-        "scenario": "Les factures créent du travail de nettoyage lorsque les fichiers et les enregistrements comptables s'éloignent. {{assistantName}} classe les pièces jointes Gmail dans Drive, enregistre la facture ou l'expense dans QuickBooks et peut mettre à jour une feuille de réconciliation.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les messages Gmail sélectionnés et les pièces jointes.",
-            "title": "Les emails de facture sont identifiés"
-          },
-          "three": {
-            "description": "{{assistantName}} enregistre l'article et met à jour optionnellement Google Sheets.",
-            "title": "QuickBooks est mis à jour"
-          },
-          "two": {
-            "description": "{{assistantName}} enregistre le document dans Drive et extrait les données comptables.",
-            "title": "Les fichiers et les détails sont capturés"
-          }
-        },
-        "title": "Classer les factures Gmail dans Drive et QuickBooks"
-      },
-      "file-sentry-crashes-github": {
-        "description": "Classer les nouveaux incidents par impact et enregistrer les problèmes les plus opérationnels.",
-        "scenario": "Les incidents à haut impact peuvent rester inaperçus dans un flux d'erreurs. {{assistantName}} examine les nouvelles failures de Sentry, les classe par gravité et par utilisateurs affectés, et enregistre celles qui nécessitent du travail d'ingénierie.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collecte les erreurs non résolues et les signaux d'impact de Sentry.",
-            "title": "{{assistantName}} lit de nouveaux incidents"
-          },
-          "three": {
-            "description": "{{assistantName}} crée des problèmes opérationnels et peut les lier à Linear.",
-            "title": "Des problèmes GitHub sont enregistrés"
-          },
-          "two": {
-            "description": "{{assistantName}} sépare les régressions urgentes de la bruit basse-impact.",
-            "title": "L'impact est classé"
-          }
-        },
-        "title": "Sentry envoie des incidents comme des problèmes GitHub"
-      },
-      "fixes-to-notion-help-docs": {
-        "description": "Convertissez les corrections GitHub confirmées en guidance Notion réutilisable.",
-        "scenario": "La même question de support revient lorsque la correction n'est jamais documentée. {{assistantName}} lit les corrections GitHub résolues et transforme la résolution approuvée en un article de aide Notion clair.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit l'issue GitHub, la correction et l'impact utilisateur.",
-            "title": "Un bug résolu est sélectionné"
-          },
-          "three": {
-            "description": "{{assistantName}} écrit le brouillon réutilisable dans Notion.",
-            "title": "L'article d'aide est enregistré"
-          },
-          "two": {
-            "description": "{{assistantName}} transforme la résolution en étapes de dépannage claires.",
-            "title": "La guidance est élaborée"
-          }
-        },
-        "title": "Transformez les bugs résolus en documents d'aide"
-      },
-      "flag-figma-designs-no-task": {
-        "description": "Convertir une spécification de produit approuvée en travail Linear structuré.",
-        "scenario": "Les spécifications approuvées doivent encore devenir du travail exécutable. {{assistantName}} lit une spécification de produit Notion et crée un projet Linear avec des milestones, des issues structurées, des dépendances et des critères d'acceptation.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit la spécification de produit Notion approuvée.",
-            "title": "La spécification est examinée"
-          },
-          "three": {
-            "description": "{{assistantName}} crée le projet et éventuellement lie un contexte GitHub.",
-            "title": "Le projet Linear est créé"
-          },
-          "two": {
-            "description": "{{assistantName}} identifie les milestones, les issues, les dépendances et les critères.",
-            "title": "Le travail est structuré"
-          }
-        },
-        "title": "Transformer une spécification Notion en un projet Linear"
-      },
-      "flagged-gmail-todoist-tasks": {
-        "description": "Créer des tâches concrètes à partir des messages avec une étiquette sélectionnée.",
-        "scenario": "Les e-mails importants deviennent plus faciles à terminer lorsque ceux-ci sortent de l'inbox sous forme de tâches claires. {{assistantName}} transforme les messages Gmail étiquetés en éléments Todoist avec des dates de péremption et un contexte source.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} détecte l'étiquette sélectionnée et lit le message.",
-            "title": "Un e-mail Gmail est marqué"
-          },
-          "three": {
-            "description": "{{assistantName}} crée la tâche avec un lien source.",
-            "title": "Une tâche Todoist est créée"
-          },
-          "two": {
-            "description": "{{assistantName}} identifie la tâche, la date de péremption et le contexte de soutien.",
-            "title": "L'action est extraitede"
-          }
-        },
-        "title": "Transformer les e-mails marqués en tâches Todoist"
-      },
-      "github-idea-to-notion-spec": {
-        "description": "Élargir une idée étiquetée GitHub en une spécification de produit structurée.",
-        "scenario": "De nombreuses bonnes idées s'arrêtent à une description succincte de l'issue. {{assistantName}} transforme une idée étiquetée GitHub en une spécification claire Notion avec le problème, les preuves, le champ d'application, les indicateurs, les risques et les questions ouvertes.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit l'issue GitHub étiquetée et son contexte.",
-            "title": "Une idée est sélectionnée"
-          },
-          "three": {
-            "description": "{{assistantName}} rédige un brouillon structuré dans Notion.",
-            "title": "La spécification est sauvegardée"
-          },
-          "two": {
-            "description": "{{assistantName}} élargit le problème, le champ d'application, les critères de succès et les risques.",
-            "title": "La spécification est développée"
-          }
-        },
-        "title": "Transform une idée GitHub en une spécification Notion"
-      },
-      "gmail-followups-auto": {
-        "description": "Préparer des réponses suivantes contextuelles pour examen humain.",
-        "scenario": "Des bonnes réponses suivantes nécessitent le dossier de la transaction et le fil de conversation. {{assistantName}} combine le contexte de HubSpot avec le fil de conversation Gmail associé et rédige une réponse concise sans l'envoyer.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit le dossier HubSpot et l'activité récente.",
-            "title": "Un contexte de transaction est examiné"
-          },
-          "three": {
-            "description": "{{assistantName}} prépare un brouillon Gmail pour examen humain.",
-            "title": "Une réponse suivante est rédigée"
-          },
-          "two": {
-            "description": "{{assistantName}} identifie les questions ouvertes, les engagements et les délais.",
-            "title": "Le fil de conversation est vérifié"
-          }
-        },
-        "title": "Rédiger des réponses suivantes Gmail à partir de HubSpot"
-      },
-      "gmail-reconnect-reminders": {
-        "description": "Trouver des contacts importants qui sont silencieux et rédiger des approches.",
-        "scenario": "Les relations importantes s'estompent lorsque personne ne remarque le silence. {{assistantName}} examine Gmail, ajoute l'historique de l'agenda lorsque disponible, et rédige des notes de reprise réfléchies.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} vérifie l'activité Gmail récente et le contexte des contacts.",
-            "title": "L'historique des relations est examiné"
-          },
-          "three": {
-            "description": "{{assistantName}} rédige des messages personnels pour examen humain.",
-            "title": "Les brouillons de reprise sont préparés"
-          },
-          "two": {
-            "description": "{{assistantName}} identifie des contacts précieux sans interaction récente.",
-            "title": "Les relations silencieuses sont classées"
-          }
-        },
-        "title": "Mettre en évidence les relations pour reprendre contact"
-      },
-      "highlight-key-emails-gmail": {
-        "description": "Trouver les messages Gmail qui nécessitent le plus une réponse exécutive.",
-        "scenario": "Un répertoire exécutif mélange des décisions importantes avec du trafic courant. {{assistantName}} identifie les messages qui comptent, explique pourquoi et rédige des réponses sans les envoyer.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les messages Gmail récents et le contexte de l'agenda disponible.",
-            "title": "Le répertoire est examiné"
-          },
-          "three": {
-            "description": "{{assistantName}} résume chaque élément et rédige des réponses pour examen.",
-            "title": "Les réponses sont préparées"
-          },
-          "two": {
-            "description": "{{assistantName}} priorise les décisions, les engagements et les demandes sensibles.",
-            "title": "Les messages importants sont classés"
-          }
-        },
-        "title": "Mettre en évidence les emails clés"
-      },
-      "investor-update-google-docs": {
-        "description": "Combiner les données financières et de croissance dans un brouillon Google Docs.",
-        "scenario": "Les mises à jour pour les investisseurs prennent du temps car l'histoire et les chiffres vivent séparément. {{assistantName}} combine QuickBooks et Google Analytics, ajoute le contexte HubSpot lorsque disponible, et rédige la mise à jour dans Google Docs.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les métriques financières, de croissance et de pipeline disponibles.",
-            "title": "Les métriques actuelles sont rassemblées"
-          },
-          "three": {
-            "description": "{{assistantName}} rédige la mise à jour pour les investisseurs dans Google Docs.",
-            "title": "La mise à jour est rédigée"
-          },
-          "two": {
-            "description": "{{assistantName}} relie les progrès, les leçons, les risques et les priorités suivantes.",
-            "title": "Le récit est développé"
-          }
-        },
-        "title": "Rédiger une mise à jour pour les investisseurs"
-      },
-      "log-gong-calls-hubspot": {
-        "description": "Transformer les transcriptions de la réunion Google Meet en décisions CRM et actions suivantes.",
-        "scenario": "Les détails importants de la réunion disparaissent lorsque les notes restent en dehors du CRM. {{assistantName}} transforme les transcriptions de la réunion Google Meet en décisions, objections, engagements et actions suivantes dans HubSpot.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit la dernière transcription et le contexte de la réunion.",
-            "title": "Une transcription de la réunion Google Meet arrive"
-          },
-          "three": {
-            "description": "{{assistantName}} enregistre le résumé et peut rédiger une réponse suivante Gmail.",
-            "title": "HubSpot est mis à jour"
-          },
-          "two": {
-            "description": "{{assistantName}} identifie les décisions, les objections, les engagements et les responsables.",
-            "title": "Des signaux de vente sont extraits"
-          }
-        },
-        "title": "Enregistrer les actions Google Meet dans HubSpot"
-      },
-      "meeting-notes-asana-tasks": {
-        "description": "Créer du travail attribué pour les projets à partir des transcriptions des réunions.",
-        "scenario": "Les actions de la réunion disparaissent lorsque celles-ci restent dans les notes. {{assistantName}} lit les transcriptions de Google Meet, identifie les engagements et les propriétaires, et crée des tâches Asana claires.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit la transcription de la réunion et le contexte de l'agenda.",
-            "title": "Une transcription de Meet arrive"
-          },
-          "three": {
-            "description": "{{assistantName}} crée du travail attribué avec le contexte source.",
-            "title": "Des tâches Asana sont créées"
-          },
-          "two": {
-            "description": "{{assistantName}} identifie les tâches, les propriétaires, les dates limites et les dépendances.",
-            "title": "Les actions sont extraits"
-          }
-        },
-        "title": "Convertir les notes de Google Meet en tâches Asana"
-      },
-      "meeting-recaps-slack": {
-        "description": "Transformer les transcriptions de réunion en résumés concis et éléments d'action.",
-        "scenario": "Les décisions de réunion sont perdues lorsque la transcription n'est jamais traitée. {{assistantName}} lit les transcriptions de réunion Google Meet et écrit les décisions clés, les actions et les responsables dans Google Docs.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit la transcription et le contexte du calendrier disponible.",
-            "title": "Une transcription de réunion arrive"
-          },
-          "three": {
-            "description": "{{assistantName}} écrit le résumé structuré dans Google Docs.",
-            "title": "Le résumé est sauvegardé"
-          },
-          "two": {
-            "description": "{{assistantName}} identifie les résultats, les responsables, les dates limites et les questions ouvertes.",
-            "title": "Les décisions et les actions sont extraites"
-          }
-        },
-        "title": "Sauvegarder les résumés de réunion Google Docs"
-      },
-      "morning-brief-slack": {
-        "description": "Combiner des e-mails importants, le calendrier du jour et un contexte Notion facultatif.",
-        "scenario": "Un plan matinal utile nécessite à la fois l'inbox et le calendrier. {{assistantName}} examine les e-mails Gmail et le calendrier Google, ajoute un contexte Notion lorsque disponible, et retourne un bref quotidien court.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les e-mails importants et le calendrier du jour.",
-            "title": "Les entrées du jour sont rassemblées"
-          },
-          "three": {
-            "description": "{{assistantName}} crée un plan focalisé dans le fil d'automatisation.",
-            "title": "Le résumé est retourné"
-          },
-          "two": {
-            "description": "{{assistantName}} identifie les engagements, la préparation et les suivi.",
-            "title": "Les priorités sont connectées"
-          }
-        },
-        "title": "Créer un résumé matinal"
-      },
-      "new-gmail-contacts-hubspot": {
-        "description": "Créer ou enrichir les contacts CRM à partir de conversations électroniques pertinentes.",
-        "scenario": "De nouvelles relations restent souvent piégées dans la boîte aux lettres. {{assistantName}} identifie les correspondants pertinents de Gmail, vérifie HubSpot pour des doublons et crée ou enrichit le profil du contact.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} examine les conversations électroniques pertinentes de Gmail.",
-            "title": "Des correspondants nouveaux sont identifiés"
-          },
-          "three": {
-            "description": "{{assistantName}} crée ou enrichit la fiche HubSpot.",
-            "title": "Le contact est mis à jour"
-          },
-          "two": {
-            "description": "{{assistantName}} trouve des enregistrements existants et des détails manquants.",
-            "title": "HubSpot est vérifié"
-          }
-        },
-        "title": "Ajouter de nouveaux contacts Gmail à HubSpot"
-      },
-      "onboard-new-hires-asana": {
-        "description": "Convertir les soumissions approuvées en un plan d'accompagnement Asana.",
-        "scenario": "L'installation des nouveaux employés est plus fiable lorsque chaque soumission approuvée suit le même plan. {{assistantName}} lit les soumissions Google Forms, crée les tâches Asana et peut classer des documents dans Drive.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit le formulaire de nouvel employé et les détails nécessaires.",
-            "title": "Une soumission est approuvée"
-          },
-          "three": {
-            "description": "{{assistantName}} crée le plan et classe optionnellement des documents Drive.",
-            "title": "Asana est mis à jour"
-          },
-          "two": {
-            "description": "{{assistantName}} mappe le rôle et la date de début aux tâches et aux propriétaires.",
-            "title": "Le plan d'accompagnement est construit"
-          }
-        },
-        "title": "Accueillir de nouveaux embauchés à partir de Google Forms"
-      },
-      "post-daily-metrics-slack": {
-        "description": "Résumer le trafic, l'acquisition, la conversion et les changements notables.",
-        "scenario": "La progression quotidienne du site web ne devrait pas nécessiter d'ouvrir plusieurs rapports. {{assistantName}} lit Google Analytics, ajoute le contexte de Search Console lorsque disponible, et retourne un résumé concis dans le fil d'automatisation.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit le trafic, l'acquisition et les métriques de conversion.",
-            "title": "Les données du site web sont collectées"
-          },
-          "three": {
-            "description": "{{assistantName}} résume ce qui a changé et ce qui mérite l'attention.",
-            "title": "Le résumé est retourné"
-          },
-          "two": {
-            "description": "{{assistantName}} compare les performances et met en évidence les mouvements significatifs.",
-            "title": "Les changements sont identifiés"
-          }
-        },
-        "title": "Créer un résumé quotidien des métriques du site web"
-      },
-      "post-github-updates-slack": {
-        "description": "Examiner l'accès cloud, les comptes de service et les services exposés.",
-        "scenario": "Les permissions IAM driftent avec le temps dans les projets. {{assistantName}} examine les IAM Google Cloud, les comptes de service, les clés, les services activés et l'exposition publique, puis retourne un rapport de risque en lecture seule avec des recommandations claires.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} inventorie les liens IAM, les comptes, les clés et les services.",
-            "title": "L'accès cloud est examiné"
-          },
-          "three": {
-            "description": "{{assistantName}} recommande des corrections et peut écrire des problèmes GitHub approuvés.",
-            "title": "La réparation est préparée"
-          },
-          "two": {
-            "description": "{{assistantName}} met en évidence des privilèges excessifs, des identifiants obsolètes et l'exposition publique.",
-            "title": "Le risque est évalué"
-          }
-        },
-        "title": "Examiner les IAM et services Google Cloud"
-      },
-      "post-release-notes-slack": {
-        "description": "Transformer les travaux récemment déployés GitHub en un changelog approuvé.",
-        "scenario": "Le travail déployé est facile à perdre dans les requêtes de tirage. {{assistantName}} rassemble les changements récemment intégrés GitHub, rédige des notes de version lisibles et publie la version approuvée dans Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collecte les changements récemment intégrés GitHub.",
-            "title": "Le travail déployé est rassemblé"
-          },
-          "three": {
-            "description": "{{assistantName}} sauvegarde les notes de version finales dans Notion.",
-            "title": "La version approuvée est publiée"
-          },
-          "two": {
-            "description": "{{assistantName}} classe les changements et explique leur impact utilisateur.",
-            "title": "Les notes de version sont rédigées"
-          }
-        },
-        "title": "Publier les notes de version dans Notion"
-      },
-      "prep-google-calendar-meetings": {
-        "description": "Créer un résumé ciblé pour les réunions externes à venir.",
-        "scenario": "La préparation des réunions ne doit pas commencer cinq minutes avant l'appel. {{assistantName}} examine l'événement du calendrier et ajoute un contexte de contact et CRM lorsque disponible.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit la fenêtre Google Calendar sélectionnée.",
-            "title": "Des réunions à venir sont trouvées"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne les objectifs, le contexte, les risques et les questions recommandées.",
-            "title": "Un résumé est préparé"
-          },
-          "two": {
-            "description": "{{assistantName}} vérifie HubSpot lorsque cela est possible.",
-            "title": "Un contexte de participants est rassemblé"
-          }
-        },
-        "title": "Préparer pour les réunions Google Calendar"
-      },
-      "publish-scheduled-posts-buffer": {
-        "description": "Comparer le site avec ses concurrents et identifier les opportunités organiques.",
-        "scenario": "Les plans de contenu s'améliorent quand ils commencent avec des lacunes de recherche réelles. {{assistantName}} utilise Firecrawl et DataForSEO intégrés pour comparer le site de l'utilisateur avec des concurrents nommés et classer les sujets manquants par intention et valeur.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} crawl le site de l'utilisateur et ses concurrents.",
-            "title": "Les sites sont comparés"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne une liste priorisée d'opportunités de contenu.",
-            "title": "Les opportunités sont classées"
-          },
-          "two": {
-            "description": "{{assistantName}} trouve des mots-clés, des sujets manquants et une couverture d'intention.",
-            "title": "Les lacunes de recherche sont identifiées"
-          }
-        },
-        "title": "Trouver les lacunes en mots-clés et en contenu"
-      },
-      "report-ai-model-costs-slack": {
-        "description": "Expliquer les incidents de trafic ou de sécurité et la prochaine action.",
-        "scenario": "Les incidents Cloudflare nécessitent un contexte avant de devenir du bruit. {{assistantName}} examine le trafic, les événements de sécurité et la santé du service, explique l'impact probable et retourne les prochaines actions dans le fil d'automatisation.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} examine la santé du service, les décalages de trafic et les événements de sécurité.",
-            "title": "Cloudflare est vérifié"
-          },
-          "three": {
-            "description": "{{assistantName}} recommande une action et peut écrire un problème GitHub.",
-            "title": "Les prochaines actions sont retournées"
-          },
-          "two": {
-            "description": "{{assistantName}} sépare les incidents confirmés de la variation normale.",
-            "title": "L'impact est expliqué"
-          }
-        },
-        "title": "Prévenir les incidents Cloudflare"
-      },
-      "research-calendar-meetings": {
-        "description": "Construire des présentations concises à partir du calendrier et du contexte des e-mails.",
-        "scenario": "La préparation des réunions est plus rapide lorsque les informations sur les participants et l'historique des conversations sont déjà connectées. {{assistantName}} examine les événements à venir dans le calendrier Google et ajoute un contexte d'e-mails Gmail lorsque disponible.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit la fenêtre de calendrier Google sélectionnée.",
-            "title": "Les prochaines réunions sont trouvées"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne les objectifs, le contexte et des questions suggérées.",
-            "title": "Les présentations sont préparées"
-          },
-          "two": {
-            "description": "{{assistantName}} vérifie les fils d'e-mails associés.",
-            "title": "Le contexte des participants est rassemblé"
-          }
-        },
-        "title": "Préparer les prochaines réunions"
-      },
-      "research-new-signups-apollo": {
-        "description": "Trouvez et qualifiez des leads créateurs sur X.",
-        "scenario": "La prospection s'essouffle quand la liste est obsolète. {{assistantName}} trouve sur X les créateurs et prospects correspondant au profil cible, les qualifie avec la recherche de personnes intégrée et Firecrawl, puis renvoie une liste de contact priorisée.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} recherche sur X les comptes correspondant au profil cible.",
-            "title": "Des candidats sont trouvés sur X"
-          },
-          "three": {
-            "description": "{{assistantName}} évalue l'adéquation, rédige un premier message et enregistre éventuellement les leads dans HubSpot.",
-            "title": "La liste de contact est priorisée"
-          },
-          "two": {
-            "description": "{{assistantName}} vérifie le rôle, l'entreprise et l'audience avec la recherche intégrée.",
-            "title": "Chaque lead est qualifié"
-          }
-        },
-        "title": "Trouver des leads créateurs sur X"
-      },
-      "run-daily-query-sheets": {
-        "description": "Écrire la visibilité des recherches et le mouvement des requêtes dans Google Sheets.",
-        "scenario": "La performance organique est plus facile à agir sur lorsqu'elle a une histoire cohérente. {{assistantName}} extrait les métriques de Search Console, ajoute le contexte Analytics lorsque disponible, et met à jour une feuille de rapport.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les clics, les impressions, le CTR, la position et les requêtes.",
-            "title": "Les données de recherche sont collectées"
-          },
-          "three": {
-            "description": "{{assistantName}} écrit les résultats normalisés dans Google Sheets.",
-            "title": "La feuille est mise à jour"
-          },
-          "two": {
-            "description": "{{assistantName}} identifie les requêtes gagnantes, en déclin et émergentes.",
-            "title": "Le mouvement est analysé"
-          }
-        },
-        "title": "Enregistrer la performance des recherches organiques dans des feuilles de calcul"
-      },
-      "send-bugs-github-slack": {
-        "description": "Convertissez les rapports de bugs réproductibles en travail structuré pour les ingénieurs.",
-        "scenario": "Les rapports de bugs perdent de la valeur lorsque les preuves restent dans la boîte de réception. {{assistantName}} identifie les problèmes de support réproductibles, extrait l'impact et les étapes, et enregistre un problème structuré GitHub.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} examine les emails de support pour les problèmes de produits réproductibles.",
-            "title": "Les rapports de bugs sont identifiés"
-          },
-          "three": {
-            "description": "{{assistantName}} crée le problème et peut le lier à Linear.",
-            "title": "Un problème GitHub est enregistré"
-          },
-          "two": {
-            "description": "{{assistantName}} extrait l'impact, les étapes, le comportement attendu et le contexte.",
-            "title": "Les preuves sont structurées"
-          }
-        },
-        "title": "Transformez les emails de support en problèmes GitHub"
-      },
-      "sort-gmail-draft-replies": {
-        "description": "Traiter les nouveaux e-mails et préparer des réponses pour examen humain.",
-        "scenario": "Un répertoire chargé masque à la fois des demandes urgentes et des réponses faciles. {{assistantName}} classe les nouveaux e-mails Gmail par urgence et action, puis rédige des réponses sans les envoyer.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit le répertoire ou l'étiquette Gmail sélectionnée.",
-            "title": "Les nouveaux e-mails sont examinés"
-          },
-          "three": {
-            "description": "{{assistantName}} prépare des réponses pour examen humain.",
-            "title": "Les réponses sont rédigées"
-          },
-          "two": {
-            "description": "{{assistantName}} classe les e-mails par urgence, demande et prochaine action.",
-            "title": "Les e-mails sont triés"
-          }
-        },
-        "title": "Trier et rédiger des réponses aux e-mails Gmail"
-      },
-      "sort-route-zendesk-tickets": {
-        "description": "Classifiez les emails de support et créez des problèmes Linear actionables.",
-        "scenario": "Les emails de support nécessitent une priorité et une responsabilité constantes. {{assistantName}} lit de nouvelles conversations Gmail, identifie le type de problème et l'urgence, et crée du travail Linear pour les éléments nécessitant une action.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} examine de nouvelles conversations et le contexte disponible.",
-            "title": "Les emails de support sont lus"
-          },
-          "three": {
-            "description": "{{assistantName}} crée des problèmes actionables et relie des preuves de soutien.",
-            "title": "Du travail Linear est créé"
-          },
-          "two": {
-            "description": "{{assistantName}} classe l'urgence, le sujet et l'équipe responsable.",
-            "title": "La priorité et la responsabilité sont définies"
-          }
-        },
-        "title": "Triagez les emails de support dans Linear"
-      },
-      "spot-churn-risk-stripe-zendesk": {
-        "description": "Résumez le volume de support, le risque, les thèmes et le travail non résolu.",
-        "scenario": "Un file de support est plus facile à gérer lorsque les changements importants sont visibles. {{assistantName}} examine les conversations Gmail, met en évidence les problèmes urgents ou récurrents et relie le travail Linear ou GitHub associé.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit de nouvelles et de non-résolues conversations Gmail.",
-            "title": "L'activité de support est rassemblée"
-          },
-          "three": {
-            "description": "{{assistantName}} résume les priorités dans le fil d'automatisation.",
-            "title": "Le digest est retourné"
-          },
-          "two": {
-            "description": "{{assistantName}} regroupe les problèmes récurrents et souligne les suivi urgents.",
-            "title": "Le risque et les thèmes sont identifiés"
-          }
-        },
-        "title": "Créez un digest de support quotidien"
-      },
-      "summarize-gmail-newsletters": {
-        "description": "Transformer les newsletters sélectionnées en un résumé récurrent utile.",
-        "scenario": "La valeur des newsletters disparaît lorsque chaque édition concurrence l'attention de l'inbox. {{assistantName}} résume les newsletters Gmail sélectionnées par thèmes, liens utiles et articles recommandés.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les messages des envois sélectionnés ou de l'étiquette.",
-            "title": "Les newsletters sont collectées"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne le résumé et peut le sauvegarder dans Notion.",
-            "title": "Le résumé est créé"
-          },
-          "two": {
-            "description": "{{assistantName}} regroupe les thèmes et identifie les liens les plus utiles.",
-            "title": "Le contenu utile est distillé"
-          }
-        },
-        "title": "Résumer les newsletters Gmail"
-      },
-      "summarize-user-feedback-notion": {
-        "description": "Classer de nouvelles réponses de formulaire en insights de produit classés par ordre.",
-        "scenario": "Les retours deviennent utiles lorsque des motifs sont visibles. {{assistantName}} examine les réponses de Google Forms, regroupe les points de douleur et les demandes récurrentes, classe les résultats et rédige la synthèse dans Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit les dernières soumissions de Google Forms.",
-            "title": "Les réponses sont collectées"
-          },
-          "three": {
-            "description": "{{assistantName}} rédige une synthèse priorisée dans Notion.",
-            "title": "Les insights sont sauvegardés"
-          },
-          "two": {
-            "description": "{{assistantName}} classe les points de douleur, les demandes et l'émotion.",
-            "title": "Les thèmes sont classés"
-          }
-        },
-        "title": "Résumer les retours de Google Forms dans Notion"
-      },
-      "summarize-zendesk-tickets-daily": {
-        "description": "Créez des vidéos de support approuvées avec la fonctionnalité d'avatar intégrée.",
-        "scenario": "Certaines réponses de support sont plus faciles à suivre sous forme de vidéo courte présentée. {{assistantName}} transforme le contenu de FAQ approuvé en un scénario et une planche de storyboard, puis utilise la fonctionnalité d'avatar-videos intégrée après examen.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} identifie la réponse approuvée et le public cible.",
-            "title": "Le contenu de FAQ est sélectionné"
-          },
-          "three": {
-            "description": "{{assistantName}} génère uniquement après l'approbation de l'utilisateur du brouillon.",
-            "title": "La vidéo d'avatar est générée"
-          },
-          "two": {
-            "description": "{{assistantName}} crée un plan de support numérique-humain concis et précis.",
-            "title": "Un scénario et une planche de storyboard sont élaborés"
-          }
-        },
-        "title": "Transformez les FAQ en vidéos de support numériques-humaines"
-      },
-      "sync-asana-projects-notion": {
-        "description": "Maintenir un aperçu Notion à jour avec Asana.",
-        "scenario": "Les résumés de projets se décalent lorsque les statuts des tâches changent ailleurs. {{assistantName}} lit les projets Asana sélectionnés et maintient l'aperçu correspondant Notion à jour.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} examine les statuts, les propriétaires, les dates limites et les obstacles.",
-            "title": "Les projets Asana sont lus"
-          },
-          "three": {
-            "description": "{{assistantName}} met à jour l'aperçu et met en évidence les changements.",
-            "title": "Notion est synchronisée"
-          },
-          "two": {
-            "description": "{{assistantName}} compare l'état actuel du projet avec la vue précédente.",
-            "title": "Les changements significatifs sont identifiés"
-          }
-        },
-        "title": "Synchroniser les projets Asana avec Notion"
-      },
-      "sync-linear-roadmap-notion": {
-        "description": "Maintenir un plan Now, Next, Later actuel dans Notion.",
-        "scenario": "Les plans driftent lorsque les états de livraison changent ailleurs. {{assistantName}} lit les projets et les issues sélectionnés Linear, les mappe en Now, Next, Later et maintient le plan Notion actuel.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} examine les projets, les issues et les milestones sélectionnés.",
-            "title": "Les états Linear sont lus"
-          },
-          "three": {
-            "description": "{{assistantName}} met à jour le plan et met en évidence les changements significatifs.",
-            "title": "Notion est mis à jour"
-          },
-          "two": {
-            "description": "{{assistantName}} convertit les états de livraison en Now, Next, Later.",
-            "title": "Les étapes du plan sont mappées"
-          }
-        },
-        "title": "Synchroniser le plan Linear avec Notion"
-      },
-      "track-feature-usage-posthog": {
-        "description": "Mettre en évidence les plus grandes variations hebdomadaires dans l'adoption du produit.",
-        "scenario": "Les variations d'adoption d'une fonctionnalité changent avant une revue de tableau de bord. {{assistantName}} compare les signaux d'adoption Google Analytics les plus récents, identifie des mouvements significatifs et enregistre éventuellement des décisions dans Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collecte les signaux de fonctionnalité et d'audience sélectionnés.",
-            "title": "Les données d'adoption sont lues"
-          },
-          "three": {
-            "description": "{{assistantName}} explique ce qui a bougé et ce qui doit être investigué ensuite.",
-            "title": "Les insights sont retournés"
-          },
-          "two": {
-            "description": "{{assistantName}} trouve les plus grandes gains, baisses et différences de segment.",
-            "title": "Les changements sont comparés"
-          }
-        },
-        "title": "Suivre l'adoption d'une fonctionnalité avec Google Analytics"
-      },
-      "track-keyword-ranks-ahrefs": {
-        "description": "Effectuer un crawl du site et retourner une liste priorisée des problèmes SEO techniques.",
-        "scenario": "Les problèmes SEO techniques se cachent sur de multiples pages. {{assistantName}} utilise Firecrawl et DataForSEO intégrés pour examiner la crawlabilité, l'indexabilité, les liens internes et la visibilité en temps réel sans nécessiter un connecteur.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} utilise Firecrawl pour examiner les pages et les liens internes.",
-            "title": "Le site est crawlé"
-          },
-          "three": {
-            "description": "{{assistantName}} retourne les corrections les plus impactantes avec des preuves en soutien.",
-            "title": "Les problèmes sont priorisés"
-          },
-          "two": {
-            "description": "{{assistantName}} utilise DataForSEO pour valider les signaux de visibilité et d'indexation.",
-            "title": "Les preuves de la recherche sont vérifiées"
-          }
-        },
-        "title": "Examiner le SEO technique d'un site web"
-      },
-      "track-signup-sources-sheets": {
-        "description": "Interroger les données Google Cloud et publier une analyse renouvelable.",
-        "scenario": "Les données opérationnelles importantes sont souvent stockées dans BigQuery sans une vue récurrente utilisable. {{assistantName}} exécute la requête approuvée, identifie les tendances et les anomalies, et écrit une table de résultats et un résumé dans Google Sheets.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} confirme l'étendue BigQuery et la question d'analyse.",
-            "title": "Un ensemble de données et une requête sont sélectionnés"
-          },
-          "three": {
-            "description": "{{assistantName}} publie une table renouvelable et un résumé prêt à la prise de décision.",
-            "title": "Les résultats sont écrits dans des feuilles de calcul"
-          },
-          "two": {
-            "description": "{{assistantName}} exécute la requête et vérifie les tendances, les segments et les anomalies.",
-            "title": "Les données cloud sont analysées"
-          }
-        },
-        "title": "Analyser les données BigQuery dans des feuilles de calcul"
-      },
-      "watch-brand-mentions": {
-        "description": "Transformer des vidéos approuvées en publications et discussions natives des plateformes.",
-        "scenario": "Une vidéo forte peut soutenir plus d'une seule chaîne. {{assistantName}} examine une vidéo YouTube sélectionnée, rédige X publications et discussions, et enregistre optionnellement le plan approuvé dans Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} lit la vidéo YouTube, le transcript et le contexte.",
-            "title": "Une vidéo est sélectionnée"
-          },
-          "three": {
-            "description": "{{assistantName}} enregistre le plan et ne publie jamais sans approbation.",
-            "title": "Le contenu est préparé pour l'approbation"
-          },
-          "two": {
-            "description": "{{assistantName}} crée des options de publications et de discussions X concises.",
-            "title": "Les variantes sociales sont rédigées"
-          }
-        },
-        "title": "Reproposer des vidéos YouTube pour X"
-      },
-      "watch-sentry-after-release": {
-        "description": "Comparer la stabilité post-mise à jour avec la base de référence précédente.",
-        "scenario": "Une mise à jour peut paraître saine alors que les régressions se construisent silencieusement. {{assistantName}} compare les derniers signaux de Sentry avec la base de référence précédente et explique si on doit continuer à surveiller, corriger en avant ou revenir en arrière.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} trouve la dernière mise à jour et son intervalle de comparaison.",
-            "title": "Une mise à jour est identifiée"
-          },
-          "three": {
-            "description": "{{assistantName}} résume l'impact et l'action la plus sûre à entreprendre.",
-            "title": "Une réponse est recommandée"
-          },
-          "two": {
-            "description": "{{assistantName}} vérifie le taux de mise à jour sans erreurs et les nouvelles régressions par rapport à la base de référence.",
-            "title": "La stabilité est comparée"
-          }
-        },
-        "title": "Surveiller Sentry après une mise à jour"
+        "title": "Commencez par une tâche qui compte"
       }
     }
   },
@@ -5988,7 +4601,7 @@
     "concurrentRuns_one": "{{count}} exécution(s) simultanée(s)",
     "concurrentRuns_many": "{{count}} exécutions simultanées",
     "concurrentRuns_other": "{{count}} exécutions simultanées",
-    "description": "Voir votre position dans la file d'attente et passez à une version supérieure pour éviter l'attente.",
+    "description": "Voyez combien d'exécutions simultanées sont utilisées et passez à une version supérieure pour éviter l'attente.",
     "perMonth": "/mois",
     "pricePerMonth": "{{price}}/mois",
     "purchase": {
@@ -6015,7 +4628,6 @@
     "tiers": {
       "custom": "Personnalisé",
       "free": "Gratuit",
-      "limitedFree": "Gratuit limité",
       "pro": "Pro",
       "team": "Team"
     },
@@ -6025,7 +4637,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} crédits / mois",
         "emailSupport": "Support par e-mail",
-        "ownKeys": "Apportez vos propres clés LLM",
         "payAsYouGo": "Payer à l'utilisation après cela",
         "prioritySupport": "Support prioritaire",
         "unlimitedAgents": "Agents illimités au total"
@@ -6038,17 +4649,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "Ajouter des crédits",
-      "openModelProviders": "Ouvrir les fournisseurs de modèles",
-      "reconnectClaude": "Reconnecter Claude Code",
-      "shareWithAdmin": "Partager avec un administrateur"
+      "openModelSettings": "Ouvrir les paramètres des modèles",
+      "reconnectClaude": "Reconnecter Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Mettez à jour ou remplacez la clé API dans les fournisseurs de modèles, puis réessayez.",
-    "anthropicKeyMember": "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Demandez à un administrateur de l’espace de travail de mettre à jour ou de remplacer la clé API.",
     "askAdmin": "Demandez à un administrateur de l’espace de travail d’ajouter des crédits ou de passer à une offre supérieure.",
-    "claudeReconnect": "L’authentification de l’abonnement Claude Code a échoué. Reconnectez Claude Code dans les fournisseurs de modèles, puis réessayez.",
-    "claudeTerms": "Claude Code nécessite l’acceptation des conditions d’utilisation et de la politique de confidentialité mises à jour. Connectez-vous à https://claude.ai avec le compte Claude associé dans les fournisseurs de modèles, acceptez les nouvelles conditions et la politique, puis réessayez.",
+    "claudeReconnect": "L’authentification de l’abonnement Claude Code a échoué. Reconnectez Claude Code dans Paramètres > Modèles, puis réessayez.",
+    "claudeTerms": "Claude Code nécessite l’acceptation des conditions d’utilisation et de la politique de confidentialité mises à jour. Connectez-vous à https://claude.ai avec le compte Claude associé dans Paramètres > Modèles, acceptez les nouvelles conditions et la politique, puis réessayez.",
     "codexOverloaded": "Le modèle sélectionné est saturé. Veuillez essayer un autre modèle.",
-    "codexReconnect": "La session ChatGPT doit être reconnectée. Reconnectez ChatGPT (Codex) dans les fournisseurs de modèles, puis réessayez.",
+    "codexReconnect": "La session ChatGPT doit être reconnectée. Reconnectez ChatGPT (Codex) dans Paramètres > Modèles, puis réessayez.",
     "contentPolicyRejected": "Le fournisseur de modèle a refusé cette demande en raison de sa politique de sécurité du contenu. Réessayer avec la même saisie échouera à nouveau. Reformulez la demande, commencez une nouvelle conversation ou choisissez un autre modèle.",
     "executionTimeout": "Cette exécution a atteint sa limite de temps.",
     "failed": "Échec de l’exécution",
@@ -6056,9 +4664,9 @@
     "modelTemporarilyUnavailable": "Modèle temporairement indisponible",
     "modelUnavailable": "Le modèle actuel est indisponible.",
     "overloaded": "{{model}} est surchargé. Patientez quelques minutes avant de réessayer, ou choisissez un autre modèle.",
-    "providerBalance": "Le solde du compte de votre fournisseur de modèle connecté est insuffisant.",
+    "providerBalance": "Le solde de votre compte d'abonnement connecté est insuffisant.",
     "transient": "Une erreur s’est produite. Veuillez réessayer plus tard.",
-    "vm0Credits": "Crédits insuffisants. Ajoutez des crédits ou configurez votre propre clé API pour continuer."
+    "vm0Credits": "Crédits insuffisants. Ajoutez des crédits ou connectez un abonnement personnel Codex ou Claude pour continuer."
   },
   "serviceStatus": {
     "dismiss": "Masquer la mise à jour du service",
@@ -6135,7 +4743,7 @@
           "title": "Factures"
         },
         "model": {
-          "description": "Choisissez quels modèles d'IA votre espace de travail et vos exécutions utilisent.",
+          "autoDescription": "Okou choisit le modèle pour chaque tâche.",
           "title": "Modèles"
         },
         "people": {
@@ -6225,16 +4833,10 @@
     },
     "models": {
       "actions": {
-        "addModel": "Ajouter un modèle",
-        "deleteModel": "Supprimer un modèle",
-        "editModel": "Modifier un modèle",
-        "resetUsage": "Réinitialiser l'utilisation",
-        "upgradePro": "Passer à Pro pour utiliser",
-        "upgradeToPro": "Passer à Pro"
+        "resetUsage": "Réinitialiser l'utilisation"
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "La page d'approbation n'a pas pu être ouverte. Utilisez le lien manuellement et collez le code ici.",
           "authorizationCode": "Code d'autorisation",
           "codePlaceholder": "Coller le code depuis Claude",
           "codeRequired": "Collez le code d'autorisation Claude pour continuer.",
@@ -6252,84 +4854,40 @@
           "usageNotice": "Connectez-vous avec votre abonnement Claude pour utiliser les modèles Claude avec des agents basés sur Claude Code."
         },
         "codex": {
-          "approvalOpened": "Page d'approbation ouverte. Copiez le code de l'appareil avant d'approuver.",
-          "codeCopied": "Code de l'appareil copié. En attente de l'approbation...",
-          "codeCopiedRetry": "Code de l'appareil copié. Essayez d'ouvrir à nouveau la page d'approbation.",
           "connectedToast": "ChatGPT connecté",
           "connectTitle": "Connecter Codex",
-          "copyAndOpen": "Copier le code et ouvrir la page d'approbation",
-          "copyAndOpenError": "Impossible de copier le code de l'appareil ou d'ouvrir la page d'approbation. Copiez le code manuellement et réessayez.",
-          "copyError": "Page d'approbation ouverte, mais le code de l'appareil n'a pas été copié. Copiez-le manuellement avant d'approuver.",
           "deviceCode": "Code de l'appareil",
           "error": "Échec de la connexion à ChatGPT. Recommencez pour réessayer.",
           "expired": "La session de connexion Codex a expiré. Recommencez pour réessayer.",
           "freePlanRejected": "Les plans gratuits ChatGPT ne peuvent pas utiliser Codex via {{brandName}}. Passez à Plus ou Pro et réessayez.",
-          "instructions": "Cliquez d'abord sur Copier le code et ouvrez la page d'approbation. Ensuite, collez le code de l'appareil dans OpenAI lorsqu'il est demandé. Enfin, approuvez l'accès et gardez cette fenêtre ouverte pendant que {{brandName}} termine la connexion.",
+          "instructions": "Copiez d'abord le code de l'appareil avec le bouton de copie, puis ouvrez la page d'approbation. Ensuite, collez le code de l'appareil dans OpenAI lorsqu'il est demandé. Enfin, approuvez l'accès et gardez cette fenêtre ouverte pendant que {{brandName}} termine la connexion.",
           "invalidTokenFormat": "Codex a produit un jeton de connexion dans un format que {{brandName}} ne reconnaît pas. Mettez à jour Codex et réessayez.",
-          "openError": "Code de l'appareil copié, mais la page d'approbation n'a pas pu être ouverte. Réessayez.",
+          "openApproval": "Ouvrir la page d'approbation",
           "preparing": "Préparation...",
           "reconnectAction": "Reconnecter ChatGPT",
           "reconnectTitle": "Reconnecter Codex",
           "signIn": "Se connecter avec ChatGPT"
         }
       },
-      "gateways": {
-        "actions": "Actions de la passerelle",
-        "add": "Ajouter un fournisseur",
-        "addTitle": "Ajouter un fournisseur de modèles",
-        "apiBaseUrl": "URL de base de l'API",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "Clé API",
-        "deleteConfirm": "Supprimer cette connexion au fournisseur de modèles ? Les routes de modèles qui l'utilisent ne seront plus disponibles.",
-        "description": "Connectez une passerelle gérée par un administrateur via Anthropic Messages, OpenAI Responses ou les deux.",
-        "dialogDescription": "Configurez chaque protocole avec l'URL de base de l'API utilisée par Claude Code ou Codex.",
-        "editTitle": "Modifier le fournisseur de modèles",
-        "empty": "Aucun fournisseur de modèles personnalisé n'est configuré.",
-        "errors": {
-          "invalidMappings": "Les mappages de modèles doivent être un objet JSON dont les valeurs sont les noms des modèles en amont.",
-          "missingProtocol": "Activez au moins un protocole.",
-          "missingSecret": "Saisissez une clé API."
-        },
-        "headerName": "En-tête d'authentification",
-        "headerValue": "Modèle de valeur d'en-tête",
-        "keepKey": "Laissez ce champ vide pour conserver la clé actuelle",
-        "modelMappings": "Mappages de modèles (JSON)",
-        "name": "Nom",
-        "presets": {
-          "custom": "Personnalisé",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "Requêtes",
-        "title": "Connexions aux fournisseurs"
-      },
       "personal": {
         "accountFallback": "Compte {{number}}",
-        "accountsDescription": "Choisissez le compte que chaque fournisseur utilise pour les nouvelles exécutions.",
-        "accountsSectionTitle": "Comptes personnels",
-        "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Actif",
-        "addAccount": "Ajouter un compte",
-        "claudeDescription": "Connectez-vous avec votre abonnement Claude pour utiliser les modèles Claude avec des agents basés sur Claude Code.",
+        "autoDescription": "Connectez votre compte Claude ou ChatGPT pour utiliser plus de modèles.",
+        "autoTitle": "Utilisez plus de modèles",
         "claudeTitle": "Claude",
-        "codexDescription": "Connectez votre compte ChatGPT pour utiliser les modèles GPT.",
         "codexTitle": "ChatGPT (Codex)",
-        "description": "Utilisé uniquement dans vos sessions, avec vos propres identifiants.",
+        "connectAccount": "Connecter un compte",
         "disconnectAccount": "Déconnecter le compte",
         "disconnectDescription": "Cette action supprime le compte d’Okou. Elle n’annule pas votre abonnement auprès du fournisseur.",
         "disconnecting": "Déconnexion…",
         "disconnectTitle": "Déconnecter {{account}} ?",
+        "loadError": "Impossible de charger vos comptes.",
+        "loadingAccounts": "Chargement des comptes…",
         "noAccounts": "Aucun compte connecté.",
         "reconnectAccount": "Reconnecter",
-        "sectionTitle": "Personnel",
+        "retry": "Réessayer",
         "status": {
           "connected": "Connecté",
-          "connectedWithDetail": "Connecté ({{detail}})",
           "fiveHour": "5h",
           "left": "{{percent}} restant",
           "stale": "Attention",
@@ -6338,99 +4896,37 @@
         "useAccount": "Utiliser"
       },
       "picker": {
-        "builtInModel": "Modèle intégré",
-        "byokHelp": "Utilise votre fournisseur configuré",
-        "categoryChat": "Chat",
-        "categoryImage": "Image",
-        "categoryVideo": "Vidéo",
+        "auto": "Auto",
         "chatModels": "Modèles de chat",
         "effort": "Effort",
         "effortScale": {
           "faster": "Plus rapide",
+          "higherUsage": "Plus de consommation",
+          "lowerUsage": "Moins de consommation",
           "smarter": "Plus intelligent"
         },
         "fast": "Rapide",
         "fastImpact": {
-          "apiCost": "2× le coût des tokens API",
-          "chatGptUsage": "2,5× la consommation ChatGPT",
-          "fasterResponses": "Réponses du modèle plus rapides",
-          "modelSpeed": "{{multiplier}}× la vitesse du modèle",
-          "okouCredits": "2× les crédits de modèle Okou",
-          "providerSpeed": "La vitesse dépend du fournisseur",
           "providerUsage": "La consommation dépend du fournisseur",
-          "solApiSpeed": "Jusqu’à 2,5× la vitesse du modèle",
-          "summary": "{{speed}} · {{usage}}"
+          "subscriptionUsage": "{{multiplier}}× utilisation de l’abonnement"
         },
+        "fastMode": "Mode rapide",
         "generationPriceTiers": {
           "higher": "Coût plus élevé par génération",
           "highest": "Coût le plus élevé par génération",
           "lowest": "Coût le plus bas par génération",
           "typical": "Coût habituel par génération"
         },
-        "imageModels": "Modèles d’image",
-        "inheritDefault": "Hériter des paramètres par défaut de l'organisation",
+        "inheritDefault": "Par défaut (Auto)",
         "loadError": "Impossible de charger les modèles.",
         "loading": "Chargement des modèles...",
-        "menu": {
-          "backToModels": "Retour aux modèles",
-          "changeModel": "Changer le modèle {{category}}, {{model}}"
-        },
         "models": "Modèles",
         "noConfiguredModels": "Aucun modèle configuré",
-        "priceTiers": {
-          "balanced": "Coût et performance équilibrés",
-          "economy": "Niveau économique pour les tâches simples quotidiennes",
-          "frontier": "Modèle phare Frontier",
-          "premium": "Modèle premium Frontier pour les tâches les plus difficiles"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "Portail Azure Foundry",
-          "claudeCodeOauth": "Claude Code (jeton OAuth)",
-          "deepseek": "Deepseek"
-        },
-        "standard": "Standard",
-        "videoModels": "Modèles vidéo"
-      },
-      "policies": {
-        "actionsFor": "Actions pour {{model}}",
-        "apiKey": "Clé API",
-        "apiKeyDescription": "Une clé d'espace de travail partagée. Idéal lorsque l'équipe facture via un seul compte.",
-        "apiKeyPlaceholder": "Entrez votre clé API",
-        "apiKeyRequired": "La clé API est requise",
-        "availableModels": "Modèles disponibles",
-        "builtIn": "Intégré",
-        "builtInDescription": "Les crédits de l'espace de travail couvrent l'utilisation.",
-        "claudeSubscription": "Abonnement Claude",
-        "claudeSubscriptionDescription": "Chaque membre connecte son propre plan Pro, Max ou Team.",
-        "codexSubscription": "Abonnement Codex",
-        "codexSubscriptionDescription": "Chaque membre connecte son propre plan Pro ou Team.",
-        "defaultModel": "Modèle par défaut",
-        "defaultModelDescription": "Utilisé lorsqu'une tâche ne choisit pas son propre modèle.",
-        "dialogDescription": "Décider comment les membres accèdent à ce modèle.",
-        "gateway": "Passerelle personnalisée",
-        "gatewayDescription": "Acheminer via une connexion au fournisseur définie par un administrateur.",
-        "gatewayProvider": "Connexion au fournisseur",
-        "getKey": "Obtenir une clé",
-        "invalidRoute": "Route invalide",
-        "missingProvider": "Fournisseur manquant",
-        "model": "Modèle",
-        "noAvailableModels": "Aucun modèle disponible",
-        "noMappedGateway": "Aucune connexion au fournisseur ne correspond à ce modèle.",
-        "pricing": "Tarification",
-        "providedBy": "Fourni par",
-        "provider": "Fournisseur",
-        "providerApiKey": "Clé API {{provider}}",
-        "runsThrough": "Exécuté via",
-        "secretStored": "Stocké dans les secrets de l'espace de travail.",
-        "selectDefaultModel": "Sélectionner un modèle par défaut",
-        "selectGateway": "Sélectionner une connexion au fournisseur",
-        "selectModel": "Sélectionner un modèle",
-        "selectProvider": "Sélectionner un fournisseur",
-        "workspaceDescription": "Disponible pour tous les membres de cet espace de travail."
+        "standard": "Standard"
       },
       "reset": {
-        "confirmDescription": "Utilisez une réinitialisation de {{provider}} pour remettre à zéro vos fenêtres d'utilisation actuelles. Il vous en reste {{remaining}}.",
+        "confirmDescription": "Utilisez une réinitialisation de Codex pour remettre à zéro vos fenêtres d'utilisation actuelles. Il vous en reste {{remaining}}.",
         "progress": "Réinitialisation en cours...",
         "remaining_one": "{{value}} réinitialisation restante",
         "remaining_many": "{{value}} réinitialisations restantes",
@@ -6440,26 +4936,14 @@
         "remainingWithExpiry_one": "{{value}} réinitialisation restante · expire {{expiry}}",
         "remainingWithExpiry_many": "{{value}} réinitialisations restantes · expirent {{expiry}}",
         "remainingWithExpiry_other": "{{value}} réinitialisations restantes · expirent {{expiry}}",
-        "title": "Réinitialiser l'utilisation de {{provider}} ?"
-      },
-      "stale": {
-        "claudeExpired": "Votre session Claude Code a expiré. Reconnectez-vous pour continuer.",
-        "claudeFailed": "Échec du rafraîchissement de Claude Code. Reconnectez-vous pour réessayer.",
-        "claudeTitle": "La session Claude Code nécessite une reconnexion",
-        "codexExpired": "Votre session ChatGPT a expiré. Reconnectez-vous pour continuer.",
-        "codexFailed": "Le rafraîchissement de ChatGPT a échoué. Reconnectez-vous pour réessayer.",
-        "codexInvalidated": "Votre session ChatGPT a été révoquée. Reconnectez-vous.",
-        "codexReused": "Votre session ChatGPT a été utilisée ailleurs. Reconnectez-vous.",
-        "codexTitle": "La session ChatGPT nécessite une reconnexion"
+        "title": "Réinitialiser l'utilisation de Codex ?"
       },
       "toasts": {
         "accountDisconnected": "Compte déconnecté",
         "accountSwitched": "Compte actif changé",
-        "disconnected": "{{provider}} déconnecté",
-        "policiesUpdated": "Paramètres du fournisseur de modèle mis à jour",
-        "reset": "Utilisation de {{provider}} réinitialisée",
-        "resetUnavailable": "Aucune réinitialisation d'utilisation de {{provider}} disponible",
-        "resetUnneeded": "L'utilisation de {{provider}} n'a pas besoin d'être réinitialisée pour le moment"
+        "reset": "Utilisation de Codex réinitialisée",
+        "resetUnavailable": "Aucune réinitialisation d'utilisation de Codex disponible",
+        "resetUnneeded": "L'utilisation de Codex n'a pas besoin d'être réinitialisée pour le moment"
       },
       "usage": {
         "inDays": "dans {{days}}j",
@@ -6476,8 +4960,13 @@
       }
     },
     "paidTools": {
-      "description": "Choisissez les outils payants qu’Okou peut utiliser dans vos tâches. Chaque utilisation consomme des crédits.",
+      "description": "Ces outils consomment des crédits intégrés, et Okou les utilise automatiquement pendant qu'il travaille sur vos tâches. Désactivez un outil pour qu'Okou ne l'utilise pas.",
       "disabledForCreation": "{{tool}} est désactivé pour vous",
+      "imageModel": {
+        "description": "La génération d’images intégrée utilise ce modèle pour vos tâches.",
+        "label": "Modèle",
+        "saveError": "Votre modèle d’image n’a pas été enregistré."
+      },
       "loadError": "Impossible de charger vos paramètres.",
       "loading": "Chargement de vos paramètres…",
       "openSettings": "Ouvrir les paramètres",
@@ -6486,12 +4975,8 @@
       "saving": "Enregistrement…",
       "scope": "Ces paramètres ne concernent que vous dans {{workspace}}.",
       "timing": "Les modifications s’appliquent aux prochaines exécutions. Les tâches en cours ou déjà préparées peuvent conserver leurs anciens paramètres.",
-      "title": "Outils payants",
+      "title": "Outils intégrés",
       "tools": {
-        "avatar-video-generation": {
-          "description": "Créez des vidéos avec des avatars parlants.",
-          "name": "Génération de vidéos avec avatar"
-        },
         "finance": {
           "description": "Consultez les entreprises, les cours et les données de marché.",
           "name": "Données financières"
@@ -6499,10 +4984,6 @@
         "image-generation": {
           "description": "Créez des images avec les modèles intégrés.",
           "name": "Génération d’images"
-        },
-        "image-recognition": {
-          "description": "Lisez et analysez des images.",
-          "name": "Reconnaissance d’images"
         },
         "maps": {
           "description": "Trouvez des lieux, des adresses et des itinéraires.",
@@ -6523,14 +5004,6 @@
         "social": {
           "description": "Analysez des publications publiques et collectez des médias.",
           "name": "Recherche sur les réseaux sociaux"
-        },
-        "video-generation": {
-          "description": "Créez des vidéos avec les modèles intégrés.",
-          "name": "Génération de vidéos"
-        },
-        "voice-generation": {
-          "description": "Créez des paroles avec les voix intégrées.",
-          "name": "Génération de voix"
         },
         "web-search": {
           "description": "Trouvez des informations actuelles sur le web.",
@@ -6581,26 +5054,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Annuler le délai d'attente",
-          "cancelDescription": "L'annulation de ce délai d'attente global rend immédiatement la route disponible pour tous les espaces de travail.",
-          "cancelling": "Annulation...",
-          "cancelTitle": "Annuler le délai d'attente global ?",
-          "cancelWarning": "Un échec ultérieur répondant aux critères peut remettre cette route en délai d'attente.",
-          "description": "Inspectez les routes de modèles intégrés temporairement exclues de la sélection de secours.",
-          "empty": "Aucune route de modèle intégré n'est actuellement soumise à un délai d'attente global.",
-          "globalActive": "délais d'attente globaux actifs",
-          "globalExplanation": "Les délais d'attente constituent un état opérationnel global et affectent tous les espaces de travail qui utilisent des modèles intégrés.",
-          "keepCooldown": "Conserver le délai d'attente",
-          "loading": "Chargement du diagnostic des délais d'attente des modèles intégrés...",
-          "providerType": "Type de fournisseur",
-          "refresh": "Actualiser",
-          "selectedModel": "Modèle sélectionné",
-          "title": "Secours des modèles intégrés",
-          "unavailable": "Le diagnostic des délais d'attente des modèles intégrés n'est pas disponible.",
-          "unavailableUntil": "Indisponible jusqu'au",
-          "upstreamModel": "Modèle en amont"
-        },
         "capture": {
           "disabled": "Désactivé",
           "enabled_one": "Activé pour la prochaine exécution de {{count}}",
@@ -6646,20 +5099,6 @@
           "title": "Stockage IndexedDB",
           "unavailable": "Le stockage IndexedDB est indisponible."
         },
-        "morningBriefTrigger": {
-          "description": "Exécutez un vrai Morning Brief maintenant. Votre prochaine exécution est mise en file d’attente pour le planificateur habituel, qui envoie un vrai récapitulatif et un vrai e-mail en moins d’une minute. Un déclenchement avant votre heure quotidienne donne deux récapitulatifs ce matin-là.",
-          "failed": "Impossible de mettre le Morning Brief en file d’attente. Réessayez.",
-          "queued": "En file d’attente. Le planificateur enverra le récapitulatif en moins d’une minute.",
-          "title": "Morning Brief",
-          "trigger": "Exécuter Morning Brief maintenant",
-          "triggering": "Mise en file d’attente…"
-        },
-        "voiceInput": {
-          "default": "Par défaut ({{model}})",
-          "description": "Choisissez le modèle pour la saisie vocale v2. Les modèles de transcription utilisent {{model}} pour améliorer le texte.",
-          "title": "Modèle de saisie vocale",
-          "unavailable": "Modèle indisponible ({{model}})"
-        },
         "welcomeThread": {
           "create": "Créer une discussion de bienvenue",
           "creating": "Création…",
@@ -6671,9 +5110,6 @@
       "emailSubscription": {
         "description": "Recevez les synthèses, rappels et autres actualités de l’espace de travail par e-mail.",
         "descriptionWithEmail": "Recevez les synthèses, rappels et autres actualités de l’espace de travail à l’adresse {{email}}.",
-        "loading": "Vérification de l’abonnement aux e-mails…",
-        "retryMessage": "Impossible d’enregistrer ou de charger votre abonnement aux e-mails. Réessayez.",
-        "saving": "Enregistrement…",
         "sectionTitle": "Abonnements aux e-mails",
         "title": "Mises à jour par e-mail",
         "unavailable": "E-mail indisponible",
@@ -6699,17 +5135,10 @@
         "title": "Langue"
       },
       "morningBrief": {
-        "chatAndEmail": "Chat + e-mail",
-        "chatOnly": "Chat uniquement",
-        "checkEmailSubscription": "Consultez l’abonnement aux e-mails ci-dessus pour connaître l’état de la livraison.",
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent. Réessayez une fois la réconciliation terminée.",
         "description": "Vos priorités quotidiennes à 7 h dans votre fuseau horaire.",
-        "lastDelivered": "Dernière livraison : {{date}}",
-        "loading": "Chargement des paramètres de Morning Brief...",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
-        "nextBrief": "Prochaine synthèse {{date}}",
-        "paused": "En pause",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",
         "preparing": "Préparation de votre premier briefing matinal. Vous pouvez le désactiver à tout moment.",
         "retry": "Réessayer",
@@ -6719,10 +5148,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Appuyez sur ⌘/Ctrl+Entrée pour envoyer, Entrée pour une nouvelle ligne",
-        "description": "Choisissez comment envoyer les messages dans le chat.",
         "enter": "Enter",
         "enterDescription": "Appuyez sur Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne",
-        "sectionTitle": "Enter",
         "title": "Envoyer un message avec"
       },
       "timezone": {
@@ -6759,17 +5186,12 @@
     "shared": {
       "cancel": "Annuler",
       "close": "Fermer",
-      "connect": "Connecter",
       "connecting": "Connexion en cours...",
       "delete": "Supprimer",
       "discard": "Ignorer",
-      "disconnect": "Déconnecter",
-      "edit": "Modifier",
       "loading": "Chargement",
       "moreOptions": "Plus d'options",
-      "reconnect": "Reconnecter",
       "remove": "Retirer",
-      "replace": "Remplacer",
       "save": "Enregistrer",
       "saveChanges": "Enregistrer les modifications",
       "saving": "Enregistrement..."
@@ -6941,8 +5363,6 @@
     "tryItYourself": "Essayez par vous-même"
   },
   "ssh": {
-    "accessDescription": "Choisissez les agents qui peuvent utiliser vos hôtes SSH.",
-    "accessHelp": "Autoriser cet Agent à exécuter des commandes sur tous vos hôtes SSH configurés, actuels et futurs. Cet accès est distinct des autorisations des connecteurs.",
     "add": "Ajouter un hôte",
     "cancel": "Annuler",
     "chooseFile": "Choisir un fichier",
@@ -6952,8 +5372,10 @@
       "keepChanges": "Appliquer mes modifications à cette version",
       "latest": "Derniers paramètres enregistrés",
       "mode": "Connexion",
+      "needsRebind": "Cet hôte nécessite une nouvelle configuration Cloudflare Access. Modifiez-le pour le réassocier ou choisir Direct. Il ne pourra pas se connecter avant cela.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nom d’hôte publié",
+      "rebindHelp": "Choisissez une configuration Cloudflare Access autorisée ou Direct pour rétablir cet hôte. Rien ne change avant l'enregistrement.",
       "reviewHelp": "Votre brouillon est conservé. Confirmez les derniers paramètres enregistrés avant d’appliquer vos modifications.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access n’est pas disponible pour ce compte."
@@ -7002,16 +5424,14 @@
       "unused": "Aucun hôte ne les utilise"
     },
     "credentialsHelp": "Les identifiants sont accessibles uniquement en écriture et restent hors du sandbox. Collez la clé complète ; les espaces sont conservés. Les champs sont effacés à la fermeture du formulaire.",
-    "credentialsTab": "Identifiants",
     "delete": "Supprimer l’hôte",
     "deleteHelp": "Supprimer cet hôte ? Ses identifiants seront conservés. Les Agents ne le verront plus dans l’inventaire.",
     "description": "Configurez des hôtes SSH pour que vos agents exécutent des commandes à distance.",
     "displayName": "Nom affiché",
     "edit": "Modifier l’hôte",
     "editHelp": "Changer les identifiants ne modifie que cet hôte. Modifier une destination directe efface sa clé d’hôte enregistrée ; les changements impliquant Cloudflare Access la conservent.",
-    "empty": "Aucun hôte SSH configuré. Ajoutez un hôte pour le rendre disponible aux Agents disposant d’un accès SSH.",
+    "empty": "Aucun hôte SSH configuré. Ajoutez un hôte, puis activez-le par défaut ou dans certains chats.",
     "errors": {
-      "agentUnavailable": "Cet agent n’est plus disponible. Choisissez un autre agent.",
       "configurationChanged": "Cet hôte a changé pendant votre modification. Votre brouillon est conservé. Vérifiez ses derniers paramètres avant d’appliquer vos modifications.",
       "credentialChanged": "Cet identifiant a été modifié pendant votre édition. Votre brouillon est conservé. Vérifiez les derniers paramètres et les hôtes concernés avant d’enregistrer.",
       "credentialInUse": "Ces identifiants sont utilisés. Réaffectez ou supprimez les hôtes concernés d’abord.",
@@ -7029,11 +5449,9 @@
     "fingerprint": "Clé d’hôte mémorisée",
     "host": "Nom d’hôte public ou adresse IP",
     "hostSection": "Hôte",
-    "hostsTab": "Hôtes",
     "label": "SSH",
     "loadFailed": "Impossible de charger les paramètres SSH. Réessayez.",
     "loading": "Chargement des hôtes SSH…",
-    "loadingAccess": "Chargement des accès des agents…",
     "manage": "Gérer les hôtes SSH",
     "notLearned": "Aucune clé d’hôte mémorisée",
     "passphrase": "Phrase secrète (facultative)",
@@ -7059,7 +5477,10 @@
     "summary_one": "{{count}} hôte configuré",
     "summary_many": "{{count}} hôtes configurés",
     "summary_other": "{{count}} hôtes configurés",
-    "title": "Hôtes SSH",
+    "tailscale": {
+      "editUnavailable": "Cet hôte utilise désormais Tailscale. La modification et la réassociation de Tailscale ne sont pas encore disponibles ici. Annulez cette modification pour conserver son transport enregistré.",
+      "needsRebind": "Cet hôte nécessite une nouvelle configuration Tailscale. La configuration et la réassociation de Tailscale ne sont pas encore disponibles ici."
+    },
     "unavailable": "L’accès SSH n’est pas disponible pour ce compte.",
     "username": "Nom d’utilisateur SSH"
   },
@@ -7154,8 +5575,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "Choisissez les agents autorisés à afficher et contrôler vos bureaux VNC. Cet accès est indépendant de SSH.",
-    "accessHelp": "Autoriser cet agent à afficher et contrôler tous vos bureaux VNC configurés, actuels et futurs.",
     "add": "Ajouter un hôte",
     "cancel": "Annuler",
     "close": "Fermer",
@@ -7164,7 +5583,12 @@
       "add": "Ajouter des identifiants",
       "appleDhFieldHelp": "Chaque champ doit contenir de 1 à 63 octets UTF-8. NUL est interdit.",
       "appleDhMethod": "Nom d’utilisateur et mot de passe Apple DH",
+      "appleRsaSrpMethod": "Nom d’utilisateur et mot de passe Apple RSA/SRP",
+      "appleRsaSrpUsernameHelp": "Nom d’utilisateur RSA/SRP : de 1 à 234 octets UTF-8. NUL est interdit.",
+      "appleSrpMethod": "Nom d’utilisateur et mot de passe Apple Direct SRP",
       "authentication": "Méthode d’authentification",
+      "certificateChain": "Chaîne de certificats client (PEM)",
+      "clientKeyHelp": "Collez 1 à 8 certificats et la clé non chiffrée correspondante. Ils sont chiffrés à l’enregistrement. Remplacez les deux lors de la rotation ; la clé ne sera plus affichée.",
       "createNew": "Créer des identifiants",
       "delete": "Supprimer les identifiants",
       "deleteHelp": "Supprimer ces identifiants inutilisés ? Cette action est irréversible.",
@@ -7178,6 +5602,9 @@
       "password": "Mot de passe VNC",
       "passwordHelp": "Les mots de passe VNC classiques utilisent 1 à 8 caractères ASCII imprimables. Les espaces sont conservés.",
       "passwordHint": "Saisissez le mot de passe VNC du serveur",
+      "privateKey": "Clé privée PKCS#8 non chiffrée (PEM)",
+      "qemuScramPasswordHelp": "1 à 1023 caractères ASCII imprimables ; les espaces sont conservés.",
+      "qemuScramUsernameHelp": "1 à 255 caractères ASCII imprimables ; sans espace, virgule ni signe égal.",
       "replace": "Remplacer l'authentification",
       "replaceHelp": "Laissez cette option désactivée pour conserver l'authentification enregistrée. Son remplacement affecte tous les hôtes utilisant ces identifiants.",
       "select": "Sélectionner un identifiant",
@@ -7196,7 +5623,6 @@
       "usernamePasswordHint": "Saisissez le mot de passe de cet utilisateur",
       "usernamePasswordMethod": "Nom d’utilisateur et mot de passe"
     },
-    "credentialsTab": "Identifiants",
     "delete": "Supprimer l’hôte",
     "deleteHelp": "Supprimer cet hôte enregistré ? Ses identifiants réutilisables seront conservés.",
     "description": "Permettez à vos agents d’afficher et de contrôler vos bureaux distants.",
@@ -7214,19 +5640,37 @@
       "invalidHost": "Saisissez un nom d’hôte ou une adresse IP valides, sans URL, nom d’utilisateur ni port.",
       "invalidInput": "Vérifiez la configuration VNC et réessayez.",
       "invalidTrust": "Saisissez un ensemble valide de 8 certificats publics d’AC maximum, ne dépassant pas 64 KiB.",
-      "ownerChanged": "Votre accès à l’espace de travail a changé. Actualisez avant de continuer.",
       "revisionExhausted": "Cette configuration ne peut plus être mise à jour. Créez-en une nouvelle."
     },
     "host": "Nom d’hôte ou adresse IP",
     "hostHint": "p. ex. desktop.example.com",
-    "hostsTab": "Hôtes",
     "label": "VNC",
     "loadFailed": "Impossible de charger la configuration VNC.",
     "loading": "Chargement de la configuration VNC…",
-    "loadingAccess": "Chargement des accès des agents…",
     "manage": "Gérer VNC",
     "port": "Port",
     "retry": "Réessayer",
+    "rsaAes": {
+      "fieldHelp": "Chaque champ contient 1–255 octets UTF-8, sans NUL. Les espaces sont conservés ; ce n'est pas le mot de passe VNC classique de huit octets.",
+      "fullHelp": "RA2 et RA2_256 chiffrent toute la session RFB avec EAX. Vérifiez indépendamment le pin complet de la clé RSA au format filaire ; la confiance CA ne le remplace pas.",
+      "importHelp": "Obtenez le PEM PUBLIC KEY ou RSA PUBLIC KEY via une administration serveur fiable. Ne collez jamais une clé privée/un certificat et n'acceptez pas automatiquement une clé en ligne. La conversion ne prouve pas l'identité et n'enregistre rien : vérifiez le pin complet puis enregistrez explicitement.",
+      "importKey": "Importer la clé publique de confiance",
+      "modulusBits": "Taille de la clé publique importée : {{bits}} bits",
+      "neHelp": "Seule l'authentification est chiffrée par RSA-AES. Nécessite un SSH enregistré et vérifié vers l'adresse de bouclage littérale du serveur. SSH ne protège que son saut ; un proxy ultérieur peut exposer le trafic RFB non chiffré.",
+      "passwordMethod": "Mot de passe RSA-AES",
+      "pin": "SHA256 de la clé RSA filaire du serveur",
+      "pinHelp": "Importez le pin complet de 64 caractères hexadécimaux obtenu par une source indépendante fiable : SHA256 de la taille du module en U32 big-endian puis du module et de l'exposant de même largeur fixe. Pas un hash PEM/SPKI ni une empreinte courte. Remplacez-le puis enregistrez explicitement pour renouveler la confiance et invalider les sessions.",
+      "publicKey": "PEM public RSA obtenu indépendamment (facultatif)",
+      "ra2256Password": "RA2_256 · AES-256 · mot de passe",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · identifiant/mot de passe",
+      "ra2ne256Password": "RA2ne_256 · authentification seule · mot de passe",
+      "ra2ne256UsernamePassword": "RA2ne_256 · authentification seule · identifiant/mot de passe",
+      "ra2nePassword": "RA2ne · authentification seule · mot de passe",
+      "ra2neUsernamePassword": "RA2ne · authentification seule · identifiant/mot de passe",
+      "ra2Password": "RA2 · AES-128 · mot de passe",
+      "ra2UsernamePassword": "RA2 · AES-128 · identifiant/mot de passe",
+      "usernamePasswordMethod": "Identifiant/mot de passe RSA-AES"
+    },
     "save": "Enregistrer",
     "saveRecovery": {
       "resourceIdConflict": "Impossible de créer cette ressource. Fermez cette boîte de dialogue et réessayez.",
@@ -7235,18 +5679,31 @@
     },
     "saving": "Enregistrement…",
     "security": {
-      "appleDh": "Partage d’écran Mac (Apple DH)",
-      "appleDhHelp": "Nécessite le partage d’écran macOS via une connexion SSH enregistrée. La destination RFB doit être 127.0.0.1 ou ::1 sur ce Mac. SSH protège toute la session VNC. Utilisez un hôte SSH Mac que vous contrôlez ; sa clé d’hôte n’exclut pas un relais en aval.",
+      "appleDh": "VNC Mac (Apple DH)",
+      "appleDhHelp": "Nécessite un service VNC Mac via une connexion SSH enregistrée. Le mode Partage d’écran macOS autonome n’a pas été vérifié. La destination RFB doit être 127.0.0.1 ou ::1 sur ce Mac. SSH protège toute la session VNC. Utilisez un hôte SSH Mac que vous contrôlez ; sa clé d’hôte n’exclut pas un relais en aval.",
+      "appleRsaSrp": "VNC Mac (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "Nécessite SSH enregistré vers le Mac et une destination RFB 127.0.0.1 ou ::1. La clé RSA fournie par RFB ne prouve pas l’identité de l’hôte. SRP vérifie le compte et la preuve du serveur ; SSH protège toute la session. La clé d’hôte SSH identifie le point choisi sans exclure un relais en aval.",
+      "appleSrp": "VNC Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Nécessite une connexion SSH enregistrée vers le Mac et 127.0.0.1 ou ::1 comme destination RFB. SRP vérifie le compte et la preuve du serveur ; SSH protège toute la session VNC. La clé d’hôte SSH identifie le point choisi, mais n’exclut pas un relais en aval.",
+      "appleVncPassword": "VNC Mac (mot de passe VNC classique)",
+      "appleVncPasswordHelp": "Mot de passe VNC optionnel du Mac : 1 à 8 octets ASCII imprimables. Le type 2 seul ne vérifie pas l’identité du serveur et ne chiffre pas le bureau. SSH vérifié protège cette session Okou, pas l’écoute du Mac : d’autres clients peuvent atteindre le port 5900 selon le réseau. Activez l’option sur le Mac seulement si vous acceptez ce risque.",
       "caBundle": "Certificats d’AC (PEM)",
       "caHelp": "Jusqu’à 8 certificats d’AC, pour un total de 64 KiB. Ne collez ni clé privée ni certificat de serveur.",
       "caHint": "Collez les certificats publics des AC ayant émis le certificat du serveur",
+      "clientCertificateHelp": "Une connexion TLS réussie ne prouve pas que le serveur vérifie le certificat client. Configurez et vérifiez la CA côté serveur et limitez l’accès réseau. SSH n’authentifie que le relais.",
+      "clientCertificateNone": "Certificat client sans mot de passe VNC (X509None)",
+      "clientCertificateVnc": "Certificat client et mot de passe VNC (X509Vnc)",
       "custom": "Autorités de certification personnalisées",
       "profileLabel": "Profil de sécurité",
+      "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
+      "qemuX509SaslHelp": "Sous-type QEMU 263 uniquement. TLS vérifie le serveur avant SCRAM ; aucun repli vers PLAIN ou le sous-type 264.",
       "serverName": "Identité du certificat TLS",
       "serverNameHelp": "Facultatif. Laissez ce champ vide pour vérifier le certificat avec l’hôte de destination RFB. Ne le renseignez que si le certificat utilise un autre nom DNS.",
       "serverNameHint": "p. ex. desktop.internal.example.com",
       "system": "Autorités de certification du système",
       "title": "Confiance dans le certificat du serveur",
+      "x509None": "Chiffré sans mot de passe VNC (X509None)",
+      "x509NoneHelp": "TLS vérifie le serveur et chiffre la session, mais ne vous authentifie pas auprès du serveur VNC. Toute autre personne pouvant joindre ce serveur peut contrôler le bureau. SSH protège seulement le trajet vers l’hôte SSH choisi, pas l’accès d’autres clients ni un relais ultérieur. À choisir seulement pour un serveur sous votre contrôle.",
       "x509Plain": "Nom d’utilisateur et mot de passe chiffrés (X509Plain)",
       "x509PlainHelp": "Nécessite VeNCrypt X509Plain. TLS vérifie le serveur avant d’envoyer le nom d’utilisateur et le mot de passe.",
       "x509Vnc": "VNC chiffré (X509Vnc)",
@@ -7255,20 +5712,26 @@
     "summary_one": "{{count}} hôte configuré",
     "summary_many": "{{count}} hôtes configurés",
     "summary_other": "{{count}} hôtes configurés",
-    "title": "Accès à distance VNC",
     "transport": {
       "appleDhDestinationHelp": "Pour Apple DH, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
+      "appleRsaSrpDestinationHelp": "Pour Apple RSA/SRP, saisissez 127.0.0.1 ou ::1 sur le Mac accessible via l’hôte SSH sélectionné.",
+      "appleSrpDestinationHelp": "Pour Apple Direct SRP, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
+      "appleVncPasswordDestinationHelp": "Pour le mot de passe VNC classique, saisissez 127.0.0.1 ou ::1 sur le Mac joint par SSH enregistré.",
       "destination": "Destination RFB",
       "destinationHelp": "Pour une route SSH, cet hôte et ce port sont joints depuis le serveur SSH sélectionné, et non directement depuis le Runner.",
       "direct": "Direct depuis le Runner",
       "empty": "Aucun hôte SSH enregistré n’est disponible. Ajoutez-en un dans les paramètres SSH avant d’utiliser cette route.",
       "loadFailed": "Impossible de charger les hôtes SSH enregistrés.",
       "loading": "Chargement des hôtes SSH enregistrés…",
+      "privateDirectHelp": "Les adresses IP privées ou de bouclage nécessitent un hôte SSH enregistré. Choisissez la route SSH ci-dessus ; elle ne sera pas modifiée automatiquement.",
       "select": "Sélectionner un hôte SSH enregistré",
       "selectionUnavailable": "L’hôte SSH sélectionné n’est plus disponible. Sélectionnez-en un autre ou passez explicitement en accès direct.",
       "ssh": "Via un hôte SSH enregistré",
       "sshConnection": "Hôte SSH",
-      "sshHelp": "SSH protège le trajet du Runner au serveur SSH. Ce serveur doit pouvoir joindre la destination RFB. L’Agent a besoin des accès VNC et SSH.",
+      "sshHelp": "SSH protège le trajet du Runner au serveur SSH. Ce serveur doit pouvoir joindre la destination RFB. Un chat ne peut utiliser cette route que si cet hôte SSH y est aussi activé.",
+      "sshNeedsRebind": "L’hôte SSH de cette connexion VNC doit être réassocié à Cloudflare Access. Réassociez-le dans les paramètres SSH ou choisissez-y explicitement Direct avant de vous connecter.",
+      "sshNeedsRebindStatus": "SSH à réassocier",
+      "sshTailscaleNeedsRebind": "L’hôte SSH de cette connexion VNC nécessite une nouvelle configuration Tailscale. La configuration et la réassociation de Tailscale ne sont pas encore disponibles ici.",
       "title": "Route de connexion",
       "unavailable": "Les paramètres SSH ne sont pas disponibles pour ce compte.",
       "via": "Hôte SSH :"
@@ -7994,6 +6457,18 @@
       "uninstallTitle": "Désinstaller le workflow officiel",
       "viewAndInstall": "Afficher et installer",
       "yes": "Oui"
+    },
+    "skillImport": {
+      "action": "Importer des skills",
+      "description": "Exécutez ce prompt là où se trouvent vos skills. Chacune devient un workflow privé.",
+      "emptyAction": "Importer depuis Claude Code ou Codex",
+      "providerLabel": "Importer depuis",
+      "source": {
+        "claudeCode": "Importé de Claude Code",
+        "codex": "Importé de Codex"
+      },
+      "title": "Importez vos skills",
+      "viewWorkflows": "Voir les workflows"
     }
   },
   "works": {
@@ -8010,6 +6485,27 @@
     },
     "connected": "Connecté",
     "connectedWithDetail": "Connecté ({{detail}})",
+    "discord": {
+      "accountSetup": "Votre compte n’est pas connecté. Il n’est pas encore possible de connecter un nouveau compte Discord.",
+      "adminSetup": "La configuration des serveurs n’est pas encore disponible. Les configurations déjà vérifiées peuvent continuer à utiliser Discord.",
+      "chooseDmServer": "Choisir un serveur",
+      "description": "Mentionnez Okou sur un serveur ou envoyez un message privé au bot.",
+      "disconnect": "Déconnecter Discord",
+      "dmServer": "Serveur par défaut pour les messages privés",
+      "limitedContext": "Contexte limité : Okou peut ne pas recevoir les messages ordinaires des canaux. Mentionnez Okou et incluez les détails dont il a besoin.",
+      "loadError": "Impossible de charger le statut de Discord.",
+      "loading": "Chargement du statut de Discord…",
+      "memberSetup": "Renseignez-vous auprès d’un administrateur de l’organisation sur l’accès à Discord. La configuration des serveurs n’est pas encore disponible.",
+      "moreOptions": "Plus d’options Discord",
+      "retry": "Réessayer",
+      "server": "Serveur : {{name}}",
+      "suspended": "Discord est temporairement indisponible. Les connexions existantes sont conservées.",
+      "title": "Discord",
+      "unconfigured": "Discord n’est pas encore disponible pour cette organisation.",
+      "uninstall": "Supprimer Discord",
+      "uninstallDescription": "Cela déconnecte de Discord toutes les personnes de cette organisation. Les autres organisations conservent leurs connexions.",
+      "uninstallTitle": "Supprimer Discord de cette organisation ?"
+    },
     "documentTitle": "Fonctionne",
     "feishuConnected": "Feishu connecté avec succès",
     "github": {

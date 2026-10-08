@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.4.5](https://github.com/okou-ai/okou/compare/runner-types-v0.4.4...runner-types-v0.4.5) (2026-10-07)
+
+## [0.4.4](https://github.com/okou-ai/okou/compare/runner-types-v0.4.3...runner-types-v0.4.4) (2026-10-07)
+
+## [0.4.3](https://github.com/okou-ai/okou/compare/runner-types-v0.4.2...runner-types-v0.4.3) (2026-10-07)
+
+
+### Refactoring
+
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+
+## [0.4.2](https://github.com/okou-ai/okou/compare/runner-types-v0.4.1...runner-types-v0.4.2) (2026-10-02)
+
+## [0.4.1](https://github.com/okou-ai/okou/compare/runner-types-v0.4.0...runner-types-v0.4.1) (2026-10-01)
+
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-types-v0.3.4...runner-types-v0.4.0) (2026-09-30)
+
+
+### Features
+
+* make the database model catalog the model authority ([#37416](https://github.com/okou-ai/okou/issues/37416)) ([7a8cf4d](https://github.com/okou-ai/okou/commit/7a8cf4d005dea492e0375b91ac46bcf3201d902d))
+
+## [0.3.4](https://github.com/okou-ai/okou/compare/runner-types-v0.3.3...runner-types-v0.3.4) (2026-09-30)
+
+## [0.3.3](https://github.com/okou-ai/okou/compare/runner-types-v0.3.2...runner-types-v0.3.3) (2026-09-30)
+
+## [0.3.2](https://github.com/okou-ai/okou/compare/runner-types-v0.3.1...runner-types-v0.3.2) (2026-09-29)
+
+## [0.3.1](https://github.com/okou-ai/okou/compare/runner-types-v0.3.0...runner-types-v0.3.1) (2026-09-29)
+
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-types-v0.2.0...runner-types-v0.3.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+
+## [0.2.0](https://github.com/okou-ai/okou/compare/runner-types-v0.1.13...runner-types-v0.2.0) (2026-09-28)
+
+
+### Features
+
+* **runner:** gate wss tickets on host ingress heartbeat ([#37192](https://github.com/okou-ai/okou/issues/37192)) ([00b5a33](https://github.com/okou-ai/okou/commit/00b5a334dceacc63b97978c57108d736822fd230))
+
+## [0.1.13](https://github.com/okou-ai/okou/compare/runner-types-v0.1.12...runner-types-v0.1.13) (2026-09-28)
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
+## [0.1.12](https://github.com/okou-ai/okou/compare/runner-types-v0.1.11...runner-types-v0.1.12) (2026-09-28)
+
+## [0.1.11](https://github.com/okou-ai/okou/compare/runner-types-v0.1.10...runner-types-v0.1.11) (2026-09-26)
+
+## [0.1.10](https://github.com/okou-ai/okou/compare/runner-types-v0.1.9...runner-types-v0.1.10) (2026-09-25)
+
+## [0.1.9](https://github.com/okou-ai/okou/compare/runner-types-v0.1.8...runner-types-v0.1.9) (2026-09-25)
+
+
+### Bug Fixes
+
+* retain runner affinity for active predecessor producers ([#36866](https://github.com/okou-ai/okou/issues/36866)) ([d90ba1e](https://github.com/okou-ai/okou/commit/d90ba1e7d4a7bc36c2c5f1abf168c1b1e83e657a))
+
+## [0.1.8](https://github.com/okou-ai/okou/compare/runner-types-v0.1.7...runner-types-v0.1.8) (2026-09-25)
+
+## [0.1.7](https://github.com/okou-ai/okou/compare/runner-types-v0.1.6...runner-types-v0.1.7) (2026-09-24)
+
 ## [0.1.6](https://github.com/okou-ai/okou/compare/runner-types-v0.1.5...runner-types-v0.1.6) (2026-09-23)
 
 ## [0.1.5](https://github.com/okou-ai/okou/compare/runner-types-v0.1.4...runner-types-v0.1.5) (2026-09-23)

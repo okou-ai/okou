@@ -112,8 +112,8 @@ function nextAnimationFrame(): Promise<void> {
   return frame.promise;
 }
 
-test("Keep the check-mark thread icon Done when archiving is disabled", async () => {
-  await setupEmojiPage("Emoji planning", false);
+test("Keep the check-mark thread icon Done when archiving is enabled", async () => {
+  await setupEmojiPage("Emoji planning", true);
   await waitFor(() => {
     expect(buttonByLabel("Change icon")).toBeInTheDocument();
   });
@@ -124,21 +124,6 @@ test("Keep the check-mark thread icon Done when archiving is disabled", async ()
   expect(emojiButton("Done")).toHaveTextContent("✅");
   expect(
     document.querySelector('[data-chat-thread-emoji][aria-label="Archive"]'),
-  ).not.toBeInTheDocument();
-});
-
-test("Name the check-mark thread icon Archive when archiving is enabled", async () => {
-  await setupEmojiPage("Emoji planning", true);
-  await waitFor(() => {
-    expect(buttonByLabel("Change icon")).toBeInTheDocument();
-  });
-
-  click(buttonByLabel("Change icon"));
-  await screen.findByLabelText("Search emoji");
-
-  expect(emojiButton("Archive")).toHaveTextContent("✅");
-  expect(
-    document.querySelector('[data-chat-thread-emoji][aria-label="Done"]'),
   ).not.toBeInTheDocument();
 });
 

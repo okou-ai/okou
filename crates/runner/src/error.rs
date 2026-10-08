@@ -105,6 +105,12 @@ impl From<runner_lifecycle::LifecycleError> for RunnerError {
     }
 }
 
+impl From<runner_supervisor::heartbeat::HeartbeatError> for RunnerError {
+    fn from(error: runner_supervisor::heartbeat::HeartbeatError) -> Self {
+        Self::Internal(error.to_string())
+    }
+}
+
 impl From<runner_network::NetworkError> for RunnerError {
     fn from(error: runner_network::NetworkError) -> Self {
         match error {

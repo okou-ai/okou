@@ -25,13 +25,20 @@ export const pgTimestampWithoutTimezoneToDateSchema = z
   })
   .pipe(z.date());
 
+/** Decode query results without passing a transaction out of its owner. */
+export function parseRawRows<TSchema extends ZodType>(
+  rowSchema: TSchema,
+  result: { readonly rows: readonly unknown[] },
+): output<TSchema>[] {
+  return result.rows.map((row) => {
+    return rowSchema.parse(row);
+  });
+}
+
 export async function executeRawRows<TSchema extends ZodType>(
   executor: RawSqlExecutor,
   query: SQLWrapper,
   rowSchema: TSchema,
 ): Promise<output<TSchema>[]> {
-  const result = await executor.execute(query);
-  return result.rows.map((row) => {
-    return rowSchema.parse(row);
-  });
+  return parseRawRows(rowSchema, await executor.execute(query));
 }

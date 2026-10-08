@@ -115,20 +115,15 @@ identity used for one provider request.
 
 **Pi catalog model**:
 The native Pi provider/model entry used to source model capabilities and limits.
-It does not expand product admission and does not have to match a custom
-gateway's upstream model identifier.
-_Avoid_: Gateway model, requested model
+It does not expand product admission and does not have to match the upstream
+model identifier sent to the provider.
+_Avoid_: Upstream model, requested model
 
 **Pi request model**:
-The model identifier sent to the selected provider endpoint. For a custom model
-provider gateway, this is the surface's upstream model mapping.
+The model identifier sent to the selected provider endpoint. For Auto (the
+`null` selection, run as `okou-1.0`), this is the OpenRouter preset `@preset/okou-1-0` unless an
+operator-only `org_metadata.openrouter_preset` override applies.
 _Avoid_: Catalog model, logical model
-
-**Pi credential header**:
-A non-secret header name and value template stored in Pi launch metadata. The
-credential is substituted only inside the API first-turn process or the
-Sandbox's protected runtime boundary.
-_Avoid_: API key header value, stored credential
 
 # Retired Goal History Context
 
@@ -282,3 +277,11 @@ _Avoid_: Second attachment, rewritten original
 Composer-owned transient working state initialized from image annotations and
 discarded with its owning composer.
 _Avoid_: Global annotation session, saved annotation
+
+### iMessage Group History
+
+**iMessage group message visibility**:
+Only linked Okou accounts present in a message's participant list at that
+message's time can read it. Joining the group or linking an account later does
+not grant access to earlier messages.
+_Avoid_: Current-member history access, retroactive history grant

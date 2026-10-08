@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
-import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import {
   ALL_RUN_STATUSES,
@@ -23,32 +22,14 @@ import {
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
-import {
-  and,
-  asc,
-  avg,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  lte,
-  sql,
-} from "drizzle-orm";
-import { z } from "zod";
+import { and, asc, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
-import {
-  nullableDriverValueDecoder,
-  zodDriverValueDecoder,
-} from "../../lib/db-structured-result";
-import { nowDate } from "../../lib/time";
 import { readPiLangfuseServerConfig } from "../../lib/pi-langfuse-debug";
 import { db$, type Db } from "../external/db";
-import { sandboxCapacityPredicate } from "./pi-inference-lifecycle.service";
 import {
   activePaidConcurrencySlots,
   cappedBaseConcurrencyLimit,
@@ -57,20 +38,7 @@ import {
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 
-const PENDING_RUN_TTL_MS = 15 * 60 * 1000;
-const RECENT_RUNS_FOR_ETA = 10;
-const PROMPT_TRUNCATE_LENGTH = 200;
-const runDurationMillisecondsDecoder = zodDriverValueDecoder(
-  z
-    .string()
-    .regex(/^(?:0|[1-9]\d*)(?:\.\d+)?$/)
-    .transform((value) => {
-      return Number(value);
-    })
-    .pipe(z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER)),
-);
 type ReadDb = Pick<Db, "select">;
-type QueueItem = QueueResponse["queue"][number];
 type RunningTaskItem = QueueResponse["runningTasks"][number];
 type RunSourceRow = Pick<
   typeof agentRuns.$inferSelect,
@@ -86,29 +54,12 @@ type RunListResult =
   | { readonly kind: "ok"; readonly body: RunsListResponse }
   | { readonly kind: "bad-request"; readonly message: string };
 
-interface QueuedRunRow {
-  readonly id: string;
-  readonly runUserId: string;
-  readonly createdAt: Date;
-  readonly agentName: string | null;
-  readonly agentDisplayName: string | null;
-  readonly prompt: string;
-  readonly triggerSource: string | null;
-  readonly continuedFromSessionId: string | null;
-}
-
 interface RunningRunRow {
   readonly id: string;
   readonly runUserId: string;
   readonly startedAt: Date | null;
   readonly agentName: string | null;
   readonly agentDisplayName: string | null;
-}
-
-function truncatePrompt(prompt: string): string {
-  return prompt.length > PROMPT_TRUNCATE_LENGTH
-    ? `${prompt.slice(0, PROMPT_TRUNCATE_LENGTH)}...`
-    : prompt;
 }
 
 function effectiveConcurrencyLimit(
@@ -125,74 +76,53 @@ function effectiveConcurrencyLimit(
   });
 }
 
+/** One `active_agent_runs` row is one occupied slot; see the admission count. */
 async function concurrencyUsage(
   db: ReadDb,
   orgId: string,
 ): Promise<{
   readonly memberUsage: ConcurrencyMemberUsage[];
 }> {
-  const observedAt = nowDate();
-  const staleThreshold = new Date(observedAt.getTime() - PENDING_RUN_TTL_MS);
-  const active = count().as("active");
-  const activeMembers = db
-    .select({
-      userId: agentRuns.userId,
-      name: userCache.name,
-      email: userCache.email,
-      active,
-    })
-    .from(agentRuns)
-    .leftJoin(userCache, eq(agentRuns.userId, userCache.userId))
-    .where(
-      and(
-        eq(agentRuns.orgId, orgId),
-        sandboxCapacityPredicate(db, orgId, staleThreshold),
-      ),
-    )
-    .groupBy(agentRuns.userId, userCache.name, userCache.email)
-    .as("active_member_usage");
+  const active = count();
   const rows = await db
-    .select({
-      userId: activeMembers.userId,
-      name: activeMembers.name,
-      email: activeMembers.email,
-      active: activeMembers.active,
-    })
-    .from(activeMembers)
-    .orderBy(desc(activeMembers.active), asc(activeMembers.userId));
+    .select({ userId: activeAgentRuns.userId, active })
+    .from(activeAgentRuns)
+    .where(eq(activeAgentRuns.orgId, orgId))
+    .groupBy(activeAgentRuns.userId)
+    .orderBy(desc(active), asc(activeAgentRuns.userId));
+  const users =
+    rows.length > 0
+      ? await db
+          .select({
+            userId: userCache.userId,
+            name: userCache.name,
+            email: userCache.email,
+          })
+          .from(userCache)
+          .where(
+            inArray(
+              userCache.userId,
+              rows.map((row) => {
+                return row.userId;
+              }),
+            ),
+          )
+      : [];
+  const displayNames = new Map(
+    users.map((user) => {
+      return [user.userId, user.name?.trim() || user.email] as const;
+    }),
+  );
 
   return {
-    memberUsage: rows.flatMap((row) => {
-      return row.userId === null
-        ? []
-        : [
-            {
-              userId: row.userId,
-              displayName: row.name?.trim() || row.email || "unknown",
-              active: Number(row.active),
-            },
-          ];
+    memberUsage: rows.map((row) => {
+      return {
+        userId: row.userId,
+        displayName: displayNames.get(row.userId) || "unknown",
+        active: row.active,
+      };
     }),
   };
-}
-
-function queuedRunRows(db: ReadDb, orgId: string): Promise<QueuedRunRow[]> {
-  return db
-    .select({
-      id: agentRuns.id,
-      runUserId: agentRuns.userId,
-      createdAt: agentRuns.createdAt,
-      agentName: agents.name,
-      agentDisplayName: agents.displayName,
-      prompt: agentRuns.prompt,
-      triggerSource: agentRuns.triggerSource,
-      continuedFromSessionId: agentRuns.continuedFromSessionId,
-    })
-    .from(agentRuns)
-    .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-    .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-    .where(and(eq(agentRuns.orgId, orgId), eq(agentRuns.status, "queued")))
-    .orderBy(asc(agentRuns.createdAt));
 }
 
 function runningRunRows(db: ReadDb, orgId: string): Promise<RunningRunRow[]> {
@@ -211,56 +141,16 @@ function runningRunRows(db: ReadDb, orgId: string): Promise<RunningRunRow[]> {
     .orderBy(asc(agentRuns.startedAt));
 }
 
-async function estimatedTimePerRun(
-  db: ReadDb,
-  orgId: string,
-): Promise<number | null> {
-  const recentRuns = db
-    .select({
-      durationMs:
-        sql`EXTRACT(EPOCH FROM (${agentRuns.completedAt} - ${agentRuns.startedAt})) * 1000`
-          .mapWith(runDurationMillisecondsDecoder)
-          .as("duration_ms"),
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.orgId, orgId),
-        eq(agentRuns.status, "completed"),
-        isNotNull(agentRuns.completedAt),
-        isNotNull(agentRuns.startedAt),
-      ),
-    )
-    .orderBy(desc(agentRuns.completedAt))
-    .limit(RECENT_RUNS_FOR_ETA)
-    .as("recent_runs");
-  const [etaResult] = await db
-    .select({
-      avgMs: avg(recentRuns.durationMs).mapWith(
-        nullableDriverValueDecoder(runDurationMillisecondsDecoder),
-      ),
-    })
-    .from(recentRuns);
-  const averageMs = etaResult?.avgMs;
-  return averageMs === null || averageMs === undefined
-    ? null
-    : Math.round(averageMs);
-}
-
 async function userEmailMap(
   db: ReadDb,
-  queuedRuns: readonly QueuedRunRow[],
   runningRuns: readonly RunningRunRow[],
 ): Promise<ReadonlyMap<string, string>> {
   const userIds = [
-    ...new Set([
-      ...queuedRuns.map((run) => {
+    ...new Set(
+      runningRuns.map((run) => {
         return run.runUserId;
       }),
-      ...runningRuns.map((run) => {
-        return run.runUserId;
-      }),
-    ]),
+    ),
   ];
   const rows =
     userIds.length > 0
@@ -274,34 +164,6 @@ async function userEmailMap(
       return [row.userId, row.email] as const;
     }),
   );
-}
-
-function queueItem(
-  run: QueuedRunRow,
-  index: number,
-  userId: string,
-  emails: ReadonlyMap<string, string>,
-): QueueItem {
-  const isOwner = run.runUserId === userId;
-  const triggerSource =
-    run.triggerSource === null
-      ? null
-      : triggerSourceSchema.parse(run.triggerSource);
-  return {
-    position: index + 1,
-    agentName: isOwner ? (run.agentName ?? "unknown") : null,
-    agentDisplayName: isOwner ? (run.agentDisplayName ?? null) : null,
-    userEmail: isOwner ? (emails.get(run.runUserId) ?? "unknown") : null,
-    createdAt: run.createdAt.toISOString(),
-    isOwner,
-    runId: isOwner ? run.id : null,
-    prompt: isOwner ? truncatePrompt(run.prompt) : null,
-    triggerSource: isOwner ? triggerSource : null,
-    sessionLink:
-      isOwner && run.continuedFromSessionId
-        ? `/chat/${run.continuedFromSessionId}`
-        : null,
-  };
 }
 
 function runningTaskItem(
@@ -474,7 +336,7 @@ export function agentRunList(args: {
       ? args.status.split(",").map((status) => {
           return status.trim();
         })
-      : ["queued", "pending", "running"];
+      : ["pending", "running"];
 
     for (const status of statusValues) {
       if (!ALL_RUN_STATUSES.includes(status as RunStatus)) {
@@ -632,18 +494,9 @@ export function agentRunQueueStatus(args: {
 }): Computed<Promise<QueueResponse>> {
   return computed(async (get): Promise<QueueResponse> => {
     const db = get(db$);
-    const [
-      usage,
-      queuedRuns,
-      runningRuns,
-      estimatedTime,
-      paidSlots,
-      capabilities,
-    ] = await Promise.all([
+    const [usage, runningRuns, paidSlots, capabilities] = await Promise.all([
       concurrencyUsage(db, args.orgId),
-      queuedRunRows(db, args.orgId),
       runningRunRows(db, args.orgId),
-      estimatedTimePerRun(db, args.orgId),
       activePaidConcurrencySlots(db, args.orgId),
       loadOrgPlanCapabilities(db, args.orgId),
     ]);
@@ -655,7 +508,7 @@ export function agentRunQueueStatus(args: {
     const active = memberUsage.reduce((total, member) => {
       return total + member.active;
     }, 0);
-    const emails = await userEmailMap(db, queuedRuns, runningRuns);
+    const emails = await userEmailMap(db, runningRuns);
 
     return {
       concurrency: {
@@ -665,13 +518,9 @@ export function agentRunQueueStatus(args: {
         available: limit === 0 ? -1 : Math.max(0, limit - active),
         memberUsage,
       },
-      queue: queuedRuns.map((run, index) => {
-        return queueItem(run, index, args.userId, emails);
-      }),
       runningTasks: runningRuns.map((run) => {
         return runningTaskItem(run, args.userId, emails);
       }),
-      estimatedTimePerRun: estimatedTime,
     };
   });
 }

@@ -1,9 +1,10 @@
 import {
-  isPiExecutionRoute,
-  isPiNativeModel,
-  isPiGptModel,
-  isPiDeepSeekModel,
-} from "@okouai/core/pi-execution";
+  getModelProviderPiEndpoint,
+  getSecretNameForType,
+  isBuiltInModelProviderType,
+  modelProviderTypeSchema,
+  type ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
 import {
   piThinkingLevelForEffort,
   type ReasoningEffort,
@@ -12,192 +13,83 @@ import {
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
   type PiModelConfig,
-  type PiModelConfigLegacy,
 } from "@okouai/api-contracts/contracts/runners";
 import {
-  getModelProviderPiEndpoint,
-  getBuiltInModelRouteCandidates,
-  getProviderRuntimeModel,
-  getSecretNameForType,
-  isBuiltInModelProviderType,
-  isOkouRunModel,
-  modelProviderTypeSchema,
-  type ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+  isPiExecutionRoute,
+  isPresetUpstreamModel,
+  piCatalogModel,
+  type PiCatalogModel,
+  type PiRouteClass,
+} from "@okouai/core/pi-execution";
 import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
-import { OPENROUTER_US_ORIGIN } from "@okouai/api-contracts/contracts/openrouter-routing";
+import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 
 import {
-  resolvePiNativeModelConfig,
-  type PiNativeModelProviderInput,
-} from "./pi-native-model-config";
-
+  AUTO_RUN_MODEL,
+  AUTO_RUN_PROVIDER,
+  isAutoRunPreset,
+} from "@okouai/core/auto-run-model";
+import { env } from "../../lib/env";
+import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
-import { GATEWAY_RUNTIME_SECRET_NAME } from "./model-provider-gateway-runtime";
+import type { ModelCatalog } from "./model-catalog.service";
+import { PiModelConfigurationError } from "./pi-model-configuration-error";
 
 /**
- * Resolve non-secret model metadata shared by the sandbox Pi runtime and the
- * required API first-turn slot. Credentials remain in the ordinary encrypted
- * run context and are never embedded in this launch metadata.
+ * Resolve non-secret model metadata for the sandbox Pi runtime. Credentials
+ * remain in the ordinary encrypted run context and are never embedded in this
+ * launch metadata.
  */
 
 function normalizedBaseUrl(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-interface PiRuntimeContract {
-  readonly thinkingLevel?: PiModelConfigLegacy["thinkingLevel"];
-  readonly serviceTier?: PiModelConfigLegacy["serviceTier"];
-}
-
-type PiCatalogProvider = "deepseek" | "openai";
-
-const GPT_API_KEY_PI_ROUTES = {
-  "openai-api-key": {
-    productProviderType: "openai-api-key",
-    provider: "openai",
-    modelPrefix: "",
-    endpoint: getModelProviderPiEndpoint("openai-api-key", "openai-responses"),
-    credentialSecretName: "OPENAI_API_KEY",
-  },
-  "openrouter-codex": {
-    productProviderType: "openrouter-codex",
-    provider: "openrouter",
-    modelPrefix: "openai/",
-    endpoint: getModelProviderPiEndpoint(
-      "openrouter-codex",
-      "openai-responses",
-    ),
-    credentialSecretName: "OPENROUTER_API_KEY",
-  },
-  "vercel-ai-gateway-codex": {
-    productProviderType: "vercel-ai-gateway-codex",
-    provider: "openai",
-    modelPrefix: "openai/",
-    endpoint: getModelProviderPiEndpoint(
-      "vercel-ai-gateway-codex",
-      "openai-responses",
-    ),
-    credentialSecretName: "VERCEL_AI_GATEWAY_API_KEY",
-  },
-} as const;
-
-type GptApiKeyPiProviderType = keyof typeof GPT_API_KEY_PI_ROUTES;
-
-function isGptApiKeyPiProviderType(
-  value: string | null | undefined,
-): value is GptApiKeyPiProviderType {
-  return (
-    value !== null &&
-    value !== undefined &&
-    Object.hasOwn(GPT_API_KEY_PI_ROUTES, value)
-  );
-}
-
-export function gptApiKeyPiRoute(
-  value: string | null | undefined,
-): (typeof GPT_API_KEY_PI_ROUTES)[GptApiKeyPiProviderType] | null {
-  return isGptApiKeyPiProviderType(value) ? GPT_API_KEY_PI_ROUTES[value] : null;
-}
-
-function piCatalogProvider(
-  selectedModel: string | null | undefined,
-): PiCatalogProvider | null {
-  if (isPiGptModel(selectedModel)) {
-    return "openai";
-  }
-  return isPiDeepSeekModel(selectedModel) ? "deepseek" : null;
-}
-
-function piRuntimeContract(args: {
-  readonly providerType: string;
-  readonly selectedModel: string;
-  readonly codexServiceTier: "fast" | undefined;
-}): PiRuntimeContract {
-  if (isPiGptModel(args.selectedModel) && !isOkouRunModel(args.selectedModel)) {
-    return {
-      thinkingLevel: "max",
-      ...((isBuiltInModelProviderType(args.providerType) ||
-        args.providerType === "custom-openai-responses") &&
-      args.codexServiceTier === "fast"
-        ? { serviceTier: "priority" as const }
-        : {}),
-    };
-  }
-  return {};
-}
-
-function piProvider(
-  concreteType: ModelProviderType,
-): "deepseek" | "openai" | "openrouter" | null {
-  switch (concreteType) {
-    case "deepseek": {
-      return "deepseek";
-    }
-    case "openai-api-key": {
-      return "openai";
-    }
-    case "openrouter-codex": {
-      return "openrouter";
-    }
-    default: {
-      return null;
-    }
-  }
+function piProvider(concreteType: ModelProviderType): "openrouter" | null {
+  return concreteType === "openrouter-codex" ? "openrouter" : null;
 }
 
 /**
- * Route canonical chat threads by model and provider policy. Trigger source is
+ * Route canonical chat threads by model and provider route. Trigger source is
  * intentionally absent so every thread-bound launch shares the same admission.
  */
 export function shouldUsePiExecution(args: {
   readonly chatThreadId: string | undefined;
   readonly modelProviderType: string | null | undefined;
-  readonly selectedModel: string | null | undefined;
+  /** The selected model's catalog projection (`piCatalogModel`). */
+  readonly catalogModel: PiCatalogModel | null;
   readonly codexServiceTier: "fast" | undefined;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
-  readonly featureSwitchContext: FeatureSwitchContext;
 }): boolean {
   return (
     Boolean(args.chatThreadId) &&
     isPiExecutionRoute({
-      selectedModel: args.selectedModel,
+      catalogModel: args.catalogModel,
       modelProviderType: args.modelProviderType,
       runtimeProviderType:
         args.builtInModelRuntimeRoute?.providerType ?? args.modelProviderType,
       codexServiceTier: args.codexServiceTier,
-      piEnabled: isFeatureEnabled(
-        FeatureSwitchKey.PiLoop,
-        args.featureSwitchContext,
-      ),
     })
   );
 }
 
-interface PiModelProviderConfigInput extends PiNativeModelProviderInput {
+interface PiModelProviderConfigInput {
+  readonly upstreamModel?: string;
   readonly piModelConfig?: PiModelConfig;
   readonly type: string;
   readonly concreteType?: string;
   readonly environment: Record<string, string>;
   readonly selectedModel: string | null;
-  readonly inlineFirewall?: boolean;
-  readonly credentialHeader?: PiModelConfigLegacy["credentialHeader"];
 }
 
 function resolveCodexSubscriptionPiModelConfig(
   provider: PiModelProviderConfigInput,
+  routeClass: PiRouteClass | null,
   codexServiceTier: "fast" | undefined,
 ): PiModelConfig | null {
   if (
     provider.type !== "codex-oauth-token" ||
-    !isPiGptModel(provider.selectedModel) ||
-    provider.inlineFirewall === true ||
-    provider.credentialHeader !== undefined ||
+    routeClass !== "gpt-codex" ||
     (provider.concreteType !== undefined &&
       provider.concreteType !== "codex-oauth-token") ||
     provider.environment.OPENAI_MODEL !== provider.selectedModel ||
@@ -255,123 +147,7 @@ function resolveCodexSubscriptionPiModelConfig(
     dialect: config.dialect,
     transport: config.transport,
     thinkingLevel: config.thinkingLevel,
-    serviceTier: codexServiceTier,
-  })
-    ? config
-    : null;
-}
-
-function resolveCustomGatewayPiModelConfig(
-  provider: PiModelProviderConfigInput,
-  codexServiceTier: "fast" | undefined,
-): PiModelConfig | null {
-  if (
-    provider.type !== "custom-openai-responses" ||
-    provider.inlineFirewall !== true ||
-    !provider.selectedModel ||
-    !provider.credentialHeader
-  ) {
-    return null;
-  }
-  const catalogProvider = piCatalogProvider(provider.selectedModel);
-  const baseUrl = provider.environment.OPENAI_BASE_URL;
-  const model = provider.environment.OPENAI_MODEL;
-  if (!catalogProvider || !baseUrl || !model) {
-    return null;
-  }
-  const runtimeContract = piRuntimeContract({
-    providerType: provider.type,
-    selectedModel: provider.selectedModel,
-    codexServiceTier,
-  });
-  const config = {
-    provider: catalogProvider,
-    baseUrl,
-    model,
-    catalogModel: provider.selectedModel,
-    apiKeyEnv: "OPENAI_API_KEY",
-    credentialSecretName: GATEWAY_RUNTIME_SECRET_NAME,
-    credentialHeader: provider.credentialHeader,
-    ...runtimeContract,
-  } as const;
-  return isPiAgentModelSupported({
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-    model: config.model,
-    catalogModel: config.catalogModel,
-    apiKey: "sandbox-secret",
-    dialect: "openai-responses",
-    transport: "sse",
-    ...runtimeContract,
-  })
-    ? config
-    : null;
-}
-
-function resolveGptApiKeyPiModelConfig(
-  provider: PiModelProviderConfigInput,
-  codexServiceTier: "fast" | undefined,
-): PiModelConfig | null {
-  const route = gptApiKeyPiRoute(provider.type);
-  if (
-    !route ||
-    !isPiGptModel(provider.selectedModel) ||
-    provider.inlineFirewall === true ||
-    provider.credentialHeader !== undefined ||
-    (provider.concreteType !== undefined &&
-      provider.concreteType !== route.productProviderType) ||
-    !route.endpoint ||
-    getSecretNameForType(route.productProviderType) !==
-      route.credentialSecretName ||
-    provider.environment.OPENAI_MODEL !==
-      `${route.modelPrefix}${provider.selectedModel}` ||
-    !provider.environment.OPENAI_API_KEY?.trim()
-  ) {
-    return null;
-  }
-  const configuredBaseUrl = provider.environment.OPENAI_BASE_URL;
-  if (
-    configuredBaseUrl &&
-    normalizedBaseUrl(configuredBaseUrl) !==
-      normalizedBaseUrl(route.endpoint.baseUrl)
-  ) {
-    return null;
-  }
-  const serviceTier = codexServiceTier === "fast" ? "priority" : undefined;
-  const config = {
-    ...(serviceTier === undefined
-      ? { schemaVersion: PI_MODEL_CONFIG_CURRENT_GENERATION }
-      : {
-          schemaVersion: PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-          serviceTier,
-        }),
-    dialect: "openai-responses",
-    transport: "sse",
-    provider: route.provider,
-    baseUrl: route.endpoint.baseUrl,
-    model: `${route.modelPrefix}${provider.selectedModel}`,
-    ...(route.productProviderType === "vercel-ai-gateway-codex"
-      ? { catalogModel: provider.selectedModel }
-      : {}),
-    thinkingLevel: "max",
-    credentialBindings: [
-      {
-        kind: "api-key",
-        environment: "OPENAI_API_KEY",
-        secretName: route.credentialSecretName,
-      },
-    ],
-  } satisfies PiModelConfig;
-  return isPiAgentModelSupported({
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-    model: config.model,
-    ...(config.catalogModel ? { catalogModel: config.catalogModel } : {}),
-    apiKey: "sandbox-secret",
-    dialect: config.dialect,
-    transport: config.transport,
-    thinkingLevel: config.thinkingLevel,
-    serviceTier,
+    serviceTier: codexServiceTier === "fast" ? "fast" : undefined,
   })
     ? config
     : null;
@@ -379,7 +155,8 @@ function resolveGptApiKeyPiModelConfig(
 
 function resolvePiRouteModelConfig(
   provider: PiModelProviderConfigInput | null,
-  codexServiceTier: "fast" | undefined = undefined,
+  catalogModel: PiCatalogModel | null,
+  codexServiceTier: "fast" | undefined,
 ): PiModelConfig | null {
   if (!provider || !provider.selectedModel) {
     return null;
@@ -387,34 +164,34 @@ function resolvePiRouteModelConfig(
   if (provider.piModelConfig) {
     return provider.piModelConfig;
   }
-  if (isPiNativeModel(provider.selectedModel)) {
-    return resolvePiNativeModelConfig(provider);
-  }
   if (provider.type === "codex-oauth-token") {
-    return resolveCodexSubscriptionPiModelConfig(provider, codexServiceTier);
-  }
-  if (provider.type === "custom-openai-responses") {
-    return resolveCustomGatewayPiModelConfig(provider, codexServiceTier);
+    return resolveCodexSubscriptionPiModelConfig(
+      provider,
+      catalogModel?.model === provider.selectedModel
+        ? catalogModel.piRouteClass
+        : null,
+      codexServiceTier,
+    );
   }
   if (
-    isGptApiKeyPiProviderType(provider.type) &&
-    isPiGptModel(provider.selectedModel)
+    !isBuiltInModelProviderType(provider.type) ||
+    provider.selectedModel !== AUTO_RUN_MODEL ||
+    provider.concreteType !== AUTO_RUN_PROVIDER ||
+    !isAutoRunPreset(provider.upstreamModel)
   ) {
-    return resolveGptApiKeyPiModelConfig(provider, codexServiceTier);
+    return null;
   }
-  return resolveResponsesPiModelConfig(
-    { ...provider, selectedModel: provider.selectedModel },
-    codexServiceTier,
-  );
+  // An OpenRouter preset upstream configures reasoning and service tier
+  // itself, so the client sends neither.
+  return resolveResponsesPiModelConfig({
+    ...provider,
+    selectedModel: provider.selectedModel,
+  });
 }
 
 function resolveResponsesPiModelConfig(
   provider: PiModelProviderConfigInput & { readonly selectedModel: string },
-  codexServiceTier: "fast" | undefined,
 ): PiModelConfig | null {
-  if (provider.inlineFirewall) {
-    return null;
-  }
   const concreteType = modelProviderTypeSchema.safeParse(
     provider.concreteType ?? provider.type,
   );
@@ -427,13 +204,9 @@ function resolveResponsesPiModelConfig(
     return null;
   }
   const model = provider.environment.OPENAI_MODEL ?? provider.selectedModel;
-  const expectedModel = isBuiltInModelProviderType(provider.type)
-    ? getBuiltInModelRouteCandidates(provider.selectedModel).find(
-        (candidate) => {
-          return candidate.providerType === concreteType.data;
-        },
-      )?.upstreamModel
-    : getProviderRuntimeModel(concreteType.data, provider.selectedModel);
+  // The provider environment was built from the catalog route; its upstream
+  // model is the only model this Pi route may send.
+  const expectedModel = provider.upstreamModel;
   if (model !== expectedModel) {
     return null;
   }
@@ -443,15 +216,6 @@ function resolveResponsesPiModelConfig(
   const endpoint = getModelProviderPiEndpoint(
     concreteType.data,
     "openai-responses",
-    provider.credentialOwner
-      ? {
-          credentialOwner: provider.credentialOwner,
-          model,
-          usRoutingEnabled:
-            provider.environment.OPENAI_BASE_URL ===
-            `${OPENROUTER_US_ORIGIN}/api/v1`,
-        }
-      : undefined,
   );
   if (!endpoint) {
     return null;
@@ -465,21 +229,15 @@ function resolveResponsesPiModelConfig(
   }
 
   const apiKeyEnv = "OPENAI_API_KEY";
-  const runtimeContract = piRuntimeContract({
-    providerType: provider.type,
-    selectedModel: provider.selectedModel,
-    codexServiceTier,
-  });
   const config = {
     provider: providerId,
     baseUrl: endpoint.baseUrl,
     model,
     apiKeyEnv,
     credentialSecretName,
-    ...(isOkouRunModel(provider.selectedModel)
+    ...(isPresetUpstreamModel(provider.upstreamModel)
       ? { catalogModel: provider.selectedModel }
       : {}),
-    ...runtimeContract,
   } as const;
   return isPiAgentModelSupported({
     provider: config.provider,
@@ -489,7 +247,6 @@ function resolveResponsesPiModelConfig(
     apiKey: "sandbox-secret",
     dialect: "openai-responses",
     transport: "sse",
-    ...runtimeContract,
   })
     ? config
     : null;
@@ -498,13 +255,18 @@ function resolveResponsesPiModelConfig(
 /** Apply the run's effective effort to every Pi dialect before capturing its launch context. */
 export function resolvePiSandboxModelConfig(
   provider: PiModelProviderConfigInput | null,
+  catalogModel: PiCatalogModel | null,
   codexServiceTier: "fast" | undefined = undefined,
   reasoningEffort: ReasoningEffort | null | undefined = undefined,
 ): PiModelConfig | null {
-  const config = resolvePiRouteModelConfig(provider, codexServiceTier);
+  const config = resolvePiRouteModelConfig(
+    provider,
+    catalogModel,
+    codexServiceTier,
+  );
   if (
     !config ||
-    isOkouRunModel(provider?.selectedModel) ||
+    isPresetUpstreamModel(provider?.upstreamModel) ||
     reasoningEffort === null ||
     reasoningEffort === undefined
   ) {
@@ -514,4 +276,106 @@ export function resolvePiSandboxModelConfig(
     ...config,
     thinkingLevel: piThinkingLevelForEffort(reasoningEffort),
   };
+}
+
+function assertCurrentPiCliArtifact(): void {
+  // The writer and CLI reader are built from the same commit. A mutable or
+  // differently pinned package cannot consume a newly captured model.
+  const commit = env("GIT_COMMIT_SHA");
+  const cliUrl = new URL(env("CLI_PKG_URL"));
+  if (
+    !/^[0-9a-f]{40}$/u.test(commit) ||
+    cliUrl.origin !== "https://static.okou.io" ||
+    cliUrl.username ||
+    cliUrl.password ||
+    cliUrl.search ||
+    cliUrl.hash ||
+    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
+  ) {
+    throw new PiModelConfigurationError(
+      "Pi requires the current commit-addressed CLI reader artifact",
+    );
+  }
+}
+
+/** The plain run facts Pi model preparation reads. */
+export interface PiModelPreparationInput {
+  readonly catalog: ModelCatalog;
+  readonly piExecution: boolean;
+  readonly codexServiceTier?: "fast";
+  readonly reasoningEffort?: ReasoningEffort | null;
+}
+
+export function materializePreparedPiProvider(
+  input: PiModelPreparationInput,
+  provider: ResolvedModelProviderEnvironment | null,
+): ResolvedModelProviderEnvironment | null {
+  if (!input.piExecution) {
+    return provider;
+  }
+  const catalogModel = piCatalogModel(input.catalog, provider?.selectedModel);
+  const config = resolvePiSandboxModelConfig(
+    provider,
+    catalogModel,
+    input.codexServiceTier,
+    input.reasoningEffort,
+  );
+  if (!config || !provider) {
+    throw new Error(
+      "Selected Pi execution requires a supported model provider configuration",
+    );
+  }
+  return { ...provider, piModelConfig: config };
+}
+
+/** Maintenance has its own platform-funded extraction model, not a chat model choice. */
+export function resolvePlatformMemoryPiModelConfig(
+  provider: ResolvedModelProviderEnvironment,
+): PiModelConfig {
+  const route = provider.builtInModelRuntimeRoute;
+  if (
+    !isBuiltInModelProviderType(provider.type) ||
+    provider.credentialOwner !== "builtin" ||
+    provider.selectedModel !== PI_MEMORY_STAGE1_BUILT_IN_MODEL ||
+    !route ||
+    route.selectedModel !== provider.selectedModel ||
+    route.upstreamModel !== provider.upstreamModel ||
+    route.providerType !== provider.concreteType
+  ) {
+    throw new PiModelConfigurationError(
+      "Invalid platform memory model binding",
+    );
+  }
+  assertCurrentPiCliArtifact();
+  const config = resolveResponsesPiModelConfig({
+    ...provider,
+    selectedModel: provider.selectedModel,
+  });
+  if (!config) {
+    throw new PiModelConfigurationError(
+      "Platform memory model configuration is unavailable",
+    );
+  }
+  return config;
+}
+
+export function resolvePreparedPiModelConfig(args: {
+  readonly input: PiModelPreparationInput;
+  readonly modelProvider: ResolvedModelProviderEnvironment | null;
+}): PiModelConfig | undefined {
+  if (!args.input.piExecution) {
+    return undefined;
+  }
+  const config = resolvePiSandboxModelConfig(
+    args.modelProvider,
+    piCatalogModel(args.input.catalog, args.modelProvider?.selectedModel),
+    args.input.codexServiceTier,
+    args.input.reasoningEffort,
+  );
+  if (!config) {
+    throw new Error(
+      "Selected Pi execution requires a supported Pi model provider configuration",
+    );
+  }
+  return config;
 }

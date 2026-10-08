@@ -17,7 +17,7 @@ import {
 import { settle } from "../utils";
 import {
   checkManagedCredits$,
-  recordManagedUsage$,
+  recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 
@@ -123,7 +123,7 @@ function successBody(
   request: MapsSearchRequest,
   result: VertexMapsResult,
   billingQuantity: number,
-  creditsCharged: number,
+  creditsCharged: number | null,
 ): MapsSearchResponse {
   return {
     query: request.query,
@@ -204,7 +204,7 @@ export const mapsSearch$ = command(
       billingQuantity === 0
         ? 0
         : await set(
-            recordManagedUsage$,
+            recordSuccessfulManagedUsage$,
             {
               actor: {
                 orgId: args.auth.orgId,

@@ -34,11 +34,11 @@ pub(crate) fn storage_commit_url(base_url: &str) -> String {
     routes::webhooks::agent::storages::commit::COMMIT.url(base_url)
 }
 
-pub(crate) fn active_input_receipt_url(base_url: &str, run_id: &str, delivery_id: &str) -> String {
-    routes::runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::route(
-        routes::runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::Params {
+pub(crate) fn steered_input_url(base_url: &str, run_id: &str, event_id: &str) -> String {
+    routes::runners::runs::by_run_id::steerable_inputs::by_event_id::steered::route(
+        routes::runners::runs::by_run_id::steerable_inputs::by_event_id::steered::Params {
             run_id,
-            delivery_id,
+            event_id,
         },
     )
     .url(base_url)

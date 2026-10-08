@@ -2,10 +2,11 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, countDistinct, eq, inArray, isNotNull } from "drizzle-orm";
 import { buildFeishuAgentResponseMessage } from "../../lib/feishu-message-card";
 import { logger } from "../../lib/log";
@@ -22,7 +23,6 @@ import {
   feishuChatCallbackPayloadSchema,
   type FeishuDeliveryTarget,
 } from "./feishu-chat-callback-payload";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
@@ -146,7 +146,7 @@ async function loadFeishuChatDeliveryContext(
   const [binding] = await args.db
     .select({
       feishuOpenId: feishuOrgConnections.feishuOpenId,
-      defaultAgentId: feishuOrgInstallations.defaultAgentId,
+      defaultAgentId: orgMetadata.defaultAgentId,
     })
     .from(feishuChatThreadRoutes)
     .innerJoin(
@@ -157,6 +157,7 @@ async function loadFeishuChatDeliveryContext(
       feishuOrgInstallations,
       eq(feishuOrgInstallations.id, feishuOrgConnections.installationId),
     )
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
     .where(
       and(
         eq(feishuChatThreadRoutes.chatThreadId, run.chatThreadId),
@@ -310,21 +311,17 @@ async function deliverClaimedFeishuChatCallback(
     return "skipped_revoked";
   }
 
-  const [mentionerCount, featureContext] = await Promise.all([
-    countFeishuMentioners({
-      db: args.db,
-      installationId: payload.installationId,
-      chatId: payload.chatId,
-      threadId: payload.threadId,
-    }),
-    loadUserFeatureSwitchContext(args.db, run.orgId, run.userId),
-  ]);
+  const mentionerCount = await countFeishuMentioners({
+    db: args.db,
+    installationId: payload.installationId,
+    chatId: payload.chatId,
+    threadId: payload.threadId,
+  });
   signal.throwIfAborted();
   const presentation = await resolveIntegrationAgentResponsePresentation(
     {
       db: args.db,
       orgId: run.orgId,
-      userId: run.userId,
       runId: args.callback.runId,
       agentId: run.agentId,
       defaultAgentId: binding.defaultAgentId ?? undefined,
@@ -332,16 +329,12 @@ async function deliverClaimedFeishuChatCallback(
         payload.replyInThread && mentionerCount > 1
           ? `<at id=${binding.feishuOpenId}></at>`
           : undefined,
-      getFeatureOverrides: () => {
-        return Promise.resolve(featureContext.overrides ?? {});
-      },
     },
     signal,
   );
   signal.throwIfAborted();
   const message = buildFeishuAgentResponseMessage({
     text: messageContent,
-    auditUrl: presentation.logsUrl,
     footerText: presentation.footerText,
   });
   if (payload.replyInThread) {

@@ -1,49 +1,40 @@
 # Connector catalog rejection diagnostics
 
-The API validates a candidate catalog before atomically activating it. A rejected
-candidate never replaces the accepted snapshot. Existing connectors keep using
-the accepted catalog; new catalog changes are unavailable until a later sync
-accepts a candidate. Retention is not proof that the catalog is current.
+The API validates a candidate publication before preparing its immutable
+entries and moving the catalog pointer. A rejected candidate never replaces
+the serving generation. Existing connectors keep using it; new catalog changes
+are unavailable until a later sync accepts a candidate. Retention is not proof
+that the catalog is current.
 
 ## Interpreting rejection records
 
-`Connector catalog candidate rejected` is emitted only after a rejection attempt
-commits. A concurrent attempt that loses the revision check retries without
-emitting that record.
+Since the [Release 2 contraction](deployment-compatibility.md#connector-catalog-release-2-contraction-migration-1334),
+rejections are not persisted and there is no rejection cache. Every sync
+attempt revalidates the current publication, and each rejected attempt emits
+one `Connector catalog candidate rejected` WARN. The cron response is only the
+attempt report: `{ outcome: "rejected", failureCode }`. It no longer reports
+the serving state; observe the retained generation with masked database
+queries against `connector_catalog`, or by a later sync of the serving
+publication returning `outcome: "unchanged"`. See
+[diagnostics removal](deployment-compatibility.md#connector-catalog-diagnostics-removed-2026-10-07).
 
-- A fresh rejection is WARN. A cached rejection without an active snapshot is
-  also WARN because no accepted catalog is available.
-- A reused cached rejection with an active snapshot is DEBUG. It remains a
-  rejected sync, not success; the sync/status API continues reporting stale
-  state and `reusedCachedRejection: true`.
-  The production Axiom transport drops DEBUG; local output requires the existing
-  `OKOU_DEBUG=connector-catalog:sync` setting. No new INFO audit exception is added.
 - `failureCode` keeps its existing meaning. `relationshipRule`, when present,
   identifies an explicit semantic validator check, such as
   `auth-code-client-registration`, `undeclared-storage-reference`, or
   `unknown-firewall-binding`.
 - Rule identifiers are fixed strings. Raw exception messages, causes, private
-  binding names, credentials, object keys, ETags and candidate payloads are not
-  added to the record. Unclassified exceptions keep the coarse failure code
-  without an invented rule.
-- `catalogVersion` and `catalogDigest` identify a parsed candidate pointer, not
-  the retained active catalog. A cached 304 observation uses its exact recorded
-  rejected candidate. A fresh source/pointer failure does not borrow a previous
-  candidate identity. Missing fields mean that identity is unavailable.
-- `sourceId` identifies the storage authority, bucket and snapshot generation.
-  It is not a candidate identifier: equal source IDs do not establish equal
-  catalog versions or contents.
+  binding names, credentials, object keys and candidate payloads are not added
+  to the record. Unclassified exceptions keep the coarse failure code without
+  an invented rule.
+- `catalogVersion` and `catalogDigest` identify the parsed candidate pointer,
+  not the serving generation, which `retainedServingHash` reports. They are
+  present whenever a pointer was parsed, including a later catalog download
+  failure reported as `source-unavailable`; a pointer download or parse
+  failure has no candidate identity, so they are absent.
+- `sourceId` identifies the storage authority, bucket and persisted-source
+  generation salt. It is not a candidate identifier.
 - `schemaVersion` identifies the sync target generation. Current APIs sync and
-  serve only accepted v4 snapshots. Cold v4 diagnostics mean connectors are
-  unavailable until normal sync succeeds. Older APIs keep their separate v3
-  state and reader. See [v4 consumption](connector-catalog-v4.md) for bootstrap
-  and rollback boundaries.
-
-Fine-grained rules are not persisted. Cache-only observations therefore omit
-them; the API does not download or revalidate unchanged rejected content just to
-enrich a log. Candidate identity/ETag changes and the existing API authority
-rules still determine revalidation. A successful sync clears rejected state.
-Old and new APIs share the unchanged persisted/public failure-code contract.
+  serve only artifact schema version 4.
 
 ## Recovered publication mismatch
 

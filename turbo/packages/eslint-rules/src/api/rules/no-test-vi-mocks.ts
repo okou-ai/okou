@@ -64,6 +64,19 @@ export const noTestViMocks = createRule({
         return;
       }
 
+      // The sole generalized harness replaces only the database transport;
+      // it still executes real migrations, SQL and production route behavior.
+      const target = node.arguments[0];
+      if (
+        context.filename
+          .replaceAll("\\", "/")
+          .endsWith("/src/__tests__/pglite-setup.ts") &&
+        callee.property.name === "mock" &&
+        target?.type === AST_NODE_TYPES.Literal &&
+        target.value === "../lib/db"
+      ) {
+        return;
+      }
       context.report({
         node,
         messageId: "noTestViMock",

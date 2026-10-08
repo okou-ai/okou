@@ -1,5 +1,5 @@
 diff --git a/package.json b/package.json
-index d41363e0c536ed26a6e8e761b4bbbef41988001f..cf23501694339325acc46f17f4119407323485d7 100644
+index d41363e..cf23501 100644
 --- a/package.json
 +++ b/package.json
 @@ -5,6 +5,7 @@
@@ -11,10 +11,10 @@ index d41363e0c536ed26a6e8e761b4bbbef41988001f..cf23501694339325acc46f17f4119407
    "repository": {
      "type": "git",
 diff --git a/src/index.ts b/src/index.ts
-index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836ec757b26 100644
+index 363a50d..ca3a021 100644
 --- a/src/index.ts
 +++ b/src/index.ts
-@@ -14,11 +14,14 @@ import {
+@@ -14,11 +14,13 @@ import {
  } from "@langfuse/tracing";
  import { type SpanContext, TraceFlags } from "@opentelemetry/api";
  import { AlwaysOnSampler, NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
@@ -24,12 +24,11 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836
  const EXTENSION_VERSION = "0.1.2";
  const ROOT_OBSERVATION_NAME = "Conversational Turn";
  const SUBAGENT_ROOT_OBSERVATION_NAME = "Subagent Turn";
-+const CONTINUATION_ROOT_OBSERVATION_NAME = "Sandbox Continuation";
 +const SANDBOX_ROOT_OBSERVATION_NAME = "Sandbox Execution";
  const TRACE_NAME = "Pi Turn";
  const GENERATION_PREFIX = "LLM Call";
  const TOOL_PREFIX = "Tool:";
-@@ -76,9 +79,10 @@ export function readInheritedParent(env: NodeJS.ProcessEnv = process.env): Inher
+@@ -76,9 +78,10 @@ export function readInheritedParent(env: NodeJS.ProcessEnv = process.env): Inher
  // ---------------------------------------------------------------------------
  
  export interface LangfuseConfig {
@@ -43,7 +42,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836
    userId?: string;
    environment?: string;
    release?: string;
-@@ -89,6 +93,19 @@ export function loadConfig(): LangfuseConfig | undefined {
+@@ -89,6 +92,19 @@ export function loadConfig(): LangfuseConfig | undefined {
    if ((process.env.LANGFUSE_TRACING_ENABLED ?? "").trim().toLowerCase() === "false") {
      return undefined;
    }
@@ -63,7 +62,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836
    const file = readConfigFile();
    const asTrimmedString = (v: unknown): string | undefined =>
      typeof v === "string" && v.trim() ? v.trim() : undefined;
-@@ -144,14 +161,15 @@ export interface TruncationMeta {
+@@ -144,14 +160,15 @@ export interface TruncationMeta {
  }
  
  export function truncateText(text: string): { text: string; meta: TruncationMeta } {
@@ -83,7 +82,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836
        kept_len: MAX_CHARS,
        sha256: createHash("sha256").update(text).digest("hex"),
      },
-@@ -197,7 +215,7 @@ export function createSecretRedactor(...extraSecrets: string[]): (value: unknown
+@@ -197,7 +214,7 @@ export function createSecretRedactor(...extraSecrets: string[]): (value: unknown
    return (value) => walk(value, []);
  }
  
@@ -92,7 +91,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836
  
  /** Extract plain text from a pi message content array. */
  export function extractText(content: unknown): string {
-@@ -383,8 +401,18 @@ function createRuntime(
+@@ -383,8 +400,18 @@ function createRuntime(
    config: LangfuseConfig,
    resolveTraceAttributes: () => TraceAttributes,
  ): Runtime {
@@ -112,7 +111,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836
      publicKey: config.publicKey,
      secretKey: config.secretKey,
      baseUrl: config.baseUrl,
-@@ -494,6 +522,36 @@ export default function (pi: ExtensionAPI) {
+@@ -494,6 +521,36 @@ export default function (pi: ExtensionAPI) {
      }
    };
  
@@ -149,7 +148,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836
    const closeDanglingObservations = (reason: "interrupted" | "superseded") => {
      if (!state) return;
      for (const [, tool] of state.openTools) {
-@@ -618,8 +676,10 @@ export default function (pi: ExtensionAPI) {
+@@ -618,8 +675,10 @@ export default function (pi: ExtensionAPI) {
        ...(config.userId ? { [LangfuseOtelSpanAttributes.TRACE_USER_ID]: config.userId } : {}),
      };
  
@@ -161,7 +160,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836
        {
          input: { role: "user", content: userText },
          metadata: {
-@@ -637,7 +697,7 @@ export default function (pi: ExtensionAPI) {
+@@ -637,7 +696,7 @@ export default function (pi: ExtensionAPI) {
              : {}),
          },
        },
@@ -170,92 +169,3 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836
      );
  
      state = {
-@@ -654,6 +714,88 @@ export default function (pi: ExtensionAPI) {
-     debug("root created, turn", turnNumber);
-   });
- 
-+  // continuePendingTools() starts the agent without before_agent_start because
-+  // the user prompt and assistant tool calls already exist in session history.
-+  pi.on("agent_start", (_event, ctx) => {
-+    if (
-+      state ||
-+      !inheritedParent ||
-+      process.env.PI_LANGFUSE_CONTINUATION !== "true"
-+    ) {
-+      return;
-+    }
-+
-+    ensureRuntime();
-+    const sessionId = ctx.sessionManager.getSessionId();
-+    const entries = ctx.sessionManager.getEntries() as Array<{
-+      type?: string;
-+      message?: { role?: string; content?: unknown };
-+    }>;
-+    let lastUserMessage: (typeof entries)[number] | undefined;
-+    for (let index = entries.length - 1; index >= 0; index -= 1) {
-+      const entry = entries[index];
-+      if (entry?.type === "message" && entry.message?.role === "user") {
-+        lastUserMessage = entry;
-+        break;
-+      }
-+    }
-+    const { text: userText, meta: userMeta } = truncateText(
-+      extractText(lastUserMessage?.message?.content),
-+    );
-+    const turnNumber = resolveTurnNumber(ctx, userText);
-+    lastPromptText = userText;
-+    traceAttributes = {
-+      [LangfuseOtelSpanAttributes.TRACE_SESSION_ID]:
-+        inheritedParent.sessionId ?? sessionId,
-+      [LangfuseOtelSpanAttributes.TRACE_TAGS]: BASE_TAGS,
-+      ...(config.userId
-+        ? { [LangfuseOtelSpanAttributes.TRACE_USER_ID]: config.userId }
-+        : {}),
-+    };
-+
-+    const startedAt = new Date();
-+    recordSandboxWait(startedAt);
-+    const root = startObservation(
-+      isPlatformSandbox ? SANDBOX_ROOT_OBSERVATION_NAME : CONTINUATION_ROOT_OBSERVATION_NAME,
-+      {
-+        input: { role: "user", content: userText },
-+        metadata: {
-+          source: "pi",
-+          extension: EXTENSION_NAME,
-+          extension_version: EXTENSION_VERSION,
-+          session_id: sessionId,
-+          turn_number: turnNumber,
-+          cwd: ctx.cwd,
-+          user_text_meta: userMeta,
-+          continuation: "pending-tools",
-+          parent_session_id: inheritedParent.sessionId,
-+          ...(gitBranch ? { git_branch: gitBranch } : {}),
-+          ...(ctx.model
-+            ? { model: ctx.model.id, provider: ctx.model.provider }
-+            : {}),
-+        },
-+      },
-+      {
-+        asType: "span",
-+        parentSpanContext: inheritedParent.spanContext,
-+        startTime: startedAt,
-+      },
-+    );
-+
-+    state = {
-+      root,
-+      turnNumber,
-+      generationCount: 0,
-+      openTools: new Map(),
-+      pendingToolResults: [],
-+      sawError: false,
-+      userText,
-+      turnImages: [],
-+    };
-+    publishParentContext(root, sessionId);
-+    debug("continuation root created, turn", turnNumber);
-+  });
-+
-   pi.on("before_provider_request", (_event, ctx) => {
-     if (!state) return;
-     // A new provider request while one is open means the previous HTTP

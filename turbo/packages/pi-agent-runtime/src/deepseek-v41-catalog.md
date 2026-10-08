@@ -1,9 +1,24 @@
 # DeepSeek V4.1 Flash Pi catalog
 
-`model.ts:sourceModel` supplies the exact V4.1 identities missing from pi-ai
-0.85.1. API-first and the commit-addressed CLI register this same metadata in
+`model.ts:sourceModel` supplies the exact OpenRouter V4.1 identity missing from
+pi-ai 0.85.1. The commit-addressed CLI registers this same metadata in
 the real SDK ModelRuntime. This is a model definition, not a substitute V4
 request or a second admission policy.
+
+## Effective limit corrections (2026-10-02)
+
+The [model-limit audit](model-limits-audit.md) supersedes the historical output
+snapshots below. The exact V4.1 Flash direct-API maximum in the provider's
+[Models documentation](https://api-docs.deepseek.com/api/list-models/) is 393,216,
+not 384,000. The OpenRouter primary-provider maximum is separately 943,718
+according to its live Models and endpoint metadata; it is not interchangeable
+with the direct API or a guarantee for every fallback endpoint. Both retain
+1,048,576 total context.
+
+`model-limits.ts` applies these corrections at the shared resolver and includes
+them in installed-CLI parity. The hand-pinned identity, cost, input modalities
+and dialect-compatibility boundary remain unchanged. Legacy V4 retains its
+provider-specific definition and is not remapped to V4.1.
 
 ## Provenance (2026-09-15)
 
@@ -24,37 +39,12 @@ request or a second admission policy.
   estimate, not the billing authority. Cache creation has no separately quoted
   provider rate. Okou's existing logical-model usage pricing remains unchanged.
 
-The native catalog identity `deepseek-v4.1-flash` exists only for explicitly
-mapped custom Responses deployments. Their opaque request model is preserved.
-Other provider/model pairs still require a matching SDK entry; no version-prefix
-lookup or experimental vision alias is used. Existing V4 entries are unchanged.
-Replace this definition only when the pinned SDK has verified equivalent V4.1
-metadata and the actual API/CLI transport and continuation tests pass.
-
-## Pinned V4 Flash definition (2026-09-21, pi-ai 0.86.1)
-
-pi-ai 0.86.1 removed `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`
-from `providers/data/deepseek.json`, leaving `deepseek-flash` and
-`deepseek-v4-pro`. `deepseek-v4-flash` is still offered product surface —
-`PI_MEMORY_STAGE1_BUILT_IN_MODEL`, the `$` price tier and its billing rows —
-so `model.ts:sourceModel` now pins the definition 0.85.1 shipped, field for
-field: `openai-completions`, `https://api.deepseek.com`, reasoning, text-only
-input, context 1,000,000, maximum output 384,000 and peak USD per million
-input/output/cache-read of 0.14/0.28/0.0028.
-
-Keeping `api: "openai-completions"` is load-bearing. `resolvePiAgentModel`
-copies `source.compat` only when `source.api === dialect`, and this model never
-resolves to a Responses dialect; recording the upstream dialect keeps that guard
-false, so no compatibility metadata is copied and the wire is unchanged. The
-upstream `compat` block is deliberately not reproduced because nothing reads it.
-
-V4 and V4.1 are different models at different prices (0.14/0.28 versus
-0.3/1.2). `deepseek-v4-flash` must never be remapped onto `deepseek-flash`;
-retiring the model is a separate product decision. The OpenRouter identity
-`deepseek/deepseek-v4-flash` is unaffected and still resolves from the 0.87.1
-catalog. `deepseek-v4-flash-vision-exp` has no reference in this repository and
-was not pinned. Remove this pin only when the product retires the model or a
-pinned SDK restores an equivalent entry.
+Only the OpenRouter identity `deepseek/deepseek-v4.1-flash`, used by the fixed
+built-in memory maintenance binding, is hand-pinned. Other provider/model pairs
+still require a matching SDK entry; no version-prefix lookup or experimental
+vision alias is used. Replace this definition only when the pinned SDK has
+verified equivalent V4.1 metadata and the actual API/CLI transport and
+continuation tests pass.
 
 ## Deployment and retained work
 
@@ -62,8 +52,8 @@ New V4.1 Pi admission requires the serving API's exact commit-addressed CLI
 artifact (`https://static.okou.io/okou-cli/<GIT_COMMIT_SHA>/package.tgz`). A
 mutable, foreign or differently pinned package fails before provider transport.
 Release verification must prove that immutable artifact contains this reader.
-This uses the existing Responses config and handoff generations; no DDL,
-Runner capability or native Claude catalog vocabulary changes are needed.
+This uses the existing Responses config and handoff generations; no DDL or
+Runner capability changes are needed.
 
 Old queued/running contexts retain their original runtime, model, package and
 accounting writer. New API and CLI still read all existing supported Responses

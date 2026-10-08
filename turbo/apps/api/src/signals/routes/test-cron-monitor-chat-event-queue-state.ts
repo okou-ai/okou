@@ -1,3 +1,6 @@
+import { chatEventCommandResultSchema } from "../services/chat-event-append.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -5,13 +8,16 @@ import {
   type TestCronMonitorChatEventQueueStateActionBody,
 } from "@okouai/api-contracts/contracts/test-cron-monitor-chat-event-queue-state";
 import { agents } from "@okouai/db/schema/agent";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "../services/managed-usage-attribution";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
@@ -19,8 +25,12 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  insertChatEvent,
-  replaceChatEvent,
+  chatEventContextInsertSql,
+  chatEventInsertSql,
+  chatEventReplacementInsertSql,
+  requireChatEventReplacementTarget,
+  chatEventReplacementTargetSql,
+  chatEventReplacementTargetSchema,
 } from "../services/chat-event.service";
 import { normalizeRunMetadata } from "../services/agent-run-metadata-write.service";
 import { createUserMessageDocument } from "../services/chat-user-message.service";
@@ -82,10 +92,6 @@ const STALE_CONTEXT_FIXTURES = [
     eventType: "input.prompt",
   },
   {
-    contextType: "github",
-    eventType: "input.prompt",
-  },
-  {
     contextType: "agentphone",
     eventType: "input.prompt",
   },
@@ -129,21 +135,37 @@ async function seedActiveRun(
     triggerSource: "web",
     chatThreadId: fixture.threadId,
   });
-  const [run] = await db
-    .insert(agentRuns)
-    .values({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      sessionId: session.id,
-      status: "pending",
-      prompt: "orphan monitor active run fixture",
-      ...metadata,
-    })
-    .returning({ id: agentRuns.id });
+  await db.transaction(async (tx) => {
+    const [run] = await tx
+      .insert(agentRuns)
+      .values({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        sessionId: session.id,
+        status: "pending",
+        prompt: "orphan monitor active run fixture",
+        ...metadata,
+      })
+      .returning({
+        id: agentRuns.id,
+        orgId: agentRuns.orgId,
+        userId: agentRuns.userId,
+        startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+        triggerSource: agentRuns.triggerSource,
+        threadId: agentRuns.chatThreadId,
+      });
+    signal.throwIfAborted();
+    if (!run) {
+      throw new Error("Failed to seed orphan monitor run");
+    }
+    const capture = billingRunAttributionWrite(run);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
+    signal.throwIfAborted();
+  });
   signal.throwIfAborted();
-  if (!run) {
-    throw new Error("Failed to seed orphan monitor run");
-  }
 }
 
 function recentStaleEventCreatedAt(): Date {
@@ -282,13 +304,25 @@ async function seedFixtureEvents(
       .returning({ id: chatEvents.id });
   }
   if (fixtureKind === "orphaned-automation") {
-    const automation = await insertChatEvent(tx, {
+    // Like the workflow entry, write the context row before the event that
+    // points at it under the same id.
+    const values = {
       ...baseEvent,
-      eventType: "input.automation",
+      id: randomUUID(),
+      eventType: "input.automation" as const,
       createdAt: recentStaleEventCreatedAt(),
       automationId: randomUUID(),
       triggerBrief: null,
-    });
+    };
+    const contextInsert = chatEventContextInsertSql(values);
+    if (contextInsert) {
+      await tx.execute(contextInsert);
+    }
+    const automation =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(chatEventInsertSql(values)),
+      )[0] ?? null;
     return [automation];
   }
   if (fixtureKind === "queued-integration") {
@@ -301,23 +335,39 @@ async function seedFixtureEvents(
       recentStaleEventCreatedAt(),
     );
     await tx
-      .update(chatThreads)
-      .set({ lastChatEventSeqId: 1 })
-      .where(eq(chatThreads.id, threadId));
+      .insert(chatEventSequences)
+      .values({ chatThreadId: threadId, lastSeqId: 1 })
+      .onConflictDoUpdate({
+        target: chatEventSequences.chatThreadId,
+        set: {
+          lastSeqId: sql`GREATEST(${chatEventSequences.lastSeqId}, ${1})`,
+        },
+      });
     return [sourceEvent];
   }
   const event =
     fixtureKind === "failed-message"
-      ? await insertChatEvent(tx, {
-          ...baseEvent,
-          eventType: "input.rejected",
-          error: "INSUFFICIENT_CREDITS",
-        })
-      : await insertChatEvent(tx, {
-          ...baseEvent,
-          contextType: "web",
-          eventType: "input.prompt",
-        });
+      ? (parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventInsertSql({
+              ...baseEvent,
+              contextType: "web",
+              eventType: "input.rejected",
+              error: "INSUFFICIENT_CREDITS",
+            }),
+          ),
+        )[0] ?? null)
+      : (parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventInsertSql({
+              ...baseEvent,
+              contextType: "web",
+              eventType: "input.prompt",
+            }),
+          ),
+        )[0] ?? null);
   return [event];
 }
 
@@ -363,14 +413,29 @@ async function seedFixture(
 
   if (fixtureKind === "revoked-message") {
     const replacement = await db.transaction(async (tx) => {
-      return await replaceChatEvent(tx, event.id, {
-        chatThreadId: thread.id,
-        eventType: "input.prompt",
-        userMessage: createUserMessageDocument({
-          text: "claimed orphan monitor fixture",
-        }),
-        runId: randomUUID(),
-      });
+      return (
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventReplacementInsertSql(
+              requireChatEventReplacementTarget(
+                parseRawRows(
+                  chatEventReplacementTargetSchema,
+                  await tx.execute(chatEventReplacementTargetSql(event.id)),
+                ),
+              ),
+              {
+                chatThreadId: thread.id,
+                eventType: "input.prompt",
+                userMessage: createUserMessageDocument({
+                  text: "claimed orphan monitor fixture",
+                }),
+                runId: randomUUID(),
+              },
+            ),
+          ),
+        )[0] ?? null
+      );
     });
     if (!replacement) {
       throw new Error("Failed to revoke orphan monitor message");

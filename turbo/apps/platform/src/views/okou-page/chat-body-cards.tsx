@@ -8,6 +8,7 @@ import type {
   CatalogConnectorSignals,
   ConnectorSignals,
   CustomConnectorSignals,
+  ExactReconnectConnectorSignals,
 } from "../../signals/chat-page/connector-action-block.ts";
 import { contentTypeForBodyPreviewKind } from "../../signals/chat-page/parse-body-blocks.ts";
 import type { PermissionSignals } from "../../signals/chat-page/permission-card-signals.ts";
@@ -33,6 +34,7 @@ import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import { builtinConnectorCurrentConnectionStatus } from "../../signals/okou-page/settings/connectors.ts";
 import { PermissionGrantDurationSelect } from "../components/permission-grant-duration-select.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
+import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
@@ -74,6 +76,7 @@ import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
+import { SubscriptionResetCard } from "./subscription-reset-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
 
 type ChatImagePreviewLinkProps = {
@@ -311,6 +314,9 @@ export function MarkdownCardView({
         />
       );
     }
+    case "subscription-reset": {
+      return <SubscriptionResetCard signals={card.signals} />;
+    }
     case "connector-action": {
       return <ConnectorActionCard signals={card.signals} />;
     }
@@ -339,12 +345,7 @@ export function MarkdownCardView({
       return <BrowserSessionCard signals={card.signals} />;
     }
     case "browser-user-action": {
-      return (
-        <BrowserUserActionCard
-          signals={card.signals}
-          browserSessionSignals={card.browserSessionSignals}
-        />
-      );
+      return <BrowserUserActionCard signals={card.signals} />;
     }
   }
 }
@@ -539,6 +540,80 @@ function CatalogConnectorActionCard({
   );
 }
 
+function ExactReconnectConnectorActionCard({
+  signals,
+}: {
+  signals: ExactReconnectConnectorSignals;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const statusLoadable = useLoadable(signals.status$);
+  const status = useLastResolved(signals.status$);
+  const [activateLoadable, activate] = useLoadableSet(signals.activate$);
+  const refresh = useSet(signals.refresh$);
+  const accountLabelOf = useConnectorAccountLabel();
+
+  if (statusLoadable.state === "hasError") {
+    return (
+      <ChatCard className="flex h-full w-full items-center gap-3 px-4 py-3">
+        <span className="min-w-0 flex-1 line-clamp-3 text-sm leading-5 text-muted-foreground">
+          {t(($) => {
+            return $.chat.connectorAccountSwitch.loadFailed;
+          })}
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          onClick={refresh}
+        >
+          {t(($) => {
+            return $.chat.connectorAccountSwitch.retry;
+          })}
+        </Button>
+      </ChatCard>
+    );
+  }
+  if (!status) {
+    return <ConnectorActionCardSkeleton />;
+  }
+  if (status.kind === "unavailable") {
+    return <UnavailableActionCard fillFrame />;
+  }
+
+  const accountLabel = accountLabelOf(status.account);
+  const connectionState =
+    status.account.connectionStatus === "connected"
+      ? t(($) => {
+          return $.connectors.card.connected;
+        })
+      : t(($) => {
+          return $.connectors.accounts.reconnectRequired;
+        });
+  return (
+    <ConnectorCard
+      variant="action"
+      className={cn(
+        "h-full justify-between rounded-[var(--okou-chat-card-radius)] border-border/70 px-4",
+      )}
+      icon={<ConnectorIcon icon={status.catalogItem.icon} size={22} />}
+      label={
+        accountLabel === status.catalogItem.label
+          ? accountLabel
+          : `${status.catalogItem.label} · ${accountLabel}`
+      }
+      description={`${connectionState} · ${status.catalogItem.description}`}
+      connected={status.account.connectionStatus === "connected"}
+      complete={false}
+      reconnectRequired
+      busy={activateLoadable.state === "loading"}
+      onActivate={() => {
+        detach(activate(pageSignal), Reason.DomCallback);
+      }}
+    />
+  );
+}
+
 function CustomConnectorActionCard({
   signals,
 }: {
@@ -599,6 +674,8 @@ function ConnectorActionCard({ signals }: { signals: ConnectorSignals }) {
     >
       {signals.kind === "catalog" ? (
         <CatalogConnectorActionCard signals={signals} />
+      ) : signals.kind === "catalog-reconnect" ? (
+        <ExactReconnectConnectorActionCard signals={signals} />
       ) : (
         <CustomConnectorActionCard signals={signals} />
       )}

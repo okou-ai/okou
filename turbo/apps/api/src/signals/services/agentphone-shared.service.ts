@@ -1,15 +1,17 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
+import {
+  getAgentPhoneConversationParticipants,
+  isAgentPhoneApiError,
+} from "../external/agentphone-client";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
+import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { eq } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { and, eq, inArray, lte } from "drizzle-orm";
 
-import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 
 export type AgentPhoneChannel = "imessage" | "sms" | "mms";
 export type AgentPhoneUserLink = typeof agentphoneUserLinks.$inferSelect;
@@ -35,10 +37,17 @@ const AGENTPHONE_PHONE_HANDLE_PATTERN = /^\+[1-9]\d{7,14}$/u;
 
 /** Handle that addresses the assistant in a group conversation. */
 const AGENTPHONE_MENTION_PATTERN = /(^|\s)@okou\b/iu;
+// Native iMessage mentions can arrive as display names without an at-sign or
+// mention metadata. Treat only an opening name followed by a separator as an
+// address, keeping embedded names, domains and longer names as group chatter.
+const AGENTPHONE_OPENING_NAME_PATTERN = /^\s*okou(?=$|[\s,，:：!！?？])/iu;
 
-/** Whether free-form message text addresses the assistant by handle. */
+/** Whether free-form message text addresses the assistant by handle or name. */
 export function isAgentPhoneMentionText(value: string): boolean {
-  return AGENTPHONE_MENTION_PATTERN.test(value);
+  return (
+    AGENTPHONE_MENTION_PATTERN.test(value) ||
+    AGENTPHONE_OPENING_NAME_PATTERN.test(value)
+  );
 }
 
 export function isAgentPhoneChannel(value: string): value is AgentPhoneChannel {
@@ -54,6 +63,16 @@ export function normalizeAgentPhoneHandle(
     return trimmed.toLowerCase();
   }
   return trimmed.replace(/[^\d+]/gu, "");
+}
+
+/**
+ * Channel implied by an already-normalized linked handle. Email handles only
+ * exist on iMessage; phone numbers keep the SMS normalization.
+ */
+export function agentPhoneChannelForLinkedHandle(
+  handle: string,
+): AgentPhoneChannel {
+  return AGENTPHONE_EMAIL_HANDLE_PATTERN.test(handle) ? "imessage" : "sms";
 }
 
 export function isValidAgentPhoneHandle(
@@ -79,18 +98,90 @@ export function describeAgentPhoneHandleShape(
   return "other";
 }
 
+export interface AgentPhoneMessageVisibilityRecipient {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+export async function resolveAgentPhoneConversationVisibilityRecipients(
+  db: Pick<ReadonlyDb, "select">,
+  conversationId: string,
+  asOf: Date,
+  signal: AbortSignal,
+): Promise<readonly AgentPhoneMessageVisibilityRecipient[]> {
+  const result = await settle(
+    getAgentPhoneConversationParticipants({ conversationId }, signal),
+    signal,
+  );
+  if (!result.ok) {
+    if (
+      isAgentPhoneApiError(result.error) ||
+      result.error instanceof TypeError ||
+      result.error instanceof SyntaxError
+    ) {
+      return [];
+    }
+    throw result.error;
+  }
+  return resolveAgentPhoneMessageVisibilityRecipients(
+    db,
+    result.value,
+    "imessage",
+    asOf,
+  );
+}
+
+export async function resolveAgentPhoneMessageVisibilityRecipients(
+  db: Pick<ReadonlyDb, "select">,
+  handles: readonly string[],
+  channel: AgentPhoneChannel,
+  asOf: Date,
+): Promise<readonly AgentPhoneMessageVisibilityRecipient[]> {
+  const normalizedHandles = [
+    ...new Set(
+      handles
+        .map((handle) => {
+          return normalizeAgentPhoneHandle(handle, channel);
+        })
+        .filter((handle) => {
+          return isValidAgentPhoneHandle(handle, channel);
+        }),
+    ),
+  ];
+  if (normalizedHandles.length === 0) {
+    return [];
+  }
+
+  const links = await db
+    .select({
+      orgId: agentphoneUserLinks.orgId,
+      userId: agentphoneUserLinks.userId,
+    })
+    .from(agentphoneUserLinks)
+    .where(
+      and(
+        inArray(agentphoneUserLinks.phoneHandle, normalizedHandles),
+        lte(agentphoneUserLinks.createdAt, asOf),
+      ),
+    );
+
+  return [
+    ...new Map(
+      links.map((link) => {
+        return [`${link.orgId}:${link.userId}`, link] as const;
+      }),
+    ).values(),
+  ];
+}
+
 export async function touchAgentPhoneUserLink(
   db: Db,
   userLink: AgentPhoneUserLink,
   phoneHandle: string,
   channel: AgentPhoneChannel,
-  publicBrand?: PublicBrand,
 ): Promise<AgentPhoneUserLink> {
   const normalized = normalizeAgentPhoneHandle(phoneHandle, channel);
-  if (
-    userLink.phoneHandle === normalized &&
-    (publicBrand === undefined || userLink.publicBrand === publicBrand)
-  ) {
+  if (userLink.phoneHandle === normalized) {
     return userLink;
   }
 
@@ -98,7 +189,6 @@ export async function touchAgentPhoneUserLink(
     .update(agentphoneUserLinks)
     .set({
       phoneHandle: normalized,
-      ...(publicBrand ? { publicBrand } : {}),
       updatedAt: nowDate(),
     })
     .where(eq(agentphoneUserLinks.id, userLink.id))
@@ -133,9 +223,9 @@ export async function storeOutboundAgentPhoneMessage(
   params: {
     readonly agentphoneMessageId: string;
     readonly conversationId: string | null;
+    readonly groupId?: string | null;
     readonly agentphoneAgentId: string;
-    readonly publicBrand: PublicBrand;
-    readonly userLinkId: string;
+    readonly userLinkId?: string | null;
     readonly phoneHandle: string;
     readonly fromNumber: string;
     readonly toNumber: string;
@@ -143,35 +233,57 @@ export async function storeOutboundAgentPhoneMessage(
     readonly channel: string | null;
     readonly userChannel: AgentPhoneChannel;
     readonly mediaUrl?: string | null;
+    readonly visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[];
   },
 ): Promise<void> {
-  await db
-    .insert(agentphoneMessages)
-    .values({
-      agentphoneMessageId: params.agentphoneMessageId,
-      conversationId: params.conversationId,
-      agentphoneAgentId: params.agentphoneAgentId,
-      publicBrand: params.publicBrand,
-      agentphoneUserLinkId: params.userLinkId,
-      phoneHandle: normalizeAgentPhoneHandle(
-        params.phoneHandle,
-        params.userChannel,
-      ),
-      fromNumber: normalizeAgentPhoneHandle(params.fromNumber, "sms"),
-      toNumber: params.toNumber.startsWith("grp_")
-        ? params.toNumber
-        : normalizeAgentPhoneHandle(params.toNumber, params.userChannel),
-      direction: "outbound",
-      channel: params.channel ?? "unknown",
-      body: params.body ?? null,
-      mediaUrl: params.mediaUrl ?? null,
-      isBot: true,
-    })
-    .onConflictDoNothing();
-}
+  const isGroup = Boolean(params.groupId);
+  const visibilityRecipients = params.visibilityRecipients;
+  if (isGroup && visibilityRecipients.length === 0) {
+    return;
+  }
 
-export function formatAgentPhoneAuditLink(logsUrl: string): string {
-  return `Audit: ${logsUrl}`;
+  await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(agentphoneMessages)
+      .values({
+        agentphoneMessageId: params.agentphoneMessageId,
+        conversationId: params.conversationId,
+        groupId: params.groupId ?? null,
+        agentphoneAgentId: params.agentphoneAgentId,
+        agentphoneUserLinkId: params.userLinkId ?? null,
+        phoneHandle: normalizeAgentPhoneHandle(
+          params.phoneHandle,
+          params.userChannel,
+        ),
+        fromNumber: normalizeAgentPhoneHandle(params.fromNumber, "sms"),
+        toNumber: params.toNumber.startsWith("grp_")
+          ? params.toNumber
+          : normalizeAgentPhoneHandle(params.toNumber, params.userChannel),
+        direction: "outbound",
+        channel: params.channel ?? "unknown",
+        body: params.body ?? null,
+        mediaUrl: params.mediaUrl ?? null,
+        isBot: true,
+        receivedAt: nowDate(),
+      })
+      .onConflictDoNothing()
+      .returning({ id: agentphoneMessages.id });
+
+    if (inserted && isGroup) {
+      await tx
+        .insert(agentphoneMessageVisibility)
+        .values(
+          visibilityRecipients.map((recipient) => {
+            return {
+              messageId: inserted.id,
+              orgId: recipient.orgId,
+              userId: recipient.userId,
+            };
+          }),
+        )
+        .onConflictDoNothing();
+    }
+  });
 }
 
 export function markdownToImessagePlain(markdown: string): string {
@@ -271,29 +383,4 @@ export async function resolveAgentPhoneReplyFooterText(args: {
 
   const label = await resolveComposeLabel(args.db, args.composeId);
   return label ? `Responded by ${label}` : undefined;
-}
-
-export async function resolveAgentPhoneAuditLogsUrl(
-  args: {
-    readonly getFeatureOverrides: (
-      orgId: string,
-      userId: string,
-    ) => Promise<Record<string, boolean>>;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly runId: string;
-  },
-  signal: AbortSignal,
-): Promise<string | undefined> {
-  const overrides = await args.getFeatureOverrides(args.orgId, args.userId);
-  signal.throwIfAborted();
-  const enabled = isFeatureEnabled(FeatureSwitchKey.OkouDebug, {
-    userId: args.userId,
-    orgId: args.orgId,
-    overrides,
-  });
-  if (!enabled) {
-    return undefined;
-  }
-  return `${env("APP_URL")}/activities/${encodeURIComponent(args.runId)}`;
 }

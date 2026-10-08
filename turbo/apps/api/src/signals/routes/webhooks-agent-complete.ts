@@ -1,18 +1,18 @@
-import { command } from "ccstate";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
-
+import { command, computed } from "ccstate";
 import { logger } from "../../lib/log";
-import { apiStartTime$, authorization$ } from "../context/hono";
+import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
-import {
-  completeAgentRun$,
-  dispatchRequiredTerminalChatCallback$,
-  type RequiredTerminalChatCallbackResult,
-} from "../services/agent-webhook-complete.service";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
+import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
+import { createAgentRunCompletion } from "../services/agent-webhook-complete.service";
+import {
+  createRequiredTerminalChatCallback,
+  type RequiredTerminalChatCallbackResult,
+} from "../services/required-terminal-chat-callback.service";
 import { settle, tapError } from "../utils";
 import {
   getSandboxAuthForRun,
@@ -21,30 +21,66 @@ import {
 
 const L = logger("webhook:complete");
 
+function createAuthorizedCompletion(runId: string) {
+  return computed((get) => {
+    const auth = getSandboxAuthForRun(runId, get(authorization$));
+    if (!auth) {
+      return null;
+    }
+    return {
+      auth,
+      completion: createAgentRunCompletion(runId, auth.userId),
+    };
+  });
+}
+
 const completeBody$ = bodyResultOf(webhookCompleteContract.complete);
+const completeRequest$ = computed(async (get) => {
+  const bodyResult = await get(completeBody$);
+  if (!bodyResult.ok) {
+    return bodyResult;
+  }
+  return {
+    ...bodyResult,
+    authorizedCompletion$: createAuthorizedCompletion(bodyResult.data.runId),
+    requiredChatCallback: createRequiredTerminalChatCallback(
+      bodyResult.data.runId,
+    ),
+  };
+});
 
 const completeAgentRunRoute$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const bodyResult = await get(completeBody$);
+    const bodyResult = await get(completeRequest$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
 
     const body = bodyResult.data;
-    const auth = getSandboxAuthForRun(body.runId, get(authorization$));
-    if (!auth) {
+    const authorized = get(bodyResult.authorizedCompletion$);
+    if (!authorized) {
       return unauthorizedRunMismatch;
     }
 
-    const result = await set(completeAgentRun$, { auth, body }, signal);
+    const result = await set(
+      authorized.completion.complete$,
+      { auth: authorized.auth, body },
+      signal,
+    );
+    if (result.status === 200) {
+      set(scheduleReleasedSlotPicks$, result.releasedSlots, signal);
+    }
     signal.throwIfAborted();
 
     if (result.status === 200 && result.sideEffects?.kind === "terminal") {
       const requiredResult = await settle(
         set(
-          dispatchRequiredTerminalChatCallback$,
-          { ...result.sideEffects, apiStartTime: get(apiStartTime$) },
+          bodyResult.requiredChatCallback.dispatch$,
+          {
+            status: result.sideEffects.status,
+            error: result.sideEffects.error,
+          },
           signal,
         ),
       );
@@ -53,7 +89,6 @@ const completeAgentRunRoute$ = command(
         ? requiredResult.value
         : {
             success: false,
-            chatThreadQueueHandled: false,
             error:
               requiredResult.error instanceof Error
                 ? requiredResult.error.message
@@ -71,14 +106,7 @@ const completeAgentRunRoute$ = command(
         tapError(
           set(
             dispatchCompleteSideEffects$,
-            {
-              ...result.sideEffects,
-              apiStartTime: get(apiStartTime$),
-              skipChatCallback: true,
-              ...(required.chatThreadQueueHandled
-                ? { chatThreadQueueHandled: true as const }
-                : {}),
-            },
+            { ...result.sideEffects, skipChatCallback: true },
             backgroundSignal,
           ),
           (error) => {
@@ -99,11 +127,7 @@ const completeAgentRunRoute$ = command(
     } else if (result.status === 200 && result.sideEffects) {
       waitUntil(
         tapError(
-          set(
-            dispatchCompleteSideEffects$,
-            { ...result.sideEffects, apiStartTime: get(apiStartTime$) },
-            signal,
-          ),
+          set(dispatchCompleteSideEffects$, result.sideEffects, signal),
           (error) => {
             L.error("dispatchCompleteSideEffects failed", {
               runId: result.sideEffects?.runId,

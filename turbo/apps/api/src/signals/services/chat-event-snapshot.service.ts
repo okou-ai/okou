@@ -4,11 +4,12 @@ import {
   type ChatEventCursor,
 } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command, computed, type Computed } from "ccstate";
-import { and, asc, eq, gt, inArray, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { env } from "../../lib/env";
 import { db$, type ReadonlyDb } from "../external/db";
@@ -235,10 +236,14 @@ interface ChatEventBatchContinuation {
   readonly lastSeqId: number;
 }
 
-function validatedBatchSnapshotCursor(snapshot: ChatEventBatchSnapshotCursor): {
+interface ChatEventBatchSnapshotCoverage {
   readonly lastSeqId: number;
   readonly physicalLastSeqId: number;
-} {
+}
+
+function validatedBatchSnapshotCursor(
+  snapshot: ChatEventBatchSnapshotCursor,
+): ChatEventBatchSnapshotCoverage {
   if (
     snapshot.lastSeqId === null ||
     !(
@@ -259,10 +264,7 @@ function validatedBatchSnapshotCursor(snapshot: ChatEventBatchSnapshotCursor): {
 function resolveBatchContinuations(
   requested: ReadonlyMap<string, number>,
   ownedThreadLastSeqIds: ReadonlyMap<string, number>,
-  snapshotsByThreadId: ReadonlyMap<
-    string,
-    { readonly lastSeqId: number; readonly physicalLastSeqId: number }
-  >,
+  snapshotsByThreadId: ReadonlyMap<string, ChatEventBatchSnapshotCoverage>,
 ): {
   readonly eventThreadIds: readonly string[];
   readonly continuations: readonly ChatEventBatchContinuation[];
@@ -329,9 +331,16 @@ export function catchUpChatThreadEvents(args: {
     const ownedRows = await db
       .select({
         threadId: chatThreads.id,
-        lastChatEventSeqId: chatThreads.lastChatEventSeqId,
+        lastChatEventSeqId:
+          sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+            chatEventSequences.lastSeqId,
+          ),
       })
       .from(chatThreads)
+      .leftJoin(
+        chatEventSequences,
+        eq(chatEventSequences.chatThreadId, chatThreads.id),
+      )
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
@@ -378,9 +387,11 @@ export function catchUpChatThreadEvents(args: {
               ),
             );
     const snapshotsByThreadId = new Map(
-      snapshots.map((snapshot) => {
-        return [snapshot.threadId, validatedBatchSnapshotCursor(snapshot)];
-      }),
+      snapshots.map(
+        (snapshot): readonly [string, ChatEventBatchSnapshotCoverage] => {
+          return [snapshot.threadId, validatedBatchSnapshotCursor(snapshot)];
+        },
+      ),
     );
 
     const { eventThreadIds, continuations, notFoundThreads } =

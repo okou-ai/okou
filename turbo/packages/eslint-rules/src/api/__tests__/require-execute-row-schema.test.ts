@@ -22,6 +22,24 @@ ruleTester.run("require-execute-row-schema", requireExecuteRowSchema, {
   valid: [
     {
       code: `${drizzlePreamble}
+        import { parseRawRows } from "../../lib/db-raw-rows";
+        const rows = parseRawRows(rowSchema, await tx.execute(query));
+      `,
+    },
+    {
+      code: `${drizzlePreamble}
+        import { parseRawRows as decode } from "../../lib/db-raw-rows.ts";
+        const rows = decode(rowSchema, await tx.execute(query));
+      `,
+    },
+    {
+      code: `${drizzlePreamble}
+        import * as rows from "../../lib/db-raw-rows";
+        const result = rows.parseRawRows(rowSchema, await tx.execute(query));
+      `,
+    },
+    {
+      code: `${drizzlePreamble}
         import { sql } from "drizzle-orm";
         await db.execute(sql\`DELETE FROM jobs\`);
       `,
@@ -188,6 +206,59 @@ ruleTester.run("require-execute-row-schema", requireExecuteRowSchema, {
     },
   ],
   invalid: [
+    {
+      code: `${drizzlePreamble}
+        import { parseRawRows } from "./other-decoder";
+        parseRawRows(rowSchema, await tx.execute(query));
+      `,
+      errors: [{ messageId: "rawResult" }],
+    },
+    {
+      code: `${drizzlePreamble}
+        import { parseRawRows } from "../../lib/db-raw-rows";
+        function run(parseRawRows) {
+          return parseRawRows(rowSchema, tx.execute(query));
+        }
+      `,
+      errors: [{ messageId: "rawResult" }],
+    },
+    {
+      code: `${drizzlePreamble}
+        import { parseRawRows } from "../../lib/db-raw-rows";
+        async function run(parseRawRows) {
+          return parseRawRows(rowSchema, await tx.execute(query));
+        }
+      `,
+      errors: [{ messageId: "rawResult" }],
+    },
+    {
+      code: `${drizzlePreamble}
+        import { parseRawRows } from "../../lib/db-raw-rows";
+        parseRawRows(rowSchema, tx.execute(query));
+      `,
+      errors: [{ messageId: "rawResult" }],
+    },
+    {
+      code: `${drizzlePreamble}
+        import { parseRawRows } from "../../lib/db-raw-rows";
+        parseRawRows(rowSchema, (await tx.execute(query)).rows);
+      `,
+      errors: [{ messageId: "rawResult" }],
+    },
+    {
+      code: `${drizzlePreamble}
+        import { parseRawRows } from "../../lib/db-raw-rows";
+        parseRawRows(rowSchema, await tx.execute<Row>(query));
+      `,
+      errors: [{ messageId: "rowTypeArgument" }],
+    },
+    {
+      code: `${drizzlePreamble}
+        import { parseRawRows } from "../../lib/db-raw-rows";
+        parseRawRows(rowSchema, (await tx.execute(query)) as QueryResult<Row>);
+      `,
+      errors: [{ messageId: "assertedResult" }, { messageId: "rawResult" }],
+    },
     {
       code: `${drizzlePreamble}
         import { sql } from "drizzle-orm";

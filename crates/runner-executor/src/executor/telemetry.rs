@@ -501,6 +501,25 @@ impl RunnerPreSpawnTiming {
                 None,
             );
             telemetry.record(
+                "runner_claim_response_first_body_chunk_wait",
+                timing.response_first_body_chunk_wait_elapsed(),
+                true,
+                None,
+            );
+            telemetry.record(
+                "runner_claim_response_body_after_first_chunk",
+                timing.response_body_after_first_chunk_elapsed(),
+                true,
+                None,
+            );
+            let response_attribution = timing.response_attribution();
+            telemetry.record_bounded_outcome(
+                "runner_claim_response_body_attribution",
+                true,
+                response_attribution.body_size_bucket(),
+                Some(response_attribution.content_encoding()),
+            );
+            telemetry.record(
                 "runner_claim_response_decode",
                 timing.response_decode_elapsed(),
                 true,

@@ -3,12 +3,13 @@ use serde::{Serialize, Serializer};
 
 use crate::storage_plan::ArchiveHandle;
 
-/// Bounded evidence from a rejected archive response, without object identity.
+/// Bounded evidence that a response length differs from the stored archive size,
+/// without object identity. The disagreement alone does not reject the response.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct ArchiveSizeMismatch {
     #[serde(serialize_with = "serialize_byte_count")]
     expected_bytes: u64,
-    /// Declared response body length; the rejected body has not been read.
+    /// Declared response body length, observed before reading the body.
     #[serde(serialize_with = "serialize_byte_count")]
     response_bytes: u64,
     source_kind: &'static str,

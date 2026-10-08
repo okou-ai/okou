@@ -8,11 +8,7 @@ from usage import create_model_json_response_inspector
 
 
 def _openai_responses_json_inspector():
-    return create_model_json_response_inspector(
-        "openai_responses",
-        include_usage=True,
-        include_failure=False,
-    )
+    return create_model_json_response_inspector("openai_responses")
 
 
 def _inspect_openai_responses_json(body: bytes) -> tuple[dict | None, str | None]:

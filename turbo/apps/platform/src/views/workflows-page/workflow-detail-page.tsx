@@ -2330,7 +2330,7 @@ function WorkflowCopyForm({
           checked={form.removeOriginal}
           className="mt-0.5"
           onCheckedChange={(checked) => {
-            onChange({ ...form, removeOriginal: checked === true });
+            onChange({ ...form, removeOriginal: checked });
           }}
         />
         <span className="text-sm text-foreground">

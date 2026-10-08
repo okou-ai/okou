@@ -1,4 +1,4 @@
-import { randomUUID, X509Certificate } from "node:crypto";
+import { generateKeyPairSync, randomUUID, X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { rootCertificates } from "node:tls";
 import { describe, expect, it } from "vitest";
@@ -8,13 +8,15 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { createDeferredPromise } from "../../utils";
+import { mockNow } from "../../../lib/time";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRouteMocks } from "./helpers/route-test";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { requireVncCredentialId } from "./helpers/vnc-response";
+import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -215,6 +217,301 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([]);
+  });
+
+  it("stores two exact client-certificate pairs without changing certificate-free X509None", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const certificateOnly = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "QEMU client identity",
+          authentication: {
+            method: "client_certificate",
+            certificateChain,
+            privateKey,
+          },
+        },
+      }),
+      [201],
+    );
+    expect(certificateOnly.body).toMatchObject({
+      authMethod: "client_certificate",
+      revision: 1,
+    });
+    const created = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "QEMU X509None mTLS",
+          host: "qemu.example.com",
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: { id: certificateOnly.body.id },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      credentialId: certificateOnly.body.id,
+      clientCertificateAuthentication: "client_certificate",
+      security: { type: "x509_none" },
+      generation: 1,
+    });
+    expect(created.body).not.toHaveProperty("credential");
+    const certificateAndPassword = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "QEMU VNC mTLS",
+          authentication: {
+            method: "client_certificate_vnc_password",
+            certificateChain,
+            privateKey,
+            password: " secret ",
+          },
+        },
+      }),
+      [201],
+    );
+    const second = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "QEMU X509Vnc mTLS",
+          host: "qemuvnc.example.com",
+          security: { type: "x509_vnc", trust: { mode: "system" } },
+          credential: { id: certificateAndPassword.body.id },
+        },
+      }),
+      [201],
+    );
+    expect(second.body).toMatchObject({
+      clientCertificateAuthentication: "client_certificate_vnc_password",
+      security: { type: "x509_vnc" },
+    });
+    for (const value of [
+      certificateOnly.body,
+      certificateAndPassword.body,
+      created.body,
+      second.body,
+      (await accept(credentials().list({ headers }), [200])).body,
+      (await accept(connections().list({ headers }), [200])).body,
+    ]) {
+      const output = JSON.stringify(value);
+      for (const secret of [
+        privateKey,
+        "privateKey",
+        "encryptedClientIdentity",
+        " secret ",
+      ]) {
+        expect(output).not.toContain(secret);
+      }
+    }
+    expect(kms.generateDataKeyCalls).toBe(3);
+    expect(
+      (
+        await rawRequest("/api/vnc/connections", {
+          id: randomUUID(),
+          displayName: "Do not downgrade",
+          host: "qemu.example.com",
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: { id: certificateAndPassword.body.id },
+        })
+      ).status,
+    ).toBe(400);
+    const rotated = await accept(
+      credentials().update({
+        headers,
+        params: { credentialId: certificateOnly.body.id },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "client_certificate",
+            certificateChain,
+            privateKey,
+          },
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body.revision).toBe(2);
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections[0]
+        ?.generation,
+    ).toBe(2);
+  });
+
+  it("rejects a malformed or mismatched client identity before KMS", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const otherKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ format: "pem", type: "pkcs8" })
+      .toString();
+    for (const method of [
+      "client_certificate",
+      "client_certificate_vnc_password",
+    ] as const) {
+      for (const [chain, key] of [
+        [certificateChain, "not a key"],
+        [certificateChain, otherKey],
+        [certificateChain + "\nGARBAGE", privateKey],
+        [certificateChain + certificateChain.repeat(8), privateKey],
+        [certificateChain, privateKey + "\n" + privateKey],
+        [
+          certificateChain,
+          "-----BEGIN ENCRYPTED PRIVATE KEY-----\nAA==\n-----END ENCRYPTED PRIVATE KEY-----",
+        ],
+      ] as const) {
+        const response = await rawRequest("/api/vnc/credentials", {
+          id: randomUUID(),
+          name: "Rejected",
+          authentication: {
+            method,
+            certificateChain: chain,
+            privateKey: key,
+            ...(method === "client_certificate_vnc_password"
+              ? { password: "secret" }
+              : {}),
+          },
+        });
+        expect(response.status).toBe(400);
+        expect(JSON.stringify(response.body)).not.toContain(otherKey);
+      }
+    }
+    mockNow(new Date("2037-01-01T00:00:00Z"));
+    const expired = await rawRequest("/api/vnc/credentials", {
+      id: randomUUID(),
+      name: "Expired",
+      authentication: {
+        method: "client_certificate",
+        certificateChain,
+        privateKey,
+      },
+    });
+    expect(expired.status).toBe(400);
+    const inline = await rawRequest("/api/vnc/connections", {
+      id: randomUUID(),
+      displayName: "Rejected inline identity",
+      host: "qemu.example.com",
+      security: { type: "x509_none", trust: { mode: "system" } },
+      credential: {
+        create: {
+          name: "Rejected identity",
+          authentication: {
+            method: "client_certificate",
+            certificateChain,
+            privateKey: "not a key",
+          },
+        },
+      },
+    });
+    expect(inline.status).toBe(400);
+    expect(inline.body).toMatchObject({
+      error: { code: "VNC_INVALID_CLIENT_IDENTITY" },
+    });
+    expect(kms.generateDataKeyCalls).toBe(0);
+  });
+
+  it("persists explicitly selected X509None without a credential and requires explicit rebinds", async () => {
+    useSecretKmsProbe();
+    await owner();
+    const none = {
+      type: "x509_none" as const,
+      trust: { mode: "system" as const },
+    };
+    const created = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "No VNC password",
+          host: "vnc.example.com",
+          security: none,
+          credential: { type: "none" },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      security: none,
+      credential: { type: "none" },
+      generation: 1,
+    });
+    expect("credentialId" in created.body).toBeFalsy();
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([created.body]);
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([]);
+
+    const invalid = await rawRequest("/api/vnc/connections", {
+      id: randomUUID(),
+      displayName: "Wrong authentication",
+      host: "vnc.example.com",
+      security: none,
+      credential: {
+        create: {
+          name: "Secret",
+          authentication: passwordAuthentication("secret"),
+        },
+      },
+    });
+    expect(invalid.status).toBe(400);
+    const silentSwitch = await rawRequest(
+      `/api/vnc/connections/${created.body.id}`,
+      {
+        expectedGeneration: 1,
+        security,
+      },
+      "PATCH",
+    );
+    expect(silentSwitch.status).toBe(400);
+    const withPassword = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: created.body.id },
+        body: {
+          expectedGeneration: 1,
+          security,
+          credential: {
+            create: {
+              name: "Explicit password",
+              authentication: passwordAuthentication("secret"),
+            },
+          },
+        },
+      }),
+      [200],
+    );
+    expect(withPassword.body).toMatchObject({ security, generation: 2 });
+    expect(requireVncCredentialId(withPassword.body)).toBeDefined();
+    const backToNone = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: created.body.id },
+        body: {
+          expectedGeneration: 2,
+          security: none,
+          credential: { type: "none" },
+        },
+      }),
+      [200],
+    );
+    expect(backToNone.body).toMatchObject({
+      security: none,
+      credential: { type: "none" },
+      generation: 3,
+    });
+    expect("credentialId" in backToNone.body).toBeFalsy();
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toHaveLength(1);
   });
 
   it("persists typed SSH routes, certificate identity and restrictive deletion", async () => {
@@ -432,6 +729,108 @@ describe("VNC owner configuration", () => {
     expect(JSON.stringify(created.body)).not.toContain(password);
   });
 
+  it("bounds Apple SRP UTF-8 credentials before encryption and returns no password", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    for (const [username, password] of [
+      ["", "secret"],
+      ["operator", ""],
+      ["é".repeat(128), "secret"],
+      ["operator", "é".repeat(512)],
+      ["oper\u0000ator", "secret"],
+      ["operator", "sec\u0000ret"],
+    ]) {
+      const result = await rawRequest("/api/vnc/credentials", {
+        id: randomUUID(),
+        name: "Mac SRP login",
+        authentication: {
+          method: "apple_srp_username_password",
+          username,
+          password,
+        },
+      });
+      expect(result.status).toBe(400);
+      expect(result.body).toMatchObject({
+        error: { code: "VNC_INVALID_INPUT" },
+      });
+    }
+    expect(kms.generateDataKeyCalls).toBe(0);
+
+    const username = `${"é".repeat(127)}x`;
+    const password = "p".repeat(1023);
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Mac SRP login",
+          authentication: {
+            method: "apple_srp_username_password",
+            username,
+            password,
+          },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      authMethod: "apple_srp_username_password",
+      username,
+    });
+    expect(JSON.stringify(created.body)).not.toContain(password);
+  });
+
+  it("bounds Apple RSA/SRP credentials at 234 UTF-8 bytes before encryption", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    for (const [username, password] of [
+      ["", "secret"],
+      ["operator", ""],
+      ["é".repeat(118), "secret"],
+      ["operator", "é".repeat(512)],
+      ["oper\u0000ator", "secret"],
+      ["operator", "sec\u0000ret"],
+    ]) {
+      const result = await rawRequest("/api/vnc/credentials", {
+        id: randomUUID(),
+        name: "Mac RSA/SRP login",
+        authentication: {
+          method: "apple_rsa_srp_username_password",
+          username,
+          password,
+        },
+      });
+      expect(result.status).toBe(400);
+      expect(result.body).toMatchObject({
+        error: { code: "VNC_INVALID_INPUT" },
+      });
+    }
+    expect(kms.generateDataKeyCalls).toBe(0);
+
+    const username = "é".repeat(117);
+    const password = "p".repeat(1023);
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Mac RSA/SRP login",
+          authentication: {
+            method: "apple_rsa_srp_username_password",
+            username,
+            password,
+          },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      authMethod: "apple_rsa_srp_username_password",
+      username,
+    });
+    expect(JSON.stringify(created.body)).not.toContain(password);
+  });
+
   it("rejects unsupported authentication and security profiles without changing saved configuration", async () => {
     useSecretKmsProbe();
     await owner();
@@ -467,7 +866,7 @@ describe("VNC owner configuration", () => {
       expect(
         (
           await rawRequest(
-            `/api/vnc/credentials/${saved.body.credentialId}`,
+            `/api/vnc/credentials/${requireVncCredentialId(saved.body)}`,
             {
               expectedRevision: 1,
               authentication,
@@ -511,6 +910,127 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body,
     ).toStrictEqual(before);
+  });
+
+  it("stores only the exact QEMU SCRAM credential and verified-X509 pair without leaking secrets", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const auth = (username: string, password: string) => {
+      return {
+        method: "qemu_scram_sha256" as const,
+        username,
+        password,
+      };
+    };
+    for (const invalid of [
+      auth("", "secret"),
+      auth("has space", "secret"),
+      auth("has,comma", "secret"),
+      auth("has=equal", "secret"),
+      auth("é", "secret"),
+      auth("x".repeat(256), "secret"),
+      auth("operator", ""),
+      auth("operator", "bad\u0000password"),
+      auth("operator", "é"),
+      auth("operator", "x".repeat(1024)),
+      { ...auth("operator", "secret"), mechanism: "PLAIN" },
+    ]) {
+      const request = {
+        id: randomUUID(),
+        name: "QEMU SCRAM",
+        authentication: invalid,
+      };
+      expect((await rawRequest("/api/vnc/credentials", request)).status).toBe(
+        400,
+      );
+      expect(
+        (
+          await rawRequest("/api/vnc/connections", {
+            ...hostBody(),
+            security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
+            credential: { create: request },
+          })
+        ).status,
+      ).toBe(400);
+    }
+    expect(kms.generateDataKeyCalls).toBe(0);
+    const password = ` ${"s".repeat(1021)} `;
+    const credential = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "QEMU SCRAM",
+          authentication: auth("operator", password),
+        },
+      }),
+      [201],
+    );
+    expect(credential.body).toMatchObject({
+      authMethod: "qemu_scram_sha256",
+      username: "operator",
+      revision: 1,
+    });
+    const scramSecurity = {
+      type: "qemu_x509_sasl" as const,
+      trust: { mode: "system" as const },
+      serverName: "qemu.example.com",
+    };
+    const base = {
+      ...hostBody("qemu.example.com"),
+      credential: { id: credential.body.id },
+    };
+    for (const securityType of ["x509_plain", "x509_vnc", "x509_none"]) {
+      const response = await rawRequest("/api/vnc/connections", {
+        ...base,
+        id: randomUUID(),
+        security: { ...scramSecurity, type: securityType },
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(
+      (
+        await rawRequest("/api/vnc/connections", {
+          ...base,
+          security: { ...scramSecurity, type: "x509_sasl" },
+        })
+      ).status,
+    ).toBe(400);
+    const connection = await accept(
+      connections().create({
+        headers,
+        body: { ...base, security: scramSecurity },
+      }),
+      [201],
+    );
+    expect(connection.body).toMatchObject({
+      credentialId: credential.body.id,
+      security: scramSecurity,
+      generation: 1,
+    });
+    for (const response of [
+      credential.body,
+      connection.body,
+      (await accept(credentials().list({ headers }), [200])).body,
+      (await accept(connections().list({ headers }), [200])).body,
+    ]) {
+      expect(JSON.stringify(response)).not.toContain(password);
+      expect(JSON.stringify(response)).not.toContain("encryptedPassword");
+    }
+    const rotated = await accept(
+      credentials().update({
+        headers,
+        params: { credentialId: credential.body.id },
+        body: {
+          expectedRevision: 1,
+          authentication: auth("operator", "new-secret"),
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body.revision).toBe(2);
+    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
+    expect(kms.generateDataKeyCalls).toBe(2);
   });
 
   it("models username/password credentials and enforces exact profile pairs", async () => {
@@ -847,6 +1367,152 @@ describe("VNC owner configuration", () => {
     }
   });
 
+  it.each(["orgId", "userId"] as const)(
+    "rejects an owned connection rebind to a foreign credential sharing the %s without changing configuration",
+    async (shared) => {
+      useSecretKmsProbe();
+      const first = await owner();
+      const created = await accept(
+        connections().create({ headers, body: hostBody() }),
+        [201],
+      );
+      const before = (await accept(credentials().list({ headers }), [200])).body
+        .credentials;
+      const peer = await owner({ [shared]: first[shared] });
+      const foreign = await accept(
+        credentials().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            name: "Foreign credential",
+            authentication: passwordAuthentication("foreign"),
+          },
+        }),
+        [201],
+      );
+      await owner(first);
+      const denied = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: {
+            expectedGeneration: 1,
+            displayName: "Forbidden credential rebind",
+            credential: { id: foreign.body.id },
+          },
+        }),
+        [404],
+      );
+      expect(denied.body.error.code).toBe("VNC_CREDENTIAL_NOT_FOUND");
+      expect(
+        (await accept(connections().list({ headers }), [200])).body.connections,
+      ).toStrictEqual([created.body]);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toStrictEqual(before);
+      await owner(peer);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toStrictEqual([foreign.body]);
+      await owner(first);
+      const recovered = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: { expectedGeneration: 1, displayName: "Recovered" },
+        }),
+        [200],
+      );
+      expect(recovered.body).toMatchObject({
+        id: created.body.id,
+        credentialId: requireVncCredentialId(created.body),
+        displayName: "Recovered",
+        generation: 2,
+      });
+    },
+  );
+
+  it.each(["orgId", "userId"] as const)(
+    "rejects an owned connection rebind to a foreign SSH route sharing the %s without storing an inline credential",
+    async (shared) => {
+      useSecretKmsProbe();
+      const first = await owner();
+      const created = await accept(
+        connections().create({ headers, body: hostBody() }),
+        [201],
+      );
+      const before = (await accept(credentials().list({ headers }), [200])).body
+        .credentials;
+      const peer = await owner({ [shared]: first[shared] });
+      const foreign = await accept(
+        sshConnectionsClient().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "Foreign gateway",
+            host: "gateway.example.com",
+            credential: inlineSshKey("deploy", "synthetic-private-key"),
+          },
+        }),
+        [201],
+      );
+      const peerRoutes = (
+        await accept(sshConnectionsClient().list({ headers }), [200])
+      ).body.connections;
+      await owner(first);
+      const denied = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: {
+            expectedGeneration: 1,
+            host: "127.0.0.1",
+            transport: { type: "ssh", connectionId: foreign.body.id },
+            credential: {
+              create: {
+                name: "Rejected inline credential",
+                authentication: passwordAuthentication("rejected"),
+              },
+            },
+          },
+        }),
+        [404],
+      );
+      expect(denied.body.error.code).toBe("VNC_SSH_CONNECTION_NOT_FOUND");
+      expect(
+        (await accept(connections().list({ headers }), [200])).body.connections,
+      ).toStrictEqual([created.body]);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toStrictEqual(before);
+      await owner(peer);
+      expect(
+        (await accept(sshConnectionsClient().list({ headers }), [200])).body
+          .connections,
+      ).toStrictEqual(peerRoutes);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toStrictEqual([]);
+      await owner(first);
+      const recovered = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: { expectedGeneration: 1, displayName: "Recovered" },
+        }),
+        [200],
+      );
+      expect(recovered.body).toMatchObject({
+        id: created.body.id,
+        credentialId: requireVncCredentialId(created.body),
+        host: created.body.host,
+        displayName: "Recovered",
+        generation: 2,
+      });
+      expect(recovered.body).not.toHaveProperty("transport");
+    },
+  );
+
   it("makes creation retries no-ops even with changed inline secrets and metadata", async () => {
     useSecretKmsProbe();
     await owner();
@@ -925,7 +1591,9 @@ describe("VNC owner configuration", () => {
       [201],
     );
     expect(second.body.id).not.toBe(first.body.id);
-    expect(second.body.credentialId).not.toBe(first.body.credentialId);
+    expect(requireVncCredentialId(second.body)).not.toBe(
+      requireVncCredentialId(first.body),
+    );
     expect(second.body.host).toBe(first.body.host);
     expect(second.body.port).toBe(first.body.port);
     expect(second.body.security).toMatchObject({
@@ -944,7 +1612,7 @@ describe("VNC owner configuration", () => {
     );
     expect(updated.body).toMatchObject({
       id: second.body.id,
-      credentialId: second.body.credentialId,
+      credentialId: requireVncCredentialId(second.body),
       generation: 2,
       displayName: "Renamed",
       security,
@@ -966,7 +1634,7 @@ describe("VNC owner configuration", () => {
     await accept(
       credentials().delete({
         headers,
-        params: { credentialId: first.body.credentialId },
+        params: { credentialId: requireVncCredentialId(first.body) },
         body: { expectedRevision: 1 },
       }),
       [204],
@@ -975,7 +1643,7 @@ describe("VNC owner configuration", () => {
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toMatchObject([
       {
-        id: second.body.credentialId,
+        id: requireVncCredentialId(second.body),
         authMethod: "vnc_password",
         revision: 1,
         hosts: [{ id: second.body.id, displayName: "Renamed" }],
@@ -1041,7 +1709,7 @@ describe("VNC owner configuration", () => {
     await accept(
       credentials().delete({
         headers,
-        params: { credentialId: saved.body.credentialId },
+        params: { credentialId: requireVncCredentialId(saved.body) },
         body: { expectedRevision: 1 },
       }),
       [204],
@@ -1073,13 +1741,19 @@ describe("VNC owner configuration", () => {
       displayName: "New desktop",
       generation: 1,
     });
-    expect(recreated.body.credentialId).not.toBe(saved.body.credentialId);
+    expect(requireVncCredentialId(recreated.body)).not.toBe(
+      requireVncCredentialId(saved.body),
+    );
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toStrictEqual([recreated.body]);
     const logins = await accept(credentials().list({ headers }), [200]);
     expect(logins.body.credentials).toMatchObject([
-      { id: recreated.body.credentialId, name: "New login", revision: 1 },
+      {
+        id: requireVncCredentialId(recreated.body),
+        name: "New login",
+        revision: 1,
+      },
     ]);
   });
 
@@ -1096,7 +1770,7 @@ describe("VNC owner configuration", () => {
       credentials().create({
         headers,
         body: {
-          id: saved.body.credentialId,
+          id: requireVncCredentialId(saved.body),
           name: "Retry",
           authentication: passwordAuthentication("changed"),
         },
@@ -1136,7 +1810,7 @@ describe("VNC owner configuration", () => {
     ).toStrictEqual([saved.body]);
   });
 
-  it("advances shared host generations on password rotation and rejects stale edits and deletes", async () => {
+  it("leaves concurrent password rotations recoverable, advances every shared host and rejects stale writes", async () => {
     useSecretKmsProbe();
     await owner();
     const first = await accept(
@@ -1148,7 +1822,7 @@ describe("VNC owner configuration", () => {
         headers,
         body: {
           ...hostBody("VNC.EXAMPLE.COM."),
-          credential: { id: first.body.credentialId },
+          credential: { id: requireVncCredentialId(first.body) },
         },
       }),
       [201],
@@ -1157,26 +1831,49 @@ describe("VNC owner configuration", () => {
       connections().create({ headers, body: hostBody() }),
       [201],
     );
-    const params = { credentialId: first.body.credentialId };
-    const rotated = await accept(
-      credentials().update({
-        headers,
-        params,
-        body: {
-          expectedRevision: 1,
-          authentication: passwordAuthentication("rotated"),
-        },
+    const params = { credentialId: requireVncCredentialId(first.body) };
+    const rotations = await Promise.all(
+      ["rotated1", "rotated2"].map((password) => {
+        return accept(
+          credentials().update({
+            headers,
+            params,
+            body: {
+              expectedRevision: 1,
+              authentication: passwordAuthentication(password),
+            },
+          }),
+          [200, 409],
+        );
       }),
-      [200],
     );
-    expect(rotated.body.revision).toBe(2);
+    const statuses = rotations
+      .map((result) => {
+        return result.status;
+      })
+      .sort();
+    expect([
+      [200, 200],
+      [200, 409],
+    ]).toContainEqual(statuses);
+    const applied = statuses.filter((status) => {
+      return status === 200;
+    }).length;
+    const revision = 1 + applied;
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: params.credentialId, revision }),
+      ]),
+    );
     const hosts = (await accept(connections().list({ headers }), [200])).body
       .connections;
     expect(hosts).toHaveLength(3);
     expect(hosts).toStrictEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: first.body.id, generation: 2 }),
-        expect.objectContaining({ id: second.body.id, generation: 2 }),
+        expect.objectContaining({ id: first.body.id, generation: revision }),
+        expect.objectContaining({ id: second.body.id, generation: revision }),
         independent.body,
       ]),
     );
@@ -1222,73 +1919,119 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toHaveLength(2);
+    const renamed = await accept(
+      credentials().update({
+        headers,
+        params,
+        body: { expectedRevision: revision, name: "Recovered" },
+      }),
+      [200],
+    );
+    expect(renamed.body).toMatchObject({
+      name: "Recovered",
+      revision: revision + 1,
+    });
     const edited = await accept(
       connections().update({
         headers,
         params: { connectionId: first.body.id },
-        body: { expectedGeneration: 2, host: "new.example.com", security },
+        body: {
+          expectedGeneration: revision,
+          host: "new.example.com",
+          security,
+        },
       }),
       [200],
     );
     expect(edited.body).toMatchObject({
-      generation: 3,
+      generation: revision + 1,
       host: "new.example.com",
     });
   });
 
-  it("rechecks revision after delayed KMS encryption without overwriting the winner", async () => {
+  it("rejects a concurrent creation by another owner without leaving an inline credential", async () => {
     useSecretKmsProbe();
-    await owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          name: "Initial",
-          authentication: passwordAuthentication("initial"),
+    const owners = [await owner(), await owner()];
+    context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
+      if (!(request instanceof Request)) {
+        throw new Error("Expected a Clerk authentication request");
+      }
+      const authorization = request.headers.get("authorization");
+      const authenticatedOwner = owners.find((candidate) => {
+        return authorization === `Bearer ${candidate.userId}`;
+      });
+      if (!authenticatedOwner) {
+        throw new Error("Expected a VNC creation owner token");
+      }
+      return Promise.resolve({
+        isAuthenticated: true,
+        toAuth: () => {
+          return { ...authenticatedOwner, orgRole: "org:admin" };
         },
-      }),
-      [201],
-    );
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    useSecretKmsProbe(async (request) => {
-      entered.resolve();
-      await release.promise;
-      return {
-        keyId: request.keyId,
-        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-        encryptedDataKey: Buffer.from("test-wrapped-key"),
-      };
+      });
     });
-    const params = { credentialId: created.body.id };
-    const delayed = accept(
-      credentials().update({
-        headers,
-        params,
-        body: {
-          expectedRevision: 1,
-          authentication: passwordAuthentication("delayed"),
-        },
-      }),
-      [409],
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: owners.map((candidate) => {
+          return {
+            id: `member_${candidate.orgId}_${candidate.userId}`,
+            publicUserData: { userId: candidate.userId },
+            organization: { id: candidate.orgId },
+            role: "org:admin",
+          };
+        }),
+        totalCount: owners.length,
+      },
     );
-    await entered.promise;
-    const winner = await accept(
-      credentials().update({
-        headers,
-        params,
-        body: { expectedRevision: 1, name: "Winner" },
+
+    const body = hostBody();
+    const outcomes = await Promise.all(
+      owners.map(async (candidate, index) => {
+        const ownerHeaders = { authorization: `Bearer ${candidate.userId}` };
+        const response = await accept(
+          connections().create({
+            headers: ownerHeaders,
+            body: {
+              ...body,
+              id: index === 0 ? body.id : body.id.toUpperCase(),
+            },
+          }),
+          [201, 409],
+        );
+        return { headers: ownerHeaders, response };
       }),
-      [200],
-    );
-    release.resolve();
-    expect((await delayed).body.error.code).toBe(
-      "VNC_CREDENTIAL_REVISION_CONFLICT",
     );
     expect(
-      (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([winner.body]);
+      outcomes
+        .map(({ response }) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 409]);
+
+    for (const outcome of outcomes) {
+      const [hosts, logins] = await Promise.all([
+        accept(connections().list({ headers: outcome.headers }), [200]),
+        accept(credentials().list({ headers: outcome.headers }), [200]),
+      ]);
+      if (outcome.response.status === 409) {
+        expect(outcome.response.body.error.code).toBe(
+          "VNC_RESOURCE_ID_CONFLICT",
+        );
+        expect(hosts.body.connections).toStrictEqual([]);
+        expect(logins.body.credentials).toStrictEqual([]);
+      } else {
+        expect(outcome.response.body.id).toBe(body.id);
+        expect(hosts.body.connections).toStrictEqual([outcome.response.body]);
+        expect(logins.body.credentials).toStrictEqual([
+          expect.objectContaining({
+            id: requireVncCredentialId(outcome.response.body),
+            name: "Desktop password",
+            hosts: [{ id: body.id, displayName: "Desktop" }],
+          }),
+        ]);
+      }
+    }
   });
 
   it("serializes concurrent duplicate creation and binding against credential deletion", async () => {
@@ -1327,7 +2070,7 @@ describe("VNC owner configuration", () => {
           headers,
           body: {
             ...hostBody("race.example.com"),
-            credential: { id: host.credentialId },
+            credential: { id: requireVncCredentialId(host) },
           },
         }),
         [201, 404],
@@ -1335,7 +2078,7 @@ describe("VNC owner configuration", () => {
       accept(
         credentials().delete({
           headers,
-          params: { credentialId: host.credentialId },
+          params: { credentialId: requireVncCredentialId(host) },
           body: { expectedRevision: 1 },
         }),
         [204, 409],

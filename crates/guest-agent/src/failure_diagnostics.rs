@@ -365,7 +365,7 @@ fn classify_cli_failure_reason(
     {
         return Some(FailureReason::ProviderInsufficientCredits);
     }
-    if is_insufficient_credits_error(&normalized) {
+    if has_insufficient_credits_response_envelope(&normalized) {
         return Some(FailureReason::InsufficientCredits);
     }
     if matches!(framework, AgentFramework::ClaudeCode)
@@ -532,12 +532,6 @@ fn pi_upstream_non_api_response_reason(failure_message: &str) -> Option<FailureR
 fn is_codex_safety_policy_refusal(source: FailureDetailSource, failure_message: &str) -> bool {
     source == FailureDetailSource::CodexJsonl
         && failure_message.trim() == CODEX_SAFETY_POLICY_REFUSAL_MESSAGE
-}
-
-fn is_insufficient_credits_error(normalized: &str) -> bool {
-    normalized.trim()
-        == "api error: 402 insufficient credits. add credits or configure your own api key to continue."
-        || has_insufficient_credits_response_envelope(normalized)
 }
 
 fn is_provider_balance_response_error(normalized: &str) -> bool {

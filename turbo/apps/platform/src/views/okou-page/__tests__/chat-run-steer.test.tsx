@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
+import { click } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
@@ -8,6 +9,8 @@ import {
   assistantEvent,
   context,
   expectTextOrder,
+  findButton,
+  findEnabledButton,
   installRunChat,
   promptEvent,
   publishRunUpdate,
@@ -135,7 +138,7 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
   await openChat(12);
   expect(screen.getByText(STEER)).toBeVisible();
   expectWaitingAfter(STEER);
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12s");
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
 
   mockNow(new Date(createdAt(20)), context.signal);
   events.push(
@@ -152,10 +155,13 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
 
   await expect(screen.findByText(NEXT_RESULT)).resolves.toBeVisible();
   expect(screen.getAllByText(STEER)).toHaveLength(1);
+  expect(
+    screen.queryByRole("listitem", { name: "Queued message" }),
+  ).not.toBeInTheDocument();
   await expectRetainedResult();
   expect(queryButton("Copy message", mainResult(NEXT_RESULT))).toBeVisible();
   expectTextOrder(RESULT, STEER, NEXT_RESULT);
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12s");
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
   expect(workSummary(NEXT_RESULT)).toHaveTextContent("Working for");
 
   chat.completeRun();
@@ -163,8 +169,8 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
   await waitFor(() => {
     expect(workSummary(NEXT_RESULT)).toHaveTextContent("Worked for");
   });
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12s");
-  expect.soft(workSummary(NEXT_RESULT)).toHaveTextContent("Worked for 8s");
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
+  expect.soft(workSummary(NEXT_RESULT)).toHaveTextContent("Worked for 8 sec");
 });
 
 test("Keep separate histories, artifacts and actions on both sides of a steer in the same run", async () => {
@@ -256,4 +262,128 @@ test("Keep separate histories, artifacts and actions on both sides of a steer in
   expect(workSummary(NEXT_RESULT)).toHaveTextContent("Working for");
   expectWaitingAfter(NEXT_RESULT);
   expectTextOrder(RESULT, STEER, NEXT_RESULT);
+});
+
+function textNode(text: string): Text {
+  const node = screen.getByText(text).firstChild;
+  if (!(node instanceof Text)) {
+    throw new Error(`Expected a text node for ${text}`);
+  }
+  return node;
+}
+
+function statusRow(): HTMLElement {
+  const row = document.querySelector<HTMLElement>(
+    '[data-role="assistant-thinking"]',
+  );
+  if (!row) {
+    throw new Error("Expected a run status row");
+  }
+  return row;
+}
+
+// The user selects the conversation tail, from their message through the run
+// status row, as they would before copying it.
+function selectFromMessageThroughStatus(text: string): void {
+  const row = statusRow();
+  const range = document.createRange();
+  range.setStart(textNode(text), 0);
+  range.setEnd(row, row.childNodes.length);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function selectedText(): string {
+  return window.getSelection()?.toString().replace(/\s+/gu, " ").trim() ?? "";
+}
+
+test("Keep the selected prompt and status row when a run claims the prompt", async () => {
+  const events: MockChatEventInput[] = [
+    promptEvent({
+      id: "queued-request",
+      seqId: 1,
+      text: "Review the API",
+      createdAt: createdAt(0),
+    }),
+  ];
+  installRunChat({ chatEvents: events });
+  await openChat(1);
+  await expect(findButton("queue...")).resolves.toBeInTheDocument();
+  selectFromMessageThroughStatus("Review the API");
+
+  events.push({
+    ...promptEvent({
+      id: RUN_A,
+      runId: RUN_A,
+      seqId: 2,
+      text: "Review the API",
+      createdAt: createdAt(1),
+    }),
+    revokesEventId: "queued-request",
+  });
+  publishRunUpdate();
+
+  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
+  expect(queryButton("queue...")).toBeNull();
+  expect(screen.getAllByText("Review the API")).toHaveLength(1);
+  const selected = selectedText();
+  expect(selected.startsWith("Review the API")).toBeTruthy();
+  expect(selected.endsWith("Thinking...")).toBeTruthy();
+});
+
+test("Keep the selected steer and status row through steer delivery and the first result", async () => {
+  const events = [...resultEvents(), pendingSteer()];
+  installRunChat({ chatEvents: events, activeRunIds: [RUN_A] });
+  await openChat(12);
+  expectWaitingAfter(STEER);
+  selectFromMessageThroughStatus(STEER);
+
+  mockNow(new Date(createdAt(20)), context.signal);
+  events.push(
+    deliveredSteer(),
+    assistantEvent({
+      id: "result-after-steer",
+      runId: RUN_A,
+      seqId: 6,
+      text: NEXT_RESULT,
+      createdAt: createdAt(18),
+    }),
+  );
+  publishRunUpdate();
+
+  await expect(screen.findByText(NEXT_RESULT)).resolves.toBeInTheDocument();
+  expectWaitingAfter(NEXT_RESULT);
+  const selected = selectedText();
+  expect(selected.startsWith(STEER)).toBeTruthy();
+  expect(selected).toContain(NEXT_RESULT);
+  expect(selected.endsWith("Thinking...")).toBeTruthy();
+});
+
+test("Stop interrupts the live run and keeps the queued follow-up", async () => {
+  const interrupted: string[] = [];
+  const recalled: string[] = [];
+  installRunChat({
+    chatEvents: [...resultEvents(), pendingSteer()],
+    activeRunIds: [RUN_A],
+    onInterruptEventAppend: ({ interruptsRunId }) => {
+      interrupted.push(interruptsRunId);
+    },
+    onRecallEventAppend: ({ revokesEventId }) => {
+      recalled.push(revokesEventId);
+    },
+  });
+  await openChat(12);
+  expect(screen.getByText(STEER)).toBeVisible();
+
+  click(await findEnabledButton("Stop"));
+
+  await waitFor(() => {
+    expect(interrupted).toStrictEqual([RUN_A]);
+  });
+  expect(recalled).toStrictEqual([]);
+  expect(screen.getByText(STEER)).toBeVisible();
+  expect(
+    screen.queryByRole("listitem", { name: "Queued message" }),
+  ).not.toBeInTheDocument();
 });

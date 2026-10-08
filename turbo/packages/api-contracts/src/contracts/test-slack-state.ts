@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { initContract } from "./base";
-import { publicBrandSchema } from "./public-brand";
 
 const c = initContract();
 
@@ -22,7 +21,6 @@ export const testSlackStatePostBodySchema = z.object({
   bot_user_id: z.string().optional(),
   bot_scopes: z.string().nullable().optional(),
   bot_token: z.string().optional(),
-  public_brand: publicBrandSchema.optional(),
   installation_org_id: z.string().nullable().optional(),
   email: z.string().optional(),
   seed_connection: z.boolean().optional(),
@@ -53,7 +51,6 @@ export const testSlackStateResponseSchema = z.object({
       botUserId: z.string(),
       botScopes: z.string().nullable(),
       installedByUserId: z.string().nullable(),
-      publicBrand: publicBrandSchema,
       createdAt: z.string(),
     })
     .nullable(),
@@ -83,7 +80,6 @@ export const testSlackStateResponseSchema = z.object({
       routeId: z.string(),
       eventId: z.string(),
       payload: z.string(),
-      publicBrand: publicBrandSchema,
       status: z.enum([
         "pending",
         "processing",

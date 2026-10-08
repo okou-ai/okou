@@ -1,8 +1,7 @@
 import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { JSX } from "react";
-import { Loader2 } from "lucide-react";
-import { Button, CopyButton } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import { clerk$ } from "../../signals/auth.ts";
@@ -153,108 +152,6 @@ function AlreadyConnectedState({
             })}
           </Button>
         ) : null}
-        <div className="flex justify-center">
-          <BackLink />
-        </div>
-      </div>
-    </PageShell>
-  );
-}
-
-function DomainStatusPolling() {
-  const { t } = useTranslation();
-
-  return (
-    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-      <Loader2 size={13} className="animate-spin" />
-      {t(($) => {
-        return $.connectors.providerConnect.telegram.checkingDomain;
-      })}
-    </div>
-  );
-}
-
-function DomainSetupState({
-  botUsername,
-}: {
-  botUsername: string | undefined;
-}) {
-  const { t } = useTranslation();
-  const domain = location.hostname;
-  const normalizedBotUsername = botUsername?.replace(/^@/, "");
-  const botLabel = normalizedBotUsername
-    ? `@${normalizedBotUsername}`
-    : t(($) => {
-        return $.connectors.providerConnect.telegram.botFallback;
-      });
-
-  return (
-    <PageShell>
-      <TelegramMark state="warning" />
-      <CenterText
-        title={t(($) => {
-          return $.connectors.providerConnect.telegram.domainTitle;
-        })}
-        body={t(
-          ($) => {
-            return $.connectors.providerConnect.telegram.domainDescription;
-          },
-          { bot: botLabel },
-        )}
-      />
-      <div className="w-full rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-foreground">
-        <p>
-          {t(($) => {
-            return $.connectors.providerConnect.telegram.domainIn;
-          })}
-          <a
-            href="https://t.me/BotFather"
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium text-foreground underline-offset-4 hover:underline"
-          >
-            {t(($) => {
-              return $.connectors.providerConnect.telegram.botFatherHandle;
-            })}
-          </a>
-          {t(($) => {
-            return $.connectors.providerConnect.telegram.domainSend;
-          })}
-          <code className="rounded border border-amber-500/30 bg-background/80 px-1 py-0.5 font-mono text-xs">
-            {t(($) => {
-              return $.connectors.providerConnect.telegram.setDomainCommand;
-            })}
-          </code>
-          {t(($) => {
-            return $.connectors.providerConnect.telegram
-              .domainInstructionsAfter;
-          })}
-        </p>
-        <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
-          <code className="min-w-0 truncate font-mono text-xs">{domain}</code>
-          <CopyButton
-            text={domain}
-            className="shrink-0 p-1.5 hover:bg-state-hover"
-          />
-        </div>
-        <p className="mt-3 text-muted-foreground">
-          {t(($) => {
-            return $.connectors.providerConnect.telegram.domainKeepOpen;
-          })}
-        </p>
-        <DomainStatusPolling />
-      </div>
-      <div className="flex w-full flex-col gap-3">
-        <a
-          href="https://t.me/BotFather"
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
-        >
-          {t(($) => {
-            return $.connectors.providerConnect.telegram.openBotFather;
-          })}
-        </a>
         <div className="flex justify-center">
           <BackLink />
         </div>
@@ -455,7 +352,14 @@ export function TelegramConnectPage(): JSX.Element {
     linkStatus?.installation?.domainConfigured === false
   ) {
     return (
-      <DomainSetupState botUsername={linkStatus.installation.botUsername} />
+      <InvalidState
+        title={t(($) => {
+          return $.connectors.providerConnect.common.connectionFailed;
+        })}
+        message={t(($) => {
+          return $.connectors.providerConnect.telegram.errorFallback;
+        })}
+      />
     );
   }
 

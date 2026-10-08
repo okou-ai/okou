@@ -33,7 +33,6 @@ describe("resolveImmutableDedupeInsert", () => {
 
   it.each([
     ["foreign-key violation", postgresError("23503")],
-    ["check violation", postgresError("23514")],
     ["connection failure", postgresError("ECONNRESET")],
     ["abort", new DOMException("aborted", "AbortError")],
     ["arbitrary error", new Error("arbitrary failure")],

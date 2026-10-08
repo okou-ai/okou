@@ -167,7 +167,7 @@ function fixture(html = false, extension = "pdf", token = publicToken) {
       return registryCache;
     },
   });
-  return { env, objects, reads, policy, cache };
+  return { env, objects, reads, policy, cache, registryCache };
 }
 
 afterEach(() => {
@@ -294,7 +294,7 @@ test("thumbnail caches cannot hide missing policy or feed external Image Resizin
   expect(f.render).toHaveBeenCalledTimes(1);
 });
 
-test("legacy ten-character image thumbnails retain public caching and original bytes", async () => {
+test("legacy ten-character image thumbnails retain their original bytes without browser caching", async () => {
   const f = imageFixture("a1b2c3d4e5");
   const key = "artifacts/a1b2c3d4e5.png";
   // The same shape as a new share is classified by its immutable registration.
@@ -315,9 +315,7 @@ test("legacy ten-character image thumbnails retain public caching and original b
   f.objects.delete(policyKey);
   const thumbnail = await fetchWorker(new Request(f.url), f.env);
   expect(await thumbnail.text()).toBe("Thumbnail of Historical image");
-  expect(thumbnail.headers.get("Cache-Control")).toBe(
-    "public, max-age=31536000, immutable",
-  );
+  expect(thumbnail.headers.get("Cache-Control")).toBe("private, no-store");
   expect(
     await (
       await fetchWorker(new Request("https://a.okou.io/a1b2c3d4e5.png"), f.env)
@@ -412,6 +410,58 @@ test.each([false, true])(
     expect((await fetchWorker(request, f.env)).status).toBe(404);
   },
 );
+
+test("legacy-layout shares and hosted aliases resolve only on the legacy host", async () => {
+  const f = fixture(true);
+  if (f.policy.target.kind !== "html") throw new Error("Expected html fixture");
+  const legacyPolicy: ArtifactSharePolicy = {
+    ...f.policy,
+    publicBrand: "vm0",
+    target: {
+      ...f.policy.target,
+      manifest: { ...f.policy.target.manifest, publicBrand: "vm0" },
+    },
+  };
+  const currentPrefix = `shared-artifacts/okou/${snapshotId}/${fileId}`;
+  const legacyPrefix = `shared-artifacts/vm0/${snapshotId}/${fileId}`;
+  for (const [key, value] of Array.from(f.objects)) {
+    f.objects.delete(key);
+    if (key.startsWith(currentPrefix))
+      f.objects.set(key.replace(currentPrefix, legacyPrefix), value);
+  }
+  const legacyPolicyKey = `artifact-shares/vm0/${id}.json`;
+  const legacyAliasKey = artifactDeliveryKey("vm0", "html", publicToken);
+  f.objects.set(legacyPolicyKey, JSON.stringify(legacyPolicy));
+  f.objects.set(
+    legacyAliasKey,
+    JSON.stringify({
+      version: 1,
+      kind: "publication",
+      publicBrand: "vm0",
+      shareId: id,
+      publicToken,
+      targetKind: "html",
+    }),
+  );
+  for (const url of [
+    `https://${publicToken}.sites.vm0.io/style.css`,
+    `https://sh-${id.replaceAll("-", "")}-${publicToken}.sites.vm0.io/style.css`,
+  ]) {
+    const response = await fetchWorker(new Request(url), f.env);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("Content /style.css");
+  }
+  expect(f.reads).toContain(legacyPolicyKey);
+  expect(f.reads).toContain(legacyAliasKey);
+  expect(
+    f.cache.put.mock.calls.map(([key]) => {
+      return new URL(key.url).pathname;
+    }),
+  ).toContain(`/__artifact-content/vm0/${snapshotId}/${fileId}/style.css`);
+  expect(
+    (await fetchWorker(new Request(`${siteOrigin}/style.css`), f.env)).status,
+  ).toBe(404);
+});
 
 test("warm public bytes still require authoritative permission, and revocation defeats cache hits", async () => {
   const f = fixture();
@@ -545,6 +595,105 @@ test("named public site aliases retain snapshot delivery and revoked aliases nev
       )
     ).status,
   ).toBe(200);
+});
+
+test("named HTML migration ignores old registry caches and preserves the revocable token snapshot", async () => {
+  const f = fixture(true);
+  if (f.policy.target.kind !== "html") throw new Error("Expected HTML fixture");
+  const alias = "business-report";
+  const address = `https://${alias}.okou.app`;
+  const registryKey = artifactDeliveryKey("okou", "html", alias);
+  const snapshotRecord = {
+    version: 1,
+    kind: "publication",
+    publicBrand: "okou",
+    shareId: id,
+    publicToken,
+    targetKind: "html",
+  };
+  f.objects.set(registryKey, JSON.stringify(snapshotRecord));
+  expect(await (await fetchWorker(new Request(address), f.env)).text()).toBe(
+    "Content /index.html",
+  );
+
+  // Simulate the 24-hour entry written by the previously deployed Worker.
+  await f.registryCache.put(
+    new Request(
+      new URL(
+        `/__artifact-delivery/${encodeURIComponent(registryKey)}`,
+        address,
+      ),
+    ),
+    new Response(JSON.stringify(snapshotRecord), {
+      headers: { "Cache-Control": "public, max-age=86400" },
+    }),
+  );
+  const pointerKey = `sites/brands/okou/${alias}/active.json`;
+  const snapshotManifest = f.policy.target.manifest;
+  function activate(deploymentId: string, content: string) {
+    const prefix = `sites/orgs/org/${alias}/deployments/${deploymentId}`;
+    const manifestKey = `${prefix}/manifest.json`;
+    f.objects.set(
+      manifestKey,
+      JSON.stringify({
+        ...snapshotManifest,
+        access: undefined,
+        publicSlug: alias,
+        deploymentId,
+      }),
+    );
+    f.objects.set(`${prefix}/index.html`, content);
+    f.objects.set(
+      pointerKey,
+      JSON.stringify({
+        version: 1,
+        publicBrand: "okou",
+        publicSlug: alias,
+        siteId,
+        deploymentId,
+        prefix,
+        manifestKey,
+        spaFallback: false,
+        updatedAt: "2026-09-24T00:00:00Z",
+      }),
+    );
+  }
+  activate("00000000-0000-4000-8000-000000000021", "First public deployment");
+  f.objects.set(
+    registryKey,
+    JSON.stringify({
+      version: 1,
+      kind: "legacy-site",
+      publicBrand: "okou",
+      audience: "public",
+      pointerKey,
+    }),
+  );
+  const migrated = await fetchWorker(new Request(address), f.env);
+  expect(migrated.status).toBe(200);
+  expect(await migrated.text()).toBe("First public deployment");
+  expect(migrated.headers.get("Cache-Control")).toBe("no-store");
+
+  activate("00000000-0000-4000-8000-000000000022", "Newest public deployment");
+  expect(await (await fetchWorker(new Request(address), f.env)).text()).toBe(
+    "Newest public deployment",
+  );
+  expect(await (await fetchWorker(new Request(siteOrigin), f.env)).text()).toBe(
+    "Content /index.html",
+  );
+  f.objects.set(
+    policyKey,
+    JSON.stringify({
+      ...f.policy,
+      audience: "private",
+      status: "revoked",
+      publicToken: null,
+    }),
+  );
+  expect((await fetchWorker(new Request(siteOrigin), f.env)).status).toBe(404);
+  expect(await (await fetchWorker(new Request(address), f.env)).text()).toBe(
+    "Newest public deployment",
+  );
 });
 
 test("html snapshots protect every resource and navigation on an isolated origin", async () => {
@@ -746,9 +895,7 @@ test.each([
     );
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("Historical public PDF");
-    expect(response.headers.get("Cache-Control")).toBe(
-      "public, max-age=31536000, immutable",
-    );
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     const head = await fetchWorker(
       new Request(`https://a.okou.io/${legacy}`, { method: "HEAD" }),
       env,
@@ -787,6 +934,40 @@ test.each([
     ).toBe(404);
   },
 );
+
+test("a removed legacy file alias denies warm content and range requests", async () => {
+  const f = fixture();
+  const alias = "user_erased/00000000-0000-4000-8000-000000000015/report.pdf";
+  const key = `artifacts/${alias}`;
+  const registryKey = artifactDeliveryKey(null, "file", alias);
+  f.objects.set(key, "Previously public bytes");
+  f.objects.set(
+    registryKey,
+    JSON.stringify({
+      version: 1,
+      kind: "legacy-file",
+      publicBrand: "okou",
+      audience: "public",
+      key,
+      filename: "report.pdf",
+      contentType: "application/pdf",
+    }),
+  );
+  const env = { ...f.env, PUBLIC_ARTIFACTS_BUCKET: f.env.HOSTED_SITES_BUCKET };
+  const url = `https://a.okou.io/${alias}`;
+  expect((await fetchWorker(new Request(url), env)).status).toBe(200);
+  expect(f.cache.put).toHaveBeenCalled();
+  f.objects.delete(registryKey);
+  expect((await fetchWorker(new Request(url), env)).status).toBe(404);
+  expect(
+    (
+      await fetchWorker(
+        new Request(url, { headers: { Range: "bytes=0-4" } }),
+        env,
+      )
+    ).status,
+  ).toBe(404);
+});
 
 test.each(["", "artifacts/"])(
   "public file shares reject noncanonical %s paths outside cache exclusions",

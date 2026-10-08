@@ -5,52 +5,26 @@ import {
   type PiPreparationObservation,
 } from "./preparation-timing";
 
-function deferred(): {
-  readonly promise: Promise<void>;
-  readonly resolve: () => void;
-} {
-  let settleHeldWork: (() => void) | undefined;
-  // The executor runs synchronously, so the holder is set before any caller
-  // can release it.
-  const promise = new Promise<void>((settle) => {
-    settleHeldWork = () => {
-      settle();
-    };
-  });
-  return {
-    promise,
-    resolve: () => {
-      settleHeldWork?.();
-    },
-  };
-}
-
 describe("Pi preparation phase observations", () => {
   it("reports work that finishes after the attempt aborts as cancelled", async () => {
     const observed: PiPreparationObservation[] = [];
     const controller = new AbortController();
-    const release = deferred();
     const measured = measurePiPreparation(
       (observation) => {
         observed.push(observation);
       },
-      "credentials_revalidate",
-      async () => {
-        await release.promise;
-        return "revalidated";
+      "model_runtime",
+      () => {
+        expect(observed).toStrictEqual([]);
+        controller.abort();
+        return "prepared";
       },
       controller.signal,
     );
-    // Work in flight is not a completion, so nothing may be reported yet.
-    expect(observed).toStrictEqual([]);
-
-    controller.abort();
-    release.resolve();
-
-    await expect(measured).resolves.toBe("revalidated");
+    await expect(measured).resolves.toBe("prepared");
     expect(observed).toHaveLength(1);
     expect(observed[0]).toMatchObject({
-      phase: "credentials_revalidate",
+      phase: "model_runtime",
       outcome: "cancelled",
     });
     expect(observed[0]?.durationMs).toBeGreaterThanOrEqual(0);
@@ -64,30 +38,29 @@ describe("Pi preparation phase observations", () => {
     const observer = (observation: PiPreparationObservation) => {
       observed.push(observation);
     };
-    await measurePiPreparation(observer, "activation_authorize", () => {
-      return Promise.resolve("authorized");
+    await measurePiPreparation(observer, "launch", () => {
+      return Promise.resolve("launched");
     });
-    // The second step is skipped, as native-input/resume-history transfer and an
-    // earlier failure skip it in production. A zero-duration placeholder would
+    // A second preparation step that never ran has no observation. A placeholder would
     // make reconstruction read a skipped step as a step that cost nothing, so
     // the phase must be absent entirely.
     expect(
       observed.map((observation) => {
         return observation.phase;
       }),
-    ).toStrictEqual(["activation_authorize"]);
+    ).toStrictEqual(["launch"]);
   });
 
   it("keeps a failing step's own error and outcome authoritative", async () => {
     const observed: PiPreparationObservation[] = [];
-    const failure = new Error("credential source unavailable");
+    const failure = new Error("model runtime unavailable");
     await expect(
       measurePiPreparation(
         (observation) => {
           observed.push(observation);
           throw new Error("observer failure must stay contained");
         },
-        "credentials_revalidate",
+        "model_runtime",
         () => {
           return Promise.reject(failure);
         },
@@ -95,7 +68,7 @@ describe("Pi preparation phase observations", () => {
     ).rejects.toBe(failure);
     expect(observed).toHaveLength(1);
     expect(observed[0]).toMatchObject({
-      phase: "credentials_revalidate",
+      phase: "model_runtime",
       outcome: "error",
     });
   });

@@ -222,13 +222,40 @@ function mockMutableConversation(
     chatEvents: [...initialEvents],
     activeRunIds: [...activeRunIds],
   });
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    const rows = mockChatEventRows(normalizeMockChatEvents(events, threadId))
+  const rowsSince = (sinceSeqId: number) => {
+    return mockChatEventRows(normalizeMockChatEvents(events, threadId))
       .filter((row) => {
-        return row.seqId > query.sinceSeqId;
+        return row.seqId > sinceSeqId;
       })
-      .slice(0, query.limit ?? 50);
-    return respond(200, chatEventRowsResponse(rows, query));
+      .map((row) => {
+        // The batched catch-up stores the last row ID as the next rows cursor.
+        // Use real UUID IDs in both paths so that cursor is valid on replay.
+        return {
+          ...row,
+          id: `00000000-0000-4000-8000-${row.seqId.toString(16).padStart(12, "0")}`,
+        };
+      });
+  };
+  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
+    return respond(
+      200,
+      chatEventRowsResponse(
+        rowsSince(query.sinceSeqId).slice(0, query.limit ?? 50),
+        query,
+      ),
+    );
+  });
+  // The Worker may warm its cache through the batched endpoint before the
+  // page fetches rows. Both endpoints must describe the same persisted events.
+  context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
+    return respond(200, {
+      events: Object.fromEntries(
+        body.map(([id, sinceSeqId]) => {
+          return [id, id === threadId ? rowsSince(sinceSeqId) : []];
+        }),
+      ),
+      notFoundThreads: [],
+    });
   });
   return {
     publish: (nextEvents) => {
@@ -328,7 +355,8 @@ test("Preserve the visible message when earlier content grows", async () => {
 });
 
 async function completeRunWhileReadingExpandedWork() {
-  const activeRunId = "scroll-expanded-work-run";
+  // A live run demands activity summaries, whose contract requires a UUID run ID.
+  const activeRunId = "a0000000-0000-4000-a000-000000000937";
   const conversation = mockMutableConversation(
     THREAD_IDS.expandedWork,
     [
@@ -402,7 +430,7 @@ async function completeRunWhileReadingExpandedWork() {
   });
 
   await screen.findByText("The rollout is healthy");
-  await screen.findByText("Worked for 1m");
+  await screen.findByText("Worked for 1 min");
 }
 
 test("Keep expanded work history and its duration visible after the run completes", async () => {
@@ -410,7 +438,7 @@ test("Keep expanded work history and its duration visible after the run complete
   await waitFor(() => {
     expect(screen.getByText("Checked the first rollout stage")).toBeVisible();
     expect(buttonByLabel("Collapse work history")).toBeVisible();
-    expect(screen.getByText("Worked for 1m")).toBeVisible();
+    expect(screen.getByText("Worked for 1 min")).toBeVisible();
   });
 });
 

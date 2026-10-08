@@ -223,7 +223,7 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
 }
 
 export function connectorCatalogFirewallConfig(
-  connector: ConnectorCatalogArtifactConnector,
+  connector: Pick<ConnectorCatalogArtifactConnector, "slug" | "firewall">,
 ): FirewallConfig | null {
   return connector.firewall.kind === "none"
     ? null

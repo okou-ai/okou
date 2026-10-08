@@ -5,7 +5,6 @@ use std::{future::Future, io, sync::Arc, time::Duration};
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseWriter};
 use runner_types::{ids::RunId, types::ExecutionContext};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
@@ -30,7 +29,6 @@ impl Runtime {
     pub(crate) fn for_context(&self, context: &ExecutionContext) -> Arc<Run> {
         Arc::new(Run {
             run_id: context.run_id,
-            api: capture_api_source(context.pi_launch_config.as_ref()),
             mitm: self.mitm.for_run(context.run_id),
         })
     }
@@ -38,7 +36,6 @@ impl Runtime {
 
 pub(crate) struct Run {
     run_id: RunId,
-    api: ApiFirstTurnSource,
     mitm: MitmRunUsage,
 }
 
@@ -48,11 +45,8 @@ impl Run {
         ResultDto {
             schema_version: 1,
             run_id: self.run_id,
-            combined: combine(&self.api, &sandbox_proxy),
-            sources: Sources {
-                api_first_turn: self.api.clone(),
-                sandbox_proxy,
-            },
+            combined: combine(&sandbox_proxy),
+            sources: Sources { sandbox_proxy },
         }
     }
 
@@ -155,68 +149,6 @@ async fn send_error(
 enum Coverage {
     Complete,
     Partial,
-    Unavailable,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ApiTokens {
-    input: Option<u64>,
-    cache_read: Option<u64>,
-    cache_creation: Option<u64>,
-    output: Option<u64>,
-    total: Option<u64>,
-}
-
-impl ApiTokens {
-    fn from_handoff(tokens: HandoffTokens) -> Self {
-        let [input, cache_read, cache_creation, output] = tokens.values();
-        let total = [input, cache_read, cache_creation, output]
-            .into_iter()
-            .try_fold(0_u64, |sum, value| sum.checked_add(value?))
-            .filter(|total| *total <= MAX_SAFE_INTEGER);
-        Self {
-            input,
-            cache_read,
-            cache_creation,
-            output,
-            total,
-        }
-    }
-
-    fn values(&self) -> [Option<u64>; 4] {
-        [
-            self.input,
-            self.cache_read,
-            self.cache_creation,
-            self.output,
-        ]
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(tag = "state", rename_all = "kebab-case")]
-enum ApiFirstTurnSource {
-    Unavailable {
-        reason: ApiUnavailableReason,
-    },
-    NoInference {
-        #[serde(rename = "sampledAt")]
-        sampled_at: u64,
-    },
-    Observed {
-        #[serde(rename = "sampledAt")]
-        sampled_at: u64,
-        coverage: Coverage,
-        tokens: ApiTokens,
-    },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum ApiUnavailableReason {
-    MissingHandoff,
-    InvalidHandoff,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -275,7 +207,6 @@ enum CombinedUnavailableReason {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Sources {
-    api_first_turn: ApiFirstTurnSource,
     sandbox_proxy: SandboxProxySource,
 }
 
@@ -286,142 +217,6 @@ struct ResultDto {
     run_id: RunId,
     combined: Combined,
     sources: Sources,
-}
-
-#[derive(Deserialize)]
-#[serde(
-    tag = "state",
-    rename_all = "kebab-case",
-    rename_all_fields = "camelCase"
-)]
-enum HandoffUsage {
-    NoInference {
-        schema_version: u8,
-        sampled_at: u64,
-    },
-    Observed {
-        schema_version: u8,
-        sampled_at: u64,
-        coverage: CoverageInput,
-        tokens: HandoffTokens,
-    },
-}
-
-#[derive(Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum CoverageInput {
-    Complete,
-    Partial,
-    Unavailable,
-}
-
-impl CoverageInput {
-    fn output(self) -> Coverage {
-        match self {
-            Self::Complete => Coverage::Complete,
-            Self::Partial => Coverage::Partial,
-            Self::Unavailable => Coverage::Unavailable,
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct HandoffTokens {
-    input: NullableQuantity,
-    cache_read: NullableQuantity,
-    cache_creation: NullableQuantity,
-    output: NullableQuantity,
-}
-
-impl HandoffTokens {
-    fn values(&self) -> [Option<u64>; 4] {
-        [
-            self.input.0,
-            self.cache_read.0,
-            self.cache_creation.0,
-            self.output.0,
-        ]
-    }
-
-    fn valid(&self, coverage: CoverageInput) -> bool {
-        let values = self.values();
-        let all_safe = values
-            .iter()
-            .flatten()
-            .all(|value| *value <= MAX_SAFE_INTEGER);
-        let known = values.iter().filter(|value| value.is_some()).count();
-        all_safe
-            && match coverage {
-                CoverageInput::Complete => known == values.len(),
-                CoverageInput::Partial => known > 0,
-                CoverageInput::Unavailable => known == 0,
-            }
-    }
-}
-
-#[derive(Deserialize)]
-struct NullableQuantity(Option<u64>);
-
-fn capture_api_source(pi_launch_config: Option<&Value>) -> ApiFirstTurnSource {
-    let value = match api_usage_value(pi_launch_config) {
-        Ok(Some(value)) => value,
-        Ok(None) => {
-            return ApiFirstTurnSource::Unavailable {
-                reason: ApiUnavailableReason::MissingHandoff,
-            };
-        }
-        Err(()) => {
-            return ApiFirstTurnSource::Unavailable {
-                reason: ApiUnavailableReason::InvalidHandoff,
-            };
-        }
-    };
-    let usage: HandoffUsage = match serde_json::from_value(value.clone()) {
-        Ok(usage) => usage,
-        Err(_) => {
-            return ApiFirstTurnSource::Unavailable {
-                reason: ApiUnavailableReason::InvalidHandoff,
-            };
-        }
-    };
-    match usage {
-        HandoffUsage::NoInference {
-            schema_version: 1,
-            sampled_at,
-        } if sampled_at <= MAX_SAFE_INTEGER => ApiFirstTurnSource::NoInference { sampled_at },
-        HandoffUsage::Observed {
-            schema_version: 1,
-            sampled_at,
-            coverage,
-            tokens,
-        } if sampled_at <= MAX_SAFE_INTEGER && tokens.valid(coverage) => {
-            ApiFirstTurnSource::Observed {
-                sampled_at,
-                coverage: coverage.output(),
-                tokens: ApiTokens::from_handoff(tokens),
-            }
-        }
-        _ => ApiFirstTurnSource::Unavailable {
-            reason: ApiUnavailableReason::InvalidHandoff,
-        },
-    }
-}
-
-fn api_usage_value(pi_launch_config: Option<&Value>) -> Result<Option<&Value>, ()> {
-    let Some(config) = pi_launch_config else {
-        return Ok(None);
-    };
-    let config = config.as_object().ok_or(())?;
-    let Some(api_first_turn) = config.get("apiFirstTurn") else {
-        return Ok(None);
-    };
-    let api_first_turn = api_first_turn.as_object().ok_or(())?;
-    let Some(continuation) = api_first_turn.get("continuation") else {
-        return Ok(None);
-    };
-    let continuation = continuation.as_object().ok_or(())?;
-    Ok(continuation.get("apiUsage"))
 }
 
 fn sandbox_proxy_source(snapshot: io::Result<RunUsageObservation>) -> SandboxProxySource {
@@ -459,76 +254,36 @@ pub(crate) fn test_run(run_id: RunId) -> Arc<Run> {
     let (proxy, _crash_rx) = runner_network::proxy::MitmProxy::noop();
     Arc::new(Run {
         run_id,
-        api: ApiFirstTurnSource::NoInference { sampled_at: 0 },
         mitm: MitmUsageHandle::from(&proxy).for_run(run_id),
     })
 }
 
-fn combine(api: &ApiFirstTurnSource, sandbox: &SandboxProxySource) -> Combined {
-    let mut values = [0_u128; 4];
-    let mut observed = false;
-    let api_complete = match api {
-        ApiFirstTurnSource::NoInference { .. } => {
-            observed = true;
-            true
-        }
-        ApiFirstTurnSource::Observed {
-            coverage, tokens, ..
-        } => {
-            for (target, value) in values.iter_mut().zip(tokens.values()) {
-                if let Some(value) = value {
-                    observed = true;
-                    *target += u128::from(value);
-                }
-            }
-            *coverage == Coverage::Complete
-        }
-        ApiFirstTurnSource::Unavailable { .. } => false,
-    };
-    let mitm_complete = match sandbox {
-        SandboxProxySource::Observed {
-            coverage, tokens, ..
-        } => {
-            observed = true;
-            for (target, value) in values.iter_mut().zip([
-                tokens.input,
-                tokens.cache_read,
-                tokens.cache_creation,
-                tokens.output,
-            ]) {
-                *target += u128::from(value);
-            }
-            *coverage == Coverage::Complete
-        }
-        SandboxProxySource::Unavailable { .. } => false,
-    };
-    if !observed {
+fn combine(sandbox: &SandboxProxySource) -> Combined {
+    let SandboxProxySource::Observed {
+        coverage, tokens, ..
+    } = sandbox
+    else {
         return Combined::Unavailable {
             reason: CombinedUnavailableReason::NoObservation,
         };
-    }
-    let coverage = if api_complete && mitm_complete {
-        Coverage::Complete
-    } else {
-        Coverage::Partial
     };
-    let total = values.iter().sum::<u128>();
-    if values
-        .iter()
-        .chain(std::iter::once(&total))
-        .any(|value| *value > u128::from(MAX_SAFE_INTEGER))
+    if [
+        tokens.input,
+        tokens.cache_read,
+        tokens.cache_creation,
+        tokens.output,
+        tokens.total,
+    ]
+    .into_iter()
+    .any(|value| value > MAX_SAFE_INTEGER)
     {
-        return Combined::Overflow { coverage };
+        return Combined::Overflow {
+            coverage: *coverage,
+        };
     }
     Combined::Observed {
-        coverage,
-        observed_tokens: TokenTotals {
-            input: values[0] as u64,
-            cache_read: values[1] as u64,
-            cache_creation: values[2] as u64,
-            output: values[3] as u64,
-            total: total as u64,
-        },
+        coverage: *coverage,
+        observed_tokens: tokens.clone(),
     }
 }
 

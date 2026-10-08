@@ -35,9 +35,9 @@ def _openai_responses_sse_flow(
     flow = model_provider_sse_flow(
         tmp_path,
         real_flow,
-        host="api.openai.com",
-        original_url="https://api.openai.com/v1/responses",
-        firewall_name="model-provider:openai-api-key",
+        host="openrouter.ai",
+        original_url="https://openrouter.ai/api/v1/responses",
+        firewall_name="model-provider:openrouter-codex",
         cli_agent_type="codex",
         model_usage_provider=model_usage_provider,
     )
@@ -86,16 +86,16 @@ class TestOpenAIResponsesSseUsage:
         flow = model_provider_sse_flow(
             tmp_path,
             real_flow,
-            host="api.deepseek.com",
-            original_url="https://api.deepseek.com/responses",
-            firewall_name="model-provider:deepseek",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             cli_agent_type="pi",
-            model_usage_provider="deepseek-v4-flash",
+            model_usage_provider="okou-1.0",
         )
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             b"event: response.completed\n"
-            b'data: {"type":"response.completed","response":{"model":"deepseek-chat",'
+            b'data: {"type":"response.completed","response":{"model":"openai/gpt-6-luna",'
             b'"usage":{"input_tokens":7131,"output_tokens":49,'
             b'"input_tokens_details":{"cached_tokens":5504}}}}\n\n'
         )
@@ -114,6 +114,7 @@ class TestOpenAIResponsesSseUsage:
             real_flow,
             model_usage_provider="gpt-5.6-sol",
         )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             b"event: response.completed\n"

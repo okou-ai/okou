@@ -1,13 +1,20 @@
+import { chatEventCommandResultSchema } from "../signals/services/chat-event-append.service";
+import { parseRawRows } from "../lib/db-raw-rows";
+import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { randomUUID } from "node:crypto";
 
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
-import { revokeChatEvent } from "../signals/services/chat-event.service";
+import {
+  chatEventReplacementInsertSql,
+  requireChatEventReplacementTarget,
+  chatEventReplacementTargetSql,
+  chatEventReplacementTargetSchema,
+} from "../signals/services/chat-event.service";
 
 export async function readOfficialWorkflowQueueInputFixture(eventId: string) {
   const [row] = await db()
@@ -21,9 +28,13 @@ export async function readOfficialWorkflowQueueInputFixture(eventId: string) {
 }
 
 /**
- * Production writers cannot produce historical-brand, canonical or corrupt
- * queue encodings. Append a test-owned persisted input and revoke the original;
- * never update an immutable event or relax its storage constraints.
+ * Historical persisted-state exception (docs/testing.md rollout coexistence;
+ * docs/testing/testing-external-behavior.md historical states): production
+ * writers can no longer produce historical-brand or canonical queue encodings,
+ * which web-chat-queue-context.service.ts still reads during the #29908
+ * compatibility window. Delete with that reader when the window closes.
+ * Append a test-owned persisted input and revoke the original; never update an
+ * immutable event or relax its storage constraints.
  */
 export async function appendOfficialWorkflowQueueInputFixture(args: {
   readonly eventId: string;
@@ -36,18 +47,31 @@ export async function appendOfficialWorkflowQueueInputFixture(args: {
 }) {
   const source = await readOfficialWorkflowQueueInputFixture(args.eventId);
   return await db().transaction(async (tx) => {
-    const revoked = await revokeChatEvent(tx, source.id, {
-      chatThreadId: source.chatThreadId,
-      eventType: "control.revoke",
-    });
+    const revoked =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
+          chatEventReplacementInsertSql(
+            requireChatEventReplacementTarget(
+              parseRawRows(
+                chatEventReplacementTargetSchema,
+                await tx.execute(chatEventReplacementTargetSql(source.id)),
+              ),
+            ),
+            {
+              chatThreadId: source.chatThreadId,
+              eventType: "control.revoke",
+              content: null,
+            },
+          ),
+        ),
+      )[0] ?? null;
     if (!revoked) {
       throw new Error("Official queue fixture source was already revoked");
     }
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({ lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1` })
-      .where(eq(chatThreads.id, source.chatThreadId))
-      .returning({ seqId: chatThreads.lastChatEventSeqId });
+    const thread = {
+      seqId: await reserveFixtureChatEventSequence(tx, source.chatThreadId, 1),
+    };
     if (!thread) {
       throw new Error("Official queue fixture thread is missing");
     }
@@ -57,6 +81,7 @@ export async function appendOfficialWorkflowQueueInputFixture(args: {
         id: randomUUID(),
         chatThreadId: source.chatThreadId,
         eventType: "input.prompt",
+        modelSelection: source.modelSelection,
         contextType: args.contextType,
         contextId: args.contextId,
         requiredOfficialWorkflowIds: args.claim,

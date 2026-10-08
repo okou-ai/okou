@@ -222,6 +222,20 @@ Never assert internal signal, store, service, helper, request-count, DOM
 identity, or cache-protocol details. Do not use snapshots in Platform page
 tests.
 
+### Localization
+
+Tests do not cover translated copy. The shared MSW handlers serve a placeholder
+resource for every non-default locale, so a page in any locale renders the
+en-US strings through i18next fallback. Locate controls and assert text with
+the en-US copy.
+
+Test locale behavior, not translations: locale selection and persistence, the
+document `lang` attribute, locale-dependent URLs, and `Intl` date, number, and
+duration formatting. Do not import locale resource JSON into tests or mocks,
+and do not add per-locale tables that pin translated strings. Loading those
+resources as typed modules also makes the type-check program build literal
+types for every locale.
+
 ## Network and External Boundaries
 
 All application HTTP traffic is intercepted by MSW, and unhandled requests

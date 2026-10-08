@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -6,14 +7,20 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
-import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
+import {
+  automaticMcpCatalogFixture,
+  installAutomaticMcpCatalog,
+} from "./helpers/connector-automatic-catalog";
+
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const routes = Object.freeze([
@@ -30,7 +37,7 @@ function accounts() {
   return setupApp({ context, routes })(connectorAccountsContract);
 }
 
-async function fixture() {
+async function fixture(legacyCatalog = false) {
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -38,9 +45,13 @@ async function fixture() {
   mocks.clerk.session(actor.userId, actor.orgId);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
-  const catalog = await installAutomaticMcpCatalog();
+  const catalog = legacyCatalog
+    ? await installAutomaticMcpCatalog()
+    : automaticMcpCatalogFixture();
   onTestFinished(async () => {
-    mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalog.bucket);
+    if (legacyCatalog) {
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalog.bucket);
+    }
     mocks.clerk.session(actor.userId, actor.orgId);
     const existing = await accept(
       accounts().connections({ headers, query: catalog.target }),
@@ -178,6 +189,7 @@ describe("builtin MCP automatic authentication", () => {
       externalId: null,
       externalUsername: null,
       externalEmail: null,
+      oauthScopes: ["read", "write"],
     });
     expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(
       "https://api.okou.ai/api/connectors/automatic/callback",
@@ -339,33 +351,26 @@ describe("builtin MCP automatic authentication", () => {
     expect(provider.registrationBodies).toHaveLength(1);
   });
 
-  it("rejects an in-flight callback when its catalog storage contract changes", async () => {
+  it("connects and reuses a DCR client with millisecond issuance and expiry", async () => {
     const f = await fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
-      registration: "cimd",
+      registration: "dcr",
+      dcrClientIdIssuedAt: now() - 1000,
+      dcrClientSecretExpiresAt: now() + 60 * 60 * 1000,
     });
-    const started = await beginOAuth(f);
-    await installAutomaticMcpCatalog({
-      slug: f.slug,
-      methodId: f.methodId,
-      storageVersion: 2,
-      isolateSource: false,
-    });
-    expect((await callback(started.state, provider.issuer)).body.status).toBe(
-      "error",
+    const first = await beginOAuth(f);
+    expect((await callback(first.state, provider.issuer)).body.status).toBe(
+      "success",
     );
-    await accept(receipt(f, started.oauthAttemptId), [404]);
-    expect(
-      (
-        await accept(
-          accounts().connections({ headers, query: f.target }),
-          [200],
-        )
-      ).body.connections,
-    ).toStrictEqual([]);
+    const completed = await accept(receipt(f, first.oauthAttemptId), [200]);
+    const second = await beginOAuth(f, completed.body.connectionId);
+    expect((await callback(second.state, provider.issuer)).body.status).toBe(
+      "success",
+    );
+    expect(provider.registrationBodies).toHaveLength(1);
   });
 
-  it("does not resurrect a deleted reconnect account", async () => {
+  it("does not resurrect an account deleted during its reconnect token exchange", async () => {
     const f = await fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
@@ -378,13 +383,23 @@ describe("builtin MCP automatic authentication", () => {
     );
     const connectionId = receiptResult.body.connectionId;
     const reconnect = await beginOAuth(f, connectionId);
-    await accept(
-      accounts().delete({
-        headers,
-        params: { connectionId },
-        body: { target: f.target },
+    server.use(
+      http.post(`${provider.issuer}/token`, async () => {
+        await accept(
+          accounts().delete({
+            headers,
+            params: { connectionId },
+            body: { target: f.target },
+          }),
+          [200],
+        );
+        return HttpResponse.json({
+          access_token: "deleted-account-access-token",
+          refresh_token: "deleted-account-refresh-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+        });
       }),
-      [200],
     );
     expect((await callback(reconnect.state, provider.issuer)).body.status).toBe(
       "error",

@@ -7,6 +7,7 @@ import { now } from "../../../../lib/time";
 import { getApiTestMocks } from "../../../../__tests__/mocks";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { mockStripeClient } from "../../../external/stripe-client";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
 
 const TEST_PRICE_PRO = "price_test_pro";
@@ -358,6 +359,31 @@ export async function postOneTimePurchaseCompleted(
   return true;
 }
 
+/** Reevaluate queued inputs through the production entitlement-change entry. */
+export async function refreshConcurrencyEntitlement(
+  actor: { readonly orgId: string | null; readonly userId: string },
+  customerId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Expected an organization-scoped actor");
+  }
+  await postConcurrencyEntitlementsInvoicePaid(signal, {
+    orgId: actor.orgId,
+    userId: actor.userId,
+    customerId,
+    subscriptionId: `sub_${randomUUID()}`,
+    lines: [
+      {
+        slots: 1,
+        startsAt: new Date(now()),
+        expiresAt: new Date(now() + 86_400_000),
+      },
+    ],
+  });
+  await flushWaitUntilForTest();
+}
+
 export async function postConcurrencyEntitlementsInvoicePaid(
   signal: AbortSignal,
   args: BillingWebhookFixture & {
@@ -377,6 +403,42 @@ export async function postConcurrencyEntitlementsInvoicePaid(
   mockClerkOrganization(args);
   getApiTestMocks().stripe.customers.retrieve.mockResolvedValueOnce(
     stripeCustomer(args.customerId, args.orgId),
+  );
+
+  const activeLines = args.lines.filter((line) => {
+    return line.expiresAt.getTime() > now();
+  });
+  const subscriptionLines = activeLines.length > 0 ? activeLines : args.lines;
+  const currentPeriodEnd = Math.max(
+    ...subscriptionLines.map((line) => {
+      return seconds(line.expiresAt);
+    }),
+  );
+  const subscription = {
+    id: args.subscriptionId,
+    customer: args.customerId,
+    status: args.subscriptionStatus ?? "active",
+    metadata: { purpose: "concurrency_subscription" },
+    cancel_at_period_end: args.cancelAtPeriodEnd ?? false,
+    cancel_at: args.cancelAtPeriodEnd ? currentPeriodEnd : null,
+    schedule: null,
+    trial_end: null,
+    items: {
+      data: [
+        {
+          price: {
+            id: subscriptionLines[0]?.priceId ?? TEST_PRICE_CONCURRENCY,
+          },
+          quantity: subscriptionLines.reduce((sum, line) => {
+            return sum + line.slots;
+          }, 0),
+          current_period_end: currentPeriodEnd,
+        },
+      ],
+    },
+  };
+  getApiTestMocks().stripe.subscriptions.retrieve.mockResolvedValue(
+    subscription,
   );
 
   await postStripeEvent(signal, {
@@ -419,41 +481,10 @@ export async function postConcurrencyEntitlementsInvoicePaid(
     return;
   }
 
-  const activeLines = args.lines.filter((line) => {
-    return line.expiresAt.getTime() > now();
-  });
-  const subscriptionLines = activeLines.length > 0 ? activeLines : args.lines;
-  const currentPeriodEnd = Math.max(
-    ...subscriptionLines.map((line) => {
-      return seconds(line.expiresAt);
-    }),
-  );
   await postStripeEvent(signal, {
     type: "customer.subscription.updated",
     data: {
-      object: {
-        id: args.subscriptionId,
-        customer: args.customerId,
-        status: args.subscriptionStatus ?? "active",
-        metadata: { purpose: "concurrency_subscription" },
-        cancel_at_period_end: args.cancelAtPeriodEnd ?? false,
-        cancel_at: args.cancelAtPeriodEnd ? currentPeriodEnd : null,
-        schedule: null,
-        trial_end: null,
-        items: {
-          data: [
-            {
-              price: {
-                id: subscriptionLines[0]?.priceId ?? TEST_PRICE_CONCURRENCY,
-              },
-              quantity: subscriptionLines.reduce((sum, line) => {
-                return sum + line.slots;
-              }, 0),
-              current_period_end: currentPeriodEnd,
-            },
-          ],
-        },
-      },
+      object: subscription,
     },
   });
 }

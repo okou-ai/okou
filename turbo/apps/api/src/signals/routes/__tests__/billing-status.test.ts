@@ -25,6 +25,7 @@ import {
 } from "./helpers/billing-status";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
+import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { mockStripeClient } from "../../external/stripe-client";
 import { billingStatusRoutes } from "../billing-status";
@@ -132,9 +133,7 @@ describe("GET /api/billing/status", () => {
     expect(response.body.tier).toBe("limited-free-1");
     expect(response.body.status).toBe("active");
     expect(response.body.concurrencyLimit).toBe(2);
-    expect(response.body.supportByok).toBeTruthy();
     expect(response.body.restrictedBuiltInModels).toBeTruthy();
-    expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.credits).toBe(100_000);
     expect(response.body.onboardingPaymentPending).toBeFalsy();
     expect(response.body.hasSubscription).toBeFalsy();
@@ -309,31 +308,33 @@ describe("GET /api/billing/status", () => {
   );
 
   it("returns custom tier status without subscription plan credits", async () => {
-    const fixture = await track(
-      store.set(seedBillingStatusOrg$, { credits: 0 }, context.signal),
-    );
-    await seedOrgMetadata({
-      orgId: fixture.orgId,
-      tier: "custom",
-      credits: 0,
+    const fixture = createBddApi(context).user();
+    const owner = createPublicBillingZeroFixture(context, fixture, {
+      foreverCustom: {
+        priceId: "price_status_atom_forever",
+        webhookSecret: "whsec_status_atom_forever",
+      },
     });
-    mocks.clerk.session(fixture.userId, fixture.orgId);
+    await owner.run(async () => {
+      await owner.initialize();
+      mocks.clerk.session(fixture.userId, fixture.orgId);
 
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
+      const client = setupApp({ context, routes: billingStatusRoutes })(
+        billingStatusContract,
+      );
 
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
+      const response = await accept(
+        client.get({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
 
-    expect(response.body.tier).toBe("custom");
-    expect(response.body.status).toBe("active");
-    expect(response.body.hasSubscription).toBeFalsy();
-    expect(response.body.currentPeriodEnd).toBeNull();
-    expect(response.body.concurrencyLimit).toBe(10);
-    expect(response.body.creditBreakdown).toStrictEqual([]);
+      expect(response.body.tier).toBe("custom");
+      expect(response.body.status).toBe("active");
+      expect(response.body.hasSubscription).toBeFalsy();
+      expect(response.body.currentPeriodEnd).toBeNull();
+      expect(response.body.concurrencyLimit).toBe(10);
+      expect(response.body.creditBreakdown).toStrictEqual([]);
+    });
   });
 
   it.each([
@@ -475,9 +476,7 @@ describe("GET /api/billing/status", () => {
       canBuyCredits: false,
       showUsagePack: true,
       autoRechargeAllowed: false,
-      supportByok: false,
       restrictedBuiltInModels: false,
-      videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: true,
     });
     mocks.clerk.session(userId, orgId);
@@ -497,9 +496,7 @@ describe("GET /api/billing/status", () => {
     expect(response.body.showUsagePack).toBeTruthy();
     expect(response.body.status).toBe("active");
     expect(response.body.autoRechargeAllowed).toBeFalsy();
-    expect(response.body.supportByok).toBeFalsy();
     expect(response.body.restrictedBuiltInModels).toBeFalsy();
-    expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.workflowWebhookAutomationAllowed).toBeTruthy();
     expect(response.body.concurrencyLimit).toBe(3);
     expect(response.body.concurrencyUnitAmountCents).toBe(4200);

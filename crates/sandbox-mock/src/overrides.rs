@@ -339,7 +339,9 @@ impl MockSandboxOverrides {
             .push_back(result);
     }
 
-    /// Queue one write_file result shared by attached sandboxes.
+    /// Queue one ordinary-write result shared by attached sandboxes.
+    /// Both `write_file` and nonempty `write_files` consume one result per call
+    /// after any sandbox-local result queue has been checked.
     pub fn push_write_file_result(&self, result: Result<()>) {
         self.file
             .write_file_results
@@ -360,7 +362,8 @@ impl MockSandboxOverrides {
         *self.file.finalize_staged_file_gate.lock_ignoring_poison() = Some(gate);
     }
 
-    /// Block write_file after call recording.
+    /// Block `write_file` and nonempty `write_files` after call recording.
+    /// A batch enters the gate once, regardless of its file count.
     pub fn set_write_file_lifecycle_gate(&self, gate: MockLifecycleGate) {
         *self.file.write_file_gate.lock_ignoring_poison() = Some(gate);
     }

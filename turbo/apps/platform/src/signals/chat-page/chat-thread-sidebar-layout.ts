@@ -8,9 +8,6 @@ import { syncActiveBrowserFitAction$ } from "./thread-sidebar-coordinator.ts";
 export const CHAT_THREAD_SIDEBAR_MIN_WIDTH = 400;
 // Width the chat thread keeps so its composer never collapses.
 export const CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH = 600;
-// Matches the `xl` split-view breakpoint in ChatThreadSidebarShell. Below it,
-// an open utility sidebar replaces the chat instead of sitting alongside it.
-export const CHAT_THREAD_SIDEBAR_SPLIT_VIEW_MEDIA_QUERY = "(min-width: 1280px)";
 
 const internalChatThreadSidebarWidth$ = state<number | null>(null);
 

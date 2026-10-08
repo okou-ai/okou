@@ -1,5 +1,4 @@
 import {
-  DEFAULT_USER_LOCALE,
   type UserPreferencesResponse,
   userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -28,7 +27,7 @@ let mockPreferences: UserPreferencesResponse = {
   theme: "system",
   colorTheme: null,
   captureNetworkBodiesRemaining: 0,
-  voiceInputModel: null,
+  memoryInitialized: true,
 };
 
 function normalizePinnedAgentIds(ids: readonly string[]): string[] {
@@ -59,7 +58,7 @@ export function resetMockUserPreferences(): void {
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
+    memoryInitialized: true,
   };
 }
 
@@ -74,7 +73,8 @@ export const apiUserPreferencesHandlers = [
     mockPreferences = {
       ...mockPreferences,
       timezone: mockPreferences.timezone ?? body.timezone ?? null,
-      locale: mockPreferences.locale ?? body.locale ?? DEFAULT_USER_LOCALE,
+      locale: mockPreferences.locale ?? body.locale,
+      memoryInitialized: true,
     };
     return respond(200, mockPreferences);
   }),

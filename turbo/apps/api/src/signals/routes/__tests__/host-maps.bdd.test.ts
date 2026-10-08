@@ -4,15 +4,16 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
   insertLegacyHostedSiteFixture,
   insertLegacyHostedSiteHistoryFixture,
 } from "../../../test-fixtures/hosted-sites";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createMapsBillingApi } from "./helpers/api-bdd-maps-billing";
@@ -290,7 +291,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(history.deployments).toHaveLength(8);
   });
 
-  it("reserves historical hosted-site identities and creates new sites on Okou [HOST-A]", async () => {
+  it("reserves legacy-layout hosted-site identities and creates new sites in the current layout [HOST-A]", async () => {
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
     mockEnv("ZERO_HOST_DOMAIN", "sites.vm0.io");
     mockEnv("OKOU_HOST_SCHEME", "https");
@@ -425,8 +426,8 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     if (!actor.orgId) {
       throw new Error("Expected collision actor to have an org");
     }
+    await bdd.completeOnboarding(actor);
     const capture = api.captureHostedSitesS3();
-    await upsertOrgPlanEntitlementFixture({ orgId: actor.orgId });
     const versioned = await api.prepareHostedSite(actor, {
       site: occupied.publicSlug,
       artifactKind: "hosted-site",
@@ -464,141 +465,170 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const capture = api.captureHostedSitesS3();
 
     const site = `bdd-host-${randomUUID().slice(0, 8)}`;
-    const indexFile = hostedTextFile("/index.html", "<main>BDD host</main>");
-    const scriptFile = hostedTextFile(
-      "/assets/app-4f3a9c12.js",
-      "console.log('bdd host');",
-      "application/javascript",
-    );
-    const files = [indexFile, scriptFile];
-    const body = {
-      site,
-      artifactKind: "hosted-site" as const,
-      spaFallback: true,
-      files,
-    };
-
-    const first = await api.prepareHostedSite(actor, body);
-    expect(first.publicSlug).toBe(site);
-    expect(first.deploymentVersion).toBe(1);
-    expect(
-      first.uploads.map((upload) => {
-        return upload.path;
-      }),
-    ).toStrictEqual(["/index.html", "/assets/app-4f3a9c12.js"]);
-    expect(context.mocks.s3.clientConfig).toHaveBeenCalledWith(
-      expect.objectContaining({
-        credentials: {
-          accessKeyId: "test-hosted-sites-access-key",
-          secretAccessKey: "test-hosted-sites-secret-key",
-        },
-      }),
-    );
-
-    const missingKey = `sites/brands/okou/publications/${first.deploymentId}/assets/app-4f3a9c12.js`;
-    capture.missingKeys.add(missingKey);
-    const notUploaded = await api.requestCompleteHostedSite(
-      actor,
-      first.deploymentId,
-      [400],
-    );
-    expectApiError(notUploaded.body);
-    expect(notUploaded.body.error.message).toBe(
-      "Hosted deployment file was not uploaded: /assets/app-4f3a9c12.js",
-    );
-    capture.missingKeys.delete(missingKey);
-
-    const completed = await api.completeHostedSite(actor, first.deploymentId);
-    expect(completed).toMatchObject({
-      siteId: first.siteId,
-      deploymentId: first.deploymentId,
-      publicSlug: first.publicSlug,
-      url: first.url,
-      deploymentVersion: 1,
-      artifactUrl: first.artifactUrl,
-      aliasUrl: first.url,
-      isActive: true,
-      activeDeploymentVersion: 1,
-      status: "ready",
-    });
-
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/hosted-sites/download?sig=bdd",
-    );
-    const listed = await api.readHostedSiteFiles(actor, first.publicSlug);
-    expect(listed).toMatchObject({
-      siteId: first.siteId,
-      deploymentId: first.deploymentId,
-      publicSlug: first.publicSlug,
-      url: first.url,
-      fileCount: 2,
-      size: indexFile.size + scriptFile.size,
-    });
-    expect(
-      listed.files.map((file) => {
-        return {
-          path: file.path,
-          size: file.size,
-          contentType: file.contentType,
-          downloadUrl: file.downloadUrl,
-        };
-      }),
-    ).toStrictEqual([
-      {
-        path: "/assets/app-4f3a9c12.js",
-        size: scriptFile.size,
-        contentType: "application/javascript",
-        downloadUrl: "https://r2.example.com/hosted-sites/download?sig=bdd",
-      },
-      {
-        path: "/index.html",
-        size: indexFile.size,
-        contentType: "text/html; charset=utf-8",
-        downloadUrl: "https://r2.example.com/hosted-sites/download?sig=bdd",
-      },
-    ]);
-
-    const outsider = bdd.user();
-    const crossOrg = await api.requestHostedSiteFiles(
-      outsider,
-      first.publicSlug,
-      [200],
-    );
-    expect(crossOrg.body).toStrictEqual(listed);
-
-    const third = await api.prepareHostedSite(actor, {
-      ...body,
-      site: `${site}-pending`,
-    });
-    const onboardingCompleted = await bdd.completeOnboarding(actor);
-    expect(onboardingCompleted.status).toBe(200);
-    if (!actor.orgId) {
-      throw new Error("Expected suspended host actor to have an org");
+    const requestedSites = [site, `${site}-pending`];
+    const hostedSitesResponder = context.mocks.s3.send.getMockImplementation();
+    if (!hostedSitesResponder) {
+      throw new Error("Expected hosted site S3 boundary");
     }
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "pro",
-      credits: 0,
+    const hostedSiteEnvironment = [
+      ["R2_HOSTED_SITES_BUCKET_NAME", env("R2_HOSTED_SITES_BUCKET_NAME")],
+      ["R2_HOSTED_SITES_ACCESS_KEY_ID", env("R2_HOSTED_SITES_ACCESS_KEY_ID")],
+      [
+        "R2_HOSTED_SITES_SECRET_ACCESS_KEY",
+        env("R2_HOSTED_SITES_SECRET_ACCESS_KEY"),
+      ],
+      ["OKOU_PUBLIC_HOST_DOMAIN", env("OKOU_PUBLIC_HOST_DOMAIN")],
+      ["OKOU_HOST_SCHEME", env("OKOU_HOST_SCHEME")],
+      ["ZERO_HOST_DOMAIN", env("ZERO_HOST_DOMAIN")],
+      ["ZERO_HOST_SCHEME", env("ZERO_HOST_SCHEME")],
+    ] as const;
+    const fixture = createPublicUnfundedProFixture(context, actor, {
+      async beforeOrganizationCleanup() {
+        for (const [name, value] of hostedSiteEnvironment) {
+          mockEnv(name, value);
+        }
+        capture.missingKeys.clear();
+        context.mocks.s3.send.mockImplementation(hostedSitesResponder);
+        // Registered names also find a prepare that committed without a response.
+        for (const requestedSite of requestedSites) {
+          const history = await api.requestHostedSiteDeployments(
+            actor,
+            requestedSite,
+            [200, 404],
+          );
+          if (history.status === 200) {
+            await api.deleteHostedSite(actor, history.body.publicSlug);
+          }
+        }
+        // Public deletion retires serving pointers; deployment history is retained.
+        await flushWaitUntilForTest();
+      },
     });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "suspended",
-    });
-    const suspendedComplete = await api.requestCompleteHostedSite(
-      actor,
-      third.deploymentId,
-      [402],
-    );
-    expectApiError(suspendedComplete.body);
-    expect(suspendedComplete.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    await fixture.run(async () => {
+      const indexFile = hostedTextFile("/index.html", "<main>BDD host</main>");
+      const scriptFile = hostedTextFile(
+        "/assets/app-4f3a9c12.js",
+        "console.log('bdd host');",
+        "application/javascript",
+      );
+      const files = [indexFile, scriptFile];
+      const body = {
+        site,
+        artifactKind: "hosted-site" as const,
+        spaFallback: true,
+        files,
+      };
 
-    const suspendedPrepare = await api.requestPrepareHostedSite(
-      actor,
-      body,
-      [402],
-    );
-    expectApiError(suspendedPrepare.body);
-    expect(suspendedPrepare.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      const first = await api.prepareHostedSite(actor, body);
+      expect(first.publicSlug).toBe(site);
+      expect(first.deploymentVersion).toBe(1);
+      expect(
+        first.uploads.map((upload) => {
+          return upload.path;
+        }),
+      ).toStrictEqual(["/index.html", "/assets/app-4f3a9c12.js"]);
+      expect(context.mocks.s3.clientConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          credentials: {
+            accessKeyId: "test-hosted-sites-access-key",
+            secretAccessKey: "test-hosted-sites-secret-key",
+          },
+        }),
+      );
+
+      const missingKey = `sites/brands/okou/publications/${first.deploymentId}/assets/app-4f3a9c12.js`;
+      capture.missingKeys.add(missingKey);
+      const notUploaded = await api.requestCompleteHostedSite(
+        actor,
+        first.deploymentId,
+        [400],
+      );
+      expectApiError(notUploaded.body);
+      expect(notUploaded.body.error.message).toBe(
+        "Hosted deployment file was not uploaded: /assets/app-4f3a9c12.js",
+      );
+      capture.missingKeys.delete(missingKey);
+
+      const completed = await api.completeHostedSite(actor, first.deploymentId);
+      expect(completed).toMatchObject({
+        siteId: first.siteId,
+        deploymentId: first.deploymentId,
+        publicSlug: first.publicSlug,
+        url: first.url,
+        deploymentVersion: 1,
+        artifactUrl: first.artifactUrl,
+        aliasUrl: first.url,
+        isActive: true,
+        activeDeploymentVersion: 1,
+        status: "ready",
+      });
+
+      context.mocks.s3.getSignedUrl.mockResolvedValue(
+        "https://r2.example.com/hosted-sites/download?sig=bdd",
+      );
+      const listed = await api.readHostedSiteFiles(actor, first.publicSlug);
+      expect(listed).toMatchObject({
+        siteId: first.siteId,
+        deploymentId: first.deploymentId,
+        publicSlug: first.publicSlug,
+        url: first.url,
+        fileCount: 2,
+        size: indexFile.size + scriptFile.size,
+      });
+      expect(
+        listed.files.map((file) => {
+          return {
+            path: file.path,
+            size: file.size,
+            contentType: file.contentType,
+            downloadUrl: file.downloadUrl,
+          };
+        }),
+      ).toStrictEqual([
+        {
+          path: "/assets/app-4f3a9c12.js",
+          size: scriptFile.size,
+          contentType: "application/javascript",
+          downloadUrl: "https://r2.example.com/hosted-sites/download?sig=bdd",
+        },
+        {
+          path: "/index.html",
+          size: indexFile.size,
+          contentType: "text/html; charset=utf-8",
+          downloadUrl: "https://r2.example.com/hosted-sites/download?sig=bdd",
+        },
+      ]);
+
+      const outsider = bdd.user();
+      const crossOrg = await api.requestHostedSiteFiles(
+        outsider,
+        first.publicSlug,
+        [200],
+      );
+      expect(crossOrg.body).toStrictEqual(listed);
+
+      const third = await api.prepareHostedSite(actor, {
+        ...body,
+        site: `${site}-pending`,
+      });
+      await fixture.initialize();
+      await fixture.suspend();
+      const suspendedComplete = await api.requestCompleteHostedSite(
+        actor,
+        third.deploymentId,
+        [402],
+      );
+      expectApiError(suspendedComplete.body);
+      expect(suspendedComplete.body.error.code).toBe("INSUFFICIENT_CREDITS");
+
+      const suspendedPrepare = await api.requestPrepareHostedSite(
+        actor,
+        body,
+        [402],
+      );
+      expectApiError(suspendedPrepare.body);
+      expect(suspendedPrepare.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    });
   });
 
   it("rejects unauthenticated prepares and oversized public slugs [HOST-D]", async () => {
@@ -901,7 +931,10 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    runs.configureRunnerGroup();
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD host maps agent",
       description: "Run-scoped maps and host attribution.",
@@ -916,10 +949,9 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       }),
     );
 
-    const created = await runs.createRun(actor, {
+    const created = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "attribute maps and host usage",
-      modelProvider: "anthropic-api-key",
     });
     const okouToken = runs.okouTokenForRunWithCapabilities(
       actor,
@@ -943,6 +975,7 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     });
     expect(mapsRequests).toBe(1);
 
+    api.captureHostedSitesS3();
     const bearer = { bearerToken: okouToken };
     const site = `bdd-run-artifact-${randomUUID().slice(0, 8)}`;
     const prepared = await api.prepareHostedSite(bearer, {

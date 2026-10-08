@@ -7,9 +7,10 @@
 //! 1. Mount `/proc`.
 //! 2. Configure TCP keepalive.
 //! 3. Mount `/sys` and initialize cgroup v2 exec process containment.
-//! 4. Mount `/dev/shm`.
-//! 5. Load shared environment variables.
-//! 6. Enter `/root`.
+//! 4. Mount `/dev/pts` for pseudo-terminals.
+//! 5. Mount `/dev/shm`.
+//! 6. Load shared environment variables.
+//! 7. Enter `/root`.
 
 use nix::mount::{MsFlags, mount};
 use std::fs;
@@ -80,7 +81,23 @@ pub fn init_filesystem() -> Result<(), InitError> {
 
     initialize_process_containment()?;
 
-    // 4. Mount tmpfs on /dev/shm — required by Chromium for shared memory.
+    // 4. devtmpfs provides /dev/ptmx but not the devpts filesystem needed to
+    // allocate pseudo-terminals. Allow unprivileged users to open ptmx while
+    // keeping the created slave devices restricted to their owner and tty group.
+    create_dir_all(Path::new("/dev/pts"))?;
+    mount(
+        Some("devpts"),
+        "/dev/pts",
+        Some("devpts"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC,
+        Some("gid=5,mode=0620,ptmxmode=0666"),
+    )
+    .map_err(|source| InitError::Mount {
+        target: "/dev/pts".into(),
+        source,
+    })?;
+
+    // 5. Mount tmpfs on /dev/shm — required by Chromium for shared memory.
     // devtmpfs (CONFIG_DEVTMPFS_MOUNT=y) doesn't create /dev/shm.
     let _ = fs::create_dir_all("/dev/shm");
     mount(
@@ -97,7 +114,7 @@ pub fn init_filesystem() -> Result<(), InitError> {
 
     eprintln!("[guest-init] Virtual filesystems mounted");
 
-    // 5. Load environment variables.
+    // 6. Load environment variables.
     //
     // /etc/environment is baked into the rootfs by customize-rootfs.sh and
     // contains variables shared by ALL users (LANG, NODE_EXTRA_CA_CERTS, …).
@@ -113,7 +130,7 @@ pub fn init_filesystem() -> Result<(), InitError> {
         std::env::set_var("SHELL", "/bin/bash");
     }
 
-    // 6. Change to root home directory. The command launcher selects the
+    // 7. Change to root home directory. The command launcher selects the
     // sandbox user's home explicitly when it transitions users.
     let _ = std::env::set_current_dir("/root");
 

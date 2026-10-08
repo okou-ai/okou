@@ -12,7 +12,7 @@ import { command } from "ccstate";
 import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { processGetStartedClaims } from "../services/get-started-review.service";
+import { processGetStartedClaims$ } from "../services/get-started-review.service";
 
 // Imported only by tests, never registered in the deployed router. The global
 // worker is restricted to claims created by this test through the real API.
@@ -55,7 +55,7 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
           return row.id;
         });
   signal.throwIfAborted();
-  const processed = await processGetStartedClaims(db, { claimIds }, signal);
+  const processed = await set(processGetStartedClaims$, { claimIds }, signal);
   signal.throwIfAborted();
   return { status: 200 as const, body: { processed } };
 });

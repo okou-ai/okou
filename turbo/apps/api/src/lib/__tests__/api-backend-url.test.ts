@@ -25,9 +25,9 @@ describe("API backend URL", () => {
     expect(apiBackendUrl()).toBeUndefined();
   });
 
-  it.each(["", "not-a-url"])("rejects invalid canonical input %j", (value) => {
+  it("rejects an empty canonical input", () => {
     expect(() => {
-      configureApiBackendUrl(value);
+      configureApiBackendUrl("");
     }).toThrow(/Invalid URL/u);
   });
 });

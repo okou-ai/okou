@@ -31,6 +31,10 @@ use runner_types::ids::RunId;
 pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 const TOKEN: &str = "vm0_official_vnc-test";
 
+fn supported_profiles() -> Value {
+    crate::test_fixtures::vnc::supported_profiles(false)
+}
+
 pub(super) async fn bounded<T>(future: impl Future<Output = T>) -> T {
     tokio::time::timeout(Duration::from_secs(10), future)
         .await
@@ -352,7 +356,7 @@ impl Harness {
             let when = match run { Some(run) => when.path(format!("/api/runners/runs/{run}/vnc/resolve")), None => when.path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$") };
             when
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":[{"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},{"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"}]}));
+                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()}));
             then.status(200).json_body(json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
                 "serverName":"vnc.example.test","transport":{"type":"direct"},
                 "authentication":{"method":"vnc_password","password":" secret "},
@@ -365,7 +369,7 @@ impl Harness {
             when.method("POST")
                 .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":[{"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},{"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"}]}));
+                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()}));
             then.status(200).json_body(json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
                 "serverName":"vnc.example.test","transport":{"type":"direct"},
                 "authentication":{"method":"username_password","username":PLAIN_USERNAME,"password":PLAIN_PASSWORD},
@@ -378,7 +382,7 @@ impl Harness {
             when.method("POST")
                 .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":[{"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},{"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"}]}));
+                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()}));
             then.status(200).json_body(response);
         }).await
     }

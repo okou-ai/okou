@@ -1,5 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   chatEventsContract,
@@ -7,6 +6,8 @@ import {
   type ChatEventSendBody,
   type UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -21,7 +22,7 @@ const DESIGN_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 interface PromptLaunchCapture {
   readonly createdThreads: {
     readonly connectorSelections: readonly unknown[] | undefined;
-    readonly model: string | undefined;
+    readonly model: string | null | undefined;
   }[];
   readonly sends: ChatEventSendBody[];
 }
@@ -37,7 +38,11 @@ function capturePromptLaunch(): PromptLaunchCapture {
       id: body.clientThreadId ?? "b0000000-0000-4000-a000-000000000001",
       title: null,
       createdAt: "2026-03-10T00:00:00Z",
-      selectedModel: body.model ?? "claude-sonnet-4-6",
+      // The response names the run model; an Auto thread runs on Auto's.
+      selectedModel:
+        body.model === undefined
+          ? "claude-sonnet-5"
+          : (body.model ?? AUTO_RUN_MODEL),
       serviceTier: body.serviceTier ?? null,
     });
   });
@@ -49,7 +54,6 @@ function capturePromptLaunch(): PromptLaunchCapture {
     return respond(201, {
       runId: "a0000000-0000-4000-a000-000000000001",
       threadId: body.threadId ?? "b0000000-0000-4000-a000-000000000001",
-      status: "completed",
       createdAt: "2026-03-10T00:00:00Z",
     });
   });
@@ -148,7 +152,18 @@ test("A prompt link prefills a new chat from Home", async () => {
   expect(capture.sends).toHaveLength(0);
 });
 
-test("A prompt route starts a chat with its selected model", async () => {
+test("A prompt route starts a chat with its selected personal subscription model", async () => {
+  context.mocks.data.personalModelProviders([
+    {
+      id: "00000000-0000-4000-a000-000000000701",
+      type: "codex-oauth-token",
+      framework: "codex",
+      needsReconnect: false,
+      lastRefreshErrorCode: null,
+      createdAt: "2026-03-10T00:00:00Z",
+      updatedAt: "2026-03-10T00:00:00Z",
+    },
+  ]);
   const capture = capturePromptLaunch();
   await setupPage({
     context,
@@ -220,33 +235,31 @@ test("A prompt link starts a presentation chat with its selected template", asyn
       },
     },
   });
-  expect(capture.createdThreads[0]?.model).toBe("gpt-6-luna");
-  expect(userMessageParts(send)).toContainEqual({
-    type: "model",
-    selectedModel: "gpt-6-luna",
-  });
+  expect(capture.createdThreads[0]?.model).toBeNull();
+  expect(userMessageParts(send)).not.toContainEqual(
+    expect.objectContaining({ type: "model" }),
+  );
 });
 
-test("A prompt link starts a video chat with its selected style", async () => {
+test("A retired video template link keeps its brief as an editable draft", async () => {
+  const user = userEvent.setup();
   const capture = capturePromptLaunch();
   await setupPage({
     context,
     path: "/prompt?prompt=Create%20a%20cinematic%20product%20film&template=epic-grandeur",
   });
 
-  const send = await waitForPromptLaunch(
-    "Create a cinematic product film",
-    capture,
-  );
+  const composer = await waitForDraft("Create a cinematic product film");
+  await user.type(composer, " for launch");
 
-  expect(templatePart(send)).toStrictEqual({
-    type: "template",
-    titleSnapshot: "Epic Grandeur",
-    template: {
-      type: "video",
-      selection: { stylePresetId: "video-template:epic-grandeur" },
-    },
-  });
+  expect(composer).toHaveTextContent(
+    "Create a cinematic product film for launch",
+  );
+  expect(pathname()).toBe(`/agents/${DEFAULT_AGENT_ID}/chat`);
+  expect(search()).toBe("");
+  expect(document.querySelector("[data-composer-inline-template]")).toBeNull();
+  expect(capture.createdThreads).toHaveLength(0);
+  expect(capture.sends).toHaveLength(0);
 });
 
 test("A prompt link starts a website chat with its selected template", async () => {
@@ -278,7 +291,7 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
     parts: [{ type: "text" as const, text: "Keep my unrelated draft" }],
   };
   const draftUpdates: unknown[] = [];
-  context.mocks.data.orgModelPolicies([]);
+  context.mocks.data.availableRunModels([]);
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: savedDraft,

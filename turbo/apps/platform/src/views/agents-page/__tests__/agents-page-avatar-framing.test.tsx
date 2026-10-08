@@ -2,11 +2,11 @@
  * Boundary exception, per `docs/testing/testing-external-behavior.md`.
  *
  * These cases are set up entirely through the production page — the real
- * Agents route, the real agent list, and a real feature-switch override — but
- * they cannot be verified through it. Avatar framing has no page-observable
- * result: it is a transform whose only effect is the rendered size of the
- * artwork, and jsdom performs no layout, so nothing a user could see changes in
- * the DOM. The applied transform is the only available evidence.
+ * Agents route and the real agent list — but they cannot be verified through
+ * it. Avatar framing has no page-observable result: it is a transform whose
+ * only effect is the rendered size of the artwork, and jsdom performs no
+ * layout, so nothing a user could see changes in the DOM. The applied
+ * transform is the only available evidence.
  *
  * The case is still worth testing because the whole point of the framing rule
  * is that two avatars stop differing in size, and a wrong scale is silent —
@@ -17,7 +17,6 @@
  */
 import { avatarComposerUrl } from "@okouai/core/agent-avatar";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -53,9 +52,6 @@ function agent(agentId: string, avatarUrl: string): AgentResponse {
     displayName: agentId,
     sound: null,
     avatarUrl,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
   };
 }
@@ -117,7 +113,6 @@ function centeringOffset(transform: string): number {
 
 async function setupAgentsPage(
   agents: readonly AgentResponse[],
-  framing: boolean,
 ): Promise<void> {
   context.mocks.data.agents([...agents]);
   context.mocks.data.onboardingStatus({
@@ -126,36 +121,17 @@ async function setupAgentsPage(
   await setupPage({
     context,
     path: "/agents",
-    featureSwitches: {
-      [FeatureSwitchKey.AvatarFraming]: framing,
-    },
   });
   await waitFor(() => {
     expect(agentCard(agents[0]!.agentId)).toBeInTheDocument();
   });
 }
 
-test("Leave composer avatars on their drawn placement while framing is off", async () => {
-  await setupAgentsPage(
-    [
-      agent(FLAT_HAIR_AGENT_ID, FLAT_HAIR_AVATAR_URL),
-      agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
-    ],
-    false,
-  );
-
-  expect(avatarFramingTransform(FLAT_HAIR_AGENT_ID)).toBe("");
-  expect(avatarFramingTransform(TALL_HAIR_AGENT_ID)).toBe("");
-});
-
 test("Center each composer avatar and pull the cast toward one size", async () => {
-  await setupAgentsPage(
-    [
-      agent(FLAT_HAIR_AGENT_ID, FLAT_HAIR_AVATAR_URL),
-      agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
-    ],
-    true,
-  );
+  await setupAgentsPage([
+    agent(FLAT_HAIR_AGENT_ID, FLAT_HAIR_AVATAR_URL),
+    agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
+  ]);
 
   const flat = avatarFramingTransform(FLAT_HAIR_AGENT_ID);
   const tall = avatarFramingTransform(TALL_HAIR_AGENT_ID);
@@ -188,7 +164,7 @@ test("Center each composer avatar and pull the cast toward one size", async () =
 });
 
 test("Keep legacy avatars on the scale they already shipped with", async () => {
-  await setupAgentsPage([agent(LEGACY_AGENT_ID, "svg:r3s2h4c1f5h")], true);
+  await setupAgentsPage([agent(LEGACY_AGENT_ID, "svg:r3s2h4c1f5h")]);
 
   expect(avatarFramingTransform(LEGACY_AGENT_ID)).toBe("scale(1.25)");
 });
@@ -208,13 +184,10 @@ function headPlacementTransform(agentId: string): string {
 }
 
 test("Move the head to the chin baseline instead of resizing it", async () => {
-  await setupAgentsPage(
-    [
-      agent(FLAT_HAIR_AGENT_ID, FLAT_HAIR_AVATAR_URL),
-      agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
-    ],
-    true,
-  );
+  await setupAgentsPage([
+    agent(FLAT_HAIR_AGENT_ID, FLAT_HAIR_AVATAR_URL),
+    agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
+  ]);
 
   // The face assets are all drawn at one width. Resizing a head to reach the
   // shared collar made it up to 1.24x wider than its neighbour while the neck

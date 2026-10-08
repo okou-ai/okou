@@ -152,7 +152,7 @@ jobs:
           SEMGREP_SCAN_MODE: ${{ github.event_name == 'push' && 'full' || 'diff' }}
 
       - name: Upload Semgrep SARIF
-        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         if: always() && github.event_name != 'merge_group'
         with:
           sarif_file: semgrep-results-for-code-scanning.sarif
@@ -169,12 +169,12 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: javascript-typescript
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: codeql
 
@@ -280,16 +280,16 @@ jobs:
             .github/scripts/cloudflare-ssh-preconnect.sh \
             .github/scripts/download-verified.sh \
             .github/scripts/fetch-okou-desktop-artifact.sh \
+            .github/scripts/neon-preview-branch.sh \
             .github/scripts/pass-release-pr-ci-gates.sh \
             .github/scripts/publish-okou-app-assets.sh \
-            .github/scripts/verify-okou-app-assets.sh \
-            .github/scripts/verify-okou-app-runtime.sh \
             .github/scripts/reconcile-and-start-runner-groups.sh \
             .github/scripts/prune-runner-idle.sh \
             .github/scripts/reconcile-runner-binary-groups.sh \
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/resolve-desktop-version-change.sh \
             .github/scripts/run-semgrep.sh \
+            .github/scripts/run-nbd-cow-tests.sh \
             .github/scripts/run-workflow-script-test-shard.sh \
             .github/scripts/runner-behavior-*.sh \
             .github/scripts/smoke-okou-cli-artifact.sh \
@@ -311,14 +311,14 @@ jobs:
             .github/scripts/tests/cloudflare-ssh-preconnect-test.sh \
             .github/scripts/tests/cloudflare-ssh-proxy-test.sh \
             .github/scripts/tests/deploy-desktop-workflow-test.sh \
+            .github/scripts/tests/ios-testflight-workflow-test.sh \
             .github/scripts/tests/deploy-cli-local-test.sh \
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \
             .github/scripts/tests/discover-runner-pr-namespaces-test.sh \
             .github/scripts/tests/publish-okou-app-assets-test.sh \
-            .github/scripts/tests/verify-okou-app-assets-test.sh \
-            .github/scripts/tests/verify-okou-app-runtime-test.sh \
             .github/scripts/tests/download-verified-test.sh \
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
+            .github/scripts/tests/nbd-cow-upload-test.sh \
             .github/scripts/tests/neon-credential-mask-test.sh \
             .github/scripts/tests/neon-connection-string-ssl-test.sh \
             .github/scripts/tests/okou-desktop-artifact-test.sh \

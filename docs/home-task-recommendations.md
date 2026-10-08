@@ -32,8 +32,8 @@ One refresh has three deliberately separate stages.
    actionability levels plus the two `Noul` probabilities. Candidates must pass
    both `HOME_TASK_RECOMMENDATION_MIN_ACTIONABILITY` and the Jev confidence
    gate.
-3. **Write.** `FAST_PATH_MODEL` receives only accepted intents and writes the
-   localized title, prompt, and rationale. For a Workflow task, the server
+3. **Write.** Gemini 3.1 Flash-Lite on native Vertex AI receives only accepted
+   intents and writes the localized title, prompt, and rationale. For a Workflow task, the server
    appends bounded completed-request examples to the prompt before storing it.
 
 The split is the boundary. No prose model selects candidates or scores them;
@@ -100,6 +100,11 @@ route-owned lease renewal only keeps an open home visit eligible for cron.
   winner collects evidence or contacts providers.
 - An unchanged evidence digest advances `next_refresh_at` without another model
   call. A failed attempt enters a cooldown while previous cards remain cached.
+- Cached entries are strictly validated on both GET and cron. An invalid set
+  (including cards from before `purpose` became required) is discarded with a
+  conditional, claim-aware update: its digest is cleared and refresh becomes
+  due immediately. GET returns the normal unavailable response instead of 500;
+  only the cron may regenerate cards. A concurrent refresh is never overwritten.
 - When the cached set changes, the API publishes
   `homeTaskRecommendationsChanged` on that member's user-org Ably channel. An
   open page records that new cards are available, but keeps its current cards

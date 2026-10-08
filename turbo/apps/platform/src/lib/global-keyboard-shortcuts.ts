@@ -23,4 +23,8 @@ export const GLOBAL_KEYBOARD_SHORTCUTS = {
     binding: "mod+shift+d",
     ariaKeyShortcuts: "Meta+Shift+D Control+Shift+D",
   },
+  toggleChatArchive: {
+    binding: "mod+shift+x",
+    ariaKeyShortcuts: "Meta+Shift+X Control+Shift+X",
+  },
 } as const;

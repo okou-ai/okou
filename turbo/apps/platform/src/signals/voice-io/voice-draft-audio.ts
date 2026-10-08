@@ -1,7 +1,6 @@
 import type { VoiceDraftSegment } from "../external/voice-draft-store";
 import {
   decodeVoiceDraftPcmWav,
-  encodeVoiceDraftPcmWav,
   VOICE_DRAFT_PCM_SAMPLE_RATE,
 } from "./voice-draft-pcm";
 
@@ -47,19 +46,11 @@ export function nextVoiceDraftSegment(
   };
 }
 
-export async function voiceDraftSegmentFile(
+export async function voiceDraftSegmentSamples(
   recording: Blob,
   segment: VoiceDraftSegment,
   signal: AbortSignal,
-): Promise<File> {
+): Promise<Float32Array> {
   const samples = await recordingSamples(recording, signal);
-  return new File(
-    [
-      encodeVoiceDraftPcmWav(
-        samples.slice(segment.startSample, segment.endSample),
-      ),
-    ],
-    `voice-draft-${String(segment.startSample)}.wav`,
-    { type: "audio/wav" },
-  );
+  return samples.slice(segment.startSample, segment.endSample);
 }

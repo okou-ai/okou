@@ -26,7 +26,7 @@
 
 <p align="center">
   <a href="https://app.okou.ai/sign-up"><b>Get started free</b></a> ·
-  <a href="https://www.okou.ai/api/slack/oauth/install?publicBrand=okou"><b>Add to Slack</b></a> ·
+  <a href="https://www.okou.ai/api/slack/oauth/install"><b>Add to Slack</b></a> ·
   <a href="https://www.okou.ai/en/workflow-automation-examples"><b>Use cases</b></a> ·
   <a href="https://www.okou.ai/en/blog"><b>Blog</b></a>
 </p>

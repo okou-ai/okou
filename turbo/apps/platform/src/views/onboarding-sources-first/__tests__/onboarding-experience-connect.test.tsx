@@ -1,7 +1,6 @@
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -20,15 +19,11 @@ import {
 
 const context = testContext();
 
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
-
-const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
-const SKILLS_QUESTION = "Bring the skills you already wrote.";
-const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
+const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
+const SKILLS_QUESTION = "Bring your existing skills into Okou";
+const SLACK_QUESTION = "Keep Okou a message away";
 const CODEX_CARD = "Codex";
-const NEW_TO_THIS_CARD = "No, I’m new to this";
+const NEW_TO_THIS_CARD = "I'm new to AI agents";
 const CONNECT_CODEX = "Connect Codex";
 const FAILED_NOTE =
   "We couldn’t connect Codex. You can try again, or continue and connect it later.";
@@ -43,11 +38,6 @@ function connectedCodexAccount(): ModelProviderResponse {
     id: "00000000-0000-4000-a000-000000000401",
     type: "codex-oauth-token",
     framework: "codex",
-    secretName: null,
-    authMethod: "auth_json",
-    secretNames: ["CODEX_AUTH_JSON"],
-    isDefault: false,
-    selectedModel: null,
     accountEmail: "codex.user@example.com",
     workspaceName: "Personal ChatGPT",
     planType: "pro",
@@ -107,7 +97,6 @@ async function openExperienceStep(fromStart = false): Promise<void> {
     context,
     locale: "en-US",
     path: fromStart ? ROUTES.onboarding : ROUTES.onboardingExperience,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   if (fromStart) {
@@ -118,11 +107,11 @@ async function openExperienceStep(fromStart = false): Promise<void> {
     await waitForContinueEnabled();
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
-      name: "Okou is for you, and shared across your whole team.",
+      name: "Connect a work tool",
     });
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
-      name: "Bring the people who do this work with you.",
+      name: "Make Okou useful to your whole team",
     });
     click(getButtonByName("Not now"));
   }
@@ -161,6 +150,17 @@ function answerRadio(name: string): HTMLElement {
 function closeDeviceAuthDialog(): void {
   click(screen.getByLabelText("Close"));
 }
+
+test("The guided start comes before subscription plans", async () => {
+  await openExperienceStep();
+
+  const choices = screen.getAllByRole("radio").map((radio) => {
+    return radio.closest("label")?.textContent ?? "";
+  });
+  expect(choices[0]).toContain(NEW_TO_THIS_CARD);
+  expect(choices[1]).toContain(CODEX_CARD);
+  expect(choices[2]).toContain("Claude Code");
+});
 
 test("The step reports connected once the account lists the subscription", async () => {
   context.mocks.data.personalModelProviders([]);
@@ -234,12 +234,6 @@ test("Answering new to this keeps skipping the skills step", async () => {
   // The connect belongs to a plan, and this answer names none.
   expect(screen.queryByText(CONNECT_CODEX)).not.toBeInTheDocument();
 
-  click(getButtonByName("Continue"));
-
-  await screen.findByRole("heading", {
-    name: "Here's what we've learned about you",
-  });
-  expect(pathname()).toBe(ROUTES.onboardingProfile);
   click(getButtonByName("Continue"));
 
   await expect(

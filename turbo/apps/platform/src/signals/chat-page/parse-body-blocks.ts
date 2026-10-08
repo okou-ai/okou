@@ -43,6 +43,11 @@ import {
 } from "./browser-user-action-block.ts";
 import { isTrustedPlatformHostname } from "./trusted-platform-url.ts";
 import { isOfficialTemplatePreviewUrl } from "./official-template-preview.ts";
+import {
+  parseSubscriptionResetUrl,
+  subscriptionResetResourceKey,
+  type SubscriptionResetDescriptor,
+} from "./subscription-reset-block.ts";
 
 import {
   resolveHostedSiteDomains,
@@ -63,6 +68,11 @@ export interface ParsedMarkdownBlock {
 
 export type ParsedBodyBlock =
   | ParsedMarkdownBlock
+  | {
+      type: "subscription-reset";
+      resourceKey: string;
+      descriptor: SubscriptionResetDescriptor;
+    }
   | {
       type: "connector-action";
       resourceKey: string;
@@ -129,6 +139,8 @@ type OpenMarkdownFence = {
 
 interface ParseBodyBlocksOptions {
   readonly previews?: boolean;
+  /** A streaming bare URL needs a following boundary before becoming a card. */
+  readonly requireUrlTerminator?: boolean;
   readonly chatActionContext?: ChatActionContext;
 }
 
@@ -152,7 +164,7 @@ const PLATFORM_FILE_CDN_HOSTS = [
   "cdn.vm7.io",
 ] as const;
 const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
-const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|f|artifacts|browsers)\/|\/browser\/actions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
+const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers)\/|\/browser\/actions\/|\/subscriptions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
 const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
   /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
 const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[-./\\_*;~=&%+@#?]$/u;
@@ -695,22 +707,22 @@ function createBrowserUserActionBlock(
 function createActionBlockFromUrl(
   url: string,
   chatActionContext: ChatActionContext | undefined,
-): Extract<
-  ParsedBodyBlock,
-  {
-    type:
-      | "connector-action"
-      | "connector-account-action"
-      | "permission-action"
-      | "banking-action"
-      | "unavailable-action"
-      | "computer-use-authorization"
-      | "plan-upgrade"
-      | "mail-draft"
-      | "browser-session"
-      | "browser-user-action";
+): CardDescriptorBlock | null {
+  const subscriptionReset = parseSubscriptionResetUrl(url);
+  if (subscriptionReset.status === "valid") {
+    return {
+      type: "subscription-reset",
+      resourceKey: subscriptionResetResourceKey(subscriptionReset.descriptor),
+      descriptor: subscriptionReset.descriptor,
+    };
   }
-> | null {
+  if (subscriptionReset.status === "invalid") {
+    return {
+      type: "unavailable-action",
+      resourceKey: subscriptionReset.originalUrl,
+      descriptor: { originalUrl: subscriptionReset.originalUrl },
+    };
+  }
   const connectorAction = parseConnectorAuthorizeUrl(url, chatActionContext);
   if (connectorAction.status === "valid") {
     return {
@@ -879,10 +891,61 @@ function retainedActionLabel(tokens: readonly Token[]): string {
     .join("");
 }
 
+function hasStreamingUrlBoundary(source: string, end: number): boolean {
+  // A bare URL at the current stream tail can still gain a path or query.
+  // Whitespace and closing wrappers terminate it; punctuation such as `.`
+  // alone does not, even when Marked excludes it from an autolink token.
+  const remaining = source.slice(end);
+  return (
+    /^[\s)）\]}>]/u.test(remaining) ||
+    /^[.,，。；;:：!！?？]+\s/u.test(remaining)
+  );
+}
+
+function isTerminatedActionLink(
+  token: Tokens.Link,
+  source: string,
+  offset: number,
+  requireUrlTerminator: boolean,
+): boolean {
+  return (
+    !requireUrlTerminator ||
+    token.raw.startsWith("[") ||
+    token.raw.startsWith("<") ||
+    hasStreamingUrlBoundary(source, offset + token.raw.length)
+  );
+}
+
+function retainedActionEmphasis(
+  token: Tokens.Strong | Tokens.Em | Tokens.Del,
+  inner: ActionText,
+): string {
+  const start = token.raw.indexOf(token.text);
+  if (inner.matches.length > 0) {
+    const text = inner.markdown.trim();
+    // Removing a bare URL can empty the emphasis or leave whitespace at
+    // its edges. Keep the remaining prose formatted, without orphan marks.
+    return text
+      ? inner.markdown.slice(0, inner.markdown.indexOf(text)) +
+          token.raw.slice(0, start) +
+          text +
+          token.raw.slice(start + token.text.length) +
+          inner.markdown.slice(inner.markdown.indexOf(text) + text.length)
+      : inner.markdown;
+  }
+  return (
+    token.raw.slice(0, start) +
+    inner.markdown +
+    token.raw.slice(start + token.text.length)
+  );
+}
+
 function actionLinksFromTokens(
   source: string,
   tokens: readonly Token[],
   chatActionContext: ChatActionContext | undefined,
+  requireUrlTerminator: boolean,
+  allowMailDraftCard: boolean,
 ): ActionText {
   const matches: ActionLinkMatch[] = [];
   const parts: string[] = [];
@@ -904,10 +967,19 @@ function actionLinksFromTokens(
       const candidate = isBareLink
         ? new RegExp(`^${URL_TOKEN_PATTERN}`).exec(token.raw)?.[0]
         : token.href;
-      if (candidate !== undefined) {
+      if (
+        candidate !== undefined &&
+        isTerminatedActionLink(token, source, offset, requireUrlTerminator)
+      ) {
         const url = trimPreviewUrl(candidate);
         const block = createActionBlockFromUrl(url, chatActionContext);
-        if (block) {
+        if (block?.type === "mail-draft" && !allowMailDraftCard) {
+          // Keep the existing bare-URL boundary without extracting the link
+          // from its paragraph. Marked otherwise includes adjacent CJK prose.
+          retained = isBareLink
+            ? cardSlotMarkdown(url) + token.raw.slice(url.length)
+            : token.raw;
+        } else if (block) {
           const suffix = isBareLink ? token.raw.slice(url.length) : "";
           matches.push({
             source: token.raw.slice(0, token.raw.length - suffix.length),
@@ -924,34 +996,31 @@ function actionLinksFromTokens(
         token.text,
         token.tokens,
         chatActionContext,
+        false, // A complete emphasis token closes the contained URL.
+        false,
       );
       matches.push(...inner.matches);
-      if (inner.matches.length > 0) {
-        const text = inner.markdown.trim();
-        const start = token.raw.indexOf(token.text);
-        // Removing a bare URL can empty the emphasis or leave whitespace at
-        // its edges. Keep the remaining prose formatted, without orphan marks.
-        retained = text
-          ? inner.markdown.slice(0, inner.markdown.indexOf(text)) +
-            token.raw.slice(0, start) +
-            text +
-            token.raw.slice(start + token.text.length) +
-            inner.markdown.slice(inner.markdown.indexOf(text) + text.length)
-          : inner.markdown;
-      }
+      retained = retainedActionEmphasis(token, inner);
     } else if (token.type === "text") {
       // Bare relative platform paths are text to Markdown, but remain valid
       // action candidates. Never scan code spans, images, or ordinary links.
       retained = token.raw.replace(
         new RegExp(URL_TOKEN_PATTERN, "g"),
         (match: string, index: number) => {
-          if (!hasUrlTokenBoundary(source, offset + index)) {
+          if (
+            !hasUrlTokenBoundary(source, offset + index) ||
+            (requireUrlTerminator &&
+              !hasStreamingUrlBoundary(source, offset + index + match.length))
+          ) {
             return match;
           }
           const url = trimPreviewUrl(match);
           const block = createActionBlockFromUrl(url, chatActionContext);
           if (!block) {
             return match;
+          }
+          if (block.type === "mail-draft" && !allowMailDraftCard) {
+            return cardSlotMarkdown(url) + match.slice(url.length);
           }
           matches.push({ source: url, block });
           return match.slice(url.length);
@@ -967,6 +1036,8 @@ function actionLinksFromTokens(
 function actionLinksFromMarkdown(
   source: string,
   chatActionContext: ChatActionContext | undefined,
+  requireUrlTerminator: boolean,
+  allowMailDraftCard: boolean,
 ): ActionText {
   if (!new RegExp(URL_TOKEN_PATTERN).test(source)) {
     return { markdown: source, matches: [] };
@@ -976,7 +1047,37 @@ function actionLinksFromMarkdown(
     source,
     Lexer.lexInline(source, getDefaults()),
     chatActionContext,
+    requireUrlTerminator,
+    allowMailDraftCard,
   );
+}
+
+/** Only a complete top-level paragraph can promote a mail link to a card. */
+function standaloneMailDraftRows(content: string): ReadonlySet<number> {
+  const rows = new Set<number>();
+  if (!content.includes("/mail/drafts/")) {
+    return rows;
+  }
+  let row = 0;
+  for (const token of Lexer.lex(content, getDefaults())) {
+    if (token.type === "paragraph") {
+      const meaningful = token.tokens?.filter((child) => {
+        return child.type !== "text" || child.raw.trim() !== "";
+      });
+      const child = meaningful?.length === 1 ? meaningful[0] : undefined;
+      const url =
+        child?.type === "link"
+          ? child.href
+          : child?.type === "text"
+            ? child.text.trim()
+            : undefined;
+      if (url && parseMailDraftUrl(url)) {
+        rows.add(row);
+      }
+    }
+    row += token.raw.split("\n").length - 1;
+  }
+  return rows;
 }
 
 function retainedActionMarkdown(
@@ -1176,6 +1277,7 @@ function parseBodyBlocks(
   const lines = content.split("\n");
   const tableRowIndexes = markdownTableRowIndexes(lines);
   const codeBoundaries = markdownCodeBoundaries(content);
+  const mailDraftRows = standaloneMailDraftRows(content);
   const keptLines: string[] = [];
   const markdownBuffer: string[] = [];
   let firstMarkdownLineIsCode: boolean | null = null;
@@ -1244,7 +1346,13 @@ function parseBodyBlocks(
       lineIndex = inlineBlockEnd;
     }
     const actionLine = previews
-      ? actionLinksFromMarkdown(actionSource, options.chatActionContext)
+      ? actionLinksFromMarkdown(
+          actionSource,
+          options.chatActionContext,
+          options.requireUrlTerminator === true &&
+            lineIndex === lines.length - 1,
+          mailDraftRows.has(lineIndex),
+        )
       : null;
     if (actionLine && actionLine.matches.length > 0) {
       const retainedMarkdown = retainedActionMarkdown(actionSource, actionLine);
@@ -1260,7 +1368,7 @@ function parseBodyBlocks(
       continue;
     }
 
-    pushMarkdownLines([actionSource]);
+    pushMarkdownLines([actionLine?.markdown ?? actionSource]);
   }
 
   flushMarkdownBuffer();
@@ -1282,6 +1390,9 @@ export type CardDescriptorBlock = Exclude<ParsedBodyBlock, ParsedMarkdownBlock>;
 /** The URL a card's slot stands on, and the key its signals are looked up by. */
 export function cardSlotUrl(block: CardDescriptorBlock): string {
   switch (block.type) {
+    case "subscription-reset": {
+      return block.descriptor.originalUrl;
+    }
     case "connector-action": {
       return block.descriptor.originalUrl;
     }

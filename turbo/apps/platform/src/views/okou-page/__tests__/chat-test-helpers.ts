@@ -1,3 +1,4 @@
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import {
   withModelReasoningEffort,
   type ModelSettings,
@@ -12,6 +13,8 @@ import {
   chatThreadDraftContract,
   chatThreadModelSelectionContract,
   chatThreadEventsContract,
+  chatThreadUsageContract,
+  type ChatEventUsagePayload,
   chatEventsContract,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   type ChatRunOptionsRequest,
@@ -20,14 +23,12 @@ import {
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
   runsCancelContract,
   runsByIdContract,
 } from "@okouai/api-contracts/contracts/run-routes";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
-import { queuePositionContract } from "@okouai/api-contracts/contracts/queue-position";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import {
@@ -38,6 +39,7 @@ import {
 
 import { fill } from "../../../__tests__/page-helper.ts";
 import {
+  mockChatThreadSnapshotResponse,
   chatEventRowsResponse,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
@@ -49,12 +51,10 @@ const MOCK_RUN_ID = "d0000000-0000-4000-a000-000000000001";
 
 interface ModelSelectionRequest {
   readonly modelProviderId: string;
-  readonly selectedModel: SupportedRunModel;
+  readonly selectedModel: string;
 }
 
-function modelFirstSelection(
-  selectedModel: SupportedRunModel,
-): ModelSelectionRequest {
+function modelFirstSelection(selectedModel: string): ModelSelectionRequest {
   return {
     modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
     selectedModel,
@@ -62,7 +62,7 @@ function modelFirstSelection(
 }
 
 function modelSelectionFromBody(body: {
-  readonly model?: SupportedRunModel | null;
+  readonly model?: string | null;
 }): ModelSelectionRequest | null | undefined {
   if (body.model === undefined) {
     return undefined;
@@ -113,7 +113,6 @@ interface ThreadListItem {
   modelSettings?: ModelSettings;
   computerUseHostId?: string | null;
   cloudBrowserEnabled?: boolean;
-  selectedVideoModel?: string | null;
 }
 
 const UUID_PATTERN =
@@ -129,20 +128,19 @@ export function threadListSnapshot(threads: readonly ThreadListItem[]) {
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
       pinnedAt: thread.pinnedAt ?? null,
+      archived: false,
       renamedAt: thread.renamedAt ?? null,
       selectedModel: thread.selectedModel ?? null,
       serviceTier: thread.serviceTier ?? null,
       modelSettings: thread.modelSettings ?? {},
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-      selectedVideoModel: thread.selectedVideoModel ?? null,
     };
   });
 }
 
 interface MockLifecycleControl {
   setRunStatus: (status: RunStatus) => void;
-  setQueuePosition: (n: number) => void;
   setRunOutput: (content: string) => void;
   setThreadList: (list: ThreadListItem[]) => void;
   setCodexServiceTier: (tier: CodexServiceTier | null) => void;
@@ -280,7 +278,7 @@ function appendDefaultCompletionMarkers(args: {
 function initialMockThreadModelSelection(
   options:
     | {
-        selectedModel?: SupportedRunModel | null;
+        selectedModel?: string | null;
         codexServiceTier?: CodexServiceTier | null;
         modelSettings?: ModelSettings;
         reasoningEffort?: ReasoningEffort | null;
@@ -312,8 +310,9 @@ export function mockChatLifecycle(
     threadId?: string;
     historyEvents?: MockChatEvent[];
     chatEvents?: MockChatEvent[];
+    runUsage?: Readonly<Record<string, ChatEventUsagePayload>>;
     threadTitle?: string | null;
-    selectedModel?: SupportedRunModel | null;
+    selectedModel?: string | null;
     codexServiceTier?: CodexServiceTier | null;
     modelSettings?: ModelSettings;
     reasoningEffort?: ReasoningEffort | null;
@@ -362,7 +361,7 @@ export function mockChatLifecycle(
       clientThreadId?: string;
       hasTextContent?: boolean;
       userMessage?: UserMessageDocument;
-      model?: string;
+      model?: string | null;
       modelSelection?: ModelSelectionRequest | null;
       runOptions?: ChatRunOptionsRequest;
       computerUseHostId?: string | null;
@@ -377,7 +376,7 @@ export function mockChatLifecycle(
       threadId?: string;
       clientThreadId?: string;
       userMessage?: UserMessageDocument;
-      model?: string;
+      model?: string | null;
       modelSelection?: ModelSelectionRequest | null;
       computerUseHostId?: string | null;
       cloudBrowserEnabled?: boolean;
@@ -386,13 +385,16 @@ export function mockChatLifecycle(
     onThreadCreate?: (body: {
       clientThreadId?: string;
       eventId?: string;
-      model?: SupportedRunModel;
-      modelSelection: ModelSelectionRequest;
+      model?: string | null;
+      modelSelection: ModelSelectionRequest | null;
       serviceTier?: ChatThreadServiceTier | null;
       reasoningEffort?: ReasoningEffort;
-      imageModel?: string;
-      videoModel?: string;
       connectorSelections?: readonly ConnectorAccountSelection[];
+      initialRemoteAccessOverrides?: readonly {
+        protocol: "ssh" | "vnc";
+        connectionId: string;
+        enabled: boolean;
+      }[];
     }) => void;
     onModelSelectionUpdate?: (body: {
       model?: string | null;
@@ -408,7 +410,6 @@ export function mockChatLifecycle(
 
   let runStatus: RunStatus = "running";
   let runError: string | null = null;
-  let queuePosition = 0;
   let resultContent = "";
   let threadListOverride: ThreadListItem[] | null = null;
   let runPrompt: string | null = null;
@@ -514,7 +515,17 @@ export function mockChatLifecycle(
         seqId: runUserSeqId,
         createdAt: "2026-03-10T00:00:01Z",
       },
-      {
+    ];
+    // The claimed input already marks the run live; like production, the run
+    // writes an assistant row only once it has output, an error or a terminal
+    // failure or cancellation.
+    if (
+      resultContent ||
+      runError !== null ||
+      runStatus === "failed" ||
+      runStatus === "cancelled"
+    ) {
+      events.push({
         id: `msg-assistant-${currentRunId}`,
         role: "assistant",
         content: resultContent || null,
@@ -526,8 +537,8 @@ export function mockChatLifecycle(
             : undefined,
         seqId: assistantSeqId,
         createdAt: "2026-03-10T00:00:02Z",
-      },
-    ];
+      });
+    }
     if (runStatus === "completed") {
       events.push({
         id: `msg-assistant-marker-${currentRunId}`,
@@ -632,7 +643,7 @@ export function mockChatLifecycle(
     clientEventId?: string;
     hasTextContent?: boolean;
     userMessage?: UserMessageDocument;
-    model?: SupportedRunModel;
+    model?: string | null;
     runOptions?: ChatRunOptionsRequest;
   }) => {
     const clientEventId = body.clientEventId ?? crypto.randomUUID();
@@ -657,6 +668,9 @@ export function mockChatLifecycle(
       seqId: allocateDynamicSeqId(),
       createdAt: now,
     });
+    // The server announces the persisted input like any other thread event;
+    // the sender learns it is queued from that event, not the send response.
+    createChatEvent(threadId);
     return { runId: null, threadId, createdAt: now };
   };
 
@@ -665,7 +679,7 @@ export function mockChatLifecycle(
     clientEventId?: string;
     hasTextContent?: boolean;
     userMessage?: UserMessageDocument;
-    model?: SupportedRunModel;
+    model?: string | null;
     runOptions?: ChatRunOptionsRequest;
     computerUseHostId?: string | null;
     cloudBrowserEnabled?: boolean;
@@ -697,7 +711,9 @@ export function mockChatLifecycle(
     runStatus = "running";
     runError = null;
     resultContent = "";
-    selectedModel = modelSelection?.selectedModel ?? selectedModel;
+    if (modelSelection !== undefined) {
+      selectedModel = modelSelection?.selectedModel ?? null;
+    }
     codexServiceTier = body.runOptions?.codexServiceTier ?? null;
     runAssociated = true;
     runUserSeqId = allocateDynamicSeqId();
@@ -711,6 +727,22 @@ export function mockChatLifecycle(
       createdAt: "2026-03-10T00:00:00Z",
     };
   };
+
+  context.mocks.api(chatThreadUsageContract.read, ({ body, respond }) => {
+    const values =
+      options?.runUsage ??
+      Object.fromEntries(
+        [...historyEvents, ...chatEvents].flatMap((event) => {
+          return event.runId && event.usage ? [[event.runId, event.usage]] : [];
+        }),
+      );
+    return respond(200, {
+      runs: body.runIds.flatMap((runId) => {
+        const usage = values[runId];
+        return usage ? [{ runId, usage }] : [];
+      }),
+    });
+  });
 
   context.mocks.api(chatThreadEventsContract.snapshot, ({ respond }) => {
     return respond(404, {
@@ -792,11 +824,14 @@ export function mockChatLifecycle(
     },
   );
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: threadListSnapshot(effectiveThreadList()),
-      latestEventId: latestThreadEventId,
-      latestSeqId: latestThreadEventSeqId,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: threadListSnapshot(effectiveThreadList()),
+        latestEventId: latestThreadEventId,
+        latestSeqId: latestThreadEventSeqId,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -826,12 +861,12 @@ export function mockChatLifecycle(
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     threadId = body.clientThreadId ?? threadId;
     const modelSelection = modelSelectionFromBody(body);
-    if (!modelSelection) {
+    if (modelSelection === undefined) {
       throw new Error("Expected chat thread create to include model");
     }
-    selectedModel = modelSelection.selectedModel;
+    selectedModel = modelSelection?.selectedModel ?? null;
     codexServiceTier = body.serviceTier === "priority" ? "fast" : null;
-    if (body.reasoningEffort !== undefined) {
+    if (selectedModel !== null && body.reasoningEffort !== undefined) {
       modelSettings = withModelReasoningEffort(modelSettings, {
         model: selectedModel,
         effort: body.reasoningEffort,
@@ -844,15 +879,15 @@ export function mockChatLifecycle(
       modelSelection,
       serviceTier: body.serviceTier,
       reasoningEffort: body.reasoningEffort,
-      imageModel: body.imageModel,
-      videoModel: body.videoModel,
       connectorSelections: body.connectorSelections,
+      initialRemoteAccessOverrides: body.initialRemoteAccessOverrides,
     });
     return respond(201, {
       id: threadId,
       title: null,
       createdAt: "2026-03-10T00:00:00Z",
-      selectedModel,
+      // The response names the run model; an Auto thread runs on Auto's.
+      selectedModel: selectedModel ?? AUTO_RUN_MODEL,
       serviceTier: body.serviceTier ?? null,
     });
   });
@@ -932,9 +967,6 @@ export function mockChatLifecycle(
       createdAt: "2026-03-10T00:00:00Z",
     });
   });
-  context.mocks.api(queuePositionContract.getPosition, ({ respond }) => {
-    return respond(200, { position: queuePosition, total: 0 });
-  });
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [] });
   });
@@ -956,9 +988,6 @@ export function mockChatLifecycle(
   return {
     setRunStatus: (s) => {
       runStatus = s;
-    },
-    setQueuePosition: (n) => {
-      queuePosition = n;
     },
     setRunOutput: (content) => {
       resultContent = content;

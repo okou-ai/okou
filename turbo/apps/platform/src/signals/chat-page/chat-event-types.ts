@@ -15,21 +15,6 @@ export type ChatEvent = (PersistedChatEvent | OptimisticChatEvent) & {
 export type ChatInputEvent = Extract<
   ChatEvent,
   {
-    eventType:
-      | "input.prompt"
-      | "input.automation"
-      | "input.goal"
-      | "input.rejected";
+    eventType: "input.prompt" | "input.automation" | "input.rejected";
   }
 >;
-
-export function isGoalContinuationInput(
-  event: ChatEvent,
-): event is ChatInputEvent {
-  return (
-    (event.eventType === "input.prompt" || event.eventType === "input.goal") &&
-    event.userMessage.parts.some((part) => {
-      return part.type === "goal";
-    })
-  );
-}

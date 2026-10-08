@@ -1,26 +1,31 @@
 import {
+  chatEventRowSchema,
+  type ChatEventRow,
+} from "@okouai/api-contracts/contracts/chat-event-rows";
+import {
   chatThreadByIdContract,
   chatThreadDraftContract,
   chatThreadEventsContract,
   chatThreadMetadataContract,
+  chatThreadsContract,
   type ChatThreadDraft,
   type ChatThreadSnapshotProjection,
   type PersistedAttachment,
   type UserMessageInputDocument,
   type UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 
 import type { SetupPageAuth } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatEventRowContextType } from "./chat-event-test-helpers.ts";
 import {
-  chatListAuth,
   cachedChatListEvents,
+  chatListAuth,
   chatListThread,
   installActiveChatBoundaries,
   installChatListAgent,
-  installChatListModelPolicies,
+  installChatListRunModels,
   installChatListStream,
   sidebarThreadLinks,
 } from "./chat-list-test-helpers.ts";
@@ -56,6 +61,8 @@ interface ContinuityWorkspace {
     readonly cachedChatThreadEvents: ReturnType<typeof cachedChatListEvents>;
   };
   readonly draftPatches: ContinuityDraftPatch[];
+  /** How many times the sidebar fetched the drafts listing. */
+  readonly draftListRequests: () => number;
   readonly eventRowQueries: ContinuityEventRowQuery[];
   readonly setDraft: (threadId: string, draft: ChatThreadDraft) => void;
   readonly setChatEventRows: (rows: readonly ChatEventRow[]) => void;
@@ -107,29 +114,28 @@ export function continuityEventRow(
   options: {
     readonly payload?: ChatEventRow["payload"];
     readonly runId?: string;
-    readonly runGroupId?: string;
     readonly revokesEventId?: string;
   } = {},
 ): ChatEventRow {
   const threadSuffix = Number.parseInt(threadId.slice(-6), 10);
   const suffix = threadSuffix * 1000 + sequence;
   const second = (sequence % 60).toString().padStart(2, "0");
-  return {
+  return chatEventRowSchema.parse({
     id: `a8000000-0000-4000-a000-${suffix.toString().padStart(12, "0")}`,
     chatThreadId: threadId,
     eventType,
     payload: options.payload ?? null,
     runId: options.runId ?? null,
     revokesEventId: options.revokesEventId ?? null,
-    contextType: options.runGroupId === undefined ? null : "goal",
-    contextId: options.runGroupId ?? null,
+    contextType: mockChatEventRowContextType(eventType),
+    contextId: null,
     runEventSequenceNumber: null,
     runEventId: null,
     seqId: sequence,
     createdAt: `2026-08-${((caseId % 20) + 1)
       .toString()
       .padStart(2, "0")}T12:00:${second}.000Z`,
-  };
+  });
 }
 
 export function continuityDraft(
@@ -197,7 +203,7 @@ export function installContinuityWorkspace(
 ): ContinuityWorkspace {
   const auth = chatListAuth(200 + options.caseId);
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: options.caseId,
     snapshot: options.threads,
@@ -212,6 +218,7 @@ export function installContinuityWorkspace(
   );
   const drafts = new Map(options.drafts ?? []);
   const draftPatches: ContinuityDraftPatch[] = [];
+  let draftListRequests = 0;
   let chatEventRows = [...(options.chatEventRows ?? [])];
   const eventRowQueries: ContinuityEventRowQuery[] = [];
 
@@ -278,10 +285,10 @@ export function installContinuityWorkspace(
         modelSettings: thread.modelSettings ?? {},
         serviceTier: thread.serviceTier,
         pinnedAt: thread.pinnedAt,
+        archived: thread.archived,
+        muted: thread.muted ?? false,
         computerUseHostId: thread.computerUseHostId,
         cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-        selectedVideoModel: thread.selectedVideoModel ?? null,
-        selectedImageModel: thread.selectedImageModel ?? null,
       });
     },
   );
@@ -303,16 +310,13 @@ export function installContinuityWorkspace(
     chatThreadDraftContract.get,
     async ({ params, respond }) => {
       await options.beforeDraftResponse?.(params.id);
-      const draft = drafts.get(params.id);
-      if (!draft) {
-        return respond(404, {
-          error: {
-            code: "CHAT_THREAD_NOT_FOUND",
-            message: "Chat draft not found",
-          },
-        });
-      }
-      return respond(200, draft);
+      return respond(
+        200,
+        drafts.get(params.id) ?? {
+          draftUserMessage: null,
+          draftAttachments: null,
+        },
+      );
     },
   );
   context.mocks.api(
@@ -331,6 +335,18 @@ export function installContinuityWorkspace(
       return respond(204);
     },
   );
+  context.mocks.api(chatThreadsContract.drafts, ({ respond }) => {
+    draftListRequests += 1;
+    return respond(200, {
+      draftThreadIds: [...drafts]
+        .filter(([, draft]) => {
+          return draft.draftUserMessage !== null;
+        })
+        .map(([threadId]) => {
+          return threadId;
+        }),
+    });
+  });
   context.mocks.api(webFilesContract.fileUrl, async ({ query, respond }) => {
     const resolution =
       (await options.resolveAttachment?.(query.file_id)) ?? "available";
@@ -355,6 +371,9 @@ export function installContinuityWorkspace(
       ),
     },
     draftPatches,
+    draftListRequests() {
+      return draftListRequests;
+    },
     eventRowQueries,
     setDraft(threadId, draft) {
       drafts.set(threadId, draft);

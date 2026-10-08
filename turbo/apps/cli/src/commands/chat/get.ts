@@ -2,7 +2,10 @@ import chalk from "chalk";
 import { Command } from "commander";
 
 import { getChatThread } from "../../lib/api/domains/chat";
+import { getModelCatalog } from "../../lib/api/domains/model-catalog";
+import { formatCatalogThreadModel } from "../../lib/domain/model-catalog-display";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import { resolveChatThreadId } from "./shared";
 
 interface GetOptions {
@@ -28,7 +31,7 @@ Examples:
 
 Notes:
   - Defaults --thread-id to OKOU_CHAT_THREAD_ID from the current web chat thread
-  - Prints thread metadata; okou chat messages prints the messages
+  - Prints thread metadata and a Markdown link; okou chat messages prints the messages
   - Authenticates via OKOU_TOKEN (requires chat-thread:read capability)`,
   )
   .action(
@@ -36,19 +39,27 @@ Notes:
       const threadId = resolveChatThreadId(options.threadId);
 
       const thread = await getChatThread({ threadId });
+      const url = new URL(
+        `/chats/${encodeURIComponent(thread.id)}`,
+        await getPlatformOrigin(),
+      ).href;
       if (options.json) {
-        console.log(JSON.stringify(thread));
+        console.log(JSON.stringify({ ...thread, url }));
         return;
       }
 
       console.log(chalk.green("✓ Chat thread loaded"));
       console.log(chalk.dim(`  Thread: ${thread.id}`));
+      console.log(chalk.cyan(`  URL:    [Open chat](${url})`));
       if (thread.agentId) {
         console.log(chalk.dim(`  Agent:  ${thread.agentId}`));
       }
       console.log(chalk.dim(`  Title:  ${thread.title ?? "(untitled)"}`));
+      const catalog = await getModelCatalog();
       console.log(
-        chalk.dim(`  Model:  ${thread.selectedModel ?? "(default)"}`),
+        chalk.dim(
+          `  Model:  ${formatCatalogThreadModel(catalog, thread.selectedModel, thread.modelSettings)}`,
+        ),
       );
     }),
   );

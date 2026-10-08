@@ -534,19 +534,7 @@ diff --git a/dist/modes/json-event.d.ts b/dist/modes/json-event.d.ts
 index d4f306e..840d2d1 100644
 --- a/dist/modes/json-event.d.ts
 +++ b/dist/modes/json-event.d.ts
-@@ -9,6 +9,11 @@ type ToJsonAssistantMessageEvent<T> = T extends {
- } ? WithoutPartial<T> & {
-     id: string;
-     toolName: string;
-+} : T extends {
-+    type: "text_start";
-+    partial: unknown;
-+} ? WithoutPartial<T> & {
-+    initialText?: string;
- } : WithoutPartial<T>;
- type MessageUpdateEvent = Extract<AgentSessionEvent, {
-     type: "message_update";
-@@ -18,15 +23,28 @@ type JsonMessageUpdateEvent = {
+@@ -18,15 +18,27 @@ type JsonMessageUpdateEvent = {
      usage: Usage;
      assistantMessageEvent: ToJsonAssistantMessageEvent<MessageUpdateEvent["assistantMessageEvent"]>;
  };
@@ -563,13 +551,9 @@ index d4f306e..840d2d1 100644
 +}> | JsonMessageUpdateEvent | JsonAgentEndEvent;
  /**
   * Remove cumulative assistant snapshots from streaming wire events.
-- * `message_start` provides the initial message, deltas build it, and
-- * `message_end` provides the final authoritative message. Cumulative usage,
-- * tool-call ids, and tool names remain available because their size is constant.
-+ * Deltas build the message and `message_end` provides the final authoritative
-+ * value. Anthropic `text_start` retains initial block text because it may not
-+ * be repeated as a delta. Cumulative usage, tool-call ids, and tool names remain
-+ * available because their size is constant.
+  * `message_start` provides the initial message, deltas build it, and
+  * `message_end` provides the final authoritative message. Cumulative usage,
+  * tool-call ids, and tool names remain available because their size is constant.
 + *
 + * `agent_end` drops `messages` for the same reason. That array is the agent
 + * loop's return value for embedders, but a streaming consumer has already
@@ -583,19 +567,7 @@ diff --git a/dist/modes/json-event.js b/dist/modes/json-event.js
 index b2671b8..6537158 100644
 --- a/dist/modes/json-event.js
 +++ b/dist/modes/json-event.js
-@@ -7,6 +7,11 @@ function toJsonAssistantMessageEvent(event) {
-         const { partial: _partial, ...deltaEvent } = event;
-         return { ...deltaEvent, id: toolCall.id, toolName: toolCall.name };
-     }
-+    if (event.type === "text_start" && event.partial.api === "anthropic-messages") {
-+        const text = event.partial.content[event.contentIndex];
-+        const { partial: _partial, ...deltaEvent } = event;
-+        return text?.type === "text" && text.text ? { ...deltaEvent, initialText: text.text } : deltaEvent;
-+    }
-     if (!("partial" in event)) {
-         return event;
-     }
-@@ -14,6 +19,10 @@ function toJsonAssistantMessageEvent(event) {
+@@ -14,6 +14,10 @@ function toJsonAssistantMessageEvent(event) {
      return deltaEvent;
  }
  export function toJsonEvent(event) {

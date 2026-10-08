@@ -37,7 +37,7 @@ function entry(id: string, parentId: string | null) {
     parentId,
     timestamp: header.timestamp,
     provider: "openai",
-    modelId: "gpt-5.6-terra",
+    modelId: "gpt-6-luna",
   };
 }
 const cycles = [
@@ -271,10 +271,9 @@ describe("native Pi history structural boundaries", () => {
       cwd: directory,
       agentDir: join(directory, "agent"),
       appendSystemPrompt: null,
-      ownershipTransferMode: "sandbox-first" as const,
       model: {
-        provider: "openai",
-        model: "gpt-5.6-terra",
+        provider: "openrouter",
+        model: "openai/gpt-6-luna",
         dialect: "openai-responses" as const,
         transport: "sse" as const,
         apiKey: "synthetic-key",

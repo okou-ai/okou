@@ -6,12 +6,15 @@ use guest_contracts::storage_files;
 use guest_contracts::storage_manifest::{Manifest, StorageEntry};
 use sandbox::ExecResult;
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
+use tracing::instrument::WithSubscriber;
+use tracing_subscriber::layer::SubscriberExt;
 
 use super::super::storage::download_storages_with_files;
 use super::super::{ExecutorConfig, RunnerResult, guest_runtime_dir};
 use super::support::{
-    RUN_IN_SANDBOX_TEST_TIMEOUT, api_artifact, api_storage, create_overridden_sandbox,
-    minimal_context, spawn_run_in_sandbox_test, test_executor_config, test_telemetry,
+    CapturedEvents, RUN_IN_SANDBOX_TEST_TIMEOUT, api_artifact, api_storage,
+    create_overridden_sandbox, minimal_context, spawn_run_in_sandbox_test, test_executor_config,
+    test_telemetry,
 };
 use crate::storage_cache::decoded::CachedFiles;
 use crate::storage_cache::{populate_cache_with_fresh_delivery, prepare_fresh_archive_delivery};
@@ -179,6 +182,87 @@ impl DeliveryFixture {
     }
 }
 
+#[tokio::test]
+async fn local_info_preserves_original_r2_key_for_cached_writeback_sources() {
+    for ready in [0, 1] {
+        let mut fixture = DeliveryFixture::artifacts(1, ready, 100).await;
+        fixture.manifest.artifacts[0].archive_url = Some(
+            "https://example-bucket.0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/version/a%20b+%252F/archive.tar.gz?X-Amz-Signature=signature-secret#fragment-secret".into(),
+        );
+        let original = fixture.manifest.clone();
+        let sandbox = MockSandbox::new("local-r2-source-log");
+        let (manifest, files) = fixture.prepare(&sandbox).await;
+        assert_eq!(files.len(), ready);
+        if ready == 0 {
+            assert!(
+                manifest.artifacts[0]
+                    .archive_url
+                    .as_deref()
+                    .unwrap()
+                    .starts_with("file://")
+            );
+        }
+        let mut context = minimal_context();
+        context.storage_manifest = Some(original.clone());
+        let mut telemetry = test_telemetry(&fixture.config, &context);
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+
+        download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
+            .with_subscriber(subscriber)
+            .await
+            .unwrap();
+
+        let events = captured.entries();
+        let downloads = events
+            .iter()
+            .filter(|event| {
+                event.fields.get("message").map(String::as_str) == Some("downloading storages")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(downloads.len(), 1);
+        assert_eq!(downloads[0].level, tracing::Level::INFO);
+        let sources: serde_json::Value =
+            serde_json::from_str(&downloads[0].fields["r2_storage_sources"]).unwrap();
+        assert_eq!(
+            sources,
+            serde_json::json!([{
+                "name": original.artifacts[0].vas_storage_name,
+                "version_id": original.artifacts[0].vas_version_id,
+                "mount_path": original.artifacts[0].mount_path,
+                "r2_key": "version/a b+%2F/archive.tar.gz",
+            }])
+        );
+        for event in &events {
+            if event.level != tracing::Level::INFO {
+                assert!(!event.fields.contains_key("r2_storage_sources"));
+                assert!(!event.fields.contains_key("r2_key"));
+            }
+        }
+        let logs = format!("{events:?}");
+        for forbidden in ["X-Amz", "signature-secret", "fragment-secret", "r2_bucket"] {
+            assert!(!logs.contains(forbidden), "{forbidden} leaked into logs");
+        }
+        assert_eq!(sandbox.storage_manifest_calls().len(), 1);
+        for call in sandbox.storage_manifest_calls() {
+            let wire = String::from_utf8_lossy(&call.manifest_json);
+            // The pre-existing decoded-input contract may retain archiveUrl.
+            // Only the new diagnostics must stay out of the Guest wire format.
+            for forbidden in ["r2_key", "r2_storage_sources"] {
+                assert!(
+                    !wire.contains(forbidden),
+                    "{forbidden} leaked into Guest input"
+                );
+            }
+        }
+        assert_eq!(
+            context.storage_manifest.as_ref().unwrap().artifacts[0].archive_url,
+            original.artifacts[0].archive_url
+        );
+        fixture.shutdown().await;
+    }
+}
+
 fn assert_binary_calls(sandbox: &MockSandbox, expected: usize) {
     let mut delivered = 0;
     for call in sandbox.storage_manifest_calls() {
@@ -282,6 +366,41 @@ async fn guest_apply_telemetry_caps_large_batch_runs_and_retains_the_last_batch(
     assert_eq!(batches[0].2.as_deref(), Some("dedicated_first"));
     assert_eq!(batches.last().unwrap().2.as_deref(), Some("dedicated_last"));
     assert!(batches.iter().all(|batch| batch.1));
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn guest_apply_telemetry_pairs_guest_server_duration_per_batch() {
+    let fixture = DeliveryFixture::new(3, 3, 35_000).await;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    for guest_duration_ms in [Some(0), None, Some(u32::MAX)] {
+        let mut result = ExecResult::new(0, Vec::new(), Vec::new());
+        result.guest_duration_ms = guest_duration_ms;
+        overrides.push_storage_manifest_result(Ok(result));
+    }
+    let sandbox = MockSandbox::with_overrides("storage-batch-guest-timing", overrides);
+    let (manifest, files) = fixture.prepare(&sandbox).await;
+    let context = minimal_context();
+    let mut telemetry = test_telemetry(&fixture.config, &context);
+
+    download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
+        .await
+        .unwrap();
+
+    let batches = telemetry.pending_storage_batch_payloads();
+    assert_eq!(batches.len(), 3);
+    assert_eq!(batches[0]["storage_batch_guest_duration_ms"], 0);
+    assert_eq!(batches[0]["storage_batch_timing"], "paired");
+    assert_eq!(
+        batches[0]["storage_batch_outer_residual_ms"],
+        batches[0]["duration_ms"]
+    );
+    assert_eq!(batches[1]["storage_batch_timing"], "unavailable");
+    assert!(batches[1].get("storage_batch_guest_duration_ms").is_none());
+    assert!(batches[1].get("storage_batch_outer_residual_ms").is_none());
+    assert_eq!(batches[2]["storage_batch_guest_duration_ms"], u32::MAX);
+    assert_eq!(batches[2]["storage_batch_timing"], "inconsistent");
+    assert!(batches[2].get("storage_batch_outer_residual_ms").is_none());
     fixture.shutdown().await;
 }
 
@@ -893,11 +1012,9 @@ async fn decoded_batch_failure_prevents_agent_spawn() {
     let fixture = DeliveryFixture::new(3, 3, 35_000).await;
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.push_storage_manifest_result(Ok(ExecResult::new(0, Vec::new(), Vec::new())));
-    overrides.push_storage_manifest_result(Ok(ExecResult::new(
-        1,
-        Vec::new(),
-        b"second batch failed".to_vec(),
-    )));
+    let mut failed = ExecResult::new(1, Vec::new(), b"second batch failed".to_vec());
+    failed.guest_duration_ms = Some(0);
+    overrides.push_storage_manifest_result(Ok(failed));
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let mut context = minimal_context();
     context.storage_manifest = Some(fixture.manifest.clone());
@@ -925,6 +1042,11 @@ async fn decoded_batch_failure_prevents_agent_spawn() {
     assert!(error.to_string().contains("storage download failed"));
     assert_eq!(overrides.storage_manifest_calls().len(), 2);
     assert!(overrides.start_agent_process_calls().is_empty());
+    let batches = telemetry.pending_storage_batch_payloads();
+    assert_eq!(batches.len(), 2);
+    assert_eq!(batches[1]["success"], false);
+    assert_eq!(batches[1]["storage_batch_guest_duration_ms"], 0);
+    assert_eq!(batches[1]["storage_batch_timing"], "paired");
     fixture.shutdown().await;
 }
 

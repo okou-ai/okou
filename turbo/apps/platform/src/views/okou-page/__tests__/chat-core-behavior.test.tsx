@@ -107,12 +107,22 @@ test("A new message keeps its attachment, text, and selected model together", as
     readonly prompt: string;
     readonly userMessage?: UserMessageDocument;
   }[] = [];
+  context.mocks.data.personalModelProviders([
+    {
+      id: "00000000-0000-4000-a000-000000000811",
+      type: "codex-oauth-token",
+      framework: "codex",
+      needsReconnect: false,
+      lastRefreshErrorCode: null,
+      createdAt: "2026-08-01T09:00:00Z",
+      updatedAt: "2026-08-01T09:00:00Z",
+    },
+  ]);
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-6-luna",
     serviceTier: null,
     modelSettings: {},
     selectedImageModel: null,
-    selectedVideoModel: null,
     updatedAt: "2026-08-01T09:00:00Z",
   });
   context.mocks.upload.success({

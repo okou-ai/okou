@@ -7,8 +7,8 @@ WORKFLOW="${REPO_ROOT}/.github/workflows/turbo.yml"
 TURBO_CONFIG="${REPO_ROOT}/turbo/turbo.json"
 RUNNER_START_HELPER="${REPO_ROOT}/.github/scripts/reconcile-and-start-runner-groups.sh"
 RUNNER_TESTS="${REPO_ROOT}/e2e/tests/03-runner"
-REAL_CLAUDE_TEST="${RUNNER_TESTS}/run-t10-real-claude-smoke.bats"
-BUILT_IN_FALLBACK_TEST="${RUNNER_TESTS}/run-t24-built-in-provider-fallback.bats"
+AUTO_TEST="${RUNNER_TESTS}/run-t10-auto-pi-smoke.bats"
+AUTO_CONTINUATION_TEST="${RUNNER_TESTS}/run-t24-auto-continuation.bats"
 RUNNER_HELPERS=(
   "${REPO_ROOT}/e2e/helpers/runner-api.bash"
   "${REPO_ROOT}/e2e/helpers/runner-chat.bash"
@@ -69,25 +69,19 @@ grep -Fq 'trace: "retain-on-failure"' "$PLAYWRIGHT_CONFIG" ||
 if grep -R -Fq '/api/test/' "$RUNNER_TESTS" "${RUNNER_HELPERS[@]}"; then
   fail "runner E2E coverage must use supported public APIs"
 fi
-grep -Fq 'REAL_CLAUDE_MODEL="claude-sonnet-5"' "$REAL_CLAUDE_TEST" ||
-  fail "real Claude E2E must select Sonnet 5"
-if [[ "$(grep -Fc "\"\$REAL_CLAUDE_MODEL\"" "$REAL_CLAUDE_TEST")" -ne 3 ]]; then
-  fail "real Claude E2E must use its model pin for policy, smoke, and steer coverage"
-fi
-if grep -Fq 'claude-sonnet-4-6' "$REAL_CLAUDE_TEST"; then
-  fail "real Claude E2E must not retain the Sonnet 4.6 pin"
-fi
-grep -Fq 'OKOU_MITM_RUNNER_TOKEN' "$BUILT_IN_FALLBACK_TEST" ||
-  fail "built-in fallback E2E must require trusted failure authentication"
+grep -Fq '"@preset/okou-1-0"' "$AUTO_TEST" ||
+  fail "Auto E2E must verify the canonical OpenRouter preset"
+grep -Fq 'runner_chat_send_after_completion' "$AUTO_CONTINUATION_TEST" ||
+  fail "Auto E2E must retain deployed successor-run coverage"
 grep -Fq 'createRunnerCheckout' "$RUNNER_TOKEN" ||
   fail "paid runner accounts must use the public checkout API"
 grep -Fq 'fillStripeCheckout' "$RUNNER_TOKEN" ||
   fail "real runner accounts must complete the public Stripe checkout"
-if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 4 ]]; then
-  fail "both real Codex accounts, real Claude, and mock Claude must upgrade to Pro"
-fi
-if [[ "$(grep -Fc 'upgradeToPro: false' "$RUNNER_TOKEN")" -ne 1 ]]; then
-  fail "the default mock runner account must remain on limited-free"
+# Keep the existing paid account prerequisites for billing and capability
+# coverage; retirement must not silently downgrade shared runner identities.
+if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 5 ||
+  "$(grep -Fc 'fileName: "' "$RUNNER_TOKEN")" -ne 5 ]]; then
+  fail "all five runner accounts, including the default mock runner, must upgrade to Pro"
 fi
 
 ruby -ryaml -ropen3 -rtempfile - "$WORKFLOW" "$RUNNER_MOCK_CLAUDE_BOOTSTRAP" <<'RUBY'
@@ -116,16 +110,16 @@ playwright = jobs.fetch("cli-e2e-02-playwright")
 playwright_finalizer = jobs.fetch("cli-e2e-02-playwright-finalize")
 account_prepare = jobs.fetch("cli-e2e-03-runner-prepare")
 account_prepare_steps = account_prepare.fetch("steps")
-model_policy_index = account_prepare_steps.index do |step|
-  step["name"] == "Check runner E2E model policy" &&
-    step["run"] == "cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts"
+model_selection_index = account_prepare_steps.index do |step|
+  step["name"] == "Check runner E2E model selection" &&
+    step["run"] == "cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs scripts/runner-chat-model-default.test.mjs"
 end
 prepare_accounts_index = account_prepare_steps.index do |step|
   step["name"] == "Prepare runner E2E accounts"
 end
-unless model_policy_index && prepare_accounts_index &&
-    model_policy_index < prepare_accounts_index
-  raise "runner E2E must check the Luna cost policy before preparing real accounts"
+unless model_selection_index && prepare_accounts_index &&
+    model_selection_index < prepare_accounts_index
+  raise "runner E2E must check model selection before preparing real accounts"
 end
 bootstrap = jobs.fetch("cli-e2e-03-runner-bootstrap")
 runner = jobs.fetch("cli-e2e-03-runner")
@@ -479,135 +473,53 @@ unless bootstrap_steps.any? do |step|
   end
   raise "runner bootstrap must download the token artifact"
 end
-model_defaults_step = bootstrap_steps.find do |step|
-  step["name"] == "Reset runner model defaults"
-end
-raise "missing runner model policy bootstrap" unless model_defaults_step
-model_defaults_script = model_defaults_step.fetch("run")
-unless model_defaults_script.include?("/api/model-policies") &&
-    model_defaults_script.include?("/api/user-model-preference") &&
-    model_defaults_script.include?("deepseek-v4-flash") &&
-    model_defaults_script.include?("gpt-5.6-luna") &&
-    model_defaults_script.scan('defaultProviderType: "built-in"').length == 2 &&
-    model_defaults_script.include?('{"selectedModel":null,"serviceTier":null}')
-  raise "runner bootstrap must reset the limited-free model defaults"
-end
-%w[claude-opus-4-7 claude-sonnet-4-6 gpt-5.5].each do |restricted_model|
-  if model_defaults_script.include?(restricted_model)
-    raise "runner bootstrap must not select restricted model #{restricted_model}"
+# Fresh accounts inherit the sole platform model. Personal subscriptions are
+# provisioned independently.
+auto_steps = {
+  "Reset runner model defaults" => ["runner", "false"],
+  "Bootstrap real Codex account" => ["runner-real-codex", "true"],
+  "Bootstrap built-in Codex account" => ["runner-real-codex-built-in", "true"],
+  "Bootstrap real Claude account" => ["runner-real-claude", "true"],
+}
+auto_steps.each do |name, (account, real_agent)|
+  step = bootstrap_steps.find { |candidate| candidate["name"] == name }
+  raise "missing #{name}" unless step
+  expected = "cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-#{account}.json #{real_agent}"
+  raise "#{name} must bootstrap Auto" unless step["run"] == expected
+  unless step.dig("env", "VERCEL_AUTOMATION_BYPASS_SECRET") ==
+      "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}"
+    raise "#{name} must receive the preview bypass secret"
   end
-end
-provider_step = bootstrap_steps.find do |step|
-  step["name"] == "Bootstrap runner mock model provider"
-end
-raise "missing runner mock provider bootstrap" unless provider_step
-unless provider_step.fetch("run").include?(
-    '{"type":"claude-code-oauth-token","secret":"mock-oauth-token-for-e2e"}',
-  )
-  raise "runner bootstrap must restore the historical mock provider"
 end
 mock_claude_step = bootstrap_steps.find do |step|
   step["name"] == "Bootstrap mock Claude account"
 end
-raise "missing mock Claude account bootstrap" unless mock_claude_step
+raise "missing personal subscription bootstrap" unless mock_claude_step
 unless mock_claude_step.fetch("run").end_with?(
     "runner-mock-claude-bootstrap.bash /tmp/e2e-api-credentials-runner-mock-claude.json",
   )
-  raise "mock Claude account bootstrap must use the focused executable"
+  raise "personal subscription bootstrap must use the focused executable"
 end
 unless mock_claude_step.dig("env", "VERCEL_AUTOMATION_BYPASS_SECRET") ==
     "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}"
-  raise "mock Claude bootstrap must receive the preview bypass secret"
+  raise "mock subscription bootstrap must receive the preview bypass secret"
 end
 mock_claude_script = File.read(ARGV.fetch(1))
 %w[
   /api/me/model-providers
-  /api/model-policies
-  /api/feature-switches
+  /api/run-models
   claude-code-oauth-token
-  claude-sonnet-4-6
-  _realAgentInPreview
-].each do |required_fragment|
-  unless mock_claude_script.include?(required_fragment)
-    raise "mock Claude bootstrap must include #{required_fragment}"
+  codex-oauth-token
+  CODEX_AUTH_JSON
+  claude-sonnet-5
+  gpt-6-astra
+].each do |fragment|
+  unless mock_claude_script.include?(fragment)
+    raise "personal subscription bootstrap must include #{fragment}"
   end
 end
-unless mock_claude_script.include?(
-    '.effectiveSwitches._realAgentInPreview == false',
-  )
-  raise "mock Claude bootstrap must keep the real runtime disabled"
-end
-unless mock_claude_script.include?('credentialScope: "member"') &&
-    mock_claude_script.include?("modelProviderId: null")
-  raise "mock Claude OAuth policy must use member credentials"
-end
-codex_step = bootstrap_steps.find do |step|
-  step["name"] == "Bootstrap real Codex account"
-end
-raise "missing real Codex account bootstrap" unless codex_step
-codex_script = codex_step.fetch("run")
-%w[
-  /api/model-providers
-  /api/model-policies
-  /api/feature-switches
-  gpt-5.6-luna
-  _realAgentInPreview
-].each do |required_fragment|
-  unless codex_script.include?(required_fragment)
-    raise "real Codex bootstrap must include #{required_fragment}"
-  end
-end
-unless codex_step.dig("env", "OPENAI_API_KEY") ==
-    "${{ secrets.OPENAI_API_KEY }}"
-  raise "real Codex bootstrap must receive the OpenAI credential"
-end
-built_in_codex_step = bootstrap_steps.find do |step|
-  step["name"] == "Bootstrap built-in Codex account"
-end
-raise "missing built-in Codex account bootstrap" unless built_in_codex_step
-built_in_codex_script = built_in_codex_step.fetch("run")
-%w[
-  e2e-api-credentials-runner-real-codex-built-in.json
-  /api/model-policies
-  /api/feature-switches
-  gpt-5.6-luna
-].each do |required_fragment|
-  unless built_in_codex_script.include?(required_fragment)
-    raise "built-in Codex bootstrap must include #{required_fragment}"
-  end
-end
-unless built_in_codex_script.include?('"defaultProviderType":"built-in"') &&
-    built_in_codex_script.include?('"modelProviderId":null') &&
-    built_in_codex_script.include?('"_realAgentInPreview":true,"piLoop":false') &&
-    built_in_codex_script.include?('.effectiveSwitches.piLoop == false')
-  raise "built-in Luna must retain Codex execution in its isolated account"
-end
-claude_step = bootstrap_steps.find do |step|
-  step["name"] == "Bootstrap real Claude account"
-end
-raise "missing real Claude account bootstrap" unless claude_step
-claude_script = claude_step.fetch("run")
-%w[
-  /api/model-policies
-  /api/feature-switches
-  _realAgentInPreview
-].each do |required_fragment|
-  unless claude_script.include?(required_fragment)
-    raise "real Claude bootstrap must include #{required_fragment}"
-  end
-end
-unless claude_script.include?('claude_model="claude-sonnet-5"') &&
-    claude_script.include?('--arg model "$claude_model"') &&
-    claude_script.include?('select(.model != $model)') &&
-    claude_script.include?('model: $model')
-  raise "real Claude bootstrap must configure Sonnet 5 consistently"
-end
-if claude_script.include?("claude-sonnet-4-6")
-  raise "real Claude bootstrap must not retain the Sonnet 4.6 pin"
-end
-unless claude_script.include?('defaultProviderType: "built-in"') &&
-    claude_script.include?("modelProviderId: null")
-  raise "real Claude bootstrap must use the built-in provider"
+unless mock_claude_script.include?('.effectiveSwitches._realAgentInPreview == false')
+  raise "synthetic personal credentials must only use mock runtimes"
 end
 
 shard_step = runner.fetch("steps").find do |step|
@@ -643,10 +555,10 @@ unless run_step.dig("env", "VERCEL_AUTOMATION_BYPASS_SECRET") ==
     "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}"
   raise "runner E2E tests must receive the preview bypass secret"
 end
-expected_failure_token = "${{ contains(matrix.files, 'tests/03-runner/run-t24-built-in-provider-fallback.bats') && format('vm0_official_{0}', secrets.OFFICIAL_RUNNER_SECRET) || '' }}"
-unless run_step.dig("env", "OKOU_MITM_RUNNER_TOKEN") == expected_failure_token
-  raise "only the built-in fallback shard may receive trusted failure authentication"
+if run_step.fetch("env").key?("OKOU_MITM_RUNNER_TOKEN")
+  raise "runner E2E no longer requires privileged vendor-fallback injection"
 end
+
 unless runner.fetch("steps").any? do |step|
     step["name"] == "Download runner E2E API tokens" &&
       step.dig("with", "name") == "e2e-tokens"

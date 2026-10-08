@@ -93,7 +93,10 @@ export const signalCheckAwait = createRule<[], MessageIds>({
       }
 
       if (node.type === "ExpressionStatement") {
-        const expr = node.expression;
+        const expr =
+          node.expression.type === "ChainExpression"
+            ? node.expression.expression
+            : node.expression;
         if (expr.type === "CallExpression") {
           const callee = expr.callee;
           if (

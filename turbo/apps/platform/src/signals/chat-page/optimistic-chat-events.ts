@@ -75,9 +75,6 @@ export const appendOptimisticSessionOutput$ = command(
     if (chunk.chunkIndex !== 0) {
       return false;
     }
-    const runGroupId = events.find((event) => {
-      return event.runId === chunk.runId && event.runGroupId;
-    })?.runGroupId;
     set(internalOptimisticChatEvents$, [
       ...entries,
       {
@@ -86,7 +83,6 @@ export const appendOptimisticSessionOutput$ = command(
           id: chunk.eventId,
           threadId: chunk.threadId,
           runId: chunk.runId,
-          ...(runGroupId ? { runGroupId } : {}),
           runEventId: chunk.runEventId,
           eventType: "output.message",
           content: chunk.delta,

@@ -10,8 +10,10 @@ export async function sendChatEvent(
   createClient: ApiClientFactory,
   body: ChatEventSendBody,
   signal: AbortSignal,
-) {
-  const result = await accept(
+): Promise<void> {
+  // The web client only needs acceptance; thread state comes from the
+  // persisted events, so the response body is intentionally not read.
+  await accept(
     createClient(chatEventsContract).send({
       body,
       fetchOptions: { signal },
@@ -19,5 +21,4 @@ export async function sendChatEvent(
     [201],
     signal,
   );
-  return result.body;
 }

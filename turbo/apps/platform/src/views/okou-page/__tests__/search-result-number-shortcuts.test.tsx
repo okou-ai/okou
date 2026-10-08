@@ -76,9 +76,6 @@ function installSearchResources() {
     description: null,
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "private" as const,
   };
   context.mocks.api(agentsMainContract.list, ({ respond }) => {
@@ -108,6 +105,7 @@ function installSearchResources() {
     createdAt: "2026-08-01T01:00:00.000Z",
     canManage: true,
     canPublish: true,
+    importSource: null,
     official: null,
   };
   context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {

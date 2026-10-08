@@ -4,7 +4,7 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
-import { expect, onTestFinished, describe, beforeEach, it } from "vitest";
+import { expect, describe, beforeEach, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -23,23 +23,18 @@ import {
 } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { clearWorkflowAutomationEventConnectorAsPreviousApi } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import {
-  clearGoogleCalendarBeforeRunStartHookForTest,
-  setGoogleCalendarBeforeRunStartHookForTest,
-  webhooksGoogleCalendarRoutes,
-} from "../webhooks-google-calendar";
+import { webhooksGoogleCalendarRoutes } from "../webhooks-google-calendar";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...webhooksGoogleCalendarRoutes,
   ...workflowAutomationsRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -297,6 +292,8 @@ async function setupFixture(): Promise<CalendarScenario> {
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   const { actor } = await wf.setupWorkflowOrg();
+  await runsApi.ensurePersonalSubscriptionModel(actor);
+  await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
@@ -455,13 +452,7 @@ describe("POST /api/webhooks/google-calendar", () => {
 
     const response = await postGoogleCalendarWebhook(webhookHeaders(watch));
 
-    expect(response.status).toBe(200);
-    expect(response.body).toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 0,
-      duplicates: 0,
-    });
+    expect(response.status).toBe(401);
     expect(recorder.baselineCalls).toBe(1);
     expect(recorder.incrementalCalls).toBe(0);
 
@@ -615,6 +606,7 @@ describe("POST /api/webhooks/google-calendar", () => {
         dispatched: 1,
         duplicates: 0,
       });
+      await flushWaitUntilForTest();
       if (!created.body.chatThreadId) {
         throw new Error("Expected the automation to have a chat thread");
       }
@@ -652,7 +644,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     });
   });
 
-  describe("with a legacy Calendar projection", () => {
+  describe("after switching Calendar accounts", () => {
     async function prepareScenario() {
       const firstAccessToken = "calendar-first-access-token";
       const secondAccessToken = "calendar-second-access-token";
@@ -715,11 +707,6 @@ describe("POST /api/webhooks/google-calendar", () => {
         }),
         [200],
       );
-      await clearWorkflowAutomationEventConnectorAsPreviousApi(
-        context,
-        created.body.id,
-      );
-
       const firstWatch = calendar.channels.find((channel) => {
         return channel.accessToken === firstAccessToken;
       });
@@ -742,29 +729,22 @@ describe("POST /api/webhooks/google-calendar", () => {
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("repairs a legacy projection and dispatches only from the selected Calendar account", async () => {
-      const {
-        firstWatch,
-        calendar,
-        secondWatch,
-        secondAccessToken,
-        scenario,
-        secondConnectorId,
-      } = preparedScenario;
+    it("rejects the retired source and dispatches from the selected account even when remote stop fails", async () => {
+      const { firstWatch, secondWatch, scenario, secondConnectorId } =
+        preparedScenario;
 
       const oldSource = await postGoogleCalendarWebhook(
         webhookHeaders(firstWatch),
       );
+      // The selected-account API retires the old local channel immediately;
+      // failure of best-effort remote stop does not preserve its authority.
       expect(oldSource).toStrictEqual({
-        status: 200,
-        body: {
-          success: true,
-          watchStates: 1,
-          dispatched: 0,
-          duplicates: 0,
-        },
+        status: 401,
+        body: { error: "Unauthorized" },
       });
-      expect(calendar.incrementalAccessTokens).toStrictEqual([]);
+      await runsApi.heartbeatRunner(scenario.runnerGroup);
+      const idleAfterOldSource = await runsApi.pollRunner(scenario.runnerGroup);
+      expect(idleAfterOldSource.body.job).toBeNull();
 
       const selectedSource = await postGoogleCalendarWebhook(
         webhookHeaders(secondWatch),
@@ -778,10 +758,7 @@ describe("POST /api/webhooks/google-calendar", () => {
           duplicates: 0,
         },
       });
-      expect(calendar.incrementalAccessTokens).toStrictEqual([
-        secondAccessToken,
-      ]);
-
+      await flushWaitUntilForTest();
       await runsApi.heartbeatRunner(scenario.runnerGroup);
       const job = await runsApi.pollRunner(scenario.runnerGroup);
       if (!job.body.job) {
@@ -796,7 +773,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     });
   });
 
-  it("supersedes an old Calendar source when account selection changes at queue admission", async () => {
+  it("recovers when account selection changes during old-source event retrieval", async () => {
     const firstAccessToken = "calendar-admission-first-token";
     const secondAccessToken = "calendar-admission-second-token";
     const calendar = configureAccountAwareGoogleCalendarApiMock({
@@ -851,43 +828,59 @@ describe("POST /api/webhooks/google-calendar", () => {
       throw new Error("Expected the initial Calendar watch");
     }
 
-    onTestFinished(() => {
-      clearGoogleCalendarBeforeRunStartHookForTest();
-    });
-    setGoogleCalendarBeforeRunStartHookForTest(async () => {
-      clearGoogleCalendarBeforeRunStartHookForTest();
-      await accept(
-        chatThreadConnectorSelectionsClient().update({
-          headers: authHeaders(),
-          params: { id: admissionChatThreadId },
-          body: {
-            connectionId: secondConnectorId,
-            target: { kind: "builtin", connectorSlug: "google-calendar" },
-          },
-        }),
-        [200],
-      );
-    });
-
-    const response = await postGoogleCalendarWebhook(
-      webhookHeaders(firstWatch),
+    server.use(
+      http.get(
+        "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events",
+        async ({ request }) => {
+          const accessToken = googleCalendarRequestAccessToken(request);
+          const syncToken = new URL(request.url).searchParams.get("syncToken");
+          if (!syncToken) {
+            return HttpResponse.json({
+              items: [],
+              nextSyncToken: `calendar-switched-baseline-${accessToken}`,
+            });
+          }
+          expect(accessToken).toBe(firstAccessToken);
+          await accept(
+            chatThreadConnectorSelectionsClient().update({
+              headers: authHeaders(),
+              params: { id: admissionChatThreadId },
+              body: {
+                connectionId: secondConnectorId,
+                target: { kind: "builtin", connectorSlug: "google-calendar" },
+              },
+            }),
+            [200],
+          );
+          return HttpResponse.json({
+            items: [
+              {
+                id: "calendar-admission-event",
+                etag: '"calendar-admission-version"',
+                status: "confirmed",
+                summary: "Old account response after selection changed",
+                created: "2026-08-01T10:00:00.000Z",
+                updated: "2026-08-01T10:00:00.000Z",
+              },
+            ],
+            nextSyncToken: "calendar-stale-account-result",
+          });
+        },
+      ),
     );
 
-    expect(response).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        watchStates: 1,
-        dispatched: 0,
-        duplicates: 0,
-      },
-    });
-    expect(calendar.incrementalAccessTokens).toStrictEqual([firstAccessToken]);
+    // The in-flight old-source request is not arbitrated against the switch;
+    // only the recovered end state is asserted.
+    await postGoogleCalendarWebhook(webhookHeaders(firstWatch));
+
     expect(
       calendar.channels.some((channel) => {
         return channel.accessToken === secondAccessToken;
       }),
     ).toBeTruthy();
+    await expect(
+      postGoogleCalendarWebhook(webhookHeaders(firstWatch)),
+    ).resolves.toStrictEqual({ status: 401, body: { error: "Unauthorized" } });
     await runsApi.heartbeatRunner(scenario.runnerGroup);
     const idle = await runsApi.pollRunner(scenario.runnerGroup);
     expect(idle.body.job).toBeNull();
@@ -1344,6 +1337,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       dispatched: 1,
       duplicates: 0,
     });
+    await flushWaitUntilForTest();
     if (!created.body.chatThreadId) {
       throw new Error("Expected the automation to have a chat thread");
     }
@@ -1385,6 +1379,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       dispatched: 1,
       duplicates: 0,
     });
+    await flushWaitUntilForTest();
     const thirdJob = await runsApi.pollRunner(runnerGroup);
     expect(thirdJob.body.job?.runId).toStrictEqual(expect.any(String));
     expect(thirdJob.body.job?.runId).not.toBe(firstJob.body.job?.runId);
@@ -1467,6 +1462,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       dispatched: 1,
       duplicates: 0,
     });
+    await flushWaitUntilForTest();
     if (!cancelled.body.chatThreadId) {
       throw new Error("Expected the automation to have a chat thread");
     }

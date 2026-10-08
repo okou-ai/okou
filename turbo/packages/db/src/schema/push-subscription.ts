@@ -6,7 +6,6 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 /**
  * Push Subscriptions table
@@ -21,10 +20,6 @@ export const pushSubscriptions = pgTable(
     endpoint: text("endpoint").notNull(),
     p256dh: text("p256dh").notNull(),
     auth: text("auth").notNull(),
-    publicBrand: text("public_brand")
-      .$type<PublicBrand>()
-      .default("vm0")
-      .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

@@ -1,69 +1,103 @@
-import { command } from "ccstate";
-import { v5 as uuidv5 } from "uuid";
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   chatRunFinishedEventConfigSchema,
   type ChatRunFinishedEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
-
-import { writeDb$, type Db } from "../external/db";
+import { v5 as uuidv5 } from "uuid";
+import { z } from "zod";
+import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
+import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
-import { loadRunAutonomyBudget } from "./autonomy-budget.service";
+import { settle, settleIncludingAbort } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
+import { loadRunAutonomyBudget } from "./autonomy-budget.service";
+import { touchChatThreadLastMessageAtIndependently$ } from "./chat-event-shared.service";
+import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
+import { chatEventInsertSql } from "./chat-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
-import { insertChatEvent } from "./chat-event.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import {
+  notifyRunningChatRunOfPendingInput$,
+  pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
+import { waitUntil } from "../context/wait-until";
 import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { ChatRunFinishedAutomationAlreadyAdmittedError } from "./workflow-input-queue.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const CHAT_RUN_FINISHED_EVENT_TYPE = "chat-run-finished";
 // Bounds the finished run's output copied into the triggered run's context.
 const OUTPUT_EXCERPT_CHAR_CAP = 4000;
+const CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE =
+  "ed97d605-f9df-4ce3-b2df-f7ccf318cb53";
 const AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE =
   "e020ef30-b3ec-4465-83e0-f040094ef14b";
 
-async function appendAutonomyBudgetError(args: {
-  readonly db: Db;
-  readonly chatThreadId: string;
-  readonly sourceRunId: string;
-}): Promise<boolean> {
-  return await args.db.transaction(async (tx) => {
-    const errorEvent = await insertChatEvent(
-      tx,
-      {
-        id: uuidv5(
-          `${args.chatThreadId}:${args.sourceRunId}`,
-          AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
+const appendAutonomyBudgetError$ = command(
+  async (
+    { set },
+    args: {
+      readonly chatThreadId: string;
+      readonly sourceRunId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    const errorEvent =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await set(writeDb$).execute(
+          chatEventInsertSql(
+            {
+              id: uuidv5(
+                `${args.chatThreadId}:${args.sourceRunId}`,
+                AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
+              ),
+              chatThreadId: args.chatThreadId,
+              eventType: "output.error",
+              content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
+              runId: null,
+              error: "AUTONOMY_BUDGET_EXHAUSTED",
+            },
+            "id",
+          ),
         ),
-        chatThreadId: args.chatThreadId,
-        eventType: "output.error",
-        content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
-        runId: null,
-        error: "AUTONOMY_BUDGET_EXHAUSTED",
-      },
-      "id",
-    );
+      )[0] ?? null;
+    signal.throwIfAborted();
     if (!errorEvent) {
       return false;
     }
-    await touchChatThreadLastMessageAt(
-      tx,
+    const startedAt = performance.now();
+    const result = await settleIncludingAbort(
+      set(
+        touchChatThreadLastMessageAtIndependently$,
+        args.chatThreadId,
+        { touchedAt: errorEvent.createdAt, eventId: errorEvent.id },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "thread_touch",
       args.chatThreadId,
-      errorEvent.createdAt,
+      startedAt,
+      result,
     );
     return true;
-  });
-}
+  },
+);
 
 /**
  * Anchored case-insensitive `*`-wildcard match. Every character except `*`
@@ -143,6 +177,109 @@ function chatRunFinishedTriggerContext(args: {
   };
 }
 
+// Chat callback writers do not seed this receipt key; the first admission
+// creates it. An absent key therefore means no automation has been admitted
+// for this source callback yet.
+async function loadAdmittedChatRunFinishedAutomations(
+  db: Db,
+  event: ChatRunFinishedEvent,
+): Promise<ReadonlySet<string>> {
+  const [source] = await db
+    .select({
+      automationIds:
+        sql`coalesce(${agentRunCallbacks.payload}->'chatRunFinishedAutomationIds', '[]'::jsonb)`.mapWith(
+          zodDriverValueDecoder(z.array(z.uuid())),
+        ),
+    })
+    .from(agentRunCallbacks)
+    .where(
+      and(
+        eq(agentRunCallbacks.id, event.sourceCallbackId),
+        eq(agentRunCallbacks.runId, event.runId),
+        eq(agentRunCallbacks.internalKind, "chat"),
+      ),
+    )
+    .limit(1);
+  if (!source) {
+    throw new Error("Chat run finished event is missing its source callback");
+  }
+  return new Set(source.automationIds);
+}
+
+const admitChatRunFinishedAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: ChatRunFinishedEvent;
+      readonly automation: typeof workflowAutomations.$inferSelect;
+      readonly agentId: string;
+      readonly chatThreadId: string;
+      readonly workflowName: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { event, automation, agentId, chatThreadId, workflowName } = args;
+    const context = chatRunFinishedTriggerContext({
+      workflowName,
+      automationId: automation.id,
+      event,
+    });
+    const admission = await settle(
+      set(
+        runWorkflowAutomationNow$,
+        {
+          due: {
+            automation,
+            agentId,
+            chatThreadId,
+          },
+          automationContext: context,
+          queueEventId: uuidv5(
+            `${automation.id}:${event.runId}`,
+            CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE,
+          ),
+          sourcePlan: {
+            kind: "chat-run-finished",
+            sourceCallbackId: event.sourceCallbackId,
+            runId: event.runId,
+          },
+          apiStartTime: now(),
+          agentRunSource: {
+            runId: event.runId,
+            threadId: event.chatThreadId,
+            agentId: event.sourceAgentId,
+            titleSnapshot: agentRunSourceTitleSnapshot(event.sourceThreadTitle),
+          },
+          triggerSource: "automation-event",
+          triggerBrief: `Chat run ${event.runStatus} in watched thread`,
+        },
+        signal,
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!admission.ok) {
+      if (
+        !(
+          admission.error instanceof
+          ChatRunFinishedAutomationAlreadyAdmittedError
+        )
+      ) {
+        throw admission.error;
+      }
+      // A competing callback committed this input; wake the thread anyway.
+      waitUntil(
+        set(
+          pickEnqueuedChatThread$,
+          { orgId: automation.orgId, chatThreadId },
+          signal,
+        ),
+      );
+      waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
+    }
+  },
+);
+
 /**
  * Fires `chat-run-finished` automations watching the thread whose run just
  * reached a terminal state. Called from the terminal chat callback after the
@@ -193,6 +330,11 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
       );
     signal.throwIfAborted();
 
+    const admittedAutomationIds = await loadAdmittedChatRunFinishedAutomations(
+      db,
+      event,
+    );
+    signal.throwIfAborted();
     const currentTime = nowDate();
     const exhaustedThreadIds = new Set<string>();
     for (const row of automationRows) {
@@ -203,18 +345,38 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         continue;
       }
 
+      if (admittedAutomationIds.has(row.automation.id)) {
+        // Queue admission is durable independently of its launch. A source retry
+        // also retries the target wakeup, including after hot-event retention.
+        if (row.chatThreadId !== null) {
+          waitUntil(
+            set(
+              pickEnqueuedChatThread$,
+              { orgId: row.automation.orgId, chatThreadId: row.chatThreadId },
+              signal,
+            ),
+          );
+          waitUntil(
+            set(notifyRunningChatRunOfPendingInput$, row.chatThreadId, signal),
+          );
+        }
+        continue;
+      }
+
       const chatThreadId =
         row.chatThreadId ??
-        (await db.transaction(async (tx) => {
-          return await ensureWorkflowUserAutomationThread(tx, {
+        (await set(
+          ensureWorkflowUserAutomationThread$,
+          {
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
             agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime,
-          });
-        }));
+          },
+          signal,
+        ));
       signal.throwIfAborted();
 
       if (sourceAutonomyBudget === 0) {
@@ -222,11 +384,14 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
           continue;
         }
         exhaustedThreadIds.add(chatThreadId);
-        const inserted = await appendAutonomyBudgetError({
-          db,
-          chatThreadId,
-          sourceRunId: event.runId,
-        });
+        const inserted = await set(
+          appendAutonomyBudgetError$,
+          {
+            chatThreadId,
+            sourceRunId: event.runId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
         if (inserted) {
           await publishChatThreadMessageCreatedSafely({
@@ -239,30 +404,14 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         continue;
       }
 
-      const context = chatRunFinishedTriggerContext({
-        workflowName: row.workflowName,
-        automationId: row.automation.id,
-        event,
-      });
       await set(
-        runWorkflowAutomationNow$,
+        admitChatRunFinishedAutomation$,
         {
-          due: {
-            automation: row.automation,
-            agentId: row.agentId,
-            chatThreadId,
-          },
-          automationContext: context,
-          apiStartTime: now(),
-          agentRunSource: {
-            runId: event.runId,
-            threadId: event.chatThreadId,
-            agentId: event.sourceAgentId,
-            titleSnapshot: agentRunSourceTitleSnapshot(event.sourceThreadTitle),
-          },
-          triggerSource: "automation-event",
-          triggerBrief: `Chat run ${event.runStatus} in watched thread`,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+          event,
+          automation: row.automation,
+          agentId: row.agentId,
+          chatThreadId,
+          workflowName: row.workflowName,
         },
         signal,
       );

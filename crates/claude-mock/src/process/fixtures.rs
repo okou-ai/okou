@@ -31,6 +31,7 @@ const OVERSIZED_RECORD_HEAD: &str =
     r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":""#;
 const TOOL_OOM_PARENT_HEADROOM_BYTES: u64 = 192 * 1024 * 1024;
 const TOOL_OOM_RUNTIME_BYTES: usize = 128 * 1024 * 1024;
+const TOOL_OOM_INJECTED_OFFENDER_BYTES: usize = 384 * 1024 * 1024;
 const TOOL_MARKER_TIMEOUT: Duration = Duration::from_secs(5);
 const TOOL_COMPLETION_TIMEOUT: Duration = Duration::from_secs(5);
 const TOOL_OOM_CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -81,6 +82,39 @@ while True:
     os.wait()
 '
 "#;
+
+// Publish readiness only after the offender has enough resident memory to be
+// the predictable victim of a Guest-wide SysRq OOM. The extra child proves
+// that memory.oom.group reaps the entire tool, not just its large process.
+const TOOL_OOM_INJECTED_OFFENDER_SCRIPT: &str = r#"
+set -eu
+test "$(cat /proc/self/oom_score_adj)" = 1000
+(trap '' TERM; while :; do sleep 1; done) &
+exec python3 -c '
+import os, pathlib, time
+
+assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
+memory = bytearray(int(os.environ["VM0_TEST_OOM_ALLOCATOR_BYTES"]))
+memory[::4096] = b"\x01" * ((len(memory) + 4095) // 4096)
+relative = next(line[3:] for line in pathlib.Path("/proc/self/cgroup").read_text().splitlines() if line.startswith("0::"))
+pathlib.Path("/tmp/vm0-tool-oom-offender.cgroup").write_text(relative)
+while True:
+    time.sleep(1)
+'
+"#;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum ToolOomMode {
+    WorkloadLimit,
+    GuestPressure,
+    GuestInjected,
+}
+
+impl ToolOomMode {
+    fn guest_wide(self) -> bool {
+        self != Self::WorkloadLimit
+    }
+}
 
 pub(super) fn run_fail_no_newline(msg: &str) -> ExitCode {
     eprint!("{msg}");
@@ -562,13 +596,13 @@ fn verify_append_prompt_transport(payload: &str) -> Result<String, String> {
 
 pub(super) fn run_parallel_shell_tool_oom_scenario(
     output_format: &str,
-    guest_wide: bool,
+    mode: ToolOomMode,
 ) -> ExitCode {
     if output_format != "stream-json" {
         return ExitCode::from(1);
     }
 
-    match verify_parallel_shell_tool_oom(guest_wide) {
+    match verify_parallel_shell_tool_oom(mode) {
         Ok(summary) => {
             emit_result_pair(false, &summary);
             ExitCode::SUCCESS
@@ -582,7 +616,8 @@ pub(super) fn run_parallel_shell_tool_oom_scenario(
     }
 }
 
-fn verify_parallel_shell_tool_oom(guest_wide: bool) -> Result<String, String> {
+fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
+    let guest_wide = mode.guest_wide();
     let runtime_relative = unified_cgroup_path(std::process::id())?;
     let runtime_suffix = "/workload/runtime";
     let operation_relative = runtime_relative
@@ -603,7 +638,7 @@ fn verify_parallel_shell_tool_oom(guest_wide: bool) -> Result<String, String> {
     if read_trimmed(Path::new("/proc/self/oom_score_adj"))? != "0" {
         return Err("runtime OOM score is not the unmodified default".to_string());
     }
-    let runtime_bytes = if guest_wide {
+    let runtime_bytes = if mode == ToolOomMode::GuestPressure {
         // Keep every individual tool allocator smaller than the runtime. With
         // four half-sized allocators, total charge still exhausts this Guest.
         let meminfo = std::fs::read_to_string("/proc/meminfo")
@@ -671,13 +706,20 @@ fn verify_parallel_shell_tool_oom(guest_wide: bool) -> Result<String, String> {
             .ok_or_else(|| "survivor process is missing".to_string())?,
     )?;
 
+    let offender_script = if mode == ToolOomMode::GuestInjected {
+        TOOL_OOM_INJECTED_OFFENDER_SCRIPT
+    } else {
+        TOOL_OOM_OFFENDER_SCRIPT
+    };
+    let offender_bytes = if mode == ToolOomMode::GuestInjected {
+        TOOL_OOM_INJECTED_OFFENDER_BYTES
+    } else {
+        runtime_bytes / 2
+    };
     fixture.offender = Some(
         bash_tool_command()
-            .args(["-c", TOOL_OOM_OFFENDER_SCRIPT])
-            .env(
-                "VM0_TEST_OOM_ALLOCATOR_BYTES",
-                (runtime_bytes / 2).to_string(),
-            )
+            .args(["-c", offender_script])
+            .env("VM0_TEST_OOM_ALLOCATOR_BYTES", offender_bytes.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -698,6 +740,18 @@ fn verify_parallel_shell_tool_oom(guest_wide: bool) -> Result<String, String> {
         return Err("parallel Bash tools entered the same cgroup".to_string());
     }
 
+    let offender_path = Path::new("/sys/fs/cgroup").join(offender_relative.trim_start_matches('/'));
+    if mode == ToolOomMode::GuestInjected {
+        // The disposable Guest runs the kernel's global OOM victim selection
+        // after both tools have reached their readiness markers.
+        write_cgroup_value_as_root(Path::new("/proc/sysrq-trigger"), "f")?;
+    } else if mode == ToolOomMode::GuestPressure {
+        eprintln!(
+            "real Guest-wide OOM pressure started: {}",
+            guest_pressure_diagnostics(workload_path, &offender_path)
+        );
+    }
+
     let offender_status = wait_for_child_exit(
         fixture
             .offender
@@ -705,14 +759,23 @@ fn verify_parallel_shell_tool_oom(guest_wide: bool) -> Result<String, String> {
             .ok_or_else(|| "offender process is missing".to_string())?,
         TOOL_OOM_CONVERGENCE_TIMEOUT,
         "offender Bash tool",
-    )?;
+    )
+    .map_err(|error| {
+        if mode == ToolOomMode::GuestPressure {
+            format!(
+                "{error}; {}",
+                guest_pressure_diagnostics(workload_path, &offender_path)
+            )
+        } else {
+            error
+        }
+    })?;
     fixture.offender = None;
     if offender_status.signal() != Some(libc::SIGKILL) {
         return Err(format!(
             "offender Bash tool was not killed as a group: {offender_status}"
         ));
     }
-    let offender_path = Path::new("/sys/fs/cgroup").join(offender_relative.trim_start_matches('/'));
     let deadline = Instant::now() + TOOL_COMPLETION_TIMEOUT;
     while read_cgroup_events(&offender_path.join("cgroup.events"))?.get("populated") != Some(&0) {
         if Instant::now() >= deadline {
@@ -766,7 +829,12 @@ fn verify_parallel_shell_tool_oom(guest_wide: bool) -> Result<String, String> {
     drop(runtime_memory);
     fixture.restore_memory_max()?;
     Ok(format!(
-        "parallel-shell-tool-oom-survived oom_group_kill={oom_group_kills} guest_wide={guest_wide} memcg_ooms={memcg_ooms} offender={offender_relative} survivor={survivor_relative}"
+        "parallel-shell-tool-oom-survived oom_group_kill={oom_group_kills} guest_wide={guest_wide} memcg_ooms={memcg_ooms} trigger={} offender={offender_relative} survivor={survivor_relative}",
+        if mode == ToolOomMode::GuestInjected {
+            "sysrq"
+        } else {
+            "pressure"
+        }
     ))
 }
 
@@ -1000,6 +1068,19 @@ fn read_cgroup_events(path: &Path) -> Result<BTreeMap<String, u64>, String> {
             Ok((name.to_string(), value))
         })
         .collect()
+}
+
+fn guest_pressure_diagnostics(workload: &Path, offender: &Path) -> String {
+    let read = |path: &Path| read_trimmed(path).unwrap_or_else(|error| format!("<{error}>"));
+    let events = read_cgroup_events(&workload.join("memory.events"))
+        .map(|events| format!("{events:?}"))
+        .unwrap_or_else(|error| format!("<{error}>"));
+    format!(
+        "workload_current={} workload_peak={} offender_current={} workload_events={events}",
+        read(&workload.join("memory.current")),
+        read(&workload.join("memory.peak")),
+        read(&offender.join("memory.current")),
+    )
 }
 
 fn event_delta(

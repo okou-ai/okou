@@ -11,10 +11,7 @@ import {
 } from "@okouai/core";
 import { expect, test } from "vitest";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
-import type {
-  ComposerWorkflow,
-  WorkflowSummary,
-} from "@okouai/api-contracts/contracts/workflows";
+import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 
 import {
   click,
@@ -24,7 +21,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
-  AGENT_ID,
   composerInlineTemplates,
   context,
   expectInlineTemplateInComposer,
@@ -148,16 +144,6 @@ function namedButton(name: string): HTMLElement {
     throw new Error(`Expected button ${name}`);
   }
   return button;
-}
-
-function namedLink(name: string): HTMLElement {
-  const link = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!link) {
-    throw new Error(`Expected link ${name}`);
-  }
-  return link;
 }
 
 test("Multiple inline templates preserve every reference when you send", async () => {
@@ -311,77 +297,6 @@ test("Find and insert a workflow with an abbreviated name", async () => {
     expect(editor).toHaveTextContent(/^Review \/pr-design-acceptance-url\s*$/);
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
-});
-
-test("Suggest effective workflows from an API that predates the composer endpoint", async () => {
-  mockAgent();
-  mockThread();
-  const summary = (
-    name: string,
-    options: {
-      readonly agentId?: string;
-      readonly description: string;
-      readonly visibility?: WorkflowSummary["visibility"];
-      readonly shadowedBy?: WorkflowSummary["shadowedBy"];
-    },
-  ): WorkflowSummary => {
-    return {
-      id: crypto.randomUUID(),
-      agentId: options.agentId ?? AGENT_ID,
-      agentName: null,
-      agentDisplayName: "Scout",
-      name,
-      displayName: null,
-      description: options.description,
-      visibility: options.visibility ?? "public",
-      ownerUserId: "user-1",
-      createdAt: "2026-06-01T00:00:00.000Z",
-      canManage: true,
-      canPublish: false,
-      official: null,
-      shadowedBy: options.shadowedBy ?? null,
-    };
-  };
-  const privateWorkflow = summary("pr-auto", {
-    description: "Review, repair, and merge one pull request",
-    visibility: "private",
-  });
-  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
-    return respond(400, {
-      error: { message: "Invalid uuid", code: "BAD_REQUEST" },
-    });
-  });
-  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
-    return respond(200, [
-      summary("pr-auto", {
-        description: "Legacy goal-driven pull request automation",
-        shadowedBy: {
-          id: privateWorkflow.id,
-          name: privateWorkflow.name,
-          displayName: privateWorkflow.displayName,
-        },
-      }),
-      privateWorkflow,
-      summary("pr-review", {
-        agentId: "e0000000-0000-4000-a000-000000000099",
-        description: "Another agent's workflow",
-      }),
-    ]);
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("/pr");
-
-  await waitFor(() => {
-    expect(slashButton("/pr-auto")).toHaveTextContent(
-      "Review, repair, and merge one pull request",
-    );
-  });
-  expect(slashWorkflowNames()).toStrictEqual(["/pr-auto"]);
 });
 
 test("Rank exact workflow names before prefixes, substrings, and abbreviations", async () => {
@@ -539,30 +454,6 @@ test("Workflow category filters narrow templates and preserve the search", async
   ).not.toBeInTheDocument();
 });
 
-test("Continue from empty slash suggestions to all workflows", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("/");
-  await expect(
-    screen.findByText("No matching workflows"),
-  ).resolves.toBeVisible();
-
-  await user.click(namedLink("View all workflows"));
-
-  await expect(
-    screen.findByRole("heading", { name: "Workflows" }),
-  ).resolves.toBeVisible();
-});
-
 test("Wait for a template attachment before sending", async () => {
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   if (!template) {
@@ -639,11 +530,40 @@ test("Distinguish workflow tokens from text inside URLs", async () => {
   const editor = await findComposerEditor();
   const url = "https://www.okou.ai/en/use-cases/pr-review";
   await user.click(editor);
+  await user.keyboard("/pr-review ");
+  await waitFor(() => {
+    expect(workflowHighlights(editor)).toHaveLength(1);
+  });
   await user.keyboard(url);
 
   await waitFor(() => {
     expect(editor).toHaveTextContent(url);
-    expect(workflowHighlights(editor)).toHaveLength(0);
+    expect(workflowHighlights(editor)).toHaveLength(1);
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
+});
+
+test("Highlight a workflow in a restored draft", async () => {
+  mockAgent();
+  mockThread();
+  installWorkflows(() => {
+    return [workflow("pr-review")];
+  });
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [{ type: "text" as const, text: "Please run /pr-review" }],
+      },
+      draftAttachments: null,
+    });
+  });
+
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+
+  const editor = await findComposerEditor();
+  await waitFor(() => {
+    expect(workflowHighlights(editor)).toHaveLength(1);
+  });
+  expect(workflowHighlights(editor)[0]).toHaveTextContent("/pr-review");
 });

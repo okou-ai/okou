@@ -204,14 +204,13 @@
 //! The fixed-role launcher is
 //! `crates/guest-control-server/src/agent_command.rs::spawn_codex_session_cleanup_with_pipes`.
 //! The runner invokes the operation only for an actually reused sandbox from
-//! `crates/runner-executor/src/executor/session_restore/codex.rs::cleanup_existing_codex_session`
+//! `crates/runner-executor/src/executor/session_restore/codex.rs::cleanup_existing_codex_session_files`
 //! before writing replacement history, and independently validates the output in
 //! `parse_codex_cleanup_output`
 //! before using a returned path as the restore destination. Keep these source
 //! references in sync with the shared contract when changing this protocol.
 
 pub mod active_input;
-mod active_input_receipts;
 mod artifact;
 pub mod checkpoint;
 pub mod cli;
@@ -238,6 +237,7 @@ pub mod run_context;
 pub mod session_history;
 pub mod session_history_identity;
 pub mod session_metadata;
+mod steered_inputs;
 pub mod telemetry;
 pub mod timing;
 mod upstream_error_text;

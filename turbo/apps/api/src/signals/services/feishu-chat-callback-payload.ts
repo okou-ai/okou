@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { publicBrandSchema } from "@okouai/api-contracts/contracts/public-brand";
 
 import { feishuOrgCallbackFileSchema } from "./feishu-org-callback-payload";
 
@@ -19,5 +18,4 @@ export type FeishuDeliveryTarget = z.infer<typeof feishuDeliveryTargetSchema>;
 export const feishuChatCallbackPayloadSchema =
   feishuDeliveryTargetSchema.extend({
     chatEventId: z.string(),
-    publicBrand: publicBrandSchema,
   });

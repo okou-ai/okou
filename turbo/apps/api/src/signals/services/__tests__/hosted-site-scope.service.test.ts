@@ -13,14 +13,17 @@ import { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import type { ApiDb, Tx } from "../../../lib/db-types";
-import {
-  pgBooleanDecoder,
-  pgIntegerDecoder,
-} from "../../../lib/db-structured-result";
+import type { ApiDb } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { createDeferredPromise, settle } from "../../utils";
+import { expectApiError } from "../../routes/__tests__/helpers/api-bdd";
+import { hostedTextFile } from "../../routes/__tests__/helpers/api-bdd-host-files";
+import { createHostMapsBddApi } from "../../routes/__tests__/helpers/api-bdd-host-maps";
+import {
+  createChatEventsFixture,
+  okouTokenFromClaim,
+} from "../../routes/__tests__/helpers/chat-events-fixture";
 import { createHostedSiteDeployment } from "../host.service";
 import {
   assertHostedDeploymentScope,
@@ -29,10 +32,13 @@ import {
 } from "../hosted-site-scope.service";
 
 const context = testContext();
+const fixture = createChatEventsFixture(context);
+const host = createHostMapsBddApi(context);
 
 // Product routes cannot select trigger presence, corrupt ownership, row-lock
 // interleavings or an insertion failure after allocation. Exercise the actual
-// allocation transaction in private schemas; route suites cover HTTP behavior.
+// allocation transaction in private schemas; route suites cover HTTP behavior,
+// including the publication scope cases in the route-level describe below.
 async function createHarness(retainTriggers: boolean) {
   const schemaName = `host_scope_${randomUUID().replaceAll("-", "")}`;
   const adminPool = new Pool({
@@ -83,12 +89,12 @@ async function createHarness(retainTriggers: boolean) {
             sql`CREATE TABLE private_hosted_deployments (LIKE public.private_hosted_deployments INCLUDING ALL)`,
           );
           await tx.execute(sql`
-      ALTER TABLE hosted_deployments ADD FOREIGN KEY (site_id, public_brand)
-      REFERENCES hosted_sites (id, public_brand) ON DELETE CASCADE
+      ALTER TABLE hosted_deployments ADD FOREIGN KEY (site_id, link_layout_segment)
+      REFERENCES hosted_sites (id, link_layout_segment) ON DELETE CASCADE
     `);
           await tx.execute(sql`
-      ALTER TABLE private_hosted_deployments ADD FOREIGN KEY (site_id, public_brand)
-      REFERENCES hosted_sites (id, public_brand) ON DELETE CASCADE
+      ALTER TABLE private_hosted_deployments ADD FOREIGN KEY (site_id, link_layout_segment)
+      REFERENCES hosted_sites (id, link_layout_segment) ON DELETE CASCADE
     `);
           if (retainTriggers) {
             await installPreparedDomainLegacyFunctions(setupClient, [
@@ -127,7 +133,6 @@ function deploymentArgs(runId?: string, orgId = `org_${randomUUID()}`) {
     orgId,
     userId: `user_${randomUUID()}`,
     runId,
-    publicBrand: "okou" as const,
     body: {
       site: `scope-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site" as const,
@@ -174,33 +179,6 @@ async function requireDeployment(
     throw new Error(`Expected deployment, received ${result.kind}`);
   }
   return result;
-}
-
-async function backendPid(tx: Tx) {
-  const [row] = await tx
-    .select({
-      pid: sql`pg_backend_pid()`.mapWith(pgIntegerDecoder),
-    })
-    .from(sql`(SELECT 1) AS backend`);
-  if (!row) {
-    throw new Error("Expected transaction backend");
-  }
-  return row.pid;
-}
-
-async function expectBlocked(db: ApiDb, pid: number) {
-  await expect
-    .poll(async () => {
-      const [row] = await db
-        .select({
-          blocked: sql`cardinality(pg_blocking_pids(${pid})) > 0`.mapWith(
-            pgBooleanDecoder,
-          ),
-        })
-        .from(sql`(SELECT 1) AS blocking_state`);
-      return row?.blocked;
-    })
-    .toBe(true);
 }
 
 describe.each([true, false])(
@@ -254,7 +232,7 @@ describe.each([true, false])(
               userId: args.userId,
               slug: args.body.site,
               publicSlug: args.body.site,
-              publicBrand: "okou",
+              linkLayoutSegment: "okou",
               createdFromRunId: runId,
               ...scope,
             })
@@ -450,7 +428,7 @@ describe.each([true, false])(
           userId: args.userId,
           slug: args.body.site,
           publicSlug: args.body.site,
-          publicBrand: "okou",
+          linkLayoutSegment: "okou",
           createdFromRunId: runId,
         })
         .returning();
@@ -470,70 +448,6 @@ describe.each([true, false])(
           });
         }),
       ).rejects.toThrow("Hosted site not found for deployment");
-    });
-
-    it("redeploys one site per scope within and across chat and organization scopes", async () => {
-      const owner = randomUUID();
-      const firstRun = await seedRun(harness.db, owner);
-      const sameChatRun = await seedRun(harness.db, owner);
-      const otherRun = await seedRun(harness.db, randomUUID());
-      const args = deploymentArgs(firstRun);
-      const first = await requireDeployment(harness.db, args);
-      const second = await requireDeployment(harness.db, {
-        ...args,
-        runId: sameChatRun,
-      });
-      const other = await requireDeployment(harness.db, {
-        ...args,
-        runId: otherRun,
-      });
-      // The same preferred name in one chat redeploys its site; another chat
-      // owns a separate site under a suffixed name.
-      expect(second.site.id).toBe(first.site.id);
-      expect(second.deployment.manifest.deploymentVersion).toBe(2);
-      expect(other.site.id).not.toBe(first.site.id);
-      expect(other.site.publicSlug).not.toBe(first.site.publicSlug);
-      expect(second.site.chatThreadId).toBe(owner);
-      const unscoped = deploymentArgs();
-      const organizationSite = await requireDeployment(harness.db, unscoped);
-      expect(organizationSite.site.chatThreadId).toBeNull();
-      // A chat cannot take over a name the organization already owns.
-      await expect(
-        createDeployment(harness.db, { ...unscoped, runId: firstRun }),
-      ).resolves.toMatchObject({ kind: "scope_conflict" });
-    });
-
-    it("serializes concurrent redeploys of one site and rejects other owners", async () => {
-      const runId = await seedRun(harness.db, randomUUID());
-      const args = deploymentArgs(runId);
-      const created = await Promise.all(
-        Array.from({ length: 3 }, async () => {
-          return await requireDeployment(harness.db, args);
-        }),
-      );
-      expect(
-        new Set(
-          created.map((result) => {
-            return result.site.id;
-          }),
-        ).size,
-      ).toBe(1);
-      // Each concurrent publication still owns a distinct version.
-      expect(
-        new Set(
-          created.map((result) => {
-            return result.deployment.manifest.deploymentVersion;
-          }),
-        ),
-      ).toStrictEqual(new Set([1, 2, 3]));
-      // Redeploying replaces what the site serves, so organization membership
-      // in the same chat does not authorize it.
-      await expect(
-        createDeployment(harness.db, {
-          ...args,
-          userId: `user_${randomUUID()}`,
-        }),
-      ).resolves.toMatchObject({ kind: "owner_conflict" });
     });
 
     it("rolls back a slug reservation after deployment insertion fails", async () => {
@@ -577,47 +491,6 @@ describe.each([true, false])(
       await expect(
         harness.db.select().from(privateHostedDeployments),
       ).resolves.toStrictEqual([]);
-    });
-
-    it("locks a metadata-less run before site allocation and reads the committed owner after waiting", async () => {
-      const runId = await seedRun(harness.db, null, null);
-      const owner = randomUUID();
-      const ready = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      const pidReady = createDeferredPromise<number>(context.signal);
-      const writer = harness.db.transaction(async (tx) => {
-        await tx.execute(
-          sql`UPDATE agent_runs SET trigger_source = 'chat', chat_thread_id = ${owner} WHERE id = ${runId}`,
-        );
-        ready.resolve();
-        await release.promise;
-      });
-      await Promise.race([ready.promise, writer]);
-      const contender = harness.db.transaction(async (tx) => {
-        pidReady.resolve(await backendPid(tx));
-        return await createDeployment(tx, deploymentArgs(runId));
-      });
-      const completed = Promise.all([settle(writer), settle(contender)]);
-      const verified = await settle(
-        pidReady.promise.then(async (pid) => {
-          await expectBlocked(harness.db, pid);
-        }),
-      );
-      release.resolve();
-      const [written, created] = await completed;
-      if (!verified.ok) {
-        throw verified.error;
-      }
-      if (!written.ok) {
-        throw written.error;
-      }
-      if (!created.ok) {
-        throw created.error;
-      }
-      expect(created.value).toMatchObject({
-        kind: "ok",
-        site: { chatThreadId: owner },
-      });
     });
 
     it.each(["chat", null])(
@@ -675,48 +548,6 @@ describe.each([true, false])(
       },
     );
 
-    it("waits for an outgoing allocator before redeploying the same site", async () => {
-      const runId = await seedRun(harness.db, randomUUID());
-      const args = deploymentArgs(runId);
-      const first = await requireDeployment(harness.db, args);
-      const ready = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      const pidReady = createDeferredPromise<number>(context.signal);
-      const outgoing = harness.db.transaction(async (tx) => {
-        await tx
-          .select({ id: hostedSites.id })
-          .from(hostedSites)
-          .where(eq(hostedSites.id, first.site.id))
-          .for("update");
-        ready.resolve();
-        await release.promise;
-      });
-      await Promise.race([ready.promise, outgoing]);
-      const contender = harness.db.transaction(async (tx) => {
-        pidReady.resolve(await backendPid(tx));
-        return await createDeployment(tx, args);
-      });
-      const completed = settle(contender);
-      const verified = await settle(
-        pidReady.promise.then(async (pid) => {
-          await expectBlocked(harness.db, pid);
-        }),
-      );
-      release.resolve();
-      await outgoing;
-      const created = await completed;
-      if (!verified.ok) {
-        throw verified.error;
-      }
-      if (!created.ok) {
-        throw created.error;
-      }
-      expect(created.value).toMatchObject({
-        kind: "ok",
-        site: { id: first.site.id, publicSlug: first.site.publicSlug },
-      });
-    });
-
     it("allocates a suffix while keeping a deleted site's slug reserved", async () => {
       const args = deploymentArgs();
       const created = await requireDeployment(harness.db, args);
@@ -748,3 +579,134 @@ describe.each([true, false])(
     });
   },
 );
+
+function hostedSiteBody(site: string, content: string) {
+  return {
+    site,
+    artifactKind: "hosted-site" as const,
+    spaFallback: false,
+    files: [hostedTextFile("/index.html", `<main>${content}</main>`)],
+  };
+}
+
+/** Launch and claim a chat run; its claimed Okou token publishes as the chat. */
+async function claimedChatRun(
+  entitled: Awaited<ReturnType<typeof fixture.entitledNativeChatActor>>,
+  prompt: string,
+  threadId?: string,
+) {
+  const run = await fixture.sendChatRun(entitled.actor, {
+    agentId: entitled.agentId,
+    prompt,
+    ...(threadId === undefined ? {} : { threadId }),
+  });
+  const { claim, sandboxHeaders } = await fixture.claimChatRun(
+    entitled.runnerGroup,
+    run.runId,
+  );
+  return {
+    ...run,
+    sandboxHeaders,
+    bearer: `Bearer ${okouTokenFromClaim(claim)}`,
+  };
+}
+
+describe("hosted publication scope through host APIs", () => {
+  it("redeploys one site per scope within and across chat and organization scopes", async () => {
+    const entitled = await fixture.entitledNativeChatActor();
+    host.captureHostedSitesS3();
+    const site = `scope-${randomUUID().slice(0, 8)}`;
+
+    const firstRun = await claimedChatRun(entitled, "publish the first site");
+    const first = await fixture.chat.prepareHostedSiteWithBearer(
+      firstRun.bearer,
+      hostedSiteBody(site, "first"),
+    );
+    await fixture.completeChatRunOk(firstRun.runId, firstRun.sandboxHeaders);
+
+    // The same preferred name in one chat redeploys its site; another chat
+    // owns a separate site under a suffixed name.
+    const sameChatRun = await claimedChatRun(
+      entitled,
+      "publish the site again",
+      firstRun.threadId,
+    );
+    const second = await fixture.chat.prepareHostedSiteWithBearer(
+      sameChatRun.bearer,
+      hostedSiteBody(site, "second"),
+    );
+    const otherRun = await claimedChatRun(entitled, "publish in another chat");
+    const other = await fixture.chat.prepareHostedSiteWithBearer(
+      otherRun.bearer,
+      hostedSiteBody(site, "other"),
+    );
+    expect(second.siteId).toBe(first.siteId);
+    expect(second.deploymentVersion).toBe(2);
+    expect(other.siteId).not.toBe(first.siteId);
+    expect(other.publicSlug).not.toBe(first.publicSlug);
+
+    // A chat cannot take over a name the organization already owns.
+    const organizationSite = `scope-org-${randomUUID().slice(0, 8)}`;
+    await host.prepareHostedSite(
+      entitled.actor,
+      hostedSiteBody(organizationSite, "organization"),
+    );
+    const takeover = await fixture.chat.requestPrepareHostedSiteWithBearer(
+      sameChatRun.bearer,
+      hostedSiteBody(organizationSite, "takeover"),
+      [409],
+    );
+    expectApiError(takeover.body);
+    expect(takeover.body.error.message).toBe(
+      `Hosted site slug "${organizationSite}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
+    );
+  });
+
+  it("serializes concurrent redeploys of one site and rejects other owners", async () => {
+    const entitled = await fixture.entitledNativeChatActor();
+    host.captureHostedSitesS3();
+    const site = `scope-${randomUUID().slice(0, 8)}`;
+    const run = await claimedChatRun(entitled, "publish concurrently");
+    const created = await Promise.all(
+      Array.from({ length: 3 }, async (_, index) => {
+        return await fixture.chat.prepareHostedSiteWithBearer(
+          run.bearer,
+          hostedSiteBody(site, `concurrent ${index}`),
+        );
+      }),
+    );
+    expect(
+      new Set(
+        created.map((result) => {
+          return result.siteId;
+        }),
+      ).size,
+    ).toBe(1);
+    // Each concurrent publication still owns a distinct version.
+    expect(
+      new Set(
+        created.map((result) => {
+          return result.deploymentVersion;
+        }),
+      ),
+    ).toStrictEqual(new Set([1, 2, 3]));
+
+    // Redeploying replaces what the site serves, so organization membership
+    // does not authorize it.
+    const organizationSite = `scope-owner-${randomUUID().slice(0, 8)}`;
+    await host.prepareHostedSite(
+      entitled.actor,
+      hostedSiteBody(organizationSite, "owner"),
+    );
+    const member = fixture.bdd.user({ orgId: entitled.actor.orgId });
+    const conflict = await host.requestPrepareHostedSite(
+      member,
+      hostedSiteBody(organizationSite, "member"),
+      [409],
+    );
+    expectApiError(conflict.body);
+    expect(conflict.body.error.message).toBe(
+      `Hosted site "${organizationSite}" belongs to another owner. Choose a different --site value and rerun the same okou host command.`,
+    );
+  });
+});

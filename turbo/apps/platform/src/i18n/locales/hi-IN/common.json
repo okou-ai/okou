@@ -84,13 +84,9 @@
           "guidance": "पहले क्रेडिट डायग्नोस्टिक्स चलाएँ। क्रेडिट तभी खरीदें जब वर्तमान योजना इसकी अनुमति दे; अन्यथा प्लान अपग्रेड लिंक वापस कर दें।",
           "title": "क्रेडिट ख़त्म हो गए"
         },
-        "modelProviderUnavailable": {
-          "guidance": "इस थ्रेड का उपयोग किया गया मॉडल प्रोवाइडर हटा दिया गया है। जारी रखने के लिए नया चैट थ्रेड शुरू करें।",
-          "title": "मॉडल प्रोवाइडर अनुपलब्ध"
-        },
         "noModelProvider": {
-          "guidance": "एजेंट चलाने के लिए एक मॉडल प्रोवाइडर कॉन्फ़िगर करें।",
-          "title": "कोई मॉडल प्रोवाइडर कॉन्फ़िगर नहीं किया गया"
+          "guidance": "थोड़ी देर में फिर से कोशिश करें, या Settings में व्यक्तिगत Claude Code या Codex सब्सक्रिप्शन कनेक्ट करें।",
+          "title": "इस रन के लिए कोई मॉडल प्रोवाइडर उपलब्ध नहीं है"
         },
         "paidPlanRequired": {
           "guidance": "वर्तमान योजना पर अंतर्निहित वीडियो जनरेशन उपलब्ध नहीं है।",
@@ -347,13 +343,13 @@
     },
     "sources": {
       "agent": "एजेंट",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "ऑटोमेशन घटना",
       "automationSchedule": "ऑटोमेशन शेड्यूल",
+      "discord": "Discord",
       "email": "ईमेल",
       "feishu": "Feishu",
       "github": "GitHub",
-      "goal": "लक्ष्य",
       "lark": "Lark",
       "slack": "Slack",
       "teams": "टीमें",
@@ -373,6 +369,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "एजेंट लोड नहीं हो सके",
+      "backToChats": "चैट पर वापस जाएँ",
+      "chatListUnavailable": "चैट लोड नहीं हो सकीं",
+      "chats": "चैट",
+      "me": "मैं",
+      "navigation": "मुख्य नेविगेशन",
+      "searchAgents": "एजेंट खोजें",
+      "switchAgent": "एजेंट बदलें"
+    },
     "shortcutHelp": {
       "close": "कुंजीपटल शॉर्टकट बंद करें",
       "description": "इस पृष्ठ पर उपलब्ध शॉर्टकट",
@@ -571,7 +577,8 @@
       "video": "वीडियो"
     },
     "metadata": {
-      "generated": "{{date}} उत्पन्न किया गया"
+      "generated": "{{date}} उत्पन्न किया गया",
+      "updated": "{{date}} को अपडेट किया गया"
     },
     "preview": {
       "audioLabel": "{{filename}} के लिए ऑडियो पूर्वावलोकन",
@@ -621,24 +628,8 @@
       "activeHtmlPreview": "{{title}} सक्रिय HTML पूर्वावलोकन",
       "all": "सभी",
       "avatar": "अवतार",
-      "avatarWithId": "अवतार {{id}}",
-      "backToAvatars": "अवतार पर वापस जाएँ",
       "categories": "टेम्पलेट श्रेणियां",
       "category": "टेम्पलेट श्रेणी",
-      "chooseVoice": "{{title}} के लिए आवाज़ चुनें",
-      "filters": {
-        "age": "आयु",
-        "all": "सभी",
-        "aspectRatio": "आस्पेक्ट रेशियो",
-        "clear": "साफ़ करें",
-        "ethnicity": "जातीयता",
-        "gender": "लिंग",
-        "language": "भाषा",
-        "scene": "दृश्य",
-        "style": "शैली",
-        "title": "फ़िल्टर",
-        "useCase": "उपयोग का प्रकार"
-      },
       "fullPreview": "{{title}} वेबसाइट पूर्ण पूर्वावलोकन",
       "htmlPreview": "{{title}} HTML पूर्वावलोकन",
       "illustration": "चित्रण",
@@ -649,25 +640,18 @@
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "टेम्पलेट आयात करें",
       "multiAccent": "बहु-उच्चारण",
-      "needPro": "Pro चाहिए",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
       "noMatches": "कोई मेल नहीं",
       "placeholder": "{{title}} वेबसाइट पूर्वावलोकन प्लेसहोल्डर",
-      "playVideo": "वीडियो टेम्पलेट पूर्वावलोकन {{title}} चलाएँ",
-      "previewAvatarVideo": "अवतार वीडियो {{title}} का पूर्वावलोकन करें",
       "previewCurrentSlide": "वर्तमान स्लाइड पर {{title}} का पूर्वावलोकन करें",
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
-      "previewVoice": "आवाज़ {{title}} सुनें",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previousSlide": "पिछली स्लाइड का पूर्वावलोकन करें",
-      "recommended": "अनुशंसित",
       "renameImportedTemplate": "टेम्पलेट का नाम बदलें",
       "searchConnector": "टेम्पलेट खोजें",
       "searchConnectors": "टेम्पलेट खोजें",
       "selectStyle": "शैली {{style}} चुनें",
       "selectTemplate": "टेम्पलेट {{title}} चुनें",
-      "selectVideo": "वीडियो टेम्पलेट {{title}} चुनें",
-      "selectVoice": "आवाज़ {{title}} चुनें",
       "selectWebsite": "वेबसाइट टेम्पलेट {{title}} चुनें",
       "selectWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} चुनें",
       "showVariant": "वैरिएंट {{variantNumber}} दिखाएँ",
@@ -700,7 +684,6 @@
       "tryDifferentSearch": "भिन्न खोज का प्रयास करें.",
       "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
-      "viewVideoPlans": "वीडियो टेम्पलेट {{title}} के लिए प्लान देखें",
       "visibility": {
         "change": "बदलें",
         "changeLabel": "टेम्पलेट की दृश्यता बदलें",
@@ -1166,9 +1149,6 @@
       "downgradesOn": "{{date}} पर {{plan}} में डाउनग्रेड",
       "downgradeTo": "{{plan}} पर डाउनग्रेड करें",
       "endsOn": "{{date}} पर समाप्त होता है",
-      "features": {
-        "byok": "अपनी स्वयं की LLM कुंजियाँ लाएँ"
-      },
       "free": {
         "name": "फ्री"
       },
@@ -1183,18 +1163,13 @@
         "everythingInBuiltForTeams": "{{plan}} की हर सुविधा, टीमों के लिए तैयार",
         "included": "शामिल",
         "liveBrowser": "एजेंट का लाइव ब्राउज़र देखें और कमान लें",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
         "moreConnectorsChannels": "ज़्यादा कस्टम कनेक्टर और चैनल इंटीग्रेशन",
         "supportEmail": "ईमेल सहायता",
         "supportPriority": "प्राथमिकता सहायता",
-        "videoGeneration": "वीडियो और अवतार जनरेशन",
         "voiceInput": "वॉइस इनपुट: रोज़ {{requests}} रिक्वेस्ट और {{minutes}} मिनट",
         "webhookAutomations": "किसी भी सिस्टम से एक webhook पर रन शुरू करें"
       },
       "legacy": "पुराना",
-      "limitedFree": {
-        "name": "लिमिटेड फ्री"
-      },
       "loadError": "बिलिंग स्थिति लोड नहीं हो सकी.",
       "namedPlan": "{{plan}} योजना",
       "noActivePlan": "कोई सक्रिय योजना नहीं",
@@ -1421,7 +1396,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} जोड़े गए",
         "checkedIn": "चेक इन हो गया",
         "checkin": {
           "action": "चेक इन करें",
@@ -1435,8 +1409,12 @@
           "name": "एक टूल कनेक्ट करें",
           "unit": "प्रति कनेक्टर"
         },
-        "earned": "{{amount}} अर्जित",
         "howRewardsWork": "इनाम कैसे काम करते हैं",
+        "imessage": {
+          "action": "जोड़ें",
+          "description": "अपने iPhone से {{assistantName}} को मैसेज करें",
+          "name": "iMessage में जोड़ें"
+        },
         "inReview": "समीक्षा में",
         "intro": {
           "checkin": {
@@ -1482,6 +1460,9 @@
         "pendingState": "{{amount}} लंबित",
         "rejected": {
           "alreadyRedeemed": "पोस्ट पहले इस्तेमाल हो चुकी",
+          "authorAlreadyRewarded": "खाते को पहले ही इनाम मिल चुका",
+          "authorUnavailable": "लेखक की पुष्टि नहीं हो सकी",
+          "officialAccount": "{{assistantName}} की आधिकारिक पोस्ट मान्य नहीं",
           "postMustMention": "{{assistantName}} का ज़िक्र ज़रूरी"
         },
         "rewardsNote": "इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। चेक इन 00:00 UTC पर रीसेट होता है। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
@@ -1492,7 +1473,6 @@
         },
         "shareDialog": {
           "description": "समीक्षा के लिए सार्वजनिक पोस्ट भेजें। हर व्यक्ति को एक स्वीकृत इनाम मिल सकता है।",
-          "draft": "सोमवार की प्रतिस्पर्धी रिपोर्ट मैं {{assistantName}} से बनवाता हूँ — यह स्रोत पढ़कर तालिका बनाकर देता है।",
           "helper": "पोस्ट सार्वजनिक होनी चाहिए और उसमें {{assistantName}} का ज़िक्र होना चाहिए।",
           "inputLabel": "पोस्ट का लिंक",
           "openX": "X खोलें",
@@ -1507,7 +1487,8 @@
           "stepPaste": "लिंक पेस्ट करें",
           "stepWrite": "पोस्ट लिखें",
           "submit": "भेजें",
-          "title": "{{assistantName}} को X पर शेयर करें"
+          "title": "{{assistantName}} को X पर शेयर करें",
+          "writingPrompt": "{{assistantName}} के साथ आपने वास्तव में जो कुछ आज़माया है, उसके बारे में अपने शब्दों में लिखें।"
         },
         "slack": {
           "action": "जोड़ें",
@@ -1737,12 +1718,17 @@
       "cancelFailed": "अनुरोध रद्द नहीं किया जा सका। फिर से प्रयास करें।",
       "cancelled": "अनुरोध रद्द किया गया",
       "cancelling": "रद्द किया जा रहा है…",
+      "checkFailed": "ब्राउज़र की जाँच नहीं हो सकी। भरी गई जानकारी सुरक्षित है; भेजने से पहले फिर कोशिश करें।",
       "completed": "जानकारी जोड़ दी गई",
+      "confirmRangeValue": "मौजूदा मान इस्तेमाल करें",
       "continue": "एजेंट को सूचित करें",
       "continuing": "एजेंट को सूचित किया जा रहा है…",
       "delivered": "एजेंट को सूचित किया गया",
       "expired": "अनुरोध की अवधि समाप्त",
       "expiredDescription": "ब्राउज़र बंद हो गया है या यह अनुरोध अब सक्रिय नहीं है।",
+      "fileLeave": "वेबसाइट की फ़ाइलें न बदलें",
+      "fileLimit": "अधिकतम 3 फ़ाइलें चुनें (एकल फ़ाइल साइट पर 1), कुल 10 MiB।",
+      "fileNotice": "ब्राउज़र में जोड़ने पर चुनी गई फ़ाइल इस वेबसाइट को भेजी जाएगी। फ़ाइल चयन बदलने पर साइट उसे अपलोड कर सकती है या फ़ॉर्म भेज सकती है:",
       "loadFailed": "यह अनुरोध लोड नहीं हो सका",
       "loadFailedDescription": "कुछ देर में फिर से प्रयास करें।",
       "loadingDescription": "इस अनुरोध की जाँच हो रही है…",
@@ -1760,29 +1746,6 @@
       "uncertain": "ब्राउज़र जाँचें",
       "uncertainDescription": "ब्राउज़र को जानकारी मिल गई हो सकती है। दोबारा प्रयास करने से पहले एजेंट से जाँच करने को कहें।"
     },
-    "browserInteraction": {
-      "applying": "ब्राउज़र इंटरैक्शन पूरा किया जा रहा है",
-      "applyingDescription": "ब्राउज़र इस अनुरोध को पूरा कर रहा है।",
-      "callbackFailed": "एजेंट को सूचित नहीं किया जा सका।",
-      "cancel": "रद्द करें",
-      "cancelFailed": "यह अनुरोध रद्द नहीं किया जा सका। फिर से प्रयास करें।",
-      "cancelled": "अनुरोध रद्द किया गया",
-      "cancelling": "रद्द किया जा रहा है…",
-      "completed": "ब्राउज़र इंटरैक्शन पूरा हुआ",
-      "completeFailed": "यह अनुरोध पूरा नहीं किया जा सका। फिर से प्रयास करें।",
-      "completing": "पूरा किया जा रहा है…",
-      "continue": "एजेंट को सूचित करें",
-      "continuing": "एजेंट को सूचित किया जा रहा है…",
-      "delivered": "एजेंट को सूचित किया गया",
-      "description": "ब्राउज़र खोलें, यह चरण पूरा करें, फिर हो गया चुनें।",
-      "done": "हो गया",
-      "finish": "चरण पूरा करें",
-      "stale": "ब्राउज़र अब उपलब्ध नहीं है",
-      "staleDescription": "एजेंट से नया अनुरोध बनाने के लिए कहें।",
-      "title": "ब्राउज़र का नियंत्रण लें",
-      "uncertain": "ब्राउज़र जाँचें",
-      "uncertainDescription": "इंटरैक्शन पूरा हो सकता है। फिर से प्रयास करने से पहले एजेंट से जाँच करने को कहें।"
-    },
     "cards": {
       "viewDetails": "विवरण देखें"
     },
@@ -1795,13 +1758,10 @@
         "addTemplate": "टेम्पलेट जोड़ें",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
-        "settingsAdjusted": "इस मॉडल के लिए कुछ वीडियो सेटिंग समायोजित की गई हैं",
         "slideCount": "स्लाइड की संख्या",
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
       },
-      "createWorkflow": "वर्कफ़्लो बनाएँ",
-      "imageModelForThisChat": "इस चैट के लिए इमेज मॉडल",
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
@@ -1816,12 +1776,10 @@
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
       "threadSuggestions": "चैट थ्रेड",
       "useForFutureChats": "भविष्य की चैट के लिए इस मॉडल का इस्तेमाल करें",
-      "videoModelForThisChat": "इस चैट के लिए वीडियो मॉडल",
       "workflows": {
         "empty": "कोई मेल खाता वर्कफ़्लो नहीं",
         "loading": "वर्कफ़्लो लोड हो रहा है...",
-        "title": "वर्कफ़्लो",
-        "viewAll": "सभी वर्कफ़्लो देखें"
+        "title": "वर्कफ़्लो"
       }
     },
     "computerUse": {
@@ -1859,8 +1817,6 @@
       "add": "{{connectorName}} जोड़ें",
       "addConnectors": "कनेक्टर्स जोड़ें",
       "authorized": "{{connectorName}} जुड़ा हुआ है और {{agentName}} के लिए अधिकृत है",
-      "available_one": "कनेक्ट करने के लिए उपलब्ध कनेक्टर ({{count}})",
-      "available_other": "कनेक्ट करने के लिए उपलब्ध कनेक्टर ({{count}})",
       "back": "पीछे",
       "configurePermissions": "{{connectorName}} अनुमतियाँ कॉन्फ़िगर करें",
       "customAuthorizeDescription": "एजेंट के लिए इस कस्टम कनेक्टर की समीक्षा करें, कनेक्ट करें और अधिकृत करें।",
@@ -1909,10 +1865,8 @@
     "errors": {
       "genericTitle": "यह रन पूरा नहीं हो सका",
       "loadMessages": "संदेश लोड करने में विफल",
-      "noModelProviderAction": "वर्कस्पेस सेटिंग्स में एक सेट अप करें",
-      "noModelProviderPrefix": "अभी तक कोई मॉडल प्रोवाइडर कॉन्फ़िगर नहीं किया गया है।",
-      "providerDeletedAction": "एक नया चैट थ्रेड प्रारंभ करें",
-      "providerDeletedPrefix": "इस थ्रेड का उपयोग किया गया मॉडल प्रोवाइडर हटा दिया गया है।",
+      "noModelProviderAction": "सब्सक्रिप्शन प्रबंधित करें",
+      "noModelProviderPrefix": "इस रन के लिए कोई मॉडल प्रोवाइडर उपलब्ध नहीं है। फिर से कोशिश करें, या कोई व्यक्तिगत सब्सक्रिप्शन कनेक्ट करें।",
       "providerIncompatibleAction": "नया सत्र प्रारंभ करें",
       "providerIncompatiblePrefix": "यह सत्र एक अलग मॉडल प्रोवाइडर के साथ शुरू किया गया था और इसे वर्तमान के साथ जारी नहीं रखा जा सकता है।",
       "recovery": {
@@ -1932,19 +1886,18 @@
         "fiveHourReset": "5 घंटे की सीमा {{time}} पर रीसेट होगी",
         "inputTooLargeDescription": "अपना संदेश छोटा करके फिर भेजें।",
         "inputTooLargeTitle": "आपका संदेश बहुत बड़ा है",
-        "invalidApiKeyTitle": "API कुंजी अपडेट करनी होगी",
+        "invalidApiKeyTitle": "आपके सब्सक्रिप्शन साइन-इन को अपडेट करना होगा",
         "invalidCredentialsTitle": "मॉडल कनेक्शन की जाँच ज़रूरी है",
         "newChat": "नई चैट",
         "newChatDescription": "नई चैट शुरू करें और आगे के काम के लिए ज़रूरी जानकारी उसमें जोड़ें।",
         "openClaude": "Claude खोलें",
-        "originalAccount": "निजी सदस्यता {{account}}",
-        "originalAccountUnavailable": "निजी सदस्यता डिस्कनेक्ट है",
-        "originalAccountUnknown": "निजी सदस्यता की पुष्टि नहीं हुई",
         "outputLimitDescription": "जवाब पूरा होने से पहले रुक गया। वहीं से आगे बढ़ने के लिए 'जारी रखें' चुनें।",
         "outputLimitTitle": "जवाब लंबाई की सीमा तक पहुँच गया",
-        "providerBalanceDescription": "अपने प्रदाता खाते का क्रेडिट बैलेंस जाँचें, फिर दोबारा कोशिश करें।",
-        "providerBalanceTitle": "मॉडल प्रदाता खाते में पर्याप्त क्रेडिट नहीं है",
-        "providerConnectionDescription": "मॉडल प्रदाता सेटिंग में खाता फिर से जोड़ें या अपडेट करें, फिर दोबारा कोशिश करें।",
+        "personalAccount": "निजी सदस्यता {{account}}",
+        "personalAccountDisconnected": "निजी सदस्यता डिस्कनेक्ट है",
+        "providerBalanceDescription": "अपने सब्सक्रिप्शन खाते का उपयोग या क्रेडिट बैलेंस जाँचें, फिर से कोशिश करें।",
+        "providerBalanceTitle": "आपके सब्सक्रिप्शन खाते में और क्रेडिट चाहिए",
+        "providerConnectionDescription": "सेटिंग्स > मॉडल में खाता फिर से जोड़ें या अपडेट करें, फिर दोबारा कोशिश करें।",
         "providerQueueTimeoutTitle": "मॉडल समय पर शुरू नहीं हुआ",
         "providerRateLimitedTitle": "अभी मॉडल के लिए बहुत ज़्यादा अनुरोध हैं",
         "providerServerErrorTitle": "मॉडल प्रदाता में अस्थायी त्रुटि हुई",
@@ -2008,6 +1961,10 @@
       "newThread": "नई चैट",
       "reload": "कार्य फिर से लोड करें"
     },
+    "lastReadMarker": {
+      "previouslyRead": "आपने पिछली बार यहाँ तक पढ़ा था",
+      "unread": "अपठित संदेश"
+    },
     "mail": {
       "bcc": "गुप्त प्रतिलिपि",
       "cc": "प्रतिलिपि",
@@ -2047,11 +2004,13 @@
     "newChat": "नई चैट",
     "origins": {
       "agentphone": "iMessage",
+      "discord": "Discord",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "चैट खोलें",
       "openChatIn": "{{integration}} में चैट खोलें",
+      "openDiscordMessage": "Discord में मूल संदेश खोलें",
       "openFeishuChat": "Feishu में मूल चैट खोलें",
       "openGithubMessage": "GitHub में मूल इश्यू या पुल अनुरोध खोलें",
       "openLarkChat": "Lark में मूल चैट खोलें",
@@ -2091,24 +2050,33 @@
       "aboutAutomationEvent": "इस ऑटोमेशन इवेंट के बारे में",
       "aboutQueuedMessage": "इस पंक्तिबद्ध संदेश के बारे में",
       "automationEvent": "ऑटोमेशन घटना",
-      "automationEventDescription": "पंक्तिबद्ध संदेशों के पीछे प्रतीक्षा करता है और वर्तमान रन समाप्त होने पर चलता है।",
+      "automationEventDescription": "लाइन में प्रतीक्षा करता है और शुरू हो सकने पर अपने आप चलता है।",
       "cancellationRecoveryPending": "पंक्तिबद्ध कार्य जारी रखने से पहले रद्द किए गए रन को अंतिम रूप दिया जा रहा है।",
       "event_one": "{{count}} घटना",
       "event_other": "{{count}} घटनाएँ",
-      "goal": "लक्ष्य",
       "itemsWaiting": "{{items}} प्रतीक्षा कर रहा है",
       "itemsWaitingTogether": "{{messages}} और {{events}} प्रतीक्षारत हैं",
       "message_one": "{{count}} संदेश",
       "message_other": "{{count}} संदेश",
       "pendingAutomationEvent": "लंबित ऑटोमेशन कार्यक्रम",
       "queuedMessage": "पंक्तिबद्ध संदेश",
-      "queuedMessageDescription": "लाइन में प्रतीक्षा करता है और वर्तमान रन समाप्त होने पर भेजता है।",
+      "queuedMessageDescription": "लाइन में प्रतीक्षा करता है और शुरू हो सकने पर अपने आप भेजता है।",
       "removeQueuedMessage": "पंक्तिबद्ध संदेश हटाएँ",
       "skipAutomationEvent": "ऑटोमेशन ईवेंट छोड़ें"
     },
-    "replaceDraft": {
-      "description": "जारी रखने से आपका वर्तमान कंपोज़र ड्राफ्ट साफ़ हो जाएगा और वर्कफ़्लो प्रॉम्प्ट प्रारंभ हो जाएगा।",
-      "title": "कंपोज़र ड्राफ्ट बदलें?"
+    "remoteAccess": {
+      "default": "डिफ़ॉल्ट",
+      "defaultEnabled": "चैट के लिए डिफ़ॉल्ट रूप से सक्षम",
+      "enabledCount_one": "{{count}} सक्षम",
+      "enabledCount_other": "{{count}} सक्षम",
+      "loadFailed": "रिमोट एक्सेस लोड नहीं हो सका।",
+      "loading": "रिमोट एक्सेस लोड हो रहा है…",
+      "off": "बंद",
+      "on": "चालू",
+      "requiresSsh": "SSH होस्ट {{name}} का एक्सेस भी आवश्यक है।",
+      "retry": "फिर से कोशिश करें",
+      "title": "रिमोट एक्सेस",
+      "unavailableSsh": "अनुपलब्ध SSH होस्ट"
     },
     "run": {
       "collapseWorkHistory": "कार्य इतिहास संक्षिप्त करें",
@@ -2125,12 +2093,13 @@
         "wrappedUp": "{{time}} पर समाप्त हुआ"
       },
       "duration": {
-        "hoursShort_one": "{{count}}h",
-        "hoursShort_other": "{{count}}h",
-        "minutesShort_one": "{{count}}m",
-        "minutesShort_other": "{{count}}m",
-        "secondsShort_one": "{{count}}s",
-        "secondsShort_other": "{{count}}s"
+        "hoursMinutesShort": "{{hours}} घं॰ {{minutes}} मि॰",
+        "hoursShort_one": "{{count}} घं॰",
+        "hoursShort_other": "{{count}} घं॰",
+        "minutesShort_one": "{{count}} मि॰",
+        "minutesShort_other": "{{count}} मि॰",
+        "secondsShort_one": "{{count}} से॰",
+        "secondsShort_other": "{{count}} से॰"
       },
       "expandWorkHistory": "कार्य इतिहास का विस्तार करें",
       "fastModelName": "{{model}} Fast",
@@ -2192,11 +2161,15 @@
       "deleteTitle": "चैट हटाएं?",
       "draft": "मसौदा",
       "empty": "बातचीत शुरू करें और यह यहां दिखाई देगी",
+      "inbox": "इनबॉक्स",
       "markUnread": "अपठित के रूप में चिह्नित करें",
       "movePinDown": "नीचे ले जाएँ",
       "movePinUp": "ऊपर ले जाएँ",
+      "mute": "चैट म्यूट करें",
+      "muted": "म्यूट किया गया",
       "newChatWith": "{{agentName}} के साथ नई चैट",
       "noArchived": "कोई आर्काइव की गई चैट नहीं",
+      "noMuted": "कोई म्यूट की गई चैट नहीं",
       "noUnread": "कोई अपठित चैट नहीं",
       "openChatMenu": "चैट मेनू खोलें",
       "openListMenu": "चैट सूची मेनू खोलें",
@@ -2208,17 +2181,13 @@
       "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
       "unarchive": "आर्काइव से निकालें",
+      "unmute": "चैट अनम्यूट करें",
       "unpin": "चैट अनपिन करें",
       "unread": "अपठित",
       "unreadOnly": "अपठित"
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "अपनी अगली सामग्री के लिए प्रस्तुतकर्ता बनाएं",
-          "prompt": "मेरे अगले वीडियो के लिए बोलने वाला अवतार प्रस्तुतकर्ता बनाएं।",
-          "title": "अवतार बनाएं"
-        },
         "illustration": {
           "description": "अपनी पसंद की शैली में तैयार विज़ुअल बनाएं",
           "prompt": "मेरी बताई गई शैली में एक चित्र बनाएं।",
@@ -2229,11 +2198,6 @@
           "prompt": "मेरे दिए गए विषय या दस्तावेज़ से एक प्रस्तुति बनाएं।",
           "title": "प्रस्तुति बनाएं"
         },
-        "video": {
-          "description": "अपने विचार या सामग्री को तैयार वीडियो में बदलें",
-          "prompt": "मेरे विचार या सामग्री को एक तैयार वीडियो में बदलें।",
-          "title": "वीडियो बनाएं"
-        },
         "website": {
           "description": "साझा करने योग्य पेज बनाएं और प्रकाशित करें",
           "prompt": "मेरे लिए एक साझा करने योग्य वेब पेज बनाएं और प्रकाशित करें।",
@@ -2242,7 +2206,38 @@
       },
       "openTemplatesAria": "टेम्पलेट ब्राउज़ करें",
       "startWithPrompt": "बनाएं",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "अपने Claude Max 5x/20x या Codex प्लान से",
+        "openSettingsAria": "मॉडल सेटिंग्स खोलें",
+        "title": "मुफ़्त में काम चलाएँ"
+      },
       "templates": "टेम्पलेट"
+    },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "यह रीसेट अनुरोध पहले ही इस्तेमाल किया जा चुका है।",
+      "confirm_one": "{{count}} रीसेट",
+      "confirm_other": "{{count}} रीसेट",
+      "confirmation": "रीसेट करने में एक क्रेडिट लगता है। अनुरोध केवल रीसेट करें पर क्लिक करने से भेजा जाता है।",
+      "confirmUnknown": "— रीसेट",
+      "credits_one": "शेष रीसेट: {{count}}",
+      "credits_other": "शेष रीसेट: {{count}}",
+      "creditsUnknown": "शेष रीसेट: अज्ञात",
+      "error": "रीसेट विफल हुआ। उसी अनुरोध को फिर आज़माएँ।",
+      "expiresAt": "क्रेडिट की समाप्ति: {{time}}",
+      "loadFailed": "सदस्यता का उपयोग पढ़ा नहीं जा सका।",
+      "loading": "सदस्यता लोड हो रही है…",
+      "noCredit": "कोई रीसेट क्रेडिट उपलब्ध नहीं है।",
+      "nothingToReset": "रीसेट करने के लिए कोई समाप्त उपयोग अवधि नहीं है।",
+      "reconnect": "सेटिंग्स > मॉडल में इस सदस्यता को फिर से कनेक्ट करें।",
+      "reset": "उपयोग सफलतापूर्वक रीसेट किया गया।",
+      "resetting": "रीसेट हो रहा है…",
+      "title": "Reset card",
+      "unavailable": "यह सदस्यता वर्तमान कार्यक्षेत्र में उपलब्ध नहीं है।",
+      "unknown": "अज्ञात",
+      "unsupported": "मैन्युअल रीसेट समर्थित नहीं है; उपयोग अपने आप पुनः उपलब्ध होगा।"
     },
     "taskChips": {
       "chooseTask": "काम चुनें",
@@ -2569,7 +2564,7 @@
         "back": "वर्कफ़्लो देखें",
         "browse": "वर्कफ़्लो देखें",
         "close": "बंद करें",
-        "contextPrefix": "मेरे लिए ज़रूरी: {{context}}",
+        "contextPrefix": "मेरे लिए ज़रूरी: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "रोज़ या हर हफ़्ते",
@@ -2860,29 +2855,17 @@
       "importedLoading": "अपलोड किए गए टेम्पलेट लोड हो रहे हैं…",
       "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
-      "previewVideo": "पूर्वावलोकन वीडियो टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previewWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "removeTemplate": "टेम्प्लेट {{title}} हटाएँ",
-      "removeVideo": "वीडियो टेम्प्लेट {{title}} हटाएं",
       "removeWebsite": "वेबसाइट टेम्पलेट {{title}} हटाएँ",
       "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ",
-      "retry": "फिर से कोशिश करें",
-      "videoOptions": "वीडियो विकल्प",
-      "videoOptionsAudio": "ऑडियो बनाएँ",
-      "videoOptionsAudioOff": "ऑडियो बंद",
-      "videoOptionsAudioOn": "ऑडियो चालू",
-      "videoOptionsDuration": "अवधि",
-      "videoOptionsLabel": "वीडियो विकल्प {{spec}}",
-      "videoOptionsModel": "मॉडल",
-      "videoOptionsRatio": "अनुपात",
-      "videoOptionsResolution": "रिज़ॉल्यूशन"
+      "retry": "फिर से कोशिश करें"
     },
     "thread": {
       "ariaLabel": "चैट थ्रेड",
       "changeIcon": "आइकन बदलें",
       "emoji": {
-        "archive": "आर्काइव करें",
         "done": "हो गया",
         "idea": "विचार",
         "no": "नहीं",
@@ -2921,6 +2904,7 @@
       "checkingLimit": "ध्वनि इनपुट सीमा की जाँच की जा रही है",
       "cleanupFailed": "टेक्स्ट जोड़ दिया गया, लेकिन सहेजी गई रिकॉर्डिंग हटाई नहीं जा सकी।",
       "confirmRecording": "हो गया",
+      "detectionFailed": "वाक् पहचान उपलब्ध नहीं है। आपकी रिकॉर्डिंग सुरक्षित रखी गई है। कृपया फिर से प्रयास करें।",
       "discarding": "वॉइस ड्राफ़्ट हटाया जा रहा है...",
       "input": "ध्वनि इनपुट",
       "inputLimitReached": "ध्वनि इनपुट सीमा पूरी हो गई. उच्च सीमा के लिए प्रो या टीम में अपग्रेड करें।",
@@ -2929,6 +2913,7 @@
       "inputLimitReachedProMember": "ध्वनि इनपुट सीमा पूरी हो गई. उच्च सीमा के लिए किसी वर्कस्पेस व्यवस्थापक से टीम में अपग्रेड करने के लिए कहें।",
       "inputLimitReachedReset": "ध्वनि इनपुट सीमा पूरी हो गई. कृपया अपनी सीमा रीसेट होने तक प्रतीक्षा करें।",
       "microphoneAccessDenied": "माइक्रोफ़ोन पहुंच अस्वीकृत कर दी गई थी. माइक्रोफ़ोन एक्सेस की अनुमति दें और पुनः प्रयास करें।",
+      "noSpeechDetected": "कोई बोली गई आवाज़ नहीं मिली। कृपया फिर से रिकॉर्ड करें।",
       "openingMicrophone": "माइक्रोफ़ोन खुल रहा है...",
       "removeDraft": "वॉइस ड्राफ़्ट हटाएँ",
       "restoreFailed": "आपका वॉइस ड्राफ़्ट लोड नहीं हो सका। फिर से कोशिश करें।",
@@ -2950,6 +2935,8 @@
   },
   "cloudflareAccess": {
     "add": "Cloudflare Access जोड़ें",
+    "affectedMembers_one": "{{count}} सदस्य",
+    "affectedMembers_other": "{{count}} सदस्य",
     "cancel": "रद्द करें",
     "changed": "संपादन के दौरान यह Cloudflare Access बदल गया। सहेजने से पहले नवीनतम सेटिंग्स की समीक्षा करें।",
     "clientId": "Service Token क्लाइंट ID",
@@ -2957,40 +2944,59 @@
     "clientSecret": "Service Token क्लाइंट सीक्रेट",
     "clientSecretPlaceholder": "Service Token का Client Secret पेस्ट करें",
     "configuration": "Cloudflare Access",
+    "convert": "व्यक्तिगत बनाएं",
+    "convertHelp": "संगठन का यह Cloudflare Access आपका अपना व्यक्तिगत कॉन्फ़िगरेशन बन जाएगा, भले ही इसे किसी और ने बनाया हो। Service Token वही रहेगा और आपके SSH होस्ट जुड़े रह सकते हैं।",
+    "convertUncertain": "रूपांतरण की पुष्टि नहीं हो सकी। फिर से प्रयास करने से पहले नवीनतम कॉन्फ़िगरेशन देखें।",
     "createNew": "नया Cloudflare Access बनाएँ",
     "delete": "Cloudflare Access हटाएँ",
-    "deleteHelp": "यह अप्रयुक्त Cloudflare Access हटाएँ? सहेजा गया Service Token पुनर्प्राप्त नहीं किया जा सकेगा।",
-    "description": "Cloudflare Access सर्विस टोकन से सुरक्षित ऐप्लिकेशन एक्सेस करें।",
+    "deleteHelp": "यह Cloudflare Access हटाएँ? सहेजा गया Service Token वापस नहीं मिल सकेगा। पहले अपने होस्ट को दोबारा बाइंड करें।",
+    "deleteUncertain": "हटाए जाने की पुष्टि नहीं हो सकी। फिर प्रयास करने से पहले नवीनतम प्रभाव देखें।",
     "edit": "Cloudflare Access संपादित करें",
-    "empty": "अभी कोई Cloudflare Access नहीं है। सुरक्षित ऐप्लिकेशन एक्सेस करने के लिए सर्विस टोकन जोड़ें।",
     "failed": "Cloudflare Access बदलाव सहेजा नहीं जा सका। फिर से कोशिश करें।",
-    "inUse": "कोई होस्ट इस Cloudflare Access का उपयोग कर रहा है। संबंधित होस्ट की समीक्षा करें और पहले उनका कॉन्फ़िगरेशन बदलें या उन्हें हटाएँ।",
-    "inUseHelp": "इस Cloudflare Access को हटाने से पहले संबंधित होस्ट के लिए दूसरा Cloudflare Access चुनें, स्पष्ट रूप से सीधे कनेक्शन पर जाएँ या होस्ट हटाएँ।",
+    "forbidden": "साझा Cloudflare Access केवल संगठन के एडमिन बदल सकते हैं।",
+    "hostCount_one": "{{count}} SSH होस्ट",
+    "hostCount_other": "{{count}} SSH होस्ट",
+    "impactChanged": "प्रभावित होस्ट बदल गए हैं। दोबारा पुष्टि करने से पहले नवीनतम प्रभाव देखें।",
+    "impactConfirm": "मैं समझता/समझती हूँ कि इन सदस्यों के SSH होस्ट सुरक्षित रहेंगे, लेकिन उनके मालिकों के दोबारा बाइंड करने या स्पष्ट रूप से Direct चुनने तक कनेक्ट नहीं होंगे।",
+    "impactSummary": "प्रभावित: {{members}} और {{hosts}}। SSH होस्ट सुरक्षित रहेंगे, लेकिन उनके मालिक के दोबारा बाइंड करने या स्पष्ट रूप से Direct चुनने तक कनेक्ट नहीं होंगे। कोई होस्ट अपने आप Direct नहीं बनेगा।",
+    "inUse": "एक SSH होस्ट इस Cloudflare Access का उपयोग कर रहा है। उसके स्वामी को पहले उसे फिर से बाँधना या हटाना होगा।",
+    "inUseHelp": "आपके SSH होस्ट अभी भी इस कॉन्फ़िगरेशन का उपयोग करते हैं। उन्हें दूसरे कॉन्फ़िगरेशन से बाइंड करें, स्पष्ट रूप से Direct चुनें या पहले हटाएँ।",
     "invalidInput": "कुछ Cloudflare Access सेटिंग अमान्य हैं। फ़ील्ड जाँचें और फिर से कोशिश करें।",
     "keepChanges": "इस संस्करण पर मेरे बदलाव लागू करें",
     "latest": "नवीनतम सहेजी गई सेटिंग्स",
     "loadFailed": "Cloudflare Access लोड नहीं हो सका। दोबारा प्रयास करें।",
     "loading": "Cloudflare Access लोड हो रहा है…",
-    "manage": "Cloudflare Access प्रबंधित करें",
+    "memberIdentifier": " (ID {{identifier}})",
     "missing": "यह Cloudflare Access अब उपलब्ध नहीं है। दूसरा चुनें या नया बनाएँ।",
     "name": "नाम",
     "namePlaceholder": "जैसे, प्रोडक्शन एक्सेस",
+    "nameUnavailable": "नाम उपलब्ध नहीं",
+    "organization": "संगठन",
+    "organizationHelp": "इस संगठन के सभी सदस्य इस Service Token का उपयोग कर सकते हैं। इसे केवल एडमिन बदल सकते हैं।",
+    "personal": "व्यक्तिगत",
+    "promote": "संगठन के लिए साझा करें",
+    "promoteConfirm": "मैं समझता/समझती हूँ कि संगठन के सभी सदस्य इस Service Token का उपयोग कर सकेंगे।",
+    "promoteHelp": "अपना व्यक्तिगत Cloudflare Access संगठन से साझा करें। Service Token और आपके SSH होस्ट बाइंडिंग वैसे ही रहेंगे।",
+    "promoteUncertain": "रूपांतरण की पुष्टि नहीं हो सकी। यह संवाद बंद करें और दोबारा प्रयास से पहले नवीनतम कॉन्फ़िगरेशन देखें।",
     "replace": "Service Token बदलें",
     "resourceIdConflict": "इस संसाधन आईडी का उपयोग नहीं किया जा सकता। फिर से कोशिश करने के लिए फ़ॉर्म बंद करके दोबारा खोलें।",
     "retry": "फिर से कोशिश करें",
     "reviewHelp": "आपका ड्राफ़्ट सुरक्षित है। बदलाव लागू करने से पहले नवीनतम सहेजी गई सेटिंग्स की पुष्टि करें।",
+    "reviewLatest": "नवीनतम प्रभाव देखें",
     "revisionExhausted": "यह कॉन्फ़िगरेशन अब अपडेट नहीं किया जा सकता। नया कॉन्फ़िगरेशन बनाएँ।",
     "save": "सहेजें",
     "saveUncertain": "हम पुष्टि नहीं कर सके कि आपके बदलाव सहेजे गए हैं या नहीं। वही जानकारी फिर से सहेजने की कोशिश करें, या फ़ॉर्म बंद करें और दोबारा जोड़ने से पहले सूची जाँचें।",
+    "scope": "इसे कौन उपयोग कर सकता है",
+    "sectionEmpty": "यहाँ अभी कोई कॉन्फ़िगरेशन नहीं है।",
     "select": "Cloudflare Access चुनें",
     "summary_one": "{{count}} Cloudflare Access सेट है",
     "summary_other": "{{count}} Cloudflare Access सेट हैं",
     "title": "Cloudflare Access",
     "tokenHelp": "Cloudflare Access सर्विस टोकन से सुरक्षित ऐप्लिकेशन एक्सेस करें।",
     "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है।",
-    "unused": "किसी होस्ट द्वारा उपयोग नहीं किया जा रहा",
-    "usedBy_one": "{{count}} होस्ट द्वारा उपयोग:",
-    "usedBy_other": "{{count}} होस्ट द्वारा उपयोग:"
+    "unused": "आपका कोई होस्ट इसका उपयोग नहीं करता",
+    "usedBy_one": "आपके {{count}} होस्ट इसका उपयोग करते हैं:",
+    "usedBy_other": "आपके {{count}} होस्ट इसका उपयोग करते हैं:"
   },
   "connectors": {
     "access": {
@@ -3104,7 +3110,6 @@
       "connectAria": "{{connector}} कनेक्ट करें",
       "connected": "कनेक्टेड",
       "connectionExpired": "कनेक्शन समाप्त हो गया",
-      "connectToContinue": "जारी रखने के लिए इस खाते को कनेक्ट करें",
       "managePermissions": "अनुमतियाँ प्रबंधित करें",
       "managePermissionsFor": "{{connector}} अनुमतियाँ प्रबंधित करें",
       "optional": "वैकल्पिक",
@@ -3174,7 +3179,6 @@
           "menu": "बिक्री और व्यवसाय"
         }
       },
-      "categoriesAria": "कनेक्टर श्रेणियां",
       "description": "अपने एजेंटों के उपयोग के लिए तृतीय-पक्ष सेवाओं को कनेक्ट करें।",
       "descriptionWithCount": "अपने एजेंटों के उपयोग के लिए {{value}} सेवाओं को कनेक्ट करें।",
       "directory": {
@@ -3193,8 +3197,6 @@
       "empty": {
         "agent": "इस एजेंट के लिए कोई कनेक्टर नहीं",
         "connected": "कोई कनेक्टेड कनेक्टर नहीं",
-        "matching": "{{message}} मिलान \"{{search}}\"",
-        "notConnected": "कनेक्ट करने के लिए कोई कनेक्टर नहीं बचा",
         "search": "\"{{search}}\" से मेल खाने वाला कोई कनेक्टर नहीं",
         "unshared": "हर कनेक्टर किसी एजेंट के साथ साझा है"
       },
@@ -3204,14 +3206,10 @@
         "all": "सभी",
         "allAgents": "सभी एजेंट",
         "aria": "फ़िल्टर कनेक्टर्स",
-        "connected": "जुड़े हुए",
-        "notConnected": "जुड़े नहीं हैं",
-        "status": "स्थिति",
         "unshared": "किसी एजेंट के साथ साझा नहीं"
       },
       "filterWith": "फ़िल्टर: {{category}}",
       "iconUnavailable": "कनेक्टर आइकन अनुपलब्ध",
-      "newConnector": "नया कनेक्टर",
       "noConnectorsAlt": "कोई कनेक्टर नहीं",
       "otherCategory": "अन्य",
       "remoteAccess": "रिमोट एक्सेस",
@@ -3238,10 +3236,6 @@
         "seeMore_one": "{{names}} और {{count}} अन्य देखें",
         "seeMore_other": "{{names}} और {{count}} अन्य देखें",
         "top": "शीर्ष कनेक्टर"
-      },
-      "tabs": {
-        "builtin": "बिल्ट-इन",
-        "custom": "कस्टम"
       },
       "title": "कनेक्टर्स",
       "unnamedAgent": "अज्ञात"
@@ -3382,7 +3376,6 @@
       "edit": {
         "title": "कस्टम कनेक्टर संपादित करें"
       },
-      "emptyAdmin": "अभी तक कोई कस्टम कनेक्टर नहीं. प्रत्येक सदस्य के उपयोग के लिए एक API पंजीकृत करने के लिए एक बनाएं।",
       "emptyMember": "आपके संगठन ने अभी तक कोई कस्टम कनेक्टर पंजीकृत नहीं किया है.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -3467,7 +3460,7 @@
         "invalidSignature": "इस लिंक पर हस्ताक्षर मान्य नहीं है.",
         "invalidTimestamp": "इस लिंक पर टाइमस्टैम्प मान्य नहीं है.",
         "invalidTitle": "कनेक्ट लिंक अमान्य है",
-        "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस AgentPhone नंबर के साथ iMessage का उपयोग करें।",
+        "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस नंबर के साथ iMessage का उपयोग करें।",
         "successDescription": "{{phone}} जुड़ा हुआ है. {{assistantName}} के साथ चैट शुरू करने के लिए एक टेक्स्ट संदेश भेजें।",
         "successTitle": "फ़ोन नंबर कनेक्ट हो गया"
       },
@@ -3550,21 +3543,12 @@
         "alreadyDescriptionNamed": "आप पहले से ही {{bot}} से जुड़े हुए हैं। चैटिंग शुरू करने के लिए Telegram में एक संदेश भेजें।",
         "alreadyTitle": "पहले से ही Telegram से जुड़ा है",
         "back": "Telegram सेटिंग्स पर वापस जाएँ",
-        "botFallback": "यह बॉट",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "कृपया प्रतीक्षा करें जब तक हम आपके Telegram कनेक्शन की जाँच कर रहे हैं।",
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
-        "checkingDomain": "डोमेन स्थिति जाँची जा रही है...",
         "checkingSession": "कृपया तब तक प्रतीक्षा करें जब तक हम आपके {{brandName}} सत्र का सत्यापन नहीं कर लेते।",
         "connectDescription": "अपने खाते को इस Telegram बॉट से लिंक करें ताकि आप Telegram से सीधे अपने एजेंट से बातचीत कर सकें।",
         "connectTitle": "Telegram से कनेक्ट करें",
         "continue": "Telegram के साथ जारी रखें",
-        "domainDescription": "{{bot}} के लिए Telegram वेब लॉगिन सक्षम नहीं है।",
-        "domainIn": "में",
-        "domainInstructionsAfter": ", बॉट चुनें, फिर डोमेन को यहां सेट करें:",
-        "domainKeepOpen": "डोमेन सेव करने के बाद इस पेज को खुला रखें। आप Telegram से /connect से भी जुड़ सकते हैं।",
-        "domainSend": ", भेजना",
-        "domainTitle": "Telegram लॉगिन डोमेन सेट करें",
         "errorFallback": "हम Telegram कनेक्ट नहीं कर सके। Telegram से पुनः प्रयास करें।",
         "invalidSignature": "इस लिंक पर हस्ताक्षर मान्य नहीं हैं।",
         "invalidTimestamp": "इस लिंक पर टाइमस्टैम्प मान्य नहीं है।",
@@ -3574,9 +3558,7 @@
         "linkIncomplete": "Telegram से एक नया /कनेक्ट लिंक खोलें और पुनः प्रयास करें।",
         "linkIncompleteTitle": "कनेक्ट लिंक अधूरा है",
         "open": "Telegram खोलें",
-        "openBotFather": "बॉटफ़ादर खोलें",
         "refresh": "इस पृष्ठ को ताज़ा करें और पुनः प्रयास करें।",
-        "setDomainCommand": "/setdomain",
         "signInButton": "{{brandName}} में साइन इन करें",
         "signInCheckFailed": "साइन-इन की जाँच नहीं की जा सकी",
         "signInDescription": "इस Telegram उपयोगकर्ता को जोड़ने से पहले अपने {{brandName}} खाते का उपयोग करें।",
@@ -3589,9 +3571,10 @@
       "agentphone": {
         "authorizedSender": "अधिकृत प्रेषक",
         "codeExpiry": "10 मिनट में समाप्त होगा",
+        "codeLabel": "कोड",
         "connectAria": "फ़ोन कनेक्ट करें",
-        "connectDescription": "कोड स्कैन करें या Messages खोलें, फिर पहले से भरा हुआ कोड भेजें।",
-        "connectTitle": "फ़ोन कनेक्ट करें",
+        "connectDescription": "अपने कैमरे से स्कैन करें, फिर पहले से भरा हुआ कोड भेजें।",
+        "connectTitle": "अपने iPhone से {{assistantName}} को मैसेज करें",
         "copyAria": "{{phone}} कॉपी करें",
         "copyCodeAria": "कनेक्शन कोड {{code}} कॉपी करें",
         "copyCodeError": "कनेक्शन कोड कॉपी नहीं हो सका",
@@ -3602,80 +3585,16 @@
         "creatingCode": "कनेक्शन कोड बनाया जा रहा है…",
         "description": "{{assistantName}} तक टेक्स्ट-संदेश पहुंच",
         "destination": "iMessage या SMS को",
-        "manualSend": "या भेजें",
-        "manualSendTo": "इस नंबर पर",
         "openMessages": "मैसेज खोलें",
         "options": "फ़ोन विकल्प",
         "phoneLabel": "फ़ोन",
         "qrTitle": "कनेक्शन कोड पहले से भरे हुए Messages को खोलने के लिए स्कैन करें",
         "risk": "जहाँ संभव हो iMessage का उपयोग करें। SMS और MMS के जवाब भरोसेमंद तरीके से नहीं पहुँच सकते हैं।",
+        "sendToLabel": "इस नंबर पर भेजें",
         "tryAgain": "फिर से कोशिश करें"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activated": "सक्रिय",
-          "activeCatalogDigest": "सक्रिय कैटलॉग डाइजेस्ट",
-          "activeVersion": "सक्रिय संस्करण",
-          "evaluated": "का मूल्यांकन",
-          "evaluation": "मूल्यांकन",
-          "executableCapabilityDigest": "निष्पादन योग्य क्षमता डाइजेस्ट",
-          "failureCode": "विफलता कोड",
-          "filteredAuthMethods": "फ़िल्टर किए गए प्रमाणीकरण तरीके",
-          "lastAttempt": "आखिरी प्रयास",
-          "lastAttemptAt": "पर अंतिम प्रयास",
-          "lastSuccess": "आखिरी सफलता",
-          "missingVersions": "अनुपलब्ध संस्करण",
-          "rejectedCatalogDigest": "अस्वीकृत कैटलॉग डाइजेस्ट",
-          "rejectedVersion": "अस्वीकृत संस्करण",
-          "rejectingBackend": "बैकएंड को अस्वीकार किया जा रहा है",
-          "rejectionCache": "अस्वीकृति कैश",
-          "rejectionFailure": "अस्वीकृति विफलता",
-          "syncState": "सिंक अवस्था",
-          "unownedSecrets": "अज्ञात रहस्य",
-          "unownedVariables": "अज्ञात चर",
-          "unresolvedBridgeCredentials": "अनसुलझे पुल क्रेडेंशियल"
-        },
-        "loading": "लोड हो रहा है",
-        "none": "कोई नहीं",
-        "notReused": "पुन: उपयोग नहीं किया गया",
-        "reused": "पुन: उपयोग",
-        "sections": {
-          "compatibility": "अनुकूलता",
-          "credentialStorage": "क्रेडेंशियल भंडारण",
-          "rejectedCandidate": "अस्वीकृत उम्मीदवार"
-        },
-        "title": "कनेक्टर कैटलॉग",
-        "unavailable": "अनुपलब्ध",
-        "values": {
-          "accepted": "स्वीकृत",
-          "current": "मौजूदा",
-          "digestMismatch": "पाचन बेमेल",
-          "invalidArtifact": "अमान्य आर्टिफ़ैक्ट",
-          "invalidCompression": "अमान्य संपीड़न",
-          "invalidJson": "अमान्य JSON",
-          "invalidPointer": "अमान्य सूचक",
-          "invalidReference": "अमान्य संदर्भ",
-          "missingAccessProvider": "पहुंच प्रोवाइडर गुम है",
-          "missingGrantProvider": "अनुपलब्ध अनुदान प्रोवाइडर",
-          "missingPlatformConfiguration": "प्लेटफ़ॉर्म कॉन्फ़िगरेशन गुम है",
-          "missingRevokeProvider": "निरस्तीकरण प्रोवाइडर गुम है",
-          "neverSynced": "कभी समन्वयित नहीं किया गया",
-          "objectTooLarge": "वस्तु बहुत बड़ी है",
-          "providerContractMismatch": "प्रोवाइडर अनुबंध बेमेल",
-          "publicLeakage": "सार्वजनिक रिसाव",
-          "rejected": "अस्वीकार कर दिया",
-          "relationshipMismatch": "रिश्ता बेमेल",
-          "sourceUnavailable": "स्रोत अनुपलब्ध",
-          "stale": "बासी",
-          "unchanged": "स्थिर",
-          "unsupportedProtocol": "असमर्थित प्रोटोकॉल",
-          "unsupportedSchema": "असमर्थित स्कीमा"
-        }
-      },
       "errors": {
-        "githubAuthorizationWindow": "प्राधिकरण विंडो खोलने में विफल",
-        "telegramDomain": "डोमेन अभी तक Telegram को दिखाई नहीं दे रहा है। BotFather की जाँच करें और पुनः प्रयास करें।",
-        "telegramPrivacy": "गोपनीयता मोड अभी भी चालू प्रतीत होता है. इसे BotFather में बंद करें, फिर पुनः प्रयास करें।"
+        "githubAuthorizationWindow": "प्राधिकरण विंडो खोलने में विफल"
       },
       "feishu": {
         "addBot": "बॉट जोड़ें",
@@ -3943,83 +3862,21 @@
         "uninstallTitle": "Lark बॉट अनइंस्टॉल करें?"
       },
       "telegram": {
-        "addBot": "बॉट जोड़ें",
-        "addDescription": "प्रत्येक बोटफादर चरण को पूरा करें, फिर वर्कस्पेस बॉट बनाएं।",
-        "adding": "जोड़ा जा रहा है...",
-        "addTitle": "Telegram बॉट जोड़ें",
-        "agentAria": "{{bot}} के लिए डिफ़ॉल्ट एजेंट",
         "backToIntegrations": "एकीकरण पर वापस जाएँ",
         "botFallback": "Telegram बॉट",
-        "bots": "Telegram बॉट",
-        "botToken": "बॉट टोकन",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "जाँच हो रही है...",
-        "copied": "नकल की गई!",
-        "copyAria": "{{value}} कॉपी करें",
-        "copyTitle": "कॉपी करने के लिए क्लिक करें",
-        "create": {
-          "description": "{{brandName}} इस बॉट को पंजीकृत करेगा और इसके वेबहुक को कॉन्फ़िगर करेगा। सेटअप के बाद, किसी समूह में बॉट का उल्लेख करें या चयनित एजेंट से बात करने के लिए उसे DM भेजें।",
-          "descriptionNamed": "{{brandName}} {{bot}} को पंजीकृत करेगा और इसके वेबहुक को कॉन्फ़िगर करेगा। सेटअप के बाद, किसी समूह में बॉट का उल्लेख करें या चयनित एजेंट से बात करने के लिए उसे DM भेजें।",
-          "title": "एकीकरण बनाने के लिए तैयार"
-        },
-        "defaultAgent": "डिफ़ॉल्ट एजेंट",
         "disconnectAria": "{{bot}} को डिस्कनेक्ट करें",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "डोमेन का पता चला",
-          "instructionAfter": ", इस बॉट को चुनें, और डोमेन को इस पर सेट करें",
-          "instructionEnd": ". Telegram इस बॉट के लिए कनेक्ट प्रवाह की अनुमति देने के लिए इस डोमेन का उपयोग करता है।",
-          "instructionStart": "{{botFather}} में भेजें",
-          "title": "Telegram लॉगिन डोमेन सेट करें"
-        },
-        "emptyDescription": "किसी एजेंट को Telegram संदेश रूट करना शुरू करने के लिए एक बॉट टोकन जोड़ें।",
-        "emptyTitle": "अभी तक कोई Telegram बॉट नहीं है",
-        "invalidTokenDescription": "BotFather से नए टोकन के साथ बॉट को पुनः स्थापित करें।",
         "loadError": "Telegram सेटिंग लोड नहीं हो सकी.",
         "moreOptions": "{{bot}} के लिए अधिक विकल्प",
-        "newBotToken": "नया बॉट टोकन",
         "notConnected": "जुड़े नहीं हैं",
         "officialBot": "आधिकारिक Telegram बॉट",
         "officialDescription": "{{brandName}} द्वारा प्रदान किया गया आधिकारिक बॉट।",
         "officialMissing": "आधिकारिक बॉट कॉन्फ़िगरेशन अनुपलब्ध है.",
-        "pageDescription": "इस वर्कस्पेस के लिए बॉट रूटिंग प्रबंधित करें",
-        "privacy": {
-          "instructionAfter": ", इस बॉट को चुनें, फिर गोपनीयता मोड को अक्षम करें। इससे एजेंट को उल्लेखों और उत्तरों के आसपास समूह संदर्भ पढ़ने की सुविधा मिलती है।",
-          "instructionStart": "{{botFather}} में भेजें",
-          "off": "गोपनीयता मोड बंद है",
-          "title": "वैकल्पिक: गोपनीयता मोड बंद करें"
-        },
-        "registerAria": "Telegram बॉट पंजीकृत करें",
-        "reinstall": "पुनर्स्थापित",
-        "reinstallDescription": "{{bot}} के लिए ताज़ा BotFather टोकन चिपकाएँ। टोकन इसी बॉट का होना चाहिए.",
-        "reinstalling": "पुनः स्थापित किया जा रहा है...",
-        "reinstallTargetFallback": "यह बॉट",
-        "reinstallTitle": "Telegram बॉट को पुनर्स्थापित करें",
-        "selectAgent": "एजेंट का चयन करें",
-        "steps": {
-          "back": "पीछे",
-          "create": "बनाएं",
-          "domain": "कार्यक्षेत्र",
-          "next": "अगला",
-          "privacy": "गोपनीयता",
-          "token": "टोकन"
-        },
-        "token": {
-          "instructionAfter": ", एक नाम और उपयोगकर्ता नाम चुनें, फिर नीचे टोकन चिपकाएँ।",
-          "open": "खुला",
-          "send": ", भेजना",
-          "title": "BotFather में एक बॉट टोकन बनाएं",
-          "verified": "टोकन सत्यापित"
-        },
-        "tokenInvalid": "टोकन अमान्य",
-        "uninstallAria": "{{bot}} को अनइंस्टॉल करें",
-        "uninstallDescription": "यह वर्कस्पेस से {{bot}} को हटा देता है और इसका उपयोग करने वाले उपयोगकर्ताओं के लिए Telegram पहुंच को डिस्कनेक्ट कर देता है। इस एक्शन को वापस नहीं किया जा सकता।",
-        "uninstallTargetFallback": "यह बॉट",
-        "uninstallTitle": "Telegram बॉट अनइंस्टॉल करें?"
+        "pageDescription": "इस वर्कस्पेस के लिए बॉट रूटिंग प्रबंधित करें"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone जुड़ा",
-        "agentphoneDisconnected": "AgentPhone डिस्कनेक्ट हो गया",
+        "agentphoneConnected": "फ़ोन नंबर कनेक्ट हो गया",
+        "agentphoneDisconnected": "फ़ोन नंबर डिस्कनेक्ट हो गया",
         "slackConnected": "Slack सफलतापूर्वक कनेक्ट हुआ",
         "slackDisconnected": "Slack से डिस्कनेक्ट हो गया",
         "slackInstalled": "Slack सफलतापूर्वक स्थापित हुआ",
@@ -4031,12 +3888,7 @@
         "teamsInstalled": "Microsoft Teams सफलतापूर्वक स्थापित हुआ",
         "teamsUninstalled": "Microsoft Teams एकीकरण अनइंस्टॉल किया गया",
         "teamsUpdated": "Microsoft Teams अद्यतन किया गया",
-        "telegramAgentUpdated": "डिफ़ॉल्ट एजेंट अद्यतन किया गया",
-        "telegramBotAdded": "Telegram बॉट जोड़ा गया",
-        "telegramBotReinstalled": "Telegram बॉट पुनः स्थापित किया गया",
-        "telegramBotUninstalled": "Telegram बॉट अनइंस्टॉल किया गया",
-        "telegramDisconnected": "Telegram खाता डिस्कनेक्ट किया गया",
-        "telegramUpdatingAgent": "डिफ़ॉल्ट एजेंट अपडेट किया जा रहा है..."
+        "telegramDisconnected": "Telegram खाता डिस्कनेक्ट किया गया"
       },
       "works": {
         "connected": "कनेक्टेड",
@@ -4061,9 +3913,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "अनुरोध विफल रहा"
-    },
-    "realtime": {
-      "degraded": "लाइव अपडेट में समस्या आई। कृपया पृष्ठ को ताज़ा करें."
     }
   },
   "invitationRedirect": {
@@ -4144,132 +3993,66 @@
     }
   },
   "onboarding": {
-    "categories": {
-      "ceo": {
-        "description": "ब्रीफिंग और बड़ी तस्वीर",
-        "title": "CEO"
-      },
-      "data": {
-        "description": "डैशबोर्ड, मेट्रिक्स, क्वेरीज़",
-        "title": "डेटा"
-      },
-      "engineering": {
-        "description": "शिप करें, डिबग करें, कोड स्वचालित करें",
-        "title": "अभियंता"
-      },
-      "everyone": {
-        "description": "ईमेल, कैलेंडर, बैठकें",
-        "title": "सब लोग"
-      },
-      "marketing": {
-        "description": "सामग्री, SEO, अभियान",
-        "title": "मार्केटिंग"
-      },
-      "operations": {
-        "description": "प्रोजेक्ट, शेड्यूलिंग, सिंक",
-        "title": "संचालन"
-      },
-      "product": {
-        "description": "विशिष्टताएँ, रिलीज़, प्रतिक्रिया",
-        "title": "उत्पाद"
-      },
-      "sales": {
-        "description": "पाइपलाइन और आउटरीच",
-        "title": "बिक्री"
-      },
-      "support": {
-        "description": "टिकट और ग्राहक सहायता",
-        "title": "सहायता"
-      }
-    },
     "common": {
-      "back": "पीछे",
-      "continue": "जारी रखना",
-      "dialogPreview": "{{title}} पूर्वावलोकन",
-      "gotIt": "समझ गया",
       "next": "अगला",
-      "previewWorkflowDetails": "वर्कफ़्लो विवरण का पूर्वावलोकन करें",
-      "selectTemplate": "इस टेम्पलेट का चयन करें",
-      "selectThisTemplate": "इस टेम्पलेट का चयन करें",
       "stepProgress": "{{total}} का चरण {{current}}"
     },
     "documentTitles": {
-      "chooseImage": "एक छवि शैली चुनें",
-      "choosePresentation": "एक प्रस्तुति टेम्पलेट चुनें",
-      "chooseVideo": "एक वीडियो शैली चुनें",
-      "chooseWorkflow": "एक वर्कफ़्लो चुनें",
-      "make": "{{brandName}} में आपका स्वागत है",
-      "runImage": "अपनी पहली छवि बनाएं",
-      "runPresentation": "अपनी पहली प्रस्तुति बनाएं",
-      "runVideo": "अपना पहला वीडियो बनाएं",
-      "runWorkflow": "अपना पहला वर्कफ़्लो चलाएँ"
+      "make": "{{brandName}} में आपका स्वागत है"
     },
     "make": {
-      "description": "एक शुरुआती बिंदु चुनें, आप बाकी सब कुछ बाद में कर सकते हैं।",
-      "options": {
-        "explore": {
-          "description": "बस मेरे टूल से जुड़ें",
-          "title": "मैं स्वयं अन्वेषण करूंगा"
-        },
-        "images": {
-          "description": "उच्च गुणवत्ता वाले दृश्य बनाएं",
-          "title": "छवियाँ उत्पन्न करें"
-        },
-        "presentation": {
-          "description": "स्लाइड और स्पीकर जेनरेट करें",
-          "title": "एक प्रस्तुति तैयार करें"
-        },
-        "slack": {
-          "description": "अपने कार्यक्षेत्र में अपने AI टीममेट के साथ चैट करें",
-          "title": "Slack में Okou से चैट करें"
-        },
-        "video": {
-          "description": "अपने विचारों को वीडियो में बदलें",
-          "title": "वीडियो निर्माण"
-        },
-        "website": {
-          "description": "साझा करने योग्य पेज बनाएं और प्रकाशित करें",
-          "title": "वेबसाइट बनाएं"
-        },
-        "workflow": {
-          "description": "पूर्व निर्धारित टेम्प्लेट से अन्वेषण करें",
-          "title": "वर्कफ़्लो ऑटोमेशन"
-        }
-      },
-      "projectTypeLabel": "पहला प्रोजेक्ट प्रकार",
       "promptDescription": "इसे नीचे संशोधित करें या इसे वैसे ही चलाएँ जैसे यह है। {{assistantName}} इसे यहां से लेता है। आपके उपकरण सैंडबॉक्स में बंद रहते हैं और आपके वर्कस्पेस से कुछ भी नहीं छूटता।",
       "promptLabel": "ऑनबोर्डिंग प्रॉम्प्ट",
-      "promptTitle": "इस प्रॉम्प्ट को आज़माएँ",
-      "title": "आप पहले क्या बनाना चाहते हैं"
-    },
-    "runAction": {
-      "checkingPlan": "योजना की जाँच हो रही है",
-      "runNow": "अब रन करें",
-      "upgradePro": "चलाने के लिए प्रो को अपग्रेड करें"
+      "promptTitle": "इस प्रॉम्प्ट को आज़माएँ"
     },
     "sourcesFirst": {
+      "chatChannels": {
+        "connectedTitle": "आपकी चैट कनेक्ट हो गई है",
+        "copy": "Okou को संदेश भेजें या उसे अपनी टीम की चैट में जोड़ें। अपने परिचित तरीके से काम करें।",
+        "imessageConnected": "iMessage कनेक्ट हो गया है",
+        "imessageCopy": "आपका काम, बस एक संदेश दूर।",
+        "imessageExpired": "आपके कनेक्शन कोड की समय सीमा समाप्त हो गई है।",
+        "imessageRefresh": "नया कोड प्राप्त करें",
+        "imessageScan": "अपने iPhone का कैमरा खोलें, फिर पहले से भरा संदेश भेजें।",
+        "imessageTitle": "iMessage में Okou से बात करें",
+        "othersLabel": "इन पर भी उपलब्ध है",
+        "title": "Okou बस एक संदेश की दूरी पर है"
+      },
       "common": {
         "back": "वापस",
         "continue": "आगे बढ़ें",
-        "finish": "सेटअप पूरा करें",
-        "notNow": "अभी नहीं",
-        "skip": "अभी छोड़ें"
+        "notNow": "अभी नहीं"
+      },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "सुरक्षा विवरण",
+        "status": {
+          "aligned": "संरेखित",
+          "compliant": "अनुपालित",
+          "inProgress": "जारी है"
+        },
+        "title": "Okou का अनुपालन, आपके भरोसे के लिए"
       },
       "documentTitles": {
         "experience": "आपका AI अनुभव",
         "industry": "अपना क्षेत्र चुनें",
-        "profile": "आपकी प्रोफ़ाइल",
         "ready": "Okou तैयार है",
         "skills": "अपनी skills इम्पोर्ट करें",
-        "slack": "Slack में Okou जोड़ें",
         "sources": "अपना काम जोड़ें",
-        "team": "साथी को बुलाएँ"
+        "team": "टीम सदस्य को आमंत्रित करें"
       },
       "experience": {
-        "copy": "जो प्लान आप पहले से लेते हैं उसे जोड़ें — काम Okou क्रेडिट के बजाय वहीं चलेगा।",
-        "no": "नहीं, यह मेरे लिए नया है",
-        "noCopy": "Okou आपके लिए पहला काम चुन लेगा।",
-        "title": "क्या आपने Codex या Claude Code इस्तेमाल किया है?"
+        "copy": "मार्गदर्शन से शुरू करें या अपना मौजूदा Codex या Claude Code प्लान साथ लाएँ।",
+        "no": "मैं AI एजेंट में नया हूँ",
+        "noCopy": "Okou आपके लिए उपयोगी पहला काम चुनने में मदद करता है।",
+        "title": "आप Okou के साथ कैसे शुरू करना चाहेंगे?",
+        "trust": "टास्क Okou क्रेडिट की बजाय आपके Codex या Claude Code प्लान पर चलते हैं, इसलिए खपत की चिंता किए बिना ज़्यादा काम करें। अभी या बाद में जोड़ें।"
       },
       "industries": {
         "coaching": {
@@ -4318,34 +4101,59 @@
         }
       },
       "industry": {
-        "copy": "Okou इसी से आपका पहला काम और उसकी शुरुआती स्रोत चुनता है।",
+        "copy": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है। अपने लिए सही पहला टास्क पाने के लिए अपना क्षेत्र चुनें।",
         "title": "आप किस तरह का काम करते हैं?"
       },
-      "profile": {
-        "communicationStyle": "आप कैसे संवाद करते हैं",
-        "copy": "आपके जुड़े हुए खातों के आधार पर आपके काम की पहली झलक।",
-        "failed": "अभी आपकी प्रोफ़ाइल नहीं बन सकी। फिर कोशिश करें या आगे बढ़ें।",
-        "heading": "आपकी प्रोफ़ाइल",
-        "loading": "जुड़े हुए काम से आपकी प्रोफ़ाइल बनाई जा रही है…",
-        "priorities": "संभावित प्राथमिकताएँ",
-        "professionalIdentity": "आपका काम",
-        "retry": "फिर कोशिश करें",
-        "title": "हमें आपके बारे में यह पता चला"
+      "prompt": {
+        "intro": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है।"
       },
       "skills": {
         "copied": "कॉपी हो गया",
-        "copy": "इस prompt को अपने {{provider}} सेशन में पेस्ट करें — यह आपकी मशीन की skills को Okou में ले आता है।",
+        "copy": "{{provider}} में यह प्रॉम्प्ट चलाकर अपनी बनाई हुई स्किल आयात करें, ताकि Okou पहले दिन से उनका इस्तेमाल कर सके।",
         "copyError": "prompt कॉपी नहीं हो सका।",
         "copyPrompt": "prompt कॉपी करें",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Claude ऐप खोलें और {{control}} टैब पर जाएँ",
+            "openAppNote": "Code आपके कंप्यूटर पर चलता है, इसलिए यह आपके स्किल फ़ोल्डर पढ़ सकता है।",
+            "stayLocal": "सेशन को {{control}} पर ही रखें",
+            "stayLocalNote": "Chat और क्लाउड सेशन आपके कंप्यूटर की फ़ाइलें नहीं देख सकते।"
+          },
+          "codex": {
+            "keepOpen": "जब तक आपकी स्किल नीचे न दिखें, इसे खुला रखें",
+            "openApp": "Codex ऐप खोलें और {{control}} शुरू करें",
+            "openAppNote": "अपने कंप्यूटर वाला ऐप इस्तेमाल करें, ताकि यह आपके स्किल फ़ोल्डर पढ़ सके।"
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "प्रॉम्प्ट कॉपी करें",
+          "label": "प्रॉम्प्ट कहाँ चलाएँ",
+          "paste": "प्रॉम्प्ट पेस्ट करके भेजें",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "पूरा प्रॉम्प्ट छिपाएँ",
         "importedCopy": "Okou workflow के रूप में इम्पोर्ट हुआ।",
+        "importedCount_one": "1 इम्पोर्ट हुई · और का इंतज़ार",
+        "importedCount_other": "{{count}} इम्पोर्ट हुईं · और का इंतज़ार",
         "importedLabel": "इम्पोर्ट हुई skills",
         "importedTitle": "आपकी skills Okou में आ गईं",
         "preparing": "आपका इम्पोर्ट सेशन खोला जा रहा है…",
         "promptCopy": "यह आपकी मशीन की skills पढ़कर Okou में लिख देता है।",
         "promptLabel": "skill इम्पोर्ट prompt",
         "promptTitle": "इसे {{provider}} में चलाएँ",
+        "showFullPrompt": "पूरा प्रॉम्प्ट दिखाएँ",
         "startError": "इम्पोर्ट सेशन नहीं खोला जा सका।",
-        "title": "जो skills आपने पहले ही लिखी हैं, उन्हें ले आएँ।",
+        "title": "अपनी मौजूदा स्किल Okou में लाएँ",
         "tryAgain": "फिर से कोशिश करें",
         "waiting": "इम्पोर्ट हुई skills आते ही यहाँ दिखेंगी।"
       },
@@ -4354,44 +4162,18 @@
         "channelAdminRequired": "अपने workspace के व्यवस्थापक से {{channel}} में Okou जोड़ने के लिए कहें।",
         "channelUnavailable": "{{channel}} इस workspace में अभी उपलब्ध नहीं है।",
         "connectAction": "Slack कनेक्ट करें",
-        "connectedCopy": "Slack खोलें और काम सौंपने के लिए @Okou को मेंशन करें।",
         "connectedStatus": "आपके workspace में जुड़ गया",
-        "connectedTitle": "Slack जुड़ गया है",
-        "copy": "एक बार जोड़ें, फिर जहाँ काम पहले से हो रहा है वहीं @Okou को मेंशन करें।",
         "name": "Slack",
         "otherAdded": "जोड़ा गया",
         "otherImessage": "iMessage",
-        "othersLabel": "बाद में जोड़ें, या अभी",
         "otherTeams": "Teams",
-        "otherTelegram": "Telegram",
-        "previewAppBadge": "APP",
-        "previewAsk": "पिछले हफ़्ते के साइनअप स्रोत के हिसाब से निकालो, ऐड अकाउंट से मिलाओ और टेबल एक शीट में डाल दो।",
-        "previewAskAuthor": "Mia Chen",
-        "previewChannel": "# growth",
-        "previewChannelGeneral": "# general",
-        "previewChannelLaunch": "# launch",
-        "previewChannelsLabel": "चैनल",
-        "previewChannelTopic": "इस हफ़्ते के आँकड़े और आगे क्या आ रहा है",
-        "previewComposer": "#growth में मैसेज करें",
-        "previewContext": "बोर्ड कॉल गुरुवार को है और पिछले हफ़्ते के आँकड़े मुझ पर अब भी बाकी हैं।",
-        "previewContextAuthor": "Dan Rivera",
-        "previewContextTime": "9:06 AM",
-        "previewDirectMessagesLabel": "डायरेक्ट मैसेज",
-        "previewMention": "@Okou",
-        "previewReplies": "3 जवाब",
-        "previewReply": "पिछले हफ़्ते 1,284 साइनअप, 1,088 से 18% ज़्यादा। शीट थ्रेड में है।",
-        "previewReplyAuthor": "Okou",
-        "previewReplyTime": "9:16 AM",
-        "previewTime": "9:14 AM",
-        "previewWorkspace": "Northwind",
-        "rowCopy": "जिस भी चैनल में जोड़ेंगे, वहाँ काम करता है।",
-        "rowTitle": "Okou for Slack",
-        "title": "Slack छोड़े बिना Okou को काम सौंपें।"
+        "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "यह क्लाउड में चलता है, उन्हीं टूल्स से जो आपकी टीम पहले से इस्तेमाल करती है। दस गुना नतीजा, कम परिचालन झंझट, कम लागत। शुरू करने के लिए एक स्रोत जोड़ें।",
-        "note": "कौन-से खाते जोड़ने हैं, यह आप तय करते हैं।",
-        "title": "Okou आपके लिए है, और आपकी पूरी टीम के साथ साझा है।"
+        "copy": "Okou आपके काम को जितना जानता है, उतना ही स्मार्ट होता जाता है। रोज़ इस्तेमाल होने वाला टूल जोड़ें और अपने असली काम पर आधारित टास्क से शुरुआत करें।",
+        "permissions": "Okou आपका पहला टास्क तय करने के लिए थोड़ी-सी जानकारी का इस्तेमाल करता है। Agents क्या कर सकते हैं और कितने समय तक, यह आप तय करते हैं।",
+        "securityLink": "Okou आपका डेटा कैसे सुरक्षित रखता है",
+        "title": "काम का एक टूल कनेक्ट करें"
       },
       "startingPrompt": {
         "exact": {
@@ -4725,1213 +4507,39 @@
         "connecting": "जोड़ा जा रहा है…",
         "failedNote": "हम {{provider}} को जोड़ नहीं सके। दोबारा कोशिश करें या बाद में जोड़ें।",
         "retry": "दोबारा कोशिश करें",
-        "rowCopy": "Okou क्रेडिट के बजाय आपके प्लान पर चलता है।",
+        "rowCopy": "Okou क्रेडिट की जगह अपने प्लान से काम चलाने के लिए उसे कनेक्ट करें।",
         "unconfirmedNote": "हम आपका {{provider}} कनेक्शन जाँच नहीं सके। दोबारा कोशिश करें या बाद में जोड़ें।"
       },
       "team": {
-        "copy": "अभी किसी साथी को बुलाएँ, या बाद में workspace मेन्यू से।",
+        "copy": "अपने वर्कफ़्लो साझा करने के लिए टीम सदस्य को आमंत्रित करें, जबकि हर कोई अपने टूल खुद जोड़ता है।",
+        "invalidEmail": "कृपया एक मान्य ईमेल पता दर्ज करें",
         "invite": "न्योता भेजें",
         "invited": "न्योता भेजा गया",
-        "label": "साथी का ईमेल",
-        "note": "वे इसी workspace में आते हैं; उनके अपने खाते उन्हीं के रहते हैं।",
+        "label": "टीम सदस्य का ईमेल",
+        "note": "वे तुरंत Okou के साथ काम शुरू कर सकते हैं।",
         "notSent": "न्योता नहीं भेजा गया",
-        "panelTitle": "साथी को बुलाएँ",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "टीम सदस्य को आमंत्रित करें",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "उनके जोड़े खाते उन्हीं के रहते हैं — उनके बिना कुछ साझा नहीं होता।",
-          "workflows": "यहाँ मौजूद कोई भी इस workspace के workflow चला सकता है।",
-          "workspace": "वे इसी workspace में आते हैं, उन्हीं स्रोतों के साथ जो आपने अभी जोड़े।"
+          "accounts": "ज़रूरत पड़ने पर अपने टूल जोड़ते हैं।",
+          "workflows": "टीम के बनाए सभी वर्कफ़्लो चला सकते हैं।",
+          "workspace": "आपके वर्कस्पेस से जुड़ते हैं।"
         },
         "sending": "भेजा जा रहा है…",
-        "title": "जो लोग यह काम करते हैं, उन्हें साथ लाएँ।"
+        "title": "पूरी टीम के लिए Okou को उपयोगी बनाएँ"
       },
       "welcome": {
-        "copy": "पहले काम से शुरू करें, जो अभी जोड़े गए काम के हिसाब से चुना गया है।",
-        "offerTitle": "पहला घंटा कंसल्टिंग हमारी ओर से, साथ में 100 क्रेडिट तक —",
+        "copy": "अपने काम के लिए सुझाया गया पहला काम देखें, लक्ष्य के अनुसार बदलें और Okou को शुरू करने दें।",
         "promptLabel": "आपका शुरुआती प्रॉम्प्ट",
         "start": "Okou से शुरू करें",
-        "title": "Okou आपके लिए तैयार है"
-      }
-    },
-    "templatePicker": {
-      "image": {
-        "description": "जिस छवि को आप बनाना चाहते हैं उसके संदर्भ के रूप में इसका उपयोग करें।",
-        "selectTemplate": "{{title}} चित्रण टेम्पलेट चुनें",
-        "showVariant": "{{title}} वैरिएंट {{variant}} दिखाएँ",
-        "title": "आरंभ करने के लिए एक चित्रण टेम्पलेट चुनें"
-      },
-      "presentation": {
-        "description": "जिस डेक को आप बनाना चाहते हैं उसके संदर्भ के रूप में इसका उपयोग करें।",
-        "nextSlide": "अगली स्लाइड दिखाएँ",
-        "previousSlide": "पिछली स्लाइड दिखाएँ",
-        "selectTemplate": "{{title}} प्रेजेंटेशन टेम्पलेट चुनें",
-        "showSlide": "स्लाइड {{slide}} दिखाएँ",
-        "slideAlt": "{{title}} स्लाइड {{slide}}",
-        "title": "आरंभ करने के लिए एक प्रस्तुति टेम्पलेट चुनें",
-        "viewTemplate": "{{title}} प्रस्तुति देखें"
-      },
-      "video": {
-        "description": "जिस वीडियो को आप बनाना चाहते हैं उसके संदर्भ के रूप में इसका उपयोग करें।",
-        "selectTemplate": "{{title}} वीडियो टेम्पलेट चुनें",
-        "title": "आरंभ करने के लिए एक वीडियो टेम्पलेट चुनें"
-      }
-    },
-    "templateRun": {
-      "image": {
-        "noteLabel": "कस्टम चित्रण दृश्य",
-        "notePlaceholder": "अपने स्वयं के चित्रण के साथ रीमिक्स में अपना कस्टम दृश्य जोड़ें",
-        "previewLabel": "चित्रण टेम्पलेट पूर्वावलोकन",
-        "title": "एक ऑटोमेशन चुनें जिसे आप आज़माना चाहेंगे"
-      },
-      "presentation": {
-        "noteLabel": "प्रस्तुति सामग्री और निर्देश",
-        "notePlaceholder": "अपनी प्रस्तुति की सामग्री और निर्देश जोड़ें",
-        "previewLabel": "प्रस्तुति टेम्पलेट पूर्वावलोकन",
-        "title": "अपनी प्रस्तुति को पूरा करें"
-      },
-      "video": {
-        "noteLabel": "कस्टम वीडियो प्रॉम्प्ट",
-        "notePlaceholder": "अपने स्वयं के वीडियो के साथ रीमिक्स करने के लिए अपना कस्टम प्रॉम्प्ट जोड़ें",
-        "previewLabel": "वीडियो टेम्पलेट पूर्वावलोकन",
-        "title": "अपने वीडियो को अनुकूलित करें"
-      }
-    },
-    "templates": {
-      "illustration": {
-        "cozy-parlor": "आरामदायक पार्लर",
-        "crowd-ink": "भीड़ स्याही",
-        "editorial-flatfolk": "संपादकीय फ़्लैटफ़ोक",
-        "emboss-deboss": "उभरी और धँसी छपाई",
-        "endpaper": "एंडपेपर",
-        "flat-poster": "सपाट पोस्टर",
-        "folk-muse": "लोक संग्रहालय",
-        "folk-storybook": "लोक कथापुस्तक",
-        "grain-poster": "अनाज का पोस्टर",
-        "grainy-duotone": "दानेदार डुओटोन",
-        "iberian-vignette": "इबेरियन विगनेट",
-        "ink-mascot": "स्याही शुभंकर",
-        "ink-storefront": "इंक स्टोरफ्रंट",
-        "inkdab": "इंकडैब",
-        "inkstomp": "इंकस्टॉम्प",
-        "iso-scene": "आईएसओ दृश्य",
-        "jade-blockprint": "जेड ब्लॉकप्रिंट",
-        "light-pop-portrait": "लाइट पॉप पोर्ट्रेट",
-        "loose-contour": "ढीला कंटूर",
-        "mellow-pop": "मधुर पॉप",
-        "mosaic-still-life": "मोज़ेक स्टिल लाइफ",
-        "notion-illustration": "Notion चित्रण",
-        "op-ed-cover": "ओप-एड कवर",
-        "painterly-botanical": "चित्रकारी वानस्पतिक",
-        "papernook": "पेपरनुक",
-        "postcard-illustration": "पोस्टकार्ड चित्रण",
-        "riso-relic": "रिसो अवशेष",
-        "shadow-pop": "छाया पॉप",
-        "soft-vector": "नरम वेक्टर",
-        "sticker-sheet": "स्टीकर शीट",
-        "sunlit-gouache": "सूरज की रोशनी वाला गौचे",
-        "tiny-wanderer": "छोटा पथिक"
-      },
-      "presentation": {
-        "bloom-pitch": "पंखुड़ी पिच",
-        "blueprint-academy": "ड्राफ्टिंग कैंपस",
-        "botane-organic-deck": "मौवे उद्यान",
-        "business-data-presentation": "बेरी डैशबोर्ड",
-        "crayon-learning-deck": "क्रेयॉन डूडल",
-        "creative-agency-presentation": "पत्ते गैलरी",
-        "data-report-presentation": "कैंडी चार्ट",
-        "editorial-magazine-deck": "कागज पत्रिका",
-        "landing-consulting-deck": "नियॉन ब्राउज़र",
-        "lumina-creative-studio": "ब्रश स्टिकर",
-        "meridian": "कोबाल्ट ब्लॉक्स",
-        "mosaic-geometric-pitch": "बॉहॉस टाइल्स",
-        "neo-brutalism": "शैडो शॉप",
-        "nocturne": "मिडनाइट स्टेज",
-        "pixel-glitch": "आर्केड पिक्सल",
-        "playful-launch-presentation": "सनबर्स्ट प्लेरूम",
-        "playful-pop-deck": "नियॉन कैंडी",
-        "prospectus": "होमपेज पिच",
-        "schoolhouse": "क्राफ्ट पोस्टर",
-        "sticker-scrapbook": "स्टिकर नोटबुक",
-        "strata": "लाल सीढ़ी",
-        "taped-consulting": "पोलेरॉइड दीवार",
-        "vantage": "नंबर वाला बोर्डरूम"
-      },
-      "video": {
-        "chinese-ink-art": "चीनी स्याही चित्रकारी",
-        "cyberpunk-anime": "साइबरपंक एनीमे",
-        "epic-grandeur": "महाकाव्य भव्यता",
-        "fashion-editorial": "फैशन संपादकीय",
-        "gourmet-documentary": "रुचिकर वृत्तचित्र",
-        "hand-drawn-fantasy-anime": "हाथ से बनाई गई काल्पनिक एनीमे",
-        "japanese-wabi-sabi": "जापानी वाबी-सबी",
-        "luxury-product": "लक्जरी उत्पाद मैक्रो",
-        "shortform-viral": "शॉर्टफॉर्म वायरल",
-        "sports-performance-ad": "खेल प्रदर्शन विज्ञापन"
-      }
-    },
-    "workflowDiagram": {
-      "preparedDescription": "{{assistantName}} आपके टूल से अगला चरण तैयार करता है।",
-      "preparedTitle": "वर्कफ़्लो तैयार किया गया",
-      "reviewDescription": "{{assistantName}} वर्कफ़्लो पूरा करता है और परिणाम लौटाता है।",
-      "reviewTitle": "समीक्षा के लिए तैयार",
-      "source": "स्रोत"
-    },
-    "workflowPicker": {
-      "categoryDescription": "रेडी-टू-रन सेटअप को आप अपने टूल और लक्ष्यों के अनुसार अनुकूलित कर सकते हैं।",
-      "categoryTitle": "{{category}} वर्कफ़्लो",
-      "customDescription": "बताएं कि आप क्या चाहते हैं और {{assistantName}} इसे आपके साथ बनाता है।",
-      "customTitle": "{{assistantName}} से बात करें और अपना खुद का बनाएं",
-      "description": "उपयुक्त वर्कफ़्लो देखने के लिए एक भूमिका चुनें। आप कभी भी स्विच कर सकते हैं।",
-      "title": "आप किस पर काम करते हैं?",
-      "workflowCardLabel": "{{title}} {{description}}"
-    },
-    "workflowPreview": {
-      "howItWorks": "यह कैसे काम करता है",
-      "whatItDoes": "यह क्या करता है"
-    },
-    "workflowRun": {
-      "continueWithAssistant": "{{assistantName}} के साथ जारी रखें",
-      "createWorkflow": "वर्कफ़्लो बनाएँ",
-      "customNoteLabel": "अपने वर्कफ़्लो का वर्णन करें",
-      "customNotePlaceholder": "बताएं कि आप {{assistantName}} से क्या बनवाना चाहते हैं",
-      "customTitle": "अपने वर्कफ़्लो का वर्णन करें",
-      "noteLabel": "क्या आप कुछ और जोड़ना चाहेंगे?",
-      "notePlaceholder": "क्या आप कुछ और जोड़ना चाहेंगे?",
-      "reviewTitle": "अपने वर्कफ़्लो ड्राफ्ट की समीक्षा करें"
-    },
-    "workflows": {
-      "alert-metric-moves-slack": {
-        "description": "वेबसाइट के महत्वपूर्ण बदलाव पहचानें और उनके संभावित कारण समझाएँ।",
-        "scenario": "किसी metric में तेज़ बदलाव तभी उपयोगी होता है जब उसके साथ संदर्भ भी मिले। {{assistantName}} Google Analytics की निगरानी करता है और कनेक्ट होने पर search या paid-channel के प्रमाण जोड़ता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} चुने हुए sources से नए signals और बदलाव पढ़ता है।",
-            "title": "ज़रूरी संकेतों की जाँच होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} असर समझाता है और समीक्षा के लिए अगले कदम सुझाता है।",
-            "title": "अलर्ट और अगले कदम तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} सामान्य उतार-चढ़ाव से अलग risks और opportunities पहचानता है।",
-            "title": "महत्वपूर्ण बदलाव पहचाने जाते हैं"
-          }
-        },
-        "title": "ट्रैफ़िक और कन्वर्ज़न में बदलाव का अलर्ट दें"
-      },
-      "auto-merge-github-prs": {
-        "description": "तैयार pull requests की समीक्षा करें, CI का इंतज़ार करें और मंज़ूर बदलाव merge करें।",
-        "scenario": "किसी PR को merge करने से पहले checks और diff दोनों को दोबारा देखना ज़रूरी है। {{assistantName}} ready-to-merge label वाले PR उठाता है, बदलाव की समीक्षा करता है, CI का इंतज़ार करता है और केवल आपकी मंज़ूर शर्तों के अनुसार merge करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} नए request, message या record और उससे जुड़ा संदर्भ पढ़ता है।",
-            "title": "इनपुट की समीक्षा होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} लक्षित system में साफ़ task या record बनाता है।",
-            "title": "काम का record बनाया जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} priority, owner, timeline और ज़रूरी evidence तय करता है।",
-            "title": "{{assistantName}} बदलाव की समीक्षा करता है"
-          }
-        },
-        "title": "GitHub PR अपने-आप merge करें"
-      },
-      "blog-posts-to-x": {
-        "description": "कमज़ोर पड़ रहे pages खोजें और उनके लिए प्राथमिकता वाले update briefs बनाएँ।",
-        "scenario": "नए article से पहले मौजूदा content को सुधारना अक्सर अधिक असरदार होता है। {{assistantName}} built-in Firecrawl और DataForSEO से कमज़ोर pages, मौजूदा search demand और ज़रूरी updates पहचानता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} ज़रूरी website, search और performance data इकट्ठा करता है।",
-            "title": "website और search data इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} प्रमाण के साथ सबसे असरदार updates और अगले कदम सुझाता है।",
-            "title": "प्राथमिकता वाली योजना तैयार होती है"
-          },
-          "two": {
-            "description": "{{assistantName}} demand, visibility, gaps और technical issues का विश्लेषण करता है।",
-            "title": "समस्याएँ और अवसर पहचाने जाते हैं"
-          }
-        },
-        "title": "SEO content refresh की योजना बनाएँ"
-      },
-      "build-weekly-deck-gamma": {
-        "description": "revenue, expenses, receivables और cash flow को Google Sheets में track करें।",
-        "scenario": "हर review में numbers हाथ से बनाना समय लेता है। {{assistantName}} मंज़ूर QuickBooks metrics पढ़ता है और Google Sheets में decision-ready dashboard को अपडेट रखता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} मंज़ूर sources से मौजूदा financial data और संदर्भ पढ़ता है।",
-            "title": "वित्तीय डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए साफ़ summary, dashboard या अगले कदम तैयार करता है।",
-            "title": "निर्णय के लिए नतीजे तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} trends, exceptions, risks और महत्वपूर्ण बदलावों की पहचान करता है।",
-            "title": "वित्तीय स्थिति का विश्लेषण होता है"
-          }
-        },
-        "title": "QuickBooks finance dashboard बनाएँ"
-      },
-      "business-review-gamma": {
-        "description": "financial, growth और operating data को एक review में जोड़ें।",
-        "scenario": "मासिक review को केवल dashboards दोहराने के बजाय business की स्थिति समझानी चाहिए। {{assistantName}} QuickBooks, Google Analytics और Google Sheets का data जोड़ता है और उपलब्ध होने पर HubSpot संदर्भ भी शामिल करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} मंज़ूर sources से मौजूदा financial data और संदर्भ पढ़ता है।",
-            "title": "वित्तीय डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए साफ़ summary, dashboard या अगले कदम तैयार करता है।",
-            "title": "निर्णय के लिए नतीजे तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} trends, exceptions, risks और महत्वपूर्ण बदलावों की पहचान करता है।",
-            "title": "वित्तीय स्थिति का विश्लेषण होता है"
-          }
-        },
-        "title": "मासिक business review तैयार करें"
-      },
-      "catch-calendar-conflicts": {
-        "description": "double-booking और मुश्किल scheduling windows को पहले ही पकड़ें।",
-        "scenario": "Calendar conflict को meeting वाले दिन से पहले सुलझाना आसान होता है। {{assistantName}} नए events में overlap, travel और तैयारी के टकराव देखता है और विकल्प समझाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} Calendar, transcript और जुड़े sources से ज़रूरी संदर्भ पढ़ता है।",
-            "title": "बैठक का संदर्भ इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} साफ़ briefing, recap या action list तैयार करता है।",
-            "title": "बैठक का नतीजा तैयार होता है"
-          },
-          "two": {
-            "description": "{{assistantName}} decisions, questions, owners और अगले कदम पहचानता है।",
-            "title": "मुख्य बातें निकाली जाती हैं"
-          }
-        },
-        "title": "Google Calendar के टकराव पहचानें"
-      },
-      "catch-leads-gmail": {
-        "description": "stage movement, ठहरे deals, risks और forecast changes का सारांश दें।",
-        "scenario": "Pipeline review तब साफ़ होता है जब बदलाव meeting से पहले मिलें। {{assistantName}} मौजूदा HubSpot pipeline की पिछले snapshot से तुलना करके संक्षिप्त weekly digest देता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "साप्ताहिक HubSpot pipeline digest बनाएँ"
-      },
-      "chase-overdue-asana-tasks": {
-        "description": "हर owner के लिए reminder तैयार करें, लेकिन अपने-आप न भेजें।",
-        "scenario": "Overdue काम के लिए सामान्य reminder नहीं, सही संदर्भ चाहिए। {{assistantName}} Asana tasks को owner के अनुसार समूहित करता है और हर व्यक्ति के लिए संक्षिप्त Gmail draft बनाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "overdue Asana tasks के लिए Gmail reminders का मसौदा बनाएँ"
-      },
-      "check-posthog-signup-funnel": {
-        "description": "Google Ads और Meta Ads को एक ही performance आधार पर देखें।",
-        "scenario": "दोनों ad platforms अलग तरीके से report करते हैं, इसलिए सीधी तुलना कठिन होती है। {{assistantName}} Google Ads और Meta Ads में spend, conversions, CPA और ROAS को एक समान आधार पर लाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "paid acquisition channels की तुलना करें"
-      },
-      "compare-google-ads-last-month": {
-        "description": "paid-media efficiency, pacing और performance drift को track करें।",
-        "scenario": "Campaign owner के ध्यान देने से पहले budget भटक सकता है। {{assistantName}} spend, conversions, CPA और ROAS की तुलना करके बताता है कि कहाँ कार्रवाई चाहिए।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "Google Ads और Meta Ads की तुलना करें"
-      },
-      "daily-company-brief-slack": {
-        "description": "growth, pipeline और उपलब्ध financial context को जोड़ें।",
-        "scenario": "कंपनी की पूरी तस्वीर कई systems में बिखरी रहती है। {{assistantName}} Google Analytics और HubSpot को जोड़ता है, उपलब्ध होने पर QuickBooks संदर्भ शामिल करता है और ज़रूरी wins, risks और decisions देता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "daily company pulse बनाएँ"
-      },
-      "daily-industry-news-slack": {
-        "description": "QuickBooks की cash position और receivables risk पर नज़र रखें।",
-        "scenario": "Cash-flow की समस्या गंभीर होने से पहले संभालना आसान होता है। {{assistantName}} QuickBooks में cash flow और overdue invoices की जाँच करता है, महत्वपूर्ण risk समझाता है और समीक्षा के लिए follow-up email का मसौदा बना सकता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} मंज़ूर sources से मौजूदा financial data और संदर्भ पढ़ता है।",
-            "title": "वित्तीय डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए साफ़ summary, dashboard या अगले कदम तैयार करता है।",
-            "title": "निर्णय के लिए नतीजे तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} trends, exceptions, risks और महत्वपूर्ण बदलावों की पहचान करता है।",
-            "title": "वित्तीय स्थिति का विश्लेषण होता है"
-          }
-        },
-        "title": "cash flow और overdue invoices का अलर्ट दें"
-      },
-      "draft-github-release-notes-notion": {
-        "description": "merged pull requests को साफ़, user-facing release notes में बदलें।",
-        "scenario": "Release notes के लिए commit log को हाथ से समझाना नहीं पड़ना चाहिए। {{assistantName}} पिछली release के बाद merge हुए PR इकट्ठा करता है और Notion में संक्षिप्त changelog बनाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "Notion में GitHub release notes का मसौदा बनाएँ"
-      },
-      "draft-newsletter-mailchimp": {
-        "description": "Analytics और Search Console को एक organic report में जोड़ें।",
-        "scenario": "Organic growth की जानकारी traffic और search data में बिखरी रहती है। {{assistantName}} Google Analytics और Search Console को जोड़कर बदलाव और अवसर समझाता है और चाहें तो follow-up काम Notion में दर्ज करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} ज़रूरी website, search और performance data इकट्ठा करता है।",
-            "title": "website और search data इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} प्रमाण के साथ सबसे असरदार updates और अगले कदम सुझाता है।",
-            "title": "प्राथमिकता वाली योजना तैयार होती है"
-          },
-          "two": {
-            "description": "{{assistantName}} demand, visibility, gaps और technical issues का विश्लेषण करता है।",
-            "title": "समस्याएँ और अवसर पहचाने जाते हैं"
-          }
-        },
-        "title": "organic growth brief बनाएँ"
-      },
-      "draft-replies-notion-faq": {
-        "description": "support email drafts को मंज़ूर Notion FAQ पर आधारित रखें।",
-        "scenario": "अधिकतर support questions का मंज़ूर जवाब पहले से मौजूद होता है। {{assistantName}} email पढ़ता है, Notion में सही guidance खोजता है और समीक्षा के लिए grounded reply तैयार करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "FAQ के आधार पर replies का मसौदा बनाएँ"
-      },
-      "file-gmail-invoices-drive": {
-        "description": "invoice files सहेजें और उनसे जुड़ा accounting item record करें।",
-        "scenario": "Files और accounting records अलग होने पर invoices बाद में cleanup का काम बनते हैं। {{assistantName}} Gmail attachments को Drive में रखता है, QuickBooks में bill या expense दर्ज करता है और चाहें तो reconciliation sheet अपडेट करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} मंज़ूर sources से मौजूदा financial data और संदर्भ पढ़ता है।",
-            "title": "वित्तीय डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए साफ़ summary, dashboard या अगले कदम तैयार करता है।",
-            "title": "निर्णय के लिए नतीजे तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} trends, exceptions, risks और महत्वपूर्ण बदलावों की पहचान करता है।",
-            "title": "वित्तीय स्थिति का विश्लेषण होता है"
-          }
-        },
-        "title": "Gmail invoices को Drive और QuickBooks में दर्ज करें"
-      },
-      "file-sentry-crashes-github": {
-        "description": "नए crashes को impact के अनुसार rank करें और actionable issues बनाएँ।",
-        "scenario": "High-impact crashes error feed में अनदेखे रह सकते हैं। {{assistantName}} नए Sentry failures की severity और affected users के आधार पर ranking करता है और engineering work वाले issues दर्ज करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} नए request, message या record और उससे जुड़ा संदर्भ पढ़ता है।",
-            "title": "{{assistantName}} नए crashes पढ़ता है"
-          },
-          "three": {
-            "description": "{{assistantName}} लक्षित system में साफ़ task या record बनाता है।",
-            "title": "काम का record बनाया जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} priority, owner, timeline और ज़रूरी evidence तय करता है।",
-            "title": "कार्रवाई योग्य काम पहचाना जाता है"
-          }
-        },
-        "title": "Sentry crashes को GitHub issues में दर्ज करें"
-      },
-      "fixes-to-notion-help-docs": {
-        "description": "पुष्टि किए गए GitHub fixes से दोबारा उपयोग होने वाली Notion guidance बनाएँ।",
-        "scenario": "Fix document न होने पर वही support question फिर आता है। {{assistantName}} resolved GitHub issues पढ़ता है और मंज़ूर समाधान को साफ़ Notion help article में बदलता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "सुलझे bugs को help docs में बदलें"
-      },
-      "flag-figma-designs-no-task": {
-        "description": "मंज़ूर product spec से scoped Linear work बनाएँ।",
-        "scenario": "मंज़ूर spec को भी executable work में बदलना पड़ता है। {{assistantName}} Notion spec पढ़कर milestones, scoped issues, dependencies और acceptance criteria वाला Linear project बनाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} नए request, message या record और उससे जुड़ा संदर्भ पढ़ता है।",
-            "title": "इनपुट की समीक्षा होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} लक्षित system में साफ़ task या record बनाता है।",
-            "title": "काम का record बनाया जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} priority, owner, timeline और ज़रूरी evidence तय करता है।",
-            "title": "कार्रवाई योग्य काम पहचाना जाता है"
-          }
-        },
-        "title": "Notion spec को Linear project में बदलें"
-      },
-      "flagged-gmail-todoist-tasks": {
-        "description": "चुने हुए label वाले messages से actionable tasks बनाएँ।",
-        "scenario": "महत्वपूर्ण email तब पूरा करना आसान होता है जब वह साफ़ task बनकर inbox से बाहर आए। {{assistantName}} labeled Gmail messages को due date और source context वाले Todoist items में बदलता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} नए request, message या record और उससे जुड़ा संदर्भ पढ़ता है।",
-            "title": "इनपुट की समीक्षा होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} लक्षित system में साफ़ task या record बनाता है।",
-            "title": "काम का record बनाया जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} priority, owner, timeline और ज़रूरी evidence तय करता है।",
-            "title": "कार्रवाई योग्य काम पहचाना जाता है"
-          }
-        },
-        "title": "flagged Gmail को Todoist tasks में बदलें"
-      },
-      "github-idea-to-notion-spec": {
-        "description": "labeled GitHub idea को structured product spec में विस्तार दें।",
-        "scenario": "अच्छे ideas अक्सर छोटे issue description तक सीमित रह जाते हैं। {{assistantName}} GitHub idea को problem, evidence, scope, metrics, risks और open questions वाले Notion spec में बदलता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "GitHub idea को Notion spec में बदलें"
-      },
-      "gmail-followups-auto": {
-        "description": "मानव समीक्षा के लिए संदर्भ वाला sales follow-up तैयार करें।",
-        "scenario": "अच्छे follow-up के लिए deal record और बातचीत दोनों चाहिए। {{assistantName}} HubSpot context को संबंधित Gmail thread से जोड़कर संक्षिप्त reply draft बनाता है और उसे भेजता नहीं है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "HubSpot से Gmail follow-ups का मसौदा बनाएँ"
-      },
-      "gmail-reconnect-reminders": {
-        "description": "शांत हो चुके महत्वपूर्ण contacts खोजें और outreach draft करें।",
-        "scenario": "महत्वपूर्ण रिश्ते चुप्पी पर ध्यान न जाने से कमजोर पड़ते हैं। {{assistantName}} Gmail की समीक्षा करता है, उपलब्ध होने पर Calendar history जोड़ता है और सोच-समझकर reconnect notes तैयार करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "दोबारा संपर्क करने योग्य रिश्ते सामने लाएँ"
-      },
-      "highlight-key-emails-gmail": {
-        "description": "वे Gmail messages खोजें जिन्हें executive response की सबसे ज़्यादा ज़रूरत है।",
-        "scenario": "Executive inbox में महत्वपूर्ण decisions और routine mail साथ आते हैं। {{assistantName}} ज़रूरी messages पहचानता है, उनका कारण समझाता है और बिना भेजे response drafts बनाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "महत्वपूर्ण emails highlight करें"
-      },
-      "investor-update-google-docs": {
-        "description": "financial और growth data को Google Docs draft में जोड़ें।",
-        "scenario": "Investor update में story और numbers अलग-अलग जगह होने से समय लगता है। {{assistantName}} QuickBooks और Google Analytics को जोड़ता है, उपलब्ध होने पर HubSpot context शामिल करता है और Google Docs में draft बनाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "investor update का मसौदा बनाएँ"
-      },
-      "log-gong-calls-hubspot": {
-        "description": "meeting transcripts को CRM decisions और next actions में बदलें।",
-        "scenario": "Call details CRM के बाहर रहने पर खो जाते हैं। {{assistantName}} Google Meet transcript से decisions, objections, commitments और action items निकालकर HubSpot में दर्ज करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} Calendar, transcript और जुड़े sources से ज़रूरी संदर्भ पढ़ता है।",
-            "title": "बैठक का संदर्भ इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} साफ़ briefing, recap या action list तैयार करता है।",
-            "title": "बैठक का नतीजा तैयार होता है"
-          },
-          "two": {
-            "description": "{{assistantName}} decisions, questions, owners और अगले कदम पहचानता है।",
-            "title": "मुख्य बातें निकाली जाती हैं"
-          }
-        },
-        "title": "Google Meet action items को HubSpot में दर्ज करें"
-      },
-      "meeting-notes-asana-tasks": {
-        "description": "meeting transcripts से assigned project work बनाएँ।",
-        "scenario": "Meeting actions notes के भीतर रहने पर गायब हो जाते हैं। {{assistantName}} Google Meet transcripts पढ़ता है, commitments और owners पहचानता है और साफ़ Asana tasks बनाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} Calendar, transcript और जुड़े sources से ज़रूरी संदर्भ पढ़ता है।",
-            "title": "बैठक का संदर्भ इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} साफ़ briefing, recap या action list तैयार करता है।",
-            "title": "बैठक का नतीजा तैयार होता है"
-          },
-          "two": {
-            "description": "{{assistantName}} decisions, questions, owners और अगले कदम पहचानता है।",
-            "title": "मुख्य बातें निकाली जाती हैं"
-          }
-        },
-        "title": "Google Meet notes को Asana tasks में बदलें"
-      },
-      "meeting-recaps-slack": {
-        "description": "meeting transcripts से संक्षिप्त recap और action items बनाएँ।",
-        "scenario": "Transcript process न होने पर meeting decisions खो जाते हैं। {{assistantName}} Google Meet transcripts पढ़कर key decisions, actions और owners को Google Docs में लिखता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} Calendar, transcript और जुड़े sources से ज़रूरी संदर्भ पढ़ता है।",
-            "title": "बैठक का संदर्भ इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} साफ़ briefing, recap या action list तैयार करता है।",
-            "title": "बैठक का नतीजा तैयार होता है"
-          },
-          "two": {
-            "description": "{{assistantName}} decisions, questions, owners और अगले कदम पहचानता है।",
-            "title": "मुख्य बातें निकाली जाती हैं"
-          }
-        },
-        "title": "Google Meet recaps को Google Docs में सहेजें"
-      },
-      "morning-brief-slack": {
-        "description": "महत्वपूर्ण email, आज का schedule और उपलब्ध Notion context जोड़ें।",
-        "scenario": "उपयोगी morning plan के लिए inbox और calendar दोनों चाहिए। {{assistantName}} Gmail और Google Calendar देखता है, उपलब्ध होने पर Notion context जोड़ता है और संक्षिप्त daily brief देता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "morning brief बनाएँ"
-      },
-      "new-gmail-contacts-hubspot": {
-        "description": "संबंधित email conversations से CRM contacts बनाएँ या बेहतर करें।",
-        "scenario": "नए रिश्ते अक्सर inbox में ही रह जाते हैं। {{assistantName}} संबंधित Gmail correspondents पहचानता है, HubSpot में duplicates देखता है और contact record बनाता या बेहतर करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े sources से मौजूदा records और उनकी स्थिति पढ़ता है।",
-            "title": "मौजूदा records पढ़े जाते हैं"
-          },
-          "three": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के साथ लक्षित system अपडेट करता है और बदलावों का सारांश देता है।",
-            "title": "लक्षित record अपडेट होता है"
-          },
-          "two": {
-            "description": "{{assistantName}} नए और पुराने data के बीच महत्वपूर्ण बदलाव पहचानता है।",
-            "title": "बदलावों की तुलना होती है"
-          }
-        },
-        "title": "नए Gmail contacts को HubSpot में जोड़ें"
-      },
-      "onboard-new-hires-asana": {
-        "description": "मंज़ूर submissions को Asana onboarding plan में बदलें।",
-        "scenario": "हर मंज़ूर intake एक ही plan अपनाए तो new-hire setup अधिक भरोसेमंद होता है। {{assistantName}} Google Forms submissions पढ़ता है, Asana tasks बनाता है और ज़रूरत होने पर documents Drive में रखता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} नए request, message या record और उससे जुड़ा संदर्भ पढ़ता है।",
-            "title": "इनपुट की समीक्षा होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} लक्षित system में साफ़ task या record बनाता है।",
-            "title": "काम का record बनाया जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} priority, owner, timeline और ज़रूरी evidence तय करता है।",
-            "title": "कार्रवाई योग्य काम पहचाना जाता है"
-          }
-        },
-        "title": "Google Forms से new hires onboard करें"
-      },
-      "post-daily-metrics-slack": {
-        "description": "traffic, acquisition, conversion और महत्वपूर्ण बदलावों का सारांश दें।",
-        "scenario": "रोज़ के website बदलाव देखने के लिए कई reports खोलने की ज़रूरत नहीं होनी चाहिए। {{assistantName}} Google Analytics पढ़ता है, उपलब्ध होने पर Search Console context जोड़ता है और automation thread में संक्षिप्त brief देता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} चुने हुए sources से नए signals और बदलाव पढ़ता है।",
-            "title": "ज़रूरी संकेतों की जाँच होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} असर समझाता है और समीक्षा के लिए अगले कदम सुझाता है।",
-            "title": "अलर्ट और अगले कदम तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} सामान्य उतार-चढ़ाव से अलग risks और opportunities पहचानता है।",
-            "title": "महत्वपूर्ण बदलाव पहचाने जाते हैं"
-          }
-        },
-        "title": "daily website metrics brief बनाएँ"
-      },
-      "post-github-updates-slack": {
-        "description": "cloud access, service accounts और exposed services की समीक्षा करें।",
-        "scenario": "Projects बढ़ने के साथ cloud permissions बदलती रहती हैं। {{assistantName}} Google Cloud IAM, service accounts, keys, enabled services और public exposure की समीक्षा करके read-only risk report और साफ़ remediation देता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} चुने हुए sources से नए signals और बदलाव पढ़ता है।",
-            "title": "ज़रूरी संकेतों की जाँच होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} असर समझाता है और समीक्षा के लिए अगले कदम सुझाता है।",
-            "title": "अलर्ट और अगले कदम तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} सामान्य उतार-चढ़ाव से अलग risks और opportunities पहचानता है।",
-            "title": "महत्वपूर्ण बदलाव पहचाने जाते हैं"
-          }
-        },
-        "title": "Google Cloud IAM और services का audit करें"
-      },
-      "post-release-notes-slack": {
-        "description": "हाल में shipped GitHub work को मंज़ूर changelog में बदलें।",
-        "scenario": "Shipped work pull requests के भीतर आसानी से खो जाता है। {{assistantName}} हाल के GitHub changes इकट्ठा करता है, पढ़ने योग्य release notes बनाता है और मंज़ूर version Notion में प्रकाशित करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "Notion में release notes प्रकाशित करें"
-      },
-      "prep-google-calendar-meetings": {
-        "description": "आने वाली external meetings के लिए focused briefing बनाएँ।",
-        "scenario": "Meeting preparation call से पाँच मिनट पहले शुरू नहीं होनी चाहिए। {{assistantName}} Calendar event पढ़ता है और उपलब्ध होने पर contact और CRM context जोड़ता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} Calendar, transcript और जुड़े sources से ज़रूरी संदर्भ पढ़ता है।",
-            "title": "बैठक का संदर्भ इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} साफ़ briefing, recap या action list तैयार करता है।",
-            "title": "बैठक का नतीजा तैयार होता है"
-          },
-          "two": {
-            "description": "{{assistantName}} decisions, questions, owners और अगले कदम पहचानता है।",
-            "title": "मुख्य बातें निकाली जाती हैं"
-          }
-        },
-        "title": "Google Calendar meetings की तैयारी करें"
-      },
-      "publish-scheduled-posts-buffer": {
-        "description": "site की competitors से तुलना करके organic opportunities rank करें।",
-        "scenario": "Content plan बेहतर होता है जब वह वास्तविक search gaps से शुरू हो। {{assistantName}} built-in Firecrawl और DataForSEO से site और चुने competitors की तुलना करके missing topics को intent और value के आधार पर rank करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} ज़रूरी website, search और performance data इकट्ठा करता है।",
-            "title": "website और search data इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} प्रमाण के साथ सबसे असरदार updates और अगले कदम सुझाता है।",
-            "title": "प्राथमिकता वाली योजना तैयार होती है"
-          },
-          "two": {
-            "description": "{{assistantName}} demand, visibility, gaps और technical issues का विश्लेषण करता है।",
-            "title": "समस्याएँ और अवसर पहचाने जाते हैं"
-          }
-        },
-        "title": "keyword और content gaps खोजें"
-      },
-      "report-ai-model-costs-slack": {
-        "description": "traffic या security incident और अगली response action समझाएँ।",
-        "scenario": "Cloudflare incident में शोर से पहले सही संदर्भ चाहिए। {{assistantName}} traffic, security events और service health की समीक्षा करता है, संभावित असर समझाता है और automation thread में अगले कदम देता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} चुने हुए sources से नए signals और बदलाव पढ़ता है।",
-            "title": "ज़रूरी संकेतों की जाँच होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} असर समझाता है और समीक्षा के लिए अगले कदम सुझाता है।",
-            "title": "अलर्ट और अगले कदम तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} सामान्य उतार-चढ़ाव से अलग risks और opportunities पहचानता है।",
-            "title": "महत्वपूर्ण बदलाव पहचाने जाते हैं"
-          }
-        },
-        "title": "Cloudflare incidents का अलर्ट दें"
-      },
-      "research-calendar-meetings": {
-        "description": "Calendar और email context से संक्षिप्त briefings बनाएँ।",
-        "scenario": "Attendee और conversation history पहले से जुड़ी हो तो meeting preparation तेज़ होती है। {{assistantName}} आने वाले Calendar events की समीक्षा करता है और उपलब्ध होने पर Gmail context जोड़ता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} Calendar, transcript और जुड़े sources से ज़रूरी संदर्भ पढ़ता है।",
-            "title": "बैठक का संदर्भ इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} साफ़ briefing, recap या action list तैयार करता है।",
-            "title": "बैठक का नतीजा तैयार होता है"
-          },
-          "two": {
-            "description": "{{assistantName}} decisions, questions, owners और अगले कदम पहचानता है।",
-            "title": "मुख्य बातें निकाली जाती हैं"
-          }
-        },
-        "title": "आने वाली meetings की तैयारी करें"
-      },
-      "research-new-signups-apollo": {
-        "description": "X से creator leads खोजें और qualify करें।",
-        "scenario": "List पुरानी होने पर outbound रुक जाता है। {{assistantName}} target profile से मेल खाने वाले creators और prospects X पर खोजता है, built-in people search और Firecrawl से qualification करता है और ranked outreach list देता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "X पर creator leads खोजें"
-      },
-      "run-daily-query-sheets": {
-        "description": "search visibility और query movement को Google Sheets में लिखें।",
-        "scenario": "Organic performance का लगातार history हो तो उस पर कार्रवाई करना आसान होता है। {{assistantName}} Search Console metrics पढ़ता है, उपलब्ध होने पर Analytics context जोड़ता है और reporting sheet refresh करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} ज़रूरी website, search और performance data इकट्ठा करता है।",
-            "title": "website और search data इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} प्रमाण के साथ सबसे असरदार updates और अगले कदम सुझाता है।",
-            "title": "प्राथमिकता वाली योजना तैयार होती है"
-          },
-          "two": {
-            "description": "{{assistantName}} demand, visibility, gaps और technical issues का विश्लेषण करता है।",
-            "title": "समस्याएँ और अवसर पहचाने जाते हैं"
-          }
-        },
-        "title": "organic search performance को Sheets में दर्ज करें"
-      },
-      "send-bugs-github-slack": {
-        "description": "दोबारा बनाए जा सकने वाले bug reports को structured engineering work में बदलें।",
-        "scenario": "Evidence inbox में रह जाए तो bug report का मूल्य घट जाता है। {{assistantName}} reproducible support issues पहचानता है, impact और steps निकालता है और structured GitHub issue बनाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} नए request, message या record और उससे जुड़ा संदर्भ पढ़ता है।",
-            "title": "इनपुट की समीक्षा होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} लक्षित system में साफ़ task या record बनाता है।",
-            "title": "काम का record बनाया जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} priority, owner, timeline और ज़रूरी evidence तय करता है।",
-            "title": "कार्रवाई योग्य काम पहचाना जाता है"
-          }
-        },
-        "title": "support emails को GitHub issues में बदलें"
-      },
-      "sort-gmail-draft-replies": {
-        "description": "नए mail को triage करें और मानव समीक्षा के लिए responses तैयार करें।",
-        "scenario": "व्यस्त inbox में urgent requests और आसान replies दोनों छिप जाते हैं। {{assistantName}} नए Gmail messages को urgency और action के अनुसार समूहित करता है और उन्हें भेजे बिना response drafts बनाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "Gmail sort करें और replies draft करें"
-      },
-      "sort-route-zendesk-tickets": {
-        "description": "support mail को classify करें और actionable Linear issues बनाएँ।",
-        "scenario": "Support mail के लिए लगातार priority और ownership चाहिए। {{assistantName}} नई Gmail conversations पढ़ता है, issue type और urgency पहचानता है और कार्रवाई वाले items के लिए Linear work बनाता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} नए request, message या record और उससे जुड़ा संदर्भ पढ़ता है।",
-            "title": "इनपुट की समीक्षा होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} लक्षित system में साफ़ task या record बनाता है।",
-            "title": "काम का record बनाया जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} priority, owner, timeline और ज़रूरी evidence तय करता है।",
-            "title": "कार्रवाई योग्य काम पहचाना जाता है"
-          }
-        },
-        "title": "support emails को Linear में triage करें"
-      },
-      "spot-churn-risk-stripe-zendesk": {
-        "description": "support volume, risk, themes और unresolved work का सारांश दें।",
-        "scenario": "महत्वपूर्ण बदलाव साफ़ दिखें तो support queue संभालना आसान होता है। {{assistantName}} Gmail conversations की समीक्षा करता है, urgent या recurring issues highlight करता है और संबंधित Linear या GitHub work जोड़ता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "daily support digest बनाएँ"
-      },
-      "summarize-gmail-newsletters": {
-        "description": "चुने newsletters को एक उपयोगी recurring digest में बदलें।",
-        "scenario": "हर issue inbox में ध्यान के लिए प्रतिस्पर्धा करे तो newsletter का मूल्य खो जाता है। {{assistantName}} चुने Gmail newsletters को themes, उपयोगी links और recommended reads में summarize करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "Gmail newsletters का सारांश बनाएँ"
-      },
-      "summarize-user-feedback-notion": {
-        "description": "नई form responses को ranked product insights में समूहित करें।",
-        "scenario": "Patterns दिखाई दें तो feedback उपयोगी बनता है। {{assistantName}} Google Forms responses पढ़ता है, बार-बार आने वाले pain points और requests को समूहित करके rank करता है और summary Notion में लिखता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "Google Forms feedback को Notion में summarize करें"
-      },
-      "summarize-zendesk-tickets-daily": {
-        "description": "built-in avatar capability से मंज़ूर support videos बनाएँ।",
-        "scenario": "कुछ support answers छोटे presenter video में समझना आसान होता है। {{assistantName}} मंज़ूर FAQ content को script और storyboard में बदलता है और review के बाद built-in avatar-video capability का उपयोग करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "FAQ को डिजिटल-ह्यूमन सपोर्ट वीडियो में बदलें"
-      },
-      "sync-asana-projects-notion": {
-        "description": "Asana के साथ Notion project overview को current रखें।",
-        "scenario": "Task status दूसरी जगह बदले तो project summary पुरानी हो जाती है। {{assistantName}} चुने Asana projects पढ़ता है और उनसे जुड़ा Notion overview current रखता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े sources से मौजूदा records और उनकी स्थिति पढ़ता है।",
-            "title": "मौजूदा records पढ़े जाते हैं"
-          },
-          "three": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के साथ लक्षित system अपडेट करता है और बदलावों का सारांश देता है।",
-            "title": "लक्षित record अपडेट होता है"
-          },
-          "two": {
-            "description": "{{assistantName}} नए और पुराने data के बीच महत्वपूर्ण बदलाव पहचानता है।",
-            "title": "बदलावों की तुलना होती है"
-          }
-        },
-        "title": "Asana projects को Notion में sync करें"
-      },
-      "sync-linear-roadmap-notion": {
-        "description": "Notion में Now, Next और Later roadmap को current रखें।",
-        "scenario": "Delivery status दूसरी जगह बदले तो roadmap पुराना हो जाता है। {{assistantName}} चुने Linear projects और issues पढ़ता है, उन्हें Now, Next और Later में रखता है और Notion roadmap अपडेट करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े sources से मौजूदा records और उनकी स्थिति पढ़ता है।",
-            "title": "मौजूदा records पढ़े जाते हैं"
-          },
-          "three": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के साथ लक्षित system अपडेट करता है और बदलावों का सारांश देता है।",
-            "title": "लक्षित record अपडेट होता है"
-          },
-          "two": {
-            "description": "{{assistantName}} नए और पुराने data के बीच महत्वपूर्ण बदलाव पहचानता है।",
-            "title": "बदलावों की तुलना होती है"
-          }
-        },
-        "title": "Linear roadmap को Notion में sync करें"
-      },
-      "track-feature-usage-posthog": {
-        "description": "product adoption में सबसे बड़े साप्ताहिक बदलाव सामने लाएँ।",
-        "scenario": "Dashboard review से पहले ही feature adoption बदल सकता है। {{assistantName}} हाल के Google Analytics usage signals की तुलना करता है, meaningful movement पहचानता है और चाहें तो decisions Notion में दर्ज करता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} चुने हुए sources से नए signals और बदलाव पढ़ता है।",
-            "title": "ज़रूरी संकेतों की जाँच होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} असर समझाता है और समीक्षा के लिए अगले कदम सुझाता है।",
-            "title": "अलर्ट और अगले कदम तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} सामान्य उतार-चढ़ाव से अलग risks और opportunities पहचानता है।",
-            "title": "महत्वपूर्ण बदलाव पहचाने जाते हैं"
-          }
-        },
-        "title": "Google Analytics से feature adoption track करें"
-      },
-      "track-keyword-ranks-ahrefs": {
-        "description": "site crawl करके प्राथमिकता वाली technical SEO issue list दें।",
-        "scenario": "Technical SEO issues सैकड़ों pages में छिपे रहते हैं। {{assistantName}} built-in Firecrawl और DataForSEO से crawlability, indexability, internal links और live search visibility की जाँच करता है, किसी connector के बिना।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} ज़रूरी website, search और performance data इकट्ठा करता है।",
-            "title": "website और search data इकट्ठा होता है"
-          },
-          "three": {
-            "description": "{{assistantName}} प्रमाण के साथ सबसे असरदार updates और अगले कदम सुझाता है।",
-            "title": "प्राथमिकता वाली योजना तैयार होती है"
-          },
-          "two": {
-            "description": "{{assistantName}} demand, visibility, gaps और technical issues का विश्लेषण करता है।",
-            "title": "समस्याएँ और अवसर पहचाने जाते हैं"
-          }
-        },
-        "title": "website का technical SEO audit करें"
-      },
-      "track-signup-sources-sheets": {
-        "description": "Google Cloud data query करें और refresh होने वाला analysis प्रकाशित करें।",
-        "scenario": "महत्वपूर्ण operational data अक्सर BigQuery में होता है, लेकिन उसका recurring view नहीं होता। {{assistantName}} मंज़ूर query चलाता है, trends और anomalies पहचानता है और Google Sheets में result table और summary लिखता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} जुड़े हुए स्रोतों से इस workflow के लिए ज़रूरी डेटा और संदर्भ इकट्ठा करता है।",
-            "title": "ज़रूरी डेटा इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} समीक्षा के लिए स्पष्ट सारांश, सुझाव और अगले कदम तैयार करता है।",
-            "title": "नतीजे तैयार किए जाते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} मुख्य बदलावों, जोखिमों और प्राथमिकताओं की पहचान करता है।",
-            "title": "डेटा का विश्लेषण किया जाता है"
-          }
-        },
-        "title": "BigQuery data का Sheets में विश्लेषण करें"
-      },
-      "watch-brand-mentions": {
-        "description": "मंज़ूर videos को platform-native posts और threads में बदलें।",
-        "scenario": "एक अच्छा video एक से अधिक channels के काम आ सकता है। {{assistantName}} चुने YouTube video की समीक्षा करता है, X posts और threads draft करता है और चाहें तो मंज़ूर plan Notion में सहेजता है।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} संबंधित records, messages और उपलब्ध संदर्भ पढ़ता है।",
-            "title": "संबंधित संदर्भ इकट्ठा किया जाता है"
-          },
-          "three": {
-            "description": "{{assistantName}} मसौदा समीक्षा के लिए रखता है और मंज़ूरी के बिना उसे भेजता या प्रकाशित नहीं करता।",
-            "title": "मानव समीक्षा के लिए रखा जाता है"
-          },
-          "two": {
-            "description": "{{assistantName}} मंज़ूर जानकारी के आधार पर स्पष्ट और सटीक मसौदा तैयार करता है।",
-            "title": "मसौदा तैयार किया जाता है"
-          }
-        },
-        "title": "YouTube videos को X के लिए repurpose करें"
-      },
-      "watch-sentry-after-release": {
-        "description": "नई release की stability को पिछली baseline से compare करें।",
-        "scenario": "Regressions धीरे-धीरे बढ़ते रहें तो release स्वस्थ दिख सकती है। {{assistantName}} नए Sentry signals की पिछली baseline से तुलना करता है और बताता है कि देखना जारी रखें, fix forward करें या rollback करें।",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} चुने हुए sources से नए signals और बदलाव पढ़ता है।",
-            "title": "ज़रूरी संकेतों की जाँच होती है"
-          },
-          "three": {
-            "description": "{{assistantName}} असर समझाता है और समीक्षा के लिए अगले कदम सुझाता है।",
-            "title": "अलर्ट और अगले कदम तैयार होते हैं"
-          },
-          "two": {
-            "description": "{{assistantName}} सामान्य उतार-चढ़ाव से अलग risks और opportunities पहचानता है।",
-            "title": "महत्वपूर्ण बदलाव पहचाने जाते हैं"
-          }
-        },
-        "title": "release के बाद Sentry पर नज़र रखें"
+        "title": "ऐसे काम से शुरू करें जो मायने रखता है"
       }
     }
   },
   "queue": {
     "concurrentRuns_one": "{{count}} समवर्ती रन",
     "concurrentRuns_other": "{{count}} समवर्ती रन",
-    "description": "कतार में अपनी स्थिति देखें और प्रतीक्षा को छोड़ने के लिए अपग्रेड करें।",
+    "description": "देखें कि कितने समवर्ती रन उपयोग में हैं और प्रतीक्षा छोड़ने के लिए अपग्रेड करें।",
     "perMonth": "/महीना",
     "pricePerMonth": "{{price}}/महीना",
     "purchase": {
@@ -5956,7 +4564,6 @@
     "tiers": {
       "custom": "कस्टम",
       "free": "मुक्त",
-      "limitedFree": "सीमित मुफ़्त",
       "pro": "प्रो",
       "team": "टीम"
     },
@@ -5966,7 +4573,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} क्रेडिट/माह",
         "emailSupport": "ई - मेल समर्थन",
-        "ownKeys": "अपनी स्वयं की LLM कीज़ लाएँ",
         "payAsYouGo": "उसके बाद पे-एज़-यू-गो",
         "prioritySupport": "प्राथमिकता सपोर्ट",
         "unlimitedAgents": "असीमित कुल एजेंट्स"
@@ -5979,17 +4585,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "क्रेडिट जोड़ें",
-      "openModelProviders": "मॉडल प्रदाता खोलें",
-      "reconnectClaude": "Claude Code को फिर से कनेक्ट करें",
-      "shareWithAdmin": "व्यवस्थापक के साथ साझा करें"
+      "openModelSettings": "मॉडल सेटिंग्स खोलें",
+      "reconnectClaude": "Claude Code को फिर से कनेक्ट करें"
     },
-    "anthropicKeyAdmin": "कॉन्फ़िगर की गई Anthropic API कुंजी से Claude Code का प्रमाणीकरण नहीं हो सका। मॉडल प्रदाता में API कुंजी अपडेट करें या बदलें, फिर दोबारा कोशिश करें।",
-    "anthropicKeyMember": "कॉन्फ़िगर की गई Anthropic API कुंजी से Claude Code का प्रमाणीकरण नहीं हो सका। वर्कस्पेस व्यवस्थापक से API कुंजी अपडेट करने या बदलने के लिए कहें।",
     "askAdmin": "वर्कस्पेस व्यवस्थापक से क्रेडिट जोड़ने या वर्कस्पेस प्लान अपग्रेड करने के लिए कहें।",
-    "claudeReconnect": "Claude Code सदस्यता का प्रमाणीकरण विफल रहा। मॉडल प्रदाता में Claude Code को फिर से कनेक्ट करें, फिर दोबारा कोशिश करें।",
-    "claudeTerms": "Claude Code के लिए अपडेट की गई उपयोग की शर्तें और गोपनीयता नीति स्वीकार करना आवश्यक है। मॉडल प्रदाता में जुड़े Claude खाते से https://claude.ai पर साइन इन करें, अपडेट स्वीकार करें और फिर दोबारा कोशिश करें।",
+    "claudeReconnect": "Claude Code सदस्यता का प्रमाणीकरण विफल रहा। सेटिंग्स > मॉडल में Claude Code को फिर से कनेक्ट करें, फिर दोबारा कोशिश करें।",
+    "claudeTerms": "Claude Code के लिए अपडेट की गई उपयोग की शर्तें और गोपनीयता नीति स्वीकार करना आवश्यक है। सेटिंग्स > मॉडल में जुड़े Claude खाते से https://claude.ai पर साइन इन करें, अपडेट स्वीकार करें और फिर दोबारा कोशिश करें।",
     "codexOverloaded": "चुना गया मॉडल अपनी क्षमता सीमा पर है। कृपया कोई दूसरा मॉडल आज़माएँ।",
-    "codexReconnect": "ChatGPT सत्र को फिर से कनेक्ट करना आवश्यक है। मॉडल प्रदाता में ChatGPT (Codex) को फिर से कनेक्ट करें, फिर दोबारा कोशिश करें।",
+    "codexReconnect": "ChatGPT सत्र को फिर से कनेक्ट करना आवश्यक है। सेटिंग्स > मॉडल में ChatGPT (Codex) को फिर से कनेक्ट करें, फिर दोबारा कोशिश करें।",
     "contentPolicyRejected": "मॉडल प्रदाता ने अपनी सामग्री सुरक्षा नीति के तहत यह अनुरोध अस्वीकार कर दिया। उसी इनपुट के साथ दोबारा कोशिश करने पर फिर विफलता होगी। अनुरोध को अलग तरह से लिखें, नई बातचीत शुरू करें या किसी दूसरे मॉडल पर स्विच करें।",
     "executionTimeout": "यह रन अपनी समय सीमा तक पहुँच गया।",
     "failed": "रन विफल हुआ",
@@ -5997,9 +4600,9 @@
     "modelTemporarilyUnavailable": "मॉडल अस्थायी रूप से उपलब्ध नहीं है",
     "modelUnavailable": "वर्तमान मॉडल उपलब्ध नहीं है।",
     "overloaded": "{{model}} पर अधिक लोड है। कुछ मिनट बाद फिर कोशिश करें या किसी दूसरे मॉडल पर स्विच करें।",
-    "providerBalance": "आपके जुड़े हुए मॉडल प्रदाता खाते में पर्याप्त बैलेंस नहीं है।",
+    "providerBalance": "आपके कनेक्ट किए गए सब्सक्रिप्शन खाते में पर्याप्त बैलेंस नहीं है।",
     "transient": "कुछ गड़बड़ हो गई। कृपया बाद में फिर कोशिश करें।",
-    "vm0Credits": "पर्याप्त क्रेडिट नहीं हैं। जारी रखने के लिए क्रेडिट जोड़ें या अपनी API कुंजी कॉन्फ़िगर करें।"
+    "vm0Credits": "पर्याप्त क्रेडिट नहीं हैं। जारी रखने के लिए क्रेडिट जोड़ें या अपनी व्यक्तिगत Codex या Claude सदस्यता कनेक्ट करें।"
   },
   "serviceStatus": {
     "dismiss": "सेवा अपडेट बंद करें",
@@ -6075,7 +4678,7 @@
           "title": "इनवॉइस"
         },
         "model": {
-          "description": "चुनें कि आपका वर्कस्पेस और आपके रन किस AI मॉडल का उपयोग करते हैं।",
+          "autoDescription": "Okou हर कार्य के लिए मॉडल चुनता है।",
           "title": "मॉडल"
         },
         "people": {
@@ -6165,16 +4768,10 @@
     },
     "models": {
       "actions": {
-        "addModel": "मॉडल जोड़ें",
-        "deleteModel": "मॉडल हटाएँ",
-        "editModel": "मॉडल संपादित करें",
-        "resetUsage": "उपयोग रीसेट करें",
-        "upgradePro": "उपयोग करने के लिए प्रो को अपग्रेड करें",
-        "upgradeToPro": "प्रो में अपग्रेड"
+        "resetUsage": "उपयोग रीसेट करें"
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "अनुमोदन पृष्ठ नहीं खोला जा सका. लिंक का मैन्युअल रूप से उपयोग करें और कोड यहां पेस्ट करें।",
           "authorizationCode": "प्राधिकरण संकेत - लिपि",
           "codePlaceholder": "Claude से कोड पेस्ट करें",
           "codeRequired": "जारी रखने के लिए Claude प्राधिकरण कोड चिपकाएँ।",
@@ -6192,84 +4789,40 @@
           "usageNotice": "Claude Code पर आधारित एजेंटों के साथ Claude मॉडल इस्तेमाल करने के लिए अपनी Claude सदस्यता से साइन इन करें।"
         },
         "codex": {
-          "approvalOpened": "अनुमोदन पृष्ठ खोला गया. अनुमोदन देने से पहले डिवाइस कोड कॉपी करें.",
-          "codeCopied": "डिवाइस कोड कॉपी किया गया. अनुमोदन के लिए प्रतीक्षा...",
-          "codeCopiedRetry": "डिवाइस कोड कॉपी किया गया. अनुमोदन पृष्ठ पुनः खोलने का प्रयास करें.",
           "connectedToast": "ChatGPT जुड़ा",
           "connectTitle": "Codex कनेक्ट करें",
-          "copyAndOpen": "कोड कॉपी करें और अनुमोदन पृष्ठ खोलें",
-          "copyAndOpenError": "डिवाइस कोड कॉपी नहीं किया जा सका या अनुमोदन पृष्ठ नहीं खोला जा सका. कोड को मैन्युअल रूप से कॉपी करें और पुनः प्रयास करें।",
-          "copyError": "अनुमोदन पृष्ठ खोला गया, लेकिन डिवाइस कोड कॉपी नहीं किया गया। अनुमोदन देने से पहले इसे मैन्युअल रूप से कॉपी करें।",
           "deviceCode": "डिवाइस कोड",
           "error": "ChatGPT कनेक्शन विफल रहा. पुनः प्रयास करने के लिए पुनः प्रारंभ करें.",
           "expired": "Codex कनेक्शन सत्र समाप्त हो गया। पुनः प्रयास करने के लिए पुनः प्रारंभ करें.",
           "freePlanRejected": "निःशुल्क ChatGPT योजनाएं {{brandName}} के माध्यम से Codex का उपयोग नहीं कर सकतीं। प्लस या प्रो में अपग्रेड करें और पुनः प्रयास करें।",
-          "instructions": "सबसे पहले कॉपी कोड पर क्लिक करें और अनुमोदन पृष्ठ खोलें। फिर संकेत मिलने पर डिवाइस कोड को OpenAI में पेस्ट करें। अंत में पहुंच स्वीकृत करें और {{brandName}} कनेक्शन पूरा होने तक इस संवाद को खुला रखें।",
+          "instructions": "सबसे पहले कॉपी बटन से डिवाइस कोड कॉपी करें, फिर अनुमोदन पृष्ठ खोलें। फिर संकेत मिलने पर डिवाइस कोड को OpenAI में पेस्ट करें। अंत में पहुंच स्वीकृत करें और {{brandName}} कनेक्शन पूरा होने तक इस संवाद को खुला रखें।",
           "invalidTokenFormat": "Codex ने एक लॉगिन टोकन प्रारूप तैयार किया जिसे {{brandName}} नहीं पहचानता। Codex को अपडेट करें और पुनः प्रयास करें।",
-          "openError": "डिवाइस कोड कॉपी किया गया, लेकिन अनुमोदन पृष्ठ नहीं खोला जा सका. पुनः प्रयास करें।",
+          "openApproval": "अनुमोदन पृष्ठ खोलें",
           "preparing": "तैयारी...",
           "reconnectAction": "ChatGPT को पुनः कनेक्ट करें",
           "reconnectTitle": "Codex को पुनः कनेक्ट करें",
           "signIn": "ChatGPT के साथ साइन इन करें"
         }
       },
-      "gateways": {
-        "actions": "गेटवे कार्रवाइयाँ",
-        "add": "प्रदाता जोड़ें",
-        "addTitle": "मॉडल प्रदाता जोड़ें",
-        "apiBaseUrl": "API बेस URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "API कुंजी",
-        "deleteConfirm": "यह मॉडल प्रदाता कनेक्शन हटाएँ? इसका उपयोग करने वाले मॉडल रूट उपलब्ध नहीं रहेंगे।",
-        "description": "Anthropic Messages, OpenAI Responses या दोनों के माध्यम से एडमिन द्वारा प्रबंधित गेटवे कनेक्ट करें।",
-        "dialogDescription": "हर प्रोटोकॉल को Claude Code या Codex द्वारा उपयोग किए जाने वाले API बेस URL के साथ कॉन्फ़िगर करें।",
-        "editTitle": "मॉडल प्रदाता संपादित करें",
-        "empty": "कोई कस्टम मॉडल प्रदाता कॉन्फ़िगर नहीं है।",
-        "errors": {
-          "invalidMappings": "मॉडल मैपिंग एक JSON ऑब्जेक्ट होना चाहिए, जिसके मान अपस्ट्रीम मॉडल नाम हों।",
-          "missingProtocol": "कम से कम एक प्रोटोकॉल चालू करें।",
-          "missingSecret": "API कुंजी दर्ज करें।"
-        },
-        "headerName": "प्रमाणीकरण हेडर",
-        "headerValue": "हेडर मान टेम्पलेट",
-        "keepKey": "मौजूदा कुंजी बनाए रखने के लिए खाली छोड़ें",
-        "modelMappings": "मॉडल मैपिंग (JSON)",
-        "name": "नाम",
-        "presets": {
-          "custom": "कस्टम",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "अनुरोध",
-        "title": "प्रदाता कनेक्शन"
-      },
       "personal": {
         "accountFallback": "खाता {{number}}",
-        "accountsDescription": "नई रन के लिए हर प्रदाता द्वारा उपयोग किया जाने वाला खाता चुनें।",
-        "accountsSectionTitle": "व्यक्तिगत खाते",
-        "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "सक्रिय",
-        "addAccount": "खाता जोड़ें",
-        "claudeDescription": "Claude Code पर आधारित एजेंटों के साथ Claude मॉडल इस्तेमाल करने के लिए अपनी Claude सदस्यता से साइन इन करें।",
+        "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना Claude या ChatGPT खाता कनेक्ट करें।",
+        "autoTitle": "और मॉडल इस्तेमाल करें",
         "claudeTitle": "Claude",
-        "codexDescription": "GPT मॉडल इस्तेमाल करने के लिए अपना ChatGPT खाता कनेक्ट करें।",
         "codexTitle": "ChatGPT (Codex)",
-        "description": "केवल आपके रनों में, आपकी अपनी साख के साथ उपयोग किया जाता है।",
+        "connectAccount": "खाता कनेक्ट करें",
         "disconnectAccount": "खाता डिस्कनेक्ट करें",
         "disconnectDescription": "इससे खाता Okou से हट जाएगा। इससे प्रदाता की आपकी सदस्यता रद्द नहीं होगी।",
         "disconnecting": "डिस्कनेक्ट हो रहा है…",
         "disconnectTitle": "{{account}} को डिस्कनेक्ट करें?",
+        "loadError": "आपके खाते लोड नहीं हो सके।",
+        "loadingAccounts": "खाते लोड हो रहे हैं…",
         "noAccounts": "कोई खाता कनेक्ट नहीं है।",
         "reconnectAccount": "फिर से कनेक्ट करें",
-        "sectionTitle": "निजी",
+        "retry": "फिर से कोशिश करें",
         "status": {
           "connected": "जुड़े हुए",
-          "connectedWithDetail": "कनेक्टेड ({{detail}})",
           "fiveHour": "5 घंटे",
           "left": "{{percent}} बायां",
           "stale": "ध्यान",
@@ -6278,99 +4831,37 @@
         "useAccount": "उपयोग करें"
       },
       "picker": {
-        "builtInModel": "अंतर्निर्मित मॉडल",
-        "byokHelp": "आपके कॉन्फ़िगर किए गए प्रोवाइडर का उपयोग करता है",
-        "categoryChat": "चैट",
-        "categoryImage": "इमेज",
-        "categoryVideo": "वीडियो",
+        "auto": "Auto",
         "chatModels": "चैट मॉडल",
         "effort": "प्रयास",
         "effortScale": {
           "faster": "तेज़",
+          "higherUsage": "अधिक उपयोग",
+          "lowerUsage": "कम उपयोग",
           "smarter": "समझदार"
         },
         "fast": "तेज़",
         "fastImpact": {
-          "apiCost": "2× API टोकन लागत",
-          "chatGptUsage": "2.5× ChatGPT उपयोग",
-          "fasterResponses": "मॉडल के तेज़ जवाब",
-          "modelSpeed": "{{multiplier}}× मॉडल गति",
-          "okouCredits": "2× Okou मॉडल क्रेडिट",
-          "providerSpeed": "गति प्रदाता पर निर्भर है",
           "providerUsage": "उपयोग प्रदाता पर निर्भर है",
-          "solApiSpeed": "अधिकतम 2.5× मॉडल गति",
-          "summary": "{{speed}} · {{usage}}"
+          "subscriptionUsage": "{{multiplier}}× सदस्यता उपयोग"
         },
+        "fastMode": "तेज़ मोड",
         "generationPriceTiers": {
           "higher": "प्रति जनरेशन अधिक लागत",
           "highest": "प्रति जनरेशन सबसे अधिक लागत",
           "lowest": "प्रति जनरेशन सबसे कम लागत",
           "typical": "प्रति जनरेशन सामान्य लागत"
         },
-        "imageModels": "इमेज मॉडल",
-        "inheritDefault": "ऑर्ग डिफॉल्ट से इनहेरिट करें",
+        "inheritDefault": "डिफ़ॉल्ट (Auto)",
         "loadError": "मॉडल लोड करने में असमर्थ.",
         "loading": "मॉडल लोड हो रहे हैं...",
-        "menu": {
-          "backToModels": "मॉडल पर वापस जाएँ",
-          "changeModel": "{{category}} मॉडल बदलें, {{model}}"
-        },
         "models": "मॉडल",
         "noConfiguredModels": "कोई कॉन्फ़िगर मॉडल नहीं",
-        "priceTiers": {
-          "balanced": "संतुलित लागत और प्रदर्शन",
-          "economy": "रोजमर्रा के सरल कार्यों के लिए इकोनॉमी टियर",
-          "frontier": "फ्रंटियर फ्लैगशिप मॉडल",
-          "premium": "सबसे कठिन कार्यों के लिए प्रीमियम फ्रंटियर मॉडल"
-        },
         "pro": "प्रो",
-        "providerLabels": {
-          "azureFoundryPortal": "एज़्योर फाउंड्री पोर्टल",
-          "claudeCodeOauth": "Claude Code (OAuth टोकन)",
-          "deepseek": "गहन खोज"
-        },
-        "standard": "मानक",
-        "videoModels": "वीडियो मॉडल"
-      },
-      "policies": {
-        "actionsFor": "{{model}} के लिए क्रियाएँ",
-        "apiKey": "API कुंजी",
-        "apiKeyDescription": "एक साझा वर्कस्पेस कुंजी। सबसे अच्छा तब होता है जब टीम एक खाते के माध्यम से बिल देती है।",
-        "apiKeyPlaceholder": "अपनी API कुंजी दर्ज करें",
-        "apiKeyRequired": "API कुंजी आवश्यक है",
-        "availableModels": "उपलब्ध मॉडल",
-        "builtIn": "में निर्मित",
-        "builtInDescription": "वर्कस्पेस क्रेडिट उपयोग को कवर करता है।",
-        "claudeSubscription": "Claude सदस्यता",
-        "claudeSubscriptionDescription": "प्रत्येक सदस्य अपना स्वयं का प्रो, मैक्स या टीम प्लान जोड़ता है।",
-        "codexSubscription": "Codex सदस्यता",
-        "codexSubscriptionDescription": "प्रत्येक सदस्य अपनी स्वयं की प्रो या टीम योजना जोड़ता है।",
-        "defaultModel": "डिफ़ॉल्ट मॉडल",
-        "defaultModelDescription": "इसका उपयोग तब किया जाता है जब कोई कार्य अपना स्वयं का मॉडल नहीं चुनता है।",
-        "dialogDescription": "तय करें कि सदस्य इस मॉडल तक कैसे पहुँचें।",
-        "gateway": "कस्टम गेटवे",
-        "gatewayDescription": "एडमिन द्वारा परिभाषित प्रदाता कनेक्शन से रूट करें।",
-        "gatewayProvider": "प्रदाता कनेक्शन",
-        "getKey": "एक कुंजी प्राप्त करें",
-        "invalidRoute": "अमान्य मार्ग",
-        "missingProvider": "प्रोवाइडर गायब है",
-        "model": "मॉडल",
-        "noAvailableModels": "कोई उपलब्ध मॉडल नहीं",
-        "noMappedGateway": "कोई प्रदाता कनेक्शन इस मॉडल से मैप नहीं है।",
-        "pricing": "मूल्य",
-        "providedBy": "द्वारा उपलब्ध कराया गया",
-        "provider": "प्रोवाइडर",
-        "providerApiKey": "{{provider}} API कुंजी",
-        "runsThrough": "रन का माध्यम",
-        "secretStored": "वर्कस्पेस में रहस्य संग्रहीत।",
-        "selectDefaultModel": "एक डिफ़ॉल्ट मॉडल चुनें",
-        "selectGateway": "प्रदाता कनेक्शन चुनें",
-        "selectModel": "एक मॉडल चुनें",
-        "selectProvider": "एक प्रोवाइडर चुनें",
-        "workspaceDescription": "इस वर्कस्पेस में सभी के लिए उपलब्ध है।"
+        "standard": "मानक"
       },
       "reset": {
-        "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक {{provider}} रीसेट का उपयोग करें। आपके पास {{remaining}} है।",
+        "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक Codex रीसेट का उपयोग करें। आपके पास {{remaining}} है।",
         "progress": "रीसेट किया जा रहा है...",
         "remaining_one": "{{value}} रीसेट बचे हैं",
         "remaining_other": "{{value}} रीसेट बचे हैं",
@@ -6378,26 +4869,14 @@
         "remainingUnknown": "रीसेट —",
         "remainingWithExpiry_one": "{{value}} रीसेट बचा है · {{expiry}} समाप्त",
         "remainingWithExpiry_other": "{{value}} रीसेट बचे हैं · {{expiry}} समाप्त",
-        "title": "{{provider}} उपयोग रीसेट करें?"
-      },
-      "stale": {
-        "claudeExpired": "आपका Claude Code सत्र समाप्त हो गया। जारी रखने के लिए पुनः कनेक्ट करें.",
-        "claudeFailed": "Claude Code रिफ्रेश विफल रहा। पुनः प्रयास करने के लिए पुनः कनेक्ट करें.",
-        "claudeTitle": "Claude Code सत्र को पुनः कनेक्ट करने की आवश्यकता है",
-        "codexExpired": "आपका ChatGPT सत्र समाप्त हो गया। जारी रखने के लिए पुनः कनेक्ट करें.",
-        "codexFailed": "ChatGPT रिफ्रेश विफल रहा। पुनः प्रयास करने के लिए पुनः कनेक्ट करें.",
-        "codexInvalidated": "आपका ChatGPT सत्र निरस्त कर दिया गया था। पुनः कनेक्ट करें.",
-        "codexReused": "आपका ChatGPT सत्र अन्यत्र उपयोग किया गया था। पुनः कनेक्ट करें.",
-        "codexTitle": "ChatGPT सत्र को पुनः कनेक्ट करने की आवश्यकता है"
+        "title": "Codex उपयोग रीसेट करें?"
       },
       "toasts": {
         "accountDisconnected": "खाता डिस्कनेक्ट हो गया",
         "accountSwitched": "सक्रिय खाता बदल दिया गया",
-        "disconnected": "{{provider}} डिस्कनेक्ट हो गया",
-        "policiesUpdated": "मॉडल प्रोवाइडर सेटिंग अपडेट की गईं",
-        "reset": "{{provider}} उपयोग रीसेट",
-        "resetUnavailable": "कोई {{provider}} उपयोग रीसेट उपलब्ध नहीं है",
-        "resetUnneeded": "{{provider}} उपयोग को अभी रीसेट की आवश्यकता नहीं है"
+        "reset": "Codex उपयोग रीसेट",
+        "resetUnavailable": "कोई Codex उपयोग रीसेट उपलब्ध नहीं है",
+        "resetUnneeded": "Codex उपयोग को अभी रीसेट की आवश्यकता नहीं है"
       },
       "usage": {
         "inDays": "{{days}}d में",
@@ -6414,8 +4893,13 @@
       }
     },
     "paidTools": {
-      "description": "चुनें कि Okou आपके कामों में कौन से सशुल्क टूल इस्तेमाल कर सकता है। हर इस्तेमाल पर क्रेडिट खर्च होते हैं।",
+      "description": "ये टूल बिल्ट-इन क्रेडिट खर्च करते हैं, और Okou आपके कार्यों पर काम करते समय ज़रूरत के अनुसार इन्हें अपने आप इस्तेमाल करता है। किसी टूल को बंद करने पर Okou उसका इस्तेमाल नहीं करेगा।",
       "disabledForCreation": "{{tool}} आपके लिए बंद है",
+      "imageModel": {
+        "description": "अंतर्निहित इमेज जनरेशन आपके कार्यों के लिए इस मॉडल का उपयोग करता है।",
+        "label": "मॉडल",
+        "saveError": "आपका इमेज मॉडल सेव नहीं हुआ।"
+      },
       "loadError": "आपकी टूल सेटिंग लोड नहीं हो सकीं।",
       "loading": "आपकी टूल सेटिंग लोड हो रही हैं…",
       "openSettings": "सेटिंग खोलें",
@@ -6424,12 +4908,8 @@
       "saving": "सेव हो रहा है…",
       "scope": "ये सेटिंग {{workspace}} में केवल आप पर लागू होती हैं।",
       "timing": "बदलाव आगे के रन पर लागू होंगे। चल रहे या पहले से तैयार कार्यों में पिछली सेटिंग बनी रह सकती हैं।",
-      "title": "सशुल्क टूल",
+      "title": "बिल्ट-इन टूल",
       "tools": {
-        "avatar-video-generation": {
-          "description": "बोलने वाले अवतार के वीडियो बनाएँ।",
-          "name": "अवतार वीडियो जनरेशन"
-        },
         "finance": {
           "description": "कंपनियों, कीमतों और बाज़ार के डेटा की जानकारी लें।",
           "name": "वित्तीय डेटा"
@@ -6437,10 +4917,6 @@
         "image-generation": {
           "description": "अंतर्निहित मॉडल से इमेज बनाएँ।",
           "name": "इमेज जनरेशन"
-        },
-        "image-recognition": {
-          "description": "इमेज पढ़ें और उनका विश्लेषण करें।",
-          "name": "इमेज पहचान"
         },
         "maps": {
           "description": "स्थान, पते और रास्ते खोजें।",
@@ -6461,14 +4937,6 @@
         "social": {
           "description": "सार्वजनिक सोशल पोस्ट पर शोध करें और मीडिया इकट्ठा करें।",
           "name": "सोशल शोध"
-        },
-        "video-generation": {
-          "description": "अंतर्निहित मॉडल से वीडियो बनाएँ।",
-          "name": "वीडियो जनरेशन"
-        },
-        "voice-generation": {
-          "description": "अंतर्निहित आवाज़ों से भाषण बनाएँ।",
-          "name": "वॉइस जनरेशन"
         },
         "web-search": {
           "description": "वेब पर ताज़ा जानकारी खोजें।",
@@ -6519,26 +4987,6 @@
         "sectionTitle": "चैट"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "कूलडाउन रद्द करें",
-          "cancelDescription": "इस ग्लोबल कूलडाउन को रद्द करने पर रूट सभी वर्कस्पेस के लिए तुरंत उपलब्ध हो जाएगा।",
-          "cancelling": "रद्द किया जा रहा है...",
-          "cancelTitle": "ग्लोबल कूलडाउन रद्द करें?",
-          "cancelWarning": "बाद में योग्य विफलता होने पर यह रूट फिर से कूलडाउन में जा सकता है।",
-          "description": "फ़ॉलबैक चयन से अस्थायी रूप से बाहर किए गए अंतर्निर्मित मॉडल रूट देखें।",
-          "empty": "अभी कोई अंतर्निर्मित मॉडल रूट ग्लोबल कूलडाउन में नहीं है।",
-          "globalActive": "सक्रिय ग्लोबल कूलडाउन",
-          "globalExplanation": "कूलडाउन ग्लोबल परिचालन स्थिति है और अंतर्निर्मित मॉडल का उपयोग करने वाले सभी वर्कस्पेस को प्रभावित करती है।",
-          "keepCooldown": "कूलडाउन बनाए रखें",
-          "loading": "अंतर्निर्मित मॉडल कूलडाउन डायग्नोस्टिक्स लोड हो रहे हैं...",
-          "providerType": "प्रदाता प्रकार",
-          "refresh": "रीफ़्रेश करें",
-          "selectedModel": "चुना गया मॉडल",
-          "title": "अंतर्निर्मित मॉडल फ़ॉलबैक",
-          "unavailable": "अंतर्निर्मित मॉडल कूलडाउन डायग्नोस्टिक्स उपलब्ध नहीं हैं।",
-          "unavailableUntil": "इस समय तक अनुपलब्ध",
-          "upstreamModel": "अपस्ट्रीम मॉडल"
-        },
         "capture": {
           "disabled": "अक्षम",
           "enabled_one": "अगले {{count}} रन के लिए सक्षम",
@@ -6583,20 +5031,6 @@
           "title": "IndexedDB स्टोरेज",
           "unavailable": "IndexedDB स्टोरेज उपलब्ध नहीं है।"
         },
-        "morningBriefTrigger": {
-          "description": "अभी एक वास्तविक Morning Brief चलाएँ। यह आपके अगले रन को सामान्य शेड्यूलर की कतार में डालता है, जो एक मिनट के भीतर वास्तविक ब्रीफ़ और वास्तविक ईमेल भेजता है। अपने दैनिक समय से पहले ट्रिगर करने पर उस सुबह दो ब्रीफ़ मिलेंगे।",
-          "failed": "Morning Brief को कतार में नहीं डाला जा सका। फिर से कोशिश करें।",
-          "queued": "कतार में है। शेड्यूलर एक मिनट के भीतर ब्रीफ़ भेजेगा।",
-          "title": "Morning Brief",
-          "trigger": "Morning Brief अभी चलाएँ",
-          "triggering": "कतार में डाला जा रहा है…"
-        },
-        "voiceInput": {
-          "default": "डिफ़ॉल्ट ({{model}})",
-          "description": "वॉइस इनपुट v2 के लिए मॉडल चुनें। स्पीच-टू-टेक्स्ट मॉडल टेक्स्ट सुधारने के लिए {{model}} का उपयोग करते हैं।",
-          "title": "वॉइस इनपुट मॉडल",
-          "unavailable": "मॉडल उपलब्ध नहीं है ({{model}})"
-        },
         "welcomeThread": {
           "create": "स्वागत चैट बनाएँ",
           "creating": "बनाई जा रही है…",
@@ -6608,9 +5042,6 @@
       "emailSubscription": {
         "description": "ईमेल से ब्रीफ़, रिमाइंडर और अन्य कार्यस्थान अपडेट प्राप्त करें।",
         "descriptionWithEmail": "{{email}} पर ब्रीफ़, रिमाइंडर और अन्य कार्यस्थान अपडेट प्राप्त करें।",
-        "loading": "ईमेल सदस्यता जाँची जा रही है…",
-        "retryMessage": "आपकी ईमेल सदस्यता सहेजी या लोड नहीं की जा सकी। फिर से कोशिश करें।",
-        "saving": "सहेजा जा रहा है…",
         "sectionTitle": "ईमेल सदस्यताएँ",
         "title": "ईमेल अपडेट",
         "unavailable": "ईमेल उपलब्ध नहीं है",
@@ -6636,17 +5067,10 @@
         "title": "भाषा"
       },
       "morningBrief": {
-        "chatAndEmail": "चैट + ईमेल",
-        "chatOnly": "केवल चैट",
-        "checkEmailSubscription": "डिलीवरी की स्थिति के लिए ऊपर ईमेल सदस्यता देखें।",
         "conflict": "इंस्टॉलेशन स्थिति असंगत होने के कारण Morning Brief अस्थायी रूप से उपलब्ध नहीं है। मिलान पूरा होने पर फिर से कोशिश करें।",
         "description": "अपने समय क्षेत्र में सुबह 7:00 बजे दैनिक प्राथमिकताएँ प्राप्त करें।",
-        "lastDelivered": "पिछली डिलीवरी: {{date}}",
-        "loading": "Morning Brief सेटिंग लोड हो रही हैं...",
         "missingDefaultAgent": "Morning Brief चालू करने से पहले उपयोग योग्य डिफ़ॉल्ट Agent चुनें।",
         "missingTimezone": "Morning Brief चालू करने से पहले एक मान्य समय क्षेत्र सेट करें।",
-        "nextBrief": "अगला ब्रीफ़ {{date}}",
-        "paused": "रुका हुआ",
         "preparationFailed": "सेटअप अपने आप फिर से आज़माया जाएगा। आप अभी भी दोबारा कोशिश कर सकते हैं।",
         "preparing": "आपका पहला मॉर्निंग ब्रीफ़ तैयार हो रहा है। आप इसे कभी भी बंद कर सकते हैं।",
         "retry": "फिर से कोशिश करें",
@@ -6656,10 +5080,8 @@
       "send": {
         "cmdEnter": "⌘ दर्ज करें",
         "cmdEnterDescription": "भेजने के लिए ⌘/Ctrl+Enter दबाएँ, नई लाइन के लिए Enter दबाएँ",
-        "description": "चैट में संदेश भेजने का तरीका चुनें.",
         "enter": "एंटर",
         "enterDescription": "भेजने के लिए Enter दबाएँ, नई लाइन के लिए Shift+Enter दबाएँ",
-        "sectionTitle": "एंटर",
         "title": "के साथ संदेश भेजें"
       },
       "timezone": {
@@ -6696,17 +5118,12 @@
     "shared": {
       "cancel": "रद्द करें",
       "close": "बंद करें",
-      "connect": "कनेक्ट करें",
       "connecting": "कनेक्ट हो रहा है...",
       "delete": "हटाएँ",
       "discard": "खारिज करें",
-      "disconnect": "डिस्कनेक्ट",
-      "edit": "संपादित करें",
       "loading": "लोड हो रहा है",
       "moreOptions": "अधिक विकल्प",
-      "reconnect": "रिकनेक्ट",
       "remove": "निकालें",
-      "replace": "प्रतिस्थापित करें",
       "save": "सहेजें",
       "saveChanges": "परिवर्तनों को सहेजें",
       "saving": "सहेजा जा रहा है..."
@@ -6878,8 +5295,6 @@
     "tryItYourself": "खुद आज़माएं"
   },
   "ssh": {
-    "accessDescription": "चुनें कि कौन से एजेंट आपके SSH होस्ट इस्तेमाल कर सकते हैं।",
-    "accessHelp": "इस Agent को आपके अभी और भविष्य में कॉन्फ़िगर किए गए सभी SSH होस्ट पर कमांड चलाने दें। यह कनेक्टर अनुमतियों से अलग है।",
     "add": "होस्ट जोड़ें",
     "cancel": "रद्द करें",
     "chooseFile": "फ़ाइल चुनें",
@@ -6889,8 +5304,10 @@
       "keepChanges": "इस संस्करण पर मेरे बदलाव लागू करें",
       "latest": "नवीनतम सहेजी गई सेटिंग्स",
       "mode": "कनेक्शन",
+      "needsRebind": "इस होस्ट को नए Cloudflare Access कॉन्फ़िगरेशन से फिर जोड़ना होगा। होस्ट संपादित करके दूसरा कॉन्फ़िगरेशन या Direct चुनें। तब तक यह कनेक्ट नहीं होगा।",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "प्रकाशित होस्टनाम",
+      "rebindHelp": "इस होस्ट को बहाल करने के लिए अनुमति प्राप्त Cloudflare Access कॉन्फ़िगरेशन या Direct चुनें। सेव करने तक कुछ नहीं बदलेगा।",
       "reviewHelp": "आपका ड्राफ़्ट सुरक्षित है। बदलाव लागू करने से पहले नवीनतम सहेजी गई सेटिंग्स की पुष्टि करें।",
       "title": "Cloudflare Access",
       "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है।"
@@ -6936,16 +5353,14 @@
       "unused": "किसी होस्ट द्वारा उपयोग नहीं किया जा रहा"
     },
     "credentialsHelp": "क्रेडेंशियल केवल लिखे जा सकते हैं और सैंडबॉक्स के बाहर रहते हैं। पूरी कुंजी पेस्ट करें; खाली स्थान बनाए रखे जाते हैं। फ़ॉर्म बंद करने पर फ़ील्ड साफ़ हो जाते हैं।",
-    "credentialsTab": "क्रेडेंशियल",
     "delete": "होस्ट हटाएँ",
     "deleteHelp": "यह होस्ट हटाएं? इसका क्रेडेंशियल बना रहेगा। Agents को यह होस्ट सूची में नहीं दिखेगा।",
     "description": "अपने एजेंटों के लिए दूरस्थ कमांड चलाने हेतु SSH होस्ट कॉन्फ़िगर करें।",
     "displayName": "दिखाया जाने वाला नाम",
     "edit": "होस्ट संपादित करें",
     "editHelp": "दूसरे क्रेडेंशियल चुनने से केवल यह होस्ट बदलता है। सीधे कनेक्शन के गंतव्य में बदलाव सहेजी गई होस्ट कुंजी हटाते हैं; Cloudflare Access से जुड़े बदलाव उसे बनाए रखते हैं।",
-    "empty": "कोई SSH होस्ट कॉन्फ़िगर नहीं है। SSH ऐक्सेस वाले Agents के लिए उपलब्ध कराने हेतु होस्ट जोड़ें।",
+    "empty": "कोई SSH होस्ट कॉन्फ़िगर नहीं है। होस्ट जोड़ें, फिर उसे डिफ़ॉल्ट रूप से या अलग-अलग चैट में सक्षम करें।",
     "errors": {
-      "agentUnavailable": "यह एजेंट अब उपलब्ध नहीं है। कोई दूसरा एजेंट चुनें।",
       "configurationChanged": "संपादन के दौरान यह होस्ट बदल गया। आपका ड्राफ़्ट सुरक्षित है। अपने बदलाव लागू करने से पहले इसकी नवीनतम सेटिंग की समीक्षा करें।",
       "credentialChanged": "संपादन के दौरान यह क्रेडेंशियल बदल गया। आपका ड्राफ़्ट सुरक्षित है। सहेजने से पहले नवीनतम सेटिंग और प्रभावित होस्ट की समीक्षा करें।",
       "credentialInUse": "यह क्रेडेंशियल उपयोग में है। पहले संबंधित होस्ट के लिए दूसरा क्रेडेंशियल चुनें या होस्ट हटा दें।",
@@ -6963,11 +5378,9 @@
     "fingerprint": "सहेजी गई होस्ट कुंजी",
     "host": "सार्वजनिक होस्टनाम या IP पता",
     "hostSection": "होस्ट",
-    "hostsTab": "होस्ट",
     "label": "SSH",
     "loadFailed": "SSH सेटिंग लोड नहीं हो सकीं। फिर से कोशिश करें।",
     "loading": "SSH होस्ट लोड हो रहे हैं…",
-    "loadingAccess": "एजेंट की पहुँच लोड हो रही है…",
     "manage": "SSH होस्ट प्रबंधित करें",
     "notLearned": "होस्ट कुंजी अभी सहेजी नहीं गई है",
     "passphrase": "पासफ़्रेज़ (वैकल्पिक)",
@@ -6992,7 +5405,10 @@
     },
     "summary_one": "{{count}} होस्ट कॉन्फ़िगर किया गया",
     "summary_other": "{{count}} होस्ट कॉन्फ़िगर किए गए",
-    "title": "SSH होस्ट",
+    "tailscale": {
+      "editUnavailable": "यह होस्ट अब Tailscale का उपयोग करता है। यहाँ Tailscale का संपादन और दोबारा बाइंड करना अभी उपलब्ध नहीं है। इसके सहेजे गए परिवहन को बनाए रखने के लिए यह संपादन रद्द करें।",
+      "needsRebind": "इस होस्ट के लिए नया Tailscale कॉन्फ़िगरेशन आवश्यक है। Tailscale सेटअप और दोबारा बाइंड करने की सुविधा अभी यहाँ उपलब्ध नहीं है।"
+    },
     "unavailable": "इस खाते के लिए SSH ऐक्सेस उपलब्ध नहीं है।",
     "username": "SSH उपयोगकर्ता नाम"
   },
@@ -7085,8 +5501,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "चुनें कि कौन से एजेंट आपके VNC डेस्कटॉप देख और नियंत्रित कर सकते हैं। यह पहुँच SSH से अलग है।",
-    "accessHelp": "इस एजेंट को अभी और भविष्य में कॉन्फ़िगर किए गए आपके सभी VNC डेस्कटॉप देखने और नियंत्रित करने की अनुमति दें।",
     "add": "होस्ट जोड़ें",
     "cancel": "रद्द करें",
     "close": "बंद करें",
@@ -7095,7 +5509,12 @@
       "add": "क्रेडेंशियल जोड़ें",
       "appleDhFieldHelp": "हर फ़ील्ड 1–63 UTF-8 बाइट का होना चाहिए। NUL की अनुमति नहीं है।",
       "appleDhMethod": "Apple DH उपयोगकर्ता नाम और पासवर्ड",
+      "appleRsaSrpMethod": "Apple RSA/SRP उपयोगकर्ता नाम और पासवर्ड",
+      "appleRsaSrpUsernameHelp": "RSA/SRP उपयोगकर्ता नाम 1–234 UTF-8 बाइट का होना चाहिए। NUL की अनुमति नहीं है।",
+      "appleSrpMethod": "Apple Direct SRP उपयोगकर्ता नाम और पासवर्ड",
       "authentication": "प्रमाणीकरण विधि",
+      "certificateChain": "क्लाइंट प्रमाणपत्र शृंखला (PEM)",
+      "clientKeyHelp": "1–8 प्रमाणपत्र और उनसे मेल खाने वाली कुंजी पेस्ट करें। सेव होने पर दोनों एन्क्रिप्ट होते हैं; बदलते समय दोनों बदलें। कुंजी फिर नहीं दिखाई जाएगी।",
       "createNew": "नया क्रेडेंशियल बनाएं",
       "delete": "क्रेडेंशियल हटाएं",
       "deleteHelp": "इस अप्रयुक्त क्रेडेंशियल को हटाएँ? यह कार्रवाई वापस नहीं की जा सकती।",
@@ -7109,6 +5528,9 @@
       "password": "VNC पासवर्ड",
       "passwordHelp": "पारंपरिक VNC पासवर्ड में 1–8 प्रिंट करने योग्य ASCII वर्ण होते हैं। स्पेस बनाए रखे जाते हैं।",
       "passwordHint": "सर्वर का VNC पासवर्ड दर्ज करें",
+      "privateKey": "बिना एन्क्रिप्शन वाली PKCS#8 निजी कुंजी (PEM)",
+      "qemuScramPasswordHelp": "1–1023 प्रिंट करने योग्य ASCII अक्षर; स्पेस बनाए रखे जाते हैं।",
+      "qemuScramUsernameHelp": "1–255 प्रिंट करने योग्य ASCII अक्षर; स्पेस, कॉमा या बराबर का चिह्न नहीं।",
       "replace": "प्रमाणीकरण बदलें",
       "replaceHelp": "सहेजा गया प्रमाणीकरण बनाए रखने के लिए इसे बंद रखें। इसे बदलने से इस क्रेडेंशियल का उपयोग करने वाले हर होस्ट पर असर पड़ता है।",
       "select": "क्रेडेंशियल चुनें",
@@ -7125,7 +5547,6 @@
       "usernamePasswordHint": "इस उपयोगकर्ता नाम का पासवर्ड दर्ज करें",
       "usernamePasswordMethod": "उपयोगकर्ता नाम और पासवर्ड"
     },
-    "credentialsTab": "क्रेडेंशियल",
     "delete": "होस्ट हटाएँ",
     "deleteHelp": "इस सहेजे गए होस्ट को हटाएँ? इसके पुन: उपयोग योग्य क्रेडेंशियल सुरक्षित रखे जाएँगे।",
     "description": "अपने एजेंटों को आपके रिमोट डेस्कटॉप देखने और नियंत्रित करने दें।",
@@ -7143,19 +5564,37 @@
       "invalidHost": "URL, उपयोगकर्ता नाम या पोर्ट के बिना मान्य होस्टनाम या IP पता दर्ज करें।",
       "invalidInput": "VNC कॉन्फ़िगरेशन जाँचें और फिर से कोशिश करें।",
       "invalidTrust": "अधिकतम 8 सार्वजनिक CA प्रमाणपत्रों का मान्य बंडल दर्ज करें, जिसका कुल आकार 64 KiB से अधिक न हो।",
-      "ownerChanged": "आपकी कार्यक्षेत्र पहुँच बदल गई है। आगे बढ़ने से पहले रीफ़्रेश करें।",
       "revisionExhausted": "यह कॉन्फ़िगरेशन अब अपडेट नहीं किया जा सकता। नया कॉन्फ़िगरेशन बनाएँ।"
     },
     "host": "होस्टनाम या IP पता",
     "hostHint": "जैसे, desktop.example.com",
-    "hostsTab": "होस्ट",
     "label": "VNC",
     "loadFailed": "VNC कॉन्फ़िगरेशन लोड नहीं हो सका।",
     "loading": "VNC कॉन्फ़िगरेशन लोड हो रहा है…",
-    "loadingAccess": "एजेंट की पहुँच लोड हो रही है…",
     "manage": "VNC प्रबंधित करें",
     "port": "पोर्ट",
     "retry": "फिर से कोशिश करें",
+    "rsaAes": {
+      "fieldHelp": "हर फ़ील्ड में 1–255 UTF-8 बाइट हों, NUL नहीं। स्पेस सुरक्षित रहते हैं; यह क्लासिक आठ-बाइट VNC पासवर्ड नहीं है।",
+      "fullHelp": "RA2 और RA2_256 पूरे RFB सत्र को EAX से एन्क्रिप्ट करते हैं। सर्वर की पूरी RSA वायर-कुंजी pin स्वतंत्र रूप से सत्यापित करें; CA भरोसा उसका विकल्प नहीं है।",
+      "importHelp": "विश्वसनीय सर्वर प्रबंधन से PUBLIC KEY या RSA PUBLIC KEY PEM प्राप्त करें। निजी कुंजी/प्रमाणपत्र न चिपकाएँ और लाइव कनेक्शन की कुंजी पर स्वतः भरोसा न करें। रूपांतरण पहचान साबित या सहेजता नहीं है: पूरी pin जाँचकर स्पष्ट रूप से सहेजें।",
+      "importKey": "विश्वसनीय सार्वजनिक कुंजी आयात करें",
+      "modulusBits": "आयातित सार्वजनिक कुंजी आकार: {{bits}} बिट",
+      "neHelp": "RSA-AES केवल प्रमाणीकरण एन्क्रिप्ट करता है। सर्वर के शाब्दिक लूपबैक पर सत्यापित सहेजा SSH आवश्यक है। SSH केवल अपने हॉप को सुरक्षित करता है; आगे का प्रॉक्सी अनएन्क्रिप्टेड RFB ट्रैफ़िक उजागर कर सकता है।",
+      "passwordMethod": "RSA-AES पासवर्ड",
+      "pin": "सर्वर RSA वायर-कुंजी SHA256",
+      "pinHelp": "स्वतंत्र विश्वसनीय स्रोत से पूरी 64-अंकीय हेक्स pin आयात करें: U32 बिग-एंडियन मॉड्यूलस बिट्स तथा समान निश्चित चौड़ाई के मॉड्यूलस/घातांक का SHA256। यह PEM/SPKI हैश या छोटा फ़िंगरप्रिंट नहीं है। भरोसा बदलने और सत्र अमान्य करने के लिए बदलकर स्पष्ट रूप से सहेजें।",
+      "publicKey": "स्वतंत्र विश्वसनीय RSA सार्वजनिक PEM (वैकल्पिक)",
+      "ra2256Password": "RA2_256 · AES-256 · पासवर्ड",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · उपयोगकर्ता नाम/पासवर्ड",
+      "ra2ne256Password": "RA2ne_256 · केवल प्रमाणीकरण · पासवर्ड",
+      "ra2ne256UsernamePassword": "RA2ne_256 · केवल प्रमाणीकरण · उपयोगकर्ता नाम/पासवर्ड",
+      "ra2nePassword": "RA2ne · केवल प्रमाणीकरण · पासवर्ड",
+      "ra2neUsernamePassword": "RA2ne · केवल प्रमाणीकरण · उपयोगकर्ता नाम/पासवर्ड",
+      "ra2Password": "RA2 · AES-128 · पासवर्ड",
+      "ra2UsernamePassword": "RA2 · AES-128 · उपयोगकर्ता नाम/पासवर्ड",
+      "usernamePasswordMethod": "RSA-AES उपयोगकर्ता नाम/पासवर्ड"
+    },
     "save": "सहेजें",
     "saveRecovery": {
       "resourceIdConflict": "यह संसाधन बनाया नहीं जा सका। यह संवाद बंद करें और फिर से कोशिश करें।",
@@ -7164,18 +5603,31 @@
     },
     "saving": "सेव हो रहा है…",
     "security": {
-      "appleDh": "Mac स्क्रीन शेयरिंग (Apple DH)",
-      "appleDhHelp": "इसके लिए सहेजे गए SSH कनेक्शन से macOS स्क्रीन शेयरिंग चाहिए। RFB गंतव्य उसी Mac पर 127.0.0.1 या ::1 होना चाहिए। SSH पूरे VNC सत्र की सुरक्षा करता है। अपने नियंत्रण वाले Mac SSH होस्ट का उपयोग करें; होस्ट कुंजी आगे के प्रॉक्सी को नकार नहीं सकती।",
+      "appleDh": "Mac VNC (Apple DH)",
+      "appleDhHelp": "इसके लिए सहेजे गए SSH कनेक्शन से Mac VNC सेवा चाहिए। स्वतंत्र macOS स्क्रीन शेयरिंग मोड की पुष्टि नहीं हुई है। RFB गंतव्य उसी Mac पर 127.0.0.1 या ::1 होना चाहिए। SSH पूरे VNC सत्र की सुरक्षा करता है। अपने नियंत्रण वाले Mac SSH होस्ट का उपयोग करें; होस्ट कुंजी आगे के प्रॉक्सी को नकार नहीं सकती।",
+      "appleRsaSrp": "Mac VNC (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "Mac तक सहेजा गया SSH कनेक्शन और RFB गंतव्य 127.0.0.1 या ::1 आवश्यक है। RFB से मिली RSA कुंजी अकेले होस्ट की पहचान प्रमाणित नहीं करती। SRP खाते और सर्वर प्रमाण को जाँचता है; SSH पूरे VNC सत्र की रक्षा करता है। SSH होस्ट कुंजी चुने गए एंडपॉइंट को पहचानती है, पर आगे का प्रॉक्सी नहीं रोक सकती।",
+      "appleSrp": "Mac VNC (Apple Direct SRP)",
+      "appleSrpHelp": "इसके लिए Mac से सहेजा गया SSH कनेक्शन और RFB गंतव्य 127.0.0.1 या ::1 चाहिए। SRP खाते और सर्वर प्रमाण को सत्यापित करता है; SSH पूरे VNC सत्र की सुरक्षा करता है। SSH होस्ट कुंजी चुने गए एंडपॉइंट की पहचान करती है, लेकिन आगे के प्रॉक्सी को नकार नहीं सकती।",
+      "appleVncPassword": "Mac VNC (क्लासिक VNC पासवर्ड)",
+      "appleVncPasswordHelp": "Mac का वैकल्पिक VNC पासवर्ड 1–8 प्रिंट करने योग्य ASCII बाइट का होता है। अकेला type 2 सर्वर की पहचान सत्यापित नहीं करता और डेस्कटॉप को एन्क्रिप्ट नहीं करता। सत्यापित SSH इस Okou सत्र की रक्षा करता है, Mac के सुनने वाले पोर्ट की नहीं; नेटवर्क के अनुसार अन्य क्लाइंट पोर्ट 5900 तक पहुँच सकते हैं। जोखिम स्वीकार हो तभी Mac पर यह विकल्प स्वयं चालू करें।",
       "caBundle": "CA प्रमाणपत्र (PEM)",
       "caHelp": "अधिकतम 8 CA प्रमाणपत्र, कुल 64 KiB। निजी कुंजी या सर्वर प्रमाणपत्र न चिपकाएँ।",
       "caHint": "सर्वर प्रमाणपत्र जारी करने वाले सार्वजनिक CA प्रमाणपत्र चिपकाएँ",
+      "clientCertificateHelp": "सफल TLS हैंडशेक यह सिद्ध नहीं करता कि सर्वर क्लाइंट प्रमाणपत्र जाँचता है। सर्वर पर विश्वसनीय CA सत्यापन और सीमित नेटवर्क पहुँच अलग से सुनिश्चित करें। SSH केवल मध्यवर्ती होस्ट की पहचान करता है।",
+      "clientCertificateNone": "बिना VNC पासवर्ड क्लाइंट प्रमाणपत्र (X509None)",
+      "clientCertificateVnc": "VNC पासवर्ड सहित क्लाइंट प्रमाणपत्र (X509Vnc)",
       "custom": "कस्टम प्रमाणपत्र प्राधिकरण",
       "profileLabel": "सुरक्षा प्रोफ़ाइल",
+      "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
+      "qemuX509SaslHelp": "केवल QEMU उपप्रकार 263। TLS, SCRAM से पहले सर्वर सत्यापित करता है; PLAIN या उपप्रकार 264 पर वापस नहीं जाता।",
       "serverName": "TLS प्रमाणपत्र पहचान",
       "serverNameHelp": "वैकल्पिक। RFB गंतव्य होस्ट के विरुद्ध प्रमाणपत्र सत्यापित करने के लिए खाली छोड़ें। इसे केवल तब सेट करें जब प्रमाणपत्र किसी दूसरे DNS नाम का उपयोग करता हो।",
       "serverNameHint": "उदा. desktop.internal.example.com",
       "system": "सिस्टम के प्रमाणपत्र प्राधिकरण",
       "title": "सर्वर प्रमाणपत्र पर भरोसा",
+      "x509None": "VNC पासवर्ड के बिना एन्क्रिप्टेड (X509None)",
+      "x509NoneHelp": "TLS सर्वर की पहचान सत्यापित करता है और सत्र को एन्क्रिप्ट करता है, लेकिन VNC सर्वर पर आपकी पहचान की पुष्टि नहीं करता। उस सर्वर तक पहुँच रखने वाला कोई और भी डेस्कटॉप नियंत्रित कर सकता है। SSH केवल चुने गए SSH होस्ट तक का रास्ता सुरक्षित करता है; अन्य क्लाइंट या आगे की फ़ॉरवर्डिंग को नहीं रोकता। केवल अपने नियंत्रण वाले गंतव्य के लिए इसे चुनें।",
       "x509Plain": "एन्क्रिप्ट किया गया उपयोगकर्ता नाम और पासवर्ड (X509Plain)",
       "x509PlainHelp": "VeNCrypt X509Plain आवश्यक है। उपयोगकर्ता नाम और पासवर्ड भेजने से पहले TLS सर्वर को सत्यापित करता है।",
       "x509Vnc": "एन्क्रिप्ट किया गया VNC (X509Vnc)",
@@ -7183,20 +5635,26 @@
     },
     "summary_one": "{{count}} कॉन्फ़िगर किया गया होस्ट",
     "summary_other": "{{count}} कॉन्फ़िगर किए गए होस्ट",
-    "title": "VNC रिमोट एक्सेस",
     "transport": {
       "appleDhDestinationHelp": "Apple DH के लिए 127.0.0.1 या ::1 दर्ज करें। यह चुने गए SSH होस्ट से पहुँचा जाने वाला Mac का अपना लूपबैक पता है।",
+      "appleRsaSrpDestinationHelp": "Apple RSA/SRP के लिए चुने गए SSH होस्ट से Mac के 127.0.0.1 या ::1 पर पहुँचें।",
+      "appleSrpDestinationHelp": "Apple Direct SRP के लिए 127.0.0.1 या ::1 दर्ज करें। यह चुने गए SSH होस्ट से पहुँचा जाने वाला Mac का अपना लूपबैक पता है।",
+      "appleVncPasswordDestinationHelp": "Mac क्लासिक VNC पासवर्ड के लिए, सेव किए गए SSH से पहुँचने वाले Mac पर 127.0.0.1 या ::1 दर्ज करें।",
       "destination": "RFB गंतव्य",
       "destinationHelp": "SSH रूट के लिए इस होस्ट और पोर्ट तक चुने गए SSH सर्वर से पहुँचा जाता है, Runner से सीधे नहीं।",
       "direct": "Runner से सीधे",
       "empty": "कोई सहेजा हुआ SSH होस्ट उपलब्ध नहीं है। इस रूट का उपयोग करने से पहले SSH सेटिंग में एक जोड़ें।",
       "loadFailed": "सहेजे गए SSH होस्ट लोड नहीं हो सके।",
       "loading": "सहेजे गए SSH होस्ट लोड हो रहे हैं…",
+      "privateDirectHelp": "निजी या लूपबैक IP के लिए सहेजा गया SSH होस्ट ज़रूरी है। ऊपर SSH रूट चुनें; कनेक्शन अपने आप नहीं बदलेगा।",
       "select": "सहेजा हुआ SSH होस्ट चुनें",
       "selectionUnavailable": "चुना गया SSH होस्ट अब उपलब्ध नहीं है। कोई दूसरा होस्ट चुनें या स्पष्ट रूप से Direct पर बदलें।",
       "ssh": "सहेजे गए SSH होस्ट के माध्यम से",
       "sshConnection": "SSH होस्ट",
-      "sshHelp": "SSH Runner से SSH सर्वर तक के चरण को सुरक्षित करता है। वह सर्वर RFB गंतव्य तक पहुँचने में सक्षम होना चाहिए। Agent को VNC और SSH दोनों एक्सेस चाहिए।",
+      "sshHelp": "SSH Runner से SSH सर्वर तक के चरण को सुरक्षित करता है। वह सर्वर RFB गंतव्य तक पहुँचने में सक्षम होना चाहिए। कोई चैट इस रूट का उपयोग तभी कर सकती है जब उसमें वह SSH होस्ट भी सक्षम हो।",
+      "sshNeedsRebind": "इस VNC कनेक्शन के SSH होस्ट को Cloudflare Access से फिर जोड़ना होगा। कनेक्ट करने से पहले SSH सेटिंग में उसे फिर जोड़ें या वहाँ स्पष्ट रूप से Direct चुनें।",
+      "sshNeedsRebindStatus": "SSH को फिर जोड़ना होगा",
+      "sshTailscaleNeedsRebind": "इस VNC कनेक्शन के SSH होस्ट के लिए नया Tailscale कॉन्फ़िगरेशन चाहिए। यहाँ Tailscale सेटअप और दोबारा जोड़ने की सुविधा अभी उपलब्ध नहीं है।",
       "title": "कनेक्शन रूट",
       "unavailable": "इस खाते के लिए SSH सेटिंग उपलब्ध नहीं हैं।",
       "via": "SSH होस्ट:"
@@ -7916,6 +6374,18 @@
       "uninstallTitle": "आधिकारिक वर्कफ़्लो अनइंस्टॉल करें",
       "viewAndInstall": "देखें और इंस्टॉल करें",
       "yes": "हाँ"
+    },
+    "skillImport": {
+      "action": "स्किल्स इम्पोर्ट करें",
+      "description": "यह प्रॉम्प्ट वहाँ चलाएँ जहाँ आपकी स्किल्स हैं। हर स्किल एक निजी वर्कफ़्लो बन जाती है।",
+      "emptyAction": "Claude Code या Codex से इम्पोर्ट करें",
+      "providerLabel": "यहाँ से इम्पोर्ट करें",
+      "source": {
+        "claudeCode": "Claude Code से इम्पोर्ट किया गया",
+        "codex": "Codex से इम्पोर्ट किया गया"
+      },
+      "title": "अपनी स्किल्स इम्पोर्ट करें",
+      "viewWorkflows": "वर्कफ़्लो देखें"
     }
   },
   "works": {
@@ -7932,6 +6402,27 @@
     },
     "connected": "जुड़े हुए",
     "connectedWithDetail": "कनेक्टेड ({{detail}})",
+    "discord": {
+      "accountSetup": "आपका खाता कनेक्ट नहीं है। नए Discord खाते को कनेक्ट करने की सुविधा अभी उपलब्ध नहीं है।",
+      "adminSetup": "सर्वर सेटअप अभी उपलब्ध नहीं है। मौजूदा सत्यापित कॉन्फ़िगरेशन के साथ Discord का इस्तेमाल जारी रखा जा सकता है।",
+      "chooseDmServer": "सर्वर चुनें",
+      "description": "सर्वर में Okou को मेंशन करें या बॉट को सीधा संदेश भेजें।",
+      "disconnect": "Discord को डिस्कनेक्ट करें",
+      "dmServer": "सीधे संदेशों के लिए डिफ़ॉल्ट सर्वर",
+      "limitedContext": "सीमित संदर्भ: Okou को चैनल के सामान्य संदेश शायद न मिलें। Okou को मेंशन करें और उसे ज़रूरी जानकारी दें।",
+      "loadError": "Discord की स्थिति लोड नहीं हो सकी।",
+      "loading": "Discord की स्थिति लोड हो रही है…",
+      "memberSetup": "Discord की पहुँच के बारे में संगठन के एडमिन से पूछें। सर्वर सेटअप अभी उपलब्ध नहीं है।",
+      "moreOptions": "Discord के और विकल्प",
+      "retry": "फिर से कोशिश करें",
+      "server": "सर्वर: {{name}}",
+      "suspended": "Discord अस्थायी रूप से उपलब्ध नहीं है। मौजूदा कनेक्शन बने रहते हैं।",
+      "title": "Discord",
+      "unconfigured": "इस संगठन के लिए Discord अभी उपलब्ध नहीं है।",
+      "uninstall": "Discord हटाएँ",
+      "uninstallDescription": "इससे इस संगठन के सभी लोगों का Discord कनेक्शन हट जाएगा। अन्य संगठनों के कनेक्शन बने रहेंगे।",
+      "uninstallTitle": "इस संगठन से Discord हटाएँ?"
+    },
     "documentTitle": "काम करता है",
     "feishuConnected": "Feishu सफलतापूर्वक कनेक्ट हुआ",
     "github": {

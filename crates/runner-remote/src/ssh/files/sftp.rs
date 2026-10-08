@@ -1,5 +1,7 @@
-//! Private sequential SFTP v3 subset. Validate lengths before allocating and
-//! discard server diagnostics. A partially completed exchange cannot be reused.
+//! Private SFTP v3 subset. Validate lengths before allocating and discard server
+//! diagnostics. A partially completed exchange cannot be reused.
+
+use std::collections::BTreeMap;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -47,10 +49,23 @@ enum Reply {
     Name(Vec<u8>),
 }
 
+struct Pending {
+    kind: u8,
+    length: usize,
+}
+
+pub(super) enum FileReply {
+    Read(Result<Option<Vec<u8>>, Error>),
+    Write(Result<(), Error>),
+}
+
 pub(super) struct Client<S> {
     stream: S,
     id: u32,
+    // False while a packet exchange is incomplete or the channel is poisoned.
+    // Fully sent requests remain in `pending` until their replies are parsed.
     healthy: bool,
+    pending: BTreeMap<u32, Pending>,
     pub(super) hardlink: bool,
     pub(super) rename: bool,
 }
@@ -61,6 +76,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
             stream,
             id: 0,
             healthy: false,
+            pending: BTreeMap::new(),
             hardlink: false,
             rename: false,
         };
@@ -89,7 +105,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
     }
 
     pub(super) fn healthy(&self) -> bool {
-        self.healthy
+        self.healthy && self.pending.is_empty()
     }
 
     async fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
@@ -112,7 +128,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         Ok(bytes)
     }
 
-    async fn request(&mut self, kind: u8, body: Vec<u8>) -> Result<Reply, Error> {
+    async fn send_request(&mut self, kind: u8, body: Vec<u8>, length: usize) -> Result<u32, Error> {
         if !self.healthy {
             return Err(Error::Protocol);
         }
@@ -122,12 +138,21 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         bytes.extend_from_slice(&self.id.to_be_bytes());
         bytes.extend_from_slice(&body);
         self.write(&bytes).await?;
+        self.pending.insert(self.id, Pending { kind, length });
+        self.healthy = true;
+        Ok(self.id)
+    }
+
+    async fn receive(&mut self) -> Result<(u32, Pending, Reply), Error> {
+        if !self.healthy || self.pending.is_empty() {
+            return Err(Error::Protocol);
+        }
+        self.healthy = false;
         let bytes = self.read().await?;
         let mut fields = Fields::new(&bytes);
         let kind = fields.byte()?;
-        if fields.u32()? != self.id {
-            return Err(Error::Protocol);
-        }
+        let id = fields.u32()?;
+        let pending = self.pending.remove(&id).ok_or(Error::Protocol)?;
         let reply = match kind {
             101 => {
                 let code = fields.u32()?;
@@ -160,6 +185,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         };
         fields.finish()?;
         self.healthy = true;
+        Ok((id, pending, reply))
+    }
+
+    async fn request(&mut self, kind: u8, body: Vec<u8>) -> Result<Reply, Error> {
+        if !self.pending.is_empty() {
+            return Err(Error::Protocol);
+        }
+        let id = self.send_request(kind, body, 0).await?;
+        let (received, _, reply) = self.receive().await?;
+        if received != id {
+            return Err(self.unexpected());
+        }
         Ok(reply)
     }
 
@@ -228,29 +265,28 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         self.status(reply)
     }
 
-    pub(super) async fn read_file(
+    pub(super) async fn send_read_file(
         &mut self,
         handle: &[u8],
         offset: u64,
-    ) -> Result<Option<Vec<u8>>, Error> {
+        length: usize,
+    ) -> Result<u32, Error> {
+        if length == 0 || length > CHUNK {
+            return Err(Error::Protocol);
+        }
         let mut body = Vec::new();
         string(&mut body, handle)?;
         body.extend_from_slice(&offset.to_be_bytes());
-        body.extend_from_slice(&(CHUNK as u32).to_be_bytes());
-        match self.request(5, body).await? {
-            Reply::Data(bytes) => Ok(Some(bytes)),
-            Reply::Status(1) => Ok(None),
-            Reply::Status(code) if code != 0 => Err(Error::Status(code)),
-            _ => Err(self.unexpected()),
-        }
+        body.extend_from_slice(&(length as u32).to_be_bytes());
+        self.send_request(5, body, length).await
     }
 
-    pub(super) async fn write_file(
+    pub(super) async fn send_write_file(
         &mut self,
         handle: &[u8],
         offset: u64,
         bytes: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<u32, Error> {
         if bytes.is_empty() || bytes.len() > CHUNK {
             return Err(Error::Protocol);
         }
@@ -258,8 +294,52 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         string(&mut body, handle)?;
         body.extend_from_slice(&offset.to_be_bytes());
         string(&mut body, bytes)?;
-        let reply = self.request(6, body).await?;
-        self.status(reply)
+        self.send_request(6, body, bytes.len()).await
+    }
+
+    pub(super) async fn receive_file(&mut self) -> Result<(u32, FileReply), Error> {
+        let (id, pending, reply) = self.receive().await?;
+        let result = match (pending.kind, reply) {
+            (5, Reply::Data(bytes)) if bytes.len() <= pending.length => {
+                FileReply::Read(Ok(Some(bytes)))
+            }
+            (5, Reply::Status(1)) => FileReply::Read(Ok(None)),
+            (5, Reply::Status(code)) if code != 0 => FileReply::Read(Err(Error::Status(code))),
+            (6, Reply::Status(0)) => FileReply::Write(Ok(())),
+            (6, Reply::Status(code)) => FileReply::Write(Err(Error::Status(code))),
+            _ => return Err(self.unexpected()),
+        };
+        Ok((id, result))
+    }
+
+    /// A timed-out input may leave fully sent writes awaiting replies. Drain
+    /// only those complete file exchanges before deciding whether cleanup is safe.
+    pub(super) async fn settle_file_requests(&mut self) -> Result<(), Error> {
+        if !self.healthy
+            || self
+                .pending
+                .values()
+                .any(|request| !matches!(request.kind, 5 | 6))
+        {
+            return Err(Error::Protocol);
+        }
+        while !self.pending.is_empty() {
+            self.receive_file().await?;
+        }
+        Ok(())
+    }
+
+    pub(super) async fn read_file(
+        &mut self,
+        handle: &[u8],
+        offset: u64,
+        length: usize,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let id = self.send_read_file(handle, offset, length).await?;
+        match self.receive_file().await? {
+            (received, FileReply::Read(result)) if received == id => result,
+            _ => Err(self.unexpected()),
+        }
     }
 
     pub(super) async fn mkdir(&mut self, path: &str) -> Result<(), Error> {

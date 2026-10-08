@@ -2,7 +2,6 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { testMailDraftStateContract } from "@okouai/api-contracts/contracts/test-mail-draft-state";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -11,33 +10,28 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { testMailDraftStateRoutes } from "../test-mail-draft-state";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
+  manualHttpCustomConnectorCreateBody,
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+
 import { createRouteMocks } from "./helpers/route-test";
 import {
   readConnectorCredentialStorageState,
-  readCustomConnectorCredentialStorageParent,
-  readThreadConnectorSelectionState,
-  seedConnectorStorageRow,
   seedBuiltinThreadConnectorSelection,
-  seedCustomConnectorRuntimeConnectors,
-  seedCustomThreadConnectorSelection,
-  setConnectorAccountState,
+  seedConnectorStorageRow,
   setBuiltinOAuthScopeFacts,
   setConnectorDefaultState,
-  setConnectorCredentialStorageState,
   setConnectorSecretOwner,
 } from "./helpers/connector-credential-storage-state";
 import { mailRoutes } from "../mail";
 import { chatThreadRoutes } from "../chat-threads";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const connectors = createConnectorBddApi(context);
@@ -311,7 +305,9 @@ function mockGmailDraftApi(options?: {
   return state;
 }
 
-async function seedGmailMailCardFixture() {
+async function seedGmailMailCardFixture(
+  registerCleanup?: (cleanup: () => Promise<void>) => void,
+) {
   const actor = bdd.user();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped actor");
@@ -321,6 +317,9 @@ async function seedGmailMailCardFixture() {
   const agent = await bdd.createAgent(actor, {
     displayName: "Nova Mail agent",
     visibility: "private",
+  });
+  registerCleanup?.(async () => {
+    await bdd.deleteAgent(actor, agent.agentId);
   });
   const thread = await chat.createThread(actor, {
     agentId: agent.agentId,
@@ -339,6 +338,9 @@ async function seedGmailMailCardFixture() {
     code: "okou-mail-code",
     state,
   });
+  registerCleanup?.(async () => {
+    await connectors.deleteDefaultBuiltinConnectorAccount(actor, "gmail");
+  });
   const gmail = await connectors.readConnectorBySlug(actor, "gmail");
   await runs.enableAgentConnectors(actor, agent.agentId, ["gmail"]);
   mocks.clerk.session(actor.userId, actorWithOrg.orgId);
@@ -355,14 +357,21 @@ function connectorSelectionsClient() {
   );
 }
 
-function stateClient() {
-  return setupApp({ context, routes: testMailDraftStateRoutes })(
-    testMailDraftStateContract,
-  );
-}
-
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
+}
+
+async function readThreadSelections(
+  fixture: Awaited<ReturnType<typeof seedGmailMailCardFixture>>,
+) {
+  const response = await accept(
+    connectorSelectionsClient().get({
+      headers: authHeaders(),
+      params: { id: fixture.thread.id },
+    }),
+    [200],
+  );
+  return response.body;
 }
 
 async function linkDraft(
@@ -497,19 +506,34 @@ describe("POST /api/mail/drafts/link", () => {
       subject: "unavailable-selected-gmail-account",
     });
     await selectGmailAccount(fixture, selectedConnectorId);
-    const orgId = fixture.actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected an organization-scoped mail fixture");
-    }
-    await setConnectorAccountState(context, {
-      orgId,
-      userId: fixture.actor.userId,
-      connectorId: selectedConnectorId,
-      needsReconnect: true,
-    });
     const gmail = mockGmailDraftApi({
       accessToken: "unavailable-selected-gmail-token",
     });
+    gmail.unauthorized = true;
+    const rejected = await accept(
+      client().linkDraft({
+        headers: authHeaders(),
+        body: {
+          threadId: fixture.thread.id,
+          agentId: fixture.agent.agentId,
+          gmailDraftId: GMAIL_DRAFT_ID,
+        },
+      }),
+      [409],
+    );
+    expect(rejected.body.error.message).toBe(
+      "Reconnect Gmail before continuing",
+    );
+    expect(gmail.draftReadCount).toBe(1);
+    await expect(
+      connectors.listBuiltinConnectorAccounts(fixture.actor, "gmail"),
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        id: selectedConnectorId,
+        connectionStatus: "reconnect-required",
+      }),
+    );
+    gmail.unauthorized = false;
 
     const response = await accept(
       client().linkDraft({
@@ -525,7 +549,7 @@ describe("POST /api/mail/drafts/link", () => {
     expect(response.body.error.message).toBe(
       "Connect and authorize Gmail for this agent first",
     );
-    expect(gmail.draftReadCount).toBe(0);
+    expect(gmail.draftReadCount).toBe(1);
   });
 
   it("uses a healthy Gmail connection with unknown historical grants", async () => {
@@ -576,7 +600,6 @@ describe("POST /api/mail/drafts/link", () => {
 
   it("requires reconnect when Gmail reports an insufficient token scope", async () => {
     const fixture = await seedGmailMailCardFixture();
-    await setGmailOAuthScopeFacts(fixture, null);
     const gmail = mockGmailDraftApi();
     gmail.insufficientScope = true;
 
@@ -602,7 +625,6 @@ describe("POST /api/mail/drafts/link", () => {
 
   it("does not require reconnect for an unrelated Gmail permission denial", async () => {
     const fixture = await seedGmailMailCardFixture();
-    await setGmailOAuthScopeFacts(fixture, null);
     const gmail = mockGmailDraftApi();
     gmail.permissionDenied = true;
 
@@ -624,6 +646,60 @@ describe("POST /api/mail/drafts/link", () => {
   });
 
   async function preparePinnedNonDefaultGmailDraft() {
+    const fixture = await seedGmailMailCardFixture();
+    mockGmailDraftApi();
+    const linked = await linkDraft(fixture);
+    const connectorId = fixture.gmail.id;
+    await selectGmailAccount(fixture, connectorId);
+    const defaultAccessToken = "replacement-default-gmail-token";
+    const defaultConnectorId = await addGmailAccount(fixture, {
+      accessToken: defaultAccessToken,
+      email: "replacement-default@example.com",
+      subject: "replacement-default-gmail-account",
+    });
+    await connectors.setDefaultBuiltinConnectorAccount(
+      fixture.actor,
+      "gmail",
+      defaultConnectorId,
+    );
+
+    return {
+      fixture,
+      linked,
+      connectorId,
+      defaultConnectorId,
+      defaultAccessToken,
+    };
+  }
+
+  it("reads an existing draft pinned to a Gmail account that is no longer default", async () => {
+    const { fixture, linked, connectorId } =
+      await preparePinnedNonDefaultGmailDraft();
+    await expect(
+      connectors.listBuiltinConnectorAccounts(fixture.actor, "gmail"),
+    ).resolves.toContainEqual(
+      expect.objectContaining({ id: connectorId, isDefault: false }),
+    );
+
+    const response = await accept(
+      client().getDraft({
+        headers: authHeaders(),
+        params: { mailDraftId: linked.body.mailDraftId },
+      }),
+      [200],
+    );
+    expect(response.status).toBe(200);
+    expect(response.body.mailDraft).toMatchObject({
+      accessStatus: "ready",
+      detailAvailable: true,
+      from: "sender@example.com",
+    });
+  });
+
+  // Connector credential storage exception: no public flow leaves Gmail
+  // accounts without a default, so this unchanged case keeps the documented
+  // test-state boundary.
+  async function prepareGmailDraftWithoutDefaultAccount() {
     const fixture = await seedGmailMailCardFixture();
     mockGmailDraftApi();
     const linked = await linkDraft(fixture);
@@ -651,21 +727,8 @@ describe("POST /api/mail/drafts/link", () => {
     return { fixture, linked, connectorId };
   }
 
-  it("reads an existing draft pinned to a Gmail account that is no longer default", async () => {
-    const { linked } = await preparePinnedNonDefaultGmailDraft();
-
-    const response = await accept(
-      client().getDraft({
-        headers: authHeaders(),
-        params: { mailDraftId: linked.body.mailDraftId },
-      }),
-      [200],
-    );
-    expect(response.status).toBe(200);
-  });
-
   it("requires a default Gmail account when linking a draft in a new thread", async () => {
-    const { fixture } = await preparePinnedNonDefaultGmailDraft();
+    const { fixture } = await prepareGmailDraftWithoutDefaultAccount();
     const newThread = await chat.createThread(fixture.actor, {
       agentId: fixture.agent.agentId,
       title: "Default Gmail projection",
@@ -687,56 +750,70 @@ describe("POST /api/mail/drafts/link", () => {
   });
 
   it("clears the exact thread selection when its pinned Gmail account is deleted", async () => {
-    const { fixture, connectorId } = await preparePinnedNonDefaultGmailDraft();
+    const { fixture, connectorId, defaultAccessToken } =
+      await preparePinnedNonDefaultGmailDraft();
+    await expect(readThreadSelections(fixture)).resolves.toMatchObject({
+      selections: [{ connectionId: connectorId }],
+    });
     await connectors.deleteBuiltinConnectorAccount(
       fixture.actor,
       "gmail",
       connectorId,
     );
-    await expect(
-      readThreadConnectorSelectionState(context, {
-        chatThreadId: fixture.thread.id,
-        connectorId,
-      }),
-    ).resolves.toBeFalsy();
+    await expect(readThreadSelections(fixture)).resolves.toStrictEqual({
+      selections: [],
+      selectedConnections: [],
+    });
+
+    // With the pinned account gone, the thread links through the default
+    // account again instead of staying bound to the deleted selection.
+    const gmail = mockGmailDraftApi({ accessToken: defaultAccessToken });
+    await linkDraft(fixture);
+    expect(gmail.draftReadCount).toBe(1);
   });
 
   it.each(["disconnect", "delete"] as const)(
     "clears the exact thread selection after custom connector %s",
     async (operation) => {
       const fixture = await seedGmailMailCardFixture();
-      const customConnectorId = randomUUID();
-      await seedCustomConnectorRuntimeConnectors(context, {
-        orgId: fixture.actor.orgId ?? "",
-        userId: fixture.actor.userId,
-        agentId: fixture.agent.agentId,
-        customConnectors: [
-          {
-            id: customConnectorId,
-            slug: `_${operation}-selection-cleanup`,
-            displayName: `${operation} selection cleanup`,
-            prefixTemplate: `https://${operation}-selection.example.com/`,
-          },
-        ],
-      });
-      const customStorage = await readCustomConnectorCredentialStorageParent(
-        context,
-        {
-          orgId: fixture.actor.orgId ?? "",
-          userId: fixture.actor.userId,
-          customConnectorId,
-        },
+      const customConnector = await connectors.createCustomConnector(
+        fixture.actor,
+        manualHttpCustomConnectorCreateBody({
+          slug: `_${operation}-selection-cleanup-${randomUUID().slice(0, 8)}`,
+          displayName: `${operation} selection cleanup`,
+          prefixTemplates: [`https://${operation}-selection.example.com/`],
+        }),
       );
-      const connectorId = customStorage.connector?.id;
+      const customConnectorId = customConnector.id;
+      const connection = await connectors.setCustomConnectorValues(
+        fixture.actor,
+        customConnectorId,
+        [{ key: "secret", kind: "secret", value: `${operation}-secret` }],
+      );
+      await connectors.updateAgentCustomConnectors(
+        fixture.actor,
+        fixture.agent.agentId,
+        [customConnectorId],
+      );
+      const connectorId = connection.connectedAccountId;
       if (!connectorId) {
         throw new Error(
           "Expected a custom connector account with a thread selection",
         );
       }
-      await seedCustomThreadConnectorSelection(context, {
-        chatThreadId: fixture.thread.id,
-        connectorId,
-        customConnectorId,
+      await accept(
+        connectorSelectionsClient().update({
+          headers: authHeaders(),
+          params: { id: fixture.thread.id },
+          body: {
+            connectionId: connectorId,
+            target: { kind: "custom", customConnectorId },
+          },
+        }),
+        [200],
+      );
+      await expect(readThreadSelections(fixture)).resolves.toMatchObject({
+        selections: [{ connectionId: connectorId }],
       });
       if (operation === "disconnect") {
         await connectors.deleteDefaultCustomConnectorAccount(
@@ -749,12 +826,10 @@ describe("POST /api/mail/drafts/link", () => {
           customConnectorId,
         );
       }
-      await expect(
-        readThreadConnectorSelectionState(context, {
-          chatThreadId: fixture.thread.id,
-          connectorId,
-        }),
-      ).resolves.toBeFalsy();
+      await expect(readThreadSelections(fixture)).resolves.toStrictEqual({
+        selections: [],
+        selectedConnections: [],
+      });
       if (operation === "disconnect") {
         await connectors.deleteCustomConnector(
           fixture.actor,
@@ -1305,6 +1380,69 @@ describe("POST /api/mail/drafts/link", () => {
     expect(gmail.draftReadCount).toBe(gmailReadsAfterUnauthorized);
   });
 
+  it("marks Gmail for reconnect when a refreshed token is rejected", async () => {
+    const fixture = await seedGmailMailCardFixture();
+    mockGmailDraftApi();
+    const linked = await linkDraft(fixture);
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        return HttpResponse.json(
+          body.get("grant_type") === "authorization_code"
+            ? {
+                access_token: "expired-mail-token",
+                refresh_token: "current-mail-refresh",
+                expires_in: 0,
+                token_type: "Bearer",
+                scope: GMAIL_MODIFY_SCOPE,
+              }
+            : {
+                access_token: "refreshed-mail-token",
+                expires_in: 3600,
+                token_type: "Bearer",
+              },
+        );
+      }),
+    );
+    const start = await connectors.startOauth(
+      fixture.actor,
+      "gmail",
+      "oauth",
+      undefined,
+      {
+        intent: "reconnect",
+        connectionId: fixture.gmail.id,
+      },
+    );
+    const state = new URL(start.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected reconnect state");
+    }
+    await connectors.completeOauthCallback("gmail", {
+      code: "expiring-mail-authorization",
+      state,
+    });
+    const gmail = mockGmailDraftApi({ accessToken: "refreshed-mail-token" });
+    gmail.unauthorized = true;
+    const rejected = await accept(
+      client().getDraft({
+        headers: authHeaders(),
+        params: { mailDraftId: linked.body.mailDraftId },
+      }),
+      [200],
+    );
+    expect(rejected.body.mailDraft).toMatchObject({
+      accessStatus: "reconnect",
+      detailAvailable: false,
+    });
+    await expect(
+      connectors.readConnectorBySlug(fixture.actor, "gmail"),
+    ).resolves.toMatchObject({
+      id: fixture.gmail.id,
+      connectionStatus: "reconnect-required",
+    });
+  });
+
   it("restores a draft after its Gmail connector is reconnected", async () => {
     const fixture = await seedGmailMailCardFixture();
     const gmail = mockGmailDraftApi();
@@ -1424,16 +1562,28 @@ describe("POST /api/mail/drafts/link", () => {
       "gmail",
       recoveredConnectorId,
     );
-    const orgId = fixture.actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected an organization-scoped mail fixture");
-    }
-    await setConnectorAccountState(context, {
-      orgId,
-      userId: fixture.actor.userId,
-      connectorId: recoveredConnectorId,
-      needsReconnect: true,
+    const gmail = mockGmailDraftApi({ accessToken: "recovered-gmail-token" });
+    gmail.unauthorized = true;
+    const rejected = await accept(
+      client().getDraft({
+        headers: authHeaders(),
+        params: { mailDraftId: linked.body.mailDraftId },
+      }),
+      [200],
+    );
+    expect(rejected.body.mailDraft).toMatchObject({
+      accessStatus: "reconnect",
+      reconnectConnectionId: recoveredConnectorId,
     });
+    expect(gmail.draftReadCount).toBe(1);
+    await expect(
+      connectors.listBuiltinConnectorAccounts(fixture.actor, "gmail"),
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        id: recoveredConnectorId,
+        connectionStatus: "reconnect-required",
+      }),
+    );
 
     const recovered = await accept(
       client().getDraft({
@@ -1448,6 +1598,7 @@ describe("POST /api/mail/drafts/link", () => {
       subject: "Attachment review",
     });
     expect(recoveredConnectorId).not.toBe(fixture.gmail.id);
+    expect(gmail.draftReadCount).toBe(1);
   });
 
   it("rejects a missing Gmail draft and cross-chat relinking", async () => {
@@ -1486,57 +1637,40 @@ describe("POST /api/mail/drafts/link", () => {
     expect(conflict.body.error.message).toContain("already linked");
   });
 
-  it("does not refresh a known mismatched Gmail storage version", async () => {
-    const fixture = await seedGmailMailCardFixture();
-    await setConnectorCredentialStorageState(context, {
-      orgId: fixture.actor.orgId ?? "",
-      userId: fixture.actor.userId,
-      connectorSlug: "gmail",
-      storageVersion: 2,
-      tokenExpiresAt: "2020-01-01T00:00:00.000Z",
-    });
-    let refreshCalls = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        refreshCalls += 1;
-        return HttpResponse.json({
-          access_token: "must-not-be-written",
-          expires_in: 3600,
-        });
-      }),
-    );
-
-    const response = await accept(
-      client().linkDraft({
-        headers: authHeaders(),
-        body: {
-          threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
-          gmailDraftId: GMAIL_DRAFT_ID,
-        },
-      }),
-      [409],
-    );
-    expect(response.body.error.message).toBe(
-      "Connect and authorize Gmail for this agent first",
-    );
-    expect(refreshCalls).toBe(0);
-  });
-
   it("requires reconnect when the Gmail token refresh fails", async () => {
     const fixture = await seedGmailMailCardFixture();
-    await setConnectorCredentialStorageState(context, {
-      orgId: fixture.actor.orgId ?? "",
-      userId: fixture.actor.userId,
-      connectorSlug: "gmail",
-      storageVersion: 1,
-      tokenExpiresAt: "2020-01-01T00:00:00.000Z",
-    });
     server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        return HttpResponse.error();
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        return body.get("grant_type") === "authorization_code"
+          ? HttpResponse.json({
+              access_token: "expired-mail-token",
+              refresh_token: "current-mail-refresh",
+              expires_in: 0,
+              token_type: "Bearer",
+              scope: GMAIL_MODIFY_SCOPE,
+            })
+          : HttpResponse.error();
       }),
     );
+    const start = await connectors.startOauth(
+      fixture.actor,
+      "gmail",
+      "oauth",
+      undefined,
+      {
+        intent: "reconnect",
+        connectionId: fixture.gmail.id,
+      },
+    );
+    const state = new URL(start.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected reconnect state");
+    }
+    await connectors.completeOauthCallback("gmail", {
+      code: "expired-mail-authorization",
+      state,
+    });
 
     const response = await accept(
       client().linkDraft({
@@ -1615,12 +1749,18 @@ describe("POST /api/mail/drafts/link", () => {
     expect(gmail.deleteCount).toBe(1);
 
     const preserved = await accept(
-      stateClient().get({
+      client().getDraft({
+        headers: authHeaders(),
         params: { mailDraftId: linked.body.mailDraftId },
       }),
       [200],
     );
-    expect(preserved.body.exists).toBeTruthy();
+    expect(preserved.body.mailDraftId).toBe(linked.body.mailDraftId);
+    expect(preserved.body.mailDraft).toMatchObject({
+      status: "deleted",
+      detailAvailable: false,
+      subject: "Attachment review",
+    });
   });
 
   it("only removes the link when its chat thread is deleted", async () => {
@@ -1632,12 +1772,31 @@ describe("POST /api/mail/drafts/link", () => {
     expect(gmail.deleteCount).toBe(0);
     expect(gmail.exists).toBeTruthy();
 
-    const unlinked = await accept(
-      stateClient().get({
+    await accept(
+      client().getDraft({
+        headers: authHeaders(),
         params: { mailDraftId: linked.body.mailDraftId },
+      }),
+      [404],
+    );
+    // The Gmail draft itself survives and is no longer claimed by the deleted
+    // chat, so another chat can link it instead of hitting "already linked".
+    const otherThread = await chat.createThread(fixture.actor, {
+      agentId: fixture.agent.agentId,
+      title: "Relinked mail review",
+    });
+    const relinked = await accept(
+      client().linkDraft({
+        headers: authHeaders(),
+        body: {
+          threadId: otherThread.id,
+          agentId: fixture.agent.agentId,
+          gmailDraftId: GMAIL_DRAFT_ID,
+        },
       }),
       [200],
     );
-    expect(unlinked.body.exists).toBeFalsy();
+    expect(relinked.body.mailDraftId).not.toBe(linked.body.mailDraftId);
+    expect(gmail.deleteCount).toBe(0);
   });
 });

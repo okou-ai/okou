@@ -89,13 +89,19 @@ SLACK_OAUTH_CLIENT_ID=op://Development/slack/SLACK_OAUTH_CLIENT_ID
 SLACK_OAUTH_CLIENT_SECRET=op://Development/slack/SLACK_OAUTH_CLIENT_SECRET
 SLACK_SIGNING_SECRET=op://Development/slack/SLACK_SIGNING_SECRET
 
+# Optional: Discord integration. Leave unset until a test application is approved.
+# App-level credentials are never stored in per-guild installation rows.
+DISCORD_BOT_TOKEN=
+DISCORD_APPLICATION_ID=
+DISCORD_PUBLIC_KEY=
+DISCORD_GATEWAY_SECRET=
+# Set true only when the bot has the MESSAGE_CONTENT intent enabled.
+DISCORD_MESSAGE_CONTENT_ENABLED=false
+
 # Optional: Official Telegram Bot
 TELEGRAM_OFFICIAL_BOT_TOKEN=op://Development/telegram/TELEGRAM_OFFICIAL_BOT_TOKEN
 TELEGRAM_OFFICIAL_BOT_USERNAME=op://Development/telegram/TELEGRAM_OFFICIAL_BOT_USERNAME
 TELEGRAM_OFFICIAL_WEBHOOK_SECRET=op://Development/telegram/TELEGRAM_OFFICIAL_WEBHOOK_SECRET
-
-# Required: Claude Code Version URL
-CLAUDE_CODE_VERSION_URL=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest
 
 # Required: OpenAI (voice-chat ephemeral token minting, STT, TTS)
 OPENAI_API_KEY=op://Development/openai/OPENAI_API_KEY
@@ -103,27 +109,18 @@ OPENAI_API_KEY=op://Development/openai/OPENAI_API_KEY
 # Optional: OpenRouter lightweight model calls
 OPENROUTER_API_KEY=op://Development/openrouter/Section_ak7dvythmldarvk4dodjs4ecyq/OPENROUTER_API_KEY
 
+# Optional: managed OpenRouter key seeded for fixed Auto by `dev-seed`
+DEV_MODEL_OPENROUTER_KEY=op://Development/openrouter/Section_ak7dvythmldarvk4dodjs4ecyq/OPENROUTER_API_KEY
+
 # Google LLM workload identity (Vercel preview uses llm-dev; no static key).
 # Configure all three together; runtime OIDC is supplied by Vercel.
 GCP_LLM_PROJECT_ID=
 GCP_LLM_WORKLOAD_IDENTITY_PROVIDER=
 GCP_LLM_SERVICE_ACCOUNT_EMAIL=
 
-# Required: OpenAI Webhook signing secret (for built-in generations webhook)
-OPENAI_WEBHOOK_SECRET=op://Development/openai/OPENAI_WEBHOOK_SECRET
-
 # Optional: fal media generation
 FAL_KEY=op://Development/fal/FAL_KEY
 
-# Optional: JoggAI talking-avatar video generation
-JOGGAI_API_KEY=op://Development/joggai/JOGGAI_API_KEY
-JOGGAI_WEBHOOK_SECRET=op://Development/joggai/JOGGAI_WEBHOOK_SECRET
-
-# Optional: BytePlus ModelArk video generation
-BYTEPLUS_API_KEY=op://Development/byteplus/BYTEPLUS_API_KEY
-
-# Optional: BytePlus voice input STT
-BYTEPLUS_STT_API_KEY=op://Development/byteplus/BYTEPLUS_STT_API_KEY
 
 # Optional: Airtable OAuth Connector
 AIRTABLE_OAUTH_CLIENT_ID=op://Development/airtable/AIRTABLE_OAUTH_CLIENT_ID
@@ -268,9 +265,6 @@ WEBFLOW_OAUTH_CLIENT_SECRET=op://Development/webflow/WEBFLOW_OAUTH_CLIENT_SECRET
 STRIPE_OAUTH_CLIENT_ID=op://Development/stripe/STRIPE_OAUTH_CLIENT_ID
 STRIPE_OAUTH_CLIENT_SECRET=op://Development/stripe/STRIPE_OAUTH_CLIENT_SECRET
 
-# Optional: Stripe Billing (Vercel AI Gateway metering)
-STRIPE_VERCEL_GATEWAY_REPORT_ACCESS_KEY=op://Development/stripe/STRIPE_VERCEL_GATEWAY_REPORT_ACCESS_KEY
-
 # Optional: Stripe Billing (subscription + credits)
 STRIPE_SECRET_KEY=op://Development/stripe/STRIPE_SECRET_KEY
 STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID=op://Development/stripe/STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID
@@ -317,14 +311,6 @@ GITHUB_APP_PRIVATE_KEY=op://Development/github/GITHUB_APP_PRIVATE_KEY
 GITHUB_APP_SLUG=op://Development/github/GITHUB_APP_SLUG
 GITHUB_APP_WEBHOOK_SECRET=op://Development/github/GITHUB_APP_WEBHOOK_SECRET
 
-# Optional: Built-in model provider API keys
-DEV_MODEL_ANTHROPIC_KEY=op://Development/anthropic/DEV_MODEL_ANTHROPIC_KEY
-DEV_MODEL_OPENAI_KEY=op://Development/openai/OPENAI_API_KEY
-DEV_MODEL_MOONSHOT_KEY=op://Development/moonshot/DEV_MODEL_MOONSHOT_KEY
-DEV_MODEL_ZAI_KEY=op://Development/z.ai/DEV_MODEL_ZAI_KEY
-DEV_MODEL_MINIMAX_KEY=op://Development/minimax/DEV_MODEL_MINIMAX_KEY
-DEV_MODEL_DEEPSEEK_KEY=op://Development/deepseek/DEEPSEEK_LOCAL_DEV_KEY
-
 # Optional: Web Push (VAPID)
 VAPID_PUBLIC_KEY=op://Development/vapid/VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY=op://Development/vapid/VAPID_PRIVATE_KEY
@@ -337,3 +323,8 @@ OFFICIAL_RUNNER_SECRET=000000000000000000000000000000000000000000000000000000000
 # `pnpm dev`. A fixed local value is fine; production uses a Vercel-managed
 # secret and never touches this file.
 CRON_SECRET=local-dev-cron-secret
+
+# Native Morning Brief per-owner self-dispatch; leave off until the staff canary
+# is accepted and a distinct 32+ character secret is provisioned on both sides.
+MORNING_BRIEF_WORKER_CONCURRENCY=4
+# Worker signatures use a purpose-derived key from SECRETS_ENCRYPTION_KEY.

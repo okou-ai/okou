@@ -84,13 +84,9 @@
           "guidance": "Führen Sie zunächst eine Credit-Diagnose durch. Kaufen Sie Credits nur, wenn der aktuelle Plan dies zulässt. andernfalls geben Sie den Plan-Upgrade-Link zurück.",
           "title": "Credits aufgebraucht"
         },
-        "modelProviderUnavailable": {
-          "guidance": "Der von diesem Thread verwendete Modellanbieter wurde gelöscht. Starten Sie einen neuen Chat-Thread, um fortzufahren.",
-          "title": "Modellanbieter nicht verfügbar"
-        },
         "noModelProvider": {
-          "guidance": "Konfigurieren Sie einen Modellanbieter, um mit der Ausführung von Agenten zu beginnen.",
-          "title": "Kein Modellanbieter konfiguriert"
+          "guidance": "Versuche es gleich noch einmal oder verbinde in den Einstellungen ein persönliches Claude Code- oder Codex-Abonnement.",
+          "title": "Für diese Ausführung ist kein Modellanbieter verfügbar"
         },
         "paidPlanRequired": {
           "guidance": "Die integrierte Videogenerierung ist im aktuellen Plan nicht verfügbar.",
@@ -347,13 +343,13 @@
     },
     "sources": {
       "agent": "Agent",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Automatisierungsereignis",
       "automationSchedule": "Automatisierungszeitplan",
+      "discord": "Discord",
       "email": "E-Mail",
       "feishu": "Feishu",
       "github": "GitHub",
-      "goal": "Ziel",
       "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
@@ -373,6 +369,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Agents konnten nicht geladen werden",
+      "backToChats": "Zurück zu Chats",
+      "chatListUnavailable": "Chats konnten nicht geladen werden",
+      "chats": "Chats",
+      "me": "Ich",
+      "navigation": "Hauptnavigation",
+      "searchAgents": "Agents suchen",
+      "switchAgent": "Agent wechseln"
+    },
     "shortcutHelp": {
       "close": "Tastaturkürzel schließen",
       "description": "Verfügbare Tastaturkürzel für diese Seite",
@@ -571,7 +577,8 @@
       "video": "Video"
     },
     "metadata": {
-      "generated": "Generiert {{date}}"
+      "generated": "Generiert {{date}}",
+      "updated": "Aktualisiert {{date}}"
     },
     "preview": {
       "audioLabel": "Audiovorschau für {{filename}}",
@@ -621,24 +628,8 @@
       "activeHtmlPreview": "{{title}} aktive HTML-Vorschau",
       "all": "Alle",
       "avatar": "Avatar",
-      "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Zurück zu den Avataren",
       "categories": "Vorlagenkategorien",
       "category": "Vorlagenkategorie",
-      "chooseVoice": "Stimme für {{title}} auswählen",
-      "filters": {
-        "age": "Alter",
-        "all": "Alle",
-        "aspectRatio": "Seitenverhältnis",
-        "clear": "Zurücksetzen",
-        "ethnicity": "Ethnische Zugehörigkeit",
-        "gender": "Geschlecht",
-        "language": "Sprache",
-        "scene": "Szene",
-        "style": "Stil",
-        "title": "Filter",
-        "useCase": "Anwendungsfall"
-      },
       "fullPreview": "Vollständige Vorschau der Website {{title}}",
       "htmlPreview": "{{title}} HTML-Vorschau",
       "illustration": "Illustration",
@@ -649,25 +640,18 @@
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Vorlage importieren",
       "multiAccent": "Multi-Akzent",
-      "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",
       "noMatches": "Keine Übereinstimmungen",
       "placeholder": "{{title}} Platzhalter für die Website-Vorschau",
-      "playVideo": "Vorschau der Videovorlage abspielen {{title}}",
-      "previewAvatarVideo": "Avatar-Video {{title}} ansehen",
       "previewCurrentSlide": "Vorschau von {{title}} auf der aktuellen Folie",
       "previewSlide": "Vorschaufolie {{slideNumber}}",
-      "previewVoice": "Stimme {{title}} anhören",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previousSlide": "Vorschau der vorherigen Folie",
-      "recommended": "Empfohlen",
       "renameImportedTemplate": "Vorlage umbenennen",
       "searchConnector": "Vorlagen suchen",
       "searchConnectors": "Vorlagen suchen",
       "selectStyle": "Stil auswählen {{style}}",
       "selectTemplate": "Wählen Sie die Vorlage {{title}} aus.",
-      "selectVideo": "Wählen Sie die Videovorlage {{title}} aus.",
-      "selectVoice": "Stimme {{title}} auswählen",
       "selectWebsite": "Wählen Sie die Website-Vorlage {{title}} aus.",
       "selectWorkflow": "Wählen Sie die Workflow-Vorlage {{title}} aus.",
       "showVariant": "Variante {{variantNumber}} anzeigen",
@@ -700,7 +684,6 @@
       "tryDifferentSearch": "Versuchen Sie es mit einer anderen Suche.",
       "use": "Verwenden",
       "useThisTemplate": "Verwenden Sie diese Vorlage",
-      "viewVideoPlans": "Tarife für die Videovorlage {{title}} anzeigen",
       "visibility": {
         "change": "Ändern",
         "changeLabel": "Sichtbarkeit der Vorlage ändern",
@@ -1166,9 +1149,6 @@
       "downgradesOn": "Downgrade auf {{plan}} auf {{date}}",
       "downgradeTo": "Downgrade auf {{plan}}",
       "endsOn": "Endet am {{date}}",
-      "features": {
-        "byok": "Bringen Sie Ihre eigenen LLM-Schlüssel mit"
-      },
       "free": {
         "name": "Frei"
       },
@@ -1183,18 +1163,13 @@
         "everythingInBuiltForTeams": "Alles aus {{plan}}, gemacht für Teams",
         "included": "Enthalten",
         "liveBrowser": "Dem Live-Browser eines Agents zusehen und übernehmen",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
         "moreConnectorsChannels": "Mehr Custom Connectors & Kanal-Integrationen",
         "supportEmail": "E-Mail-Support",
         "supportPriority": "Priorisierter Support",
-        "videoGeneration": "Video- und Avatar-Generierung",
         "voiceInput": "Spracheingabe: {{requests}} Anfragen und {{minutes}} Minuten pro Tag",
         "webhookAutomations": "Einen Run aus jedem System per Webhook starten"
       },
       "legacy": "Legacy",
-      "limitedFree": {
-        "name": "Begrenzt kostenlos"
-      },
       "loadError": "Der Abrechnungsstatus konnte nicht geladen werden.",
       "namedPlan": "{{plan}} Plan",
       "noActivePlan": "Kein aktiver Plan",
@@ -1421,7 +1396,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} hinzugefügt",
         "checkedIn": "Eingecheckt",
         "checkin": {
           "action": "Einchecken",
@@ -1435,8 +1409,12 @@
           "name": "Tool verbinden",
           "unit": "pro Connector"
         },
-        "earned": "{{amount}} erhalten",
         "howRewardsWork": "So funktionieren Prämien",
+        "imessage": {
+          "action": "Hinzufügen",
+          "description": "Schreib {{assistantName}} von deinem iPhone",
+          "name": "Zu iMessage hinzufügen"
+        },
         "inReview": "In Prüfung",
         "intro": {
           "checkin": {
@@ -1482,6 +1460,9 @@
         "pendingState": "{{amount}} ausstehend",
         "rejected": {
           "alreadyRedeemed": "Post bereits verwendet",
+          "authorAlreadyRewarded": "Konto bereits belohnt",
+          "authorUnavailable": "Autor nicht überprüfbar",
+          "officialAccount": "Offizielle {{assistantName}}-Posts zählen nicht",
           "postMustMention": "Muss {{assistantName}} erwähnen"
         },
         "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
@@ -1492,7 +1473,6 @@
         },
         "shareDialog": {
           "description": "Öffentlichen Beitrag zur Prüfung einreichen. Eine erfolgreiche Prämie pro Person.",
-          "draft": "Meinen Montags-Wettbewerbsreport mache ich mit {{assistantName}} — es liest die Quellen und liefert die Tabelle zurück.",
           "helper": "Der Post muss öffentlich sein und {{assistantName}} erwähnen.",
           "inputLabel": "Post-Link",
           "openX": "X öffnen",
@@ -1507,7 +1487,8 @@
           "stepPaste": "Link einfügen",
           "stepWrite": "Beitrag schreiben",
           "submit": "Einreichen",
-          "title": "{{assistantName}} auf X teilen"
+          "title": "{{assistantName}} auf X teilen",
+          "writingPrompt": "Schreibe in deinen eigenen Worten über etwas, das du mit {{assistantName}} tatsächlich ausprobiert hast."
         },
         "slack": {
           "action": "Hinzufügen",
@@ -1737,12 +1718,17 @@
       "cancelFailed": "Die Anfrage konnte nicht abgebrochen werden. Versuchen Sie es erneut.",
       "cancelled": "Anfrage abgebrochen",
       "cancelling": "Wird abgebrochen…",
+      "checkFailed": "Der Browser konnte nicht überprüft werden. Ihre Eingaben bleiben erhalten; versuchen Sie es vor dem Senden erneut.",
       "completed": "Informationen hinzugefügt",
+      "confirmRangeValue": "Aktuellen Wert verwenden",
       "continue": "Agent benachrichtigen",
       "continuing": "Wird benachrichtigt…",
       "delivered": "Agent benachrichtigt",
       "expired": "Anfrage abgelaufen",
       "expiredDescription": "Der Browser wurde geschlossen oder diese Anfrage ist nicht mehr aktiv.",
+      "fileLeave": "Dateien auf der Website unverändert lassen",
+      "fileLimit": "Bis zu 3 Dateien auswählen (1 bei Einzelauswahl), insgesamt 10 MiB.",
+      "fileNotice": "Mit „Zum Browser hinzufügen“ wird die Datei an diese Website übertragen. Die Website kann sie beim Ändern der Dateiauswahl selbst hochladen oder das Formular absenden:",
       "loadFailed": "Diese Anfrage konnte nicht geladen werden",
       "loadFailedDescription": "Versuchen Sie es gleich noch einmal.",
       "loadingDescription": "Anfrage wird geprüft…",
@@ -1760,29 +1746,6 @@
       "uncertain": "Browser prüfen",
       "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
     },
-    "browserInteraction": {
-      "applying": "Browserinteraktion wird abgeschlossen",
-      "applyingDescription": "Der Browser schließt diese Anfrage ab.",
-      "callbackFailed": "Der Agent wurde nicht benachrichtigt.",
-      "cancel": "Abbrechen",
-      "cancelFailed": "Diese Anfrage konnte nicht abgebrochen werden. Versuchen Sie es erneut.",
-      "cancelled": "Anfrage abgebrochen",
-      "cancelling": "Wird abgebrochen…",
-      "completed": "Browserinteraktion abgeschlossen",
-      "completeFailed": "Diese Anfrage konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
-      "completing": "Wird abgeschlossen…",
-      "continue": "Agent benachrichtigen",
-      "continuing": "Wird benachrichtigt…",
-      "delivered": "Agent benachrichtigt",
-      "description": "Öffnen Sie den Browser, schließen Sie diesen Schritt ab und wählen Sie dann „Fertig“.",
-      "done": "Fertig",
-      "finish": "Schritt abschließen",
-      "stale": "Browser nicht mehr verfügbar",
-      "staleDescription": "Bitten Sie den Agenten, eine neue Anfrage zu erstellen.",
-      "title": "Browser übernehmen",
-      "uncertain": "Browser prüfen",
-      "uncertainDescription": "Die Interaktion wurde möglicherweise abgeschlossen. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
-    },
     "cards": {
       "viewDetails": "Details ansehen"
     },
@@ -1795,13 +1758,10 @@
         "addTemplate": "Vorlage hinzufügen",
         "imagePlaceholder": "Beschreibe das gewünschte Bild…",
         "presentationPlaceholder": "Worum geht es in deiner Präsentation?",
-        "settingsAdjusted": "Einige Videoeinstellungen wurden an dieses Modell angepasst",
         "slideCount": "Folienanzahl",
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
       },
-      "createWorkflow": "Workflow erstellen",
-      "imageModelForThisChat": "Bildmodell für diesen Chat",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
@@ -1816,12 +1776,10 @@
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
       "threadSuggestions": "Chat-Threads",
       "useForFutureChats": "Dieses Modell für zukünftige Chats verwenden",
-      "videoModelForThisChat": "Videomodell für diesen Chat",
       "workflows": {
         "empty": "Keine passenden Workflows",
         "loading": "Workflows werden geladen...",
-        "title": "Workflows",
-        "viewAll": "Alle Workflows anzeigen"
+        "title": "Workflows"
       }
     },
     "computerUse": {
@@ -1859,8 +1817,6 @@
       "add": "{{connectorName}} hinzufügen",
       "addConnectors": "Integrationen hinzufügen",
       "authorized": "{{connectorName}} verbunden und autorisiert für {{agentName}}",
-      "available_one": "Verfügbare Integration ({{count}})",
-      "available_other": "Verfügbare Integrationen ({{count}})",
       "back": "Zurück",
       "configurePermissions": "Konfigurieren Sie {{connectorName}}-Berechtigungen",
       "customAuthorizeDescription": "Prüfen und verbinden Sie diese benutzerdefinierte Integration und autorisieren Sie sie für den Agenten.",
@@ -1909,10 +1865,8 @@
     "errors": {
       "genericTitle": "Dieser Lauf konnte nicht abgeschlossen werden",
       "loadMessages": "Nachrichten konnten nicht geladen werden",
-      "noModelProviderAction": "Richten Sie einen Anbieter in den Arbeitsbereichseinstellungen ein",
-      "noModelProviderPrefix": "Noch kein Modellanbieter konfiguriert.",
-      "providerDeletedAction": "Starten Sie einen neuen Chat-Thread",
-      "providerDeletedPrefix": "Der von diesem Thread verwendete Modellanbieter wurde gelöscht.",
+      "noModelProviderAction": "Abonnements verwalten",
+      "noModelProviderPrefix": "Für diese Ausführung ist kein Modellanbieter verfügbar. Versuche es erneut oder verbinde ein persönliches Abonnement.",
       "providerIncompatibleAction": "Starten Sie eine neue Sitzung",
       "providerIncompatiblePrefix": "Diese Sitzung wurde bei einem anderen Modellanbieter gestartet und kann nicht mit dem aktuellen fortgesetzt werden.",
       "recovery": {
@@ -1932,19 +1886,18 @@
         "fiveHourReset": "Das 5-Stunden-Limit wird {{time}} zurückgesetzt",
         "inputTooLargeDescription": "Kürzen Sie Ihre Nachricht und senden Sie sie erneut.",
         "inputTooLargeTitle": "Ihre Nachricht ist zu groß",
-        "invalidApiKeyTitle": "Der API-Schlüssel muss aktualisiert werden",
+        "invalidApiKeyTitle": "Die Anmeldung deines Abonnements muss aktualisiert werden",
         "invalidCredentialsTitle": "Die Modellverbindung muss überprüft werden",
         "newChat": "Neuer Chat",
         "newChatDescription": "Starten Sie einen neuen Chat und übernehmen Sie die wichtigen Angaben, die Sie weiter brauchen.",
         "openClaude": "Claude öffnen",
-        "originalAccount": "Persönliches Abonnement {{account}}",
-        "originalAccountUnavailable": "Persönliches Abonnement getrennt",
-        "originalAccountUnknown": "Persönliches Abonnement nicht verifiziert",
         "outputLimitDescription": "Die Antwort wurde vorzeitig beendet. Mit „Fortfahren“ können Sie dort weitermachen.",
         "outputLimitTitle": "Die Antwort hat ihre Längenbegrenzung erreicht",
-        "providerBalanceDescription": "Prüfen Sie das Guthaben Ihres Anbieterkontos und versuchen Sie es erneut.",
-        "providerBalanceTitle": "Das Guthaben beim Modellanbieter reicht nicht aus",
-        "providerConnectionDescription": "Verbinden oder aktualisieren Sie Ihr Konto unter „Modellanbieter“ und versuchen Sie es erneut.",
+        "personalAccount": "Persönliches Abonnement {{account}}",
+        "personalAccountDisconnected": "Persönliches Abonnement getrennt",
+        "providerBalanceDescription": "Prüfe die Nutzung oder das Guthaben deines Abonnementkontos und versuche es dann erneut.",
+        "providerBalanceTitle": "Dein Abonnementkonto benötigt mehr Guthaben",
+        "providerConnectionDescription": "Verbinden oder aktualisieren Sie Ihr Konto unter „Einstellungen > Modelle“ und versuchen Sie es erneut.",
         "providerQueueTimeoutTitle": "Das Modell wurde nicht rechtzeitig gestartet",
         "providerRateLimitedTitle": "Gerade gibt es zu viele Modellanfragen",
         "providerServerErrorTitle": "Beim Modellanbieter ist ein vorübergehender Fehler aufgetreten",
@@ -2008,6 +1961,10 @@
       "newThread": "Neuer Chat",
       "reload": "Aufgaben neu laden"
     },
+    "lastReadMarker": {
+      "previouslyRead": "Hier haben Sie zuletzt aufgehört zu lesen",
+      "unread": "Ungelesene Nachrichten"
+    },
     "mail": {
       "bcc": "BCC",
       "cc": "CC",
@@ -2047,11 +2004,13 @@
     "newChat": "Neuer Chat",
     "origins": {
       "agentphone": "iMessage",
+      "discord": "Discord",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Chat öffnen",
       "openChatIn": "Chat in {{integration}} öffnen",
+      "openDiscordMessage": "Originalnachricht in Discord öffnen",
       "openFeishuChat": "Öffnen Sie den Original-Chat in Feishu",
       "openGithubMessage": "Ursprünglichen Issue oder Pull Request in GitHub öffnen",
       "openLarkChat": "Öffnen Sie den Original-Chat in Lark",
@@ -2091,24 +2050,33 @@
       "aboutAutomationEvent": "Über dieses Automatisierungsereignis",
       "aboutQueuedMessage": "Über diese Nachricht in der Warteschlange",
       "automationEvent": "Automatisierungsereignis",
-      "automationEventDescription": "Wartet hinter Nachrichten in der Warteschlange und wird ausgeführt, sobald die aktuelle Ausführung abgeschlossen ist.",
+      "automationEventDescription": "Wartet in der Warteschlange und wird automatisch ausgeführt, sobald sie starten kann.",
       "cancellationRecoveryPending": "Die abgebrochene Ausführung wird abgeschlossen, bevor die Arbeit in der Warteschlange fortgesetzt wird.",
       "event_one": "{{count}} Ereignis",
       "event_other": "{{count}} Ereignisse",
-      "goal": "Ziel",
       "itemsWaiting": "{{items}} wartet",
       "itemsWaitingTogether": "{{messages}} und {{events}} warten",
       "message_one": "{{count}} Nachricht",
       "message_other": "{{count}} Nachrichten",
       "pendingAutomationEvent": "Ausstehendes Automatisierungsereignis",
       "queuedMessage": "Nachricht in der Warteschlange",
-      "queuedMessageDescription": "Wartet in der Warteschlange und wird gesendet, sobald die aktuelle Ausführung beendet ist.",
+      "queuedMessageDescription": "Wartet in der Warteschlange und wird automatisch gesendet, sobald sie starten kann.",
       "removeQueuedMessage": "Nachricht aus der Warteschlange entfernen",
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
     },
-    "replaceDraft": {
-      "description": "Wenn Sie fortfahren, wird Ihr aktueller Composer-Entwurf gelöscht und eine Workflow-Eingabeaufforderung gestartet.",
-      "title": "Composer-Entwurf ersetzen?"
+    "remoteAccess": {
+      "default": "Standard",
+      "defaultEnabled": "Für Chats standardmäßig aktiviert",
+      "enabledCount_one": "{{count}} aktiviert",
+      "enabledCount_other": "{{count}} aktiviert",
+      "loadFailed": "Fernzugriff konnte nicht geladen werden.",
+      "loading": "Fernzugriff wird geladen…",
+      "off": "Aus",
+      "on": "Ein",
+      "requiresSsh": "Benötigt auch Zugriff auf den SSH-Host {{name}}.",
+      "retry": "Erneut versuchen",
+      "title": "Fernzugriff",
+      "unavailableSsh": "nicht verfügbarer SSH-Host"
     },
     "run": {
       "collapseWorkHistory": "Arbeitsverlauf einklappen",
@@ -2125,12 +2093,13 @@
         "wrappedUp": "Abgeschlossen um {{time}}"
       },
       "duration": {
-        "hoursShort_one": "{{count}}h",
-        "hoursShort_other": "{{count}}h",
-        "minutesShort_one": "{{count}}m",
-        "minutesShort_other": "{{count}}m",
-        "secondsShort_one": "{{count}}s",
-        "secondsShort_other": "{{count}}s"
+        "hoursMinutesShort": "{{hours}} h {{minutes}} min",
+        "hoursShort_one": "{{count}} h",
+        "hoursShort_other": "{{count}} h",
+        "minutesShort_one": "{{count}} min",
+        "minutesShort_other": "{{count}} min",
+        "secondsShort_one": "{{count}} s",
+        "secondsShort_other": "{{count}} s"
       },
       "expandWorkHistory": "Arbeitsverlauf ausklappen",
       "fastModelName": "{{model}} Fast",
@@ -2192,11 +2161,15 @@
       "deleteTitle": "Chat löschen?",
       "draft": "Entwurf",
       "empty": "Starten Sie eine Konversation; sie wird dann hier angezeigt",
+      "inbox": "Posteingang",
       "markUnread": "Als ungelesen markieren",
       "movePinDown": "Nach unten verschieben",
       "movePinUp": "Nach oben verschieben",
+      "mute": "Chat stummschalten",
+      "muted": "Stummgeschaltet",
       "newChatWith": "Neuer Chat mit {{agentName}}",
       "noArchived": "Keine archivierten Chats",
+      "noMuted": "Keine stummgeschalteten Chats",
       "noUnread": "Keine ungelesenen Chats",
       "openChatMenu": "Chat-Menü öffnen",
       "openListMenu": "Chatlisten-Menü öffnen",
@@ -2208,17 +2181,13 @@
       "showArchivedChats": "Archivierte Chats anzeigen",
       "titlePlaceholder": "Chattitel",
       "unarchive": "Archivierung aufheben",
+      "unmute": "Stummschaltung aufheben",
       "unpin": "Chat nicht mehr anheften",
       "unread": "Ungelesen",
       "unreadOnly": "Ungelesen"
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "Erstellen Sie eine Moderation für Videos",
-          "prompt": "Erstelle einen sprechenden Avatar-Moderator für mein nächstes Video.",
-          "title": "Avatar erstellen"
-        },
         "illustration": {
           "description": "Erstellen Sie ein fertiges Motiv im gewünschten Stil",
           "prompt": "Erstelle eine Illustration in dem Stil, den ich beschreibe.",
@@ -2229,11 +2198,6 @@
           "prompt": "Erstelle eine Präsentation aus einem Thema oder Dokument, das ich dir gebe.",
           "title": "Präsentation erstellen"
         },
-        "video": {
-          "description": "Machen Sie aus Ihrer Idee ein fertiges Video",
-          "prompt": "Mach aus meiner Idee oder meinen Assets ein fertiges Video.",
-          "title": "Video erstellen"
-        },
         "website": {
           "description": "Erstellen Sie eine teilbare Seite",
           "prompt": "Erstelle und veröffentliche eine teilbare Webseite für mich.",
@@ -2242,7 +2206,38 @@
       },
       "openTemplatesAria": "Vorlagen durchsuchen",
       "startWithPrompt": "Erstellen",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Mit deinem Claude Max 5x/20x- oder Codex-Plan",
+        "openSettingsAria": "Modelleinstellungen öffnen",
+        "title": "Kostenlos ausführen"
+      },
       "templates": "Vorlagen"
+    },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "Diese Zurücksetzungsanfrage wurde bereits eingelöst.",
+      "confirm_one": "{{count}} Zurücksetzung",
+      "confirm_other": "{{count}} Zurücksetzungen",
+      "confirmation": "Das Zurücksetzen verbraucht ein Reset-Guthaben. Erst ein Klick auf Zurücksetzen sendet die Anfrage.",
+      "confirmUnknown": "— Zurücksetzungen",
+      "credits_one": "Verbleibende Zurücksetzungen: {{count}}",
+      "credits_other": "Verbleibende Zurücksetzungen: {{count}}",
+      "creditsUnknown": "Verbleibende Zurücksetzungen: unbekannt",
+      "error": "Zurücksetzen fehlgeschlagen. Dieselbe Anfrage erneut versuchen.",
+      "expiresAt": "Guthaben läuft ab: {{time}}",
+      "loadFailed": "Die Nutzung des Abonnements konnte nicht gelesen werden.",
+      "loading": "Abonnement wird geladen…",
+      "noCredit": "Kein Reset-Guthaben verfügbar.",
+      "nothingToReset": "Es gibt kein ausgeschöpftes Nutzungsfenster zum Zurücksetzen.",
+      "reconnect": "Dieses Abonnement unter Einstellungen > Modelle erneut verbinden.",
+      "reset": "Nutzung erfolgreich zurückgesetzt.",
+      "resetting": "Wird zurückgesetzt…",
+      "title": "Reset card",
+      "unavailable": "Dieses Abonnement ist im aktuellen Arbeitsbereich nicht verfügbar.",
+      "unknown": "Unbekannt",
+      "unsupported": "Manuelles Zurücksetzen wird nicht unterstützt; die Nutzung erholt sich automatisch."
     },
     "taskChips": {
       "chooseTask": "Aufgabe wählen",
@@ -2569,7 +2564,7 @@
         "back": "Workflows entdecken",
         "browse": "Workflows entdecken",
         "close": "Schließen",
-        "contextPrefix": "Das ist mir wichtig: {{context}}",
+        "contextPrefix": "Das ist mir wichtig: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Täglich oder wöchentlich",
@@ -2860,29 +2855,17 @@
       "importedLoading": "Hochgeladene Vorlagen werden geladen…",
       "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
       "previewTemplate": "Vorschauvorlage {{title}}",
-      "previewVideo": "Vorschau der Videovorlage {{title}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previewWorkflow": "Vorschau der Workflow-Vorlage {{title}}",
       "removeTemplate": "Vorlage {{title}} entfernen",
-      "removeVideo": "Videovorlage {{title}} entfernen",
       "removeWebsite": "Website-Vorlage {{title}} entfernen",
       "removeWorkflow": "Workflow-Vorlage {{title}} entfernen",
-      "retry": "Erneut versuchen",
-      "videoOptions": "Videooptionen",
-      "videoOptionsAudio": "Audio erzeugen",
-      "videoOptionsAudioOff": "Audio aus",
-      "videoOptionsAudioOn": "Audio an",
-      "videoOptionsDuration": "Dauer",
-      "videoOptionsLabel": "Videooptionen {{spec}}",
-      "videoOptionsModel": "Modell",
-      "videoOptionsRatio": "Seitenverhältnis",
-      "videoOptionsResolution": "Auflösung"
+      "retry": "Erneut versuchen"
     },
     "thread": {
       "ariaLabel": "Chat-Thread",
       "changeIcon": "Symbol ändern",
       "emoji": {
-        "archive": "Archivieren",
         "done": "Erledigt",
         "idea": "Idee",
         "no": "Nein",
@@ -2921,6 +2904,7 @@
       "checkingLimit": "Überprüfung des Spracheingabelimits",
       "cleanupFailed": "Der Text wurde eingefügt, aber die gespeicherte Aufnahme konnte nicht entfernt werden.",
       "confirmRecording": "Erledigt",
+      "detectionFailed": "Die Spracherkennung ist nicht verfügbar. Deine Aufnahme bleibt gespeichert. Bitte versuche es erneut.",
       "discarding": "Sprachentwurf wird entfernt...",
       "input": "Spracheingabe",
       "inputLimitReached": "Das Limit für die Spracheingabe wurde erreicht. Für höhere Limits upgraden Sie auf Pro oder Team.",
@@ -2929,6 +2913,7 @@
       "inputLimitReachedProMember": "Das Limit für die Spracheingabe wurde erreicht. Bitten Sie einen Arbeitsbereichsadministrator um ein Upgrade auf Team, um höhere Limits zu erhalten.",
       "inputLimitReachedReset": "Das Limit für die Spracheingabe wurde erreicht. Bitte warten Sie, bis Ihr Limit zurückgesetzt wird.",
       "microphoneAccessDenied": "Der Zugriff auf das Mikrofon wurde verweigert. Erlauben Sie den Mikrofonzugriff und versuchen Sie es erneut.",
+      "noSpeechDetected": "Keine Sprache erkannt. Bitte nimm erneut auf.",
       "openingMicrophone": "Mikrofon öffnen...",
       "removeDraft": "Sprachentwurf entfernen",
       "restoreFailed": "Ihr Sprachentwurf konnte nicht geladen werden. Versuchen Sie es erneut.",
@@ -2950,6 +2935,8 @@
   },
   "cloudflareAccess": {
     "add": "Cloudflare Access hinzufügen",
+    "affectedMembers_one": "{{count}} Mitglied",
+    "affectedMembers_other": "{{count}} Mitglieder",
     "cancel": "Abbrechen",
     "changed": "Dieser Cloudflare Access wurde während der Bearbeitung geändert. Prüfen Sie vor dem Speichern die neuesten Einstellungen.",
     "clientId": "Client-ID des Service-Tokens",
@@ -2957,40 +2944,59 @@
     "clientSecret": "Client-Secret des Service-Tokens",
     "clientSecretPlaceholder": "Client-Secret des Service-Tokens einfügen",
     "configuration": "Cloudflare Access",
+    "convert": "Persönlich machen",
+    "convertHelp": "Diese Cloudflare-Access-Konfiguration der Organisation wird zu Ihrer eigenen persönlichen Konfiguration – auch wenn sie von jemand anderem erstellt wurde. Das Service Token bleibt unverändert und Ihre SSH-Hosts können verbunden bleiben.",
+    "convertUncertain": "Die Umstellung konnte nicht bestätigt werden. Prüfen Sie die aktuelle Konfiguration, bevor Sie es erneut versuchen.",
     "createNew": "Neuen Cloudflare Access erstellen",
     "delete": "Cloudflare Access löschen",
-    "deleteHelp": "Diesen ungenutzten Cloudflare Access löschen? Das gespeicherte Service-Token kann nicht wiederhergestellt werden.",
-    "description": "Greifen Sie mit Cloudflare Access Service-Tokens auf geschützte Anwendungen zu.",
+    "deleteHelp": "Diesen Cloudflare Access löschen? Das gespeicherte Service-Token kann nicht wiederhergestellt werden. Eigene Hosts müssen zuvor neu zugewiesen werden.",
+    "deleteUncertain": "Der Löschvorgang konnte nicht bestätigt werden. Prüfen Sie die aktuellen Auswirkungen, bevor Sie es erneut versuchen.",
     "edit": "Cloudflare Access bearbeiten",
-    "empty": "Noch kein Cloudflare Access. Fügen Sie ein Service-Token hinzu, um auf geschützte Anwendungen zuzugreifen.",
     "failed": "Die Cloudflare-Access-Änderung konnte nicht gespeichert werden. Versuche es erneut.",
-    "inUse": "Dieser Cloudflare Access wird von einem Host verwendet. Prüfen Sie die betroffenen Hosts und ändern Sie zuerst deren Zuordnung oder löschen Sie sie.",
-    "inUseHelp": "Wählen Sie für diese Hosts einen anderen Cloudflare Access, wechseln Sie ausdrücklich zu Direkt oder löschen Sie die Hosts, bevor Sie diesen löschen.",
+    "forbidden": "Nur Organisationsadministratoren können gemeinsam genutzten Cloudflare Access ändern.",
+    "hostCount_one": "{{count}} SSH-Host",
+    "hostCount_other": "{{count}} SSH-Hosts",
+    "impactChanged": "Die betroffenen Hosts haben sich geändert. Prüfen Sie die aktuellen Auswirkungen erneut.",
+    "impactConfirm": "Ich verstehe, dass die SSH-Hosts dieser Mitglieder gespeichert bleiben, aber erst wieder eine Verbindung herstellen können, wenn ihre Besitzer sie neu zuordnen oder ausdrücklich Direkt wählen.",
+    "impactSummary": "Betroffen: {{members}} und {{hosts}}. Die SSH-Hosts bleiben gespeichert, können aber erst nach erneuter Bindung oder ausdrücklicher Wahl von Direkt wieder verbinden. Kein Host wechselt automatisch zu Direkt.",
+    "inUse": "Ein SSH-Host verwendet diesen Cloudflare Access. Sein Besitzer muss ihn zuerst neu zuordnen oder löschen.",
+    "inUseHelp": "Ihre SSH-Hosts verwenden diese Konfiguration noch. Weisen Sie sie einer anderen Konfiguration zu, wählen Sie ausdrücklich Direkt oder löschen Sie die Hosts zuerst.",
     "invalidInput": "Einige Cloudflare-Access-Einstellungen sind ungültig. Überprüfe die Felder und versuche es erneut.",
     "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
     "latest": "Zuletzt gespeicherte Einstellungen",
     "loadFailed": "Cloudflare Access konnte nicht geladen werden. Versuchen Sie es erneut.",
     "loading": "Cloudflare Access wird geladen…",
-    "manage": "Cloudflare Access verwalten",
+    "memberIdentifier": " (ID {{identifier}})",
     "missing": "Dieser Cloudflare Access ist nicht mehr verfügbar. Wählen oder erstellen Sie einen anderen.",
     "name": "Name",
     "namePlaceholder": "z. B. Produktionszugriff",
+    "nameUnavailable": "Name vorübergehend nicht verfügbar",
+    "organization": "Organisation",
+    "organizationHelp": "Alle Mitglieder dieser Organisation können dieses Service-Token verwenden. Nur Administratoren können es ändern.",
+    "personal": "Persönlich",
+    "promote": "Für Organisation freigeben",
+    "promoteConfirm": "Ich verstehe, dass alle Mitglieder der Organisation dieses Service-Token verwenden können.",
+    "promoteHelp": "Geben Sie Ihren persönlichen Cloudflare Access für die Organisation frei. Service-Token und eigene SSH-Hostbindungen bleiben erhalten.",
+    "promoteUncertain": "Die Umwandlung konnte nicht bestätigt werden. Schließen Sie diesen Dialog und prüfen Sie die aktuelle Konfiguration vor einem erneuten Versuch.",
     "replace": "Service-Token ersetzen",
     "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden. Schließen Sie das Formular und öffnen Sie es erneut, um es noch einmal zu versuchen.",
     "retry": "Erneut versuchen",
     "reviewHelp": "Ihr Entwurf bleibt erhalten. Bestätigen Sie die zuletzt gespeicherten Einstellungen, bevor Sie Ihre Änderungen anwenden.",
+    "reviewLatest": "Aktuelle Auswirkungen prüfen",
     "revisionExhausted": "Diese Konfiguration kann nicht mehr aktualisiert werden. Erstelle eine neue.",
     "save": "Speichern",
     "saveUncertain": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Wiederholen Sie denselben Speichervorgang, oder schließen Sie das Formular und prüfen Sie die Liste, bevor Sie erneut etwas hinzufügen.",
+    "scope": "Wer kann dies verwenden",
+    "sectionEmpty": "Hier gibt es noch keine Konfigurationen.",
     "select": "Cloudflare Access auswählen",
     "summary_one": "{{count}} Cloudflare Access eingerichtet",
     "summary_other": "{{count}} Cloudflare Access eingerichtet",
     "title": "Cloudflare Access",
     "tokenHelp": "Greifen Sie mit Cloudflare Access Service-Tokens auf geschützte Anwendungen zu.",
     "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar.",
-    "unused": "Von keinem Host verwendet",
-    "usedBy_one": "Von {{count}} Host verwendet:",
-    "usedBy_other": "Von {{count}} Hosts verwendet:"
+    "unused": "Von keinem deiner Hosts verwendet",
+    "usedBy_one": "Von {{count}} deiner Hosts verwendet:",
+    "usedBy_other": "Von {{count}} deiner Hosts verwendet:"
   },
   "connectors": {
     "access": {
@@ -3104,7 +3110,6 @@
       "connectAria": "Verbinden Sie {{connector}}",
       "connected": "Verbunden",
       "connectionExpired": "Verbindung abgelaufen",
-      "connectToContinue": "Verbinden Sie dieses Konto, um fortzufahren",
       "managePermissions": "Berechtigungen verwalten",
       "managePermissionsFor": "Verwalten Sie {{connector}}-Berechtigungen",
       "optional": "Optional",
@@ -3174,7 +3179,6 @@
           "menu": "Vertrieb und Geschäft"
         }
       },
-      "categoriesAria": "Integration-Kategorien",
       "description": "Verbinden Sie Dienste von Drittanbietern, damit Ihre Agenten sie nutzen können.",
       "descriptionWithCount": "Verbinden Sie {{value}} Dienste, damit Ihre Agenten sie nutzen können.",
       "directory": {
@@ -3193,8 +3197,6 @@
       "empty": {
         "agent": "Keine Integrationen für diesen Agenten",
         "connected": "Keine verbundenen Integrationen",
-        "matching": "{{message}} passend zu „{{search}}“",
-        "notConnected": "Keine weiteren Integrationen verfügbar",
         "search": "Keine Integrationen passend zu „{{search}}“",
         "unshared": "Jede Integration ist mit einem Agenten geteilt"
       },
@@ -3204,14 +3206,10 @@
         "all": "Alle",
         "allAgents": "Alle Agenten",
         "aria": "Integrationen filtern",
-        "connected": "Verbunden",
-        "notConnected": "Nicht verbunden",
-        "status": "Status",
         "unshared": "Mit keinem Agenten geteilt"
       },
       "filterWith": "Filter: {{category}}",
       "iconUnavailable": "Integrationssymbol nicht verfügbar",
-      "newConnector": "Neue Integration",
       "noConnectorsAlt": "Keine Integrationen",
       "otherCategory": "Andere",
       "remoteAccess": "Fernzugriff",
@@ -3238,10 +3236,6 @@
         "seeMore_one": "{{names}} und {{count}} weiteren ansehen",
         "seeMore_other": "{{names}} und {{count}} weitere ansehen",
         "top": "Top-Konnektoren"
-      },
-      "tabs": {
-        "builtin": "Eingebaut",
-        "custom": "Benutzerdefiniert"
       },
       "title": "Integrationen",
       "unnamedAgent": "Unbenannt"
@@ -3382,7 +3376,6 @@
       "edit": {
         "title": "Benutzerdefinierte Integration bearbeiten"
       },
-      "emptyAdmin": "Noch keine benutzerdefinierten Integrationen. Erstellen Sie eine, um eine API zu registrieren, die jedes Mitglied verwenden kann.",
       "emptyMember": "Ihre Organisation hat noch keine benutzerdefinierten Integrationen registriert.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -3467,7 +3460,7 @@
         "invalidSignature": "Die Signatur auf diesem Link ist ungültig.",
         "invalidTimestamp": "Der Zeitstempel auf diesem Link ist ungültig.",
         "invalidTitle": "Der Verbindungslink ist ungültig",
-        "risk": "SMS- und MMS-Antworten werden möglicherweise nicht zuverlässig zugestellt. Für ein möglichst zuverlässiges Erlebnis verwenden Sie iMessage mit dieser AgentPhone-Nummer.",
+        "risk": "SMS- und MMS-Antworten werden möglicherweise nicht zuverlässig zugestellt. Für ein möglichst zuverlässiges Erlebnis verwenden Sie iMessage mit dieser Nummer.",
         "successDescription": "{{phone}} ist verbunden. Senden Sie eine Textnachricht, um mit {{assistantName}} zu chatten.",
         "successTitle": "Telefonnummer verbunden"
       },
@@ -3550,21 +3543,12 @@
         "alreadyDescriptionNamed": "Sie sind bereits mit {{bot}} verbunden. Senden Sie eine Nachricht in Telegram, um mit dem Chatten zu beginnen.",
         "alreadyTitle": "Bereits mit Telegram verbunden",
         "back": "Zurück zu den Telegram-Einstellungen",
-        "botFallback": "dieser Bot",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Bitte warten Sie, während wir Ihre Telegram-Verbindung überprüfen.",
         "checkingConnectionTitle": "Verbindung prüfen...",
-        "checkingDomain": "Domainstatus wird überprüft...",
         "checkingSession": "Bitte warten Sie, während wir Ihre {{brandName}}-Sitzung überprüfen.",
         "connectDescription": "Verknüpfen Sie Ihr Konto mit diesem Telegram-Bot, damit Sie direkt über Telegram mit Ihrem Agenten interagieren können.",
         "connectTitle": "Stellen Sie eine Verbindung zu Telegram her",
         "continue": "Weiter mit Telegram",
-        "domainDescription": "Die Telegram-Webanmeldung ist für {{bot}} nicht aktiviert.",
-        "domainIn": "In ",
-        "domainInstructionsAfter": ", wählen Sie den Bot aus und legen Sie dann die Domäne fest auf:",
-        "domainKeepOpen": "Lassen Sie diese Seite nach dem Speichern der Domain geöffnet. Sie können sich auch über Telegram mit /connect verbinden.",
-        "domainSend": ", schicken ",
-        "domainTitle": "Legen Sie die Telegram-Anmeldedomäne fest",
         "errorFallback": "Wir konnten Telegram nicht verbinden. Versuchen Sie es erneut über Telegram.",
         "invalidSignature": "Die Signatur auf diesem Link ist ungültig.",
         "invalidTimestamp": "Der Zeitstempel auf diesem Link ist ungültig.",
@@ -3574,9 +3558,7 @@
         "linkIncomplete": "Öffnen Sie einen neuen /connect-Link von Telegram und versuchen Sie es erneut.",
         "linkIncompleteTitle": "Der Connect-Link ist unvollständig",
         "open": "Öffnen Sie Telegram",
-        "openBotFather": "Öffnen Sie BotFather",
         "refresh": "Aktualisieren Sie diese Seite und versuchen Sie es erneut.",
-        "setDomainCommand": "/setdomain",
         "signInButton": "Melden Sie sich bei {{brandName}} an",
         "signInCheckFailed": "Die Anmeldung konnte nicht überprüft werden",
         "signInDescription": "Verwenden Sie Ihr {{brandName}}-Konto, bevor Sie diesen Telegram-Benutzer verbinden.",
@@ -3589,9 +3571,10 @@
       "agentphone": {
         "authorizedSender": "Autorisierter Absender",
         "codeExpiry": "Läuft in 10 Minuten ab",
+        "codeLabel": "Code",
         "connectAria": "Telefon anschließen",
-        "connectDescription": "Scannen Sie den Code oder öffnen Sie Nachrichten und senden Sie dann den vorausgefüllten Code.",
-        "connectTitle": "Telefon anschließen",
+        "connectDescription": "Scannen Sie mit Ihrer Kamera und senden Sie dann den vorausgefüllten Code.",
+        "connectTitle": "Schreiben Sie {{assistantName}} von Ihrem iPhone",
         "copyAria": "Kopieren Sie {{phone}}",
         "copyCodeAria": "Verbindungscode {{code}} kopieren",
         "copyCodeError": "Verbindungscode konnte nicht kopiert werden",
@@ -3602,80 +3585,16 @@
         "creatingCode": "Verbindungscode wird erstellt…",
         "description": "SMS-Zugriff auf {{assistantName}}",
         "destination": "iMessage oder SMS an",
-        "manualSend": "oder senden Sie",
-        "manualSendTo": "an",
         "openMessages": "Nachrichten öffnen",
         "options": "Telefonoptionen",
         "phoneLabel": "Telefon",
         "qrTitle": "Scannen, um Nachrichten mit dem vorausgefüllten Verbindungscode zu öffnen",
         "risk": "Verwenden Sie nach Möglichkeit iMessage. SMS- und MMS-Antworten kommen möglicherweise nicht zuverlässig an.",
+        "sendToLabel": "Senden an",
         "tryAgain": "Erneut versuchen"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activated": "Aktiviert",
-          "activeCatalogDigest": "Aktiver Katalogauszug",
-          "activeVersion": "Aktive Version",
-          "evaluated": "Bewertet",
-          "evaluation": "Auswertung",
-          "executableCapabilityDigest": "Zusammenfassung der ausführbaren Funktionen",
-          "failureCode": "Fehlercode",
-          "filteredAuthMethods": "Gefilterte Authentifizierungsmethoden",
-          "lastAttempt": "Letzter Versuch",
-          "lastAttemptAt": "Letzter Versuch",
-          "lastSuccess": "Letzter Erfolg",
-          "missingVersions": "Fehlende Versionen",
-          "rejectedCatalogDigest": "Katalogauszug abgelehnt",
-          "rejectedVersion": "Abgelehnte Version",
-          "rejectingBackend": "Backend wird abgelehnt",
-          "rejectionCache": "Ablehnungscache",
-          "rejectionFailure": "Ablehnungsfehler",
-          "syncState": "Synchronisierungsstatus",
-          "unownedSecrets": "Nicht zugeordnete Secrets",
-          "unownedVariables": "Unbesessene Variablen",
-          "unresolvedBridgeCredentials": "Ungelöste Bridge-Anmeldeinformationen"
-        },
-        "loading": "Laden",
-        "none": "Keiner",
-        "notReused": "Nicht wiederverwendet",
-        "reused": "Wiederverwendet",
-        "sections": {
-          "compatibility": "Kompatibilität",
-          "credentialStorage": "Anmeldeinformationsspeicher",
-          "rejectedCandidate": "Abgelehnter Kandidat"
-        },
-        "title": "Integrationskatalog",
-        "unavailable": "Nicht verfügbar",
-        "values": {
-          "accepted": "Akzeptiert",
-          "current": "Aktuell",
-          "digestMismatch": "Digest-Konflikt",
-          "invalidArtifact": "Ungültiges Artefakt",
-          "invalidCompression": "Ungültige Komprimierung",
-          "invalidJson": "Ungültiges JSON",
-          "invalidPointer": "Ungültiger Zeiger",
-          "invalidReference": "Ungültige Referenz",
-          "missingAccessProvider": "Fehlender Access-Provider",
-          "missingGrantProvider": "Fehlender Grant-Provider",
-          "missingPlatformConfiguration": "Fehlende Plattformkonfiguration",
-          "missingRevokeProvider": "Fehlender Revoke-Provider",
-          "neverSynced": "Nie synchronisiert",
-          "objectTooLarge": "Objekt zu groß",
-          "providerContractMismatch": "Provider-Vertrag stimmt nicht überein",
-          "publicLeakage": "Öffentliche Datenfreigabe",
-          "rejected": "Abgelehnt",
-          "relationshipMismatch": "Beziehungskonflikt",
-          "sourceUnavailable": "Quelle nicht verfügbar",
-          "stale": "Veraltet",
-          "unchanged": "Unverändert",
-          "unsupportedProtocol": "Nicht unterstütztes Protokoll",
-          "unsupportedSchema": "Nicht unterstütztes Schema"
-        }
-      },
       "errors": {
-        "githubAuthorizationWindow": "Das Autorisierungsfenster konnte nicht geöffnet werden",
-        "telegramDomain": "Die Domain ist für Telegram noch nicht sichtbar. Überprüfen Sie BotFather und versuchen Sie es erneut.",
-        "telegramPrivacy": "Der Datenschutzmodus scheint immer noch aktiviert zu sein. Schalten Sie es in BotFather aus und versuchen Sie es dann erneut."
+        "githubAuthorizationWindow": "Das Autorisierungsfenster konnte nicht geöffnet werden"
       },
       "feishu": {
         "addBot": "Bot hinzufügen",
@@ -3943,83 +3862,21 @@
         "uninstallTitle": "Lark-Bot deinstallieren?"
       },
       "telegram": {
-        "addBot": "Bot hinzufügen",
-        "addDescription": "Führen Sie jeden BotFather-Schritt aus und erstellen Sie dann den Arbeitsbereichs-Bot.",
-        "adding": "Hinzufügen...",
-        "addTitle": "Telegram-Bot hinzufügen",
-        "agentAria": "Standardagent für {{bot}}",
         "backToIntegrations": "Zurück zu Integrationen",
         "botFallback": "Telegram-Bot",
-        "bots": "Telegram-Bots",
-        "botToken": "Bot-Token",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "Überprüfung...",
-        "copied": "kopiert!",
-        "copyAria": "Kopieren Sie {{value}}",
-        "copyTitle": "Klicken Sie zum Kopieren",
-        "create": {
-          "description": "{{brandName}} registriert diesen Bot und konfiguriert seinen Webhook. Erwähnen Sie den Bot nach der Einrichtung in einer Gruppe oder senden Sie ihm eine DM, um mit dem ausgewählten Agenten zu sprechen.",
-          "descriptionNamed": "{{brandName}} registriert {{bot}} und konfiguriert seinen Webhook. Erwähnen Sie den Bot nach der Einrichtung in einer Gruppe oder senden Sie ihm eine DM, um mit dem ausgewählten Agenten zu sprechen.",
-          "title": "Bereit, die Integration zu erstellen"
-        },
-        "defaultAgent": "Standardagent",
         "disconnectAria": "Trennen Sie {{bot}}",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "Domäne erkannt",
-          "instructionAfter": ", wählen Sie diesen Bot aus und stellen Sie die Domäne auf ein ",
-          "instructionEnd": ". Telegram verwendet diese Domäne, um den Verbindungsfluss für diesen Bot zu ermöglichen.",
-          "instructionStart": "Senden Sie in {{botFather}} ",
-          "title": "Legen Sie die Telegram-Anmeldedomäne fest"
-        },
-        "emptyDescription": "Fügen Sie ein Bot-Token hinzu, um mit der Weiterleitung von Telegram-Nachrichten an einen Agenten zu beginnen.",
-        "emptyTitle": "Noch keine Telegram-Bots",
-        "invalidTokenDescription": "Installieren Sie den Bot mit einem neuen Token von BotFather neu.",
         "loadError": "Telegram-Einstellungen konnten nicht geladen werden.",
         "moreOptions": "Weitere Optionen für {{bot}}",
-        "newBotToken": "Neuer Bot-Token",
         "notConnected": "Nicht verbunden",
         "officialBot": "Offizieller Telegram-Bot",
         "officialDescription": "Offizieller Bot bereitgestellt von {{brandName}}.",
         "officialMissing": "Die offizielle Bot-Konfiguration fehlt.",
-        "pageDescription": "Verwalten Sie das Bot-Routing für diesen Arbeitsbereich",
-        "privacy": {
-          "instructionAfter": ", wählen Sie diesen Bot aus und deaktivieren Sie dann den Datenschutzmodus. Dadurch kann der Agent den Gruppenkontext rund um Erwähnungen und Antworten lesen.",
-          "instructionStart": "Senden Sie in {{botFather}} ",
-          "off": "Der Datenschutzmodus ist deaktiviert",
-          "title": "Optional: Deaktivieren Sie den Datenschutzmodus"
-        },
-        "registerAria": "Registrieren Sie den Telegram-Bot",
-        "reinstall": "Neu installieren",
-        "reinstallDescription": "Fügen Sie das neue BotFather-Token für {{bot}} ein. Der Token muss zu demselben Bot gehören.",
-        "reinstalling": "Neuinstallation...",
-        "reinstallTargetFallback": "dieser Bot",
-        "reinstallTitle": "Installieren Sie den Telegram-Bot neu",
-        "selectAgent": "Wählen Sie einen Agenten aus",
-        "steps": {
-          "back": "Zurück",
-          "create": "Erstellen",
-          "domain": "Domain",
-          "next": "Nächste",
-          "privacy": "Privatsphäre",
-          "token": "Token"
-        },
-        "token": {
-          "instructionAfter": ", wählen Sie einen Namen und einen Benutzernamen und fügen Sie dann das Token unten ein.",
-          "open": "Offen ",
-          "send": ", schicken ",
-          "title": "Erstellen Sie ein Bot-Token in BotFather",
-          "verified": "Token verifiziert"
-        },
-        "tokenInvalid": "Token ungültig",
-        "uninstallAria": "{{bot}} deinstallieren",
-        "uninstallDescription": "Dadurch wird {{bot}} aus dem Arbeitsbereich entfernt und der Telegram-Zugriff für Benutzer, die es verwenden, unterbrochen. Diese Aktion kann nicht rückgängig gemacht werden.",
-        "uninstallTargetFallback": "dieser Bot",
-        "uninstallTitle": "Telegram-Bot deinstallieren?"
+        "pageDescription": "Verwalten Sie das Bot-Routing für diesen Arbeitsbereich"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone verbunden",
-        "agentphoneDisconnected": "AgentPhone getrennt",
+        "agentphoneConnected": "Telefonnummer verbunden",
+        "agentphoneDisconnected": "Telefonnummer getrennt",
         "slackConnected": "Slack erfolgreich verbunden",
         "slackDisconnected": "Von Slack getrennt",
         "slackInstalled": "Slack erfolgreich installiert",
@@ -4031,12 +3888,7 @@
         "teamsInstalled": "Microsoft Teams erfolgreich installiert",
         "teamsUninstalled": "Microsoft Teams-Integration deinstalliert",
         "teamsUpdated": "Microsoft Teams aktualisiert",
-        "telegramAgentUpdated": "Standardagent aktualisiert",
-        "telegramBotAdded": "Telegram-Bot hinzugefügt",
-        "telegramBotReinstalled": "Telegram-Bot neu installiert",
-        "telegramBotUninstalled": "Telegram-Bot deinstalliert",
-        "telegramDisconnected": "Telegram-Konto getrennt",
-        "telegramUpdatingAgent": "Standardagent wird aktualisiert..."
+        "telegramDisconnected": "Telegram-Konto getrennt"
       },
       "works": {
         "connected": "Verbunden",
@@ -4061,9 +3913,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Die Anfrage ist fehlgeschlagen"
-    },
-    "realtime": {
-      "degraded": "Bei Live-Updates ist ein Problem aufgetreten. Bitte aktualisieren Sie die Seite."
     }
   },
   "invitationRedirect": {
@@ -4144,132 +3993,66 @@
     }
   },
   "onboarding": {
-    "categories": {
-      "ceo": {
-        "description": "Briefings und das große Ganze",
-        "title": "CEO"
-      },
-      "data": {
-        "description": "Dashboards, Metriken, Abfragen",
-        "title": "Daten"
-      },
-      "engineering": {
-        "description": "Code versenden, debuggen, automatisieren",
-        "title": "Ingenieur"
-      },
-      "everyone": {
-        "description": "E-Mail, Kalender, Besprechungen",
-        "title": "Alle"
-      },
-      "marketing": {
-        "description": "Inhalte, SEO, Kampagnen",
-        "title": "Marketing"
-      },
-      "operations": {
-        "description": "Projekte, Terminplanung, Synchronisierung",
-        "title": "Operationen"
-      },
-      "product": {
-        "description": "Spezifikationen, Veröffentlichungen, Feedback",
-        "title": "Produkt"
-      },
-      "sales": {
-        "description": "Pipeline und Reichweite",
-        "title": "Verkäufe"
-      },
-      "support": {
-        "description": "Tickets und Kundenhilfe",
-        "title": "Unterstützung"
-      }
-    },
     "common": {
-      "back": "Zurück",
-      "continue": "Weitermachen",
-      "dialogPreview": "{{title}} Vorschau",
-      "gotIt": "Habe es",
       "next": "Nächste",
-      "previewWorkflowDetails": "Vorschau der Workflow-Details",
-      "selectTemplate": "Wählen Sie diese Vorlage aus",
-      "selectThisTemplate": "Wählen Sie diese Vorlage aus",
       "stepProgress": "Schritt {{current}} von {{total}}"
     },
     "documentTitles": {
-      "chooseImage": "Wählen Sie einen Bildstil",
-      "choosePresentation": "Wählen Sie eine Präsentationsvorlage",
-      "chooseVideo": "Wählen Sie einen Videostil",
-      "chooseWorkflow": "Wählen Sie einen Workflow",
-      "make": "Willkommen bei {{brandName}}",
-      "runImage": "Erstellen Sie Ihr erstes Bild",
-      "runPresentation": "Erstellen Sie Ihre erste Präsentation",
-      "runVideo": "Erstellen Sie Ihr erstes Video",
-      "runWorkflow": "Führen Sie Ihren ersten Workflow aus"
+      "make": "Willkommen bei {{brandName}}"
     },
     "make": {
-      "description": "Wählen Sie einen Ausgangspunkt, alles Weitere können Sie später erledigen.",
-      "options": {
-        "explore": {
-          "description": "Verbinden Sie sich einfach mit meinen Tools",
-          "title": "Ich werde es auf eigene Faust erkunden"
-        },
-        "images": {
-          "description": "Erstellen Sie hochwertige Bilder",
-          "title": "Bilder generieren"
-        },
-        "presentation": {
-          "description": "Folien und Referenten erstellen",
-          "title": "Erstellen Sie eine Präsentation"
-        },
-        "slack": {
-          "description": "Chatten Sie mit Ihrem KI-Teammitglied in Ihrem Workspace",
-          "title": "Mit Okou in Slack chatten"
-        },
-        "video": {
-          "description": "Verwandeln Sie Ihre Ideen in Videos",
-          "title": "Videoproduktion"
-        },
-        "website": {
-          "description": "Erstellen Sie eine teilbare Seite",
-          "title": "Website erstellen"
-        },
-        "workflow": {
-          "description": "Entdecken Sie anhand voreingestellter Vorlagen",
-          "title": "Workflow-Automatisierung"
-        }
-      },
-      "projectTypeLabel": "Erster Projekttyp",
       "promptDescription": "Passen Sie es unten an oder führen Sie es unverändert aus. {{assistantName}} übernimmt es von hier aus. Ihre Tools bleiben in der Sandbox und nichts verlässt Ihren Arbeitsbereich.",
       "promptLabel": "Onboarding-Eingabeaufforderung",
-      "promptTitle": "Versuchen Sie es mit dieser Eingabeaufforderung",
-      "title": "Was möchten Sie zuerst machen?"
-    },
-    "runAction": {
-      "checkingPlan": "Prüfplan",
-      "runNow": "Jetzt ausführen",
-      "upgradePro": "Aktualisieren Sie Pro, um es auszuführen"
+      "promptTitle": "Versuchen Sie es mit dieser Eingabeaufforderung"
     },
     "sourcesFirst": {
+      "chatChannels": {
+        "connectedTitle": "Dein Chat ist verbunden",
+        "copy": "Schreibe Okou direkt oder füge es zum Teamchat hinzu. Wähle die Art, wie du bereits arbeitest.",
+        "imessageConnected": "iMessage ist verbunden",
+        "imessageCopy": "Deine Arbeit, nur eine Nachricht entfernt.",
+        "imessageExpired": "Dein Verbindungscode ist abgelaufen.",
+        "imessageRefresh": "Neuen Code erhalten",
+        "imessageScan": "Öffne deine iPhone-Kamera und sende dann die vorausgefüllte Nachricht.",
+        "imessageTitle": "Schreibe Okou in iMessage",
+        "othersLabel": "Auch verfügbar in",
+        "title": "Okou ist nur eine Nachricht entfernt"
+      },
       "common": {
         "back": "Zurück",
         "continue": "Weiter",
-        "finish": "Einrichtung abschließen",
-        "notNow": "Jetzt nicht",
-        "skip": "Vorerst überspringen"
+        "notNow": "Jetzt nicht"
+      },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "Sicherheitsdetails",
+        "status": {
+          "aligned": "Ausgerichtet",
+          "compliant": "Konform",
+          "inProgress": "In Arbeit"
+        },
+        "title": "Okous Compliance – gebaut für dein Vertrauen"
       },
       "documentTitles": {
         "experience": "Deine KI-Erfahrung",
         "industry": "Bereich wählen",
-        "profile": "Ihr Profil",
         "ready": "Okou ist bereit",
         "skills": "Skills importieren",
-        "slack": "Okou zu Slack hinzufügen",
         "sources": "Arbeit verbinden",
         "team": "Teammitglied einladen"
       },
       "experience": {
-        "copy": "Verbinde den Plan, den du schon bezahlst: die Arbeit läuft dort statt auf Okou-Credits.",
-        "no": "Nein, das ist neu für mich",
-        "noCopy": "Okou wählt eine erste Aufgabe für dich.",
-        "title": "Hast du schon mit Codex oder Claude Code gearbeitet?"
+        "copy": "Lass dich beim Einstieg begleiten oder nutze deinen vorhandenen Codex- oder Claude-Code-Tarif.",
+        "no": "Ich bin neu bei KI-Agenten",
+        "noCopy": "Okou hilft dir, eine passende erste Aufgabe zu finden.",
+        "title": "Wie möchtest du mit Okou starten?",
+        "trust": "Aufgaben laufen über deinen Codex- oder Claude-Code-Tarif statt über Okou-Credits, so kannst du mehr erledigen, ohne auf den Verbrauch zu achten. Jetzt oder später verbinden."
       },
       "industries": {
         "coaching": {
@@ -4318,34 +4101,59 @@
         }
       },
       "industry": {
-        "copy": "Okou wählt daraus deine erste Aufgabe und die Quellen, mit denen sie startet.",
+        "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud. Wähle dein Feld für eine passende erste Aufgabe.",
         "title": "Welche Arbeit machst du?"
       },
-      "profile": {
-        "communicationStyle": "So kommunizieren Sie",
-        "copy": "Ein erster Blick auf Ihre Arbeit, basierend auf den verbundenen Konten.",
-        "failed": "Wir konnten Ihr Profil gerade nicht erstellen. Versuchen Sie es erneut oder fahren Sie fort.",
-        "heading": "Ihr Profil",
-        "loading": "Ihr Profil wird aus Ihren verbundenen Konten erstellt…",
-        "priorities": "Mögliche Prioritäten",
-        "professionalIdentity": "Ihre Arbeit",
-        "retry": "Erneut versuchen",
-        "title": "Das haben wir über Sie erfahren"
+      "prompt": {
+        "intro": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud."
       },
       "skills": {
         "copied": "Kopiert",
-        "copy": "Füge diesen Prompt in deine eigene {{provider}}-Sitzung ein, und er holt die Skills von deinem Rechner nach Okou.",
+        "copy": "Führe diesen Prompt in {{provider}} aus, um deine vorhandenen Skills zu importieren, damit Okou sie sofort nutzen kann.",
         "copyError": "Der Prompt konnte nicht kopiert werden.",
         "copyPrompt": "Prompt kopieren",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Öffne die Claude-App und wechsle zum Tab {{control}}",
+            "openAppNote": "Code läuft auf deinem Computer und kann deine Skill-Ordner lesen.",
+            "stayLocal": "Lass die Sitzung auf {{control}}",
+            "stayLocalNote": "Chat und Cloud-Sitzungen sehen keine Dateien auf deinem Computer."
+          },
+          "codex": {
+            "keepOpen": "Lass sie geöffnet, bis deine Skills unten erscheinen",
+            "openApp": "Öffne die Codex-App und starte einen {{control}}",
+            "openAppNote": "Nutze die App auf deinem Computer, damit sie deine Skill-Ordner lesen kann."
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "Kopiere den Prompt",
+          "label": "Wo du den Prompt ausführst",
+          "paste": "Prompt einfügen und senden",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "Vollständigen Prompt ausblenden",
         "importedCopy": "Als Okou-Workflow importiert.",
+        "importedCount_one": "1 importiert · wartet auf weitere",
+        "importedCount_other": "{{count}} importiert · wartet auf weitere",
         "importedLabel": "Importierte Skills",
         "importedTitle": "Deine Skills sind in Okou",
         "preparing": "Deine Import-Sitzung wird geöffnet…",
         "promptCopy": "Er liest die Skills auf deinem Rechner und schreibt sie nach Okou.",
         "promptLabel": "Prompt für den Skill-Import",
         "promptTitle": "Führe das in {{provider}} aus",
+        "showFullPrompt": "Vollständigen Prompt anzeigen",
         "startError": "Die Import-Sitzung konnte nicht geöffnet werden.",
-        "title": "Bring die Skills mit, die du schon geschrieben hast.",
+        "title": "Bring deine vorhandenen Skills zu Okou",
         "tryAgain": "Erneut versuchen",
         "waiting": "Importierte Skills erscheinen hier, sobald sie ankommen."
       },
@@ -4354,44 +4162,18 @@
         "channelAdminRequired": "Bitte deine Workspace-Administration, Okou zu {{channel}} hinzuzufügen.",
         "channelUnavailable": "{{channel}} ist in diesem Workspace noch nicht verfügbar.",
         "connectAction": "Slack verbinden",
-        "connectedCopy": "Öffne Slack und erwähne @Okou, um eine Aufgabe zu übergeben.",
         "connectedStatus": "Zu deinem Workspace hinzugefügt",
-        "connectedTitle": "Slack ist verbunden",
-        "copy": "Einmal hinzufügen, dann @Okou dort erwähnen, wo die Arbeit ohnehin läuft.",
         "name": "Slack",
         "otherAdded": "Hinzugefügt",
         "otherImessage": "iMessage",
-        "othersLabel": "Später hinzufügen – oder jetzt",
         "otherTeams": "Teams",
-        "otherTelegram": "Telegram",
-        "previewAppBadge": "APP",
-        "previewAsk": "hol die Anmeldungen der letzten Woche nach Quelle, gleich sie mit dem Werbekonto ab und pack die Tabelle in ein Sheet.",
-        "previewAskAuthor": "Mia Chen",
-        "previewChannel": "# growth",
-        "previewChannelGeneral": "# general",
-        "previewChannelLaunch": "# launch",
-        "previewChannelsLabel": "Kanäle",
-        "previewChannelTopic": "Zahlen der Woche und was als Nächstes kommt",
-        "previewComposer": "Nachricht an #growth",
-        "previewContext": "Die Boardsitzung ist am Donnerstag und ich schulde ihnen noch die Zahlen der letzten Woche.",
-        "previewContextAuthor": "Dan Rivera",
-        "previewContextTime": "9:06 AM",
-        "previewDirectMessagesLabel": "Direktnachrichten",
-        "previewMention": "@Okou",
-        "previewReplies": "3 Antworten",
-        "previewReply": "1.284 Anmeldungen letzte Woche, 18 % mehr als die 1.088 davor. Das Sheet liegt im Thread.",
-        "previewReplyAuthor": "Okou",
-        "previewReplyTime": "9:16 AM",
-        "previewTime": "9:14 AM",
-        "previewWorkspace": "Northwind",
-        "rowCopy": "Funktioniert in jedem Kanal, in dem du es hinzufügst.",
-        "rowTitle": "Okou for Slack",
-        "title": "Gib Okou eine Aufgabe, ohne Slack zu verlassen."
+        "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Es arbeitet in der Cloud, mit den Tools, die dein Team ohnehin nutzt. 10x Output, weniger Reibung im Betrieb, geringere Kosten. Verbinde eine Quelle, um zu starten.",
-        "note": "Du entscheidest, welche Konten verbunden werden.",
-        "title": "Okou ist für dich – und für dein ganzes Team."
+        "copy": "Je mehr Okou über deine Arbeit weiß, desto klüger wird es. Verbinde ein Tool, das du täglich nutzt, und starte mit einer Aufgabe aus deiner echten Arbeit.",
+        "permissions": "Okou nutzt eine kleine Stichprobe, um deine erste Aufgabe anzupassen. Du entscheidest, was Agents tun dürfen und wie lange.",
+        "securityLink": "So schützt Okou deine Daten",
+        "title": "Ein Arbeitstool verbinden"
       },
       "startingPrompt": {
         "exact": {
@@ -4725,1213 +4507,39 @@
         "connecting": "Wird verbunden …",
         "failedNote": "{{provider}} konnte nicht verbunden werden. Versuch es erneut oder verbinde es später.",
         "retry": "Erneut versuchen",
-        "rowCopy": "Läuft auf deinem Plan, nicht auf Okou-Credits.",
+        "rowCopy": "Verbinde deinen Plan, damit Aufgaben statt mit Okou-Credits darüber laufen.",
         "unconfirmedNote": "Deine {{provider}}-Verbindung konnte nicht geprüft werden. Versuch es erneut oder verbinde es später."
       },
       "team": {
-        "copy": "Lade jetzt jemanden ein – oder später über das Workspace-Menü.",
+        "copy": "Lade ein Teammitglied ein, deine Workflows zu teilen – jede Person verbindet dabei ihre eigenen Tools.",
+        "invalidEmail": "Bitte gib eine gültige E-Mail-Adresse ein",
         "invite": "Einladung senden",
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",
-        "note": "Sie kommen in diesen Workspace; ihre eigenen Konten bleiben ihre.",
+        "note": "Es kann sofort mit Okou loslegen.",
         "notSent": "Nicht gesendet",
         "panelTitle": "Teammitglied einladen",
-        "placeholder": "teammate@company.com",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Verbundene Konten bleiben ihre – ohne sie wird nichts geteilt.",
-          "workflows": "Alle hier können die Workflows dieses Workspace ausführen.",
-          "workspace": "Sie landen in diesem Workspace, mit den Quellen, die du gerade verbunden hast."
+          "accounts": "Verbindet bei Bedarf eigene Tools.",
+          "workflows": "Kann alle Workflows deines Teams ausführen.",
+          "workspace": "Tritt deinem Workspace bei."
         },
         "sending": "Wird gesendet…",
-        "title": "Hol die Leute dazu, die diese Arbeit machen."
+        "title": "Mach Okou für dein ganzes Team nützlich"
       },
       "welcome": {
-        "copy": "Starte mit einer ersten Aufgabe, passend zu der Arbeit, die du gerade verbunden hast.",
-        "offerTitle": "Die erste Beratungsstunde geht auf uns, dazu bis zu 100 Credits —",
+        "copy": "Prüfe den Vorschlag für deine Arbeit, passe ihn an dein Ziel an und lass Okou loslegen.",
         "promptLabel": "Dein Startprompt",
         "start": "Mit Okou starten",
-        "title": "Okou ist bereit für dich"
-      }
-    },
-    "templatePicker": {
-      "image": {
-        "description": "Verwenden Sie es als Referenz für das Bild, das Sie erstellen möchten.",
-        "selectTemplate": "Wählen Sie die Illustrationsvorlage {{title}} aus",
-        "showVariant": "{{title}} Variante {{variant}} anzeigen",
-        "title": "Wählen Sie eine Illustrationsvorlage als Ausgangspunkt"
-      },
-      "presentation": {
-        "description": "Verwenden Sie es als Referenz für das Deck, das Sie erstellen möchten.",
-        "nextSlide": "Nächste Folie anzeigen",
-        "previousSlide": "Vorherige Folie anzeigen",
-        "selectTemplate": "Wählen Sie die Präsentationsvorlage {{title}} aus",
-        "showSlide": "Folie {{slide}} anzeigen",
-        "slideAlt": "{{title}} Folie {{slide}}",
-        "title": "Wählen Sie eine Präsentationsvorlage als Ausgangspunkt",
-        "viewTemplate": "Präsentation {{title}} ansehen"
-      },
-      "video": {
-        "description": "Verwenden Sie es als Referenz für das Video, das Sie erstellen möchten.",
-        "selectTemplate": "Wählen Sie die Videovorlage {{title}} aus",
-        "title": "Wählen Sie eine Videovorlage als Ausgangspunkt aus"
-      }
-    },
-    "templateRun": {
-      "image": {
-        "noteLabel": "Benutzerdefinierte Illustrationsszene",
-        "notePlaceholder": "Fügen Sie Ihre benutzerdefinierte Szene hinzu, um sie mit Ihrer eigenen Illustration zu remixen",
-        "previewLabel": "Vorschau der Illustrationsvorlage",
-        "title": "Wählen Sie eine Automatisierung aus, die Sie ausprobieren möchten"
-      },
-      "presentation": {
-        "noteLabel": "Präsentationsinhalte und Anleitung",
-        "notePlaceholder": "Fügen Sie den Inhalt und die Anweisungen Ihrer Präsentation hinzu",
-        "previewLabel": "Vorschau der Präsentationsvorlage",
-        "title": "Erfüllen Sie Ihre Präsentation"
-      },
-      "video": {
-        "noteLabel": "Benutzerdefinierte Videoaufforderung",
-        "notePlaceholder": "Fügen Sie Ihre benutzerdefinierte Aufforderung zum Remixen mit Ihrem eigenen Video hinzu",
-        "previewLabel": "Vorschau der Videovorlage",
-        "title": "Passen Sie Ihr Video an"
-      }
-    },
-    "templates": {
-      "illustration": {
-        "cozy-parlor": "Gemütlicher Salon",
-        "crowd-ink": "Crowd Ink",
-        "editorial-flatfolk": "Redaktioneller Flatfolk",
-        "emboss-deboss": "Hochprägung & Tiefprägung",
-        "endpaper": "Vorsatz",
-        "flat-poster": "Flaches Poster",
-        "folk-muse": "Volksmuse",
-        "folk-storybook": "Volksmärchenbuch",
-        "grain-poster": "Getreideplakat",
-        "grainy-duotone": "Körniger Duoton",
-        "iberian-vignette": "Iberische Vignette",
-        "ink-mascot": "Tintenmaskottchen",
-        "ink-storefront": "Ink Storefront",
-        "inkdab": "Inkdab",
-        "inkstomp": "Inkstomp",
-        "iso-scene": "Iso-Szene",
-        "jade-blockprint": "Jade-Blockdruck",
-        "light-pop-portrait": "Leichtes Pop-Porträt",
-        "loose-contour": "Lockere Kontur",
-        "mellow-pop": "Sanfter Pop",
-        "mosaic-still-life": "Mosaik-Stillleben",
-        "notion-illustration": "Notion-Illustration",
-        "op-ed-cover": "Op-Ed-Cover",
-        "painterly-botanical": "Malerisch botanisch",
-        "papernook": "Papiernook",
-        "postcard-illustration": "Postkartenillustration",
-        "riso-relic": "Riso-Relikt",
-        "shadow-pop": "Schatten-Pop",
-        "soft-vector": "Weicher Vektor",
-        "sticker-sheet": "Aufkleberblatt",
-        "sunlit-gouache": "Sonnenbeschienene Gouache",
-        "tiny-wanderer": "Kleiner Wanderer"
-      },
-      "presentation": {
-        "bloom-pitch": "Petal pitch",
-        "blueprint-academy": "Drafting campus",
-        "botane-organic-deck": "Mauve garden",
-        "business-data-presentation": "Berry dashboard",
-        "crayon-learning-deck": "Crayon doodle",
-        "creative-agency-presentation": "Foliage gallery",
-        "data-report-presentation": "Candy charts",
-        "editorial-magazine-deck": "Paper magazine",
-        "landing-consulting-deck": "Neon browser",
-        "lumina-creative-studio": "Brush stickers",
-        "meridian": "Cobalt blocks",
-        "mosaic-geometric-pitch": "Bauhaus tiles",
-        "neo-brutalism": "Shadow shop",
-        "nocturne": "Midnight stage",
-        "pixel-glitch": "Arcade pixels",
-        "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy",
-        "prospectus": "Homepage pitch",
-        "schoolhouse": "Kraft poster",
-        "sticker-scrapbook": "Sticker notebook",
-        "strata": "Red staircase",
-        "taped-consulting": "Polaroid wall",
-        "vantage": "Numbered boardroom"
-      },
-      "video": {
-        "chinese-ink-art": "Chinesische Tuschemalerei",
-        "cyberpunk-anime": "Cyberpunk-Anime",
-        "epic-grandeur": "Epische Größe",
-        "fashion-editorial": "Moderedaktion",
-        "gourmet-documentary": "Gourmet-Dokumentarfilm",
-        "hand-drawn-fantasy-anime": "Handgezeichneter Fantasy-Anime",
-        "japanese-wabi-sabi": "Japanisches Wabi-Sabi",
-        "luxury-product": "Luxusprodukt-Makro",
-        "shortform-viral": "Kurzform Viral",
-        "sports-performance-ad": "Sportleistungsanzeige"
-      }
-    },
-    "workflowDiagram": {
-      "preparedDescription": "{{assistantName}} bereitet aus Ihren Tools den nächsten Schritt vor.",
-      "preparedTitle": "Workflow vorbereitet",
-      "reviewDescription": "{{assistantName}} schließt den Workflow ab und gibt das Ergebnis zurück.",
-      "reviewTitle": "Bereit zur Überprüfung",
-      "source": "Quelle"
-    },
-    "workflowPicker": {
-      "categoryDescription": "Fertige Setups, die Sie an Ihre Tools und Ziele anpassen können.",
-      "categoryTitle": "{{category}}-Workflows",
-      "customDescription": "Beschreiben Sie, was Sie wollen, und {{assistantName}} baut es mit Ihnen auf.",
-      "customTitle": "Sprich mit {{assistantName}} und mache mein eigenes",
-      "description": "Wählen Sie eine Rolle aus, um die passenden Workflows zu sehen. Sie können jederzeit wechseln.",
-      "title": "Woran arbeiten Sie?",
-      "workflowCardLabel": "{{title}} {{description}}"
-    },
-    "workflowPreview": {
-      "howItWorks": "Wie es funktioniert",
-      "whatItDoes": "Was es bewirkt"
-    },
-    "workflowRun": {
-      "continueWithAssistant": "Fahren Sie mit {{assistantName}} fort",
-      "createWorkflow": "Workflow erstellen",
-      "customNoteLabel": "Beschreiben Sie Ihren Workflow",
-      "customNotePlaceholder": "Beschreiben Sie, was {{assistantName}} bauen soll",
-      "customTitle": "Beschreiben Sie Ihren Workflow",
-      "noteLabel": "Möchten Sie noch etwas hinzufügen?",
-      "notePlaceholder": "Möchten Sie noch etwas hinzufügen?",
-      "reviewTitle": "Überprüfen Sie Ihren Workflow-Entwurf"
-    },
-    "workflows": {
-      "alert-metric-moves-slack": {
-        "description": "Finden Sie wesentliche Website-Änderungen und erklären Sie mögliche Ursachen.",
-        "scenario": "Eine scharfe Metrikänderung zählt am meisten, wenn der Kontext dabei ist. {{assistantName}} überwacht Google Analytics und fügt bei Verbindung Such- oder bezahlte-Channel-Beweise hinzu.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest die ausgewählten Verkehr- und Umwandlungsmaße.",
-            "title": "Schlüssel-Metriken werden geprüft"
-          },
-          "three": {
-            "description": "{{assistantName}} gibt mögliche Ursachen und den nächsten Diagnose-Schritt zurück.",
-            "title": "Die Änderung wird erklärt"
-          },
-          "two": {
-            "description": "{{assistantName}} vergleicht aktuelle Werte mit dem erwarteten Bereich.",
-            "title": "Ungewöhnliche Bewegungen werden gefunden"
-          }
-        },
-        "title": "Warnen Sie bei Verkehr- und Umwandlungsänderungen"
-      },
-      "auto-merge-github-prs": {
-        "description": "Überprüfe bereitgestellte Pull Requests, warte auf CI und füge genehmigte Änderungen zusammen.",
-        "scenario": "Das Zusammenführen eines Pull Requests bedeutet, die Checks zu überwachen und den Diff erneut zu lesen. {{assistantName}} nimmt den bereitgestellten Label, überprüft die Änderungen, wartet auf CI und fügt nur unter der Regel zusammen, die du genehmigst.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} erkennt den bereitgestellten Label.",
-            "title": "Ein PR ist bereit."
-          },
-          "three": {
-            "description": "{{assistantName}} fügt nur dann zusammen, wenn die genehmigten Sicherheitsbedingungen erfüllt sind.",
-            "title": "Zusammengeführt unter deiner Regel."
-          },
-          "two": {
-            "description": "{{assistantName}} überprüft den Diff und wartet auf die erforderliche CI.",
-            "title": "{{assistantName}} überprüft die Änderungen."
-          }
-        },
-        "title": "Automerge GitHub PRs"
-      },
-      "blog-posts-to-x": {
-        "description": "Finden Sie verfallende Seiten und verwandeln Sie sie in priorisierte Aktualisierungsbücher.",
-        "scenario": "Bestehender Inhalt hat oft mehr Potenzial als ein neuer Artikel. {{assistantName}} verwendet eingebaute Firecrawl und DataForSEO, um unterperformende Seiten zu finden, die aktuelle Nachfrage zuordnet und spezifische Aktualisierungen empfiehlt.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} crawlt die Website und identifiziert mögliche Aktualisierungskandidaten.",
-            "title": "Bestehende Seiten werden überprüft."
-          },
-          "three": {
-            "description": "{{assistantName}} priorisiert Seiten und gibt die notwendigen Aktualisierungen an.",
-            "title": "Aktualisierungsbücher werden erstellt."
-          },
-          "two": {
-            "description": "{{assistantName}} überprüft Suchergebnisse, Schlüsselwörter und konkurrierende Bedeckung.",
-            "title": "Aktuelle Nachfrage wird zuordnet."
-          }
-        },
-        "title": "Erstellen Sie einen SEO-Inhaltsaktualisierungsplan"
-      },
-      "build-weekly-deck-gamma": {
-        "description": "Verfolgen Sie Einnahmen, Ausgaben, Ansprüche und Cashflow in Sheets.",
-        "scenario": "Finanzprüfungen verlangsamen sich, wenn die Zahlen von Hand neu aufgebaut werden müssen. {{assistantName}} zieht die genehmigten QuickBooks-Metriken und hält ein Entscheidungsreifes Dashboard in Google Sheets auf dem Laufenden.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest Einnahmen, Ausgaben, Ansprüche und Cashflow.",
-            "title": "Finanzdaten werden gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} schreibt die aktuelle Finanzansicht in Google Sheets.",
-            "title": "Das Dashboard wird aktualisiert"
-          },
-          "two": {
-            "description": "{{assistantName}} berechnet Trends, Ausnahmen und Berichts-Totalien.",
-            "title": "Metriken werden organisiert"
-          }
-        },
-        "title": "Erstellen Sie ein QuickBooks-Finanzdashboard"
-      },
-      "business-review-gamma": {
-        "description": "Kombiniere finanzielle, wachstumsorientierte und operativen Daten in einen einzigen Bericht.",
-        "scenario": "Ein monatlicher Kontrollbericht sollte die Geschäftslage erklären, nicht nur die Dashboards wiederholen. {{assistantName}} kombiniert QuickBooks, Google Analytics und Google Sheets und fügt bei Verfügbarkeit HubSpot-Kontext hinzu.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest finanzielle, wachstumsorientierte und operative Metriken.",
-            "title": "Geschäftsinformationen werden gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} liefert einen knappen, Entscheidungsbereiteten monatlichen Kontrollbericht zurück.",
-            "title": "Der Bericht wird vorbereitet"
-          },
-          "two": {
-            "description": "{{assistantName}} verbindet Trends, Planabweichungen, Siege und Risiken.",
-            "title": "Leistung wird analysiert"
-          }
-        },
-        "title": "Erstelle einen monatlichen Geschäftskontrollbericht"
-      },
-      "catch-calendar-conflicts": {
-        "description": "Entdecke Doppelbuchungen und schwierige Terminfenster frühzeitig.",
-        "scenario": "Kalenderkonflikte sind am einfachsten zu lösen, bevor der Termintag ankommt. {{assistantName}} überprüft neue Ereignisse auf Überlappungen, Reise und Vorbereitungskonflikte und erklärt die Optionen.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest das Ereignis und den umliegenden Kalenderplan.",
-            "title": "Ein neues Ereignis wird überprüft"
-          },
-          "three": {
-            "description": "{{assistantName}} erklärt den Konflikt und kann eine Gmail-Notiz erstellen.",
-            "title": "Lösungsoptionen werden zurückgegeben"
-          },
-          "two": {
-            "description": "{{assistantName}} erkennt Überlappungen und unmögliche Übergangsfenster.",
-            "title": "Konflikte werden identifiziert"
-          }
-        },
-        "title": "Fangt Google-Kalender-Konflikte auf"
-      },
-      "catch-leads-gmail": {
-        "description": "Fasse Stadiumbewegungen, verstaubte Deals, Risiken und Prognoseänderungen zusammen.",
-        "scenario": "Pipeline-Überprüfungen sind klarer, wenn Änderungen vor der Besprechung eintreffen. {{assistantName}} vergleicht die aktuelle HubSpot-Pipeline mit der vorherigen Aufnahme und liefert eine knappe wöchentliche Zusammenfassung zurück.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} sammelt Deals, Stadien, Verantwortliche, Daten und Aktivitäten.",
-            "title": "Die Pipeline wird gelesen"
-          },
-          "three": {
-            "description": "{{assistantName}} gibt nächste Aktionen zurück und aktualisiert optional Google-Sheets.",
-            "title": "Die Zusammenfassung wird erstellt"
-          },
-          "two": {
-            "description": "{{assistantName}} findet Änderungen, verstaubte Deals, Hürden und Prognoseverschiebungen.",
-            "title": "Bewegungen und Risiken werden analysiert"
-          }
-        },
-        "title": "Erstelle eine wöchentliche HubSpot-Pipeline-Zusammenfassung"
-      },
-      "chase-overdue-asana-tasks": {
-        "description": "Erstelle eigenständige Erinnerungen für die Besitzer ohne sie automatisch zu senden.",
-        "scenario": "Überfällige Arbeit braucht Kontext, nicht allgemeine Anstöße. {{assistantName}} gruppiert überfällige Asana-Aufgaben nach Besitzer und erstellt eine knappe Gmail-Erinnerung für jeden Menschen.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest überfällige Asana-Aufgaben.",
-            "title": "Überfällige Arbeit wird gefunden"
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt Erinnerungen für menschliche Überprüfung und sendet sie nie.",
-            "title": "Gmail-Einlagen werden vorbereitet"
-          },
-          "two": {
-            "description": "{{assistantName}} bereitet den relevanten Projekt- und Hindernis-Kontext vor.",
-            "title": "Aufgaben werden nach Besitzern gruppiert"
-          }
-        },
-        "title": "Fasse überfällige Asana-Aufgaben in Gmail-Einlagen"
-      },
-      "check-posthog-signup-funnel": {
-        "description": "Vergleichen Sie Google Ads und Meta Ads auf demselben Leistungsgrund.",
-        "scenario": "Bezahle Kanäle sind schwer zu vergleichen, wenn jede Plattform anders meldet. {{assistantName}} normalisiert den Ausgabenanteil, Umwandlungen, CPA und ROAS für Google Ads und Meta Ads.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest sowohl Plattformen für den gleichen Berichtsfenster.",
-            "title": "Werbe-Daten werden gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} hebt Effizienz, Pacing und optional aktualisiert Sheets hervor.",
-            "title": "Kanalunterschiede werden erklärt"
-          },
-          "two": {
-            "description": "{{assistantName}} berechnet vergleichbare Ausgabenanteile, Umwandlungen, CPA und ROAS-Metriken.",
-            "title": "Leistung wird normalisiert"
-          }
-        },
-        "title": "Vergleichen Sie bezahlte Erwerbungskanäle"
-      },
-      "compare-google-ads-last-month": {
-        "description": "Verfolgen Sie die Effizienz, den Fortschritt und die Leistungsdrift von bezahlten Medien.",
-        "scenario": "Der Budget kann vor dem Wahrnehmen durch den Kampagnenbesitzer driftieren. {{assistantName}} vergleicht Google Ads und Meta Ads in Bezug auf Ausgaben, Umwandlungen, CPA und ROAS und hervorhebt, wo Maßnahmen erforderlich sind.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest beide Werbplattformen für den gewählten Zeitraum.",
-            "title": "Kampagnendaten werden gesammelt."
-          },
-          "three": {
-            "description": "{{assistantName}} gibt die Vergleichsergebnisse zurück und aktualisiert optional Sheets.",
-            "title": "Maßnahmen werden empfohlen."
-          },
-          "two": {
-            "description": "{{assistantName}} normalisiert die Leistung und identifiziert wichtige Drift.",
-            "title": "Effizienz wird verglichen."
-          }
-        },
-        "title": "Vergleichen Sie Google Ads und Meta Ads"
-      },
-      "daily-company-brief-slack": {
-        "description": "Verbinde Wachstum, Pipeline und optionalen finanziellen Kontext.",
-        "scenario": "Das Unternehmensbild ist über mehrere Systeme verteilt. {{assistantName}} kombiniert Google Analytics und HubSpot, fügt bei Verfügbarkeit QuickBooks-Kontext hinzu und liefert die relevanten Siege, Risiken und Entscheidungen zurück.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest Wachstum, Pipeline und verfügbare finanzielle Daten.",
-            "title": "Unternehmenssignale werden gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} fasst Prioritäten im Automatisierungs-Thread zusammen.",
-            "title": "Der Puls wird zurückgegeben"
-          },
-          "two": {
-            "description": "{{assistantName}} verbindet Bewegungen im gesamten Unternehmen.",
-            "title": "Siege und Risiken werden identifiziert"
-          }
-        },
-        "title": "Erstelle einen täglichen Unternehmenspuls"
-      },
-      "daily-industry-news-slack": {
-        "description": "Überwache QuickBooks-Cash-Position und Rechnungsriskus.",
-        "scenario": "Cashflow-Probleme sind billiger zu lösen, bevor sie dringend werden. {{assistantName}} überprüft QuickBooks-Cashflow und überfällige Rechnungen, erläutert das wesentliche Risiko und kann Entwürfe für folgen Emails vorbereiten.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest Cashflow, Rechnungen und überfällige Rechnungen.",
-            "title": "Finanzrisiko wird überprüft"
-          },
-          "three": {
-            "description": "{{assistantName}} erläutert das Risiko und kann Gmail-Folge-E-Mails vorbereiten.",
-            "title": "Die Warnung wird zurückgegeben"
-          },
-          "two": {
-            "description": "{{assistantName}} markiert alternde Konten und Cash-Drucksignale.",
-            "title": "Wichtige Änderungen werden identifiziert"
-          }
-        },
-        "title": "Warnung bei Cashflow und überfälligen Rechnungen"
-      },
-      "draft-github-release-notes-notion": {
-        "description": "Wandele zusammengeführte Pull Requests in klare, nutzerorientierte Release Notes um.",
-        "scenario": "Release Notes sollten nicht manuell aus einem Commit-Log übersetzt werden. {{assistantName}} sammelt die Pull Requests, die seit der letzten Release zusammengeführt wurden, und wandelt sie in eine knappe Änderungsprotokolldatei in Notion um.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} sammelt Pull Requests seit der letzten Release.",
-            "title": "Zusammengeführte Arbeit wird gesammelt."
-          },
-          "three": {
-            "description": "{{assistantName}} schreibt die Release-Notes-Draft in Notion.",
-            "title": "Notizen werden gespeichert."
-          },
-          "two": {
-            "description": "{{assistantName}} gruppiert die Arbeit und erklärt den Nutzerwirkung.",
-            "title": "Änderungen werden übersetzt."
-          }
-        },
-        "title": "Fasse GitHub Release Notes in Notion"
-      },
-      "draft-newsletter-mailchimp": {
-        "description": "Verbinden Sie Analytics und Search Console zu einem organischen Bericht.",
-        "scenario": "Organisches Wachstum lebt über Traffic- und Suchdaten hinweg. {{assistantName}} verbindet Google Analytics mit Search Console, erklärt Bewegungen und Chancen und speichert optional die Nachfolgewerk in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest das Verhalten der Website und die Suchleistung.",
-            "title": "Organische Daten werden gesammelt."
-          },
-          "three": {
-            "description": "{{assistantName}} gibt Prioritäten zurück und speichert optional in Notion.",
-            "title": "Das Buch wird erstellt."
-          },
-          "two": {
-            "description": "{{assistantName}} verbindet LANDING-PAGES, Queries, Umwandlungen und Trends.",
-            "title": "Wachstum wird analysiert."
-          }
-        },
-        "title": "Erstellen Sie ein organisches Wachstumsbuch"
-      },
-      "draft-replies-notion-faq": {
-        "description": "Basieren Sie Support-E-Mail-Entwürfe auf genehmigtem Notion-FAQ.",
-        "scenario": "Die meisten Support-Fragen haben bereits eine genehmigte Antwort. {{assistantName}} liest die E-Mail, findet die relevante Notion-Beratung und entwirft einen fundierten Entwurf für die Überprüfung.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest die Gmail-Konversation und den Kundenkontext.",
-            "title": "Eine Support-Frage kommt an"
-          },
-          "three": {
-            "description": "{{assistantName}} bereitet eine Antwort vor und sendet sie nicht automatisch.",
-            "title": "Ein Entwurf wird entworfen"
-          },
-          "two": {
-            "description": "{{assistantName}} findet die relevante genehmigte Beratung in Notion.",
-            "title": "Die FAQ wird überprüft"
-          }
-        },
-        "title": "Entwerfen Sie Entwürfe für die FAQ"
-      },
-      "file-gmail-invoices-drive": {
-        "description": "Speichere Rechnungsdateien und notiere die entsprechende Buchhaltungsposition.",
-        "scenario": "Rechnungen erzeugen Reinigungsaufgaben, wenn Dateien und Buchhaltungsdaten auseinanderlaufen. {{assistantName}} speichert Gmail-Anhänge in Drive, notiert die Rechnung oder den Aufwand in QuickBooks und kann eine Reconciliation-Blatt aktualisieren.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest ausgewählte Gmail-Nachrichten und Anhänge.",
-            "title": "Rechnungs-E-Mails werden identifiziert"
-          },
-          "three": {
-            "description": "{{assistantName}} notiert die Position und aktualisiert optional Google Sheets.",
-            "title": "QuickBooks wird aktualisiert"
-          },
-          "two": {
-            "description": "{{assistantName}} speichert das Dokument in Drive und extrahiert Buchhaltungsdaten.",
-            "title": "Dateien und Details werden aufgenommen"
-          }
-        },
-        "title": "Speichere Gmail-Rechnungen in Drive und QuickBooks"
-      },
-      "file-sentry-crashes-github": {
-        "description": "Rangordne neue Fehler nach Auswirkung und erstelle handlungsfähige Issues.",
-        "scenario": "Hochwirksame Fehler können in einem Fehlerfeed unbeachtet bleiben. {{assistantName}} überprüft neue Sentry-Fehler, rangordnet sie nach Schweregrad und betroffene Nutzer und erstellt diejenigen, die eine Engineering-Arbeit erfordern.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} sammelt ungelöste Fehler und Auswirkungszeichen von Sentry.",
-            "title": "{{assistantName}} liest neue Fehler."
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt handlungsfähige Issues und verlinkt sie optional in Linear.",
-            "title": "GitHub-Issues werden erstellt."
-          },
-          "two": {
-            "description": "{{assistantName}} trennt dringende Rückgängig-Markierungen von geringfügiger Rauschen.",
-            "title": "Auswirkung wird gerangordnet."
-          }
-        },
-        "title": "Datei Sentry bricht als GitHub-Issues auf"
-      },
-      "fixes-to-notion-help-docs": {
-        "description": "Wandeln Sie bestätigte GitHub-Fixes in wiederverwendbare Notion-Beratungen um.",
-        "scenario": "Die gleiche Support-Frage kehrt zurück, wenn die Lösung nicht dokumentiert ist. {{assistantName}} liest gelöste GitHub-Aufgaben und wandelt die genehmigte Lösung in eine klare Notion-Hilfe-Artikel um.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest die GitHub-Aufgabe, den Fix und die Nutzer-Auswirkungen.",
-            "title": "Ein gelöstes Fehler wird ausgewählt"
-          },
-          "three": {
-            "description": "{{assistantName}} schreibt den wiederverwendbaren Entwurf in Notion.",
-            "title": "Der Hilfetext wird gespeichert"
-          },
-          "two": {
-            "description": "{{assistantName}} wandelt die Lösung in klare Schritt-für-Schritt-Anleitungen um.",
-            "title": "Beratung wird entworfen"
-          }
-        },
-        "title": "Wandeln Sie gelöste Fehler in Hilfe-Dokumente um"
-      },
-      "flag-figma-designs-no-task": {
-        "description": "Wandeln einer genehmigten Produkt-Spezifikation in zugeschnittene Linear-Arbeit um.",
-        "scenario": "Genehmigte Spezifikationen müssen noch in ausführbare Arbeit umgewandelt werden. {{assistantName}} liest eine Notion-Spezifikation und erstellt ein Linear-Projekt mit Meilensteinen, zugeschnittenen Problemen, Abhängigkeiten und Akzeptanzkriterien.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest die genehmigte Notion-Produkt-Spezifikation.",
-            "title": "Die Spezifikation wird geprüft"
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt das Projekt und verlinkt optional GitHub-Kontext.",
-            "title": "Das Linear-Projekt wird erstellt"
-          },
-          "two": {
-            "description": "{{assistantName}} identifiziert Meilensteine, Probleme, Abhängigkeiten und Kriterien.",
-            "title": "Arbeit wird strukturiert"
-          }
-        },
-        "title": "Wandeln einer Notion-Spezifikation in ein Linear-Projekt um"
-      },
-      "flagged-gmail-todoist-tasks": {
-        "description": "Erstellen Sie ausführbare Aufgaben aus Nachrichten mit ausgewähltem Label.\\n",
-        "scenario": "Wichtige E-Mails werden einfacher zu beenden, wenn sie aus dem Posteingang als klare Aufgaben verschwinden. {{assistantName}} wandelt markierte Gmail-Nachrichten in Todoist-Elemente mit Fälligkeitsdaten und Quellkontext um.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} erkennt das ausgewählte Label und liest die Nachricht.\\n",
-            "title": "Eine Gmail-Nachricht wird markiert.\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt die Aufgabe mit einer Quellverknüpfung.\\n",
-            "title": "Eine Todoist-Aufgabe wird erstellt.\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} identifiziert die Aufgabe, Fälligkeitsdatum und unterstützenden Kontext.\\n",
-            "title": "Die Handlung wird extrahiert."
-          }
-        },
-        "title": "Wandeln Sie markierte Gmail-Nachrichten in Todoist-Aufgaben um.\\n"
-      },
-      "github-idea-to-notion-spec": {
-        "description": "Entwickle eine beschriftete GitHub-Idee in eine strukturierte Produkt-Spezifikation.",
-        "scenario": "Gute Ideen bleiben oft bei einer kurzen Problemdescription stehen. {{assistantName}} wandelt eine beschriftete GitHub-Idee in eine klare Notion-Spezifikation um, die das Problem, Beweise, den Umfang, Metriken, Risiken und offene Fragen enthält.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest die beschriftete GitHub-Idee und den verwandten Kontext.",
-            "title": "Eine Idee wird ausgewählt"
-          },
-          "three": {
-            "description": "{{assistantName}} schreibt den strukturierten Entwurf in Notion.",
-            "title": "Die Spezifikation wird gespeichert"
-          },
-          "two": {
-            "description": "{{assistantName}} erweitert das Problem, den Umfang, die Erfolgskriterien und die Risiken.",
-            "title": "Die Spezifikation wird entwickelt"
-          }
-        },
-        "title": "Wandele eine GitHub-Idee in eine Notion-Spezifikation um"
-      },
-      "gmail-followups-auto": {
-        "description": "Bereite kontextbasierte Verkaufsfolgen vor, die für die menschliche Überprüfung bereitgestellt werden.",
-        "scenario": "Gute Folgen benötigen den Deal-Record und die Korrespondenz. {{assistantName}} kombiniert den HubSpot-Kontext mit dem verwandten Gmail-Thread und färbt eine knappe Antwort ohne den Versand vor.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest den HubSpot-Record und die neueste Aktivität.",
-            "title": "Deal-Kontext wird überprüft"
-          },
-          "three": {
-            "description": "{{assistantName}} bereitet einen Gmail-Draft für die menschliche Überprüfung vor.",
-            "title": "Eine Folge wird gefertigt"
-          },
-          "two": {
-            "description": "{{assistantName}} identifiziert offene Fragen, Verpflichtungen und Zeiten.",
-            "title": "Die E-Mail-Korrespondenz wird überprüft"
-          }
-        },
-        "title": "Fertige E-Mail-Folgen aus HubSpot"
-      },
-      "gmail-reconnect-reminders": {
-        "description": "Finde wichtige Kontakte, die still sind, und formele eine Rückbindung.",
-        "scenario": "Wichtige Beziehungen verblasen, wenn niemand die Stille bemerkt. {{assistantName}} überprüft E-Mail, fügt Kalenderhistorie bei Verfügbarkeit hinzu und formelt sorgfältige Rückbindungsnachrichten.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} überprüft neueste E-Mail-Aktivität und Kontext.",
-            "title": "Beziehungsgeschichte wird überprüft"
-          },
-          "three": {
-            "description": "{{assistantName}} formelt persönliche Nachrichten für menschliche Überprüfung.",
-            "title": "Rückbindung-Drafts werden vorbereitet"
-          },
-          "two": {
-            "description": "{{assistantName}} identifiziert wertvolle Kontakte ohne neuerliche Interaktion.",
-            "title": "Stille Beziehungen werden rangiert"
-          }
-        },
-        "title": "Bereite Beziehungen zur Wiederherstellung vor"
-      },
-      "highlight-key-emails-gmail": {
-        "description": "Finde die E-Mails, die eine höhere Exekutivantwort erfordern.",
-        "scenario": "Ein Exekutivposteingang mischt wichtige Entscheidungen mit routinemäßiger Kommunikation. {{assistantName}} identifiziert die relevanten E-Mails, erklärt warum und formt Antworten ohne sie zu senden.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest neueste E-Mails und verfügbarer Kalenderkontext.",
-            "title": "Der Posteingang wird überprüft"
-          },
-          "three": {
-            "description": "{{assistantName}} fasst jedes Element zusammen und formt Antworten für Überprüfung.",
-            "title": "Antworten werden vorbereitet"
-          },
-          "two": {
-            "description": "{{assistantName}} priorisiert Entscheidungen, Verpflichtungen und empfindliche Anfragen.",
-            "title": "Wichtige E-Mails werden rangiert"
-          }
-        },
-        "title": "Betonung wichtiger E-Mails"
-      },
-      "investor-update-google-docs": {
-        "description": "Kombiniere finanzielle und wachstumsorientierte Daten in einen Google Docs-Draft.",
-        "scenario": "Investor-Updates benötigen Zeit, da die Geschichte und die Zahlen getrennt existieren. {{assistantName}} kombiniert QuickBooks und Google Analytics, fügt bei Verfügbarkeit HubSpot-Kontext hinzu und formt das Update in Google Docs.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest finanzielle, wachstumsorientierte und verfügbare Pipeline-Daten.",
-            "title": "Aktuelle Metriken werden gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} schreibt das Investor-Update in Google Docs.",
-            "title": "Das Update wird vorbereitet"
-          },
-          "two": {
-            "description": "{{assistantName}} verbindet Fortschritte, Lektionen, Risiken und nächste Prioritäten.",
-            "title": "Die Erzählung wird entwickelt"
-          }
-        },
-        "title": "Fertige eine Investor-Update"
-      },
-      "log-gong-calls-hubspot": {
-        "description": "Wandele Meeting-Protokolle in CRM-Entscheidungen und nächste Aktionen um.",
-        "scenario": "Wichtige Verhandlungsdetails verschwinden, wenn Notizen außerhalb des CRM bleiben. {{assistantName}} wandelt Google-Meet-Protokolle in Entscheidungen, Einwände, Verpflichtungen und Aktionen in HubSpot um.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest das neueste Protokoll und das Meeting-Kontext.",
-            "title": "Ein Meet-Protokoll wird empfangen"
-          },
-          "three": {
-            "description": "{{assistantName}} protokolliert den Zusammenfassung und kann einen Gmail-Folgebrief erstellen.",
-            "title": "HubSpot wird aktualisiert"
-          },
-          "two": {
-            "description": "{{assistantName}} identifiziert Entscheidungen, Einwände, Verpflichtungen und Verantwortliche.",
-            "title": "Verkaufs-Signale werden extrahiert"
-          }
-        },
-        "title": "Protokolliere Google-Meet-Aufgaben in HubSpot"
-      },
-      "meeting-notes-asana-tasks": {
-        "description": "Erstelle zugewiesene Projektarbeiten aus Meetingprotokollen.",
-        "scenario": "Meeting-Aktionen verschwinden, wenn sie im Notizzustand bleiben. {{assistantName}} liest Google Meet-Protokolle, erkennt Verpflichtungen und Besitzer und erstellt klare Asana-Aufgaben.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest das Meetingprotokoll und den Kalenderkontext.",
-            "title": "Ein Meet-Protokoll wird empfangen"
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt zugewiesene Arbeit mit Quellkontext.",
-            "title": "Asana-Aufgaben werden erstellt"
-          },
-          "two": {
-            "description": "{{assistantName}} erkennt Aufgaben, Besitzer, Fristen und Abhängigkeiten.",
-            "title": "Aktionen werden extrahiert"
-          }
-        },
-        "title": "Wandele Google Meet-Notizen in Asana-Aufgaben um"
-      },
-      "meeting-recaps-slack": {
-        "description": "Wandeln Sie Meeting-Transkripte in knappe Zusammenfassungen und Aufgabenlisten um.\\n",
-        "scenario": "Entscheidungen bei Meetings werden verloren, wenn das Transkript nie verarbeitet wird. {{assistantName}} liest Google-Meet-Transkripte und schreibt die entscheidenden Entscheidungen, Aufgaben und Verantwortliche in Google-Dokumente.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest das Transkript und verfügbaren Kalender-Kontext.\\n",
-            "title": "Ein Meet-Transkript erreicht den Server.\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} schreibt die strukturierte Zusammenfassung in Google-Dokumente.\\n",
-            "title": "Die Zusammenfassung wird gespeichert.\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} identifiziert Ergebnisse, Verantwortliche, Fälligkeitsdaten und offene Fragen.\\n",
-            "title": "Entscheidungen und Aufgaben werden extrahiert.\\n"
-          }
-        },
-        "title": "Speichern Sie Google-Meet-Transkripte in Google-Dokumente.\\n"
-      },
-      "morning-brief-slack": {
-        "description": "Kombinieren Sie wichtige E-Mails, den heutigen Terminplan und optional Notion-Kontext.\\n",
-        "scenario": "Ein nützlicher Morgenplan erfordert sowohl den Posteingang als auch den Kalender. {{assistantName}} überprüft Gmail und Google-Kalender, fügt Notion-Kontext hinzu, wenn verfügbar, und liefert einen kurzen täglichen Bericht zurück.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest wichtige E-Mails und den Kalender für den heutigen Tag.\\n",
-            "title": "Heutige Eingaben werden gesammelt.\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt einen konzentrierten Plan im Automatisierungs-Thread.\\n",
-            "title": "Der Bericht wird zurückgegeben.\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} identifiziert Verpflichtungen, Vorbereitung und Nachfolge.\\n",
-            "title": "Prioritäten werden verbunden.\\n"
-          }
-        },
-        "title": "Erstellen Sie einen Morgenbericht.\\n"
-      },
-      "new-gmail-contacts-hubspot": {
-        "description": "Erstelle oder verfeinere CRM-Kontakte aus relevanten E-Mail-Korrespondenzen.",
-        "scenario": "Neue Beziehungen bleiben oft in der Posteingangskiste stecken. {{assistantName}} identifiziert relevante Gmail-Korrespondierende, überprüft HubSpot auf Duplikate und erstellt oder verfeinert das Kontodokument.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} überprüft relevante Gmail-Korrespondenzen.",
-            "title": "Neue Korrespondierende werden identifiziert"
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt oder verfeinert den HubSpot-Datensatz.",
-            "title": "Das Kontaktobjekt wird aktualisiert"
-          },
-          "two": {
-            "description": "{{assistantName}} findet bestehende Kontodokumente und fehlende Details.",
-            "title": "HubSpot wird überprüft"
-          }
-        },
-        "title": "Füge neue Gmail-kontakte in HubSpot hinzu"
-      },
-      "onboard-new-hires-asana": {
-        "description": "Wandele genehmigte Aufnahmesubmissionen in einen Asana-Onboarding-Plan um.",
-        "scenario": "Neuer-Angestellter-Setup ist zuverlässiger, wenn jede genehmigte Aufnahme den gleichen Plan folgt. {{assistantName}} liest Google-Formular-Submissions, erstellt Asana-Aufgaben und kann Dokumente in Drive einordnen.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest das neue-Angestellter-Formular und die erforderlichen Details.",
-            "title": "Eine Abgabe wird genehmigt"
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt den Plan und optional ordnet Drive-Dokumente ein.",
-            "title": "Asana wird aktualisiert"
-          },
-          "two": {
-            "description": "{{assistantName}} ordnet die Rolle und den Startdatum zu Aufgaben und Besitzern.",
-            "title": "Der Onboarding-Plan wird aufgebaut"
-          }
-        },
-        "title": "Onboarding neuer Mitarbeiter aus Google Forms"
-      },
-      "post-daily-metrics-slack": {
-        "description": "Fassen Sie den Verkehr, die Erwerbung, die Umwandlung und bemerkenswerte Änderungen zusammen.",
-        "scenario": "Der tägliche Fortschritt der Website sollte keine mehreren Berichte öffnen erfordern. {{assistantName}} liest Google Analytics, fügt bei Verfügbarkeit Kontext aus Search Console hinzu und gibt einen knappen Bericht im Automatisierungs-Thread zurück.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest den Verkehr, die Erwerbung und Umwandlungs-Metriken.",
-            "title": "Website-Daten werden gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} fasst die Änderungen zusammen und gibt Aufmerksamkeit verdienende Elemente an.",
-            "title": "Der Bericht wird zurückgegeben"
-          },
-          "two": {
-            "description": "{{assistantName}} vergleicht den Leistungsfortschritt und hebt wichtige Bewegungen hervor.",
-            "title": "Änderungen werden identifiziert"
-          }
-        },
-        "title": "Erstellen Sie einen täglichen Bericht über Website-Metriken"
-      },
-      "post-github-updates-slack": {
-        "description": "Überprüfe Cloud-Zugriff, Dienstkonten und offene Services.",
-        "scenario": "Cloud-Berechtigungen weichen mit wachsenden Projekten ab. {{assistantName}} überprüft Google Cloud IAM, Dienstkonten, Schlüssel, aktivierte Dienste und öffentliche Exposition, und liefert eine schreibgeschützte Risikoverkündung mit klaren Anpassungsvorschlägen.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} erfasst IAM-Bindungen, Konten, Schlüssel und Dienste.",
-            "title": "Cloud-Zugriff wird überprüft."
-          },
-          "three": {
-            "description": "{{assistantName}} empfiehlt Korrekturen und erstellt optional genehmigte GitHub-Issues.",
-            "title": "Anpassungen werden vorbereitet."
-          },
-          "two": {
-            "description": "{{assistantName}} markiert überflüssiges Privileg, veraltete Zugangsdaten und öffentliche Exposition.",
-            "title": "Risiko wird bewertet."
-          }
-        },
-        "title": "Überprüfe Google Cloud IAM und Services"
-      },
-      "post-release-notes-slack": {
-        "description": "Wandeln kürzlich bereitgestellter GitHub-Arbeit in eine genehmigte Änderungsprotokollumsetzung um.",
-        "scenario": "Bereitgestellte Arbeit ist leicht zu verlieren in Pull Requests. {{assistantName}} sammelt kürzlich bereitgestellte GitHub-Änderungen, färbt sie in lesbare Release-Notes um und veröffentlicht die genehmigte Version in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} sammelt kürzlich mergede GitHub-Änderungen.",
-            "title": "Bereitgestellte Arbeit wird gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} speichert die endgültigen Release-Notes in Notion.",
-            "title": "Die genehmigte Entwurfsversion wird veröffentlicht"
-          },
-          "two": {
-            "description": "{{assistantName}} gruppiert Änderungen und erklärt deren Nutzerwirkung.",
-            "title": "Release-Notes werden gefärbt"
-          }
-        },
-        "title": "Veröffentlichen von Release-Notes in Notion"
-      },
-      "prep-google-calendar-meetings": {
-        "description": "Erstelle eine konzentrierte Besprechungsunterlagen für bevorstehende externe Besprechungen.",
-        "scenario": "Die Besprechungsplanung sollte nicht fünf Minuten vor der Verabredung beginnen. {{assistantName}} überprüft das Kalenderereignis und fügt Kontaktaufschluss und CRM-Kontext hinzufügen, wenn verfügbar.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest den ausgewählten Google-Kalenderfenster.",
-            "title": "bevorstehende Besprechungen werden gefunden"
-          },
-          "three": {
-            "description": "{{assistantName}} gibt Ziele, Kontext, Risiken und vorgeschlagene Fragen zurück.",
-            "title": "Die Besprechungsunterlagen werden vorbereitet"
-          },
-          "two": {
-            "description": "{{assistantName}} überprüft HubSpot, wenn verbunden.",
-            "title": "Teilnehmer-Kontext wird gesammelt"
-          }
-        },
-        "title": "Bereite Google-Kalender-Veranstaltungen vor"
-      },
-      "publish-scheduled-posts-buffer": {
-        "description": "Vergleichen Sie eine Website mit Wettbewerbern und identifizieren Sie organische Chancen.",
-        "scenario": "Inhaltspläne verbessern sich, wenn sie von realen Suchlücken ausgehen. {{assistantName}} verwendet eingebaute Firecrawl und DataForSEO, um die Website des Benutzers mit benannten Wettbewerbern zu vergleichen und fehlende Themen nach Absicht und Wert zu bewerten.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} crawlt die Website des Benutzers und ausgewählte Wettbewerber.",
-            "title": "Websites werden verglichen."
-          },
-          "three": {
-            "description": "{{assistantName}} gibt eine priorisierte Liste von Inhaltschancen zurück.",
-            "title": "Chancen werden bewertet."
-          },
-          "two": {
-            "description": "{{assistantName}} findet fehlende Schlüsselwörter, Themen und Absichtsbedeckungen.",
-            "title": "Suchlücken werden identifiziert."
-          }
-        },
-        "title": "Finden Sie Schlüsselwort- und Inhaltslücken"
-      },
-      "report-ai-model-costs-slack": {
-        "description": "Erklär Traffic- oder Sicherheitsausfälle und die nächste Reaktion.",
-        "scenario": "Cloudflare-Ausfälle benötigen Kontext, bevor sie Rauschen erfordern. {{assistantName}} überprüft Traffic, Sicherheitsereignisse und Dienstgesundheit, erklärt die wahrscheinliche Auswirkung und liefert die nächste Aktion in der Automatisierungstheade.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} überprüft Dienstgesundheit, Traffic-Shifts und Sicherheitsereignisse.",
-            "title": "Cloudflare wird überprüft."
-          },
-          "three": {
-            "description": "{{assistantName}} empfiehlt eine Reaktion und kann ein GitHub-Issue erstellen.",
-            "title": "Nächste Aktionen werden zurückgegeben."
-          },
-          "two": {
-            "description": "{{assistantName}} trennt bestätigte Ausfälle von normaler Variation.",
-            "title": "Auswirkung wird erklärt."
-          }
-        },
-        "title": "Warnung bei Cloudflare-Ausfällen"
-      },
-      "research-calendar-meetings": {
-        "description": "Erstellen Sie knappe Zusammenfassungen aus Kalender und E-Mail-Kontext.\n",
-        "scenario": "Die Vorbereitung auf Termine ist schneller, wenn die Teilnehmer und die Gesprächsgeschichte bereits verbunden sind. {{assistantName}} überprüft kommende Kalender-Einträge und fügt Gmail-Kontext hinzu, wenn verfügbar.\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest den ausgewählten Google-Kalenderfensterbereich.\\n",
-            "title": "Kommende Termine werden gefunden.\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} gibt Ziele, Kontext und vorgeschlagene Fragen zurück.\\n",
-            "title": "Zusammenfassungen werden erstellt.\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} überprüft verwandte Gmail-Threads.\n",
-            "title": "Kontext für die Teilnehmer wird gesammelt.\\n"
-          }
-        },
-        "title": "Bereiten Sie auf kommende Termine vor.\\n"
-      },
-      "research-new-signups-apollo": {
-        "description": "Creator-Leads auf X finden und qualifizieren.",
-        "scenario": "Outbound stockt, wenn die Liste veraltet ist. {{assistantName}} findet Creator und Interessenten auf X, die zum Zielprofil passen, qualifiziert sie mit der integrierten Personensuche und Firecrawl und liefert eine priorisierte Outreach-Liste.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} durchsucht X nach Konten, die zum Zielprofil passen.",
-            "title": "Kandidaten werden auf X gefunden"
-          },
-          "three": {
-            "description": "{{assistantName}} bewertet die Passung, entwirft eine Ansprache und speichert Leads optional in HubSpot.",
-            "title": "Die Outreach-Liste wird priorisiert"
-          },
-          "two": {
-            "description": "{{assistantName}} prüft Rolle, Unternehmen und Reichweite mit integrierter Recherche.",
-            "title": "Jeder Lead wird qualifiziert"
-          }
-        },
-        "title": "Creator-Leads auf X finden"
-      },
-      "run-daily-query-sheets": {
-        "description": "Schreiben Sie Suchsichtbarkeit und Suchanfragenbewegungen in Google Sheets.",
-        "scenario": "Organische Leistungen sind einfacher zu handhaben, wenn sie eine konstante Geschichte haben. {{assistantName}} zieht Search Console-Metriken, fügt bei Verfügbarkeit Analytics-Kontext hinzu und aktualisiert ein Berichtssheet.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest Klicks, Eindrücke, CTR, Position und Suchanfragen.",
-            "title": "Suchdaten werden gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} schreibt die normalisierten Ergebnisse in Google Sheets.",
-            "title": "Das Sheet wird aktualisiert"
-          },
-          "two": {
-            "description": "{{assistantName}} identifiziert gewinnbringende, abnehmende und emergierende Suchanfragen.",
-            "title": "Bewegungen werden analysiert"
-          }
-        },
-        "title": "Protokollieren Sie organischen Suchleistungsleistungen in Sheets"
-      },
-      "send-bugs-github-slack": {
-        "description": "Wandeln Sie reproduzierbare Fehlerberichte in strukturierte Engineering-Aufgaben um.",
-        "scenario": "Fehlerberichte verlieren Wert, wenn Beweise im Postfach bleiben. {{assistantName}} identifiziert reproduzierbare Support-Probleme, extrahiert Auswirkungen und Schritte und erstellt eine strukturierte GitHub-Aufgabe.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} überprüft Support-E-Mails auf reproduzierbare Produktfehler.",
-            "title": "Fehlerberichte werden identifiziert"
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt die Aufgabe und kann sie in Linear verlinken.",
-            "title": "Eine GitHub-Aufgabe wird erstellt"
-          },
-          "two": {
-            "description": "{{assistantName}} extrahiert Auswirkungen, Schritte, erwarteten Verhalten und Kontext.",
-            "title": "Beweise werden strukturiert"
-          }
-        },
-        "title": "Wandeln Sie Support-E-Mails in GitHub-Aufgaben um"
-      },
-      "sort-gmail-draft-replies": {
-        "description": "Bearbeiten Sie neue E-Mails und bereiten Sie Antworten vor, die einem Menschen überlassen werden.\\n",
-        "scenario": "Ein überlasteter Posteingang versteckt dringende Anfragen und einfache Antworten. {{assistantName}} gruppieren neue Gmail-Nachrichten nach Dringlichkeit und Aktion, dann fassen er Entgegnungen ohne deren Versand.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest den ausgewählten Gmail-Posteingang oder -Label.\\n",
-            "title": "Neue E-Mails werden überprüft.\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} bereitet Antworten für menschliche Überprüfung vor.\\n",
-            "title": "Entgegnungen werden gefasst.\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} gruppieren E-Mails nach Dringlichkeit, Anfrage und nächste Aktion.\\n",
-            "title": "Nachrichten werden bearbeitet.\\n"
-          }
-        },
-        "title": "Sortieren Sie Ihre Gmail-Nachrichten und fassen Sie Entgegnungen vorbereitet.\\n"
-      },
-      "sort-route-zendesk-tickets": {
-        "description": "Klassifizieren Sie Support-E-Mails und erstellen Sie in Linear handlungsfähige Aufgaben.",
-        "scenario": "Support-E-Mails benötigen konsistente Prioritäten und Verantwortung. {{assistantName}} liest neue Gmail-Konversationen, identifiziert den Art und die Dringlichkeit des Problems und erstellt in Linear Aufgaben für Elemente, die eine Handlung erfordern.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} überprüft neue Konversationen und verfügbaren Kontext.",
-            "title": "Support-E-Mails werden gelesen"
-          },
-          "three": {
-            "description": "{{assistantName}} erstellt handlungsfähige Aufgaben und verlinkt Unterlagen.",
-            "title": "Linear-Aufgaben werden erstellt"
-          },
-          "two": {
-            "description": "{{assistantName}} klassifiziert Dringlichkeit, Thema und verantwortliche Team.",
-            "title": "Prioritäten und Verantwortung werden festgelegt"
-          }
-        },
-        "title": "Triage Support-E-Mails in Linear"
-      },
-      "spot-churn-risk-stripe-zendesk": {
-        "description": "Zusammenfassen Sie den Support-Volumen, das Risiko, Themen und ungelöste Arbeit.",
-        "scenario": "Ein Support-Queue ist einfacher zu verwalten, wenn wichtige Änderungen sichtbar sind. {{assistantName}} überprüft Gmail-Konversationen, hebt dringende oder wiederkehrende Probleme hervor und verlinkt verwandte Linear- oder GitHub-Aufgaben.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest neue und ungelöste Gmail-Konversationen.",
-            "title": "Support-Aktivität wird gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} fasst Prioritäten im Automatisierungs-Thread zusammen.",
-            "title": "Der Digest wird zurückgegeben"
-          },
-          "two": {
-            "description": "{{assistantName}} gruppiert wiederkehrende Probleme und markiert dringende Nachverfolgungen.",
-            "title": "Risiko und Themen werden identifiziert"
-          }
-        },
-        "title": "Erstellen Sie einen täglichen Support-Digest"
-      },
-      "summarize-gmail-newsletters": {
-        "description": "Wandeln Sie ausgewählte Newsbriefe in einen nützlichen regelmäßig erscheinenden Zusammenfassung ein.\\n",
-        "scenario": "Der Wert von Newsbriefen verliert sich, wenn jede Ausgabe den Posteingang um die Aufmerksamkeit kämpft. {{assistantName}} fasst ausgewählte Gmail-Newsbriefe nach Themen, nützlichen Links und empfohlenen Lesestücken zusammen.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest Nachrichten von den ausgewählten Sendern oder dem Label.\\n",
-            "title": "Newsbriefe werden gesammelt.\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} gibt den Zusammenfassung zurück und kann ihn in Notion speichern.\\n",
-            "title": "Der Zusammenfassung wird erstellt.\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} gruppiert Themen und identifiziert die stärksten Links.\\n",
-            "title": "Nützlicher Inhalt wird distilliert.\\n"
-          }
-        },
-        "title": "Zusammenfassen Sie Gmail-Newsbriefe.\\n"
-      },
-      "summarize-user-feedback-notion": {
-        "description": "Gruppieren neuer Formularantworten in rangierte Produkt-Erkenntnisse.",
-        "scenario": "Feedback wird nützlich, wenn Muster sichtbar sind. {{assistantName}} überprüft Google-Formularantworten, gruppiert wiederkehrende Schmerzpunkte und Anforderungen, rangiert die Erkenntnisse und schreibt die Zusammenfassung in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest die neuesten Google-Formular-Abgaben.",
-            "title": "Antworten werden gesammelt"
-          },
-          "three": {
-            "description": "{{assistantName}} schreibt eine priorisierte Zusammenfassung in Notion.",
-            "title": "Erkenntnisse werden gespeichert"
-          },
-          "two": {
-            "description": "{{assistantName}} gruppiert Schmerzpunkte, Anforderungen und Stimmungen.",
-            "title": "Themen werden gerangiert"
-          }
-        },
-        "title": "Zusammenfassen von Google-Formular-Feedback in Notion"
-      },
-      "summarize-zendesk-tickets-daily": {
-        "description": "Erstellen Sie genehmigte Support-Videos mit der eingebauten Avatar-Fähigkeit.",
-        "scenario": "Einige Support-Antworten sind einfacher zu verstehen, wenn sie als kurzer Präsentationsvideo aufgezeichnet sind. {{assistantName}} wandelt genehmigte FAQ-Inhalte in einen Skript und Storyboard um, dann verwendet er die eingebaute Avatar-Video-Fähigkeit nach Überprüfung.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} identifiziert den genehmigten Antwort und das Zielpublikum.",
-            "title": "FAQ-Inhalte werden ausgewählt"
-          },
-          "three": {
-            "description": "{{assistantName}} generiert nur nach dem genehmigten Entwurf des Nutzers.",
-            "title": "Das Avatar-Video wird generiert"
-          },
-          "two": {
-            "description": "{{assistantName}} erstellt einen knappen, präzisen Support-Video-Plan.",
-            "title": "Ein Skript und ein Storyboard werden entworfen"
-          }
-        },
-        "title": "Wandeln Sie FAQs in digitale-Support-Videos um"
-      },
-      "sync-asana-projects-notion": {
-        "description": "Halte die Notion-Projektübersicht aktuell mit Asana.",
-        "scenario": "Projektzusammenfassungen verlaufen, wenn die Aufgabenstatus sich ändern. {{assistantName}} liest ausgewählte Asana-Projekte und hält die entsprechende Notion-Ubersicht aktuell.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} überprüft den Status, die Besitzer, die Fristen und die Hindernisse.",
-            "title": "Asana-Projekte werden gelesen"
-          },
-          "three": {
-            "description": "{{assistantName}} aktualisiert die Übersicht und markiert Änderungen.",
-            "title": "Notion wird synchronisiert"
-          },
-          "two": {
-            "description": "{{assistantName}} vergleicht den aktuellen Projektzustand mit der vorherigen Ansicht.",
-            "title": "Bedeutende Änderungen werden identifiziert"
-          }
-        },
-        "title": "Synchronisiere Asana-Projekte mit Notion"
-      },
-      "sync-linear-roadmap-notion": {
-        "description": "Halten Sie ein Jetzt, Nächstes und Später-Roadmap in Notion aktuell.",
-        "scenario": "Roadmaps verdriften sich, wenn Lieferungsstatus sich ändern. {{assistantName}} liest ausgewählte Linear-Projekte und -Probleme, ordnet sie in Jetzt, Nächstes und Später und hält das Notion-Roadmap aktuell.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} überprüft ausgewählte Projekte, Probleme und Meilensteine.",
-            "title": "Linear-Status wird gelesen"
-          },
-          "three": {
-            "description": "{{assistantName}} aktualisiert das Roadmap und hervorhebt bedeutende Änderungen.",
-            "title": "Notion wird aktualisiert"
-          },
-          "two": {
-            "description": "{{assistantName}} wandelt Lieferungsstatus in Jetzt, Nächstes und Später um.",
-            "title": "Roadmap-Phasen werden zugeordnet"
-          }
-        },
-        "title": "Synchronisieren des Linear-Roadmaps in Notion"
-      },
-      "track-feature-usage-posthog": {
-        "description": "Darstellen der größten wöchentlichen Änderungen in Produkt-Aufnahme.",
-        "scenario": "Funktionen-Aufnahme ändert sich, bevor sie bei einer Dashboard-Übersicht entdeckt wird. {{assistantName}} vergleicht die neuesten Google-Analytics-Nutzungssignale, identifiziert bedeutende Bewegungen und notiert optional Entscheidungen in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} sammelt die ausgewählten Funktionen und Zielgruppen-Signale.",
-            "title": "Aufnahmendaten werden gelesen"
-          },
-          "three": {
-            "description": "{{assistantName}} erklärt, was sich bewegt und was untersucht werden soll.",
-            "title": "Erkenntnisse werden zurückgegeben"
-          },
-          "two": {
-            "description": "{{assistantName}} findet die größten Gewinne, Verluste und Segmentunterschiede.",
-            "title": "Änderungen werden verglichen"
-          }
-        },
-        "title": "Verfolgen der Funktionen-Aufnahme mit Google-Analytics"
-      },
-      "track-keyword-ranks-ahrefs": {
-        "description": "Crawle eine Seite und gib eine priorisierte Liste technischer SEO-Probleme zurück.",
-        "scenario": "Technische SEO-Probleme verstecken sich über Hundertseiten hinweg. {{assistantName}} verwendet eingebaute Firecrawl und DataForSEO, um die Crawlbarkeit, Indexierbarkeit, internen Links und die live Suchsichtbarkeit zu überprüfen, ohne dass ein Connector erforderlich ist.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} verwendet Firecrawl, um Seiten und internen Links zu überprüfen.",
-            "title": "Die Seite wird crawlt."
-          },
-          "three": {
-            "description": "{{assistantName}} gibt die höchstrankingenen Lösungen mit unterstützenden Beweisen zurück.",
-            "title": "Probleme werden priorisiert."
-          },
-          "two": {
-            "description": "{{assistantName}} verwendet DataForSEO, um Sichtbarkeits- und Indexierungssignale zu validieren.",
-            "title": "Suchbeweise werden überprüft."
-          }
-        },
-        "title": "Audit eine Website's technische SEO"
-      },
-      "track-signup-sources-sheets": {
-        "description": "Abfragen Sie Google Cloud-Daten und veröffentlichen Sie eine aktualisierbare Analyse.",
-        "scenario": "Wichtige operative Daten liegen oft in BigQuery ohne eine nutzbare wiederkehrende Ansicht. {{assistantName}} führt die genehmigte Abfrage aus, identifiziert Trends und Abweichungen und schreibt eine Ergebnis-Tabelle und Zusammenfassung in Google Sheets.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} bestätigt den BigQuery-Bereich und die Analysefrage.",
-            "title": "Ein Datensatz und eine Abfrage werden ausgewählt"
-          },
-          "three": {
-            "description": "{{assistantName}} veröffentlicht eine aktualisierbare Tabelle und eine Entscheidungsreife Zusammenfassung.",
-            "title": "Ergebnisse werden in Sheets geschrieben"
-          },
-          "two": {
-            "description": "{{assistantName}} führt die Abfrage aus und überprüft Trends, Segmente und Abweichungen.",
-            "title": "Cloud-Daten werden analysiert"
-          }
-        },
-        "title": "Analysieren Sie BigQuery-Daten in Sheets"
-      },
-      "watch-brand-mentions": {
-        "description": "Wandeln Sie genehmigte Videos in Plattform-basierte Posts und Threads um.",
-        "scenario": "Ein starkes Video kann mehr als eine Kanal supporten. {{assistantName}} liest ein ausgewähltes YouTube-Video, fälscht X Posts und Threads und speichert optional den genehmigten Plan in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} liest das YouTube-Video, die Transkription und den Kontext.",
-            "title": "Ein Video wird ausgewählt."
-          },
-          "three": {
-            "description": "{{assistantName}} speichert den Plan und veröffentlicht nie ohne Genehmigung.",
-            "title": "Inhalte werden für die Genehmigung vorbereitet."
-          },
-          "two": {
-            "description": "{{assistantName}} erstellt knappe X Posts und Thread-Optionen.",
-            "title": "Soziale Varianten werden skizziert"
-          }
-        },
-        "title": "Repurzieren Sie YouTube-Videos für X"
-      },
-      "watch-sentry-after-release": {
-        "description": "Vergleiche die post-Release-Stabilität mit der vorherigen Baseline.",
-        "scenario": "Eine Release kann gesund aussehen, während sich Rückgängig-Markierungen stillschweigend anstauen. {{assistantName}} vergleicht die neuesten Sentry-Signale mit der vorherigen Baseline und erklärt, ob man weiter beobachten, vorantasten oder zurückrollen sollte.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} findet die neueste Release und ihren Vergleichsbereich.",
-            "title": "Eine Release wird identifiziert."
-          },
-          "three": {
-            "description": "{{assistantName}} fasst die Auswirkung und die sicherste nächste Aktion zusammen.",
-            "title": "Eine Antwort wird empfohlen."
-          },
-          "two": {
-            "description": "{{assistantName}} überprüft den crash-freien Rate und neue Rückgängig-Markierungen gegen die Baseline.",
-            "title": "Stabilität wird verglichen."
-          }
-        },
-        "title": "Überwache Sentry nach einer Release"
+        "title": "Starte mit einer Aufgabe, die zählt"
       }
     }
   },
   "queue": {
     "concurrentRuns_one": "{{count}} gleichzeitige Ausführung",
     "concurrentRuns_other": "{{count}} gleichzeitige Ausführungen",
-    "description": "Sehen Sie sich Ihre Position in der Warteschlange an und aktualisieren Sie, um das Warten zu vermeiden.",
+    "description": "Sehen Sie, wie viele gleichzeitige Ausführungen belegt sind, und führen Sie ein Upgrade durch, um das Warten zu vermeiden.",
     "perMonth": "/Monat",
     "pricePerMonth": "{{price}}/Monat",
     "purchase": {
@@ -5956,7 +4564,6 @@
     "tiers": {
       "custom": "Benutzerdefiniert",
       "free": "Frei",
-      "limitedFree": "Begrenzt kostenlos",
       "pro": "Pro",
       "team": "Team"
     },
@@ -5966,7 +4573,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} Credits / Monat",
         "emailSupport": "E-Mail-Support",
-        "ownKeys": "Bringen Sie Ihre eigenen LLM-Schlüssel mit",
         "payAsYouGo": "Danach zahlen Sie nach Bedarf",
         "prioritySupport": "Vorrangiger Support",
         "unlimitedAgents": "Unbegrenzte Gesamtanzahl an Agenten"
@@ -5979,17 +4585,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "Guthaben hinzufügen",
-      "openModelProviders": "Modellanbieter öffnen",
-      "reconnectClaude": "Claude Code erneut verbinden",
-      "shareWithAdmin": "Mit einem Administrator teilen"
+      "openModelSettings": "Modelleinstellungen öffnen",
+      "reconnectClaude": "Claude Code erneut verbinden"
     },
-    "anthropicKeyAdmin": "Claude Code konnte sich mit dem konfigurierten Anthropic-API-Schlüssel nicht authentifizieren. Aktualisieren oder ersetzen Sie den API-Schlüssel unter Modellanbieter und versuchen Sie es erneut.",
-    "anthropicKeyMember": "Claude Code konnte sich mit dem konfigurierten Anthropic-API-Schlüssel nicht authentifizieren. Bitten Sie einen Workspace-Administrator, den API-Schlüssel zu aktualisieren oder zu ersetzen.",
     "askAdmin": "Bitten Sie einen Workspace-Administrator, Guthaben hinzuzufügen oder den Workspace-Tarif zu erweitern.",
-    "claudeReconnect": "Die Authentifizierung des Claude-Code-Abonnements ist fehlgeschlagen. Verbinden Sie Claude Code unter Modellanbieter erneut und versuchen Sie es noch einmal.",
-    "claudeTerms": "Claude Code erfordert die Zustimmung zu den aktualisierten Nutzungsbedingungen und der Datenschutzerklärung. Melden Sie sich unter https://claude.ai mit dem unter Modellanbieter verbundenen Claude-Konto an, stimmen Sie den Änderungen zu und versuchen Sie es erneut.",
+    "claudeReconnect": "Die Authentifizierung des Claude-Code-Abonnements ist fehlgeschlagen. Verbinden Sie Claude Code unter Einstellungen > Modelle erneut und versuchen Sie es noch einmal.",
+    "claudeTerms": "Claude Code erfordert die Zustimmung zu den aktualisierten Nutzungsbedingungen und der Datenschutzerklärung. Melden Sie sich unter https://claude.ai mit dem unter Einstellungen > Modelle verbundenen Claude-Konto an, stimmen Sie den Änderungen zu und versuchen Sie es erneut.",
     "codexOverloaded": "Das ausgewählte Modell ist ausgelastet. Bitte versuchen Sie ein anderes Modell.",
-    "codexReconnect": "Die ChatGPT-Sitzung muss erneut verbunden werden. Verbinden Sie ChatGPT (Codex) unter Modellanbieter erneut und versuchen Sie es noch einmal.",
+    "codexReconnect": "Die ChatGPT-Sitzung muss erneut verbunden werden. Verbinden Sie ChatGPT (Codex) unter Einstellungen > Modelle erneut und versuchen Sie es noch einmal.",
     "contentPolicyRejected": "Der Modellanbieter hat diese Anfrage aufgrund seiner Richtlinie zur Inhaltssicherheit abgelehnt. Ein erneuter Versuch mit derselben Eingabe wird wieder fehlschlagen. Formulieren Sie die Anfrage um, beginnen Sie eine neue Unterhaltung oder wechseln Sie das Modell.",
     "executionTimeout": "Dieser Lauf hat sein Zeitlimit erreicht.",
     "failed": "Lauf fehlgeschlagen",
@@ -5997,9 +4600,9 @@
     "modelTemporarilyUnavailable": "Modell vorübergehend nicht verfügbar",
     "modelUnavailable": "Das aktuelle Modell ist nicht verfügbar.",
     "overloaded": "{{model}} ist überlastet. Warten Sie einige Minuten und versuchen Sie es erneut oder wechseln Sie zu einem anderen Modell.",
-    "providerBalance": "Das Guthaben Ihres verbundenen Modellanbieter-Kontos reicht nicht aus.",
+    "providerBalance": "Dein verbundenes Abonnementkonto hat nicht genügend Guthaben.",
     "transient": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.",
-    "vm0Credits": "Nicht genügend Guthaben. Fügen Sie Guthaben hinzu oder richten Sie Ihren eigenen API-Schlüssel ein, um fortzufahren."
+    "vm0Credits": "Nicht genügend Guthaben. Fügen Sie Guthaben hinzu oder verbinden Sie ein persönliches Codex- oder Claude-Abonnement, um fortzufahren."
   },
   "serviceStatus": {
     "dismiss": "Service-Update schließen",
@@ -6075,7 +4678,7 @@
           "title": "Rechnungen"
         },
         "model": {
-          "description": "Wählen Sie aus, welche KI-Modelle Ihr Arbeitsbereich und Ihre Ausführungen verwenden.",
+          "autoDescription": "Okou wählt das Modell für jede Aufgabe.",
           "title": "Modelle"
         },
         "people": {
@@ -6165,16 +4768,10 @@
     },
     "models": {
       "actions": {
-        "addModel": "Modell hinzufügen",
-        "deleteModel": "Modell löschen",
-        "editModel": "Modell bearbeiten",
-        "resetUsage": "Nutzung zurücksetzen",
-        "upgradePro": "Aktualisieren Sie Pro, um es zu verwenden",
-        "upgradeToPro": "Upgrade auf Pro"
+        "resetUsage": "Nutzung zurücksetzen"
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "Die Genehmigungsseite konnte nicht geöffnet werden. Verwenden Sie den Link manuell und fügen Sie den Code hier ein.",
           "authorizationCode": "Autorisierungscode",
           "codePlaceholder": "Code von Claude einfügen",
           "codeRequired": "Fügen Sie den Claude-Autorisierungscode ein, um fortzufahren.",
@@ -6192,84 +4789,40 @@
           "usageNotice": "Melden Sie sich mit Ihrem Claude-Abo an, um Claude-Modelle mit Claude Code-basierten Agenten zu nutzen."
         },
         "codex": {
-          "approvalOpened": "Genehmigungsseite geöffnet. Kopieren Sie den Gerätecode vor der Genehmigung.",
-          "codeCopied": "Gerätecode kopiert. Warten auf Genehmigung...",
-          "codeCopiedRetry": "Gerätecode kopiert. Versuchen Sie erneut, die Genehmigungsseite zu öffnen.",
           "connectedToast": "ChatGPT verbunden",
           "connectTitle": "Codex verbinden",
-          "copyAndOpen": "Code kopieren und Genehmigungsseite öffnen",
-          "copyAndOpenError": "Der Gerätecode konnte nicht kopiert oder die Genehmigungsseite konnte nicht geöffnet werden. Kopieren Sie den Code manuell und versuchen Sie es erneut.",
-          "copyError": "Die Genehmigungsseite wurde geöffnet, aber der Gerätecode wurde nicht kopiert. Kopieren Sie es manuell, bevor Sie es genehmigen.",
           "deviceCode": "Gerätecode",
           "error": "Die ChatGPT-Verbindung ist fehlgeschlagen. Beginnen Sie erneut, um es erneut zu versuchen.",
           "expired": "Die Codex-Verbindungssitzung ist abgelaufen. Beginnen Sie erneut, um es erneut zu versuchen.",
           "freePlanRejected": "Kostenlose ChatGPT-Pläne können Codex nicht über {{brandName}} nutzen. Führen Sie ein Upgrade auf Plus oder Pro durch und versuchen Sie es erneut.",
-          "instructions": "Klicken Sie zunächst auf Code kopieren und Genehmigungsseite öffnen. Fügen Sie dann den Gerätecode in OpenAI ein, wenn Sie dazu aufgefordert werden. Genehmigen Sie abschließend den Zugriff und lassen Sie dieses Dialogfeld geöffnet, während {{brandName}} die Verbindung herstellt.",
+          "instructions": "Kopieren Sie zunächst den Gerätecode mit der Kopierschaltfläche und öffnen Sie dann die Genehmigungsseite. Fügen Sie dann den Gerätecode in OpenAI ein, wenn Sie dazu aufgefordert werden. Genehmigen Sie abschließend den Zugriff und lassen Sie dieses Dialogfeld geöffnet, während {{brandName}} die Verbindung herstellt.",
           "invalidTokenFormat": "Codex hat ein Login-Token-Format erstellt, das {{brandName}} nicht erkennt. Aktualisieren Sie Codex und versuchen Sie es erneut.",
-          "openError": "Gerätecode kopiert, aber die Genehmigungsseite konnte nicht geöffnet werden. Versuchen Sie es erneut.",
+          "openApproval": "Genehmigungsseite öffnen",
           "preparing": "Vorbereiten...",
           "reconnectAction": "Verbinden Sie ChatGPT erneut",
           "reconnectTitle": "Codex erneut verbinden",
           "signIn": "Melden Sie sich mit ChatGPT an"
         }
       },
-      "gateways": {
-        "actions": "Gateway-Aktionen",
-        "add": "Anbieter hinzufügen",
-        "addTitle": "Modellanbieter hinzufügen",
-        "apiBaseUrl": "API-Basis-URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com/",
-        "apiKey": "API-Schlüssel",
-        "deleteConfirm": "Diese Modellanbieter-Verbindung löschen? Modellrouten, die sie verwenden, sind danach nicht mehr verfügbar.",
-        "description": "Verbinden Sie ein von Administratoren verwaltetes Gateway über Anthropic Messages, OpenAI Responses oder beide Protokolle.",
-        "dialogDescription": "Konfigurieren Sie jedes Protokoll mit der API-Basis-URL, die von Claude Code oder Codex verwendet wird.",
-        "editTitle": "Modellanbieter bearbeiten",
-        "empty": "Keine benutzerdefinierten Modellanbieter konfiguriert.",
-        "errors": {
-          "invalidMappings": "Modellzuordnungen müssen ein JSON-Objekt sein, dessen Werte die Namen der Upstream-Modelle sind.",
-          "missingProtocol": "Aktivieren Sie mindestens ein Protokoll.",
-          "missingSecret": "Geben Sie einen API-Schlüssel ein."
-        },
-        "headerName": "Authentifizierungs-Header",
-        "headerValue": "Vorlage für den Header-Wert",
-        "keepKey": "Leer lassen, um den aktuellen Schlüssel beizubehalten",
-        "modelMappings": "Modellzuordnungen (JSON)",
-        "name": "Name",
-        "presets": {
-          "custom": "Benutzerdefiniert",
-          "fireworks": "Fireworks AI-Gateway",
-          "openrouter": "OpenRouter-Gateway",
-          "vercel": "Vercel AI-Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic-Messages-Protokoll",
-          "openaiResponses": "OpenAI-Responses-Protokoll"
-        },
-        "requestPreview": "Anfragen",
-        "title": "Anbieterverbindungen"
-      },
       "personal": {
         "accountFallback": "Konto {{number}}",
-        "accountsDescription": "Wähle das Konto, das jeder Anbieter für neue Ausführungen verwendet.",
-        "accountsSectionTitle": "Persönliche Konten",
-        "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktiv",
-        "addAccount": "Konto hinzufügen",
-        "claudeDescription": "Melden Sie sich mit Ihrem Claude-Abo an, um Claude-Modelle mit Claude Code-basierten Agenten zu nutzen.",
+        "autoDescription": "Verbinde dein Claude- oder ChatGPT-Konto, um mehr Modelle zu nutzen.",
+        "autoTitle": "Mehr Modelle nutzen",
         "claudeTitle": "Claude",
-        "codexDescription": "Verbinden Sie Ihr ChatGPT-Konto, um GPT-Modelle zu nutzen.",
         "codexTitle": "ChatGPT (Codex)",
-        "description": "Wird nur bei Ihren Ausführungen mit Ihren eigenen Anmeldeinformationen verwendet.",
+        "connectAccount": "Konto verbinden",
         "disconnectAccount": "Konto trennen",
         "disconnectDescription": "Dadurch wird das Konto aus Okou entfernt. Ihr Abonnement beim Anbieter wird nicht gekündigt.",
         "disconnecting": "Verbindung wird getrennt…",
         "disconnectTitle": "{{account}} trennen?",
+        "loadError": "Deine Konten konnten nicht geladen werden.",
+        "loadingAccounts": "Konten werden geladen…",
         "noAccounts": "Keine Konten verbunden.",
         "reconnectAccount": "Erneut verbinden",
-        "sectionTitle": "Persönlich",
+        "retry": "Erneut versuchen",
         "status": {
           "connected": "Verbunden",
-          "connectedWithDetail": "Verbunden ({{detail}})",
           "fiveHour": "5h",
           "left": "{{percent}} übrig",
           "stale": "Aufmerksamkeit",
@@ -6278,99 +4831,37 @@
         "useAccount": "Verwenden"
       },
       "picker": {
-        "builtInModel": "Einbaumodell",
-        "byokHelp": "Verwendet Ihren konfigurierten Anbieter",
-        "categoryChat": "Chat",
-        "categoryImage": "Bild",
-        "categoryVideo": "Video",
+        "auto": "Auto",
         "chatModels": "Chatmodelle",
         "effort": "Aufwand",
         "effortScale": {
           "faster": "Schneller",
+          "higherUsage": "Höherer Verbrauch",
+          "lowerUsage": "Geringerer Verbrauch",
           "smarter": "Intelligenter"
         },
         "fast": "Schnell",
         "fastImpact": {
-          "apiCost": "2× API-Tokenkosten",
-          "chatGptUsage": "2,5× ChatGPT-Verbrauch",
-          "fasterResponses": "Schnellere Modellantworten",
-          "modelSpeed": "{{multiplier}}× Modellgeschwindigkeit",
-          "okouCredits": "2× Okou-Modell-Credits",
-          "providerSpeed": "Geschwindigkeit hängt vom Anbieter ab",
           "providerUsage": "Verbrauch hängt vom Anbieter ab",
-          "solApiSpeed": "Bis zu 2,5× Modellgeschwindigkeit",
-          "summary": "{{speed}} · {{usage}}"
+          "subscriptionUsage": "{{multiplier}}× Abonnementnutzung"
         },
+        "fastMode": "Schnellmodus",
         "generationPriceTiers": {
           "higher": "Höhere Kosten pro Generierung",
           "highest": "Höchste Kosten pro Generierung",
           "lowest": "Niedrigste Kosten pro Generierung",
           "typical": "Typische Kosten pro Generierung"
         },
-        "imageModels": "Bildmodelle",
-        "inheritDefault": "Von der Standardeinstellung der Organisation übernehmen",
+        "inheritDefault": "Standard (Auto)",
         "loadError": "Modelle können nicht geladen werden.",
         "loading": "Modelle werden geladen...",
-        "menu": {
-          "backToModels": "Zurück zu Modellen",
-          "changeModel": "{{category}}-Modell ändern, {{model}}"
-        },
         "models": "Modelle",
         "noConfiguredModels": "Keine konfigurierten Modelle",
-        "priceTiers": {
-          "balanced": "Ausgewogene Kosten und Leistung",
-          "economy": "Economy-Stufe für alltägliche einfache Aufgaben",
-          "frontier": "Frontier-Flaggschiffmodell",
-          "premium": "Premium-Frontier-Modell für die schwierigsten Aufgaben"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "Azure Foundry-Portal",
-          "claudeCodeOauth": "Claude Code (OAuth-Token)",
-          "deepseek": "Deepseek"
-        },
-        "standard": "Standard",
-        "videoModels": "Videomodelle"
-      },
-      "policies": {
-        "actionsFor": "Aktionen für {{model}}",
-        "apiKey": "API-Schlüssel",
-        "apiKeyDescription": "Ein gemeinsam genutzter Arbeitsbereichsschlüssel. Am besten ist es, wenn das Team über ein Konto abrechnet.",
-        "apiKeyPlaceholder": "Geben Sie Ihren API-Schlüssel ein",
-        "apiKeyRequired": "API-Schlüssel ist erforderlich",
-        "availableModels": "Verfügbare Modelle",
-        "builtIn": "Eingebaut",
-        "builtInDescription": "Arbeitsbereichs-Credits decken die Nutzung ab.",
-        "claudeSubscription": "Claude-Abonnement",
-        "claudeSubscriptionDescription": "Jedes Mitglied verbindet seinen eigenen Pro-, Max- oder Team-Plan.",
-        "codexSubscription": "Codex-Abonnement",
-        "codexSubscriptionDescription": "Jedes Mitglied verbindet seinen eigenen Pro- oder Team-Plan.",
-        "defaultModel": "Standardmodell",
-        "defaultModelDescription": "Wird verwendet, wenn eine Aufgabe kein eigenes Modell auswählt.",
-        "dialogDescription": "Entscheiden Sie, wie Mitglieder auf dieses Modell zugreifen.",
-        "gateway": "Benutzerdefiniertes Gateway",
-        "gatewayDescription": "Über eine vom Administrator definierte Anbieterverbindung weiterleiten.",
-        "gatewayProvider": "Anbieterverbindung",
-        "getKey": "Holen Sie sich einen Schlüssel",
-        "invalidRoute": "Ungültige Route",
-        "missingProvider": "Fehlender Anbieter",
-        "model": "Modell",
-        "noAvailableModels": "Keine verfügbaren Modelle",
-        "noMappedGateway": "Diesem Modell ist keine Anbieterverbindung zugeordnet.",
-        "pricing": "Preise",
-        "providedBy": "Bereitgestellt von",
-        "provider": "Anbieter",
-        "providerApiKey": "{{provider}} API-Schlüssel",
-        "runsThrough": "Ausführung über",
-        "secretStored": "In den Workspace-Secrets gespeichert.",
-        "selectDefaultModel": "Wählen Sie ein Standardmodell aus",
-        "selectGateway": "Anbieterverbindung auswählen",
-        "selectModel": "Wählen Sie ein Modell aus",
-        "selectProvider": "Wählen Sie einen Anbieter aus",
-        "workspaceDescription": "Verfügbar für alle in diesem Arbeitsbereich."
+        "standard": "Standard"
       },
       "reset": {
-        "confirmDescription": "Verwenden Sie einen {{provider}}-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
+        "confirmDescription": "Verwenden Sie einen Codex-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
         "progress": "Zurücksetzen...",
         "remaining_one": "{{value}} Reset übrig",
         "remaining_other": "{{value}} Resets übrig",
@@ -6378,26 +4869,14 @@
         "remainingUnknown": "Resets —",
         "remainingWithExpiry_one": "{{value}} Reset übrig · läuft {{expiry}} ab",
         "remainingWithExpiry_other": "{{value}} Resets übrig · laufen {{expiry}} ab",
-        "title": "{{provider}}-Nutzung zurücksetzen?"
-      },
-      "stale": {
-        "claudeExpired": "Ihre Claude Code-Sitzung ist abgelaufen. Stellen Sie die Verbindung erneut her, um fortzufahren.",
-        "claudeFailed": "Die Aktualisierung von Claude Code ist fehlgeschlagen. Stellen Sie erneut eine Verbindung her, um es noch einmal zu versuchen.",
-        "claudeTitle": "Die Claude Code-Sitzung muss erneut verbunden werden",
-        "codexExpired": "Ihre ChatGPT-Sitzung ist abgelaufen. Stellen Sie die Verbindung erneut her, um fortzufahren.",
-        "codexFailed": "Die ChatGPT-Aktualisierung ist fehlgeschlagen. Stellen Sie erneut eine Verbindung her, um es noch einmal zu versuchen.",
-        "codexInvalidated": "Ihre ChatGPT-Sitzung wurde widerrufen. Erneut verbinden.",
-        "codexReused": "Ihre ChatGPT-Sitzung wurde an anderer Stelle verwendet. Erneut verbinden.",
-        "codexTitle": "Die ChatGPT-Sitzung muss erneut verbunden werden"
+        "title": "Codex-Nutzung zurücksetzen?"
       },
       "toasts": {
         "accountDisconnected": "Konto getrennt",
         "accountSwitched": "Aktives Konto gewechselt",
-        "disconnected": "{{provider}} getrennt",
-        "policiesUpdated": "Modellanbietereinstellungen aktualisiert",
-        "reset": "{{provider}}-Nutzung zurückgesetzt",
-        "resetUnavailable": "Es sind keine {{provider}}-Nutzungs-Resets verfügbar",
-        "resetUnneeded": "Die {{provider}}-Nutzung muss derzeit nicht zurückgesetzt werden"
+        "reset": "Codex-Nutzung zurückgesetzt",
+        "resetUnavailable": "Es sind keine Codex-Nutzungs-Resets verfügbar",
+        "resetUnneeded": "Die Codex-Nutzung muss derzeit nicht zurückgesetzt werden"
       },
       "usage": {
         "inDays": "in {{days}} T.",
@@ -6414,8 +4893,13 @@
       }
     },
     "paidTools": {
-      "description": "Wähle die kostenpflichtigen Tools, die Okou für deine Aufgaben nutzen darf. Jede Nutzung kostet Credits.",
+      "description": "Diese Tools verbrauchen integrierte Credits, und Okou nutzt sie automatisch bei der Bearbeitung deiner Aufgaben. Wenn du ein Tool deaktivierst, verwendet Okou es nicht.",
       "disabledForCreation": "{{tool}} ist für dich deaktiviert",
+      "imageModel": {
+        "description": "Die integrierte Bildgenerierung verwendet dieses Modell für deine Aufgaben.",
+        "label": "Modell",
+        "saveError": "Dein Bildmodell wurde nicht gespeichert."
+      },
       "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
       "loading": "Deine Tool-Einstellungen werden geladen…",
       "openSettings": "Einstellungen öffnen",
@@ -6424,12 +4908,8 @@
       "saving": "Wird gespeichert…",
       "scope": "Diese Einstellungen gelten nur für dich in {{workspace}}.",
       "timing": "Änderungen gelten für zukünftige Ausführungen. Laufende oder bereits vorbereitete Aufgaben können die bisherigen Einstellungen behalten.",
-      "title": "Kostenpflichtige Tools",
+      "title": "Integrierte Tools",
       "tools": {
-        "avatar-video-generation": {
-          "description": "Videos mit sprechenden Avataren erstellen.",
-          "name": "Avatar-Videoerzeugung"
-        },
         "finance": {
           "description": "Suche nach Unternehmen, Kursen und Marktdaten.",
           "name": "Finanzdaten"
@@ -6437,10 +4917,6 @@
         "image-generation": {
           "description": "Bilder mit integrierten Modellen erstellen.",
           "name": "Bilderzeugung"
-        },
-        "image-recognition": {
-          "description": "Lies und analysiere Bilder.",
-          "name": "Bilderkennung"
         },
         "maps": {
           "description": "Finde Orte, Adressen und Wegbeschreibungen.",
@@ -6461,14 +4937,6 @@
         "social": {
           "description": "Recherchiere öffentliche Beiträge und sammle Medien.",
           "name": "Social-Media-Recherche"
-        },
-        "video-generation": {
-          "description": "Videos mit integrierten Modellen erstellen.",
-          "name": "Videoerzeugung"
-        },
-        "voice-generation": {
-          "description": "Sprache mit integrierten Stimmen erstellen.",
-          "name": "Spracherzeugung"
         },
         "web-search": {
           "description": "Finde aktuelle Informationen im Web.",
@@ -6519,26 +4987,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Cooldown aufheben",
-          "cancelDescription": "Wenn dieser globale Cooldown aufgehoben wird, ist die Route sofort wieder für alle Workspaces verfügbar.",
-          "cancelling": "Cooldown wird aufgehoben...",
-          "cancelTitle": "Globalen Cooldown aufheben?",
-          "cancelWarning": "Ein späterer qualifizierender Fehler kann diese Route erneut in den Cooldown versetzen.",
-          "description": "Prüfen Sie integrierte Modellrouten, die vorübergehend von der Fallback-Auswahl ausgeschlossen sind.",
-          "empty": "Derzeit befinden sich keine integrierten Modellrouten im globalen Cooldown.",
-          "globalActive": "aktive globale Cooldowns",
-          "globalExplanation": "Cooldowns sind ein globaler Betriebszustand und betreffen alle Workspaces, die integrierte Modelle verwenden.",
-          "keepCooldown": "Cooldown beibehalten",
-          "loading": "Cooldown-Diagnose für integrierte Modelle wird geladen...",
-          "providerType": "Anbietertyp",
-          "refresh": "Aktualisieren",
-          "selectedModel": "Ausgewähltes Modell",
-          "title": "Fallback für integrierte Modelle",
-          "unavailable": "Die Cooldown-Diagnose für integrierte Modelle ist nicht verfügbar.",
-          "unavailableUntil": "Nicht verfügbar bis",
-          "upstreamModel": "Upstream-Modell"
-        },
         "capture": {
           "disabled": "Deaktiviert",
           "enabled_one": "Für {{count}} kommende Ausführung aktiviert",
@@ -6583,20 +5031,6 @@
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
         },
-        "morningBriefTrigger": {
-          "description": "Führe jetzt einen echten Morning Brief aus. Dein nächster Lauf wird beim regulären Planer eingereiht, der innerhalb einer Minute einen echten Brief und eine echte E-Mail zustellt. Ein Auslösen vor deiner täglichen Uhrzeit ergibt zwei Briefs an diesem Morgen.",
-          "failed": "Der Morning Brief konnte nicht eingereiht werden. Versuche es erneut.",
-          "queued": "Eingereiht. Der Planer stellt den Brief innerhalb einer Minute zu.",
-          "title": "Morning Brief",
-          "trigger": "Morning Brief jetzt ausführen",
-          "triggering": "Wird eingereiht…"
-        },
-        "voiceInput": {
-          "default": "Standard ({{model}})",
-          "description": "Wähle das Modell für Spracheingabe v2. Spracherkennungsmodelle verwenden {{model}} zur Textbereinigung.",
-          "title": "Modell für Spracheingabe",
-          "unavailable": "Modell nicht verfügbar ({{model}})"
-        },
         "welcomeThread": {
           "create": "Willkommenschat erstellen",
           "creating": "Wird erstellt…",
@@ -6608,9 +5042,6 @@
       "emailSubscription": {
         "description": "Erhalte Briefings, Erinnerungen und andere Workspace-Updates per E-Mail.",
         "descriptionWithEmail": "Erhalte Briefings, Erinnerungen und andere Workspace-Updates an {{email}}.",
-        "loading": "E-Mail-Abonnement wird geprüft…",
-        "retryMessage": "Dein E-Mail-Abonnement konnte nicht gespeichert oder geladen werden. Versuche es erneut.",
-        "saving": "Wird gespeichert…",
         "sectionTitle": "E-Mail-Abonnements",
         "title": "E-Mail-Updates",
         "unavailable": "E-Mail nicht verfügbar",
@@ -6636,17 +5067,10 @@
         "title": "Sprache"
       },
       "morningBrief": {
-        "chatAndEmail": "Chat + E-Mail",
-        "chatOnly": "Nur Chat",
-        "checkEmailSubscription": "Prüfe oben dein E-Mail-Abonnement für den Zustellstatus.",
         "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist. Versuchen Sie es erneut, wenn die Abstimmung abgeschlossen ist.",
         "description": "Tägliche Prioritäten um 7 Uhr in deiner Zeitzone.",
-        "lastDelivered": "Zuletzt zugestellt: {{date}}",
-        "loading": "Morning-Brief-Einstellungen werden geladen...",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
-        "nextBrief": "Nächstes Briefing {{date}}",
-        "paused": "Pausiert",
         "preparationFailed": "Die Einrichtung wird automatisch erneut versucht. Sie können es auch jetzt erneut versuchen.",
         "preparing": "Ihr erster Morgenbericht wird vorbereitet. Sie können ihn jederzeit deaktivieren.",
         "retry": "Erneut versuchen",
@@ -6656,10 +5080,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Drücken Sie zum Senden ⌘/Strg+Eingabetaste und für eine neue Zeile die Eingabetaste",
-        "description": "Wählen Sie aus, wie Nachrichten im Chat gesendet werden sollen.",
         "enter": "Enter",
         "enterDescription": "Drücken Sie die Eingabetaste zum Senden, Umschalt+Eingabetaste für eine neue Zeile",
-        "sectionTitle": "Enter",
         "title": "Nachricht senden mit"
       },
       "timezone": {
@@ -6696,17 +5118,12 @@
     "shared": {
       "cancel": "Abbrechen",
       "close": "Schließen",
-      "connect": "Verbinden",
       "connecting": "Verbinden...",
       "delete": "Löschen",
       "discard": "Verwerfen",
-      "disconnect": "Trennen",
-      "edit": "Bearbeiten",
       "loading": "Laden",
       "moreOptions": "Weitere Optionen",
-      "reconnect": "Wieder verbinden",
       "remove": "Entfernen",
-      "replace": "Ersetzen",
       "save": "Speichern",
       "saveChanges": "Änderungen speichern",
       "saving": "Speichern..."
@@ -6878,8 +5295,6 @@
     "tryItYourself": "Selbst ausprobieren"
   },
   "ssh": {
-    "accessDescription": "Wähle, welche Agents deine SSH-Hosts verwenden dürfen.",
-    "accessHelp": "Diesem Agent erlauben, Befehle auf allen Ihren derzeit und künftig konfigurierten SSH-Hosts auszuführen. Dies ist unabhängig von Connector-Berechtigungen.",
     "add": "Host hinzufügen",
     "cancel": "Abbrechen",
     "chooseFile": "Datei auswählen",
@@ -6889,8 +5304,10 @@
       "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
       "latest": "Zuletzt gespeicherte Einstellungen",
       "mode": "Verbindung",
+      "needsRebind": "Dieser Host benötigt eine neue Cloudflare-Access-Konfiguration. Bearbeite ihn, um ihn neu zu verknüpfen oder Direct auszuwählen. Bis dahin ist keine Verbindung möglich.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Veröffentlichter Hostname",
+      "rebindHelp": "Wähle eine zulässige Cloudflare-Access-Konfiguration oder Direct, um diesen Host wiederherzustellen. Bis zum Speichern ändert sich nichts.",
       "reviewHelp": "Ihr Entwurf bleibt erhalten. Bestätigen Sie die zuletzt gespeicherten Einstellungen, bevor Sie Ihre Änderungen anwenden.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar."
@@ -6936,16 +5353,14 @@
       "unused": "Von keinem Host verwendet"
     },
     "credentialsHelp": "Zugangsdaten können nur geschrieben werden und bleiben außerhalb der Sandbox. Fügen Sie den vollständigen Schlüssel ein; Leerzeichen bleiben erhalten. Die Felder werden beim Schließen des Formulars geleert.",
-    "credentialsTab": "Zugangsdaten",
     "delete": "Host löschen",
     "deleteHelp": "Diesen Host löschen? Seine Zugangsdaten bleiben erhalten. Agents sehen ihn nicht mehr im Inventar.",
     "description": "Konfiguriere SSH-Hosts, auf denen deine Agents Remote-Befehle ausführen können.",
     "displayName": "Anzeigename",
     "edit": "Host bearbeiten",
     "editHelp": "Andere Zugangsdaten auszuwählen ändert nur diesen Host. Änderungen am direkten Endpunkt löschen den gespeicherten Hostschlüssel; Änderungen mit Cloudflare Access behalten ihn bei.",
-    "empty": "Keine SSH-Hosts konfiguriert. Fügen Sie einen Host hinzu, um ihn Agents mit SSH-Zugriff bereitzustellen.",
+    "empty": "Keine SSH-Hosts konfiguriert. Füge einen Host hinzu und aktiviere ihn standardmäßig oder in einzelnen Chats.",
     "errors": {
-      "agentUnavailable": "Dieser Agent ist nicht mehr verfügbar. Wähle einen anderen Agent.",
       "configurationChanged": "Dieser Host wurde während der Bearbeitung geändert. Dein Entwurf bleibt erhalten. Prüfe die aktuellen Einstellungen, bevor du deine Änderungen anwendest.",
       "credentialChanged": "Diese Zugangsdaten wurden während der Bearbeitung geändert. Ihr Entwurf bleibt erhalten. Prüfen Sie vor dem Speichern die neuesten Einstellungen und betroffenen Hosts.",
       "credentialInUse": "Diese Zugangsdaten werden verwendet. Weisen Sie den Hosts andere zu oder löschen Sie die Hosts zuerst.",
@@ -6963,11 +5378,9 @@
     "fingerprint": "Gespeicherter Hostschlüssel",
     "host": "Öffentlicher Hostname oder IP-Adresse",
     "hostSection": "Host",
-    "hostsTab": "Hosts",
     "label": "SSH",
     "loadFailed": "SSH-Einstellungen konnten nicht geladen werden. Versuche es erneut.",
     "loading": "SSH-Hosts werden geladen…",
-    "loadingAccess": "Agent-Zugriff wird geladen…",
     "manage": "SSH-Hosts verwalten",
     "notLearned": "Noch kein Hostschlüssel gespeichert",
     "passphrase": "Passphrase (optional)",
@@ -6992,7 +5405,10 @@
     },
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
-    "title": "SSH-Hosts",
+    "tailscale": {
+      "editUnavailable": "Dieser Host verwendet jetzt Tailscale. Das Bearbeiten und erneute Zuordnen von Tailscale ist hier noch nicht verfügbar. Brich diese Bearbeitung ab, um die gespeicherte Verbindungsart beizubehalten.",
+      "needsRebind": "Dieser Host benötigt eine neue Tailscale-Konfiguration. Die Einrichtung und erneute Zuordnung von Tailscale sind hier noch nicht verfügbar."
+    },
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
@@ -7085,8 +5501,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "Wähle aus, welche Agents deine VNC-Desktops anzeigen und steuern dürfen. Der Zugriff ist unabhängig von SSH.",
-    "accessHelp": "Diesem Agent erlauben, alle derzeit und künftig konfigurierten VNC-Desktops anzuzeigen und zu steuern.",
     "add": "Host hinzufügen",
     "cancel": "Abbrechen",
     "close": "Schließen",
@@ -7095,7 +5509,12 @@
       "add": "Zugangsdaten hinzufügen",
       "appleDhFieldHelp": "Je Feld 1–63 UTF-8-Bytes. NUL ist nicht zulässig.",
       "appleDhMethod": "Apple-DH-Benutzername und Passwort",
+      "appleRsaSrpMethod": "Apple-RSA/SRP-Benutzername und Passwort",
+      "appleRsaSrpUsernameHelp": "RSA/SRP-Benutzername: 1–234 UTF-8-Bytes. NUL ist nicht zulässig.",
+      "appleSrpMethod": "Apple-Direct-SRP-Benutzername und Passwort",
       "authentication": "Authentifizierungsmethode",
+      "certificateChain": "Client-Zertifikatskette (PEM)",
+      "clientKeyHelp": "1–8 Client-Zertifikate und den passenden unverschlüsselten Schlüssel einfügen. Beides wird verschlüsselt gespeichert. Bei Rotation beides ersetzen; der Schlüssel wird nicht erneut angezeigt.",
       "createNew": "Neue Zugangsdaten erstellen",
       "delete": "Zugangsdaten löschen",
       "deleteHelp": "Diese ungenutzten Zugangsdaten löschen? Dies kann nicht rückgängig gemacht werden.",
@@ -7109,6 +5528,9 @@
       "password": "VNC-Passwort",
       "passwordHelp": "Klassische VNC-Passwörter verwenden 1–8 druckbare ASCII-Zeichen. Leerzeichen bleiben erhalten.",
       "passwordHint": "Gib das VNC-Passwort des Servers ein",
+      "privateKey": "Unverschlüsselter PKCS#8-Privatschlüssel (PEM)",
+      "qemuScramPasswordHelp": "1–1023 druckbare ASCII-Zeichen; Leerzeichen bleiben erhalten.",
+      "qemuScramUsernameHelp": "1–255 druckbare ASCII-Zeichen; keine Leerzeichen, Kommas oder Gleichheitszeichen.",
       "replace": "Authentifizierung ersetzen",
       "replaceHelp": "Lass diese Option deaktiviert, um die gespeicherte Authentifizierung beizubehalten. Das Ersetzen betrifft alle Hosts, die diese Zugangsdaten verwenden.",
       "select": "Zugangsdaten auswählen",
@@ -7125,7 +5547,6 @@
       "usernamePasswordHint": "Gib das Passwort für diesen Benutzernamen ein",
       "usernamePasswordMethod": "Benutzername und Passwort"
     },
-    "credentialsTab": "Anmeldeinformationen",
     "delete": "Host löschen",
     "deleteHelp": "Diesen gespeicherten Host löschen? Die wiederverwendbaren Zugangsdaten bleiben erhalten.",
     "description": "Lass deine Agents deine Remote-Desktops anzeigen und steuern.",
@@ -7143,19 +5564,37 @@
       "invalidHost": "Gib einen gültigen Hostnamen oder eine IP-Adresse ohne URL, Benutzernamen oder Port ein.",
       "invalidInput": "Prüfe die VNC-Konfiguration und versuche es erneut.",
       "invalidTrust": "Gib ein gültiges Paket mit bis zu 8 öffentlichen CA-Zertifikaten und maximal 64 KiB ein.",
-      "ownerChanged": "Dein Workspace-Zugriff wurde geändert. Aktualisiere die Ansicht, bevor du fortfährst.",
       "revisionExhausted": "Diese Konfiguration kann nicht mehr aktualisiert werden. Erstelle eine neue."
     },
     "host": "Hostname oder IP-Adresse",
     "hostHint": "z. B. desktop.example.com",
-    "hostsTab": "Hosts",
     "label": "VNC",
     "loadFailed": "Die VNC-Konfiguration konnte nicht geladen werden.",
     "loading": "VNC-Konfiguration wird geladen…",
-    "loadingAccess": "Agent-Zugriff wird geladen…",
     "manage": "VNC verwalten",
     "port": "Port",
     "retry": "Erneut versuchen",
+    "rsaAes": {
+      "fieldHelp": "Je Feld 1–255 UTF-8-Bytes, ohne NUL. Leerzeichen bleiben erhalten; kein klassisches VNC-Passwort mit acht Bytes.",
+      "fullHelp": "RA2 und RA2_256 verschlüsseln die gesamte RFB-Sitzung mit EAX. Den vollständigen RSA-Wire-Key-Pin unabhängig prüfen; CA-Vertrauen ersetzt ihn nicht.",
+      "importHelp": "PUBLIC KEY oder RSA PUBLIC KEY PEM über vertrauenswürdige Serververwaltung beziehen. Nie private Schlüssel/Zertifikate einfügen oder einen Live-Schlüssel automatisch akzeptieren. Konvertierung beweist keine Identität und speichert nicht: vollständigen Pin prüfen, dann ausdrücklich speichern.",
+      "importKey": "Vertrauenswürdigen öffentlichen Schlüssel importieren",
+      "modulusBits": "Importierte öffentliche Schlüssellänge: {{bits}} Bits",
+      "neHelp": "Nur die Authentifizierung ist RSA-AES-verschlüsselt. Erfordert verifiziertes gespeichertes SSH zu einer literalen Server-Loopback-Adresse. SSH schützt nur seinen Hop; ein nachgeschalteter Proxy kann unverschlüsseltes RFB offenlegen.",
+      "passwordMethod": "RSA-AES-Passwort",
+      "pin": "SHA256 des RSA-Wire-Schlüssels des Servers",
+      "pinHelp": "Den unabhängig vertrauenswürdig ermittelten vollständigen 64-Hex-Pin importieren: SHA256 über U32-Big-Endian-Modulusbits und gleich breit gepolsterten Modulus/Exponenten. Kein PEM/SPKI-Hash oder Kurzfingerabdruck. Zum Rotieren ersetzen und ausdrücklich speichern; Sitzungen werden ungültig.",
+      "publicKey": "Unabhängig vertrauenswürdiger öffentlicher RSA-PEM-Schlüssel (optional)",
+      "ra2256Password": "RA2_256 · AES-256 · Passwort",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · Benutzername/Passwort",
+      "ra2ne256Password": "RA2ne_256 · nur Authentifizierung · Passwort",
+      "ra2ne256UsernamePassword": "RA2ne_256 · nur Authentifizierung · Benutzername/Passwort",
+      "ra2nePassword": "RA2ne · nur Authentifizierung · Passwort",
+      "ra2neUsernamePassword": "RA2ne · nur Authentifizierung · Benutzername/Passwort",
+      "ra2Password": "RA2 · AES-128 · Passwort",
+      "ra2UsernamePassword": "RA2 · AES-128 · Benutzername/Passwort",
+      "usernamePasswordMethod": "RSA-AES-Benutzername/Passwort"
+    },
     "save": "Speichern",
     "saveRecovery": {
       "resourceIdConflict": "Diese Ressource konnte nicht erstellt werden. Schließe diesen Dialog und versuche es erneut.",
@@ -7164,18 +5603,31 @@
     },
     "saving": "Wird gespeichert…",
     "security": {
-      "appleDh": "Mac-Bildschirmfreigabe (Apple DH)",
-      "appleDhHelp": "Erfordert macOS-Bildschirmfreigabe über eine gespeicherte SSH-Verbindung. Das RFB-Ziel muss auf diesem Mac 127.0.0.1 oder ::1 sein. SSH schützt die gesamte VNC-Sitzung. Verwenden Sie einen Mac-SSH-Host, den Sie kontrollieren; sein Host-Schlüssel schließt eine Weiterleitung nicht aus.",
+      "appleDh": "Mac-VNC (Apple DH)",
+      "appleDhHelp": "Erfordert einen Mac-VNC-Dienst über eine gespeicherte SSH-Verbindung. Die eigenständige macOS-Bildschirmfreigabe ist nicht verifiziert. Das RFB-Ziel muss auf diesem Mac 127.0.0.1 oder ::1 sein. SSH schützt die gesamte VNC-Sitzung. Verwenden Sie einen Mac-SSH-Host, den Sie kontrollieren; sein Host-Schlüssel schließt eine Weiterleitung nicht aus.",
+      "appleRsaSrp": "Mac-VNC (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "Erfordert gespeichertes SSH zum Mac mit RFB-Ziel 127.0.0.1 oder ::1. Der vom RFB-Server gelieferte RSA-Schlüssel ist kein vertrauenswürdiger Identitätsnachweis. SRP prüft Konto und Serverbeweis, SSH schützt die gesamte Sitzung. Der SSH-Host-Schlüssel bestätigt den Endpunkt, schließt eine Weiterleitung aber nicht aus.",
+      "appleSrp": "Mac-VNC (Apple Direct SRP)",
+      "appleSrpHelp": "Erfordert eine gespeicherte SSH-Verbindung zum Mac und 127.0.0.1 oder ::1 als RFB-Ziel. SRP prüft Konto und Serverbeweis; SSH schützt die gesamte VNC-Sitzung. Der SSH-Host-Schlüssel bestätigt den gewählten Endpunkt, schließt aber eine Weiterleitung nicht aus.",
+      "appleVncPassword": "Mac-VNC (klassisches VNC-Passwort)",
+      "appleVncPasswordHelp": "Optionales Mac-VNC-Passwort mit 1–8 druckbaren ASCII-Bytes. Typ 2 allein prüft die Serveridentität nicht und verschlüsselt den Desktop nicht. Verifiziertes SSH schützt diese Okou-Sitzung, nicht den Mac-Listener: Andere Clients können je nach Netzwerk Port 5900 erreichen. Aktiviere die Mac-Option nur, wenn du dieses Risiko akzeptierst.",
       "caBundle": "CA-Zertifikate (PEM)",
       "caHelp": "Bis zu 8 CA-Zertifikate, insgesamt 64 KiB. Füge keinen privaten Schlüssel und kein Serverzertifikat ein.",
       "caHint": "Füge die öffentlichen CA-Zertifikate ein, die das Serverzertifikat ausgestellt haben",
+      "clientCertificateHelp": "Ein erfolgreicher Handshake beweist nicht, dass der Server Client-Zertifikate prüft. Serverprüfung gegen die vorgesehene CA und eingeschränkten Netzwerkzugang separat sicherstellen. SSH authentifiziert nur den Zwischenhost.",
+      "clientCertificateNone": "Client-Zertifikat ohne VNC-Passwort (X509None)",
+      "clientCertificateVnc": "Client-Zertifikat mit VNC-Passwort (X509Vnc)",
       "custom": "Benutzerdefinierte Zertifizierungsstellen",
       "profileLabel": "Sicherheitsprofil",
+      "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
+      "qemuX509SaslHelp": "Nur QEMU-Untertyp 263. TLS prüft den Server vor SCRAM; kein Fallback auf PLAIN oder Untertyp 264.",
       "serverName": "TLS-Zertifikatsidentität",
       "serverNameHelp": "Optional. Leer lassen, um das Zertifikat anhand des RFB-Zielhosts zu prüfen. Nur festlegen, wenn das Zertifikat einen anderen DNS-Namen verwendet.",
       "serverNameHint": "z. B. desktop.internal.example.com",
       "system": "Zertifizierungsstellen des Systems",
       "title": "Vertrauen in Serverzertifikate",
+      "x509None": "Verschlüsselt ohne VNC-Passwort (X509None)",
+      "x509NoneHelp": "TLS prüft den Server und verschlüsselt die Sitzung, authentifiziert Sie aber nicht beim VNC-Server. Andere mit Zugriff auf den Server können den Desktop steuern. SSH schützt nur den Weg zum gewählten SSH-Host, nicht vor anderen Clients oder einer Weiterleitung. Nur für einen eigenen Endpunkt wählen.",
       "x509Plain": "Verschlüsselter Benutzername und Passwort (X509Plain)",
       "x509PlainHelp": "Erfordert VeNCrypt X509Plain. TLS überprüft den Server, bevor Benutzername und Passwort gesendet werden.",
       "x509Vnc": "Verschlüsseltes VNC (X509Vnc)",
@@ -7183,20 +5635,26 @@
     },
     "summary_one": "{{count}} konfigurierter Host",
     "summary_other": "{{count}} konfigurierte Hosts",
-    "title": "VNC-Fernzugriff",
     "transport": {
       "appleDhDestinationHelp": "Geben Sie für Apple DH 127.0.0.1 oder ::1 ein. Dies ist die Loopback-Adresse des Mac, die über den ausgewählten SSH-Host erreicht wird.",
+      "appleRsaSrpDestinationHelp": "Geben Sie für Apple RSA/SRP 127.0.0.1 oder ::1 auf dem Mac über den ausgewählten SSH-Host ein.",
+      "appleSrpDestinationHelp": "Geben Sie für Apple Direct SRP 127.0.0.1 oder ::1 ein. Dies ist die Loopback-Adresse des Mac, die über den ausgewählten SSH-Host erreicht wird.",
+      "appleVncPasswordDestinationHelp": "Für das klassische Mac-VNC-Passwort 127.0.0.1 oder ::1 auf dem über gespeichertes SSH erreichten Mac eingeben.",
       "destination": "RFB-Ziel",
       "destinationHelp": "Bei SSH-Routen werden dieser Host und Port vom ausgewählten SSH-Server aus erreicht, nicht direkt vom Runner.",
       "direct": "Direkt vom Runner",
       "empty": "Keine gespeicherten SSH-Hosts verfügbar. Füge zuerst einen in den SSH-Einstellungen hinzu.",
       "loadFailed": "Gespeicherte SSH-Hosts konnten nicht geladen werden.",
       "loading": "Gespeicherte SSH-Hosts werden geladen…",
+      "privateDirectHelp": "Private und Loopback-IP-Adressen erfordern einen gespeicherten SSH-Host. Wählen Sie oben die SSH-Route; die Verbindung wird nicht automatisch geändert.",
       "select": "Gespeicherten SSH-Host auswählen",
       "selectionUnavailable": "Der ausgewählte SSH-Host ist nicht mehr verfügbar. Wähle einen anderen Host oder stelle ausdrücklich auf Direkt um.",
       "ssh": "Über gespeicherten SSH-Host",
       "sshConnection": "SSH-Host",
-      "sshHelp": "SSH schützt die Verbindung vom Runner zum SSH-Server. Dieser Server muss das RFB-Ziel erreichen können. Der Agent benötigt VNC- und SSH-Zugriff.",
+      "sshHelp": "SSH schützt die Verbindung vom Runner zum SSH-Server. Dieser Server muss das RFB-Ziel erreichen können. Ein Chat kann diese Route nur nutzen, wenn dieser SSH-Host dort ebenfalls aktiviert ist.",
+      "sshNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Cloudflare-Access-Zuordnung. Verknüpfe ihn in den SSH-Einstellungen erneut oder wähle dort ausdrücklich Direkt, bevor du dich verbindest.",
+      "sshNeedsRebindStatus": "SSH muss neu verknüpft werden",
+      "sshTailscaleNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Tailscale-Konfiguration. Tailscale-Einrichtung und erneute Verknüpfung sind hier noch nicht verfügbar.",
       "title": "Verbindungsroute",
       "unavailable": "SSH-Einstellungen sind für dieses Konto nicht verfügbar.",
       "via": "SSH-Host:"
@@ -7916,6 +6374,18 @@
       "uninstallTitle": "Offiziellen Workflow deinstallieren",
       "viewAndInstall": "Anzeigen und installieren",
       "yes": "Ja"
+    },
+    "skillImport": {
+      "action": "Skills importieren",
+      "description": "Führe diesen Prompt dort aus, wo deine Skills liegen. Jeder wird zu einem privaten Workflow.",
+      "emptyAction": "Aus Claude Code oder Codex importieren",
+      "providerLabel": "Importieren aus",
+      "source": {
+        "claudeCode": "Aus Claude Code importiert",
+        "codex": "Aus Codex importiert"
+      },
+      "title": "Deine Skills importieren",
+      "viewWorkflows": "Workflows ansehen"
     }
   },
   "works": {
@@ -7932,6 +6402,27 @@
     },
     "connected": "Verbunden",
     "connectedWithDetail": "Verbunden ({{detail}})",
+    "discord": {
+      "accountSetup": "Ihr Konto ist nicht verbunden. Neue Discord-Konten können noch nicht verbunden werden.",
+      "adminSetup": "Die Servereinrichtung ist noch nicht verfügbar. Bereits überprüfte Konfigurationen können Discord weiterhin nutzen.",
+      "chooseDmServer": "Server auswählen",
+      "description": "Erwähnen Sie Okou auf einem Server oder senden Sie dem Bot eine Direktnachricht.",
+      "disconnect": "Verbindung zu Discord trennen",
+      "dmServer": "Standardserver für Direktnachrichten",
+      "limitedContext": "Begrenzter Kontext: Okou empfängt möglicherweise keine normalen Kanalnachrichten. Erwähnen Sie Okou und geben Sie die benötigten Details an.",
+      "loadError": "Der Discord-Status konnte nicht geladen werden.",
+      "loading": "Discord-Status wird geladen…",
+      "memberSetup": "Fragen Sie einen Organisationsadministrator nach dem Discord-Zugang. Die Servereinrichtung ist noch nicht verfügbar.",
+      "moreOptions": "Weitere Discord-Optionen",
+      "retry": "Erneut versuchen",
+      "server": "Server: {{name}}",
+      "suspended": "Discord ist vorübergehend nicht verfügbar. Bestehende Verbindungen bleiben erhalten.",
+      "title": "Discord",
+      "unconfigured": "Discord ist für diese Organisation noch nicht verfügbar.",
+      "uninstall": "Discord entfernen",
+      "uninstallDescription": "Dadurch wird die Discord-Verbindung für alle in dieser Organisation getrennt. Die Verbindungen anderer Organisationen bleiben bestehen.",
+      "uninstallTitle": "Discord aus dieser Organisation entfernen?"
+    },
     "documentTitle": "Funktioniert",
     "feishuConnected": "Feishu hat erfolgreich eine Verbindung hergestellt",
     "github": {

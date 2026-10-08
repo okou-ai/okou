@@ -8,7 +8,6 @@ import {
   useSet,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   LogOut,
   Plus,
@@ -248,10 +247,7 @@ function AccountUsageGroup({
   subscriptionsEnabled,
 }: {
   onOpenCreditBalance: () => void;
-  onResetCodexUsage: (
-    type: ModelProviderType,
-    resetCredits: number | null,
-  ) => void;
+  onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
   subscriptionsEnabled: boolean;
@@ -283,7 +279,7 @@ function AccountUsageGroup({
  * Administrators see the workspace balance combined with their member package
  * credits; members only see their own package credits.
  */
-function useCreditBalance(combined: boolean): {
+export function useCreditBalance(combined: boolean): {
   readonly creditLabel: string | null;
   readonly loading: boolean;
 } {
@@ -323,10 +319,7 @@ function AccountUsageGroupWithSubscriptions({
 }: {
   combinedCredit: boolean;
   onOpenCreditBalance: () => void;
-  onResetCodexUsage: (
-    type: ModelProviderType,
-    resetCredits: number | null,
-  ) => void;
+  onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
 }) {
@@ -457,6 +450,40 @@ function UnifiedSettingsGroup({
   );
 }
 
+export function AccountSessionItems({
+  accounts,
+  onSwitchSession,
+}: {
+  accounts: readonly SessionAccount[];
+  onSwitchSession: (sessionId: string) => void;
+}) {
+  return accounts.map((account) => {
+    return (
+      <DropdownMenuItem
+        key={account.sessionId}
+        onClick={() => {
+          onSwitchSession(account.sessionId);
+        }}
+        className="gap-3 px-3"
+      >
+        <UserAvatar
+          imageUrl={account.imageUrl}
+          name={account.name}
+          initial={account.initial}
+        />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-foreground truncate">
+            {account.name}
+          </div>
+          <div className="text-xs text-muted-foreground truncate">
+            {account.email}
+          </div>
+        </div>
+      </DropdownMenuItem>
+    );
+  });
+}
+
 function AccountManagementGroup({
   others,
   onSwitchSession,
@@ -491,31 +518,10 @@ function AccountManagementGroup({
         <ChevronRight size={14} className="" />
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent className="w-[220px]">
-        {others.map((account) => {
-          return (
-            <DropdownMenuItem
-              key={account.sessionId}
-              onClick={() => {
-                return onSwitchSession(account.sessionId);
-              }}
-              className="gap-3 px-3"
-            >
-              <UserAvatar
-                imageUrl={account.imageUrl}
-                name={account.name}
-                initial={account.initial}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-foreground truncate">
-                  {account.name}
-                </div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {account.email}
-                </div>
-              </div>
-            </DropdownMenuItem>
-          );
-        })}
+        <AccountSessionItems
+          accounts={others}
+          onSwitchSession={onSwitchSession}
+        />
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onAddAccount} className="gap-3 px-3">
           <Plus size={18} className="" />
@@ -572,17 +578,7 @@ function SignOutItem({
   );
 }
 
-export function AccountDropdown({
-  onAccountAction,
-  collapsed = false,
-  hidePreferences = false,
-  renderCodexResetDialog = true,
-}: {
-  onAccountAction?: (action: AccountAction) => void;
-  collapsed?: boolean;
-  hidePreferences?: boolean;
-  renderCodexResetDialog?: boolean;
-}) {
+export function useAccountProfile() {
   const { t } = useTranslation();
   const { clerk, accounts } = useAccountSessions();
   const userInfoLoadable = useLoadable(currentUserInfo$);
@@ -592,21 +588,6 @@ export function AccountDropdown({
   const labEnabled = features?.[FeatureSwitchKey.Lab] ?? false;
   const subscriptionsEnabled =
     features?.[FeatureSwitchKey.SidebarSubscriptionUsage] ?? false;
-  // The account mark aligns with the rounded-square workspace logo in the rail.
-  const avatarShape = "square";
-  const openSettings = useSet(openSettingsDialogAt$);
-  const reloadSubscriptions = useSet(reloadAccountMenuSubscriptionUsageRows$);
-  const reloadCreditBalances = useSet(reloadAccountMenuCreditBalances$);
-  const resetCodexSubscriptionUsage = useSet(
-    resetPersonalCodexSubscriptionUsage$,
-  );
-  const resetDialog = useGet(accountMenuCodexResetDialog$);
-  const setResetDialog = useSet(setAccountMenuCodexResetDialog$);
-  const actionLoadable = useLoadable(personalActionPromise$);
-  const setSidebarExpanded = useSet(setSidebarExpanded$);
-  const pageSignal = useGet(pageSignal$);
-  const openClerkAddAccount = useSet(openClerkAddAccount$);
-
   const current = accounts.find((a) => {
     return a.isActive;
   });
@@ -625,7 +606,25 @@ export function AccountDropdown({
   const others = accounts.filter((a) => {
     return !a.isActive;
   });
-  const actionPending = actionLoadable.state === "loading";
+  return {
+    clerk,
+    accountDisplay,
+    accountVisible: current !== undefined || user !== undefined,
+    others,
+    subscriptionRowsCacheKey,
+    labEnabled,
+    subscriptionsEnabled,
+  };
+}
+
+export function useAccountActions(
+  { clerk }: Pick<ReturnType<typeof useAccountProfile>, "clerk">,
+  onAccountAction?: (action: AccountAction) => void,
+) {
+  const openSettings = useSet(openSettingsDialogAt$);
+  const setSidebarExpanded = useSet(setSidebarExpanded$);
+  const pageSignal = useGet(pageSignal$);
+  const openClerkAddAccount = useSet(openClerkAddAccount$);
 
   const handleAccountAction = (action: AccountAction) => {
     if (action === "signout") {
@@ -673,17 +672,36 @@ export function AccountDropdown({
     openSettingsSection("usage");
   };
 
-  const handleOpenCodexReset = (
-    type: ModelProviderType,
-    resetCredits: number | null,
-  ) => {
-    setResetDialog({ open: true, resetCredits, type });
+  return {
+    handleAccountAction,
+    handleSwitchSession,
+    handleAddAccount,
+    handleOpenSettings,
+    handleOpenCreditBalance,
+  };
+}
+
+export function useAccountCodexReset(
+  subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey,
+) {
+  const reloadSubscriptions = useSet(reloadAccountMenuSubscriptionUsageRows$);
+  const resetCodexSubscriptionUsage = useSet(
+    resetPersonalCodexSubscriptionUsage$,
+  );
+  const resetDialog = useGet(accountMenuCodexResetDialog$);
+  const setResetDialog = useSet(setAccountMenuCodexResetDialog$);
+  const actionLoadable = useLoadable(personalActionPromise$);
+  const pageSignal = useGet(pageSignal$);
+  const actionPending = actionLoadable.state === "loading";
+
+  const handleOpenCodexReset = (resetCredits: number | null) => {
+    setResetDialog({ open: true, resetCredits });
   };
 
   const handleConfirmCodexReset = () => {
     detach(
       (async () => {
-        await resetCodexSubscriptionUsage(resetDialog.type, pageSignal);
+        await resetCodexSubscriptionUsage(pageSignal);
         await reloadSubscriptions(subscriptionRowsCacheKey, pageSignal);
         setResetDialog({ ...resetDialog, open: false });
       })(),
@@ -697,6 +715,55 @@ export function AccountDropdown({
       open,
     });
   };
+
+  return {
+    resetDialog,
+    actionPending,
+    handleOpenCodexReset,
+    handleConfirmCodexReset,
+    handleCodexResetOpenChange,
+  };
+}
+
+export function AccountDropdown({
+  onAccountAction,
+  collapsed = false,
+  hidePreferences = false,
+  renderCodexResetDialog = true,
+}: {
+  onAccountAction?: (action: AccountAction) => void;
+  collapsed?: boolean;
+  hidePreferences?: boolean;
+  renderCodexResetDialog?: boolean;
+}) {
+  const profile = useAccountProfile();
+  const {
+    accountDisplay,
+    accountVisible,
+    others,
+    subscriptionRowsCacheKey,
+    labEnabled,
+    subscriptionsEnabled,
+  } = profile;
+  const {
+    handleAccountAction,
+    handleSwitchSession,
+    handleAddAccount,
+    handleOpenSettings,
+    handleOpenCreditBalance,
+  } = useAccountActions(profile, onAccountAction);
+  const {
+    resetDialog,
+    actionPending,
+    handleOpenCodexReset,
+    handleConfirmCodexReset,
+    handleCodexResetOpenChange,
+  } = useAccountCodexReset(subscriptionRowsCacheKey);
+  const reloadSubscriptions = useSet(reloadAccountMenuSubscriptionUsageRows$);
+  const reloadCreditBalances = useSet(reloadAccountMenuCreditBalances$);
+  const pageSignal = useGet(pageSignal$);
+  // The account mark aligns with the rounded-square workspace logo in the rail.
+  const avatarShape = "square";
 
   const handleMenuOpenChange = (open: boolean) => {
     if (!open) {
@@ -738,7 +805,7 @@ export function AccountDropdown({
         >
           <CurrentAccountHeader
             display={accountDisplay}
-            visible={current !== undefined || user !== undefined}
+            visible={accountVisible}
           />
           {!hidePreferences && (
             <AccountUsageGroup
@@ -769,7 +836,6 @@ export function AccountDropdown({
       {renderCodexResetDialog && (
         <CodexResetUsageDialog
           open={resetDialog.open}
-          providerType={resetDialog.type}
           resetCredits={resetDialog.resetCredits}
           resetting={actionPending}
           onOpenChange={handleCodexResetOpenChange}

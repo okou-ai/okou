@@ -104,7 +104,7 @@ test("initialization uses Pacific Time and English when no hints are provided", 
   newMember();
 
   const initialized = await accept(
-    client().initialize({ headers: headers(), body: {} }),
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
     [200],
   );
   expect(initialized.body.timezone).toBe(DEFAULT_USER_TIMEZONE);

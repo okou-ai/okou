@@ -106,9 +106,9 @@ async fn codex_setup_rejects_symlinked_home_before_model_catalog_write() -> Test
         &guest_contracts::env::RunPayload {
             prompt: "should not reach codex".to_string(),
             codex_runtime_config: serde_json::json!({
-                "providerId": "deepseek",
-                "name": "DeepSeek",
-                "baseUrl": "https://api.deepseek.com/",
+                "providerId": "openrouter-codex",
+                "name": "OpenRouter (Codex)",
+                "baseUrl": "https://openrouter.ai/api/v1",
                 "envKey": "OPENAI_API_KEY",
                 "wireApi": "responses",
                 "supportsWebsockets": false,

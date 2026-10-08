@@ -1,9 +1,12 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 
@@ -16,18 +19,17 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { now } from "../../../lib/time";
+import { mockEnv } from "../../../lib/env";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import {
-  deleteTelegramFixture$,
-  seedTelegramInstallation$,
-  type TelegramFixture,
-} from "./helpers/telegram";
+import { deleteTelegramFixture$ } from "./helpers/telegram";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const store = createStore();
@@ -61,8 +63,8 @@ function okouToken(args: {
   });
 }
 
-interface UploadCompleteFixture extends TelegramFixture {
-  readonly composeId: string;
+interface UploadCompleteFixture {
+  readonly orgId: string;
   readonly telegramBotId: string;
   readonly userId: string;
   readonly runId: string;
@@ -84,27 +86,24 @@ function actorFor(args: {
 async function createRunScopedChat(args: {
   readonly orgId: string;
   readonly userId: string;
-}): Promise<{ readonly runId: string; readonly threadId: string }> {
+}): Promise<{
+  readonly runId: string;
+  readonly threadId: string;
+  readonly agentId: string;
+}> {
   const actor = actorFor(args);
   await runsApi.grantProEntitlement(actor);
-  await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
   const runnerGroup = runsApi.configureRunnerGroup();
   await runsApi.heartbeatRunner(runnerGroup);
   const agent = await bdd.createAgent(actor, {
     displayName: `Telegram upload ${randomUUID().slice(0, 8)}`,
   });
-  const sent = await chatApi.requestSendEvent(
-    actor,
-    {
-      agentId: agent.agentId,
-      prompt: "Create a run for Telegram upload completion",
-    },
-    [201],
-  );
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected chat send to create a run for Telegram upload");
-  }
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
+  const sent = await chatApi.sendAndLaunch(actor, {
+    agentId: agent.agentId,
+    prompt: "Create a run for Telegram upload completion",
+  });
+  return { runId: sent.runId, threadId: sent.threadId, agentId: agent.agentId };
 }
 
 async function visibleUploadedFiles(args: {
@@ -132,20 +131,28 @@ async function seedSendableContext(): Promise<UploadCompleteFixture> {
     { orgId, userId, role: "admin" },
     context.signal,
   );
-  const telegramBotId = uniqueBotId();
-  const installation = await store.set(
-    seedTelegramInstallation$,
-    { orgId, ownerUserId: userId, telegramBotId },
-    context.signal,
-  );
-  const { runId, threadId } = await createRunScopedChat({ orgId, userId });
+  const { runId, threadId, agentId } = await createRunScopedChat({
+    orgId,
+    userId,
+  });
+  onTestFinished(async () => {
+    await runsApi.requestCancelRun(actorFor({ orgId, userId }), runId, [200]);
+    await flushWaitUntilForTest();
+    await bdd.deleteAgent(actorFor({ orgId, userId }), agentId);
+    await deleteFeatureSwitchesForUser(context, { orgId, userId });
+    await store.set(
+      deleteTelegramFixture$,
+      {
+        orgId,
+        composeIds: [],
+        userIds: [userId],
+      },
+      context.signal,
+    );
+  });
   return {
     orgId,
-    composeIds: [installation.composeId],
-    composeId: installation.composeId,
-    telegramBotIds: [telegramBotId],
-    telegramBotId,
-    userIds: [userId],
+    telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
     userId,
     runId,
     threadId,
@@ -153,22 +160,17 @@ async function seedSendableContext(): Promise<UploadCompleteFixture> {
 }
 
 describe("POST /api/integrations/telegram/upload-file/complete", () => {
-  const fixtures: UploadCompleteFixture[] = [];
-
-  afterEach(async () => {
-    while (fixtures.length > 0) {
-      const fixture = fixtures.pop();
-      if (fixture) {
-        await store.set(deleteTelegramFixture$, fixture, context.signal);
-      }
-    }
+  beforeEach(() => {
+    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", "987654:official-upload-token");
+    bdd.acceptAgentStorageWrites();
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
   });
 
   it.each([false, true])(
     "delivers file bytes through Telegram (private=%s)",
     async (privateFiles) => {
       const fixture = await seedSendableContext();
-      fixtures.push(fixture);
 
       let uploadId: string = randomUUID();
       const telegramFileId = `tg-doc-${randomUUID().slice(0, 8)}`;
@@ -180,6 +182,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
           [FeatureSwitchKey.PrivateArtifacts]: true,
         });
         installSharedThreadStorage(context);
+        mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
         const initialized = await accept(
           setupApp({ context, routes: integrationsTelegramUploadInitRoutes })(
             integrationsTelegramUploadInitContract,
@@ -203,6 +206,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
             })
           ).status,
         ).toBe(200);
+        // The object retains its private layout after the user's flag changes.
         await updateFeatureSwitchesForUser(context, fixture, {
           [FeatureSwitchKey.PrivateArtifacts]: false,
         });
@@ -215,7 +219,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
       let telegramBody: Record<string, unknown> | undefined;
       server.use(
         http.post(
-          "https://api.telegram.org/bottest-bot-token/sendDocument",
+          "https://api.telegram.org/bot987654:official-upload-token/sendDocument",
           async ({ request }) => {
             telegramBody = (await request.json()) as Record<string, unknown>;
             return HttpResponse.json({
@@ -291,7 +295,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
     },
   );
 
-  it("returns 404 when the bot id is not owned by the org", async () => {
+  it("returns 404 for an unsupported bot id", async () => {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
     const runId = `run_${randomUUID()}`;
@@ -321,7 +325,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
     expect(response.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("returns 403 when authenticated without an organization context", async () => {
+  it("returns 403 when the token has no organization membership", async () => {
     const userId = `user_${randomUUID().slice(0, 8)}`;
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const runId = `run_${randomUUID()}`;
@@ -337,7 +341,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
       client.complete({
         body: {
           uploadId: randomUUID(),
-          botId: uniqueBotId(),
+          botId: OFFICIAL_TELEGRAM_BOT_ID,
           chatId: "-1001234567890",
         },
         headers: {
@@ -357,7 +361,6 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
 
   it("returns 400 when Telegram rejects the sendDocument call", async () => {
     const fixture = await seedSendableContext();
-    fixtures.push(fixture);
 
     const uploadId = randomUUID();
     const s3Key = `artifacts/${fixture.userId}/${uploadId}/report.pdf`;
@@ -367,7 +370,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
 
     server.use(
       http.post(
-        "https://api.telegram.org/bottest-bot-token/sendDocument",
+        "https://api.telegram.org/bot987654:official-upload-token/sendDocument",
         () => {
           return HttpResponse.json(
             { ok: false, description: "Bad Request: chat not found" },
@@ -401,5 +404,6 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
     );
     expect(response.body.error.message).toContain("chat not found");
     expect(response.body.error.code).toBe("TELEGRAM_ERROR");
+    await expect(visibleUploadedFiles(fixture)).resolves.toStrictEqual([]);
   });
 });

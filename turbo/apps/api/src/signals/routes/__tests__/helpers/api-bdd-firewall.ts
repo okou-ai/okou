@@ -1,5 +1,3 @@
-import { mockClerkUsers } from "./clerk-users";
-import type { z } from "zod";
 import {
   cliAuthTestCodexOauthContract,
   cliAuthTestConnectorContract,
@@ -7,15 +5,18 @@ import {
 } from "@okouai/api-contracts/contracts/cli-auth-test";
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
 import { HttpResponse, http } from "msw";
+import type { z } from "zod";
+import { onTestFinished } from "vitest";
+import { mockClerkUsers } from "./clerk-users";
 
-import { createAppWithRoutes } from "../../../../app-factory-core";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
+import { createAppWithRoutes } from "../../../../app-factory-core";
 import { server } from "../../../../mocks/server";
 import { generateSandboxToken } from "../../../auth/tokens";
 import { cliAuthTestRoutes } from "../../cli-auth-test";
 import { webhooksAgentFirewallAuthRoutes } from "../../webhooks-agent-firewall-auth";
-import type { ApiTestUser } from "./api-bdd";
+import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { encryptSecretForTests } from "./encrypt-secret";
 
 type FirewallAuthBody = z.infer<
@@ -94,8 +95,21 @@ export function basicTemplate(first: string, second: string): string {
   return `\${{ basic(${first}, ${second}) }}`;
 }
 
+function ownedAccountKey(actor: ApiTestUser): string {
+  return JSON.stringify([actor.orgId, actor.userId]);
+}
+
 export function createFirewallApi(context: TestContext) {
+  const receipts = new Map<string, string>();
   return {
+    /** Read a real writer receipt without triggering credential refresh during setup. */
+    seededPersonalCodexAccountId(actor: ApiTestUser): Promise<string> {
+      const id = receipts.get(ownedAccountKey(actor));
+      if (!id) {
+        throw new Error("Expected a Codex account receipt for this owner");
+      }
+      return Promise.resolve(id);
+    },
     sandboxHeaders(
       actor: ApiTestUser,
       runId: string,
@@ -134,6 +148,7 @@ export function createFirewallApi(context: TestContext) {
         }),
         [200],
       );
+      await createBddApi(context).completeOnboarding(actor);
     },
 
     async seedTestConnector(
@@ -150,18 +165,23 @@ export function createFirewallApi(context: TestContext) {
       );
     },
 
-    async seedOrgCodexProvider(
+    async seedPersonalCodexProvider(
       actor: ApiTestUser,
       body: SeedCodexOauthBody,
     ): Promise<void> {
       this.seedClerkDirectory(actor);
-      await accept(
+      const response = await accept(
         firewallApp(context)(cliAuthTestCodexOauthContract).create({
           query: { email: actor.email },
           body,
         }),
         [200],
       );
+      const key = ownedAccountKey(actor);
+      receipts.set(key, response.body.modelProviderAccountId);
+      onTestFinished(() => {
+        receipts.delete(key);
+      });
     },
 
     async requestFirewallAuth(

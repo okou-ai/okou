@@ -26,7 +26,6 @@ function stubBillingStatus(
   overrides: {
     readonly tier?: string;
     readonly canBuyCredits?: boolean;
-    readonly videoGenerationAllowed?: boolean;
   } = {},
 ) {
   return http.get("http://localhost:3000/api/billing/status", () => {
@@ -34,7 +33,6 @@ function stubBillingStatus(
       showUsagePack: false,
       tier: overrides.tier ?? "pro",
       canBuyCredits: overrides.canBuyCredits ?? true,
-      videoGenerationAllowed: overrides.videoGenerationAllowed ?? true,
       credits: 12345,
       onboardingPaymentPending: false,
       subscriptionStatus: "active",
@@ -90,7 +88,6 @@ describe("okou credit command", () => {
     expect(output()).toContain("Threshold: 5,000");
     expect(output()).toContain("Amount: 20,000");
     expect(output()).toContain("Can purchase credits: yes");
-    expect(output()).toContain("Built-in video generation: available");
   });
 
   it("surfaces the admin-only checkout rejection for non-admins", async () => {
@@ -168,7 +165,6 @@ describe("okou credit command", () => {
       stubBillingStatus({
         tier: "limited-free-1",
         canBuyCredits: false,
-        videoGenerationAllowed: false,
       }),
       http.post("http://localhost:3000/api/billing/credit-checkout", () => {
         checkoutRequests += 1;

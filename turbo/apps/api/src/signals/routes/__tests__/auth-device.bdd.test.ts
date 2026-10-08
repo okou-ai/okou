@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { mockNow, now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
+import { createDeferredPromise } from "../../utils";
 import {
   createBddApi,
   expectApiError,
@@ -69,7 +69,6 @@ async function connectPersonalCodexTestAccount(
   },
 ): Promise<string> {
   mockCodexDeviceAuthProvider({
-    tokenScope: "personal",
     ...args,
   });
   const started = await authDevice.requestCodexStart(actor, "personal", [200], {
@@ -367,7 +366,30 @@ describe("AUTH-02: desktop auth handoff", () => {
 });
 
 describe("AUTH-02: platform realtime token", () => {
-  it("issues user and active-org realtime tokens only for authenticated users", async () => {
+  function orgCapability(actor: {
+    readonly userId: string;
+    readonly orgId: string | null;
+  }) {
+    return {
+      [`user:${actor.userId}`]: ["subscribe"],
+      [`org:${actor.orgId}`]: ["subscribe"],
+      [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
+      [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
+    };
+  }
+
+  function tokenRequestFor(clientId: string, capability: string) {
+    return {
+      keyName: "ably-key",
+      timestamp: now(),
+      capability,
+      clientId,
+      nonce: "nonce",
+      mac: "mac",
+    };
+  }
+
+  it("issues exchanged user and active-org realtime tokens only for authenticated users", async () => {
     const unauthenticated = await authDevice.requestPlatformRealtimeToken(
       null,
       [401],
@@ -376,38 +398,31 @@ describe("AUTH-02: platform realtime token", () => {
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
 
     const actor = bdd.user();
-    const capability = JSON.stringify({
-      [`user:${actor.userId}`]: ["subscribe"],
-      [`org:${actor.orgId}`]: ["subscribe"],
-      [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
-      [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
-    });
-    context.mocks.ably.createTokenRequest.mockResolvedValueOnce({
-      keyName: "ably-key",
-      timestamp: now(),
+    const capability = JSON.stringify(orgCapability(actor));
+    context.mocks.ably.requestToken.mockResolvedValueOnce({
+      token: "exchanged-token",
+      issued: now(),
+      expires: now() + 60 * 60 * 1000,
       capability,
       clientId: actor.userId,
-      nonce: "nonce",
-      mac: "mac",
     });
 
     const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
     if (token.status !== 200) {
       throw new Error("Expected platform realtime token request to succeed");
     }
-    expect(token.body.capability).toBe(capability);
-    expect(token.body.clientId).toBe(actor.userId);
-    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledTimes(1);
-    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
-      capability: {
-        [`user:${actor.userId}`]: ["subscribe"],
-        [`org:${actor.orgId}`]: ["subscribe"],
-        [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
-        [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
-      },
+    expect(token.body).toMatchObject({
+      token: "exchanged-token",
+      capability,
+      clientId: actor.userId,
+    });
+    expect(context.mocks.ably.requestToken).toHaveBeenCalledTimes(1);
+    expect(context.mocks.ably.requestToken).toHaveBeenCalledWith({
+      capability: orgCapability(actor),
       ttl: 60 * 60 * 1000,
       clientId: actor.userId,
     });
+    expect(context.mocks.ably.createTokenRequest).not.toHaveBeenCalled();
   });
 
   it("keeps user realtime available without an active organization", async () => {
@@ -415,13 +430,12 @@ describe("AUTH-02: platform realtime token", () => {
     const capability = JSON.stringify({
       [`user:${actor.userId}`]: ["subscribe"],
     });
-    context.mocks.ably.createTokenRequest.mockResolvedValueOnce({
-      keyName: "ably-key",
-      timestamp: now(),
+    context.mocks.ably.requestToken.mockResolvedValueOnce({
+      token: "exchanged-token",
+      issued: now(),
+      expires: now() + 60 * 60 * 1000,
       capability,
       clientId: actor.userId,
-      nonce: "nonce",
-      mac: "mac",
     });
 
     const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
@@ -429,13 +443,65 @@ describe("AUTH-02: platform realtime token", () => {
       throw new Error("Expected platform realtime token request to succeed");
     }
     expect(token.body.capability).toBe(capability);
-    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
+    expect(context.mocks.ably.requestToken).toHaveBeenCalledWith({
       capability: {
         [`user:${actor.userId}`]: ["subscribe"],
       },
       ttl: 60 * 60 * 1000,
       clientId: actor.userId,
     });
+  });
+
+  it("falls back to a token request when the Ably exchange fails", async () => {
+    const actor = bdd.user();
+    const capability = JSON.stringify(orgCapability(actor));
+    context.mocks.ably.requestToken.mockRejectedValueOnce(
+      new Error("Ably unavailable"),
+    );
+    context.mocks.ably.createTokenRequest.mockResolvedValueOnce(
+      tokenRequestFor(actor.userId, capability),
+    );
+
+    const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
+    if (token.status !== 200) {
+      throw new Error("Expected platform realtime token request to succeed");
+    }
+    expect(token.body).toMatchObject({
+      keyName: "ably-key",
+      capability,
+      clientId: actor.userId,
+    });
+    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
+      capability: orgCapability(actor),
+      ttl: 60 * 60 * 1000,
+      clientId: actor.userId,
+    });
+  });
+
+  it("falls back to a token request when the Ably exchange exceeds its budget", async () => {
+    const actor = bdd.user();
+    const capability = JSON.stringify(orgCapability(actor));
+    const budgets: number[] = [];
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      budgets.push(milliseconds);
+      return milliseconds === 1000
+        ? AbortSignal.abort(new DOMException("timed out", "TimeoutError"))
+        : undefined;
+    });
+    const exchange = createDeferredPromise<unknown>(context.signal);
+    context.mocks.ably.requestToken.mockReturnValueOnce(exchange.promise);
+    context.mocks.ably.createTokenRequest.mockResolvedValueOnce(
+      tokenRequestFor(actor.userId, capability),
+    );
+
+    const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
+    context.mocks.abortSignal.timeout.mockReset();
+    exchange.resolve({ token: "late-token" });
+    if (token.status !== 200) {
+      throw new Error("Expected platform realtime token request to succeed");
+    }
+    expect(budgets).toContain(1000);
+    expect(token.body).toMatchObject({ keyName: "ably-key", capability });
   });
 });
 
@@ -600,11 +666,168 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
-  it("completes org-scope Codex device auth and exposes the imported provider", async () => {
-    const calls = mockCodexDeviceAuthProvider({ tokenScope: "org" });
+  it("keeps a newer Codex authorization when an earlier setup returns late", async () => {
+    const actor = bdd.user();
+    let newestSessionToken = "";
+    let supersede = true;
+    server.use(
+      http.post(
+        "https://auth.openai.com/api/accounts/deviceauth/usercode",
+        async () => {
+          if (supersede) {
+            supersede = false;
+            const newer = await authDevice.requestCodexStart(
+              actor,
+              "personal",
+              [200],
+            );
+            if (newer.status !== 200) {
+              throw new Error("Expected replacement authorization to start");
+            }
+            newestSessionToken = newer.body.sessionToken;
+          }
+          return HttpResponse.json({
+            device_auth_id: "replacement-device",
+            user_code: "LATEST",
+            interval: 5,
+          });
+        },
+      ),
+    );
+    const old = await authDevice.requestCodexStart(actor, "personal", [503]);
+    expectApiError(old.body);
+    expect(old.body.error.code).toBe("CODEX_DEVICE_AUTH_UNAVAILABLE");
+    const cancelled = await authDevice.requestCodexCancel(
+      actor,
+      newestSessionToken,
+      [200],
+    );
+    expect(cancelled.body).toStrictEqual({ status: "cancelled" });
+    const final = await authDevice.requestCodexComplete(
+      actor,
+      newestSessionToken,
+      [200],
+    );
+    expect(final.body).toStrictEqual({
+      status: "pending",
+      errorMessage: "Codex device auth session was cancelled",
+    });
+  });
+
+  it("does not publish personal Codex credentials after cancellation during token exchange", async () => {
+    const actor = bdd.user();
+    let sessionToken = "";
+    mockCodexDeviceAuthProvider({
+      beforeTokenResponse: async () => {
+        const cancelled = await authDevice.requestCodexCancel(
+          actor,
+          sessionToken,
+          [200],
+        );
+        expect(cancelled.body).toStrictEqual({ status: "cancelled" });
+      },
+    });
+    const started = await authDevice.requestCodexStart(
+      actor,
+      "personal",
+      [200],
+    );
+    if (started.status !== 200) {
+      throw new Error("Expected device authorization to start");
+    }
+    sessionToken = started.body.sessionToken;
+    const completed = await authDevice.requestCodexComplete(
+      actor,
+      sessionToken,
+      [503],
+    );
+    expectApiError(completed.body);
+    expect(completed.body.error.message).toBe(
+      "Device authorization was cancelled or expired",
+    );
+    const providers = await support.listPersonalModelProviders(actor, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
+    expect(providers.body).toMatchObject({
+      modelProviders: expect.not.arrayContaining([
+        expect.objectContaining({ type: "codex-oauth-token" }),
+      ]),
+    });
+    const repeated = await authDevice.requestCodexComplete(
+      actor,
+      sessionToken,
+      [200],
+    );
+    expect(repeated.body).toStrictEqual({
+      status: "pending",
+      errorMessage: "Codex device auth session was cancelled",
+    });
+  });
+
+  it("does not publish personal Claude credentials after cancellation during token exchange", async () => {
+    const actor = bdd.user();
+    let sessionToken = "";
+    mockClaudeCodeTokenEndpoint({
+      beforeTokenResponse: async () => {
+        const cancelled = await authDevice.requestClaudeCodeCancel(
+          actor,
+          sessionToken,
+          [200],
+        );
+        expect(cancelled.body).toStrictEqual({ status: "cancelled" });
+      },
+    });
+    const started = await authDevice.requestClaudeCodeStart(
+      actor,
+      "personal",
+      [200],
+    );
+    if (started.status !== 200) {
+      throw new Error("Expected device authorization to start");
+    }
+    sessionToken = started.body.sessionToken;
+    const state = new URL(started.body.browserUrl).searchParams.get("state");
+    const completed = await authDevice.requestClaudeCodeComplete(
+      actor,
+      sessionToken,
+      `auth_code_test#${state}`,
+      [503],
+    );
+    expectApiError(completed.body);
+    expect(completed.body.error.message).toBe(
+      "Device authorization was cancelled or expired",
+    );
+    const providers = await support.listPersonalModelProviders(actor, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
+    expect(providers.body.modelProviders).not.toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "claude-code-oauth-token" }),
+      ]),
+    );
+    const repeated = await authDevice.requestClaudeCodeComplete(
+      actor,
+      sessionToken,
+      `auth_code_test#${state}`,
+      [400],
+    );
+    expectApiError(repeated.body);
+    expect(repeated.body.error.message).toBe(
+      "Claude Code device auth session is not ready",
+    );
+  });
+
+  it("completes personal Codex device auth for an administrator", async () => {
+    const calls = mockCodexDeviceAuthProvider();
     const admin = bdd.user();
 
-    const started = await authDevice.requestCodexStart(admin, "org", [200]);
+    const started = await authDevice.requestCodexStart(
+      admin,
+      "personal",
+      [200],
+    );
     if (started.status !== 200) {
       throw new Error(
         `Expected Codex device auth start, got ${started.status}`,
@@ -613,7 +836,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     expect(started.body).toMatchObject({
       type: "codex",
       status: "pending",
-      scope: "org",
+      scope: "personal",
       browserUrl: "https://auth.openai.com/codex/device",
       verificationCode: "ABCD-EFGH",
       interval: 5,
@@ -632,8 +855,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       created: true,
       provider: {
         type: "codex-oauth-token",
-        authMethod: "auth_json",
-        workspaceName: "Org Acme",
+        workspaceName: "Personal Acme",
         planType: "plus",
       },
     });
@@ -652,12 +874,15 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
     expect(oauthTokenBody?.get("code_verifier")).toBe("code_verifier_test");
 
-    const providers = await support.listModelProviders(admin);
+    const providers = await support.listPersonalModelProviders(admin, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
     expect(
       providers.body.modelProviders.find((provider) => {
         return provider.type === "codex-oauth-token";
       }),
-    ).toMatchObject({ workspaceName: "Org Acme", planType: "plus" });
+    ).toMatchObject({ workspaceName: "Personal Acme", planType: "plus" });
 
     const reComplete = await authDevice.requestCodexComplete(
       admin,
@@ -670,11 +895,15 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     });
     expect(calls.deviceToken).toHaveLength(1);
 
-    await authDevice.deleteOrgModelProvider(admin, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      admin,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("completes personal-scope Codex device auth for an org member", async () => {
-    const calls = mockCodexDeviceAuthProvider({ tokenScope: "personal" });
+    const calls = mockCodexDeviceAuthProvider();
     const member = bdd.user({ orgRole: "org:member" });
 
     const started = await authDevice.requestCodexStart(
@@ -724,12 +953,8 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
 
   it("adds, switches, reconnects, deduplicates, and deletes concrete Codex accounts", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "codex-account-a",
       workspaceName: "Account A",
     });
@@ -757,7 +982,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     const accountAId = completedA.body.provider.id;
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "codex-account-b",
       workspaceName: "Account B",
     });
@@ -787,7 +1011,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     await support.activatePersonalModelProviderAccount(member, accountBId);
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "codex-account-b",
       workspaceName: "Account B reconnected",
     });
@@ -821,7 +1044,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     });
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "codex-account-c",
       workspaceName: "Account C",
     });
@@ -867,18 +1089,39 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       isActive: true,
     });
 
+    await connectPersonalCodexTestAccount(member, {
+      accountId: "codex-account-d",
+      workspaceName: "Account D",
+      accessTokenExpiresAt: Math.floor(now() / 1000) + 3600,
+      refreshToken: "codex-account-d-refresh",
+    });
+    const beforeDeleteAll = await support.listPersonalModelProviders(
+      member,
+      [200],
+    );
+    if (!("modelProviders" in beforeDeleteAll.body)) {
+      throw new Error("Expected personal model provider list response");
+    }
+    expect(beforeDeleteAll.body.modelProviders).toHaveLength(2);
     await support.deletePersonalModelProvider(
       member,
       "codex-oauth-token",
       [204],
     );
+    const afterDeleteAll = await support.listPersonalModelProviders(
+      member,
+      [200],
+    );
+    expect(afterDeleteAll.body).toMatchObject({ modelProviders: [] });
+    await support.deletePersonalModelProvider(
+      member,
+      "codex-oauth-token",
+      [404],
+    );
   });
 
   it("refreshes and resets the requested inactive Codex account", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
     const currentSeconds = Math.floor(now() / 1000);
     const requestedAccountId = await connectPersonalCodexTestAccount(member, {
       accessTokenExpiresAt: currentSeconds - 60,
@@ -948,9 +1191,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
 
   it("isolates terminal Codex refresh state between concrete accounts", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
     const currentSeconds = Math.floor(now() / 1000);
     const accountAId = await connectPersonalCodexTestAccount(member, {
       accessTokenExpiresAt: currentSeconds - 60,
@@ -1040,9 +1280,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
 
   it("adds, switches, and deduplicates concrete Claude Code accounts by email and workspace", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
 
     const completeClaudeAccount = async (mutation: {
       readonly mode: "add" | "reconnect";
@@ -1141,18 +1378,14 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
-  it("returns bad requests after the tenth personal subscription account", async () => {
+  it("enforces the tenth personal account boundary for sequential connects", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
 
     const completeCodexAccount = async (
       index: number,
       statuses: readonly (200 | 400)[],
     ) => {
       mockCodexDeviceAuthProvider({
-        tokenScope: "personal",
         accountId: `codex-limit-account-${index}`,
         workspaceName: `Codex Account ${index}`,
       });
@@ -1214,8 +1447,13 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       );
     };
 
-    for (let index = 0; index < 10; index += 1) {
+    // A new authorization supersedes any unfinished session for this owner.
+    for (let index = 0; index < 9; index += 1) {
       await completeClaudeCodeAccount(index, [200]);
+    }
+    const tenthClaudeCodeAccount = await completeClaudeCodeAccount(9, [200]);
+    if (tenthClaudeCodeAccount.status !== 200) {
+      throw new Error("Expected the tenth Claude Code account to connect");
     }
     const claudeCodeLimit = await completeClaudeCodeAccount(10, [400]);
     if (claudeCodeLimit.status !== 400) {
@@ -1229,6 +1467,19 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       message:
         "A maximum of 10 claude-code-oauth-token accounts can be connected",
     });
+    const listed = await support.listPersonalModelProviders(member, [200]);
+    if (!("modelProviders" in listed.body)) {
+      throw new Error("Expected account list");
+    }
+    const claudeAccounts = listed.body.modelProviders.filter((provider) => {
+      return provider.type === "claude-code-oauth-token";
+    });
+    expect(claudeAccounts).toHaveLength(10);
+    expect(claudeAccounts).toContainEqual(
+      expect.objectContaining({
+        id: tenthClaudeCodeAccount.body.provider.id,
+      }),
+    );
 
     await support.deletePersonalModelProvider(
       member,
@@ -1242,13 +1493,13 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
-  it("completes org-scope Claude Code device auth with a pasted code fragment", async () => {
+  it("completes personal Claude Code device auth with a pasted code fragment", async () => {
     const calls = mockClaudeCodeTokenEndpoint();
     const admin = bdd.user();
 
     const started = await authDevice.requestClaudeCodeStart(
       admin,
-      "org",
+      "personal",
       [200],
     );
     if (started.status !== 200) {
@@ -1276,7 +1527,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       created: true,
       provider: {
         type: "claude-code-oauth-token",
-        secretName: "CLAUDE_CODE_OAUTH_TOKEN",
+
         workspaceName: "Claude User's Organization",
         planType: "pro",
         subscriptionResetPeriod: "weekly",
@@ -1298,7 +1549,10 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       code_verifier: expect.any(String),
     });
 
-    const providers = await support.listModelProviders(admin);
+    const providers = await support.listPersonalModelProviders(admin, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
     expect(
       providers.body.modelProviders.find((provider) => {
         return provider.type === "claude-code-oauth-token";
@@ -1319,7 +1573,11 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       "Claude Code device auth session is not ready",
     );
 
-    await authDevice.deleteOrgModelProvider(admin, "claude-code-oauth-token");
+    await support.deletePersonalModelProvider(
+      admin,
+      "claude-code-oauth-token",
+      [204],
+    );
   });
 
   it("completes personal-scope Claude Code device auth from a full callback URL", async () => {
@@ -1393,45 +1651,24 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
-  it("enforces authentication, active organization, and admin scope boundaries", async () => {
+  it("enforces authentication and active organization for personal authorization", async () => {
     const noOrg = bdd.user({ orgId: null });
-    const member = bdd.user({ orgRole: "org:member" });
-
-    const codexUnauthenticated = await authDevice.requestCodexStart(
-      null,
-      "org",
-      [401],
-    );
-    expectApiError(codexUnauthenticated.body);
-    expect(codexUnauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const codexNoOrg = await authDevice.requestCodexStart(noOrg, "org", [401]);
-    expectApiError(codexNoOrg.body);
-    expect(codexNoOrg.body.error.code).toBe("UNAUTHORIZED");
-
-    const codexMemberOrg = await authDevice.requestCodexStart(
-      member,
-      "org",
-      [403],
-    );
-    expectApiError(codexMemberOrg.body);
-    expect(codexMemberOrg.body.error.code).toBe("FORBIDDEN");
-
-    const claudeNoOrg = await authDevice.requestClaudeCodeStart(
-      noOrg,
-      "org",
-      [401],
-    );
-    expectApiError(claudeNoOrg.body);
-    expect(claudeNoOrg.body.error.code).toBe("UNAUTHORIZED");
-
-    const claudeMemberOrg = await authDevice.requestClaudeCodeStart(
-      member,
-      "org",
-      [403],
-    );
-    expectApiError(claudeMemberOrg.body);
-    expect(claudeMemberOrg.body.error.code).toBe("FORBIDDEN");
+    for (const actor of [null, noOrg]) {
+      const codex = await authDevice.requestCodexStart(
+        actor,
+        "personal",
+        [401],
+      );
+      expectApiError(codex.body);
+      expect(codex.body.error.code).toBe("UNAUTHORIZED");
+      const claude = await authDevice.requestClaudeCodeStart(
+        actor,
+        "personal",
+        [401],
+      );
+      expectApiError(claude.body);
+      expect(claude.body.error.code).toBe("UNAUTHORIZED");
+    }
   });
 
   it("rejects invalid model-provider device session tokens without importing provider state", async () => {

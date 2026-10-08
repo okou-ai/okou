@@ -1,4 +1,3 @@
-import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { MountedUserTemplate } from "../signals/services/user-template-data.service";
 import {
   generationTemplateIdentity,
@@ -7,6 +6,7 @@ import {
 import {
   buildGenerationTemplatePrompt,
   buildGenerationTemplatesPrompt,
+  type LiveGenerationTemplate,
 } from "./generation-template-prompt";
 
 /**
@@ -34,8 +34,8 @@ function noGenerationTemplates(): ResolvedThreadGenerationTemplates {
  * message that doesn't reattach a template resolves to "".
  */
 export function resolveThreadGenerationTemplatePrompt(args: {
-  readonly explicit: GenerationTemplateRequest | null | undefined;
-  readonly explicitTemplates?: readonly GenerationTemplateRequest[];
+  readonly explicit: LiveGenerationTemplate | null | undefined;
+  readonly explicitTemplates?: readonly LiveGenerationTemplate[];
   /**
    * Private template row ids whose packages the run being built will mount.
    * Required rather than optional so every caller states what its run carries.

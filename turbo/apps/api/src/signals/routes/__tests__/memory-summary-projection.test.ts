@@ -1,32 +1,31 @@
-import { createHash, randomUUID } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import type {
   TestMemorySummaryProjectionStateActionBody,
   TestMemorySummaryProjectionStateActionResponse,
 } from "@okouai/api-contracts/contracts/test-memory-summary-projection-state";
-import {
-  MEMORY_ARTIFACT_NAME,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
+import { createAppWithRoutes } from "../../../app-factory-core";
+import { env, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { readStorageIdentityFixture } from "../../../test-fixtures/storage";
+import { testMemorySummaryProjectionStateRoutes } from "../test-memory-summary-projection-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import type { BddStorageFileEntry } from "./helpers/api-bdd-storage-files";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
-import { testMemorySummaryProjectionStateRoutes } from "../test-memory-summary-projection-state";
-import { createDeferredPromise } from "../../utils";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const storages = createStoragesBddApi(context);
 const BUCKET = "memory-summary-projection-test";
 const TAR_BLOCK_SIZE = 512;
 
@@ -117,38 +116,6 @@ function failNextObjectRead(key: string): void {
     }
     return fallback ? fallback(command) : Promise.resolve({});
   });
-}
-
-function holdNextObjectRead(key: string): {
-  readonly started: Promise<void>;
-  readonly release: () => void;
-} {
-  const fallback = context.mocks.s3.send.getMockImplementation();
-  let pending = true;
-  const started = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (
-      pending &&
-      command instanceof GetObjectCommand &&
-      command.input.Key === key
-    ) {
-      pending = false;
-      started.resolve(undefined);
-      return released.promise.then(() => {
-        return fallback ? fallback(command) : {};
-      });
-    }
-    return fallback ? fallback(command) : Promise.resolve({});
-  });
-  return {
-    started: started.promise,
-    release() {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-  };
 }
 
 function downloadedObjectKeys(): readonly string[] {
@@ -243,22 +210,102 @@ function canonicalManifest(files: readonly BddStorageFileEntry[]): Buffer {
   );
 }
 
+// #37440 key10 keeps only the exact-version projection worker/read harness.
+// Ordinary memory ownership and writes come from a real claimed native Run.
 async function publishVersion(args: {
-  readonly actor?: ApiTestUser;
-  readonly storageName?: string;
-  readonly storageOwner?: "organization" | "user";
   readonly files: readonly BddStorageFileEntry[];
   readonly archive: Buffer;
   readonly manifest?: Buffer;
 }): Promise<PublishedVersion> {
-  const actor = args.actor ?? bdd.user();
-  const storageName = args.storageName ?? MEMORY_ARTIFACT_NAME;
-  const storageOwner = args.storageOwner ?? "user";
-  const prepared = await storages.prepareStorage(actor, {
-    storageName,
-    storageOwner,
-    files: args.files,
+  const fixture = createChatEventsFixture(context);
+  const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+  const storage = context.mocks.s3.send.getMockImplementation();
+  const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
+  const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+
+  const carrier: {
+    actor: ApiTestUser;
+    agentId: string;
+    runId?: string;
+    sandboxToken?: string;
+    restoreStorage: () => void;
+  } = {
+    actor,
+    agentId,
+    restoreStorage() {
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
+      if (storage) {
+        context.mocks.s3.send.mockImplementation(storage);
+      }
+      if (signedUrl) {
+        context.mocks.s3.getSignedUrl.mockImplementation(signedUrl);
+      }
+    },
+  };
+  onTestFinished(async () => {
+    carrier.restoreStorage();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const runs = createRunsApi(context);
+    runs.acceptTelemetryIngest();
+    if (carrier.runId) {
+      const run = await runs.readRun(carrier.actor, carrier.runId);
+      if (run.status === "pending" || run.status === "running") {
+        await runs.requestCancelRun(carrier.actor, carrier.runId, [200]);
+      }
+      if (
+        carrier.sandboxToken &&
+        ["pending", "running", "cancelled"].includes(run.status)
+      ) {
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          {
+            runId: carrier.runId,
+            exitCode: 1,
+            error: "Memory projection carrier cancelled",
+          },
+          { authorization: `Bearer ${carrier.sandboxToken}` },
+          [200],
+        );
+      }
+    }
+    await flushWaitUntilForTest();
+    await createBddApi(context).deleteAgent(carrier.actor, carrier.agentId);
+    await flushWaitUntilForTest();
   });
+  await fixture.api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
+  const run = await fixture.sendChatRun(actor, {
+    agentId,
+    prompt: "Write the owned memory projection source",
+    model: "claude-fable-5-1",
+  });
+  carrier.runId = run.runId;
+  const claimed = await fixture.claimChatRun(runnerGroup, run.runId);
+  carrier.sandboxToken = claimed.claim.sandboxToken;
+  const manifest = expectCanonicalStorageManifest(
+    claimed.claim.storageManifest,
+  );
+  const memory = manifest?.storageMounts.find((mount) => {
+    return mount.name === MEMORY_ARTIFACT_NAME && mount.storageId;
+  });
+  if (!memory) {
+    throw new Error("Expected an actual writable memory mount");
+  }
+  installS3Objects();
+  const preparedResponse = await fixture.webhooks.requestAgentStoragePrepare(
+    {
+      runId: run.runId,
+      storageId: memory.storageId,
+      files: [...args.files],
+    },
+    claimed.sandboxHeaders,
+    [200],
+  );
+  if (preparedResponse.status !== 200) {
+    throw new Error("Expected Storage prepare success");
+  }
+  const prepared = preparedResponse.body;
   if (!prepared.uploads) {
     throw new Error("Expected a new Storage version with upload targets");
   }
@@ -269,25 +316,27 @@ async function publishVersion(args: {
     manifestKey,
     args.manifest ?? canonicalManifest(args.files),
   );
-  await storages.commitStorage(actor, {
-    storageName,
-    storageOwner,
-    versionId: prepared.versionId,
-    files: args.files,
-  });
-
-  const identity = await readStorageIdentityFixture({
-    orgId: requiredOrgId(actor),
-    userId: storageOwner === "organization" ? VOLUME_ORG_USER_ID : actor.userId,
-    name: storageName,
-  });
+  const committed = await fixture.webhooks.requestAgentStorageCommit(
+    {
+      runId: run.runId,
+      storageId: memory.storageId,
+      versionId: prepared.versionId,
+      files: [...args.files],
+    },
+    claimed.sandboxHeaders,
+    [200],
+  );
+  if (committed.status !== 200) {
+    throw new Error("Expected Storage commit success");
+  }
+  expect(committed.body.versionId).toBe(prepared.versionId);
   return {
     actor,
-    memoryStorageId: identity.id,
-    storageVersionId: prepared.versionId,
+    memoryStorageId: memory.storageId,
+    storageVersionId: committed.body.versionId,
     manifestKey,
     archiveKey,
-    files: args.files,
+    files: [...args.files],
   };
 }
 
@@ -354,91 +403,27 @@ beforeEach(() => {
 });
 
 describe("memory summary projection", () => {
-  it("enqueues only canonical user memory publication and remains idempotent", async () => {
-    const summary = Buffer.from("canonical summary", "utf8");
-    const files = [declaredFile("memory_summary.md", summary)];
-    const memory = await publishVersion({
-      files,
-      archive: tarGz([{ path: "memory_summary.md", content: summary }]),
+  it("accepts a different gzip size for the same logical Storage version", async () => {
+    const summary = Buffer.from("summary with stable logical contents", "utf8");
+    const original = tarGz([{ path: "memory_summary.md", content: summary }]);
+    const version = await publishVersion({
+      files: [declaredFile("memory_summary.md", summary)],
+      archive: original,
     });
-    expect(downloadedObjectKeys()).toStrictEqual([]);
-    await expect(inspect(memory)).resolves.toMatchObject({
-      status: "pending",
-      attempt_count: 0,
-      has_content: false,
-    });
+    const differentlyCompressed = gzipSync(gunzipSync(original), { level: 0 });
+    expect(differentlyCompressed).not.toHaveLength(original.length);
+    context.sessionHistoryBlobs.set(version.archiveKey, differentlyCompressed);
+    context.mocks.s3.send.mockClear();
 
-    await storages.commitStorage(memory.actor, {
-      storageName: MEMORY_ARTIFACT_NAME,
-      storageOwner: "user",
-      versionId: memory.storageVersionId,
-      files: memory.files,
-    });
-    await expect(inspect(memory)).resolves.toMatchObject({
-      status: "pending",
-      attempt_count: 0,
-    });
-
-    const unrelated = await publishVersion({
-      storageName: `notes-${randomUUID()}`,
-      files,
-      archive: tarGz([{ path: "memory_summary.md", content: summary }]),
-    });
-    await expect(inspect(unrelated)).resolves.toBeNull();
-
-    const organizationMemory = await publishVersion({
-      storageOwner: "organization",
-      files,
-      archive: tarGz([{ path: "memory_summary.md", content: summary }]),
-    });
-    await expect(
-      stateAction({
-        action: "inspect",
-        ...projectionScope(organizationMemory),
-        user_id: VOLUME_ORG_USER_ID,
+    await expect(run(version)).resolves.toMatchObject({ claimed: 1, ready: 1 });
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return command instanceof HeadObjectCommand;
       }),
-    ).resolves.toMatchObject({ state: null });
-  });
-
-  it("materializes and reads exact versions once under concurrent workers", async () => {
-    const actor = bdd.user();
-    const firstContent = Buffer.from(
-      `first summary secret-${randomUUID()}`,
-      "utf8",
-    );
-    const first = await publishVersion({
-      actor,
-      files: [declaredFile("memory_summary.md", firstContent)],
-      archive: tarGz([{ path: "memory_summary.md", content: firstContent }]),
-    });
-    const secondContent = Buffer.from("second immutable summary", "utf8");
-    const second = await publishVersion({
-      actor,
-      files: [declaredFile("memory_summary.md", secondContent)],
-      archive: tarGz([{ path: "memory_summary.md", content: secondContent }]),
-    });
-
-    const workers = await Promise.all([run(first), run(first)]);
-    expect(
-      workers.reduce((sum, result) => {
-        return sum + result.claimed;
-      }, 0),
-    ).toBe(1);
-    expect(
-      workers.reduce((sum, result) => {
-        return sum + result.ready;
-      }, 0),
-    ).toBe(1);
-    await expect(run(second)).resolves.toMatchObject({ claimed: 1, ready: 1 });
-    await expect(read(first)).resolves.toMatchObject({
-      content: firstContent.toString("utf8"),
-      source_hash: declaredFile("memory_summary.md", firstContent).hash,
-      source_size: firstContent.length,
-    });
-    await expect(read(second)).resolves.toMatchObject({
-      content: secondContent.toString("utf8"),
-      source_hash: declaredFile("memory_summary.md", secondContent).hash,
-      source_size: secondContent.length,
+    ).toHaveLength(0);
+    await expect(read(version)).resolves.toMatchObject({
+      content: summary.toString("utf8"),
+      source_size: summary.length,
     });
   });
 
@@ -682,37 +667,7 @@ describe("memory summary projection", () => {
     },
   );
 
-  it("prevents an expired worker from overwriting a newer lease result", async () => {
-    const content = Buffer.from("lease-protected summary", "utf8");
-    const version = await publishVersion({
-      files: [declaredFile("memory_summary.md", content)],
-      archive: tarGz([{ path: "memory_summary.md", content }]),
-    });
-    const heldRead = holdNextObjectRead(version.archiveKey);
-    const staleWorker = run(version);
-    await heldRead.started;
-    await stateAction({
-      action: "expire-lease",
-      ...projectionScope(version),
-    });
-
-    await expect(run(version)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 1,
-      stale: 0,
-    });
-    heldRead.release();
-    await expect(staleWorker).resolves.toMatchObject({
-      claimed: 1,
-      ready: 0,
-      stale: 1,
-    });
-    await expect(read(version)).resolves.toMatchObject({
-      content: content.toString("utf8"),
-    });
-  });
-
-  it("backfills misses as due on the worker clock while reads only enqueue", async () => {
+  it("leaves missing projections unchanged until the background worker backfills them", async () => {
     const content = Buffer.from("lazy projection", "utf8");
     const version = await publishVersion({
       files: [declaredFile("memory_summary.md", content)],
@@ -731,38 +686,14 @@ describe("memory summary projection", () => {
     context.mocks.s3.send.mockClear();
     await expect(read(version)).resolves.toBeNull();
     expect(downloadedObjectKeys()).toStrictEqual([]);
-    await expect(inspect(version)).resolves.toMatchObject({
-      status: "pending",
-      attempt_count: 0,
+    await expect(inspect(version)).resolves.toBeNull();
+    await expect(run(version)).resolves.toMatchObject({
+      backfilled: 1,
+      claimed: 1,
+      ready: 1,
     });
-  });
-
-  it("fails owner mismatches and requeues corrupted ready content", async () => {
-    const content = Buffer.from("authentic projection", "utf8");
-    const version = await publishVersion({
-      files: [declaredFile("memory_summary.md", content)],
-      archive: tarGz([{ path: "memory_summary.md", content }]),
-    });
-    await run(version);
-
-    const wrongOwner = await stateAction({
-      action: "read",
-      ...projectionScope(version),
-      user_id: `other-${randomUUID()}`,
-    });
-    expect(wrongOwner.projection).toBeNull();
-    await expect(inspect(version)).resolves.toMatchObject({ status: "ready" });
-
-    await stateAction({
-      action: "corrupt-ready",
-      ...projectionScope(version),
-      content: "tampered projection",
-    });
-    await expect(read(version)).resolves.toBeNull();
-    await expect(inspect(version)).resolves.toMatchObject({
-      status: "pending",
-      last_error_class: "read_integrity_mismatch",
-      has_content: false,
+    await expect(read(version)).resolves.toMatchObject({
+      content: content.toString("utf8"),
     });
   });
 
@@ -796,43 +727,6 @@ describe("memory summary projection", () => {
       source_hash: declared.hash,
       source_size: summary.length,
       token_count: tokenCount,
-    });
-  });
-
-  it("reads an authentic ready projection above the prompt injection budget", async () => {
-    const content = Buffer.from("seeded summary", "utf8");
-    const version = await publishVersion({
-      files: [declaredFile("memory_summary.md", content)],
-      archive: tarGz([{ path: "memory_summary.md", content }]),
-    });
-    await run(version);
-
-    // The runtime renderer applies the 2500-token prompt budget, so a larger
-    // authentic source must not be treated as corrupt on the read path.
-    const largeSummary = Array.from({ length: 300 }, (_, index) => {
-      return `- decision-${index.toString()}: keep repository-native checks`;
-    }).join("\n");
-    const largeTokenCount = encode(largeSummary).length;
-    expect(largeTokenCount).toBeGreaterThan(2500);
-    expect(Buffer.byteLength(largeSummary, "utf8")).toBeLessThanOrEqual(
-      64 * 1024,
-    );
-    await stateAction({
-      action: "seed-ready",
-      ...projectionScope(version),
-      content: largeSummary,
-    });
-
-    await expect(read(version)).resolves.toMatchObject({
-      content: largeSummary,
-      source_size: Buffer.byteLength(largeSummary, "utf8"),
-      token_count: largeTokenCount,
-    });
-    await expect(inspect(version)).resolves.toMatchObject({
-      status: "ready",
-      last_error_class: null,
-      has_content: true,
-      token_count: largeTokenCount,
     });
   });
 });

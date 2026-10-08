@@ -1,5 +1,6 @@
 import { Command } from "commander";
 
+import { archiveCommand, unarchiveCommand } from "./archive";
 import { cancelCommand } from "./cancel";
 import { createCommand } from "./create";
 import { getCommand } from "./get";
@@ -20,6 +21,8 @@ export const chatCommand = new Command()
   .addCommand(listCommand)
   .addCommand(modelCommand)
   .addCommand(renameCommand)
+  .addCommand(archiveCommand)
+  .addCommand(unarchiveCommand)
   .addHelpText(
     "after",
     `
@@ -35,6 +38,9 @@ Examples:
   Switch another:    okou chat model --thread <thread-id> claude-sonnet-5
   Rename this chat:  okou chat rename "Launch plan"
   Rename another:    okou chat rename --thread <thread-id> "Launch plan"
+  Archive this chat: okou chat archive
+  Unarchive a chat:  okou chat unarchive --thread-id <thread-id>
+  List archived:     okou chat list --archived
 
 Run lifecycle:
   create makes an empty thread; it does not start a run or copy conversation history.

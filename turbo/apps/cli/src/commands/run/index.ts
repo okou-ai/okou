@@ -40,10 +40,6 @@ function tokenLines(
   ];
 }
 
-function nullableToken(value: number | null): string {
-  return value === null ? "unknown" : String(value);
-}
-
 function printUsage(result: RunUsageResult): void {
   console.log(`Run: ${result.runId}`);
   if (result.combined.state === "observed") {
@@ -66,23 +62,7 @@ function printUsage(result: RunUsageResult): void {
     );
   } else {
     console.log(
-      "Observed token usage: unavailable; neither source established a numeric observation.",
-    );
-  }
-
-  const api = result.sources.apiFirstTurn;
-  if (api.state === "unavailable") {
-    console.log(`API first turn: unavailable (${api.reason}).`);
-  } else if (api.state === "no-inference") {
-    console.log(
-      `API first turn: no inference before ownership transfer; sampled at ${sampleTime(api.sampledAt)}.`,
-    );
-  } else {
-    console.log(
-      `API first turn: observed ${api.coverage}; sampled at ${sampleTime(api.sampledAt)}; handoff-time only.`,
-    );
-    console.log(
-      `  Input: ${nullableToken(api.tokens.input)}; cache read: ${nullableToken(api.tokens.cacheRead)}; cache creation: ${nullableToken(api.tokens.cacheCreation)}; output: ${nullableToken(api.tokens.output)}; total: ${nullableToken(api.tokens.total)}`,
+      "Observed token usage: unavailable; the sandbox proxy established no numeric observation.",
     );
   }
 
@@ -128,7 +108,7 @@ const usageCommand = new Command("usage")
     `
 This read-only query is bound to the current Sandbox assignment. It accepts no Run ID, endpoint or source input and requires no SSH access.
 
-Values are observations, not billing or settlement. Partial values are lower bounds. API-first usage is immutable at ownership transfer and cannot include provider usage first observed later. Source times are independent. The command never falls back to billing rows, logs or history and never retries automatically.`,
+Values are observations, not billing or settlement. Partial values are lower bounds. Source times are independent. The command never falls back to billing rows, logs or history and never retries automatically.`,
   )
   .action(
     withErrorHandler(async (options: { readonly json?: boolean }) => {

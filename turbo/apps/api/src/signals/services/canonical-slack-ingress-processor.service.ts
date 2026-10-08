@@ -1,13 +1,11 @@
-import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { ChatSlackMessageAssets } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { and, asc, eq, gte, lte, lt, or, sql } from "drizzle-orm";
+import { command } from "ccstate";
+import { and, asc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
-
 import { logger } from "../../lib/log";
 import {
   enrichMessageContent,
@@ -18,7 +16,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
-  publishThreadListChanged,
+  publishThreadListChangedSafely,
 } from "../external/realtime";
 import {
   createSlackClient,
@@ -27,27 +25,35 @@ import {
   type SlackClient,
 } from "../external/slack-message-client";
 import { settle, tapError } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
+import { waitUntil } from "../context/wait-until";
 import {
   canonicalInputMessageFiles,
   materializeCanonicalSlackInputAssets$,
   type CanonicalSlackInputAsset,
 } from "./canonical-asset.service";
 import {
-  canonicalSlackThreadStatusTargetForIngress,
-  clearCanonicalSlackThreadStatusIfIdle,
+  canonicalSlackThreadStatusTargetForIngress$,
+  clearCanonicalSlackThreadStatusIfIdle$,
 } from "./canonical-slack-thread-status.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
+import {
+  pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput$,
+} from "./chat-thread-queue-drain.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import {
   isSlackDirectMessageSessionThreadTs,
   slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
-import { insertChatEvent } from "./chat-event.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
 
 const L = logger("CanonicalSlackIngressProcessor");
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
@@ -187,7 +193,6 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       orgId: slackOrgInstallations.orgId,
       encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       botUserId: slackOrgInstallations.botUserId,
-      publicBrand: slackChatIngress.publicBrand,
     })
     .from(slackChatIngress)
     .innerJoin(
@@ -355,26 +360,31 @@ async function markIngressFailure(
 }
 
 interface PersistedCanonicalSlackIngress {
+  readonly client: SlackClient;
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
   readonly channelId: string;
   readonly threadTs: string;
   readonly routeThreadTs?: string;
+  readonly createdAt: Date;
 }
 
 function persistedCanonicalSlackIngress(
+  client: SlackClient,
   ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
   orgId: string,
   threadTs: string,
   chatThreadId: string,
 ): PersistedCanonicalSlackIngress {
   return {
+    client,
     orgId,
     userId: ingress.userId,
     chatThreadId,
     channelId: ingress.channelId,
     threadTs,
+    createdAt: ingress.createdAt,
     ...(threadTs === ingress.threadTs
       ? {}
       : { routeThreadTs: ingress.threadTs }),
@@ -402,6 +412,85 @@ async function setCanonicalSlackThinkingStatus(args: {
   );
 }
 
+/**
+ * The input waits for an org slot, not for the agent: replace the admission
+ * "is thinking..." status with the wait notice. The launched run's progress
+ * callbacks set the status again once it runs.
+ */
+async function postCanonicalSlackWaitNotice(
+  ingress: PersistedCanonicalSlackIngress,
+  ingressId: string,
+  notice: string,
+): Promise<void> {
+  await tapError(
+    (async () => {
+      await ingress.client.setThreadStatus(
+        ingress.channelId,
+        ingress.threadTs,
+        "",
+      );
+      const posted = await ingress.client.postMessage(
+        ingress.channelId,
+        notice,
+        { threadTs: ingress.threadTs },
+      );
+      if (posted.kind === "slack_error") {
+        throw new Error(posted.error);
+      }
+    })(),
+    (error) => {
+      L.warn("Failed to post canonical Slack wait notice", {
+        ingressId,
+        error,
+      });
+    },
+  );
+}
+
+/**
+ * After the pick: a full organization gets the wait notice in place of the
+ * "is thinking..." status; otherwise the status is cleared unless a run owns
+ * the thread.
+ */
+const settleCanonicalSlackStatusAfterPick$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingress: PersistedCanonicalSlackIngress;
+      readonly ingressId: string;
+      readonly reason: ChatQueueWaitReason;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const notice = chatQueueWaitNotice(args.reason);
+    if (notice) {
+      await postCanonicalSlackWaitNotice(args.ingress, args.ingressId, notice);
+      signal.throwIfAborted();
+      return;
+    }
+    await tapError(
+      set(
+        clearCanonicalSlackThreadStatusIfIdle$,
+        {
+          chatThreadId: args.ingress.chatThreadId,
+          channelId: args.ingress.channelId,
+          threadTs: args.ingress.threadTs,
+          ...(args.ingress.routeThreadTs
+            ? { routeThreadTs: args.ingress.routeThreadTs }
+            : {}),
+        },
+        signal,
+      ),
+      (error) => {
+        L.warn("Failed to reconcile canonical Slack thread status", {
+          ingressId: args.ingressId,
+          error,
+        });
+      },
+    );
+  },
+);
+
 type ClaimedCanonicalSlackIngress = NonNullable<
   Awaited<ReturnType<typeof loadClaimedIngress>>
 >;
@@ -410,7 +499,6 @@ interface CanonicalSlackLaunchContext {
   readonly channelId: string;
   readonly messageTs: string;
   readonly botUserId: string;
-  readonly publicBrand: PublicBrand;
   readonly conversationContext: string;
   readonly messageText: string;
   readonly messageFiles: readonly SlackFile[];
@@ -427,7 +515,6 @@ function canonicalSlackLaunchContext(args: {
   readonly event: SlackAgentEvent;
   readonly routeThreadTs: string;
   readonly botUserId: string;
-  readonly publicBrand: PublicBrand;
   readonly messageText: string;
   readonly conversationContext: string;
   readonly canonicalAssets: readonly CanonicalSlackInputAsset[];
@@ -442,7 +529,6 @@ function canonicalSlackLaunchContext(args: {
     channelId: args.event.channel,
     messageTs: args.event.ts,
     botUserId: args.botUserId,
-    publicBrand: args.publicBrand,
     conversationContext: args.conversationContext,
     messageText: args.messageText,
     messageFiles: args.event.files ?? [],
@@ -464,68 +550,63 @@ function canonicalSlackLaunchContext(args: {
   };
 }
 
-async function persistCanonicalSlackMessage(
-  db: Db,
-  args: {
-    readonly ingress: ClaimedCanonicalSlackIngress;
-    readonly chatThreadId: string;
-    readonly displayContent: string;
-    readonly slackContext: CanonicalSlackLaunchContext;
-    readonly messagePermalink: string | null;
-    readonly canonicalAssets: readonly CanonicalSlackInputAsset[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    const inserted = await insertChatEvent(
-      tx,
+/**
+ * The entry writes its Slack context row, then enqueues the input and marks
+ * the ingress processed in one transaction.
+ */
+const enqueueCanonicalSlackMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingress: ClaimedCanonicalSlackIngress;
+      readonly orgId: string;
+      readonly chatThreadId: string;
+      readonly displayContent: string;
+      readonly slackContext: CanonicalSlackLaunchContext;
+      readonly messagePermalink: string | null;
+      readonly canonicalAssets: readonly CanonicalSlackInputAsset[];
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const enqueuedModel = await set(
+      resolveEnqueuedChatInputModel$,
       {
-        id: args.ingress.ingressId,
-        chatThreadId: args.chatThreadId,
-        eventType: "input.prompt",
-        userMessage: createUserMessageDocument({
-          text: args.displayContent,
-          files: canonicalInputMessageFiles(args.canonicalAssets),
-          nonContentPart: createChatEventSourcePart({
-            kind: "slack",
-            messagePermalink: args.messagePermalink,
-          }),
-        }),
-        runId: null,
-        slackContext: args.slackContext,
-        createdAt: args.ingress.createdAt,
+        threadId: args.chatThreadId,
+        orgId: args.orgId,
+        userId: args.ingress.userId,
       },
-      "id",
+      signal,
+    );
+    const values = {
+      id: args.ingress.ingressId,
+      chatThreadId: args.chatThreadId,
+      eventType: "input.prompt",
+      modelSelection: enqueuedModel.modelSelection,
+      userMessage: createUserMessageDocument({
+        text: args.displayContent,
+        files: canonicalInputMessageFiles(args.canonicalAssets),
+        nonContentPart: createChatEventSourcePart({
+          kind: "slack",
+          messagePermalink: args.messagePermalink,
+        }),
+      }),
+      runId: null,
+      slackContext: args.slackContext,
+      createdAt: args.ingress.createdAt,
+    } as const;
+    await set(
+      enqueueIntegrationChatInput$,
+      {
+        orgId: args.orgId,
+        input: values,
+        threadModelReplacement: enqueuedModel.threadModelReplacement,
+        ingress: { kind: "slack", ingressId: args.ingress.ingressId },
+      },
+      signal,
     );
     signal.throwIfAborted();
-    if (!inserted) {
-      throw new Error("Canonical Slack ingress message already exists");
-    }
-    await touchChatThreadLastMessageAt(
-      tx,
-      args.chatThreadId,
-      args.ingress.createdAt,
-      args.ingress.ingressId,
-    );
-    signal.throwIfAborted();
-    await tx
-      .update(slackChatIngress)
-      .set({
-        status: "processed",
-        retryAt: null,
-        lastErrorClass: null,
-        lastError: null,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(slackChatIngress.id, args.ingress.ingressId),
-          eq(slackChatIngress.status, "processing"),
-        ),
-      );
-    signal.throwIfAborted();
-  });
-}
+  },
+);
 
 async function fetchCanonicalConversationContext(args: {
   readonly client: SlackClient;
@@ -559,6 +640,73 @@ async function fetchCanonicalConversationContext(args: {
   return { executionContext: "" };
 }
 
+/**
+ * Slack API failures keep the ingress retry classification: a revoked token is
+ * terminal and a rate limit is retryable. Only unclassified lookup failures and
+ * the optional-context authorization errors handled above are omitted.
+ */
+function rethrowClassifiedSlackFailure(error: unknown): void {
+  if (slackMessageClientFailure(error)) {
+    throw error;
+  }
+}
+
+async function loadCanonicalSlackEnrichment(
+  args: {
+    readonly client: SlackClient;
+    readonly ingressId: string;
+    readonly event: SlackAgentEvent;
+    readonly messageContent: string;
+    readonly userInfoResolver: ReturnType<
+      SlackClient["createUserInfoResolver"]
+    >;
+  },
+  signal: AbortSignal,
+) {
+  const { client, ingressId, event, messageContent, userInfoResolver } = args;
+  return await Promise.all([
+    loadOptionalChatEnrichment(
+      "slack",
+      () => {
+        return enrichMessageContent({
+          messageContent,
+          files: undefined,
+          client,
+          userId: event.user,
+          userInfoResolver,
+        });
+      },
+      (error) => {
+        rethrowClassifiedSlackFailure(error);
+        return {
+          prompt: messageContent,
+          displayContent: messageContent,
+          userInfoExtras: { slackUserId: event.user },
+          mentionDisplayNames: {},
+        };
+      },
+      signal,
+    ),
+    loadOptionalChatEnrichment(
+      "slack",
+      () => {
+        return fetchCanonicalConversationContext({
+          client,
+          ingressId,
+          event,
+          userInfoResolver,
+        });
+      },
+      (error) => {
+        rethrowClassifiedSlackFailure(error);
+        return { executionContext: "" };
+      },
+      signal,
+    ),
+    client.getMessagePermalink(event.channel, event.ts),
+  ]);
+}
+
 const persistClaimedCanonicalSlackIngress$ = command(
   async (
     { set },
@@ -575,10 +723,11 @@ const persistClaimedCanonicalSlackIngress$ = command(
     const orgId = ingress.orgId;
     const event = requireMatchingEvent(ingress.payload, ingress);
     const threadTs = slackPhysicalThreadTs(event);
-    const featureContext = await loadUserFeatureSwitchContext(
-      db,
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
       orgId,
       ingress.userId,
+      signal,
     );
     signal.throwIfAborted();
     const botToken = await decryptPersistentSecretValue(
@@ -605,29 +754,17 @@ const persistClaimedCanonicalSlackIngress$ = command(
         workspaceId: ingress.workspaceId,
         channelId: ingress.channelId,
         messageTs: event.ts,
-        publicBrand: ingress.publicBrand,
         botToken,
         files: event.files ?? [],
       },
       signal,
     );
     signal.throwIfAborted();
-    const [enriched, context, permalinkResult] = await Promise.all([
-      enrichMessageContent({
-        messageContent,
-        files: undefined,
-        client,
-        userId: event.user,
-        userInfoResolver,
-      }),
-      fetchCanonicalConversationContext({
-        client,
-        ingressId,
-        event,
-        userInfoResolver,
-      }),
-      client.getMessagePermalink(event.channel, event.ts),
-    ]);
+    const [enriched, context, permalinkResult] =
+      await loadCanonicalSlackEnrichment(
+        { client, ingressId, event, messageContent, userInfoResolver },
+        signal,
+      );
     signal.throwIfAborted();
     const messagePermalink =
       permalinkResult.kind === "ok" ? permalinkResult.permalink : null;
@@ -637,10 +774,11 @@ const persistClaimedCanonicalSlackIngress$ = command(
         error: permalinkResult.error,
       });
     }
-    await persistCanonicalSlackMessage(
-      db,
+    await set(
+      enqueueCanonicalSlackMessage$,
       {
         ingress,
+        orgId,
         chatThreadId,
         displayContent: enriched.displayContent,
         messagePermalink,
@@ -648,7 +786,6 @@ const persistClaimedCanonicalSlackIngress$ = command(
           event,
           routeThreadTs: ingress.threadTs,
           botUserId: ingress.botUserId,
-          publicBrand: ingress.publicBrand,
           messageText: messageContent,
           conversationContext: context.executionContext,
           canonicalAssets,
@@ -661,11 +798,84 @@ const persistClaimedCanonicalSlackIngress$ = command(
     );
     signal.throwIfAborted();
     return persistedCanonicalSlackIngress(
+      client,
       ingress,
       orgId,
       threadTs,
       chatThreadId,
     );
+  },
+);
+
+const finishCanonicalSlackEnqueue$ = command(
+  async (
+    { set },
+    ingress: PersistedCanonicalSlackIngress,
+    ingressId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const picked = await settle(
+      set(
+        pickEnqueuedChatThread$,
+        {
+          orgId: ingress.orgId,
+          chatThreadId: ingress.chatThreadId,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    await set(
+      touchNativeChatThread$,
+      {
+        chatThreadId: ingress.chatThreadId,
+        createdAt: ingress.createdAt,
+        eventId: ingressId,
+      },
+      signal,
+    );
+    await publishChatThreadMessageCreatedSafely({
+      userId: ingress.userId,
+      orgId: ingress.orgId,
+      threadId: ingress.chatThreadId,
+    });
+    signal.throwIfAborted();
+    await publishThreadListChangedSafely({
+      userId: ingress.userId,
+      orgId: ingress.orgId,
+    });
+    signal.throwIfAborted();
+    const noticed = await settle(
+      (async () => {
+        const pick = await set(
+          enqueuedChatQueueWaitReason$,
+          {
+            orgId: ingress.orgId,
+            chatThreadId: ingress.chatThreadId,
+            eventId: ingressId,
+          },
+          signal,
+        );
+        await set(
+          settleCanonicalSlackStatusAfterPick$,
+          { ingress, ingressId, reason: pick.reason },
+          signal,
+        );
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!picked.ok && !noticed.ok) {
+      throw new AggregateError(
+        [picked.error, noticed.error],
+        "Enqueued chat thread pick and wait notice failed",
+      );
+    }
+    if (!picked.ok) {
+      throw picked.error;
+    }
+    if (!noticed.ok) {
+      throw noticed.error;
+    }
   },
 );
 
@@ -690,47 +900,16 @@ export const processCanonicalSlackIngress$ = command(
           signal,
         );
         signal.throwIfAborted();
-        await publishChatThreadMessageCreatedSafely({
-          userId: ingress.userId,
-          orgId: ingress.orgId,
-          threadId: ingress.chatThreadId,
-        });
-        signal.throwIfAborted();
-        await publishThreadListChanged({
-          userId: ingress.userId,
-          orgId: ingress.orgId,
-        });
-        signal.throwIfAborted();
-        await set(
-          drainChatThreadQueueForThread$,
-          {
-            chatThreadId: ingress.chatThreadId,
-            dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-          },
-          signal,
+        waitUntil(
+          set(finishCanonicalSlackEnqueue$, ingress, args.ingressId, signal),
         );
-        signal.throwIfAborted();
-        await tapError(
-          clearCanonicalSlackThreadStatusIfIdle(
-            db,
-            {
-              chatThreadId: ingress.chatThreadId,
-              channelId: ingress.channelId,
-              threadTs: ingress.threadTs,
-              ...(ingress.routeThreadTs
-                ? { routeThreadTs: ingress.routeThreadTs }
-                : {}),
-            },
+        waitUntil(
+          set(
+            notifyRunningChatRunOfPendingInput$,
+            ingress.chatThreadId,
             signal,
           ),
-          (error) => {
-            L.warn("Failed to reconcile canonical Slack thread status", {
-              ingressId: args.ingressId,
-              error,
-            });
-          },
         );
-        signal.throwIfAborted();
         return true;
       })(),
       signal,
@@ -749,13 +928,14 @@ export const processCanonicalSlackIngress$ = command(
     signal.throwIfAborted();
     await tapError(
       (async () => {
-        const target = await canonicalSlackThreadStatusTargetForIngress(
-          db,
+        const target = await set(
+          canonicalSlackThreadStatusTargetForIngress$,
           args.ingressId,
+          signal,
         );
         signal.throwIfAborted();
         if (target) {
-          await clearCanonicalSlackThreadStatusIfIdle(db, target, signal);
+          await set(clearCanonicalSlackThreadStatusIfIdle$, target, signal);
         }
       })(),
       (error) => {

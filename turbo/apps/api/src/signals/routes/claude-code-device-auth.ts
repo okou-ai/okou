@@ -1,33 +1,22 @@
-import { command } from "ccstate";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
+import { command } from "ccstate";
 
 import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
+import type { RouteEntry } from "../route-entry";
 import {
   cancelClaudeCodeDeviceAuth$,
   claudeCodeDeviceAuthUnavailable,
   completeClaudeCodeDeviceAuth$,
-  startClaudeCodeDeviceAuth,
+  startClaudeCodeDeviceAuth$,
 } from "../services/claude-code-device-auth.service";
-import type { RouteEntry } from "../route-entry";
 
 const modelProviderWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
-
-const adminRequired = Object.freeze({
-  status: 403 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "Only admins can manage org model providers",
-      code: "FORBIDDEN",
-    }),
-  }),
-});
 
 const startClaudeCodeDeviceAuthBody$ = bodyResultOf(
   claudeCodeDeviceAuthContract.start,
@@ -47,23 +36,15 @@ const startClaudeCodeDeviceAuthInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    if (body.data.scope === "org" && auth.orgRole !== "admin") {
-      return adminRequired;
-    }
-    if (
-      body.data.scope === "personal" &&
-      body.data.mode === "reconnect" &&
-      !body.data.modelProviderId
-    ) {
+    if (body.data.mode === "reconnect" && !body.data.modelProviderId) {
       return badRequestMessage("modelProviderId is required for reconnect");
     }
 
-    const result = await startClaudeCodeDeviceAuth(
+    const result = await set(
+      startClaudeCodeDeviceAuth$,
       {
-        writeDb: set(writeDb$),
         orgId: auth.orgId,
         userId: auth.userId,
-        scope: body.data.scope,
         mode: body.data.mode,
         modelProviderId: body.data.modelProviderId,
       },
@@ -81,7 +62,7 @@ const startClaudeCodeDeviceAuthInner$ = command(
         sessionToken: result.sessionToken,
         type: "claude-code" as const,
         status: "pending" as const,
-        scope: result.scope,
+        scope: "personal" as const,
         browserUrl: result.browserUrl,
         expiresIn: result.expiresIn,
       },
@@ -103,7 +84,6 @@ const completeClaudeCodeDeviceAuthInner$ = command(
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        orgRole: auth.orgRole,
         sessionToken: body.data.sessionToken,
         authorizationCode: body.data.authorizationCode,
       },

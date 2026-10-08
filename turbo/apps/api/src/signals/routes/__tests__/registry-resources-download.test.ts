@@ -8,10 +8,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { seedPrivateRegistryResourceVersionFixture } from "../../../test-fixtures/private-registry-resource";
-import {
-  resolvePrivateRegistryResourceArchive,
-  registryResourceDownloadRoutes,
-} from "../registry-resources-download";
+import { registryResourceDownloadRoutes } from "../registry-resources-download";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -267,14 +264,25 @@ describe("registry resource download", () => {
     });
   });
 
-  it("rejects a reverse-template digest that was never published", () => {
-    expect(
-      resolvePrivateRegistryResourceArchive(
-        "skill:presentation-reverse-template",
-        "0".repeat(64),
-        "4b2bb4ee2a041d57a2fe9ba07b796a690c6dbe130c6e232fa98364b6ed6aeb11",
-      ),
-    ).toBeUndefined();
+  it("rejects a reverse-template digest that was never published", async () => {
+    const response = await accept(
+      client().download({
+        headers: authHeaders(),
+        query: {
+          id: "skill:presentation-reverse-template",
+          expectedSha256: "0".repeat(64),
+        },
+      }),
+      [404],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "NOT_FOUND",
+        message:
+          'Registry resource "skill:presentation-reverse-template" is not private-pullable',
+      },
+    });
   });
 
   it("downloads current website template archives", async () => {
@@ -487,16 +495,7 @@ describe("registry resource download", () => {
         sha256: archive.sha256,
       });
 
-      expect(
-        resolvePrivateRegistryResourceArchive(
-          archive.id,
-          archive.sha256,
-          archive.sha256,
-        ),
-      ).toMatchObject({
-        versionId: archive.versionId,
-        sha256: archive.sha256,
-      });
+      await expectArchiveDownload(archive);
     }
   }, 15_000);
 

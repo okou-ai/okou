@@ -1,5 +1,5 @@
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync } from "node:zlib";
 
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
@@ -14,17 +14,10 @@ import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import {
-  connectorCatalogContract,
-  CONNECTOR_CATALOG_MAX_RAW_BYTES,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
-import {
-  workflowAutomationsContract,
-  workflowsCollectionContract,
-} from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { HttpResponse, http } from "msw";
@@ -37,42 +30,15 @@ import {
   onTestFinished,
 } from "vitest";
 
-import apiPackage from "../../../../package.json";
 import { createApp } from "../../../app-factory";
-import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { singleton } from "../../../lib/singleton";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { clearMockNow, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  apiTestConnectorCatalogValidationAuthority,
-  clearApiTestConnectorCatalogExternalReaderIdentityReplacements,
-  corruptApiTestConnectorCatalogActiveSnapshotPayload,
-  deleteApiTestConnectorCatalogCompatibility,
-  deleteApiTestConnectorCatalogCompatibilityEvaluation,
-  deleteApiTestConnectorCatalogRuntimeProjectionSet,
-  expireApiTestConnectorCatalogRuntimeProjectionAuthority,
-  installApiTestConnectorCatalog,
-  invalidateApiTestConnectorCatalogCompatibility,
-  mockApiTestConnectorProviderConfiguration,
-  readApiTestConnectorCatalogCompatibilityEvaluations,
-  readApiTestConnectorCatalogSnapshot,
-  readApiTestConnectorCatalogRuntimeProjection,
-  readApiTestConnectorCatalogRuntimeProjectionAuthority,
-  readApiTestConnectorCatalogValidationAuthority,
-  replaceApiTestConnectorCatalogStoredBytes,
-  setApiTestConnectorCatalogExternalReaderIdentityReplacements,
-  setApiTestConnectorCatalogRuntimeProjectionAuthority,
-  setApiTestConnectorCatalogValidationAuthority,
-} from "../../../test-fixtures/connector-catalog";
-import {
-  deleteOrgPlanEntitlementFixture,
-  upsertOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
-import { createDeferredPromise, settle } from "../../utils";
+import { mockApiTestConnectorProviderConfiguration } from "../../../test-fixtures/connector-catalog";
+import { createDeferredPromise } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
 import { readConnectorCredentialStorageState } from "./helpers/connector-credential-storage-state";
@@ -94,9 +60,10 @@ import {
   mockTestOAuthDeviceConnectorProvider,
   requestOauthCallbackRaw,
 } from "./helpers/api-bdd-connectors";
-import { createFirewallApi } from "./helpers/api-bdd-firewall";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { withConnectorRuntime } from "./helpers/connector-runtime-consumer";
 import { createGithubBddApi, newGithubUserId } from "./helpers/api-bdd-github";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -110,8 +77,6 @@ import { connectorCheckRoutes } from "../connector-check";
 import { builtinConnectorsRoutes } from "../connectors";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { userPermissionGrantsRoutes } from "../user-permission-grants";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { workflowsRoutes } from "../workflows";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsSlugCallbackRoutes,
@@ -123,31 +88,20 @@ const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsRoutes,
   ...featureSwitchesRoutes,
   ...userPermissionGrantsRoutes,
-  ...workflowAutomationsRoutes,
-  ...workflowsRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const routeMocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 const githubApi = createGithubBddApi(context);
-const miscApi = createMiscRoutesApi(context);
 const CRON_SECRET = "connector-catalog-cron-secret";
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 const ACTIVE_KEY = "connectors/v4/active.json";
 const FIRST_SYNC_TIME = "2026-07-15T08:00:00.000Z";
-const DIAGNOSTICS_USER_ID = `user_${randomUUID()}`;
-const DIAGNOSTICS_ORG_ID = `org_${randomUUID()}`;
 const PRIVATE_VALUE = "SECRET_TOKEN";
-const DEFAULT_API_VERSION = apiPackage.version;
 const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
-const PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES = 32 * 1024 * 1024;
-const EXPECTED_CAPABILITY_DIGEST =
-  "sha256:46b3e87b761c645f1a9f23200bc60659ca488b6d313654b2c42d69ddfce82af1";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SLACK_OAUTH_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
 const SLACK_REVOKE_URL = "https://slack.com/api/auth.revoke";
 const STEAM_TEST_ID = "76561198000000000";
@@ -168,6 +122,49 @@ interface ReleaseFixtureOptions {
   readonly mutatePointer?: JsonMutation;
 }
 
+function gmailPrivateAuthMethod(): JsonRecord {
+  const accessTokenName = "CATALOG_GMAIL_ACCESS_TOKEN";
+  const refreshTokenName = "CATALOG_GMAIL_REFRESH_TOKEN";
+  return {
+    id: "oauth",
+    client: {
+      clientRegistration: "static",
+      clientType: "confidential",
+      clientIdEnv: "GOOGLE_OAUTH_CLIENT_ID",
+      clientSecretEnv: "GOOGLE_OAUTH_CLIENT_SECRET",
+    },
+    storage: {
+      version: 1,
+      secrets: [accessTokenName, refreshTokenName],
+      variables: [],
+    },
+    grant: {
+      kind: "auth-code",
+      scopes: ["https://www.googleapis.com/auth/gmail.modify"],
+      callbackOrigin: "web",
+      outputs: {
+        accessToken: `$secrets.${accessTokenName}`,
+        refreshToken: `$secrets.${refreshTokenName}`,
+      },
+    },
+    access: {
+      kind: "refresh-token",
+      envBindings: {
+        GMAIL_TOKEN: `$secrets.${accessTokenName}`,
+      },
+      inputs: {
+        refreshToken: `$secrets.${refreshTokenName}`,
+      },
+      outputs: {
+        accessToken: `$secrets.${accessTokenName}`,
+        refreshToken: `$secrets.${refreshTokenName}`,
+      },
+      refreshableSecrets: [accessTokenName],
+    },
+    revoke: { kind: "none" },
+  };
+}
+
 function createConnectorCleanup(
   actor: ApiTestUser,
   connectorSlug: ConnectorSlug,
@@ -186,6 +183,8 @@ function createConnectorCleanup(
 interface ReleaseFixture {
   readonly version: string;
   readonly connectorSlug: string;
+  // The catalog digest, which identifies the generation once it serves.
+  readonly digest: string;
   readonly pointer: Buffer;
   readonly catalogKey: string;
   readonly objects: ReadonlyMap<string, Buffer>;
@@ -238,10 +237,6 @@ function jsonBytes(value: unknown): Buffer {
 
 function digest(bytes: Uint8Array): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
-
-function objectEtag(bytes: Uint8Array): string {
-  return `"${createHash("sha256").update(bytes).digest("hex")}"`;
 }
 
 function catalogTemplate(reference: string): string {
@@ -667,49 +662,6 @@ function deelPrivateAuthMethod(): JsonRecord {
       kind: "refresh-token",
       envBindings: {
         DEEL_TOKEN: `$secrets.${accessTokenName}`,
-      },
-      inputs: {
-        refreshToken: `$secrets.${refreshTokenName}`,
-      },
-      outputs: {
-        accessToken: `$secrets.${accessTokenName}`,
-        refreshToken: `$secrets.${refreshTokenName}`,
-      },
-      refreshableSecrets: [accessTokenName],
-    },
-    revoke: { kind: "none" },
-  };
-}
-
-function gmailPrivateAuthMethod(): JsonRecord {
-  const accessTokenName = "CATALOG_GMAIL_ACCESS_TOKEN";
-  const refreshTokenName = "CATALOG_GMAIL_REFRESH_TOKEN";
-  return {
-    id: "oauth",
-    client: {
-      clientRegistration: "static",
-      clientType: "confidential",
-      clientIdEnv: "GOOGLE_OAUTH_CLIENT_ID",
-      clientSecretEnv: "GOOGLE_OAUTH_CLIENT_SECRET",
-    },
-    storage: {
-      version: 1,
-      secrets: [accessTokenName, refreshTokenName],
-      variables: [],
-    },
-    grant: {
-      kind: "auth-code",
-      scopes: ["https://www.googleapis.com/auth/gmail.modify"],
-      callbackOrigin: "web",
-      outputs: {
-        accessToken: `$secrets.${accessTokenName}`,
-        refreshToken: `$secrets.${refreshTokenName}`,
-      },
-    },
-    access: {
-      kind: "refresh-token",
-      envBindings: {
-        GMAIL_TOKEN: `$secrets.${accessTokenName}`,
       },
       inputs: {
         refreshToken: `$secrets.${refreshTokenName}`,
@@ -1236,6 +1188,7 @@ function buildRelease(options: ReleaseFixtureOptions): ReleaseFixture {
   return {
     version: options.version,
     connectorSlug,
+    digest: digest(catalogBytes),
     pointer: jsonBytes(pointer),
     catalogKey: keys.catalog,
     objects: new Map([[keys.catalog, catalogBytes]]),
@@ -1254,14 +1207,6 @@ function catalogObjects(
   }
   objects.set(ACTIVE_KEY, active.pointer);
   return objects;
-}
-
-function releaseCatalogBytes(release: ReleaseFixture): Buffer {
-  const bytes = release.objects.get(release.catalogKey);
-  if (bytes === undefined) {
-    throw new Error("Expected release catalog bytes");
-  }
-  return bytes;
 }
 
 function commandInput(command: unknown): JsonRecord {
@@ -1347,18 +1292,9 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
     if (!bytes) {
       return Promise.reject(new Error("Object unavailable"));
     }
-    const etag = objectEtag(bytes);
-    if (input.IfNoneMatch === etag) {
-      return Promise.reject(
-        Object.assign(new Error("Not modified"), {
-          $metadata: { httpStatusCode: 304 },
-        }),
-      );
-    }
     return Promise.resolve({
       ContentLength: bytes.length,
       Body: s3Body(bytes),
-      ETag: etag,
     });
   });
 }
@@ -1369,66 +1305,23 @@ function configureSource(): string {
   return bucket;
 }
 
-function previousConnectorCatalogSourceId(bucket: string): string {
-  const endpoint =
-    env("S3_ENDPOINT") ??
-    `https://${env("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com`;
-  return createHash("sha256")
-    .update(new URL(endpoint).origin)
-    .update("\0")
-    .update(bucket)
-    .update("\0connector-catalog-persisted-snapshot-generation:")
-    .update("2")
-    .digest("hex");
-}
-
-function setApiVersion(version: string): void {
-  apiPackage.version = version;
-}
-
 function cronHeaders(secret = CRON_SECRET): { readonly authorization: string } {
   return { authorization: `Bearer ${secret}` };
 }
 
-function cronClient() {
-  return setupApp({ context, routes: cronConnectorCatalogRoutes })(
-    cronConnectorCatalogContract,
-  );
-}
-
-function diagnosticsClient() {
-  return setupApp({ context, routes: connectorCatalogRoutes })(
-    connectorCatalogContract,
-  );
+async function cronClient() {
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+  return app(cronConnectorCatalogContract);
 }
 
 function runnerFirewallClient() {
   return setupApp({ context, routes: runnersRoutes })(
     runnersBuiltinFirewallsResolveContract,
   );
-}
-
-async function expectCatalogUnavailableRequestError(
-  reason: string,
-): Promise<void> {
-  const code = `CONNECTOR_CATALOG_UNAVAILABLE:${reason}`;
-  const response = await accept(
-    runnerFirewallClient().resolve({
-      headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
-      body: {},
-    }),
-    [500],
-  );
-
-  expect(response.body).toStrictEqual({ error: "Internal server error" });
-  const capturedError =
-    context.mocks.sentry.captureException.mock.calls.at(-1)?.[0];
-  expect(capturedError).toMatchObject({
-    name: "ExternalConnectorCatalogUnavailableError",
-    message: "Accepted external connector catalog is unavailable",
-    reason,
-    code,
-  });
 }
 
 interface VolumeStorageState {
@@ -1438,17 +1331,22 @@ interface VolumeStorageState {
   readonly head_version_id: string | null;
 }
 
-function systemStorageStateClient() {
-  return setupAppWithRoutes({
+async function systemStorageStateClient() {
+  const app = await setupApp({
     context,
     routes: testSystemStoragePresignedUrlCacheStateRoutes,
-  })(testSystemStoragePresignedUrlCacheStateContract);
+    isolatePg: true,
+  });
+  return app(testSystemStoragePresignedUrlCacheStateContract);
 }
 
 async function systemStorageStateAction(
   body: TestSystemStoragePresignedUrlCacheStateActionBody,
 ) {
-  return await accept(systemStorageStateClient().action({ body }), [200]);
+  return await accept(
+    (await systemStorageStateClient()).action({ body }),
+    [200],
+  );
 }
 
 async function readVolumeStorageState(args: {
@@ -1524,57 +1422,37 @@ async function seedOwnedVolumeStorageVersion(args: {
   });
 }
 
-async function readVolumeStorageVersion(args: {
-  readonly orgId: string;
-  readonly storageName: string;
-  readonly versionId: string;
-}) {
-  const response = await systemStorageStateAction({
-    action: "read-storage-version",
-    org_id: args.orgId,
-    user_id: VOLUME_ORG_USER_ID,
-    storage_name: args.storageName,
-    version_id: args.versionId,
-  });
-  return response.body.storage_version ?? null;
-}
-
 async function syncCatalog() {
-  return await accept(cronClient().sync({ headers: cronHeaders() }), [200]);
-}
-
-async function enableDiagnosticsFeatureSwitch(): Promise<void> {
-  routeMocks.clerk.session(DIAGNOSTICS_USER_ID, DIAGNOSTICS_ORG_ID);
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-    }),
+  return await accept(
+    (await cronClient()).sync({ headers: cronHeaders() }),
     [200],
   );
-  onTestFinished(async () => {
-    routeMocks.clerk.session(DIAGNOSTICS_USER_ID, DIAGNOSTICS_ORG_ID);
+}
+
+type SyncResponseBody = Awaited<ReturnType<typeof syncCatalog>>["body"];
+
+// The public catalog served from the current pointer, read as a fresh user
+// with the given feature switches.
+async function servedConnectors(
+  switches: Partial<Record<FeatureSwitchKey, boolean>> = {},
+) {
+  routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  const headers = { authorization: "Bearer clerk-session" };
+  if (Object.keys(switches).length > 0) {
     await accept(
       setupApp({ context, routes: featureSwitchesRoutes })(
         featureSwitchesContract,
-      ).delete({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+      ).update({ headers, body: { switches } }),
       [200],
     );
-  });
-}
-
-async function readStatus() {
-  await enableDiagnosticsFeatureSwitch();
-  return await accept(
-    diagnosticsClient().diagnostics({
-      headers: { authorization: "Bearer clerk-session" },
-    }),
+  }
+  const response = await accept(
+    setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    ).list({ headers }),
     [200],
   );
+  return response.body.connectors;
 }
 
 async function rawCronRequest(path: string): Promise<Response> {
@@ -1586,20 +1464,12 @@ async function rawCronRequest(path: string): Promise<Response> {
   });
 }
 
-function expectRejectedBeforeAcceptance(
-  body: Awaited<ReturnType<typeof syncCatalog>>["body"],
+// The response is only the attempt report; a rejection publishes nothing.
+function expectRejectedAttempt(
+  body: SyncResponseBody,
   failureCode: string,
 ): void {
-  expect(body).toMatchObject({
-    outcome: "rejected",
-    state: "never-synced",
-    active: null,
-    lastAttempt: {
-      outcome: "rejected",
-      failureCode,
-    },
-    lastSuccessAt: null,
-  });
+  expect(body).toStrictEqual({ outcome: "rejected", failureCode });
 }
 
 beforeEach(() => {
@@ -1608,15 +1478,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
-  setApiVersion(DEFAULT_API_VERSION);
   clearMockNow();
 });
 
 describe("connector catalog cron authentication and initial state", () => {
   it("rejects missing and invalid cron credentials", async () => {
     const response = await accept(
-      cronClient().sync({ headers: cronHeaders("wrong-secret") }),
+      (await cronClient()).sync({ headers: cronHeaders("wrong-secret") }),
       [401],
     );
     expect(response.body).toStrictEqual({
@@ -1627,89 +1495,12 @@ describe("connector catalog cron authentication and initial state", () => {
     expect(missing.status).toBe(401);
   });
 
-  it("reports never-synced without reading the shared storage bucket", async () => {
+  it("reports only the attempt report without sync history", async () => {
     configureSource();
-    expect((await readStatus()).body).toStrictEqual({
-      schemaVersion: 4,
-      state: "never-synced",
-      active: null,
-      lastAttempt: null,
-      lastSuccessAt: null,
-      rejectedCandidate: null,
-      credentialStorage: {
-        missingConnectorVersions: expect.any(Number),
-        unownedConnectorSecrets: expect.any(Number),
-        unownedConnectorVariables: expect.any(Number),
-        unresolvedBridgeCredentials: expect.any(Number),
-      },
-      filtering: {
-        capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
-        evaluatedAt: null,
-        stale: true,
-        filteredAuthMethods: [],
-      },
-    });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-  });
-
-  it("reports zero final connector credential invariant violations", async () => {
-    configureSource();
-
-    const response = await readStatus();
-    expect(response.body.credentialStorage).toStrictEqual({
-      missingConnectorVersions: 0,
-      unownedConnectorSecrets: 0,
-      unownedConnectorVariables: 0,
-      unresolvedBridgeCredentials: 0,
-    });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-  });
-});
-
-describe("connector catalog unavailable request telemetry", () => {
-  it("classifies a missing current identity", async () => {
-    expect.hasAssertions();
-    configureSource();
-
-    await expectCatalogUnavailableRequestError("missing_current_identity");
-  });
-
-  it("classifies an invalid persisted compatibility evaluation", async () => {
-    expect.hasAssertions();
-    configureSource();
-    await installApiTestConnectorCatalog();
-    await invalidateApiTestConnectorCatalogCompatibility();
-
-    await expectCatalogUnavailableRequestError(
-      "invalid_compatibility_evaluation",
-    );
-  });
-
-  it("classifies a rejected persisted artifact", async () => {
-    expect.hasAssertions();
-    configureSource();
-    await installApiTestConnectorCatalog();
-    await corruptApiTestConnectorCatalogActiveSnapshotPayload();
-
-    await expectCatalogUnavailableRequestError(
-      "invalid_artifact:invalid-compression",
-    );
-  });
-
-  it("classifies a missing active snapshot after the identity retry", async () => {
-    expect.hasAssertions();
-    configureSource();
-    await installApiTestConnectorCatalog({
-      catalogVersion: "2026-08-31.identity-race-initial",
-    });
-    setApiTestConnectorCatalogExternalReaderIdentityReplacements([
-      "2026-08-31.identity-race-first-replacement",
-      "2026-08-31.identity-race-second-replacement",
-    ]);
-
-    await expectCatalogUnavailableRequestError(
-      "missing_active_snapshot_after_retry",
-    );
+    serveObjects(new Map());
+    const body = (await syncCatalog()).body;
+    expect(Object.keys(body).sort()).toStrictEqual(["failureCode", "outcome"]);
+    expectRejectedAttempt(body, "source-unavailable");
   });
 });
 
@@ -1723,26 +1514,9 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([first, second], first));
     const acceptedFirst = await syncCatalog();
-    expect(acceptedFirst.body).toMatchObject({
+    expect(acceptedFirst.body).toStrictEqual({
       outcome: "accepted",
-      state: "current",
-      active: { catalogVersion: first.version },
-      lastAttempt: { outcome: "accepted", failureCode: null },
-      lastSuccessAt: FIRST_SYNC_TIME,
-      filtering: {
-        evaluatedAt: FIRST_SYNC_TIME,
-        stale: false,
-        filteredAuthMethods: [],
-      },
-    });
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(apiTestConnectorCatalogValidationAuthority());
-    await expect(
-      readApiTestConnectorCatalogRuntimeProjection(),
-    ).resolves.toStrictEqual({
-      connectorCount: 1,
-      connectorSlugs: [first.connectorSlug],
+      failureCode: null,
     });
     expect(
       commandInput(context.mocks.s3.send.mock.calls[0]?.[0]),
@@ -1751,100 +1525,31 @@ describe("connector catalog valid lifecycle", () => {
       Key: ACTIVE_KEY,
     });
 
-    const callsBeforeStatus = context.mocks.s3.send.mock.calls.length;
-    expect((await readStatus()).body).toStrictEqual(
-      (({ outcome: _outcome, ...status }) => {
-        return status;
-      })(acceptedFirst.body),
-    );
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeStatus);
-
     mockNow(new Date("2026-07-15T08:01:00.000Z"));
-    await deleteApiTestConnectorCatalogRuntimeProjectionSet();
-    await expect(
-      readApiTestConnectorCatalogRuntimeProjection(),
-    ).resolves.toBeNull();
     const callsBeforeUnchanged = context.mocks.s3.send.mock.calls.length;
     const unchanged = await syncCatalog();
-    expect(unchanged.body).toMatchObject({
+    expect(unchanged.body).toStrictEqual({
       outcome: "unchanged",
-      state: "current",
-      active: { catalogVersion: first.version },
-      lastAttempt: { outcome: "unchanged", failureCode: null },
-      lastSuccessAt: "2026-07-15T08:01:00.000Z",
-      filtering: {
-        evaluatedAt: FIRST_SYNC_TIME,
-        stale: false,
-        filteredAuthMethods: [],
-      },
+      failureCode: null,
     });
+    // An unchanged pointer digest skips the catalog download entirely.
     expect(context.mocks.s3.send.mock.calls.length - callsBeforeUnchanged).toBe(
       1,
     );
     expect(
       commandInput(context.mocks.s3.send.mock.calls[callsBeforeUnchanged]?.[0]),
-    ).toMatchObject({
-      Bucket: bucket,
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(first.pointer),
-    });
-    await expect(
-      readApiTestConnectorCatalogRuntimeProjection(),
-    ).resolves.toStrictEqual({
-      connectorCount: 1,
-      connectorSlugs: [first.connectorSlug],
-    });
-
-    await expireApiTestConnectorCatalogRuntimeProjectionAuthority();
-    await expect(
-      readApiTestConnectorCatalogRuntimeProjectionAuthority(),
-    ).resolves.toStrictEqual({
-      validatorVersion: "1.0.0",
-      buildCommitSha: null,
-    });
-    mockNow(new Date("2026-07-15T08:02:00.000Z"));
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "unchanged",
-      state: "current",
-      active: { catalogVersion: first.version },
-    });
-    await expect(
-      readApiTestConnectorCatalogRuntimeProjectionAuthority(),
-    ).resolves.toStrictEqual(apiTestConnectorCatalogValidationAuthority());
-
-    await setApiTestConnectorCatalogRuntimeProjectionAuthority({
-      validatorVersion: "999.0.0",
-      buildCommitSha: null,
-    });
-    mockNow(new Date("2026-07-15T08:03:00.000Z"));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-    await expect(
-      readApiTestConnectorCatalogRuntimeProjectionAuthority(),
-    ).resolves.toStrictEqual(apiTestConnectorCatalogValidationAuthority());
+    ).toMatchObject({ Bucket: bucket, Key: ACTIVE_KEY });
 
     serveObjects(catalogObjects([first, second], second));
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogVersion: second.version },
-    });
-    await expect(
-      readApiTestConnectorCatalogRuntimeProjection(),
-    ).resolves.toStrictEqual({
-      connectorCount: 1,
-      connectorSlugs: [second.connectorSlug],
-    });
+    expect((await syncCatalog()).body).toMatchObject({ outcome: "accepted" });
+    await expect(servedConnectors()).resolves.toMatchObject([
+      { slug: second.connectorSlug, label: "External Test Updated" },
+    ]);
 
+    // Rolling back publishes the first generation again rather than treating
+    // it as unchanged.
     serveObjects(catalogObjects([first, second], first));
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogVersion: first.version },
-    });
-    await expect(
-      readApiTestConnectorCatalogRuntimeProjection(),
-    ).resolves.toStrictEqual({
-      connectorCount: 1,
-      connectorSlugs: [first.connectorSlug],
-    });
+    expect((await syncCatalog()).body).toMatchObject({ outcome: "accepted" });
 
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const callsBeforePublicCatalog = context.mocks.s3.send.mock.calls.length;
@@ -1917,17 +1622,6 @@ describe("connector catalog valid lifecycle", () => {
         hasCategories: true,
         hasDefaultPolicyOverrides: true,
       },
-    });
-    expect(list.body.categoryMetadata).toStrictEqual({
-      categories: [
-        {
-          id: "testing",
-          label: "Testing",
-          menuLabel: "Testing",
-          groupId: null,
-        },
-      ],
-      groups: [],
     });
     assertPublicConnectorCatalogHasNoPrivateFields(list.body);
 
@@ -2090,229 +1784,6 @@ describe("connector catalog valid lifecycle", () => {
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforePublicReads);
   });
 
-  it("fails closed when attested catalog integrity or identity is corrupted", async () => {
-    configureSource();
-    const digestRelease = buildRelease({
-      version: "2026-07-27.attested-digest-corruption",
-    });
-    serveObjects(catalogObjects([digestRelease], digestRelease));
-    await syncCatalog();
-    const changedBytes = Buffer.from(releaseCatalogBytes(digestRelease));
-    changedBytes[changedBytes.length - 1] = 0x20;
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: digestRelease.version,
-      rawBytes: changedBytes,
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-      retainCatalogDigest: true,
-    });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const digestResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(digestResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const jsonRelease = buildRelease({
-      version: "2026-07-27.attested-json-corruption",
-    });
-    serveObjects(catalogObjects([jsonRelease], jsonRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: jsonRelease.version,
-      rawBytes: Buffer.from("{"),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const jsonResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(jsonResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const identityRelease = buildRelease({
-      version: "2026-07-27.attested-identity-corruption",
-    });
-    const mismatchedIdentity = buildRelease({
-      version: identityRelease.version,
-      mutateArtifact: (artifact) => {
-        artifact.catalogVersion = "different-catalog-version";
-      },
-    });
-    serveObjects(catalogObjects([identityRelease], identityRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: identityRelease.version,
-      rawBytes: releaseCatalogBytes(mismatchedIdentity),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const identityResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(identityResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const nonObjectRelease = buildRelease({
-      version: "2026-07-27.attested-non-object-corruption",
-    });
-    serveObjects(catalogObjects([nonObjectRelease], nonObjectRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: nonObjectRelease.version,
-      rawBytes: Buffer.from("null"),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const nonObjectResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(nonObjectResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const schemaRelease = buildRelease({
-      version: "2026-07-27.attested-schema-corruption",
-    });
-    serveObjects(catalogObjects([schemaRelease], schemaRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: schemaRelease.version,
-      rawBytes: jsonBytes({
-        artifactSchemaVersion: 5,
-        catalogVersion: schemaRelease.version,
-      }),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const schemaResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(schemaResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const shapeRelease = buildRelease({
-      version: "2026-07-27.attested-shape-corruption",
-    });
-    serveObjects(catalogObjects([shapeRelease], shapeRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: shapeRelease.version,
-      rawBytes: jsonBytes({
-        artifactSchemaVersion: 4,
-      }),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const shapeResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(shapeResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-  });
-
-  it("keeps corruption fail closed and derives missing compatibility", async () => {
-    configureSource();
-    const semanticRelease = buildRelease({
-      version: "2026-07-27.stale-semantic-corruption",
-    });
-    const invalidSemanticRelease = buildRelease({
-      version: semanticRelease.version,
-      mutateArtifact: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").label = "";
-      },
-    });
-    serveObjects(catalogObjects([semanticRelease], semanticRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: semanticRelease.version,
-      rawBytes: releaseCatalogBytes(invalidSemanticRelease),
-      catalogValidationAuthority: null,
-    });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const semanticResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(semanticResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toBeNull();
-
-    configureSource();
-    const compatibilityRelease = buildRelease({
-      version: "2026-07-27.compatibility-corruption",
-    });
-    serveObjects(catalogObjects([compatibilityRelease], compatibilityRelease));
-    await syncCatalog();
-    await invalidateApiTestConnectorCatalogCompatibility();
-    const corruptedEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(corruptedEvaluations).toHaveLength(1);
-    const compatibilityResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(compatibilityResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const missingRelease = buildRelease({
-      version: "2026-07-27.missing-compatibility",
-    });
-    serveObjects(catalogObjects([missingRelease], missingRelease));
-    await syncCatalog();
-    await deleteApiTestConnectorCatalogCompatibility();
-    const remainingEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(remainingEvaluations).toHaveLength(0);
-    const missingResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(missingResponse.body).toMatchObject({
-      connectors: [
-        expect.objectContaining({ slug: missingRelease.connectorSlug }),
-      ],
-    });
-    await expect(
-      readApiTestConnectorCatalogCompatibilityEvaluations(),
-    ).resolves.toHaveLength(0);
-  });
-
   it("applies compatibility and authored visibility to released connectors", async () => {
     configureSource();
     const apiToken = publicAuthMethod({
@@ -2428,7 +1899,10 @@ describe("connector catalog valid lifecycle", () => {
         recordValue(
           recordValue(method.access, "access").envBindings,
           "envBindings",
-        ).OPTIONAL_SERVICE_TOKEN = `$secrets.${optionalSecretName}`;
+        ).OPTIONAL_SERVICE_TOKEN = {
+          valueRef: `$secrets.${optionalSecretName}`,
+          optional: true,
+        };
       },
     });
     serveObjects(catalogObjects([release], release));
@@ -2458,23 +1932,31 @@ describe("connector catalog valid lifecycle", () => {
         name: "SERVICE_TOKEN",
       }),
     );
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(secrets).toContainEqual(
-      expect.objectContaining({ name: PRIVATE_VALUE, type: "connector" }),
+    expect(listed.connectorProvidedBindings).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "agora",
+        name: "SERVICE_TOKEN",
+        source: { kind: "connector-secret", name: PRIVATE_VALUE },
+      }),
     );
-    expect(JSON.stringify(secrets)).not.toContain("catalog-manual-secret");
-    const storageState = await readConnectorCredentialStorageState(context, {
-      connectorSlug: "agora",
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-      secretNames: [optionalSecretName],
-    });
-    expect(storageState.secrets).toStrictEqual([]);
+    expect(JSON.stringify(listed)).not.toContain("catalog-manual-secret");
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
+    await withConnectorRuntime(
+      context,
+      actor,
+      "agora",
+      async ({ claim, resolveAuth }) => {
+        expect(claim.environment).not.toHaveProperty("OPTIONAL_SERVICE_TOKEN");
+        const resolved = await resolveAuth({
+          authHeaders: {
+            Authorization: "Bearer " + secretTemplate("SERVICE_TOKEN"),
+          },
+        });
+        expect(resolved.headers).toStrictEqual({
+          Authorization: "Bearer catalog-manual-secret",
+        });
+      },
+    );
   });
 
   it("seeds an external token credential through the CLI test endpoint", async () => {
@@ -2599,14 +2081,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([initial, replacement], replacement));
-    const synced = await syncCatalog();
-    expect(synced.body.filtering.filteredAuthMethods).toStrictEqual([
-      {
-        connectorSlug: "agora",
-        authMethodId: "legacy",
-        reasons: ["missing-access-provider"],
-      },
-    ]);
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
 
     const connected = await connectorsApi.connectManualGrant(
       actor,
@@ -2622,16 +2097,39 @@ describe("connector catalog valid lifecycle", () => {
       connectionStatus: "connected",
     });
 
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
+    await expect(
+      connectorsApi.readConnectorBySlug(actor, "agora"),
+    ).resolves.toMatchObject({
+      id: legacyConnection.id,
+      authMethod: "current",
+      connectionStatus: "connected",
     });
-    const names = secrets.map((secret) => {
-      return secret.name;
-    });
-    expect(names).toContain("CURRENT_CREDENTIAL");
-    expect(names).not.toContain("LEGACY_CREDENTIAL");
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "agora",
+        authMethod: "current",
+        name: "SERVICE_TOKEN",
+        source: { kind: "connector-secret", name: "CURRENT_CREDENTIAL" },
+      }),
+    );
+    await withConnectorRuntime(
+      context,
+      actor,
+      "agora",
+      async ({ resolveAuth }) => {
+        const resolved = await resolveAuth({
+          authHeaders: {
+            Authorization: "Bearer " + secretTemplate("SERVICE_TOKEN"),
+          },
+        });
+        expect(resolved.headers).toStrictEqual({
+          Authorization: "Bearer current-catalog-secret",
+        });
+      },
+    );
 
     const unavailable = buildRelease({
       version: "2026-07-15.external-all-methods-filtered",
@@ -2660,19 +2158,12 @@ describe("connector catalog valid lifecycle", () => {
     serveObjects(
       catalogObjects([initial, replacement, unavailable], unavailable),
     );
-    const filtered = await syncCatalog();
-    expect(filtered.body.filtering.filteredAuthMethods).toHaveLength(2);
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "agora");
-    const secretsAfterDelete = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(
-      secretsAfterDelete.map((secret) => {
-        return secret.name;
-      }),
-    ).not.toContain("CURRENT_CREDENTIAL");
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "agora"),
+    ).resolves.toStrictEqual([]);
   });
 
   it("replaces and deletes stored connector state when its method is removed", async () => {
@@ -2752,18 +2243,43 @@ describe("connector catalog valid lifecycle", () => {
       },
     );
     expect(replacement.status).toBe(200);
+    await expect(
+      connectorsApi.readConnectorBySlug(actor, "agora"),
+    ).resolves.toMatchObject({
+      id: legacyConnection.id,
+      authMethod: "current",
+      connectionStatus: "connected",
+    });
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "agora",
+        authMethod: "current",
+        name: "SERVICE_TOKEN",
+        source: { kind: "connector-secret", name: "CURRENT_CREDENTIAL" },
+      }),
+    );
+    await withConnectorRuntime(
+      context,
+      actor,
+      "agora",
+      async ({ resolveAuth }) => {
+        const resolved = await resolveAuth({
+          authHeaders: {
+            Authorization: "Bearer " + secretTemplate("SERVICE_TOKEN"),
+          },
+        });
+        expect(resolved.headers).toStrictEqual({
+          Authorization: "Bearer current-catalog-secret",
+        });
+      },
+    );
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "agora");
-
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    const secretNames = secrets.map((secret) => {
-      return secret.name;
-    });
-    expect(secretNames).not.toContain("LEGACY_CREDENTIAL");
-    expect(secretNames).not.toContain("CURRENT_CREDENTIAL");
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "agora"),
+    ).resolves.toStrictEqual([]);
   });
 
   it("replaces token state when the stored method is removed", async () => {
@@ -2835,20 +2351,55 @@ describe("connector catalog valid lifecycle", () => {
     const callbackLocation = new URL(callback.headers.get("location") ?? "");
     expect(callbackLocation.pathname).toBe("/connector/success");
 
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    const secretNames = secrets.map((secret) => {
-      return secret.name;
-    });
-    expect(secretNames).not.toContain("LEGACY_GMAIL_CREDENTIAL");
-    expect(secretNames).toContain("CATALOG_GMAIL_ACCESS_TOKEN");
-    expect(secretNames).toContain("CATALOG_GMAIL_REFRESH_TOKEN");
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "gmail",
+        authMethod: "oauth",
+        name: "GMAIL_TOKEN",
+        source: {
+          kind: "connector-secret",
+          name: "CATALOG_GMAIL_ACCESS_TOKEN",
+        },
+      }),
+    );
     await expect(
       connectorsApi.readConnectorBySlug(actor, "gmail"),
     ).resolves.toMatchObject({ authMethod: "oauth" });
+    let refreshRequests = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        expect(body.get("grant_type")).toBe("refresh_token");
+        expect(body.get("refresh_token")).toBe("gmail-refresh-token");
+        refreshRequests += 1;
+        return HttpResponse.json({
+          access_token: "catalog-gmail-refreshed",
+          refresh_token: "gmail-refresh-token",
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }),
+    );
+    await withConnectorRuntime(
+      context,
+      actor,
+      "gmail",
+      async ({ resolveAuth }) => {
+        const authHeaders = {
+          Authorization: "Bearer " + secretTemplate("GMAIL_TOKEN"),
+        };
+        expect((await resolveAuth({ authHeaders })).headers).toStrictEqual({
+          Authorization: "Bearer gmail-access-token",
+        });
+        expect(
+          (await resolveAuth({ authHeaders, forceRefresh: true })).headers,
+        ).toStrictEqual({ Authorization: "Bearer catalog-gmail-refreshed" });
+        expect(refreshRequests).toBe(1);
+      },
+    );
   });
 
   it("materializes external runtime bindings for runs and firewall auth", async () => {
@@ -2875,7 +2426,7 @@ describe("connector catalog valid lifecycle", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "External catalog runtime agent",
       visibility: "private",
@@ -2960,21 +2511,18 @@ describe("connector catalog valid lifecycle", () => {
     expect(grants.body).toMatchObject([
       { connectorSlug, permission: "items.read", action: "deny" },
     ]);
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the externally sourced connector credential",
-      modelProvider: "anthropic-api-key",
     });
     created.runId = run.runId;
     await runs.heartbeatRunner(runnerGroup);
-    await expect
-      .poll(
-        async () => {
-          return (await runs.pollRunner(runnerGroup)).body.job?.runId;
-        },
-        { timeout: 10_000 },
-      )
-      .toBe(run.runId);
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
+        return (await runs.pollRunner(runnerGroup)).body.job?.runId;
+      })(),
+    ).resolves.toBe(run.runId);
     const claim = await runs.claimRunnerJob(run.runId);
     expect(claim.environment?.SERVICE_TOKEN).toBeTruthy();
     expect(claim.secretConnectorMap).toMatchObject({
@@ -3165,7 +2713,7 @@ describe("connector catalog valid lifecycle", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "External custom permission agent",
       visibility: "private",
@@ -3207,10 +2755,9 @@ describe("connector catalog valid lifecycle", () => {
       await connectorsApi.deleteCustomConnector(actor, custom.id);
       await bdd.deleteAgent(actor, agent.agentId);
     });
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the custom permission bundle",
-      modelProvider: "anthropic-api-key",
     });
     created.runId = run.runId;
     await runs.heartbeatRunner(runnerGroup);
@@ -3262,14 +2809,11 @@ describe("connector catalog valid lifecycle", () => {
       generatedFirewall: true,
     });
     serveObjects(catalogObjects([first], first));
-    const sync = await syncCatalog();
-    const acceptedCatalogDigest = sync.body.active?.catalogDigest;
-    if (!acceptedCatalogDigest) {
-      throw new Error("Expected an accepted connector catalog digest");
-    }
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
+    const acceptedCatalogDigest = first.digest;
 
     const headers = { authorization: OFFICIAL_RUNNER_AUTHORIZATION };
-    const providerName = "model-provider:openai-api-key";
+    const providerName = "model-provider:claude-code-oauth-token";
     const callsBeforeReads = context.mocks.s3.send.mock.calls.length;
     const subset = await accept(
       runnerFirewallClient().resolve({
@@ -3286,7 +2830,7 @@ describe("connector catalog valid lifecycle", () => {
       "https://api.example.test/v1",
     );
     expect(subset.body.firewalls[providerName]?.apis[0]?.base).toBe(
-      "https://api.openai.com/v1/responses",
+      "https://api.anthropic.com/v1/messages",
     );
 
     const full = await accept(
@@ -3304,7 +2848,7 @@ describe("connector catalog valid lifecycle", () => {
     expect(subset.body.catalogDigest).toBe(full.body.catalogDigest);
     expect(subset.body.catalogVersion).toBe(full.body.catalogVersion);
     const firstHex = createHash("sha256")
-      .update(JSON.stringify(full.body.firewalls, null, 2))
+      .update(JSON.stringify(canonicalJsonValue(full.body.firewalls), null, 2))
       .digest("hex");
     expect(full.body.catalogDigest).toBe(`sha256:${firstHex}`);
     expect(full.body.catalogVersion).toBe(`sha256-${firstHex.slice(0, 12)}`);
@@ -3452,7 +2996,12 @@ describe("connector catalog valid lifecycle", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.createPersonalModelProvider(actor, {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
+    });
+    await runs.updateUserModelPreference(actor, "gpt-6-luna");
     const agent = await bdd.createAgent(actor, {
       displayName: "External batch connector skill agent",
       visibility: "private",
@@ -3489,22 +3038,19 @@ describe("connector catalog valid lifecycle", () => {
     }
 
     const createAndClaimRun = async (prompt: string) => {
-      const run = await runs.createRun(actor, {
+      const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt,
-        modelProvider: "anthropic-api-key",
       });
       activeRunIds.add(run.runId);
       expect(run.status).not.toBe("failed");
       await runs.heartbeatRunner(runnerGroup);
-      await expect
-        .poll(
-          async () => {
-            return (await runs.pollRunner(runnerGroup)).body.job?.runId;
-          },
-          { timeout: 10_000 },
-        )
-        .toBe(run.runId);
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
+          return (await runs.pollRunner(runnerGroup)).body.job?.runId;
+        })(),
+      ).resolves.toBe(run.runId);
       return {
         run,
         claim: await runs.claimRunnerJob(run.runId),
@@ -3526,7 +3072,7 @@ describe("connector catalog valid lifecycle", () => {
         expect(storageMounts).toContainEqual(
           expect.objectContaining({
             name: skill.skill.storageName,
-            mountPath: `/home/user/.claude/skills/${skill.connectorSlug}`,
+            mountPath: `/home/user/.pi/agent/skills/${skill.connectorSlug}`,
             versionId: skill.selectedVersionId,
             archiveSize: 321,
             archiveUrl: expect.any(String),
@@ -3599,7 +3145,12 @@ describe("connector catalog valid lifecycle", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.createPersonalModelProvider(actor, {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
+    });
+    await runs.updateUserModelPreference(actor, "gpt-6-luna");
     const agent = await bdd.createAgent(actor, {
       displayName: "External exact connector skill agent",
       visibility: "private",
@@ -3631,17 +3182,22 @@ describe("connector catalog valid lifecycle", () => {
     );
 
     const createSkillRun = async () => {
-      return await runs.createRun(actor, {
+      return await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: "Use the connector skill",
-        modelProvider: "anthropic-api-key",
       });
     };
+    // As on main's chat path, a Thread launch failure creates no run and the
+    // thread rejects the input.
     const expectRegistrationFailure = async () => {
-      const failed = await createSkillRun();
-      expect(failed).toMatchObject({
-        status: "failed",
-        error: "Connector skill registration is unavailable",
+      await expect(
+        runs.readThreadLaunchFailure(actor, {
+          agentId: agent.agentId,
+          prompt: "Use the connector skill",
+        }),
+      ).resolves.toStrictEqual({
+        pickError: "Connector skill registration is unavailable",
+        inputError: "internal_error",
       });
     };
 
@@ -3655,27 +3211,25 @@ describe("connector catalog valid lifecycle", () => {
     successfulRunId = run.runId;
     expect(run.status).not.toBe("failed");
     await runs.heartbeatRunner(runnerGroup);
-    await expect
-      .poll(
-        async () => {
-          return (await runs.pollRunner(runnerGroup)).body.job?.runId;
-        },
-        { timeout: 10_000 },
-      )
-      .toBe(run.runId);
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
+        return (await runs.pollRunner(runnerGroup)).body.job?.runId;
+      })(),
+    ).resolves.toBe(run.runId);
     const claim = await runs.claimRunnerJob(run.runId);
     const mountedSkills =
       expectCanonicalStorageManifest(
         claim.storageManifest,
       )?.storageMounts.filter((storage) => {
         return (
-          storage.mountPath === `/home/user/.claude/skills/${connectorSlug}`
+          storage.mountPath === `/home/user/.pi/agent/skills/${connectorSlug}`
         );
       }) ?? [];
     expect(mountedSkills).toHaveLength(1);
     expect(mountedSkills[0]).toMatchObject({
       name: storageName,
-      mountPath: `/home/user/.claude/skills/${connectorSlug}`,
+      mountPath: `/home/user/.pi/agent/skills/${connectorSlug}`,
       versionId: selectedVersionId,
       archiveSize: 321,
       archiveUrl: expect.any(String),
@@ -3844,18 +3398,38 @@ describe("connector catalog valid lifecycle", () => {
       currentScopes: ["read", "future_scope"],
       storedScopes: ["read"],
     });
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(secrets).toContainEqual(
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
       expect.objectContaining({
-        name: "CATALOG_DEVICE_ACCESS_TOKEN",
-        type: "connector",
+        connectorSlug: "test-oauth-device",
+        authMethod: "api",
+        name: "TEST_OAUTH_DEVICE_TOKEN",
+        source: {
+          kind: "connector-secret",
+          name: "CATALOG_DEVICE_ACCESS_TOKEN",
+        },
       }),
     );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeCompletion);
+    await withConnectorRuntime(
+      context,
+      actor,
+      "test-oauth-device",
+      async ({ resolveAuth }) => {
+        const resolved = await resolveAuth({
+          authHeaders: {
+            Authorization:
+              "Bearer " + secretTemplate("TEST_OAUTH_DEVICE_TOKEN"),
+          },
+        });
+        expect(resolved.headers).toStrictEqual({
+          Authorization:
+            "Bearer test-device-access:test-device:test-oauth-device-api-client:read:live",
+        });
+      },
+    );
   });
 
   it("executes an external OpenID grant with catalog-owned storage", async () => {
@@ -3910,24 +3484,32 @@ describe("connector catalog valid lifecycle", () => {
       }),
       [307],
     );
-    const storageState = await readConnectorCredentialStorageState(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-      connectorSlug: "steam",
-      variableNames: ["CATALOG_STEAM_ID"],
+    await expect(
+      connectorsApi.readConnectorBySlug(actor, "steam"),
+    ).resolves.toMatchObject({
+      authMethod: "openid",
+      externalId: STEAM_TEST_ID,
+      connectionStatus: "connected",
     });
-    expect(storageState.connector?.storage_version).toBe(1);
-    expect(storageState.variables).toStrictEqual([
-      {
-        name: "CATALOG_STEAM_ID",
-        connector_id: storageState.connector?.id,
-      },
-    ]);
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "steam",
+        authMethod: "openid",
+        name: "STEAM_ID",
+        source: { kind: "connector-variable", name: "CATALOG_STEAM_ID" },
+      }),
+    );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
+    await withConnectorRuntime(context, actor, "steam", ({ claim }) => {
+      expect(claim.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
+    });
   });
 
   it("executes an external-code grant with catalog-owned storage", async () => {
-    mockAwsExternalCodeProvider();
+    const provider = mockAwsExternalCodeProvider();
     configureSource();
     const release = buildRelease({
       version: "2026-07-15.external-code-grant",
@@ -3992,25 +3574,75 @@ describe("connector catalog valid lifecycle", () => {
       currentScopes: ["openid", "future_scope"],
       storedScopes: ["openid"],
     });
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
     expect(
-      secrets.map((secret) => {
-        return secret.name;
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "aws",
+        authMethod: "cli",
+        name: "AWS_ACCESS_KEY_ID",
+        source: { kind: "connector-secret", name: "CATALOG_AWS_ACCESS_KEY_ID" },
       }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        "CATALOG_AWS_ACCESS_KEY_ID",
-        "CATALOG_AWS_LOGIN_DPOP_KEY",
-        "CATALOG_AWS_LOGIN_REFRESH_TOKEN",
-        "CATALOG_AWS_SECRET_ACCESS_KEY",
-        "CATALOG_AWS_SESSION_TOKEN",
-      ]),
+    );
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "aws",
+        authMethod: "cli",
+        name: "AWS_SECRET_ACCESS_KEY",
+        source: {
+          kind: "connector-secret",
+          name: "CATALOG_AWS_SECRET_ACCESS_KEY",
+        },
+      }),
+    );
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "aws",
+        authMethod: "cli",
+        name: "AWS_SESSION_TOKEN",
+        source: { kind: "connector-secret", name: "CATALOG_AWS_SESSION_TOKEN" },
+      }),
     );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeCompletion);
+    await withConnectorRuntime(
+      context,
+      actor,
+      "aws",
+      async ({ resolveAuth }) => {
+        const resolved = await resolveAuth({
+          authHeaders: {},
+          authAwsSigv4: {
+            accessKeyId: secretTemplate("AWS_ACCESS_KEY_ID"),
+            secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+            sessionToken: secretTemplate("AWS_SESSION_TOKEN"),
+          },
+          forceRefresh: true,
+        });
+        expect(resolved.awsSigv4).toStrictEqual({
+          accessKeyId: "aws-external-code-credential-id",
+          secretAccessKey: "aws-secret-access-key",
+          sessionToken: "aws-session-token",
+        });
+        expect(
+          provider.tokenRequests.map(({ grantType }) => {
+            return grantType;
+          }),
+        ).toStrictEqual(["authorization_code", "refresh_token"]);
+        expect(provider.tokenRequests[1]?.refreshToken).toBe(
+          "aws-login-refresh-token",
+        );
+      },
+      // AWS connector aliases are valid on the vendor Runner harness; Pi
+      // deliberately rejects them as ambient model-provider authentication.
+      { model: "claude-fable-5-1" },
+    );
   });
 
   it("rejects new auth-code actions for an authored-hidden external method", async () => {
@@ -4242,222 +3874,6 @@ describe("connector catalog valid lifecycle", () => {
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(
       callsBeforeProviderResume,
     );
-  });
-
-  it("does not persist an in-flight refresh after the connector is replaced", async () => {
-    mockGmailConnectorOAuth({ email: "refresh-race@example.test" });
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.external-refresh-replacement",
-      connectorSlug: "gmail",
-      label: "Catalog Gmail",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          publicAuthMethod({ id: "oauth", grantKind: "auth-code" }),
-        ]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [gmailPrivateAuthMethod()]);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    mockOptionalEnv(
-      "GMAIL_PUBSUB_TOPIC_NAME",
-      "projects/vm0-ai-488909/topics/gmail-events",
-    );
-    server.use(
-      http.post(OPENROUTER_URL, () => {
-        return HttpResponse.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: { content: JSON.stringify({ connectors: [] }) },
-            },
-          ],
-        });
-      }),
-    );
-
-    const orgId = createUniqueStaffOrgIdFixture();
-    const actor = bdd.user({ orgId });
-    const created: { agentId?: string; workflowId?: string } = {};
-    const refreshResume = deferredGate();
-    const cleanupConnector = createConnectorCleanup(actor, "gmail");
-    onTestFinished(async () => {
-      refreshResume.release();
-      context.mocks.s3.send.mockResolvedValue({ Contents: [] });
-      await cleanupConnector();
-      if (created.workflowId) {
-        await miscApi.deleteWorkflow(actor, created.workflowId, [204, 404]);
-      }
-      if (created.agentId) {
-        await bdd.deleteAgent(actor, created.agentId);
-      }
-      await deleteOrgPlanEntitlementFixture(orgId);
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId,
-      status: "active",
-      supportByok: true,
-      restrictedBuiltInModels: false,
-    });
-    const initialOauth = await connectorsApi.startOauth(
-      actor,
-      "gmail",
-      "oauth",
-    );
-    const initialState = new URL(
-      initialOauth.authorizationUrl,
-    ).searchParams.get("state");
-    if (!initialState) {
-      throw new Error("Expected initial Gmail authorization state");
-    }
-    await connectorsApi.completeOauthCallback("gmail", {
-      code: "initial",
-      state: initialState,
-    });
-    const initialConnection = await connectorsApi.readConnectorBySlug(
-      actor,
-      "gmail",
-    );
-
-    mockNow(new Date("2026-07-15T10:00:00.000Z"));
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Refresh replacement agent",
-      visibility: "private",
-    });
-    created.agentId = agent.agentId;
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const headers = { authorization: "Bearer clerk-session" };
-    const workflow = await accept(
-      setupApp({ context, routes: workflowsRoutes })(
-        workflowsCollectionContract,
-      ).create({
-        headers,
-        body: {
-          agentId: agent.agentId,
-          name: `refresh-replacement-${randomUUID().slice(0, 8)}`,
-          instruction: "Handle incoming Gmail messages.",
-        },
-      }),
-      [201],
-    );
-    created.workflowId = workflow.body.id;
-
-    const refreshEntered = deferredGate();
-    const watchAuthorizations: string[] = [];
-    const stopAuthorizations: string[] = [];
-    server.use(
-      http.post(GOOGLE_OAUTH_TOKEN_URL, async ({ request }) => {
-        const body = new URLSearchParams(await request.text());
-        if (body.get("grant_type") === "refresh_token") {
-          refreshEntered.release();
-          await refreshResume.promise;
-          return HttpResponse.json({
-            access_token: "stale-refreshed-gmail-token",
-            refresh_token: "stale-rotated-gmail-refresh-token",
-            expires_in: 3600,
-            token_type: "Bearer",
-            scope: "https://www.googleapis.com/auth/gmail.modify",
-          });
-        }
-        return HttpResponse.json({
-          access_token: "replacement-gmail-token",
-          refresh_token: "replacement-gmail-refresh-token",
-          expires_in: 3600,
-          token_type: "Bearer",
-          scope: "https://www.googleapis.com/auth/gmail.modify",
-        });
-      }),
-      http.post(
-        "https://gmail.googleapis.com/gmail/v1/users/me/watch",
-        ({ request }) => {
-          watchAuthorizations.push(request.headers.get("authorization") ?? "");
-          return HttpResponse.json({
-            historyId: "100",
-            expiration: String(now() + 7 * 24 * 60 * 60 * 1000),
-          });
-        },
-      ),
-      http.post(
-        "https://gmail.googleapis.com/gmail/v1/users/me/stop",
-        ({ request }) => {
-          stopAuthorizations.push(request.headers.get("authorization") ?? "");
-          return new HttpResponse(null, { status: 204 });
-        },
-      ),
-    );
-
-    const firstCreate = accept(
-      setupApp({ context, routes: workflowAutomationsRoutes })(
-        workflowAutomationsContract,
-      ).create({
-        headers,
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [400],
-    );
-    await refreshEntered.promise;
-
-    const replacementOauth = await connectorsApi.startOauth(
-      actor,
-      "gmail",
-      "oauth",
-      undefined,
-      { intent: "reconnect", connectionId: initialConnection.id },
-    );
-    const replacementState = new URL(
-      replacementOauth.authorizationUrl,
-    ).searchParams.get("state");
-    if (!replacementState) {
-      throw new Error("Expected replacement Gmail authorization state");
-    }
-    await connectorsApi.completeOauthCallback("gmail", {
-      code: "replacement",
-      state: replacementState,
-    });
-    refreshResume.release();
-
-    const rejected = await firstCreate;
-    expect(rejected.body.error.message).toBe(
-      "Reconnect Gmail before using Gmail event automations",
-    );
-    await expect(
-      connectorsApi.readConnectorBySlug(actor, "gmail"),
-    ).resolves.toMatchObject({
-      connectionStatus: "connected",
-      reconnectReason: null,
-    });
-
-    await accept(
-      setupApp({ context, routes: workflowAutomationsRoutes })(
-        workflowAutomationsContract,
-      ).create({
-        headers,
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [201],
-    );
-    expect(watchAuthorizations).toStrictEqual([
-      "Bearer replacement-gmail-token",
-      "Bearer replacement-gmail-token",
-    ]);
-    expect(stopAuthorizations).toStrictEqual([
-      "Bearer replacement-gmail-token",
-    ]);
   });
 
   describe("with a pending catalog authorization", () => {
@@ -4695,45 +4111,6 @@ describe("connector catalog valid lifecycle", () => {
     expect(tampered.location).toContain("Invalid%20state%20signature");
   });
 
-  it("fails closed without accepted catalog state", async () => {
-    configureSource();
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const callsBeforeRead = context.mocks.s3.send.mock.calls.length;
-    const catalogClient = setupApp({
-      context,
-      routes: connectorCatalogRoutes,
-    })(connectorCatalogContract);
-    const headers = { authorization: "Bearer clerk-session" };
-
-    const catalogResponse = await accept(
-      catalogClient.list({ headers }),
-      [503],
-    );
-    const catalogStatusResponse = await accept(
-      catalogClient.status({ headers }),
-      [503],
-    );
-    const searchResponse = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsSearchContract,
-      ).search({
-        headers,
-        query: {},
-      }),
-      [503],
-    );
-    const expectedError = {
-      error: {
-        code: "PROVIDER_UNAVAILABLE",
-        message: "Connector catalog is temporarily unavailable",
-      },
-    };
-    expect(catalogResponse.body).toStrictEqual(expectedError);
-    expect(catalogStatusResponse.body).toStrictEqual(expectedError);
-    expect(searchResponse.body).toStrictEqual(expectedError);
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeRead);
-  });
-
   it("accepts a complete generated firewall projection", async () => {
     configureSource();
     const release = buildRelease({
@@ -4742,10 +4119,9 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      state: "current",
-      active: { catalogVersion: release.version },
+      failureCode: null,
     });
   });
 
@@ -4761,10 +4137,9 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      state: "current",
-      active: { catalogVersion: release.version },
+      failureCode: null,
     });
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
@@ -4807,10 +4182,9 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      state: "current",
-      active: { catalogVersion: release.version },
+      failureCode: null,
     });
   });
 
@@ -4836,18 +4210,17 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      state: "current",
-      active: { catalogVersion: release.version },
+      failureCode: null,
     });
     await expect(
       readOwnedVolumeStorageState(skill.storageId),
     ).resolves.toStrictEqual({
       s3_prefix: skill.s3Prefix,
-      size: skill.contentSize,
-      file_count: 1,
-      head_version_id: skill.versionId,
+      size: 0,
+      file_count: 0,
+      head_version_id: null,
     });
     const requestedKeys = context.mocks.s3.send.mock.calls.map((call) => {
       const input = commandInput(call[0]);
@@ -4900,221 +4273,13 @@ describe("connector catalog valid lifecycle", () => {
       });
       serveObjects(catalogObjects([release], release));
 
-      const response = await syncCatalog();
-      expect(response.body).toMatchObject({
-        outcome: "rejected",
-        state: "never-synced",
-        active: null,
-        lastAttempt: { failureCode: "invalid-artifact" },
-      });
+      expectRejectedAttempt((await syncCatalog()).body, "invalid-artifact");
       await expect(
         readVolumeStorageState({
           orgId: SYSTEM_ORG_ID,
           storageName: skill.storageName,
         }),
       ).resolves.toBeNull();
-    }
-  });
-
-  it("reuses immutable skill versions without regressing HEAD", async () => {
-    configureSource();
-    const connectorSlug = `skill-cache-${randomUUID().slice(0, 8)}`;
-    const storage = createBundledSkillStorageFixture(connectorSlug);
-    const firstSkill = buildBundledSkillFixture(
-      connectorSlug,
-      createHash("sha256").update(`first:${randomUUID()}`).digest("hex"),
-      storage,
-    );
-    const secondSkill = buildBundledSkillFixture(
-      connectorSlug,
-      createHash("sha256").update(`second:${randomUUID()}`).digest("hex"),
-      storage,
-    );
-    await claimOwnedVolumeStorage({ orgId: SYSTEM_ORG_ID, ...storage });
-    onTestFinished(async () => {
-      await cleanupOwnedVolumeStorages([storage.storageId]);
-    });
-    const firstRelease = buildRelease({
-      version: `2026-07-22.skill-cache-first-${randomUUID().slice(0, 8)}`,
-      connectorSlug,
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill =
-          firstSkill.descriptor;
-      },
-    });
-    const secondRelease = buildRelease({
-      version: `2026-07-22.skill-cache-second-${randomUUID().slice(0, 8)}`,
-      connectorSlug,
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill =
-          secondSkill.descriptor;
-      },
-    });
-    const oldRetryRelease = buildRelease({
-      version: `2026-07-22.skill-cache-old-${randomUUID().slice(0, 8)}`,
-      connectorSlug,
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill =
-          firstSkill.descriptor;
-      },
-    });
-
-    serveObjects(catalogObjects([firstRelease], firstRelease));
-    expect((await syncCatalog()).body.outcome).toBe("accepted");
-
-    serveObjects(catalogObjects([firstRelease, secondRelease], secondRelease));
-    expect((await syncCatalog()).body.outcome).toBe("accepted");
-
-    context.mocks.s3.send.mockClear();
-    serveObjects(
-      catalogObjects(
-        [firstRelease, secondRelease, oldRetryRelease],
-        oldRetryRelease,
-      ),
-    );
-    expect((await syncCatalog()).body.outcome).toBe("accepted");
-    const requestedKeys = context.mocks.s3.send.mock.calls.map((call) => {
-      const input = commandInput(call[0]);
-      return typeof input.Key === "string" ? input.Key : null;
-    });
-    expect(requestedKeys).not.toContain(firstSkill.manifestKey);
-    expect(requestedKeys).not.toContain(firstSkill.archiveKey);
-    await expect(
-      readOwnedVolumeStorageState(storage.storageId),
-    ).resolves.toMatchObject({
-      head_version_id: secondSkill.versionId,
-    });
-  });
-
-  it("rolls back all skill registrations and retries a repaired conflict", async () => {
-    configureSource();
-    const suffix = randomUUID().slice(0, 8);
-    const firstConnectorSlug = `skill-atomic-a-${suffix}`;
-    const conflictingConnectorSlug = `skill-atomic-b-${suffix}`;
-    const firstSkill = buildBundledSkillFixture(
-      firstConnectorSlug,
-      createHash("sha256").update(`first:${randomUUID()}`).digest("hex"),
-    );
-    const conflictingSkill = buildBundledSkillFixture(
-      conflictingConnectorSlug,
-      createHash("sha256").update(`conflict:${randomUUID()}`).digest("hex"),
-    );
-    const wrongPrefix = `${SYSTEM_ORG_ID}/volume/wrong-${conflictingSkill.storageName}`;
-    await claimOwnedVolumeStorages([
-      { orgId: SYSTEM_ORG_ID, ...firstSkill },
-      {
-        orgId: SYSTEM_ORG_ID,
-        ...conflictingSkill,
-        s3Prefix: wrongPrefix,
-      },
-    ]);
-    onTestFinished(async () => {
-      await cleanupOwnedVolumeStorages([
-        firstSkill.storageId,
-        conflictingSkill.storageId,
-      ]);
-    });
-    const existingVersionId = createHash("sha256")
-      .update(`existing:${randomUUID()}`)
-      .digest("hex");
-    await seedOwnedVolumeStorageVersion({
-      storageId: conflictingSkill.storageId,
-      versionId: existingVersionId,
-      s3Key: `${wrongPrefix}/${existingVersionId}`,
-    });
-    const conflictingIconBytes = Buffer.from(
-      `<svg>${conflictingConnectorSlug}</svg>`,
-    );
-    const conflictingIconDigest = digest(conflictingIconBytes);
-    const release = buildRelease({
-      version: `2026-07-22.skill-conflict-${randomUUID().slice(0, 8)}`,
-      connectorSlug: firstConnectorSlug,
-      mutateCatalog: (artifact) => {
-        arrayValue(artifact.connectors, "connectors").push(
-          buildCatalogConnector({
-            connectorSlug: conflictingConnectorSlug,
-            label: "Conflicting Skill",
-            iconKey:
-              "platform/views/zero-page/components/settings/icons/" +
-              `${conflictingConnectorSlug}-${conflictingIconDigest.slice("sha256:".length, 19)}.svg`,
-          }),
-        );
-      },
-      mutateRuntime: (artifact) => {
-        const connectors = arrayValue(artifact.connectors, "connectors");
-        firstRecord(connectors, "connectors").skill = firstSkill.descriptor;
-        const conflictingConnector = recordValue(
-          connectors[1],
-          "connectors[1]",
-        );
-        const conflictingPrivateName = "ATOMIC_SKILL_B_TOKEN";
-        const conflictingMethod = firstRecord(
-          conflictingConnector.authMethods,
-          "authMethods",
-        );
-        recordValue(conflictingMethod.storage, "storage").secrets = [
-          conflictingPrivateName,
-        ];
-        firstRecord(
-          recordValue(conflictingMethod.grant, "grant").fields,
-          "grant.fields",
-        ).privateName = conflictingPrivateName;
-        recordValue(
-          recordValue(conflictingMethod.access, "access").envBindings,
-          "envBindings",
-        ).SERVICE_TOKEN = `$secrets.${conflictingPrivateName}`;
-        conflictingConnector.skill = conflictingSkill.descriptor;
-      },
-    });
-    const objects = catalogObjects([release], release);
-    serveObjects(objects);
-
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      active: null,
-      lastAttempt: { failureCode: "invalid-reference" },
-    });
-    await expect(
-      readOwnedVolumeStorageState(firstSkill.storageId),
-    ).resolves.toStrictEqual({
-      s3_prefix: firstSkill.s3Prefix,
-      size: 0,
-      file_count: 0,
-      head_version_id: null,
-    });
-    await expect(
-      readVolumeStorageVersion({
-        orgId: SYSTEM_ORG_ID,
-        storageName: firstSkill.storageName,
-        versionId: firstSkill.versionId,
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      readOwnedVolumeStorageState(conflictingSkill.storageId),
-    ).resolves.toStrictEqual({
-      s3_prefix: wrongPrefix,
-      size: 1,
-      file_count: 1,
-      head_version_id: existingVersionId,
-    });
-
-    await cleanupOwnedVolumeStorages([conflictingSkill.storageId]);
-    await claimOwnedVolumeStorage({
-      orgId: SYSTEM_ORG_ID,
-      ...conflictingSkill,
-    });
-    serveObjects(objects);
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogVersion: release.version },
-    });
-    for (const skill of [firstSkill, conflictingSkill]) {
-      await expect(
-        readOwnedVolumeStorageState(skill.storageId),
-      ).resolves.toMatchObject({
-        s3_prefix: skill.s3Prefix,
-        head_version_id: skill.versionId,
-      });
     }
   });
 
@@ -5152,11 +4317,7 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      active: null,
-      lastAttempt: { failureCode: "invalid-reference" },
-    });
+    expectRejectedAttempt((await syncCatalog()).body, "invalid-reference");
     await expect(
       readVolumeStorageState({
         orgId: SYSTEM_ORG_ID,
@@ -5174,6 +4335,7 @@ describe("connector catalog valid lifecycle", () => {
   it.each(["storage name", "version ID"] as const)(
     "rejects bundled skills sharing one %s across connectors",
     async (sharedIdentity) => {
+      expect.hasAssertions();
       configureSource();
       const suffix = randomUUID().slice(0, 8);
       const firstConnectorSlug = `skill-identity-a-${suffix}`;
@@ -5229,12 +4391,10 @@ describe("connector catalog valid lifecycle", () => {
       });
       serveObjects(catalogObjects([release], release));
 
-      expect((await syncCatalog()).body).toMatchObject({
-        outcome: "rejected",
-        state: "never-synced",
-        active: null,
-        lastAttempt: { failureCode: "relationship-mismatch" },
-      });
+      expectRejectedAttempt(
+        (await syncCatalog()).body,
+        "relationship-mismatch",
+      );
     },
   );
 
@@ -5259,10 +4419,9 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      state: "current",
-      active: { catalogVersion: release.version },
+      failureCode: null,
     });
     const response = await accept(
       runnerFirewallClient().resolve({
@@ -5279,78 +4438,19 @@ describe("connector catalog valid lifecycle", () => {
     const release = buildRelease({ version: "2026-07-15.concurrent" });
     serveObjects(catalogObjects([release], release));
     const results = await Promise.all([syncCatalog(), syncCatalog()]);
-    expect(
-      results
-        .map((result) => {
-          return result.body.outcome;
-        })
-        .sort(),
-    ).toStrictEqual(["accepted", "unchanged"]);
-    expect((await readStatus()).body).toMatchObject({
-      state: "current",
-      active: { catalogVersion: release.version },
+    // The last writer wins: both attempts may publish the same generation, or
+    // the later one may observe it already serving. Neither reports a failure.
+    const outcomes = results.map((result) => {
+      return result.body.outcome;
     });
-  });
-
-  it("rolls back a candidate snapshot when its state compare-and-swap loses", async () => {
-    configureSource();
-    const losing = buildRelease({
-      version: "2026-07-15.losing",
-      label: "Losing Candidate",
-    });
-    const winning = buildRelease({
-      version: "2026-07-15.winning",
-      label: "Winning Candidate",
-    });
-    const replacement = buildRelease({
-      version: losing.version,
-      label: "Replacement Candidate",
-    });
-    const objects = catalogObjects([losing, winning], winning);
-    const losingPublicKey = releaseKeys(losing.version).catalog;
-    const blocked = deferredGate();
-    const resume = deferredGate();
-    const activePointers = [losing.pointer, winning.pointer, winning.pointer];
-    let activeReads = 0;
-    let blockedLosingPublic = false;
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      const key = commandInput(command).Key;
-      if (key === losingPublicKey && !blockedLosingPublic) {
-        blockedLosingPublic = true;
-        blocked.release();
-        await resume.promise;
-      }
-      const bytes =
-        key === ACTIVE_KEY
-          ? activePointers[activeReads++]
-          : typeof key === "string"
-            ? objects.get(key)
-            : undefined;
-      if (!bytes) {
-        throw new Error("Object unavailable");
-      }
-      return {
-        ContentLength: bytes.length,
-        Body: s3Body(bytes),
-      };
-    });
-
-    const losingSync = syncCatalog();
-    await blocked.promise;
-    const settledWinningResult = await settle(syncCatalog(), context.signal);
-    resume.release();
-    if (!settledWinningResult.ok) {
-      throw settledWinningResult.error;
+    expect(outcomes).toContain("accepted");
+    for (const outcome of outcomes) {
+      expect(["accepted", "unchanged"]).toContain(outcome);
     }
-    const winningResult = settledWinningResult.value;
-    const losingResult = await losingSync;
-    expect(winningResult.body.outcome).toBe("accepted");
-    expect(losingResult.body.outcome).toBe("unchanged");
-
-    serveObjects(catalogObjects([replacement], replacement));
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogVersion: replacement.version },
+    // The serving generation is the release, so a later sync is unchanged.
+    expect((await syncCatalog()).body).toStrictEqual({
+      outcome: "unchanged",
+      failureCode: null,
     });
   });
 
@@ -5380,291 +4480,14 @@ describe("connector catalog valid lifecycle", () => {
       });
     });
 
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogVersion: observed.version },
-    });
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogVersion: current.version },
-    });
+    // The first attempt publishes the observed generation, so the next one
+    // accepts the current pointer instead of reporting it unchanged.
+    expect((await syncCatalog()).body).toMatchObject({ outcome: "accepted" });
+    expect((await syncCatalog()).body).toMatchObject({ outcome: "accepted" });
   });
 });
 
 describe("connector catalog executable compatibility", () => {
-  it("writes a deterministic empty compatibility evaluation", async () => {
-    configureSource();
-    mockApiTestConnectorProviderConfiguration();
-    const release = buildRelease({
-      version: "2026-07-31.empty-evaluation",
-    });
-    serveObjects(catalogObjects([release], release));
-
-    const synced = await syncCatalog();
-    const evaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(evaluations).toHaveLength(1);
-    const [evaluation] = evaluations;
-
-    expect(evaluation?.capabilityDigest).toBe(EXPECTED_CAPABILITY_DIGEST);
-    expect(synced.body.filtering).toStrictEqual({
-      capabilityDigest: EXPECTED_CAPABILITY_DIGEST,
-      evaluatedAt: FIRST_SYNC_TIME,
-      stale: false,
-      filteredAuthMethods: [],
-    });
-    expect(evaluation?.payload).toStrictEqual({ filteredAuthMethods: [] });
-
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const headers = { authorization: "Bearer clerk-session" };
-    const client = diagnosticsClient();
-    await accept(client.list({ headers }), [200]);
-    await accept(client.status({ headers }), [200]);
-    await accept(
-      client.get({
-        headers,
-        params: { connectorSlug: release.connectorSlug },
-      }),
-      [200],
-    );
-  });
-
-  it("persists canonical non-empty filtering", async () => {
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-31.filtered-evaluation",
-      connectorSlug: "future-auth",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          publicAuthMethod({ id: "oauth", grantKind: "device-auth" }),
-        ]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [devicePrivateAuthMethod()]);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    const synced = await syncCatalog();
-    const evaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(evaluations).toHaveLength(1);
-    const [evaluation] = evaluations;
-    const wireMethods = synced.body.filtering.filteredAuthMethods;
-    const expectedMethods = wireMethods.map((method) => {
-      return {
-        connectorSlug: method.connectorSlug,
-        authMethodId: method.authMethodId,
-        reasons: method.reasons,
-      };
-    });
-
-    expect(evaluation?.payload).toStrictEqual({
-      filteredAuthMethods: expectedMethods,
-    });
-    expect(wireMethods).toStrictEqual(expectedMethods);
-  });
-
-  it("derives and reconciles a missing compatibility evaluation", async () => {
-    configureSource();
-    mockApiTestConnectorProviderConfiguration();
-    const release = buildRelease({
-      version: "2026-07-31.missing-canonical-evaluation",
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-
-    await deleteApiTestConnectorCatalogCompatibilityEvaluation(
-      EXPECTED_CAPABILITY_DIGEST,
-    );
-    await expect(
-      readApiTestConnectorCatalogCompatibilityEvaluations(),
-    ).resolves.toHaveLength(0);
-
-    const stale = await readStatus();
-    expect(stale.body.filtering).toStrictEqual({
-      capabilityDigest: EXPECTED_CAPABILITY_DIGEST,
-      evaluatedAt: null,
-      stale: true,
-      filteredAuthMethods: [],
-    });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const headers = { authorization: "Bearer clerk-session" };
-    const catalogClient = setupApp({
-      context,
-      routes: connectorCatalogRoutes,
-    })(connectorCatalogContract);
-    const beforeReconciliation = await accept(
-      catalogClient.list({ headers }),
-      [200],
-    );
-    expect(beforeReconciliation.body).toMatchObject({
-      connectors: [expect.objectContaining({ slug: release.connectorSlug })],
-    });
-    await expect(
-      readApiTestConnectorCatalogCompatibilityEvaluations(),
-    ).resolves.toHaveLength(0);
-
-    mockNow(new Date("2026-07-31T08:01:00.000Z"));
-    const reconciled = await syncCatalog();
-    const evaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-
-    expect(reconciled.body.outcome).toBe("unchanged");
-    expect(reconciled.body.filtering.capabilityDigest).toBe(
-      EXPECTED_CAPABILITY_DIGEST,
-    );
-    expect(evaluations).toHaveLength(1);
-    expect(evaluations[0]?.payload).toStrictEqual({
-      filteredAuthMethods: [],
-    });
-    expect(
-      (await accept(catalogClient.list({ headers }), [200])).body,
-    ).toMatchObject({
-      connectors: [expect.objectContaining({ slug: release.connectorSlug })],
-    });
-  });
-
-  it("replaces the compatibility evaluation with a new catalog", async () => {
-    configureSource();
-    const first = buildRelease({
-      version: "2026-07-31.replacement-1",
-    });
-    serveObjects(catalogObjects([first], first));
-    await syncCatalog();
-    const firstEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(firstEvaluations).toHaveLength(1);
-    const firstCatalogDigest = firstEvaluations[0]?.catalogDigest;
-    if (firstCatalogDigest === undefined) {
-      throw new Error("Expected initial compatibility evaluations");
-    }
-
-    const second = buildRelease({
-      version: "2026-07-31.replacement-2",
-    });
-    serveObjects(catalogObjects([first, second], second));
-    const replaced = await syncCatalog();
-    const replacementEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-
-    expect(replacementEvaluations).toHaveLength(1);
-    expect(
-      replacementEvaluations.every((evaluation) => {
-        return evaluation.catalogDigest === replaced.body.active?.catalogDigest;
-      }),
-    ).toBeTruthy();
-    expect(
-      replacementEvaluations.some((evaluation) => {
-        return evaluation.catalogDigest === firstCatalogDigest;
-      }),
-    ).toBeFalsy();
-    expect(replacementEvaluations[0]?.payload).toStrictEqual({
-      filteredAuthMethods: [],
-    });
-  });
-
-  it("repairs missing and newer validator package authorities", async () => {
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-27.validation-authority-repair",
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-    const currentAuthority = apiTestConnectorCatalogValidationAuthority();
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-
-    await setApiTestConnectorCatalogValidationAuthority(null);
-    mockNow(new Date("2026-07-27T08:01:00.000Z"));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-
-    // A release that serves after a newer one — a rollback, for example — must
-    // reclaim the attestation. Its readers accept only their own validator
-    // identity, so leaving the newer one behind would strand them on the full
-    // fallback for as long as that release serves.
-    await setApiTestConnectorCatalogValidationAuthority({
-      ...currentAuthority,
-      validatorVersion: "999999.0.0",
-    });
-    mockNow(new Date("2026-07-27T08:02:00.000Z"));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-  });
-
-  it("preserves accepted authority across an API-only release", async () => {
-    configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
-    const release = buildRelease({
-      version: "2026-07-27.validation-backend-release",
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-    const currentAuthority = apiTestConnectorCatalogValidationAuthority();
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-
-    setApiVersion("1.319.0");
-    mockNow(new Date("2026-07-27T08:01:00.000Z"));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-    const evaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(evaluations).toHaveLength(1);
-    expect(
-      evaluations.map((evaluation) => {
-        return evaluation.validationAuthority;
-      }),
-    ).toStrictEqual([currentAuthority]);
-  });
-
-  it("repairs accepted validation authority after a preview build", async () => {
-    configureSource();
-    mockEnv("ENV", "preview");
-    const firstCommit = "a".repeat(40);
-    const secondCommit = "b".repeat(40);
-    mockEnv("GIT_COMMIT_SHA", firstCommit);
-    const release = buildRelease({
-      version: "2026-07-27.validation-preview-build",
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-    const validatorVersion =
-      apiTestConnectorCatalogValidationAuthority().validatorVersion;
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual({
-      validatorVersion,
-      buildCommitSha: firstCommit,
-    });
-
-    mockEnv("GIT_COMMIT_SHA", secondCommit);
-    mockNow(new Date("2026-07-27T08:01:00.000Z"));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual({
-      validatorVersion,
-      buildCommitSha: secondCommit,
-    });
-    await expect(
-      readApiTestConnectorCatalogRuntimeProjectionAuthority(),
-    ).resolves.toStrictEqual({
-      validatorVersion,
-      buildCommitSha: secondCommit,
-    });
-  });
-
   it("accepts inline confidential test clients and applies rollout at request time", async () => {
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     const provider = mockTestOAuthAuthCodeProvider({
@@ -5687,10 +4510,7 @@ describe("connector catalog executable compatibility", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body.filtering).toMatchObject({
-      stale: false,
-      filteredAuthMethods: [],
-    });
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "test-oauth"));
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -5706,10 +4526,7 @@ describe("connector catalog executable compatibility", () => {
 
     expect(
       (await accept(catalogClient.list({ headers }), [200])).body,
-    ).toStrictEqual({
-      connectors: [],
-      categoryMetadata: { categories: [], groups: [] },
-    });
+    ).toStrictEqual({ connectors: [] });
     await accept(
       featureClient.update({
         headers,
@@ -5792,26 +4609,11 @@ describe("connector catalog executable compatibility", () => {
     });
     serveObjects(catalogObjects([partial], partial));
 
-    expect((await syncCatalog()).body.filtering).toMatchObject({
-      stale: false,
-      filteredAuthMethods: [
-        {
-          connectorSlug: "future-auth",
-          authMethodId: "api-token",
-          reasons: ["missing-access-provider"],
-        },
-        {
-          connectorSlug: "future-auth",
-          authMethodId: "cli",
-          reasons: ["missing-revoke-provider"],
-        },
-        {
-          connectorSlug: "future-auth",
-          authMethodId: "oauth",
-          reasons: ["missing-grant-provider"],
-        },
-      ],
-    });
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
+    // Only the method with grant, access and revoke handlers is served.
+    await expect(servedConnectors()).resolves.toMatchObject([
+      { slug: "future-auth", authMethods: [{ id: "api" }] },
+    ]);
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const diagnostic = await accept(
       setupApp({ context, routes: connectorCheckRoutes })(
@@ -5840,9 +4642,8 @@ describe("connector catalog executable compatibility", () => {
       },
     });
     serveObjects(catalogObjects([partial, allFiltered], allFiltered));
-    expect(
-      (await syncCatalog()).body.filtering.filteredAuthMethods,
-    ).toHaveLength(3);
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
+    await expect(servedConnectors()).resolves.toStrictEqual([]);
   });
 
   it("ignores filtered sibling methods when choosing the callback origin", async () => {
@@ -5871,14 +4672,9 @@ describe("connector catalog executable compatibility", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect(
-      (await syncCatalog()).body.filtering.filteredAuthMethods,
-    ).toStrictEqual([
-      {
-        connectorSlug: "cloudflare",
-        authMethodId: "future-web",
-        reasons: ["missing-grant-provider", "provider-contract-mismatch"],
-      },
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
+    await expect(servedConnectors()).resolves.toMatchObject([
+      { slug: "cloudflare", authMethods: [{ id: "oauth" }] },
     ]);
 
     const response = await requestOauthCallbackRaw(context, {
@@ -5912,24 +4708,13 @@ describe("connector catalog executable compatibility", () => {
       },
     });
     serveObjects(catalogObjects([release], release));
-    const accepted = await syncCatalog();
-    expect(accepted.body.filtering).toMatchObject({
-      evaluatedAt: FIRST_SYNC_TIME,
-      stale: false,
-      filteredAuthMethods: [
-        {
-          connectorSlug: release.connectorSlug,
-          authMethodId: "api-token",
-          reasons: ["provider-contract-mismatch"],
-        },
-      ],
-    });
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
+    // The only method requires an unapproved configuration, so it is not
+    // served, and configuring that name does not change the capability.
+    await expect(servedConnectors()).resolves.toStrictEqual([]);
 
-    mockNow(new Date("2026-07-15T08:10:00.000Z"));
     mockOptionalEnv(unapprovedName, "must-not-affect-capabilities");
-    const unchanged = await syncCatalog();
-    expect(unchanged.body.filtering).toStrictEqual(accepted.body.filtering);
-    expect(JSON.stringify(unchanged.body)).not.toContain(unapprovedName);
+    await expect(servedConnectors()).resolves.toStrictEqual([]);
   });
 
   it("matches provider fields without pinning catalog storage names", async () => {
@@ -5950,18 +4735,17 @@ describe("connector catalog executable compatibility", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    const response = await syncCatalog();
-    expect(response.body.filtering).toMatchObject({
-      evaluatedAt: FIRST_SYNC_TIME,
-      stale: false,
-      filteredAuthMethods: [],
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
+    const served = await servedConnectors({
+      [FeatureSwitchKey.DeelConnector]: true,
     });
-    expect(JSON.stringify(response.body)).not.toContain(
-      "CATALOG_DEEL_ACCESS_TOKEN",
-    );
+    expect(served).toMatchObject([
+      { slug: "deel", authMethods: [{ id: "oauth" }] },
+    ]);
+    expect(JSON.stringify(served)).not.toContain("CATALOG_DEEL_ACCESS_TOKEN");
   });
 
-  it("reconciles configuration changes and retains rolling-build evaluations", async () => {
+  it("follows configuration changes with on-demand filtering", async () => {
     configureSource();
     mockOptionalEnv("STEAM_WEB_API_KEY", undefined);
     const first = buildRelease({
@@ -5977,19 +4761,7 @@ describe("connector catalog executable compatibility", () => {
       },
     });
     serveObjects(catalogObjects([first], first));
-    const missingConfiguration = await syncCatalog();
-    expect(missingConfiguration.body.filtering).toMatchObject({
-      evaluatedAt: FIRST_SYNC_TIME,
-      stale: false,
-      filteredAuthMethods: [
-        {
-          connectorSlug: "steam",
-          authMethodId: "openid",
-          reasons: ["missing-platform-configuration"],
-        },
-      ],
-    });
-    const firstDigest = missingConfiguration.body.filtering.capabilityDigest;
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const catalogClient = setupApp({
       context,
@@ -6000,16 +4772,9 @@ describe("connector catalog executable compatibility", () => {
       (await accept(catalogClient.list({ headers }), [200])).body,
     ).toMatchObject({ connectors: [] });
 
+    // Public reads follow the new capability before any sync.
     mockOptionalEnv("STEAM_WEB_API_KEY", "configured");
     const callsBeforeStaleStatus = context.mocks.s3.send.mock.calls.length;
-    const stale = await readStatus();
-    expect(stale.body.filtering).toMatchObject({
-      evaluatedAt: null,
-      stale: true,
-      filteredAuthMethods: [],
-    });
-    expect(stale.body.filtering.capabilityDigest).not.toBe(firstDigest);
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeStaleStatus);
     const stalePublicRead = await accept(
       catalogClient.list({ headers }),
       [200],
@@ -6027,41 +4792,10 @@ describe("connector catalog executable compatibility", () => {
       },
     });
     serveObjects(catalogObjects([first, rejected], rejected));
-    const configured = await syncCatalog();
-    expect(configured.body).toMatchObject({
-      outcome: "rejected",
-      state: "stale",
-      active: { catalogVersion: first.version },
-    });
-    expect(configured.body.filtering).toMatchObject({
-      evaluatedAt: "2026-07-15T08:20:00.000Z",
-      stale: false,
-      filteredAuthMethods: [],
-    });
-    expect(configured.body.filtering.capabilityDigest).not.toBe(firstDigest);
+    expectRejectedAttempt((await syncCatalog()).body, "invalid-pointer");
     expect(
       (await accept(catalogClient.list({ headers }), [200])).body.connectors,
     ).toStrictEqual([expect.objectContaining({ slug: "steam" })]);
-
-    mockOptionalEnv("STEAM_WEB_API_KEY", undefined);
-    expect((await readStatus()).body.filtering).toStrictEqual(
-      missingConfiguration.body.filtering,
-    );
-    const rollingEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(rollingEvaluations).toHaveLength(2);
-    expect(
-      rollingEvaluations.every(({ payload }) => {
-        return !Array.isArray(payload);
-      }),
-    ).toBeTruthy();
-    expect(
-      new Set(
-        rollingEvaluations.map((evaluation) => {
-          return evaluation.catalogDigest;
-        }),
-      ),
-    ).toStrictEqual(new Set([missingConfiguration.body.active?.catalogDigest]));
 
     const second = buildRelease({
       version: "2026-07-15.steam-2",
@@ -6077,35 +4811,14 @@ describe("connector catalog executable compatibility", () => {
     });
     mockOptionalEnv("STEAM_WEB_API_KEY", "configured");
     serveObjects(catalogObjects([first, second], second));
-    await syncCatalog();
+    expect((await syncCatalog()).body.outcome).toBe("accepted");
     mockOptionalEnv("STEAM_WEB_API_KEY", undefined);
-    expect((await readStatus()).body.filtering).toMatchObject({
-      capabilityDigest: firstDigest,
-      evaluatedAt: null,
-      stale: true,
-      filteredAuthMethods: [],
-    });
     expect(
       (await accept(catalogClient.list({ headers }), [200])).body.connectors,
     ).toStrictEqual([]);
 
     mockNow(new Date("2026-07-15T08:40:00.000Z"));
-    const rolledBack = await syncCatalog();
-    expect(rolledBack.body).toMatchObject({
-      outcome: "unchanged",
-      filtering: {
-        capabilityDigest: firstDigest,
-        evaluatedAt: "2026-07-15T08:40:00.000Z",
-        stale: false,
-        filteredAuthMethods: [
-          {
-            connectorSlug: "steam",
-            authMethodId: "openid",
-            reasons: ["missing-platform-configuration"],
-          },
-        ],
-      },
-    });
+    expect((await syncCatalog()).body.outcome).toBe("unchanged");
     expect(
       (await accept(catalogClient.list({ headers }), [200])).body.connectors,
     ).toStrictEqual([]);
@@ -6131,116 +4844,35 @@ describe("connector catalog executable compatibility", () => {
     serveObjects(catalogObjects([release], release));
 
     const response = await syncCatalog();
-    expect(response.body.filtering.filteredAuthMethods).toStrictEqual([
-      {
-        connectorSlug: "steam",
-        authMethodId: "openid",
-        reasons: ["provider-contract-mismatch"],
-      },
-    ]);
+    expect(response.body.outcome).toBe("accepted");
     expect(JSON.stringify(response.body)).not.toContain("STEAM_WEB_API_KEY");
+    // Configured, but the method's callback origin breaks the provider
+    // contract, so it is not served.
+    await expect(servedConnectors()).resolves.toStrictEqual([]);
   });
 });
 
 describe("connector catalog rejection and latest-valid retention", () => {
-  it("accepts 64 MiB in a rollback-isolated source generation and rejects 64 MiB plus one with latest-valid retention", async () => {
-    const bucket = configureSource();
-    const previousSourceId = previousConnectorCatalogSourceId(bucket);
-    await installApiTestConnectorCatalog({
-      catalogVersion: "2026-07-14.rollback-compatible",
-      sourceId: previousSourceId,
-    });
-    const previousSnapshot =
-      await readApiTestConnectorCatalogSnapshot(previousSourceId);
-    expect(previousSnapshot.catalogRawSize).toBeLessThanOrEqual(
-      PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES,
-    );
-    const previousRawBytes = gunzipSync(previousSnapshot.catalogGzip, {
-      maxOutputLength: PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES,
-    });
-    expect(previousRawBytes.byteLength).toBe(previousSnapshot.catalogRawSize);
-    expect(digest(previousRawBytes)).toBe(previousSnapshot.catalogDigest);
-
-    expect(CONNECTOR_CATALOG_MAX_RAW_BYTES).toBe(64 * 1024 * 1024);
-    const acceptedVersion = "2026-07-15.sixty-four-mib-limit";
-    const unpadded = buildRelease({
-      version: acceptedVersion,
-      mutateCatalog: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").description = "";
-      },
-    });
-    const descriptionBytes =
-      CONNECTOR_CATALOG_MAX_RAW_BYTES -
-      releaseCatalogBytes(unpadded).byteLength;
-    const accepted = buildRelease({
-      version: acceptedVersion,
-      mutateCatalog: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").description = "x".repeat(
-          descriptionBytes,
-        );
-      },
-    });
-    const acceptedBytes = releaseCatalogBytes(accepted);
-    expect(acceptedBytes.byteLength).toBe(CONNECTOR_CATALOG_MAX_RAW_BYTES);
-    serveObjects(catalogObjects([accepted], accepted));
-
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogVersion: accepted.version },
-    });
-    await expect(
-      readApiTestConnectorCatalogSnapshot(previousSourceId),
-    ).resolves.toStrictEqual(previousSnapshot);
-
-    const rejected = buildRelease({
-      version: "2026-07-15.over-sixty-four-mib-limit",
-      catalogBytes: Buffer.alloc(CONNECTOR_CATALOG_MAX_RAW_BYTES + 1),
-    });
-    serveObjects(catalogObjects([rejected], rejected));
-
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      state: "stale",
-      active: { catalogVersion: accepted.version },
-      lastAttempt: {
-        outcome: "rejected",
-        failureCode: "object-too-large",
-      },
-    });
-    await expect(
-      readApiTestConnectorCatalogSnapshot(previousSourceId),
-    ).resolves.toStrictEqual(previousSnapshot);
-  });
-
   it("classifies unavailable and oversized objects before acceptance", async () => {
     expect.hasAssertions();
     configureSource();
     context.mocks.s3.send.mockRejectedValue(
       new Error("private source credentials and URL must stay private"),
     );
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "source-unavailable",
-    );
+    expectRejectedAttempt((await syncCatalog()).body, "source-unavailable");
 
     configureSource();
     context.mocks.s3.send.mockResolvedValue({
       ContentLength: 16 * 1024 + 1,
       Body: s3Body(Buffer.from("oversized")),
     });
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "object-too-large",
-    );
+    expectRejectedAttempt((await syncCatalog()).body, "object-too-large");
 
     configureSource();
     context.mocks.s3.send.mockResolvedValue({
       Body: s3Body(Buffer.alloc(16 * 1024 + 1)),
     });
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "object-too-large",
-    );
+    expectRejectedAttempt((await syncCatalog()).body, "object-too-large");
   });
 
   it("accepts one connector sharing storage names across auth methods", async () => {
@@ -6258,9 +4890,9 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      active: { catalogVersion: release.version },
+      failureCode: null,
     });
   });
 
@@ -6299,9 +4931,9 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      active: { catalogVersion: release.version },
+      failureCode: null,
     });
   });
 
@@ -6332,9 +4964,9 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      active: { catalogVersion: release.version },
+      failureCode: null,
     });
   });
 
@@ -6386,9 +5018,9 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      active: { catalogVersion: release.version },
+      failureCode: null,
     });
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const diagnostic = await accept(
@@ -6900,7 +5532,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
     configureSource();
     const fixture = release();
     serveObjects(catalogObjects([fixture], fixture));
-    expectRejectedBeforeAcceptance((await syncCatalog()).body, expected);
+    expectRejectedAttempt((await syncCatalog()).body, expected);
   });
 
   it("retains the latest valid snapshot and exposes sanitized status", async () => {
@@ -6908,7 +5540,6 @@ describe("connector catalog rejection and latest-valid retention", () => {
     const accepted = buildRelease({ version: "2026-07-15.valid" });
     serveObjects(catalogObjects([accepted], accepted));
     const acceptedResponse = await syncCatalog();
-    const acceptedDigest = acceptedResponse.body.active?.catalogDigest;
 
     const invalid = buildRelease({
       version: "2026-07-15.invalid",
@@ -6918,40 +5549,22 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([accepted, invalid], invalid));
     const rejected = await syncCatalog();
-    expect(rejected.body).toMatchObject({
-      outcome: "rejected",
-      state: "stale",
-      active: {
-        catalogVersion: accepted.version,
-        catalogDigest: acceptedDigest,
-      },
-      lastAttempt: {
-        outcome: "rejected",
-        failureCode: "invalid-pointer",
-      },
-      lastSuccessAt: FIRST_SYNC_TIME,
-    });
+    expect(acceptedResponse.body.outcome).toBe("accepted");
+    expectRejectedAttempt(rejected.body, "invalid-pointer");
 
-    const callsBeforeStatus = context.mocks.s3.send.mock.calls.length;
-    expect((await readStatus()).body).toStrictEqual(
-      (({ outcome: _outcome, ...status }) => {
-        return status;
-      })(rejected.body),
-    );
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeStatus);
+    // The rejection is only part of the writer's attempt report; the next
+    // sync of the serving pointer is unchanged.
     expect(JSON.stringify(rejected.body)).not.toContain(PRIVATE_VALUE);
 
     serveObjects(catalogObjects([accepted], accepted));
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "unchanged",
-      state: "current",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: null,
+      failureCode: null,
     });
   });
 
   it.each(["invalid-artifact", "relationship-mismatch"])(
-    "retains the active catalog while reusing a cached %s rejection",
+    "retains the active catalog while revalidating a %s rejection",
     async (failureCode) => {
       configureSource();
       const accepted = buildRelease({ version: "2026-07-15.cache-valid" });
@@ -6969,395 +5582,59 @@ describe("connector catalog rejection and latest-valid retention", () => {
         },
       });
       serveObjects(catalogObjects([accepted, invalid], invalid));
-      const callsBeforeFirstRejection = context.mocks.s3.send.mock.calls.length;
-      const freshRejection = await syncCatalog();
-      expect(freshRejection.body).toMatchObject({
-        outcome: "rejected",
-        state: "stale",
-        active: { catalogVersion: accepted.version },
-        lastAttempt: {
+      // No rejection is remembered: every attempt downloads and validates the
+      // pointer and catalog again while the accepted generation keeps serving.
+      for (const attempt of [1, 2]) {
+        const callsBeforeRejection = context.mocks.s3.send.mock.calls.length;
+        const rejection = await syncCatalog();
+        expect(rejection.body, `attempt ${attempt}`).toStrictEqual({
+          outcome: "rejected",
           failureCode,
-          reusedCachedRejection: false,
-        },
-        rejectedCandidate: {
-          catalogVersion: invalid.version,
-          failureCode,
-          backendVersion: DEFAULT_API_VERSION,
-        },
-      });
-      expect(
-        context.mocks.s3.send.mock.calls.length - callsBeforeFirstRejection,
-      ).toBe(2);
+        });
+        expect(
+          context.mocks.s3.send.mock.calls
+            .slice(callsBeforeRejection)
+            .map((call) => {
+              return commandInput(call[0]).Key;
+            }),
+        ).toStrictEqual([ACTIVE_KEY, invalid.catalogKey]);
+        expect(JSON.stringify(rejection.body)).not.toContain(
+          invalid.catalogKey,
+        );
+      }
 
-      const callsBeforeCachedRejection =
-        context.mocks.s3.send.mock.calls.length;
-      const cachedRejection = await syncCatalog();
-      expect(cachedRejection.body).toMatchObject({
-        outcome: "rejected",
-        state: "stale",
-        active: { catalogVersion: accepted.version },
-        lastAttempt: {
-          failureCode,
-          reusedCachedRejection: true,
-        },
-        rejectedCandidate: {
-          catalogVersion: invalid.version,
-          failureCode,
-          backendVersion: DEFAULT_API_VERSION,
-        },
-      });
-      expect(
-        context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
-      ).toBe(1);
-      expect(
-        commandInput(
-          context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
-        ),
-      ).toMatchObject({
-        Key: ACTIVE_KEY,
-        IfNoneMatch: objectEtag(invalid.pointer),
-      });
-      expect(JSON.stringify(cachedRejection.body)).not.toContain(
-        invalid.catalogKey,
-      );
-      expect(JSON.stringify(cachedRejection.body)).not.toContain(
-        objectEtag(invalid.pointer),
-      );
+      // The accepted generation kept serving through both rejections.
+      serveObjects(catalogObjects([accepted], accepted));
+      expect((await syncCatalog()).body.outcome).toBe("unchanged");
+
       const recovered = buildRelease({ version: "2026-07-15.cache-recovered" });
       serveObjects(catalogObjects([accepted, invalid, recovered], recovered));
-      expect((await syncCatalog()).body).toMatchObject({
+      expect((await syncCatalog()).body).toStrictEqual({
         outcome: "accepted",
-        state: "current",
-        active: { catalogVersion: recovered.version },
-        lastAttempt: { failureCode: null, reusedCachedRejection: false },
-        rejectedCandidate: null,
+        failureCode: null,
       });
     },
   );
 
-  it("revalidates a rejection when the production backend version advances", async () => {
+  it("activates a pointer once its previously rejected catalog validates", async () => {
     configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
-    const invalid = buildRelease({
-      version: "2026-07-25.backend-version-rejection",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([invalid], invalid));
-
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: "1.318.0" },
-    });
-
-    setApiVersion("1.319.0");
-    const callsBeforeNewBackend = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeNewBackend,
-    ).toBe(2);
-
-    setApiVersion("1.318.0");
-    const callsBeforeOlderBackend = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: true },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeOlderBackend,
-    ).toBe(1);
-  });
-
-  it("activates a candidate after backend-version revalidation succeeds", async () => {
-    configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
     const candidate = buildRelease({
-      version: "2026-07-25.backend-version-acceptance",
+      version: "2026-07-25.revalidated-acceptance",
     });
     const rejectedObjects = new Map(catalogObjects([candidate], candidate));
     rejectedObjects.set(candidate.catalogKey, Buffer.from("{}"));
     serveObjects(rejectedObjects);
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: {
-        failureCode: "digest-mismatch",
-        reusedCachedRejection: false,
-      },
-      rejectedCandidate: { backendVersion: "1.318.0" },
-    });
+    expectRejectedAttempt((await syncCatalog()).body, "digest-mismatch");
 
-    setApiVersion("1.319.0");
     serveObjects(catalogObjects([candidate], candidate));
     const callsBeforeAcceptance = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      state: "current",
-      active: { catalogVersion: candidate.version },
-      lastAttempt: {
-        failureCode: null,
-        reusedCachedRejection: false,
-      },
-      rejectedCandidate: null,
+      failureCode: null,
     });
     expect(
       context.mocks.s3.send.mock.calls.length - callsBeforeAcceptance,
     ).toBe(2);
-  });
-
-  it("uses build commits to invalidate preview rejections", async () => {
-    configureSource();
-    mockEnv("ENV", "preview");
-    mockEnv("GIT_COMMIT_SHA", "a".repeat(40));
-    const invalid = buildRelease({
-      version: "2026-07-25.preview-commit-rejection",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([invalid], invalid));
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: DEFAULT_API_VERSION },
-    });
-
-    mockEnv("GIT_COMMIT_SHA", "b".repeat(40));
-    const callsBeforeNewCommit = context.mocks.s3.send.mock.calls.length;
-    const revalidated = await syncCatalog();
-    expect(revalidated.body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: DEFAULT_API_VERSION },
-    });
-    expect(context.mocks.s3.send.mock.calls.length - callsBeforeNewCommit).toBe(
-      2,
-    );
-
-    const callsBeforeCachedCommit = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: true },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeCachedCommit,
-    ).toBe(1);
-    expect(JSON.stringify(revalidated.body)).not.toContain("a".repeat(40));
-    expect(JSON.stringify(revalidated.body)).not.toContain("b".repeat(40));
-  });
-
-  it("keeps the newer rejection authority across concurrent backend versions", async () => {
-    configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
-    const invalid = buildRelease({
-      version: "2026-07-25.concurrent-backend-rejection",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    const objects = catalogObjects([invalid], invalid);
-    const blocked = deferredGate();
-    const resume = deferredGate();
-    let blockedFirstCatalogRead = false;
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      const input = commandInput(command);
-      const key = typeof input.Key === "string" ? input.Key : undefined;
-      const bytes = key ? objects.get(key) : undefined;
-      if (!bytes) {
-        throw new Error("Object unavailable");
-      }
-      if (key === invalid.catalogKey && !blockedFirstCatalogRead) {
-        blockedFirstCatalogRead = true;
-        blocked.release();
-        await resume.promise;
-      }
-      const etag = objectEtag(bytes);
-      if (input.IfNoneMatch === etag) {
-        throw Object.assign(new Error("Not modified"), {
-          $metadata: { httpStatusCode: 304 },
-        });
-      }
-      return {
-        ContentLength: bytes.length,
-        Body: s3Body(bytes),
-        ETag: etag,
-      };
-    });
-
-    const olderSync = syncCatalog();
-    await blocked.promise;
-    setApiVersion("1.319.0");
-    const newerResult = await syncCatalog();
-    resume.release();
-    const olderResult = await olderSync;
-
-    expect(newerResult.body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-    expect(olderResult.body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: true },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-    expect((await readStatus()).body).toMatchObject({
-      lastAttempt: { reusedCachedRejection: true },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-  });
-
-  it("re-evaluates a rejected identity when the pointer ETag changes", async () => {
-    configureSource();
-    const invalid = buildRelease({
-      version: "2026-07-15.changed-rejection-etag",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([invalid], invalid));
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "invalid-artifact",
-    );
-
-    const changedPointer = Buffer.concat([invalid.pointer, Buffer.from("\n")]);
-    const changedObjects = new Map(catalogObjects([invalid], invalid));
-    changedObjects.set(ACTIVE_KEY, changedPointer);
-    serveObjects(changedObjects);
-    const callsBeforeReevaluation = context.mocks.s3.send.mock.calls.length;
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "invalid-artifact",
-    );
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeReevaluation,
-    ).toBe(2);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeReevaluation]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(invalid.pointer),
-    });
-  });
-
-  it("caches an oversized active pointer by its observed ETag", async () => {
-    configureSource();
-    const oversizedPointer = Buffer.alloc(16 * 1024 + 1);
-    const etag = objectEtag(oversizedPointer);
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const input = commandInput(command);
-      if (input.IfNoneMatch === etag) {
-        return Promise.reject(
-          Object.assign(new Error("Not modified"), {
-            $metadata: { httpStatusCode: 304 },
-          }),
-        );
-      }
-      return Promise.resolve({
-        ContentLength: oversizedPointer.length,
-        Body: s3Body(oversizedPointer),
-        ETag: etag,
-      });
-    });
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "object-too-large",
-    );
-
-    const callsBeforeCachedRejection = context.mocks.s3.send.mock.calls.length;
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "object-too-large",
-    );
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
-    ).toBe(1);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: etag,
-    });
-  });
-
-  it("revalidates an ETag-only pointer rejection after a backend release", async () => {
-    configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
-    const invalid = buildRelease({
-      version: "2026-07-15.malformed-pointer-cache",
-      mutatePointer: (pointer) => {
-        pointer.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([invalid], invalid));
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "invalid-pointer",
-    );
-
-    const callsBeforeCachedRejection = context.mocks.s3.send.mock.calls.length;
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "invalid-pointer",
-    );
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
-    ).toBe(1);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(invalid.pointer),
-    });
-
-    setApiVersion("1.319.0");
-    const callsBeforeNewBackend = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: {
-        failureCode: "invalid-pointer",
-        reusedCachedRejection: false,
-      },
-      rejectedCandidate: {
-        catalogVersion: null,
-        catalogDigest: null,
-        backendVersion: "1.319.0",
-      },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeNewBackend,
-    ).toBe(1);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeNewBackend]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-    });
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeNewBackend]?.[0],
-      ),
-    ).toMatchObject({
-      IfNoneMatch: undefined,
-    });
   });
 
   it("retries transient candidate download failures", async () => {
@@ -7368,26 +5645,18 @@ describe("connector catalog rejection and latest-valid retention", () => {
     const unavailableObjects = new Map(catalogObjects([candidate], candidate));
     unavailableObjects.delete(releaseKeys(candidate.version).catalog);
     serveObjects(unavailableObjects);
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      state: "never-synced",
-      lastAttempt: { failureCode: "source-unavailable" },
-    });
+    expectRejectedAttempt((await syncCatalog()).body, "source-unavailable");
 
     serveObjects(catalogObjects([candidate], candidate));
     const callsBeforeRetry = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
+    expect((await syncCatalog()).body).toStrictEqual({
       outcome: "accepted",
-      state: "current",
-      active: { catalogVersion: candidate.version },
+      failureCode: null,
     });
     expect(context.mocks.s3.send.mock.calls.length - callsBeforeRetry).toBe(2);
     expect(
       commandInput(context.mocks.s3.send.mock.calls[callsBeforeRetry]?.[0]),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(candidate.pointer),
-    });
+    ).toMatchObject({ Key: ACTIVE_KEY });
   });
 
   it("replaces current content when a catalog version is reused", async () => {
@@ -7402,14 +5671,15 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([conflicting], conflicting));
     const replacementResponse = await syncCatalog();
-    expect(replacementResponse.body).toMatchObject({
+    expect(originalResponse.body.outcome).toBe("accepted");
+    expect(replacementResponse.body).toStrictEqual({
       outcome: "accepted",
-      state: "current",
-      active: { catalogVersion: original.version },
+      failureCode: null,
     });
-    expect(replacementResponse.body.active?.catalogDigest).not.toBe(
-      originalResponse.body.active?.catalogDigest,
-    );
+    expect(conflicting.digest).not.toBe(original.digest);
+    await expect(servedConnectors()).resolves.toMatchObject([
+      { slug: conflicting.connectorSlug, label: "Conflicting Content" },
+    ]);
   });
 
   it("does not return raw source failures", async () => {
@@ -7420,7 +5690,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
     context.mocks.s3.send.mockRejectedValue(new Error(privateError));
     const response = await syncCatalog();
 
-    expectRejectedBeforeAcceptance(response.body, "source-unavailable");
+    expectRejectedAttempt(response.body, "source-unavailable");
     for (const privateText of [
       PRIVATE_VALUE,
       bucket,

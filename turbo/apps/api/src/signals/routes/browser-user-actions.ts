@@ -10,8 +10,8 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   applyBrowserUserAction$,
+  prepareBrowserUserFileUpload$,
   cancelBrowserUserAction$,
-  completeBrowserUserAction$,
   createBrowserUserAction$,
   preflightBrowserUserAction$,
   readBrowserUserAction$,
@@ -63,10 +63,14 @@ const preflightParams$ = pathParamsOf(browserUserActionsContract.preflight);
 const preflightBody$ = bodyResultOf(browserUserActionsContract.preflight);
 const applyParams$ = pathParamsOf(browserUserActionsContract.apply);
 const applyBody$ = bodyResultOf(browserUserActionsContract.apply);
+const prepareFileParams$ = pathParamsOf(
+  browserUserActionsContract.prepareFileUpload,
+);
+const prepareFileBody$ = bodyResultOf(
+  browserUserActionsContract.prepareFileUpload,
+);
 const cancelParams$ = pathParamsOf(browserUserActionsContract.cancel);
 const cancelBody$ = bodyResultOf(browserUserActionsContract.cancel);
-const completeParams$ = pathParamsOf(browserUserActionsContract.complete);
-const completeBody$ = bodyResultOf(browserUserActionsContract.complete);
 
 const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -146,6 +150,32 @@ const applyInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     : { status: 200 as const, body: result.value };
 });
 
+const prepareFileInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  if (!(await set(browserNativeInputEnabled$))) {
+    return disabled;
+  }
+  signal.throwIfAborted();
+  const body = await get(prepareFileBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const result = await set(
+    prepareBrowserUserFileUpload$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      requestToken: get(prepareFileParams$).requestToken,
+      input: body.data,
+    },
+    signal,
+  );
+  return result.kind === "error"
+    ? errorResponse(result)
+    : { status: 200 as const, body: result.value };
+});
+
 const preflightInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const enabled = await set(browserNativeInputEnabled$);
@@ -198,32 +228,6 @@ const cancelInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     : { status: 200 as const, body: result.value };
 });
 
-const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const enabled = await set(browserNativeInputEnabled$);
-  signal.throwIfAborted();
-  if (!enabled) {
-    return disabled;
-  }
-  const body = await get(completeBody$);
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const result = await set(
-    completeBrowserUserAction$,
-    {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      requestToken: get(completeParams$).requestToken,
-    },
-    signal,
-  );
-  return result.kind === "error"
-    ? errorResponse(result)
-    : { status: 200 as const, body: result.value };
-});
-
 export const browserUserActionRoutes: readonly RouteEntry[] = [
   {
     route: browserUserActionsContract.create,
@@ -238,15 +242,15 @@ export const browserUserActionRoutes: readonly RouteEntry[] = [
     handler: authRoute(authOptions, preflightInner$),
   },
   {
+    route: browserUserActionsContract.prepareFileUpload,
+    handler: authRoute(authOptions, prepareFileInner$),
+  },
+  {
     route: browserUserActionsContract.apply,
     handler: authRoute(authOptions, applyInner$),
   },
   {
     route: browserUserActionsContract.cancel,
     handler: authRoute(authOptions, cancelInner$),
-  },
-  {
-    route: browserUserActionsContract.complete,
-    handler: authRoute(authOptions, completeInner$),
   },
 ];

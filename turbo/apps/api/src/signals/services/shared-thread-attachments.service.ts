@@ -5,7 +5,7 @@ import {
   type UserMessageDocument,
   type UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { CURRENT_LINK_LAYOUT } from "@okouai/api-contracts/contracts/link-layout";
 import type { SharedMessageAttachment } from "@okouai/api-contracts/contracts/shared-threads";
 
 import {
@@ -20,7 +20,6 @@ export interface SharedThreadAttachmentCopy {
   readonly sourceBucket: string;
   readonly sourceKey: string;
   readonly key: string;
-  readonly publicBrand: PublicBrand;
   readonly attachment: SharedMessageAttachment;
 }
 
@@ -31,7 +30,6 @@ const prepareSharedThreadAttachment$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly shareId: string;
-      readonly publicBrand: PublicBrand;
       readonly part: Extract<UserMessagePart, { type: "file" }>;
     },
     signal: AbortSignal,
@@ -59,14 +57,13 @@ const prepareSharedThreadAttachment$ = command(
       sourceBucket: object.bucket,
       sourceKey: object.key,
       key,
-      publicBrand: args.publicBrand,
       attachment: {
         filename,
         contentType: object.contentType,
         size: object.size,
         url: object.isPrivate
           ? object.url
-          : buildFileUrlFromKey(key, args.publicBrand),
+          : buildFileUrlFromKey(key, CURRENT_LINK_LAYOUT),
       },
     };
   },
@@ -79,7 +76,6 @@ export const prepareSharedThreadMessageAttachments$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly shareId: string;
-      readonly publicBrand: PublicBrand;
       readonly document: UserMessageDocument | null;
       readonly copies: Map<string, SharedThreadAttachmentCopy>;
     },
@@ -126,7 +122,6 @@ export const publishSharedThreadAttachments$ = command(
           sourceBucket: copy.sourceBucket,
           sourceKey: copy.sourceKey,
           key: copy.key,
-          publicBrand: copy.publicBrand,
           filename: copy.attachment.filename,
           contentType: copy.attachment.contentType,
           size: copy.attachment.size,

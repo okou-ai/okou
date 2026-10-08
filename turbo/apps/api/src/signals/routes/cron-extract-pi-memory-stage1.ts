@@ -10,11 +10,6 @@ import {
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 import { admitsPiMemoryBackgroundWorkerInvocation } from "./pi-memory-background-worker-breaker";
 
-interface PiMemoryStage1RouteScope {
-  readonly memoryStorageIds: readonly string[];
-  readonly piSessionId?: string;
-}
-
 const ZERO_STAGE1_RESULT: PiMemoryStage1WorkerResult = Object.freeze({
   scanned: 0,
   claimed: 0,
@@ -27,9 +22,7 @@ const ZERO_STAGE1_RESULT: PiMemoryStage1WorkerResult = Object.freeze({
   staleDiscarded: 0,
 });
 
-function extractPiMemoryStage1Routes(
-  scope: PiMemoryStage1RouteScope | undefined,
-): readonly RouteEntry[] {
+function extractPiMemoryStage1Routes(): readonly RouteEntry[] {
   const extractPiMemoryStage1Route$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       if (!get(hasValidCronSecret$)) {
@@ -43,7 +36,7 @@ function extractPiMemoryStage1Routes(
       }
       const result = await set(
         executePiMemoryStage1Work$,
-        { scope, currentTime: nowDate() },
+        { scope: undefined, currentTime: nowDate() },
         signal,
       );
       return {
@@ -61,11 +54,4 @@ function extractPiMemoryStage1Routes(
   ];
 }
 
-export function cronExtractPiMemoryStage1RoutesForTest(
-  scope: PiMemoryStage1RouteScope,
-): readonly RouteEntry[] {
-  return extractPiMemoryStage1Routes(scope);
-}
-
-export const cronExtractPiMemoryStage1Routes =
-  extractPiMemoryStage1Routes(undefined);
+export const cronExtractPiMemoryStage1Routes = extractPiMemoryStage1Routes();

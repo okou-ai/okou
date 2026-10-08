@@ -50,26 +50,14 @@ const complete = {
     state: "observed",
     coverage: "complete",
     observedTokens: {
-      input: 11,
-      cacheRead: 22,
-      cacheCreation: 33,
-      output: 44,
-      total: 110,
+      input: 10,
+      cacheRead: 20,
+      cacheCreation: 30,
+      output: 40,
+      total: 100,
     },
   },
   sources: {
-    apiFirstTurn: {
-      state: "observed",
-      sampledAt: 0,
-      coverage: "complete",
-      tokens: {
-        input: 1,
-        cacheRead: 2,
-        cacheCreation: 3,
-        output: 4,
-        total: 10,
-      },
-    },
     sandboxProxy: {
       state: "observed",
       sampledAtMs: 1,
@@ -103,8 +91,22 @@ const partialZero = {
     },
   },
   sources: {
-    apiFirstTurn: { state: "no-inference", sampledAt: 0 },
-    sandboxProxy: { state: "unavailable", reason: "launch-unavailable" },
+    sandboxProxy: {
+      state: "observed",
+      sampledAtMs: 1,
+      revision: 0,
+      coverage: "partial",
+      reasons: ["missing_usage"],
+      observedResponses: 1,
+      outstandingResponses: 0,
+      tokens: {
+        input: 0,
+        cacheRead: 0,
+        cacheCreation: 0,
+        output: 0,
+        total: 0,
+      },
+    },
   },
 };
 
@@ -176,7 +178,20 @@ describe("okou run usage", () => {
     expect(process.exitCode).not.toBe(1);
   });
 
-  it("labels partial zero as a lower bound and preserves source distinctions", async () => {
+  it("prints the combined total and the sandbox proxy source", async () => {
+    await invoke(false);
+    const text = output.mock.calls
+      .map((call) => {
+        return String(call[0]);
+      })
+      .join("\n");
+    expect(text).toContain("Observed token usage (complete):");
+    expect(text).toContain("Total: 100");
+    expect(text).toContain("Sandbox proxy: observed complete");
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it("labels partial zero as a lower bound with the source reasons", async () => {
     response({ type: "result", data: partialZero });
     await invoke(false);
     const text = output.mock.calls
@@ -186,8 +201,8 @@ describe("okou run usage", () => {
       .join("\n");
     expect(text).toContain("partial; lower bounds");
     expect(text).toContain("Total: 0+");
-    expect(text).toContain("API first turn: no inference");
-    expect(text).toContain("Sandbox proxy: unavailable (launch-unavailable)");
+    expect(text).toContain("Sandbox proxy: observed partial");
+    expect(text).toContain("reasons: missing_usage.");
     expect(process.exitCode).not.toBe(1);
   });
 
@@ -211,13 +226,12 @@ describe("okou run usage", () => {
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 
-  it("accepts unavailable and overflow as truthful business results", async () => {
+  it("accepts unavailable as a truthful business result", async () => {
     const unavailable = {
       schemaVersion: 1,
       runId,
       combined: { state: "unavailable", reason: "no-observation" },
       sources: {
-        apiFirstTurn: { state: "unavailable", reason: "missing-handoff" },
         sandboxProxy: { state: "unavailable", reason: "not-observed" },
       },
     };
@@ -226,35 +240,6 @@ describe("okou run usage", () => {
     expect(jsonOutput()).toMatchObject({
       status: "ok",
       usage: { combined: { state: "unavailable" } },
-    });
-    expect(process.exitCode).not.toBe(1);
-
-    const maximum = Number.MAX_SAFE_INTEGER;
-    const overflow = {
-      schemaVersion: 1,
-      runId,
-      combined: { state: "overflow", coverage: "partial" },
-      sources: {
-        apiFirstTurn: {
-          state: "observed",
-          sampledAt: 0,
-          coverage: "complete",
-          tokens: {
-            input: maximum,
-            cacheRead: maximum,
-            cacheCreation: maximum,
-            output: maximum,
-            total: null,
-          },
-        },
-        sandboxProxy: { state: "unavailable", reason: "not-observed" },
-      },
-    };
-    response({ type: "result", data: overflow });
-    await invoke();
-    expect(jsonOutput()).toMatchObject({
-      status: "ok",
-      usage: { combined: { state: "overflow" } },
     });
     expect(process.exitCode).not.toBe(1);
   });

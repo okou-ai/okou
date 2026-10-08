@@ -1,12 +1,13 @@
-import { command } from "ccstate";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
-import { isNotFoundResponse } from "../../lib/error";
-import { deleteUserModelProvider$ } from "../services/model-provider.service";
 import type { RouteEntry } from "../route-entry";
+import { deleteUserModelProvider$ } from "../services/model-provider.service";
+import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
 
 const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -21,9 +22,15 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  if (isNotFoundResponse(result)) {
+  if (result) {
     return result;
   }
+  await resetDisconnectedMemberModelSelection(
+    set(writeDb$),
+    auth.orgId,
+    auth.userId,
+  );
+  signal.throwIfAborted();
   return { status: 204 as const, body: undefined };
 });
 

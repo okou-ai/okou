@@ -4,7 +4,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { PUBLIC_DESTINATION_ADDRESS_POLICY } from "@okouai/connectors/public-destination-policy";
 
-import { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS } from "../contracts/model-price-tiers";
 import {
   BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION,
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
@@ -13,12 +12,6 @@ import {
 const generatedBuiltinFirewallCachePath = fileURLToPath(
   new URL(
     "../../../../../crates/runner/mitm-addon/src/generated/builtin_firewall_cache.py",
-    import.meta.url,
-  ),
-);
-const generatedModelUsagePath = fileURLToPath(
-  new URL(
-    "../../../../../crates/runner/mitm-addon/src/generated/model_usage.py",
     import.meta.url,
   ),
 );
@@ -59,28 +52,6 @@ function pythonHexInteger(value: number, width: number): string {
 
 function upperSnakeCase(value: string): string {
   return value.replaceAll(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase();
-}
-
-function renderModelUsageContract(): string {
-  const entries = Object.entries(MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS);
-  const lines = [
-    '"""Generated model usage contracts shared with TypeScript.',
-    "",
-    "Do not edit by hand; regenerate with",
-    "``cd turbo && pnpm -F @okouai/api-contracts generate:python``.",
-    '"""',
-    "",
-    "from typing import Final",
-    "",
-    "MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Final[dict[str, int]] = {",
-  ];
-  for (const [model, threshold] of entries) {
-    lines.push(
-      `    ${JSON.stringify(model)}: ${pythonPositiveInteger(threshold, "model usage threshold")},`,
-    );
-  }
-  lines.push("}", "");
-  return lines.join("\n");
 }
 
 export function renderBuiltinFirewallCacheContract(): string {
@@ -128,12 +99,11 @@ function renderPublicDestinationPolicyContract(): string {
 }
 
 export async function generatePythonBindings(): Promise<void> {
-  await mkdir(dirname(generatedModelUsagePath), { recursive: true });
+  await mkdir(dirname(generatedPackageInitPath), { recursive: true });
   await writeFile(
     generatedPackageInitPath,
     '"""Generated Python bindings shared from TypeScript contracts."""\n',
   );
-  await writeFile(generatedModelUsagePath, renderModelUsageContract());
   await writeFile(
     generatedBuiltinFirewallCachePath,
     renderBuiltinFirewallCacheContract(),

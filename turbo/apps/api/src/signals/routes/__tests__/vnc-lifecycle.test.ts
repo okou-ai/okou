@@ -21,6 +21,7 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
+import { requireVncCredentialId } from "./helpers/vnc-response";
 
 const context = testContext();
 const store = createStore();
@@ -143,7 +144,7 @@ test.each(["user", "organization", "membership"] as const)(
       survivingCredentials.body.credentials.map((entry) => {
         return entry.id;
       }),
-    ).toStrictEqual([preserved.body.credentialId]);
+    ).toStrictEqual([requireVncCredentialId(preserved.body)]);
   },
 );
 
@@ -166,7 +167,7 @@ test("requires current membership while retaining the same owner's configuration
         return entry.id;
       },
     ),
-  ).toStrictEqual([previous.body.credentialId]);
+  ).toStrictEqual([requireVncCredentialId(previous.body)]);
   const additional = await accept(createConnection(), [201]);
   expect(additional.body.id).not.toBe(previous.body.id);
   expect(additional.body.host).toBe(previous.body.host);
@@ -174,7 +175,7 @@ test("requires current membership while retaining the same owner's configuration
   const renamed = await accept(
     credentials().update({
       headers,
-      params: { credentialId: previous.body.credentialId },
+      params: { credentialId: requireVncCredentialId(previous.body) },
       body: { expectedRevision: 1, name: "Rejoined" },
     }),
     [200],
@@ -188,7 +189,7 @@ test("requires current membership while retaining the same owner's configuration
         displayName: "Shared credential",
         host: "other-desktop.example.com",
         security: { type: "x509_vnc", trust: { mode: "system" } },
-        credential: { id: previous.body.credentialId },
+        credential: { id: requireVncCredentialId(previous.body) },
       },
     }),
     [201],

@@ -96,6 +96,127 @@ async fn x509_plain_authenticates_exact_credentials_and_publishes_the_requested_
 }
 
 #[tokio::test]
+async fn x509_none_verifies_tls_and_streams_without_a_vnc_client_credential() {
+    let mut h = Harness::with_authority(super::peer::Peer::none().await, None).await;
+    let resolve = h
+        .resolve_response(json!({
+            "outcome":"resolved_transport",
+            "host":"vnc.example.test",
+            "port":5900,
+            "generation":7,
+            "serverName":"vnc.example.test",
+            "transport":{"type":"direct"},
+            "authentication":{"method":"none"},
+            "security":{"type":"x509_none","trust":{"mode":"custom_ca","caBundle":h.peer.ca}},
+        }))
+        .await;
+    let check = h.check("valid", 200).await;
+    let session = h.start("shared").await.session();
+    mode(&h, 1).await;
+    let capture = h
+        .run
+        .request("vnc.capture", json!({"sessionId":session}))
+        .await;
+    assert_eq!(capture.result()["outcome"], "captured");
+    assert_eq!(&capture.bytes[..8], b"\x89PNG\r\n\x1a\n");
+    assert!(matches!(h.peer.event().await, Event::Capture));
+    assert_eq!(
+        h.run
+            .request("vnc.session.close", json!({"sessionId":session}))
+            .await
+            .result()["outcome"],
+        "closed"
+    );
+    closed(&h).await;
+    resolve.assert_calls_async(1).await;
+    check.assert_calls_async(2).await;
+    h.run.shutdown().await;
+}
+
+#[tokio::test]
+async fn client_certificate_pairs_complete_runner_session_against_verifying_peer() {
+    for with_password in [false, true] {
+        let peer = if with_password {
+            super::peer::Peer::certificate_vnc().await
+        } else {
+            super::peer::Peer::certificate_none().await
+        };
+        let mut h = Harness::with_authority(peer, None).await;
+        let (chain, key) = h.peer.client_identity.as_ref().unwrap();
+        let method = if with_password {
+            "client_certificate_vnc_password"
+        } else {
+            "client_certificate"
+        };
+        let security = if with_password {
+            "x509_vnc"
+        } else {
+            "x509_none"
+        };
+        let mut authentication =
+            json!({"method":method,"certificateChainDer":chain,"privateKeyPkcs8Der":key});
+        if with_password {
+            authentication["password"] = json!(" secret ");
+        }
+        let resolve = h
+            .resolve_response(json!({
+                "outcome":"resolved_transport", "host":"vnc.example.test", "port":5900,
+                "generation":7, "serverName":"vnc.example.test", "transport":{"type":"direct"},
+                "authentication":authentication,
+                "security":{"type":security,"trust":{"mode":"custom_ca","caBundle":h.peer.ca}},
+            }))
+            .await;
+        let check = h.check("valid", 200).await;
+        let session = h.start("shared").await.session();
+        mode(&h, 1).await;
+        let capture = h
+            .run
+            .request("vnc.capture", json!({"sessionId":session}))
+            .await;
+        assert_eq!(capture.result()["outcome"], "captured");
+        assert_eq!(&capture.bytes[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(matches!(h.peer.event().await, Event::Capture));
+        assert_eq!(
+            h.run
+                .request("vnc.session.close", json!({"sessionId":session}))
+                .await
+                .result()["outcome"],
+            "closed"
+        );
+        closed(&h).await;
+        resolve.assert_calls_async(1).await;
+        check.assert_calls_async(2).await;
+        h.run.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn x509_none_rejects_the_wrong_tls_server_identity_before_session_start() {
+    let mut h = Harness::with_authority(super::peer::Peer::none().await, None).await;
+    let resolve = h
+        .resolve_response(json!({
+            "outcome":"resolved_transport",
+            "host":"vnc.example.test",
+            "port":5900,
+            "generation":7,
+            "serverName":"wrong.example.test",
+            "transport":{"type":"direct"},
+            "authentication":{"method":"none"},
+            "security":{"type":"x509_none","trust":{"mode":"custom_ca","caBundle":h.peer.ca}},
+        }))
+        .await;
+    let reply = h.start("shared").await;
+    assert_eq!(
+        reply.result(),
+        &json!({"outcome":"failed","reason":"authentication_failed"})
+    );
+    closed(&h).await;
+    assert_eq!(h.network.attempts.lock().unwrap().len(), 1);
+    resolve.assert_calls_async(1).await;
+    h.run.shutdown().await;
+}
+
+#[tokio::test]
 async fn input_write_to_reset_socket_is_unknown_and_never_replayed() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;

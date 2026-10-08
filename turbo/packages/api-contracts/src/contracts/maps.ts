@@ -66,7 +66,7 @@ export const mapsSearchResponseSchema = z.object({
   billingCategory: z.literal("provider_cost_usd_micros"),
   billingQuantity: z.number().int().nonnegative(),
   providerCostUsd: z.number().finite().nonnegative(),
-  creditsCharged: z.number().int().nonnegative(),
+  creditsCharged: z.number().int().nonnegative().nullable(),
   answer: z.string().min(1).max(MAPS_SEARCH_MAX_ANSWER_CHARS),
   sources: z.array(mapsSearchSourceSchema).max(MAPS_SEARCH_MAX_SOURCES),
   citations: z.array(mapsSearchCitationSchema).max(MAPS_SEARCH_MAX_CITATIONS),

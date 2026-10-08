@@ -9,7 +9,10 @@ import {
   getOfficialTelegramBotConfig,
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
-import { telegramInstallation } from "../services/telegram-data.service";
+import {
+  currentUserTelegramChatId,
+  telegramAccountNotLinked,
+} from "../services/telegram-data.service";
 import { telegramMessageSendFooterText } from "../services/telegram-footer.service";
 import { buildTelegramResponse } from "../../lib/telegram-format";
 import type { RouteEntry } from "../route-entry";
@@ -26,7 +29,6 @@ const botNotFound = Object.freeze({
 
 const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const orgId = auth.orgId;
   const authRunId =
     "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
 
@@ -39,18 +41,26 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  let botToken: string | undefined;
-  if (isOfficialTelegramBotId(body.botId)) {
-    botToken = getOfficialTelegramBotConfig().botToken ?? undefined;
-  } else {
-    const installation = await get(
-      telegramInstallation({ orgId, botId: body.botId }),
-    );
-    signal.throwIfAborted();
-    botToken = installation?.botToken;
-  }
+  const botToken = isOfficialTelegramBotId(body.botId)
+    ? getOfficialTelegramBotConfig().botToken
+    : null;
   if (!botToken) {
     return botNotFound;
+  }
+
+  let chatId = body.chatId;
+  if (chatId === "me") {
+    const resolved = await get(
+      currentUserTelegramChatId({
+        orgId: auth.orgId,
+        userId: auth.userId,
+      }),
+    );
+    signal.throwIfAborted();
+    if (!resolved) {
+      return telegramAccountNotLinked;
+    }
+    chatId = resolved;
   }
 
   const footerText = await get(
@@ -61,9 +71,9 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  const text = buildTelegramResponse(body.text, undefined, footerText);
+  const text = buildTelegramResponse(body.text, footerText);
 
-  const result = await sendMessage(botToken, body.chatId, text, {
+  const result = await sendMessage(botToken, chatId, text, {
     replyToMessageId: body.replyToMessageId,
     messageThreadId: body.messageThreadId,
   });

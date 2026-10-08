@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.12.41](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.40...guest-control-tests-v0.12.41) (2026-10-07)
+
+## [0.12.40](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.39...guest-control-tests-v0.12.40) (2026-10-07)
+
+## [0.12.39](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.38...guest-control-tests-v0.12.39) (2026-10-07)
+
+## [0.12.38](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.37...guest-control-tests-v0.12.38) (2026-10-02)
+
+## [0.12.37](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.36...guest-control-tests-v0.12.37) (2026-10-01)
+
+## [0.12.36](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.35...guest-control-tests-v0.12.36) (2026-09-30)
+
+## [0.12.35](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.34...guest-control-tests-v0.12.35) (2026-09-30)
+
+## [0.12.34](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.33...guest-control-tests-v0.12.34) (2026-09-30)
+
+## [0.12.33](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.32...guest-control-tests-v0.12.33) (2026-09-29)
+
+## [0.12.32](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.31...guest-control-tests-v0.12.32) (2026-09-29)
+
+## [0.12.31](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.30...guest-control-tests-v0.12.31) (2026-09-28)
+
+## [0.12.30](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.29...guest-control-tests-v0.12.30) (2026-09-28)
+
+## [0.12.29](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.28...guest-control-tests-v0.12.29) (2026-09-28)
+
+## [0.12.28](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.27...guest-control-tests-v0.12.28) (2026-09-27)
+
+## [0.12.27](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.26...guest-control-tests-v0.12.27) (2026-09-26)
+
+## [0.12.26](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.25...guest-control-tests-v0.12.26) (2026-09-25)
+
+## [0.12.25](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.24...guest-control-tests-v0.12.25) (2026-09-25)
+
+## [0.12.24](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.23...guest-control-tests-v0.12.24) (2026-09-24)
+
 ## [0.12.23](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.22...guest-control-tests-v0.12.23) (2026-09-23)
 
 ## [0.12.22](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.21...guest-control-tests-v0.12.22) (2026-09-23)

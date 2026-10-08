@@ -14,22 +14,22 @@ pub struct SnapshotCreateConfig {
     /// composite values such as `<rootfs>/<snapshot>`, are invalid.
     ///
     /// The complete guest-control listener path
-    /// `/run/vm0/sock/<id>/vsock/vsock.sock_1000` must be at most 107 bytes,
+    /// `/run/vm0/sock/<id>/vsock/vsock.sock_52000` must be at most 107 bytes,
     /// the usable Linux Unix socket pathname limit. The current guest-control
-    /// port is 1000, so its `_1000` suffix reserves five bytes: the unsuffixed
-    /// `vsock.sock` path must be at most 102 bytes. With the default socket root
-    /// `/run/vm0/sock/`, this leaves at most 71 ASCII bytes for the ID.
+    /// port is 52000, so its `_52000` suffix reserves six bytes: the unsuffixed
+    /// `vsock.sock` path must be at most 101 bytes. With the default socket root
+    /// `/run/vm0/sock/`, this leaves at most 70 ASCII bytes for the ID.
     ///
     /// | ID length (ASCII bytes) | Base path (bytes) | Listener path (bytes) | Fits listener limit? |
     /// | --- | --- | --- | --- |
-    /// | 71 | 102 | 107 | Yes |
-    /// | 72 | 103 | 108 | No |
+    /// | 70 | 101 | 107 | Yes |
+    /// | 71 | 102 | 108 | No |
     ///
-    /// Firecracker's early validation rejects invalid ID syntax and unsuffixed
-    /// paths longer than 107 bytes as [`SnapshotError::Setup`] before checking
-    /// prerequisites or cleaning snapshot output. It does not reserve the
-    /// listener suffix: IDs of 72 through 76 ASCII bytes under the default root
-    /// pass that length check but exceed the later listener's pathname limit.
+    /// Firecracker's early validation reserves the longer of the Guest control
+    /// and Guest-to-Runner RPC listener suffixes. Invalid ID syntax or a
+    /// port-suffixed listener path longer than 107 bytes is rejected as
+    /// [`SnapshotError::Setup`] before checking prerequisites or cleaning
+    /// snapshot output. Under the default root, a 71-byte ID fails this check.
     /// Other providers may impose different requirements; this provider-specific
     /// contract is not enforced by the provider-neutral configuration type.
     pub id: String,

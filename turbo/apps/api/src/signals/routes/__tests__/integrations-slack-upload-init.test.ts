@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createStore } from "ccstate";
 
 import { integrationsSlackUploadInitContract } from "@okouai/api-contracts/contracts/integrations";
@@ -9,15 +9,12 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import {
-  deleteSlackIntegrationFixture$,
-  seedSlackOrgInstallation$,
-  type SlackIntegrationFixture,
-} from "./helpers/integrations-slack";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-init";
 
 const context = testContext();
 const store = createStore();
+const slackOrgs = createPublicSlackOrgApi(context);
 const LARGE_DIRECT_UPLOAD_BYTES = 100 * 1024 * 1024 + 1;
 
 function okouToken(args: {
@@ -55,8 +52,6 @@ function sandboxToken(args: {
 }
 
 describe("POST /api/integrations/slack/upload-file/init", () => {
-  const slackFixtures: SlackIntegrationFixture[] = [];
-
   beforeEach(() => {
     context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
       ok: true,
@@ -65,36 +60,20 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
     });
   });
 
-  afterEach(async () => {
-    while (slackFixtures.length > 0) {
-      const fixture = slackFixtures.pop();
-      if (fixture) {
-        await store.set(
-          deleteSlackIntegrationFixture$,
-          fixture,
-          context.signal,
-        );
-      }
-    }
-  });
-
   async function seedWithInstallation(): Promise<{
     orgId: string;
     userId: string;
   }> {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
+    await slackOrgs.installForOrg({ orgId });
+    // The OAuth install authenticates its installing admin; restore the
+    // member the Okou token authenticates as.
     await store.set(
       seedOrgMembership$,
       { orgId, userId, role: "admin" },
       context.signal,
     );
-    const fixture = await store.set(
-      seedSlackOrgInstallation$,
-      { orgId },
-      context.signal,
-    );
-    slackFixtures.push(fixture);
     return { orgId, userId };
   }
 

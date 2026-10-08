@@ -1,28 +1,19 @@
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import {
-  IMAGE_MODEL_CONFIGS,
-  PUBLIC_IMAGE_MODELS,
-} from "@okouai/core/image-model-catalog";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   click,
   fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import {
-  readClipboardItemText,
-  readSingleRichClipboardWrite,
-} from "./chat-lifecycle-test-helpers.ts";
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { openTemplatePicker } from "./chat-composer-template-gallery-test-helpers.ts";
-import { VIDEO_TEMPLATE_ITEMS } from "@okouai/core/video-template-items";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -31,24 +22,27 @@ import {
   findComposerEditor,
   mockAgent,
   mockBillingCapabilities,
-  mockOrgModelRoutes,
+  mockPersonalModelRoutes,
+  queryComposerModelTrigger,
   selectTemplate,
-  composerModelTrigger,
 } from "./chat-composer-test-helpers.ts";
+import {
+  readClipboardItemText,
+  readSingleRichClipboardWrite,
+} from "./chat-lifecycle-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 function setupModels(): void {
   mockAgent();
-  mockOrgModelRoutes("claude-fable-5-1");
+  mockPersonalModelRoutes();
   mockBillingCapabilities({
-    supportByok: true,
     restrictedBuiltInModels: false,
   });
   context.mocks.data.userModelPreference({
     selectedModel: "claude-fable-5-1",
     serviceTier: null,
     modelSettings: {},
-    selectedImageModel: "gpt-image-2",
-    selectedVideoModel: "dreamina-seedance-2-0-260128",
+    selectedImageModel: null,
     updatedAt: "2026-09-07T00:00:00.000Z",
   });
 }
@@ -65,13 +59,12 @@ function button(label: string, container: ParentNode = document): HTMLElement {
   return result;
 }
 
-async function setupComposer(enabled = true): Promise<HTMLElement> {
+async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
-      [FeatureSwitchKey.ComposerTaskChips]: enabled,
+      [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });
   return await findComposerEditor();
@@ -129,14 +122,6 @@ async function chooseCommand(
     await screen.findByTestId("slash-workflow-menu"),
   );
 }
-
-test("Create commands stay hidden until enabled", async () => {
-  setupModels();
-  const editor = await setupComposer(false);
-  await fill(editor, "/");
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  expect(screen.queryByLabelText("Remove Presentation")).toBeNull();
-});
 
 test("Persisted additional info stays out of the message and copied text", async () => {
   setupModels();
@@ -206,7 +191,6 @@ async function setupQueuedCreateConversation(): Promise<UserMessageDocument[]> {
     context,
     path: `/chats/${THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });
@@ -259,33 +243,6 @@ test("A queued Create message keeps its intent separate from user-authored text"
   await expect(screen.findByText(prompt)).resolves.toBeVisible();
 });
 
-test("Image mode combines styles and image models while preserving the prompt", async () => {
-  setupModels();
-  const editor = await setupComposer();
-  await chooseCommand(editor, "A quiet garden /", "image");
-  expect(button("Add style")).toBeInTheDocument();
-  const picker = await screen.findByRole("combobox", { name: "Image models" });
-  click(picker);
-  const model = PUBLIC_IMAGE_MODELS.find((candidate) => {
-    return candidate !== "gpt-image-2";
-  });
-  if (!model) {
-    throw new Error("Expected another public image model");
-  }
-  click(
-    await screen.findByRole("option", {
-      name: IMAGE_MODEL_CONFIGS[model].label,
-    }),
-  );
-  await waitFor(() => {
-    expect(picker).toHaveTextContent(IMAGE_MODEL_CONFIGS[model].label);
-  });
-  click(taskChip("Image"));
-  await composerModelTrigger("Claude Fable 5.1");
-  expect(screen.queryByLabelText("Remove Image")).toBeNull();
-  expect(editor).toHaveTextContent("A quiet garden");
-});
-
 const createTemplateScenarios = [
   {
     mode: "image",
@@ -316,7 +273,7 @@ const createTemplateScenarios = [
           type: "presentation" as const,
           selection: {
             templateId: template.templateId,
-            colorSystemId: template.colorSystemId ?? undefined,
+            colorSystemId: template.colorSystemId,
           },
         },
       };
@@ -335,6 +292,7 @@ test.each(createTemplateScenarios)(
       throw new Error(`Expected a ${mode} template`);
     }
     await chooseCommand(editor, "Our launch /", mode);
+    expect(queryComposerModelTrigger("Claude Fable 5.1")).toBeInTheDocument();
     click(button(pickerLabel));
     await screen.findByRole("dialog");
     click(await screen.findByLabelText(`${selectLabel} ${first.title}`));
@@ -598,21 +556,6 @@ test("Exiting Create mode sends the ordinary draft and template", async () => {
   );
 });
 
-async function setupComposerWithChipCover(
-  chipCover: boolean,
-): Promise<HTMLElement> {
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
-      [FeatureSwitchKey.ComposerTaskChips]: true,
-      [FeatureSwitchKey.ComposerTemplateChipCover]: chipCover,
-    },
-  });
-  return await findComposerEditor();
-}
-
 function inlineTemplateCover(index = 0): HTMLImageElement | null {
   const chip = composerInlineTemplates()[index];
   if (!chip) {
@@ -634,23 +577,10 @@ async function addPresentationTemplate(
   });
 }
 
-test("The template chip cover stays off until the Lab switch is on", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposerWithChipCover(false);
-  const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
-  if (!first) {
-    throw new Error("Expected a presentation template");
-  }
-  await addPresentationTemplate(editor, first.title);
-  expect(inlineTemplateCover()).toBeNull();
-  expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
-});
-
 async function setupCoveredPresentationTemplate() {
   setupModels();
   mockChatLifecycle(context);
-  const editor = await setupComposerWithChipCover(true);
+  const editor = await setupComposer();
   const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first) {
     throw new Error("Expected a presentation template");
@@ -664,19 +594,20 @@ test("An inline template chip shows the chosen cover", async () => {
   await waitFor(() => {
     expect(inlineTemplateCover()?.getAttribute("src")).toContain(first.slug);
   });
+  expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
 });
 
 test("A template with no cover keeps the template glyph on its chip", async () => {
   setupModels();
   mockChatLifecycle(context);
-  await setupComposerWithChipCover(true);
-  const [template] = VIDEO_TEMPLATE_ITEMS;
+  await setupComposer();
+  const [template] = WEBSITE_TEMPLATE_ITEMS;
   if (!template) {
-    throw new Error("Expected a video template");
+    throw new Error("Expected a website template");
   }
-  await openTemplatePicker(userEvent.setup({ delay: null }), "Video");
+  await openTemplatePicker(userEvent.setup({ delay: null }), "Website");
   click(
-    await screen.findByLabelText(`Select video template ${template.title}`),
+    await screen.findByLabelText(`Select website template ${template.title}`),
   );
   await waitFor(() => {
     expect(composerInlineTemplates()).toHaveLength(1);

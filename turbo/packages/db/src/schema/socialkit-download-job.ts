@@ -1,4 +1,3 @@
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type {
   SocialKitDownloadArtifactResult,
   SocialKitDownloadError,
@@ -49,9 +48,6 @@ export const socialKitDownloadJobs = pgTable(
       },
       { onDelete: "set null" },
     ),
-    publicBrand: varchar("public_brand", { length: 8 })
-      .$type<PublicBrand>()
-      .notNull(),
     request: jsonb("request")
       .$type<SocialKitDownloadRequestSnapshot>()
       .notNull(),

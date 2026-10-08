@@ -1,0 +1,2 @@
+ALTER TABLE "usage_pack_credit_grants" DROP CONSTRAINT "chk_usage_pack_credit_grants_remaining_amount";--> statement-breakpoint
+ALTER TABLE "usage_pack_credit_grants" ADD CONSTRAINT "chk_usage_pack_credit_grants_remaining_amount" CHECK ("usage_pack_credit_grants"."remaining_amount" <= "usage_pack_credit_grants"."original_amount");

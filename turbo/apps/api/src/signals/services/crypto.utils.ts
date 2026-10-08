@@ -197,17 +197,6 @@ export async function decryptPersistentSecretValue(
   return await decryptStoredSecretValue(encrypted, ctx);
 }
 
-export async function encryptPersistentSecretsMap(
-  secrets: Record<string, string> | null | undefined,
-  ctx: FeatureSwitchContext,
-): Promise<string | null> {
-  if (!secrets) {
-    return null;
-  }
-
-  return await encryptPersistentSecretValue(JSON.stringify(secrets), ctx);
-}
-
 export async function decryptPersistentSecretsMap(
   encryptedData: string | null,
   ctx: FeatureSwitchContext,

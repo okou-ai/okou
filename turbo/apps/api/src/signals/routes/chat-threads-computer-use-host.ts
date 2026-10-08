@@ -1,60 +1,73 @@
 import { command } from "ccstate";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { chatThreadComputerUseHostContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { badRequestMessage, notFound } from "../../lib/error";
-import { withChatThreadContentWrite } from "../services/chat-thread-content-erasure-admission.service";
-import { appendChatThreadEvent } from "../services/chat-thread-event.service";
 import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
+import { updateOwnedChatThreadWithEvent$ } from "../services/chat-thread-owned-update.service";
 import type { RouteEntry } from "../route-entry";
 
-async function threadExists(params: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-}): Promise<boolean> {
-  const [thread] = await params.db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, params.threadId),
-        eq(chatThreads.userId, params.userId),
-        chatThreadOrganizationCondition(params.db, params.orgId),
-      ),
-    )
-    .limit(1);
-  return thread !== undefined;
-}
+const threadExists$ = command(
+  async (
+    { set },
+    params: {
+      readonly threadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    const [thread] = await set(writeDb$)
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, params.threadId),
+          eq(chatThreads.userId, params.userId),
+          chatThreadOrganizationCondition(params.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return thread !== undefined;
+  },
+);
 
-async function computerUseHostExists(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly hostId: string;
-}): Promise<boolean> {
-  const [host] = await params.db
-    .select({ id: computerUseHosts.id })
-    .from(computerUseHosts)
-    .where(
-      and(
-        eq(computerUseHosts.id, params.hostId),
-        eq(computerUseHosts.orgId, params.orgId),
-        eq(computerUseHosts.userId, params.userId),
-        isNull(computerUseHosts.revokedAt),
-      ),
-    )
-    .limit(1);
-  return host !== undefined;
-}
+const computerUseHostExists$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly hostId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    const [host] = await set(writeDb$)
+      .select({ id: computerUseHosts.id })
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.id, params.hostId),
+          eq(computerUseHosts.orgId, params.orgId),
+          eq(computerUseHosts.userId, params.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return host !== undefined;
+  },
+);
 
 const computerUseHostBody$ = bodyResultOf(
   chatThreadComputerUseHostContract.update,
@@ -70,14 +83,16 @@ const updateComputerUseHostInner$ = command(
       return body.response;
     }
 
-    const db = set(writeDb$);
     if (
-      !(await threadExists({
-        db,
-        threadId: params.id,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      }))
+      !(await set(
+        threadExists$,
+        {
+          threadId: params.id,
+          userId: auth.userId,
+          orgId: auth.orgId,
+        },
+        signal,
+      ))
     ) {
       return notFound("Chat thread not found");
     }
@@ -91,94 +106,46 @@ const updateComputerUseHostInner$ = command(
     }
     if (hostId !== null) {
       if (
-        !(await computerUseHostExists({
-          db,
-          orgId: auth.orgId,
-          userId: auth.userId,
-          hostId,
-        }))
+        !(await set(
+          computerUseHostExists$,
+          {
+            orgId: auth.orgId,
+            userId: auth.userId,
+            hostId,
+          },
+          signal,
+        ))
       ) {
         return notFound("Computer-use host not found");
       }
       signal.throwIfAborted();
     }
 
-    // A thread's Computer Use binding, its cloud-browser flag and the sidebar
-    // copy of both are account content, so the existing transaction now runs
-    // inside the shared B1 admission and the canonical Agent/thread locks. The
-    // thread UPDATE, the durable sidebar sequence and the
-    // `computer_use_host_updated` event stay in that one transaction: a denied
-    // or rolled back selection consumes no sequence and appends no event, and
-    // the content-free invalidation below still publishes only after a
-    // successful COMMIT. B1 closure reuses this route's existing 404, alongside
-    // its unchanged organization and non-null Agent requirements.
-    //
-    // The host eligibility read above keeps its own semantics and stays outside
-    // the fenced transaction. It admits an offline but non-revoked installed
-    // host on purpose, and a host revoked between that read and this COMMIT is
-    // a pre-existing race that closure fencing neither repairs nor worsens:
-    // `stopComputerUseHost$` takes the host `FOR UPDATE` before clearing the
-    // threads bound to it, so rechecking the host under a lock here would
-    // invert that order. Host-grant linearization needs its own bounded design.
-    const result = await withChatThreadContentWrite(
-      db,
+    const updatedAt = nowDate();
+    const cloudBrowserEnabled =
+      hostId !== null ? false : body.data.cloudBrowserEnabled;
+    const written = await set(
+      updateOwnedChatThreadWithEvent$,
       {
-        chatThreadId: params.id,
-        authorize: (identity) => {
-          return (
-            identity.userId === auth.userId &&
-            identity.agentId !== null &&
-            identity.orgId === auth.orgId
-          );
+        userId: auth.userId,
+        orgId: auth.orgId,
+        threadId: params.id,
+        set: {
+          computerUseHostId: hostId,
+          ...(cloudBrowserEnabled === undefined ? {} : { cloudBrowserEnabled }),
+          updatedAt,
         },
-      },
-      async (tx) => {
-        const updatedAt = nowDate();
-        const cloudBrowserEnabled =
-          hostId !== null ? false : body.data.cloudBrowserEnabled;
-        const [thread] = await tx
-          .update(chatThreads)
-          .set({
-            computerUseHostId: hostId,
-            ...(cloudBrowserEnabled === undefined
-              ? {}
-              : { cloudBrowserEnabled }),
-            updatedAt,
-          })
-          .where(
-            and(
-              eq(chatThreads.id, params.id),
-              eq(chatThreads.userId, auth.userId),
-              chatThreadOrganizationCondition(tx, auth.orgId),
-              isNotNull(chatThreads.agentId),
-            ),
-          )
-          .returning({
-            id: chatThreads.id,
-            agentId: chatThreads.agentId,
-            cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-          });
-        if (!thread?.agentId) {
-          return false;
-        }
-        await appendChatThreadEvent(tx, {
+        event: {
           kind: "computer_use_host_updated",
-          userId: auth.userId,
-          orgId: auth.orgId,
-          chatThreadId: thread.id,
-          agentId: thread.agentId,
           eventId: body.data.eventId,
           computerUseHostId: hostId,
-          cloudBrowserEnabled: thread.cloudBrowserEnabled,
           createdAt: updatedAt,
-        });
-        return true;
+        },
       },
       signal,
     );
     signal.throwIfAborted();
-
-    if (result.outcome !== "written" || !result.value) {
+    if (!written) {
       return notFound("Chat thread not found");
     }
 

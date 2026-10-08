@@ -7,6 +7,7 @@ import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import {
   completeHostedSiteDeployment$,
+  deleteHostedSite$,
   getHostedSiteDeployments$,
   getHostedSiteFiles$,
   prepareHostedSiteDeployment$,
@@ -19,7 +20,6 @@ import {
   notFound,
 } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 function internalError(message: string) {
   return {
@@ -38,7 +38,6 @@ const prepareInner$ = command(
     signal: AbortSignal,
   ) => {
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
 
     const bodyResult = await get(prepareBody$);
     signal.throwIfAborted();
@@ -57,7 +56,6 @@ const prepareInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         runId: "runId" in auth ? auth.runId : undefined,
-        publicBrand,
         body: {
           ...bodyResult.data,
           requirePrivateArtifact:
@@ -182,6 +180,33 @@ const deploymentsInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: result.body };
 });
 
+const deleteSiteParams$ = pathParamsOf(hostContract.deleteSite);
+const deleteSiteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const params = get(deleteSiteParams$);
+  const result = await set(
+    deleteHostedSite$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      publicSlug: params.publicSlug,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+
+  if (result.status === "bad_request") {
+    return badRequestMessage(result.message);
+  }
+  if (result.status === "not_found") {
+    return notFound(result.message);
+  }
+  if (result.status === "config_error") {
+    return internalError(result.message);
+  }
+  return { status: 200 as const, body: result.body };
+});
+
 export const hostRoutes: readonly RouteEntry[] = [
   {
     route: hostContract.preparePrivate,
@@ -238,6 +263,17 @@ export const hostRoutes: readonly RouteEntry[] = [
         missingOrganizationStatus: 401,
       },
       deploymentsInner$,
+    ),
+  },
+  {
+    route: hostContract.deleteSite,
+    handler: authRoute(
+      {
+        requiredCapability: "host:write",
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+      },
+      deleteSiteInner$,
     ),
   },
 ];

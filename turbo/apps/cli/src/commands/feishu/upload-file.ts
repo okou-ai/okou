@@ -13,6 +13,20 @@ import {
   initFeishuFileUpload,
 } from "../../lib/api/domains/integrations-feishu";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import {
+  TO_OPTION_FLAGS,
+  toOptionDescription,
+} from "../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../lib/command/message-output";
+import {
+  type FeishuDestinationOptions,
+  replyModeOption,
+  resolveFeishuDestination,
+} from "./message/target";
 
 const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   ".csv": "text/csv",
@@ -31,14 +45,11 @@ const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   ".webp": "image/webp",
 };
 
-interface UploadFeishuOptions {
+interface UploadFeishuOptions extends FeishuDestinationOptions {
   readonly file: string;
-  readonly installation?: string;
-  readonly chat?: string;
-  readonly user?: string;
-  readonly reply?: string;
-  readonly thread?: boolean;
+  readonly as?: string;
   readonly contentType?: string;
+  readonly json?: boolean;
 }
 
 function inferContentType(localPath: string): string {
@@ -56,46 +67,37 @@ export function createFeishuUploadCommand(platform: FeishuPlatform) {
       `Upload a local file to ${providerName} as an organization bot`,
     )
     .requiredOption("-f, --file <path>", "Local file path to upload")
-    .option("-i, --installation <id>", `${providerName} installation ID`)
-    .option("-c, --chat <id>", `${providerName} chat ID`)
     .option(
-      "-u, --user <open-id>",
-      `${providerName} user open ID (use "me" for yourself)`,
+      TO_OPTION_FLAGS,
+      toOptionDescription("oc_… chat, ou_… user open ID"),
     )
-    .option("-r, --reply <message-id>", "Message ID to reply to")
-    .option("--thread", `Reply in a ${providerName} thread`)
+    .option("--reply-to <message-id>", "Message ID to reply to (om_…)")
+    .addOption(replyModeOption())
+    .option("--as <installation-id>", `${providerName} installation to send as`)
     .option("--content-type <mime>", "Override inferred content type")
+    .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
     .addHelpText(
       "after",
       `
 Examples:
-  Upload to a chat:    okou ${platform} upload-file -f /tmp/report.pdf -c oc_xxx
-  Send a DM:           okou ${platform} upload-file -f /tmp/report.pdf -u ou_xxx
-  Reply with a file:   okou ${platform} upload-file -f /tmp/report.pdf -r om_xxx --thread
-  Select a custom app: okou ${platform} upload-file -f /tmp/report.pdf -i <installation-id> -c oc_xxx
+  Upload to a chat:    okou ${platform} upload-file -f /tmp/report.pdf --to oc_xxx
+  Send a DM:           okou ${platform} upload-file -f /tmp/report.pdf --to ou_xxx
+  Reply with a file:   okou ${platform} upload-file -f /tmp/report.pdf --reply-to om_xxx --reply-mode thread
+  Select a custom app: okou ${platform} upload-file -f /tmp/report.pdf --as <installation-id> --to oc_xxx
 
 Output:
-  Prints a JSON object to stdout on success:
-    {"messageId":"om_xxx","chatId":"oc_xxx","fileKey":"file_xxx","filename":"report.pdf","mimetype":"application/pdf","size":12345,"url":"https://..."}
+  Prints "✓ File uploaded" with the message ID, chat ID, and file URL.
+  With --json, prints one JSON object:
+    {"integration":"${platform}","chatId":"oc_xxx","messages":[{"id":"om_xxx","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}
 
 Notes:
-  - Exactly one of --chat, --user, or --reply is required
+  - Exactly one of --to or --reply-to is required
   - ${providerName} accepts non-empty files up to 30 MB
-  - Specify --installation when the organization has multiple ${providerName} bots`,
+  - Specify --as when the organization has multiple ${providerName} bots`,
     )
     .action(
       withErrorHandler(async (options: UploadFeishuOptions) => {
-        const targets = [options.chat, options.user, options.reply].filter(
-          Boolean,
-        );
-        if (targets.length !== 1) {
-          throw new Error(
-            "Exactly one of --chat, --user, or --reply must be provided",
-          );
-        }
-        if (options.thread && !options.reply) {
-          throw new Error("--thread requires --reply");
-        }
+        const destination = resolveFeishuDestination(providerName, options);
 
         let fileSize: number;
         try {
@@ -145,14 +147,24 @@ Notes:
         const result = await completeFeishuFileUpload({
           ...(platform === "lark" ? { platform } : {}),
           uploadId: prepared.uploadId,
-          installationId: options.installation,
-          chat: options.chat,
-          user: options.user,
-          replyToMessageId: options.reply,
-          replyInThread: options.thread,
+          installationId: options.as,
+          ...destination,
           contentType: prepared.contentType,
         });
-        console.log(JSON.stringify(result));
+        printMessageOutput(
+          {
+            integration: platform,
+            chatId: result.chatId,
+            messages: [{ id: result.messageId, url: null }],
+            file: {
+              name: result.filename,
+              contentType: result.mimetype,
+              size: result.size,
+              url: result.url,
+            },
+          },
+          options,
+        );
       }),
     );
 }

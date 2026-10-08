@@ -121,7 +121,7 @@ it("exports real Pi spans through the authenticated relay without connector cred
     throw new Error("Expected TCP test address");
   const origin = `http://127.0.0.1:${address.port}`;
   const endpoint = `${origin}/traces`;
-  const restore = installLangfuseRuntimeEnvironment(parent, "sandbox-first", {
+  const restore = installLangfuseRuntimeEnvironment(parent, {
     relay: { endpoint, token },
     userId: "anonymous-user",
     environment: "internal-debug",
@@ -134,10 +134,10 @@ it("exports real Pi spans through the authenticated relay without connector cred
       const created = await createPiAgentSessionForRuntime({
         ...target,
         model: {
-          provider: "openai",
+          provider: "openrouter",
           baseUrl: `${origin}/v1`,
           apiKey: "test-model-key",
-          model: "gpt-5.6-terra",
+          model: "openai/gpt-6-luna",
           dialect: "openai-responses",
           transport: "sse",
         },

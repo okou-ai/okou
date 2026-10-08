@@ -12,44 +12,33 @@ import {
   sql,
 } from "drizzle-orm";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
-import {
-  assertErasureSubjectWritable,
-  erasureSubjectOpenCondition,
-  setErasureFenceDeadlines,
-  type ErasureSubject,
-} from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import {
   chatEventSearchMessages,
   chatEventSearchMessageWatermarks,
 } from "@okouai/db/schema/chat-event-search";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatSearchIndexText } from "../../lib/chat-search-bigram";
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
-import { isLockNotAvailable, isStatementTimeout } from "../../lib/pg-errors";
 import { writeDb$, type Db } from "../external/db";
-import { settle } from "../utils";
 import {
   projectUserMessage,
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
 import {
-  canonicalChatEventVisibleContent,
+  canonicalChatEventContent,
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";
-import { maintainChatSearchGin } from "./chat-search-gin.service";
 
 interface ChatEventSearchProjectionStats {
   readonly threads: number;
   readonly indexedEvents: number;
   readonly deletedDocs: number;
   readonly orphanedThreads: number;
-  readonly closedThreads: number;
-  readonly deferredThreads: number;
   readonly convergence: ChatEventSearchProjectionConvergence;
 }
 
@@ -58,49 +47,17 @@ interface ChatEventSearchProjectionConvergence {
   readonly durableCaughtUpThreads: number;
 }
 
-/**
- * Canonical ownership of one thread-scoped derived copy: the thread's own user
- * plus the identity, owner and organization of the Agent the thread belongs to.
- * It is content free, so it can be resolved and admitted before any owner-bound
- * message text is read. The persisted projection labels stay `userId`/`orgId`/
- * `agentId`; `agentOwner` only widens the admitted subject set.
- */
-interface ProjectionThreadIdentity {
+interface CandidateThread {
   readonly chatThreadId: string;
   readonly userId: string;
-  readonly agentId: string;
-  readonly agentOwner: string;
   readonly orgId: string;
-}
-
-interface ProjectionThreadSnapshot {
-  readonly identity: ProjectionThreadIdentity;
-  readonly lastChatEventSeqId: number;
+  readonly agentId: string;
 }
 
 interface ThreadProjectionStats {
   readonly thread: number;
   readonly indexedEvents: number;
   readonly deletedDocs: number;
-}
-
-/**
- * `missing` is a resolved absent parent, `closed` is B1's exact subject closure
- * and `deferred` is a bounded lock/statement wait or exhausted ownership race the
- * next tick retries. They stay separate so a database or cancellation failure
- * is never reported as account closure.
- */
-type ThreadProjectionOutcome =
-  | { readonly kind: "projected"; readonly stats: ThreadProjectionStats }
-  | { readonly kind: "missing" }
-  | { readonly kind: "closed" }
-  | { readonly kind: "deferred" };
-
-class ProjectionOwnershipChangedError extends Error {
-  constructor() {
-    super("Chat search projection ownership changed while acquiring locks");
-    this.name = "ProjectionOwnershipChangedError";
-  }
 }
 
 interface SearchMessageProjection {
@@ -124,16 +81,6 @@ interface SearchProjectionWriteStats {
   readonly deletedDocs: number;
 }
 
-interface ChatEventSearchProjectionOptions {
-  readonly chatThreadIds?: readonly string[];
-  readonly ginIndexName?: string;
-}
-
-interface ChatEventSearchTestProjectionOptions {
-  readonly chatThreadIds: readonly string[];
-  readonly ginIndexName?: string;
-}
-
 type SearchableRole = "user" | "assistant";
 interface CanonicalSearchMessageInsert {
   readonly chatThreadId: string;
@@ -150,19 +97,6 @@ interface CanonicalSearchMessageInsert {
 
 const DEFAULT_THREAD_BATCH_SIZE = 500;
 const THREAD_EVENT_LIMIT = 1000;
-const OWNERSHIP_ATTEMPTS = 3;
-const GIN_MAINTENANCE_BUDGET_MS = 30_000;
-/**
- * The repository's ordinary content-write budget. Waiting is now possible
- * because the fence conflicts with thread deletion, Agent transfer/deletion and
- * an exclusive erasure holder, so one contended thread must not consume the
- * minute-cadence tick: it is deferred after a second and reselected next tick
- * with its watermark untouched. The statement limit bounds the unchanged
- * per-thread work, which is still capped at one thread and `THREAD_EVENT_LIMIT`
- * events.
- */
-const PROJECTION_LOCK_TIMEOUT = "1s";
-const PROJECTION_STATEMENT_TIMEOUT = "5s";
 
 function chatEventSearchThreadBatchSize(): number {
   const raw = optionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE");
@@ -189,7 +123,6 @@ function searchMessageRole(eventType: string): SearchableRole | null {
 }
 
 function searchMessageText(row: {
-  readonly runId: string | null;
   readonly eventType: (typeof chatEvents.$inferSelect)["eventType"];
   readonly content: string | null;
   readonly userMessage: UserMessageDocument | null;
@@ -201,16 +134,6 @@ function searchMessageText(row: {
   const text = userMessage
     ? projectUserMessage(userMessage).displayText
     : row.content;
-  // The canonical row projection already checked the full raw provenance.
-  // Preserve the historical objective's trailing whitespace as well.
-  if (
-    row.eventType === "output.message" &&
-    row.runId === null &&
-    text !== null &&
-    isRetiredGoalArchiveText(text)
-  ) {
-    return text;
-  }
   const trimmed = text?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : null;
 }
@@ -242,7 +165,7 @@ async function loadProjectionRows(
       id: chatEvents.id,
       runId: chatEvents.runId,
       eventType: chatEvents.eventType,
-      content: canonicalChatEventVisibleContent(),
+      content: canonicalChatEventContent(),
       userMessage: canonicalChatEventUserMessage(),
       revokesEventId: chatEvents.revokesEventId,
       seqId: chatEvents.seqId,
@@ -282,7 +205,7 @@ async function visibleSearchEventIds(
     .select({ id: chatEvents.id })
     .from(chatEvents)
     .where(
-      and(inArray(chatEvents.id, [...eventIds]), visibleChatEventCondition(tx)),
+      and(inArray(chatEvents.id, [...eventIds]), visibleChatEventCondition()),
     );
   return new Set(
     rows.map((row) => {
@@ -291,133 +214,25 @@ async function visibleSearchEventIds(
   );
 }
 
-async function setProjectionDeadlines(tx: Tx): Promise<void> {
-  await setErasureFenceDeadlines(tx, {
-    lockTimeout: PROJECTION_LOCK_TIMEOUT,
-    statementTimeout: PROJECTION_STATEMENT_TIMEOUT,
-  });
-}
-
-/**
- * Resolves canonical ownership from the real persisted parents. The previously
- * selected candidate and the stored projection labels are never authority here.
- * The Agent join is the same one candidate selection uses, so a thread without
- * a resolvable Agent has no canonical owner and is not projected.
- */
 async function loadProjectionThread(
   tx: Tx,
   chatThreadId: string,
-): Promise<ProjectionThreadSnapshot | null> {
+): Promise<{ readonly lastChatEventSeqId: number } | null> {
   const [thread] = await tx
     .select({
-      chatThreadId: chatThreads.id,
-      userId: chatThreads.userId,
-      agentId: agents.id,
-      agentOwner: agents.owner,
-      orgId: agents.orgId,
-      lastChatEventSeqId: chatThreads.lastChatEventSeqId,
+      lastChatEventSeqId:
+        sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+          chatEventSequences.lastSeqId,
+        ),
     })
     .from(chatThreads)
-    .innerJoin(agents, eq(chatThreads.agentId, agents.id))
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .where(eq(chatThreads.id, chatThreadId))
     .limit(1);
-  if (!thread) {
-    return null;
-  }
-  const { lastChatEventSeqId, ...identity } = thread;
-  return { identity, lastChatEventSeqId };
-}
-
-function projectionSubjects(
-  identity: ProjectionThreadIdentity,
-): ErasureSubject[] {
-  // User and organization are separate subject domains; the thread user and the
-  // Agent owner are distinct user subjects whenever an Agent is shared.
-  const subjects: ErasureSubject[] = [
-    { subjectKind: "user", subjectId: identity.userId },
-    { subjectKind: "user", subjectId: identity.agentOwner },
-    { subjectKind: "organization", subjectId: identity.orgId },
-  ];
-  return [
-    ...new Map(
-      subjects.map((subject) => {
-        return [JSON.stringify(subject), subject];
-      }),
-    ).values(),
-  ];
-}
-
-/** Sorted shared B1 admission, before any business-row lock and before any
- * owner-bound content read. Only B1's exact closure error denies the write;
- * every other failure, including a bounded lock wait, propagates unchanged.
- */
-async function admitProjectionSubjects(
-  tx: Tx,
-  identity: ProjectionThreadIdentity,
-): Promise<boolean> {
-  const result = await settle(
-    assertErasureSubjectWritable(tx, projectionSubjects(identity)),
-  );
-  if (result.ok) {
-    return true;
-  }
-  if (
-    result.error instanceof Error &&
-    result.error.message === "account_erasure:subject_closed"
-  ) {
-    return false;
-  }
-  throw result.error;
-}
-
-function sameProjectionIdentity(
-  left: ProjectionThreadIdentity,
-  right: ProjectionThreadIdentity,
-): boolean {
-  return (
-    left.chatThreadId === right.chatThreadId &&
-    left.userId === right.userId &&
-    left.agentId === right.agentId &&
-    left.agentOwner === right.agentOwner &&
-    left.orgId === right.orgId
-  );
-}
-
-/**
- * Retains the canonical identity locks through COMMIT, in the Agent -> thread
- * order the run-output writer already uses.
- *
- * `agents` carries the `(id, org_id, owner)` unique key, so KEY SHARE conflicts
- * with an owner/organization transfer and with Agent deletion, which cascades
- * this thread. `chat_threads` has no unique key over `user_id`/`agent_id` and
- * no production writer updates either column; its KEY SHARE conflicts with the
- * FOR UPDATE that thread deletion takes before removing the projection rows.
- * Both are re-read under the retained locks, so a transfer committed between
- * selection and lock acquisition rolls this attempt back instead of relabelling
- * already prepared content or expanding the admitted subject set afterwards.
- */
-async function lockProjectionOwnership(
-  tx: Tx,
-  identity: ProjectionThreadIdentity,
-): Promise<ProjectionThreadSnapshot | null> {
-  await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(eq(agents.id, identity.agentId))
-    .for("key share");
-  await tx
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, identity.chatThreadId))
-    .for("key share");
-  const current = await loadProjectionThread(tx, identity.chatThreadId);
-  if (!current) {
-    return null;
-  }
-  if (!sameProjectionIdentity(current.identity, identity)) {
-    throw new ProjectionOwnershipChangedError();
-  }
-  return current;
+  return thread ?? null;
 }
 
 async function loadThreadProjectionProgress(
@@ -458,7 +273,7 @@ function collectSearchMessageProjections(rows: readonly ProjectionRow[]): {
 
 function searchMessage(
   row: ProjectionRow,
-  thread: ProjectionThreadIdentity,
+  thread: CandidateThread,
   projections: ReadonlyMap<string, SearchMessageProjection>,
   visibleEventIds: ReadonlySet<string>,
 ): CanonicalSearchMessageInsert | null {
@@ -482,7 +297,7 @@ function searchMessage(
 
 async function buildSearchProjectionBatch(
   tx: Tx,
-  thread: ProjectionThreadIdentity,
+  thread: CandidateThread,
   progress: ThreadProjectionProgress,
 ): Promise<SearchProjectionBatch> {
   // Any event type can revoke an earlier one. Resolve every target before
@@ -588,140 +403,61 @@ async function advanceProjectionWatermark(
     });
 }
 
-/**
- * Owns one bounded per-thread transaction: ownership snapshot -> shared B1
- * admission -> Agent and thread identity locks -> revalidation -> content read
- * and projection writes, with every barrier retained through COMMIT. A missing
- * parent or an exactly closed subject performs no insert, no revocation delete
- * and no watermark advance.
- */
-async function projectThreadOnce(
-  db: Db,
-  chatThreadId: string,
-): Promise<ThreadProjectionOutcome> {
-  return await db.transaction(
-    async (tx): Promise<ThreadProjectionOutcome> => {
-      await setProjectionDeadlines(tx);
-      const selected = await loadProjectionThread(tx, chatThreadId);
-      if (!selected) {
-        return { kind: "missing" };
-      }
-      if (!(await admitProjectionSubjects(tx, selected.identity))) {
-        return { kind: "closed" };
-      }
-      const projectionThread = await lockProjectionOwnership(
-        tx,
-        selected.identity,
-      );
-      if (!projectionThread) {
-        return { kind: "missing" };
-      }
-      const { identity, lastChatEventSeqId } = projectionThread;
-      const progress = await loadThreadProjectionProgress(
-        tx,
-        chatThreadId,
-        lastChatEventSeqId,
-      );
-
-      const batch = await buildSearchProjectionBatch(tx, identity, progress);
-      const writes = await writeSearchProjectionBatch(tx, batch);
-      await advanceProjectionWatermark(
-        tx,
-        chatThreadId,
-        lastChatEventSeqId,
-        progress,
-      );
-
-      return {
-        kind: "projected",
-        stats: {
-          thread: progress.lagging ? 1 : 0,
-          indexedEvents: writes.indexedEvents,
-          deletedDocs: writes.deletedDocs,
-        },
-      };
-    },
-    { isolationLevel: "read committed" },
-  );
+function emptyThreadProjectionStats(): ThreadProjectionStats {
+  return {
+    thread: 0,
+    indexedEvents: 0,
+    deletedDocs: 0,
+  };
 }
 
-/**
- * Rolls back and reselects a finite number of times when ownership moves under
- * the locks, then defers the thread to the next tick. Lock and statement
- * deadlines defer the same way; cancellation and other database failures keep
- * existing propagation.
- */
 async function projectThread(
   db: Db,
-  chatThreadId: string,
-): Promise<ThreadProjectionOutcome> {
-  for (let attempt = 1; ; attempt++) {
-    const result = await settle(projectThreadOnce(db, chatThreadId));
-    if (result.ok) {
-      return result.value;
+  thread: CandidateThread,
+): Promise<ThreadProjectionStats> {
+  return await db.transaction(async (tx) => {
+    const projectionThread = await loadProjectionThread(
+      tx,
+      thread.chatThreadId,
+    );
+    if (!projectionThread) {
+      return emptyThreadProjectionStats();
     }
-    if (isLockNotAvailable(result.error) || isStatementTimeout(result.error)) {
-      return { kind: "deferred" };
-    }
-    if (!(result.error instanceof ProjectionOwnershipChangedError)) {
-      throw result.error;
-    }
-    if (attempt === OWNERSHIP_ATTEMPTS) {
-      return { kind: "deferred" };
-    }
-  }
-}
+    const progress = await loadThreadProjectionProgress(
+      tx,
+      thread.chatThreadId,
+      projectionThread.lastChatEventSeqId,
+    );
 
-function projectionThreadScope(chatThreadIds: readonly string[] | undefined) {
-  return chatThreadIds === undefined
-    ? undefined
-    : inArray(chatThreads.id, [...chatThreadIds]);
-}
+    const batch = await buildSearchProjectionBatch(tx, thread, progress);
+    const writes = await writeSearchProjectionBatch(tx, batch);
+    await advanceProjectionWatermark(
+      tx,
+      thread.chatThreadId,
+      projectionThread.lastChatEventSeqId,
+      progress,
+    );
 
-function projectionWatermarkScope(
-  chatThreadIds: readonly string[] | undefined,
-) {
-  return chatThreadIds === undefined
-    ? undefined
-    : inArray(chatEventSearchMessageWatermarks.chatThreadId, [
-        ...chatThreadIds,
-      ]);
-}
-
-/**
- * Indexed eligibility filter over the same canonical subject domains the
- * per-thread transaction admits. It keeps closed threads out of the bounded
- * candidate batch so they cannot starve later open threads, and keeps the
- * reported convergence honest instead of counting work this fence will never
- * index. It is a filter, not admission: `admitProjectionSubjects` still decides
- * inside the transaction, so a closure committed after selection still stops
- * the write.
- */
-function openProjectionSubjectsCondition(db: Pick<Db, "select">) {
-  return erasureSubjectOpenCondition(db, [
-    { subjectKind: "user", subjectId: chatThreads.userId },
-    { subjectKind: "user", subjectId: agents.owner },
-    { subjectKind: "organization", subjectId: agents.orgId },
-  ]);
+    return {
+      thread: progress.lagging ? 1 : 0,
+      indexedEvents: writes.indexedEvents,
+      deletedDocs: writes.deletedDocs,
+    };
+  });
 }
 
 /**
- * Removes a bounded set of derived rows whose canonical thread is gone. This
- * repairs pre-fence orphans and any older producer; it is not a substitute for
- * the per-thread fence, which now blocks a projector from recreating an orphan
- * behind a committed or in-flight thread deletion.
+ * Removes a bounded set of derived rows whose canonical thread is gone.
+ * A projector racing this cleanup can recreate an orphan after the selection;
+ * the next cron tick will select it again.
  */
-async function cleanupOrphanedSearchProjection(
-  db: Db,
-  options: ChatEventSearchProjectionOptions,
-): Promise<number> {
+async function cleanupOrphanedSearchProjection(db: Db): Promise<number> {
   return await db.transaction(async (tx) => {
     const orphanedWatermarks = await tx
       .select({ chatThreadId: chatEventSearchMessageWatermarks.chatThreadId })
       .from(chatEventSearchMessageWatermarks)
       .where(
         and(
-          projectionWatermarkScope(options.chatThreadIds),
           notExists(
             tx
               .select({ id: chatThreads.id })
@@ -762,18 +498,21 @@ async function cleanupOrphanedSearchProjection(
   });
 }
 
-/** Selection carries no identity: the per-thread transaction resolves the
- * canonical owner itself, so a transfer between selection and that transaction
- * cannot label content from a previously observed candidate row.
- */
 async function loadCandidateThreads(
   db: Pick<Db, "select">,
-  options: ChatEventSearchProjectionOptions,
-): Promise<readonly string[]> {
-  const threadScope = projectionThreadScope(options.chatThreadIds);
-  const candidates = await db
-    .select({ chatThreadId: chatThreads.id })
+): Promise<readonly CandidateThread[]> {
+  return await db
+    .select({
+      chatThreadId: chatThreads.id,
+      userId: chatThreads.userId,
+      orgId: agents.orgId,
+      agentId: agents.id,
+    })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .innerJoin(agents, eq(chatThreads.agentId, agents.id))
     .leftJoin(
       chatEventSearchMessageWatermarks,
@@ -781,37 +520,20 @@ async function loadCandidateThreads(
     )
     .where(
       and(
-        threadScope,
         gt(
-          chatThreads.lastChatEventSeqId,
+          chatEventSequences.lastSeqId,
           sql`COALESCE(${chatEventSearchMessageWatermarks.indexedSeqId}, 0)`,
         ),
-        openProjectionSubjectsCondition(db),
       ),
     )
     .orderBy(asc(chatThreads.id))
     .limit(chatEventSearchThreadBatchSize());
-  return candidates.map((candidate) => {
-    return candidate.chatThreadId;
-  });
 }
 
-/**
- * Eligible now means "has events and no closed canonical subject". A thread the
- * fence refuses to index is excluded rather than reported as outstanding or
- * silently counted as caught up; its watermark is never advanced to converge.
- * The Agent join stays outer so a thread without a resolvable Agent keeps its
- * previous eligibility, exactly as before this fence.
- */
 async function projectionConvergence(
   db: Pick<Db, "select">,
-  options: ChatEventSearchProjectionOptions,
 ): Promise<ChatEventSearchProjectionConvergence> {
-  const eligibleScope = and(
-    projectionThreadScope(options.chatThreadIds),
-    gt(chatThreads.lastChatEventSeqId, 0),
-    openProjectionSubjectsCondition(db),
-  );
+  const eligibleScope = gt(chatEventSequences.lastSeqId, 0);
   const [stats] = await db
     .select({
       eligibleThreads: count(),
@@ -820,14 +542,17 @@ async function projectionConvergence(
       ),
     })
     .from(chatThreads)
-    .leftJoin(agents, eq(chatThreads.agentId, agents.id))
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .leftJoin(
       chatEventSearchMessageWatermarks,
       and(
         eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
         gte(
           chatEventSearchMessageWatermarks.indexedSeqId,
-          chatThreads.lastChatEventSeqId,
+          chatEventSequences.lastSeqId,
         ),
       ),
     )
@@ -840,80 +565,31 @@ async function projectionConvergence(
 
 async function projectChatEventSearch(
   db: Db,
-  options: ChatEventSearchProjectionOptions,
   signal: AbortSignal,
 ): Promise<ChatEventSearchProjectionStats> {
-  const orphanedThreads = await cleanupOrphanedSearchProjection(db, options);
+  const orphanedThreads = await cleanupOrphanedSearchProjection(db);
   signal.throwIfAborted();
-  const candidateThreads = await loadCandidateThreads(db, options);
+  const candidateThreads = await loadCandidateThreads(db);
   signal.throwIfAborted();
 
   let threads = 0;
   let indexedEvents = 0;
   let deletedDocs = 0;
-  let closedThreads = 0;
-  let deferredThreads = 0;
-  let maintenanceBudgetMs = GIN_MAINTENANCE_BUDGET_MS;
-  let attemptedThreads = 0;
-  for (const chatThreadId of candidateThreads) {
+  for (const thread of candidateThreads) {
     signal.throwIfAborted();
-    if (options.ginIndexName !== undefined) {
-      // One shared budget for the whole tick, not 30 seconds per thread. A
-      // large pre-existing backlog may need a separate operational drain.
-      if (maintenanceBudgetMs <= 0) {
-        deferredThreads += candidateThreads.length - attemptedThreads;
-        break;
-      }
-      const started = performance.now();
-      const maintained = await settle(
-        maintainChatSearchGin(
-          db,
-          options.ginIndexName,
-          maintenanceBudgetMs,
-          signal,
-        ),
-      );
-      signal.throwIfAborted();
-      maintenanceBudgetMs -= performance.now() - started;
-      if (!maintained.ok) {
-        if (
-          !isLockNotAvailable(maintained.error) &&
-          !isStatementTimeout(maintained.error)
-        ) {
-          throw maintained.error;
-        }
-        // Avoid repeatedly charging a failed cleanup to every candidate. The
-        // untouched threads and their watermarks remain eligible next tick.
-        deferredThreads += candidateThreads.length - attemptedThreads;
-        break;
-      }
-      if (maintenanceBudgetMs <= 0) {
-        deferredThreads += candidateThreads.length - attemptedThreads;
-        break;
-      }
-    }
-    const outcome = await projectThread(db, chatThreadId);
+    const stats = await projectThread(db, thread);
     signal.throwIfAborted();
-    attemptedThreads += 1;
-    if (outcome.kind === "projected") {
-      threads += outcome.stats.thread;
-      indexedEvents += outcome.stats.indexedEvents;
-      deletedDocs += outcome.stats.deletedDocs;
-    } else if (outcome.kind === "closed") {
-      closedThreads += 1;
-    } else if (outcome.kind === "deferred") {
-      deferredThreads += 1;
-    }
+    threads += stats.thread;
+    indexedEvents += stats.indexedEvents;
+    deletedDocs += stats.deletedDocs;
   }
-  const convergence = await projectionConvergence(db, options);
+  const convergence = await projectionConvergence(db);
   signal.throwIfAborted();
   return {
     threads,
     indexedEvents,
     deletedDocs,
     orphanedThreads,
-    closedThreads,
-    deferredThreads,
     convergence,
   };
 }
@@ -924,32 +600,6 @@ export const projectChatEventSearch$ = command(
     signal: AbortSignal,
   ): Promise<ChatEventSearchProjectionStats> => {
     const db = set(writeDb$);
-    return await projectChatEventSearch(
-      db,
-      {
-        ginIndexName: "public.chat_event_search_messages_tsv_idx",
-      },
-      signal,
-    );
-  },
-);
-
-export const projectChatEventSearchTestScope$ = command(
-  async (
-    { set },
-    options: ChatEventSearchTestProjectionOptions,
-    signal: AbortSignal,
-  ): Promise<ChatEventSearchProjectionStats> => {
-    const db = set(writeDb$);
-    return await projectChatEventSearch(
-      db,
-      {
-        chatThreadIds: options.chatThreadIds,
-        // Scoped route tests must never drain another test's shared index. GIN
-        // maintenance tests supply their own disposable index explicitly.
-        ginIndexName: options.ginIndexName,
-      },
-      signal,
-    );
+    return await projectChatEventSearch(db, signal);
   },
 );

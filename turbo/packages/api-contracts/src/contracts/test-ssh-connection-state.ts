@@ -11,18 +11,6 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
   [
     z
       .object({
-        action: z.enum([
-          "hold-connection-lock",
-          "read-connection-lock",
-          "release-connection-lock",
-        ]),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        connectionId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
         action: z.literal("create-runtime"),
         agentId: z.uuid().optional(),
         runnerGroup: z.string().min(1).optional(),
@@ -40,16 +28,6 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
           "failed",
         ]),
         chat: z.boolean(),
-        access: z.boolean(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("set-agent-access"),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        agentId: z.uuid(),
-        enabled: z.boolean(),
       })
       .strict(),
     z
@@ -62,33 +40,6 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
         fingerprint: z.string().min(1).max(64),
       })
       .strict(),
-    z
-      .object({
-        action: z.literal("match-credentials"),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        connectionId: z.uuid(),
-        privateKey: z.string(),
-        passphrase: z.string().nullable(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("set-needs-rebind"),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        connectionId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("bind-shared-access"),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        connectionId: z.uuid(),
-        sourceConfigId: z.uuid(),
-      })
-      .strict(),
   ],
 );
 
@@ -96,14 +47,10 @@ export const testSshConnectionStateActionResponseSchema = z
   .object({
     ok: z.literal(true),
     generation: z.int().positive().optional(),
-    configId: z.uuid().optional(),
-    privateKeyMatches: z.boolean().optional(),
-    passphraseMatches: z.boolean().optional(),
     runId: z.uuid().optional(),
+    threadId: z.uuid().optional(),
     agentId: z.uuid().optional(),
     sandboxToken: z.string().optional(),
-    held: z.boolean().optional(),
-    waiting: z.boolean().optional(),
   })
   .strict();
 

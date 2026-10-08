@@ -1,59 +1,104 @@
-import { Command } from "commander";
+import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import chalk from "chalk";
-import { getBuiltInModelPriceTier } from "@okouai/api-contracts/contracts/model-providers";
-import { listModelPolicies } from "../../lib/api/domains/model-policies";
+import { Command } from "commander";
+import {
+  getUserModelPreference,
+  listRunModels,
+  selectRunModel,
+} from "../../lib/api/domains/run-models";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
-  formatModelPolicyStatus,
+  formatModelSelectionArgument,
+  parseModelSelectionArgument,
+} from "../../lib/domain/model-catalog-display";
+import {
   formatModelProviderRoute,
-  getModelProviderRouteKind,
-} from "../../lib/domain/model-policy-display";
-
-function formatPriceTier(tier: string | undefined): string {
-  return tier ?? "unknown";
-}
+  formatRunModelStatus,
+} from "../../lib/domain/run-model-display";
 
 const listCommand = new Command()
   .name("list")
   .alias("ls")
-  .description("List models allowed by the current organization")
+  .description("List Auto and your connected personal subscription models")
   .action(
     withErrorHandler(async () => {
-      const result = await listModelPolicies();
-
-      if (result.policies.length === 0) {
-        console.log(chalk.dim("No models are allowed for this organization"));
-        return;
-      }
-
-      console.log(chalk.bold("Allowed Models:"));
-      console.log();
-
-      for (const policy of result.policies) {
-        const defaultMarker = policy.isDefault ? chalk.dim(" (default)") : "";
+      const { models } = await listRunModels();
+      console.log(chalk.bold("Available Models:"));
+      for (const model of models) {
         console.log(
-          `  - ${policy.modelLabel} ${chalk.dim(`(${policy.model})`)}${defaultMarker}`,
+          `  - ${model.modelLabel} (${formatModelSelectionArgument(model.model)})${model.model === null ? " (default)" : ""}`,
         );
-        console.log(`    provider: ${formatModelProviderRoute(policy)}`);
-
-        if (getModelProviderRouteKind(policy) === "built-in") {
-          console.log(
-            `    price tier: ${formatPriceTier(getBuiltInModelPriceTier(policy.model))}`,
-          );
-        }
-
-        const status = formatModelPolicyStatus(policy);
-        if (status) {
-          console.log(chalk.yellow(`    status: ${status}`));
-        }
+        console.log(`    provider: ${formatModelProviderRoute(model)}`);
+        const status = formatRunModelStatus(model);
+        if (status) console.log(chalk.yellow(`    status: ${status}`));
       }
-
-      console.log();
       console.log(
         chalk.dim(
-          "Use `okou model-provider set --help` to see how to switch each model between built-in and BYOK.",
+          "Select your default: okou model select <model>, or okou model select auto for Auto. For one chat: okou chat model <model>.",
         ),
       );
+    }),
+  );
+
+interface SelectOptions {
+  readonly priority?: boolean;
+}
+
+/**
+ * Without an explicit flag, keep the saved tier when it still applies: the
+ * same model echoes it unchanged, and another subscription model keeps
+ * priority only when its subscription offers it.
+ */
+async function resolveServiceTier(
+  selected: AvailableRunModel,
+  priority: boolean | undefined,
+): Promise<ChatThreadServiceTier | null> {
+  if (priority !== undefined) {
+    return priority ? "priority" : null;
+  }
+  const stored = await getUserModelPreference();
+  if (stored.serviceTier === null || stored.selectedModel === selected.model) {
+    return stored.serviceTier;
+  }
+  return stored.serviceTier === "priority" &&
+    selected.subscriptionOptions?.serviceTier === "priority"
+    ? "priority"
+    : null;
+}
+
+const selectCommand = new Command()
+  .name("select")
+  .argument(
+    "<model>",
+    "auto for Auto, or a connected personal subscription model id",
+  )
+  .description("Select your default model for new chats")
+  .option("--priority", "Enable priority (Fast) for new chats on this model")
+  .option(
+    "--no-priority",
+    "Use standard priority instead of your saved preference",
+  )
+  .action(
+    withErrorHandler(async (argument: string, options: SelectOptions) => {
+      const model = parseModelSelectionArgument(argument);
+      const available = await listRunModels();
+      const selected = available.models.find((candidate) => {
+        return candidate.model === model;
+      });
+      if (!selected || !isMemberRunModelConfigurable(selected)) {
+        throw new Error(
+          `Model is unavailable: ${argument}. Run okou model ls and connect or reconnect your subscription in Settings > Models.`,
+        );
+      }
+      const serviceTier = await resolveServiceTier(selected, options.priority);
+      const result = await selectRunModel(model, serviceTier);
+      const label = result.selectedModel ?? selected.modelLabel;
+      console.log(chalk.green(`✓ Default model selected: ${label}`));
+      if (result.serviceTier !== null) {
+        console.log(chalk.dim(`  Service tier: ${result.serviceTier}`));
+      }
     }),
   );
 
@@ -62,12 +107,13 @@ export const switchCommand = new Command()
   .description("Show how to switch models in the current environment")
   .action(() => {
     console.log(
-      "Open https://app.okou.ai and switch models from the model selector next to the input box.",
+      "Use okou model select <model> for new chats, or okou chat model <model> for the current chat; pass auto for Auto. You can also use the model selector next to the input box at https://app.okou.ai.",
     );
   });
 
 export const modelCommand = new Command()
   .name("model")
-  .description("List available models and model-switching guidance")
+  .description("List and select Auto or personal subscription models")
   .addCommand(listCommand)
+  .addCommand(selectCommand)
   .addCommand(switchCommand);

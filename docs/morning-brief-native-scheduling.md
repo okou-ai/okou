@@ -1,4 +1,15 @@
-# Morning Brief native scheduling, ownership and rollback
+# Morning Brief native scheduling, ownership and rollback (historical)
+
+> **Retired by the stage-2 code cleanup.** This document describes the former
+> Native protocol, not an active runbook. The Native cron, per-user worker,
+> generation/delivery execution and debug/preview endpoints are removed.
+> Official Workflow Morning Brief owns new schedules and delivery. The shared
+> schedule journal, historical receipts, and fail-closed email admission stay
+> until their independent data-retention/compatibility review; do not replay
+> an unknown provider attempt or retroactively send an old brief. The dormant
+> The `simpleMorningBrief` registry key and Lab entry are removed. The public
+> API still rejects a `true` write to the old persisted key during mixed-version
+> rollout; this is not a path to restart Native execution.
 
 This is the durable state that lets a Morning Brief run without the legacy
 Official Workflow scheduler, and the protocol that moves a member between the
@@ -10,11 +21,20 @@ It covers `morning_brief_native_schedules`,
 `/api/cron/execute-morning-briefs` tick, and every writer that may change a
 member's choice, schedule or execution ownership.
 
-**This is not a general production rollout.** `simpleMorningBrief` stays
-registered off by default and is enabled for the staff org allowlist only, under
-S8 ([#36203](https://github.com/okou-ai/okou/issues/36203)). Every other
-organization is still off, a per-user override still wins over the allowlist,
-and the hard pre-activation gates are listed at the end.
+**Retirement stage 1.** `FeatureSwitchKey.NativeMorningBrief` stays registered
+with the persisted/API value `simpleMorningBrief` for mixed-version and rollback
+compatibility, but has no staff allowlist or other default cohort. Migration
+`1215_retire_native_morning_brief_admission` changes existing `true` overrides
+to `false` without touching other preferences; new API writes of `true` are
+rejected. The native tick and worker remain solely to reconcile already admitted
+work and transfer scheduling authority back to the Official Workflow. No
+historical messages or delivery receipts are deleted by this stage. Older API
+instances may still admit native work or write an override during promotion:
+wait for them to drain, then verify no `true` override remains, every native or
+rollback-draining row reaches `legacy` with the appropriate Official schedule,
+and no unresolved native occurrence or delivery remains before removing the
+native code in a later release. Do not infer a completed rollback from the
+migration or deployment alone.
 
 ## The two rows
 
@@ -79,6 +99,8 @@ A writer that touches both the legacy automation and the native row takes:
    (`morning-brief-native-owner:<org>:<user>`) while the member has no
    `morning_brief_native_schedules` row,
 3. the `morning_brief_native_schedules` row `FOR UPDATE`,
+   then the short global native-worker capacity advisory lock for an HTTP
+   worker claim (never held across provider work),
 4. the selected `workflow_automations` row `FOR UPDATE`,
 5. the exact S7a claim, Run, or callback row when the operation owns one,
 6. any `morning_brief_native_occurrences` row `FOR UPDATE`.
@@ -315,13 +337,51 @@ contract, and in `turbo/apps/api/vercel.json` at `* * * * *`. It uses the normal
 `CRON_SECRET` bearer check; invalid authentication returns before any state read,
 any write and any provider call.
 
-One tick is bounded: 25 due owners, 25 delivery recoveries, 25 drain reports, and
-an absolute 45-second budget after which it returns `budgetExhausted: true`. It
-holds no transaction across a provider call and never sleeps inside the request.
+The Cron always uses HTTP fanout for admitted native work; there is no
+independent transport switch. `NativeMorningBrief` alone decides each member's
+new native admission and rollback target. The Cron still bootstraps legacy-phase
+rows and advances cutover/rollback, but **never** collects or calls the model. It discovers due anchors, expired or
+deferred occurrences, and pending deliveries in bounded batches; it sends
+signed, short internal POSTs concurrently and awaits only their `202` admission.
+When a backlog spans multiple bounded pages, the Cron rotates pages by minute
+rather than repeatedly scanning a permanently blocked first page. A failed or
+lost admission leaves the database obligation discoverable for the next tick. The Cron still has a 45-second absolute budget. No generic
+`background_jobs` lease or new queue service participates in native ownership.
 
-It creates **no agent Run, sandbox, tool loop, Run-credit admission or ledger
-debit**. Zero user or organization credits and a fully occupied agent-run queue
-cannot block it.
+`POST /api/internal/morning-brief-worker` is an HTTP route, not network-private
+ingress. It accepts only a recent HMAC-SHA256 signature over the method, path,
+timestamp and task identity. Its signing key is derived with HKDF-SHA256 from
+the existing server-only `SECRETS_ENCRYPTION_KEY`, under the independent
+`okou:morning-brief-worker-dispatch:v1` context. The root is already injected
+into the API and is never transmitted in dispatch requests; neither the root
+nor the Cron or Runner bearer secrets are used directly as worker HMAC keys.
+Rotating the root must be coordinated with its other signing/encryption uses.
+It rejects unauthenticated requests before reading state. Each accepted request
+owns one Vercel invocation with `waitUntil`, restricted to the signed owner and
+frozen anchor. A late signed request cannot claim the owner's next anchor.
+`waitUntil` is not durable: its 180-second execution deadline (with 190-second
+outer signal and the Vercel function's 300-second max) can still terminate.
+The native occurrence's five-minute lease, unique generation reservation and
+receipt recovery remain the source of truth after crashes, replays and retries.
+An advisory-locked DB count caps active worker claims at
+`MORNING_BRIEF_WORKER_CONCURRENCY` (default four), never a per-process counter.
+A returned `202` is **not** a completed brief. Message content and credentials
+never travel in the dispatch payload.
+
+The single Hono Vercel build output currently hosts both HTTP routes and Cron
+routes, so the platform max-duration setting applies to that function; the Cron
+retains its own 45-second application limit. Verify the deployed timeout and
+self-dispatch origin before promoting the release. During a mixed-version
+rollout, older inline Cron invocations may still be finishing and older API
+instances may reject new worker signatures. Native schedule/occurrence fences
+remain authoritative; a rejected admission leaves the obligation for another
+tick. Turning `NativeMorningBrief` off stops new claims and enters the normal
+rollback drain, but does not erase work already claimed. Retiring legacy
+automations is a separate release decision under #36203.
+
+The native pipeline creates **no agent Run, sandbox, tool loop, Run-credit
+admission or ledger debit**. Zero user or organization credits and a fully occupied
+agent-run queue cannot block them.
 
 ## Deployment compatibility
 

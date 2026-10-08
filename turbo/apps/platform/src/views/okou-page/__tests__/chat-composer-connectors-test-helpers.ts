@@ -14,7 +14,6 @@ import {
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogAuthMethodDetail,
-  type PublicConnectorCatalogCategoryMetadata,
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -74,8 +73,6 @@ interface ConnectorFixtureOptions {
   readonly featuredConnectorSlugs?: readonly ConnectorSlug[];
   /** Category totals discovery reports, so a shelf can close on a real count. */
   readonly categoryConnectorCounts?: Readonly<Record<string, number>>;
-  /** The catalog's own category names, as discovery returns them. */
-  readonly categoryMetadata?: PublicConnectorCatalogCategoryMetadata;
   readonly customConnectors?: readonly CustomConnectorResponse[];
   readonly builtinAuthorizations?: Readonly<
     Record<string, readonly ConnectorSlug[]>
@@ -144,6 +141,11 @@ interface ComposerConnectorFixture {
   readonly createdThreadRequests: readonly {
     readonly threadId: string | undefined;
     readonly connectorSelections: readonly ConnectorAccountSelection[];
+    readonly initialRemoteAccessOverrides?: readonly {
+      protocol: "ssh" | "vnc";
+      connectionId: string;
+      enabled: boolean;
+    }[];
   }[];
   readonly lifecycle: ReturnType<typeof installMessageExperienceChat>;
 }
@@ -285,13 +287,25 @@ export function installComposerConnectorFixture(
   const createdThreadRequests: {
     threadId: string | undefined;
     connectorSelections: ConnectorAccountSelection[];
+    initialRemoteAccessOverrides?: readonly {
+      protocol: "ssh" | "vnc";
+      connectionId: string;
+      enabled: boolean;
+    }[];
   }[] = [];
   const lifecycle = installMessageExperienceChat({
     threadId: fixtureThreadId,
-    onThreadCreate: ({ clientThreadId, connectorSelections }) => {
+    onThreadCreate: ({
+      clientThreadId,
+      connectorSelections,
+      initialRemoteAccessOverrides,
+    }) => {
       createdThreadRequests.push({
         threadId: clientThreadId,
         connectorSelections: [...(connectorSelections ?? [])],
+        ...(initialRemoteAccessOverrides === undefined
+          ? {}
+          : { initialRemoteAccessOverrides }),
       });
     },
   });
@@ -361,9 +375,6 @@ export function installComposerConnectorFixture(
         ...(options.categoryConnectorCounts === undefined
           ? {}
           : { categoryConnectorCounts: options.categoryConnectorCounts }),
-        ...(options.categoryMetadata === undefined
-          ? {}
-          : { categoryMetadata: options.categoryMetadata }),
       });
     },
   );
@@ -391,7 +402,6 @@ export function installComposerConnectorFixture(
           return {
             slug: connector.slug,
             label: connector.label,
-            description: connector.description,
             icon: connector.icon,
             hasPermissions: connector.permissionSummary.hasPermissions,
           };

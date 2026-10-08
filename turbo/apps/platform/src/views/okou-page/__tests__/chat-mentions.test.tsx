@@ -17,7 +17,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const WEEKLY_SYNC_THREAD_ID = "b0000000-0000-4000-a000-000000000091";
@@ -39,14 +42,13 @@ function referencedThread(
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
     pinnedAt: null,
+    archived: false,
     renamedAt: null,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
-    selectedImageModel: null,
   };
 }
 
@@ -56,10 +58,9 @@ function configureAgentDraft(
 ): void {
   context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
-    selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: null,
   });
@@ -70,11 +71,14 @@ function configureAgentDraft(
     });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [...referencedThreads],
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [...referencedThreads],
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
 }
 

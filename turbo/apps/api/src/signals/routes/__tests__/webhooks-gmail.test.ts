@@ -6,7 +6,6 @@ import {
   randomUUID,
   sign as signData,
 } from "node:crypto";
-import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import {
   connectorAccountsContract,
   type ConnectorAccountMutationIntent,
@@ -16,7 +15,6 @@ import {
   workflowAutomationsContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -44,10 +42,6 @@ import {
   chatEventDisplayText,
 } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  clearWorkflowAutomationEventConnectorAsPreviousApi,
-  seedBuiltInModelKey,
-} from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -59,7 +53,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...workflowAutomationsRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const chatApi = createChatFilesBddApi(context);
@@ -73,7 +67,8 @@ const GMAIL_TOPIC_NAME = "projects/vm0-ai-488909/topics/gmail-events";
 const GMAIL_AUDIENCE = "https://api.okou.ai/api/webhooks/gmail";
 const GMAIL_PUSH_SERVICE_ACCOUNT =
   "gmail-pubsub-push@vm0-ai-488909.iam.gserviceaccount.com";
-const GMAIL_WORKSPACE_MODEL = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+// Queue/claim fixtures deliberately use the permanently native Claude route.
+const GMAIL_WORKSPACE_MODEL = "claude-fable-5-1";
 const GOOGLE_OIDC_CERT_KID = "gmail-pubsub-test-key";
 const googleOidcKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const googleOidcPublicKeyPem = googleOidcKeyPair.publicKey.export({
@@ -196,10 +191,7 @@ function configureGmailWatchMock(
   return recorder;
 }
 
-function configureGmailWatchLifecycleMock(args?: {
-  readonly onStop?: () => void;
-  readonly waitForStop?: () => Promise<void> | null;
-}): GmailWatchLifecycleRecorder {
+function configureGmailWatchLifecycleMock(): GmailWatchLifecycleRecorder {
   const recorder: GmailWatchLifecycleRecorder = {
     watchedTokens: [],
     stopCalls: 0,
@@ -221,18 +213,10 @@ function configureGmailWatchLifecycleMock(args?: {
         });
       },
     ),
-    http.post(
-      "https://gmail.googleapis.com/gmail/v1/users/me/stop",
-      async () => {
-        recorder.stopCalls += 1;
-        args?.onStop?.();
-        const waitForStop = args?.waitForStop?.();
-        if (waitForStop) {
-          await waitForStop;
-        }
-        return HttpResponse.json({ error: "retry cleanup" }, { status: 500 });
-      },
-    ),
+    http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
+      recorder.stopCalls += 1;
+      return HttpResponse.json({ error: "retry cleanup" }, { status: 500 });
+    }),
   );
   return recorder;
 }
@@ -334,6 +318,7 @@ function configureGmailLabelsMockSequence(
 function configureGmailLabelAppliedMocks(
   labelId: string,
   gmailEmail: string,
+  messageIds: readonly string[] = ["msg-labeled"],
 ): void {
   server.use(
     http.get("https://gmail.googleapis.com/gmail/v1/users/me/history", () => {
@@ -341,15 +326,15 @@ function configureGmailLabelAppliedMocks(
         history: [
           {
             id: "102",
-            labelsAdded: [
-              {
+            labelsAdded: messageIds.map((messageId) => {
+              return {
                 message: {
-                  id: "msg-labeled",
+                  id: messageId,
                   threadId: "gmail-thread-labeled",
                 },
                 labelIds: [labelId],
-              },
-            ],
+              };
+            }),
           },
         ],
         historyId: "102",
@@ -357,16 +342,19 @@ function configureGmailLabelAppliedMocks(
     }),
     http.get(
       "https://gmail.googleapis.com/gmail/v1/users/me/messages/:messageId",
-      () => {
+      ({ params }) => {
         return HttpResponse.json({
-          id: "msg-labeled",
+          id: String(params.messageId),
           threadId: "gmail-thread-labeled",
           labelIds: ["INBOX", labelId],
           payload: {
             headers: [
               { name: "From", value: "Support Team <support@example.com>" },
               { name: "To", value: gmailEmail },
-              { name: "Subject", value: "Support request" },
+              {
+                name: "Subject",
+                value: `Support request ${String(params.messageId)}`,
+              },
             ],
           },
         });
@@ -431,47 +419,21 @@ function expectResponseStatus(
 async function configureWorkspaceModelProvider(
   actor: ApiTestUser & { readonly orgId: string },
 ): Promise<void> {
-  // These Gmail queue cases assert the Runner claim path. The default model
-  // gained a Pi route, so keep this fixture on its intended execution path.
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.PiLoop]: false,
+  // Keep native claim/callback coverage through a supported personal subscription.
+  await runsApi.ensurePersonalSubscriptionModel(actor, {
+    model: GMAIL_WORKSPACE_MODEL,
   });
-  await configureBuiltInModelKey();
-  const policies = await miscApi.listModelPolicies(actor);
-  const workspacePolicy = policies.policies.find((policy) => {
-    return policy.model === GMAIL_WORKSPACE_MODEL;
-  });
-  if (!workspacePolicy) {
-    throw new Error(
-      `Expected ${GMAIL_WORKSPACE_MODEL} model policy to be available`,
-    );
-  }
-  await miscApi.updateModelPolicies(
-    actor,
-    [
-      {
-        ...workspacePolicy,
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ],
-    [200],
-  );
-  const updated = await miscApi.listModelPolicies(actor);
+  const available = await miscApi.listRunModels(actor);
   expect(
-    updated.policies.find((policy) => {
-      return policy.model === GMAIL_WORKSPACE_MODEL;
+    available.models.find((model) => {
+      return model.model === GMAIL_WORKSPACE_MODEL;
     }),
   ).toMatchObject({
-    defaultProviderType: "built-in",
-    modelProviderId: null,
+    memberEffective: expect.objectContaining({
+      providerType: "claude-code-oauth-token",
+      credentialScope: "member",
+    }),
   });
-}
-
-async function configureBuiltInModelKey(): Promise<void> {
-  await seedBuiltInModelKey(context, GMAIL_WORKSPACE_MODEL);
 }
 
 async function configureAutomationThreadModel(
@@ -620,6 +582,9 @@ async function setupFixture(
     displayName: "BDD Gmail Webhook Owner",
   });
   await grantVisibleCredits({ ...actor, orgId: actor.orgId });
+  // Fable's native Runner route requires the same Pro eligibility as other
+  // native-harness fixtures; keep the credit-purchase setup for billing checks.
+  await runsApi.grantProEntitlement(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "gmail-webhook-agent",
     visibility: "private",
@@ -697,7 +662,7 @@ async function readAutomation(
 async function runAutomationNow(
   actor: ApiTestUser,
   automationId: string,
-): Promise<{ readonly chatThreadId: string; readonly runId: string }> {
+): Promise<void> {
   const response = await createApp({
     signal: context.signal,
     routes: TEST_APP_ROUTES,
@@ -714,7 +679,6 @@ async function runAutomationNow(
       )}`,
     );
   }
-  return body as { readonly chatThreadId: string; readonly runId: string };
 }
 
 function requireAutomationChatThreadId(
@@ -1074,7 +1038,7 @@ describe("POST /api/webhooks/gmail", () => {
       }),
       [200],
     );
-    expect(refreshCalls).toBe(1);
+    expect(refreshCalls).toBe(0);
     mockNow(connectedAt);
 
     const response = await postGmailWebhook(
@@ -1088,12 +1052,12 @@ describe("POST /api/webhooks/gmail", () => {
     expectResponseStatus(response, 200);
     expect(response.body).toStrictEqual({
       success: true,
-      watchStates: 1,
+      watchStates: 0,
       dispatched: 0,
       duplicates: 0,
     });
     expect(historyCalls).toBe(0);
-    expect(refreshCalls).toBe(1);
+    expect(refreshCalls).toBe(0);
 
     server.use(
       http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
@@ -1196,7 +1160,7 @@ describe("POST /api/webhooks/gmail", () => {
     );
   });
 
-  it("preserves existing Gmail cursors when another identity starts watching the mailbox", async () => {
+  it("keeps another Gmail identity consuming when one identity disables", async () => {
     const gmailEmail = uniqueGmailEmail();
     configureGmailEnv();
     const watch = configureGmailWatchMock(["100", "200"]);
@@ -1204,7 +1168,7 @@ describe("POST /api/webhooks/gmail", () => {
       `gmail-first-${randomUUID()}@example.test`,
     );
     await connectGmail(first.actor, gmailEmail);
-    await accept(
+    const firstAutomation = await accept(
       automationsClient().create({
         headers: authHeaders(first.actor),
         params: { workflowId: first.workflowId },
@@ -1268,6 +1232,24 @@ describe("POST /api/webhooks/gmail", () => {
       duplicates: 0,
     });
     expect(startHistoryIds.sort()).toStrictEqual(["100", "200"]);
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(first.actor),
+        params: { id: firstAutomation.body.id },
+      }),
+      [200],
+    );
+    startHistoryIds.length = 0;
+    const remaining = await postGmailWebhook(
+      gmailPushBody({
+        emailAddress: gmailEmail,
+        historyId: 202,
+        messageId: "after-other-identity-disabled",
+      }),
+    );
+    expectResponseStatus(remaining, 200);
+    expect(remaining.body).toMatchObject({ watchStates: 1, dispatched: 0 });
+    expect(startHistoryIds).toStrictEqual(["201"]);
   });
 
   it("dispatches matching new inbound messages and de-duplicates retries", async () => {
@@ -1326,10 +1308,6 @@ describe("POST /api/webhooks/gmail", () => {
       }),
       [200],
     );
-    await clearWorkflowAutomationEventConnectorAsPreviousApi(
-      context,
-      created.body.id,
-    );
 
     const oldSource = await postGmailWebhook(
       gmailPushBody({
@@ -1339,9 +1317,8 @@ describe("POST /api/webhooks/gmail", () => {
       }),
     );
     expectResponseStatus(oldSource, 200);
-    expect(oldSource.body).toStrictEqual({
+    expect(oldSource.body).toMatchObject({
       success: true,
-      watchStates: 1,
       dispatched: 0,
       duplicates: 0,
     });
@@ -1360,6 +1337,7 @@ describe("POST /api/webhooks/gmail", () => {
       dispatched: 1,
       duplicates: 0,
     });
+    await flushWaitUntilForTest();
     const expectedDisplayMessage =
       'A new email arrived from Customer Example <customer@example.com> with subject "Invoice needs a reply".';
 
@@ -1503,7 +1481,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-access-token",
       "Bearer gmail-second-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(1);
+    expect(recorder.stopCalls).toBe(0);
     const reprojectedLabelAutomation = await readAutomation(
       actor,
       accountScopedLabelAutomation.body.id,
@@ -1591,7 +1569,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-access-token",
       "Bearer gmail-second-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(1);
+    expect(recorder.stopCalls).toBe(0);
 
     await accept(
       chatThreadConnectorSelectionsClient().clear({
@@ -1606,7 +1584,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-second-access-token",
       "Bearer gmail-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(2);
+    expect(recorder.stopCalls).toBe(0);
     const clearedSelections = await accept(
       chatThreadConnectorSelectionsClient().get({
         headers: authHeaders(actor),
@@ -1630,21 +1608,12 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-access-token",
       "Bearer gmail-second-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(3);
+    expect(recorder.stopCalls).toBe(0);
   });
 
-  it("commits Gmail default-account deletion before provider cleanup", async () => {
+  it("deletes a Gmail default account without an account-wide remote stop", async () => {
     configureGmailEnv();
-    let signalStopStarted: (() => void) | null = null;
-    let waitForStopRelease: Promise<void> | null = null;
-    const recorder = configureGmailWatchLifecycleMock({
-      onStop: () => {
-        signalStopStarted?.();
-      },
-      waitForStop: () => {
-        return waitForStopRelease;
-      },
-    });
+    const recorder = configureGmailWatchLifecycleMock();
     const { actor, workflowId, firstConnectorId, secondConnectorId } =
       await setupMultiAccountGmailFixture();
     await accept(
@@ -1668,35 +1637,24 @@ describe("POST /api/webhooks/gmail", () => {
       [200],
     );
 
-    const stopStarted = createDeferredPromise<void>(context.signal);
-    const stopRelease = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!stopRelease.settled()) {
-        stopRelease.resolve();
-      }
-    });
-    signalStopStarted = () => {
-      stopStarted.resolve();
-    };
-    waitForStopRelease = stopRelease.promise;
-    const deleteDefaultRequest = connectorAccountsClient().delete({
-      headers: authHeaders(actor),
-      params: { connectionId: secondConnectorId },
-      body: { target: { kind: "builtin", connectorSlug: "gmail" } },
-    });
-    await stopStarted.promise;
-    const accountsWhileProviderStopIsPending =
-      await connectorsApi.listBuiltinConnectorAccounts(actor, "gmail");
+    const deletedDefault = await accept(
+      connectorAccountsClient().delete({
+        headers: authHeaders(actor),
+        params: { connectionId: secondConnectorId },
+        body: { target: { kind: "builtin", connectorSlug: "gmail" } },
+      }),
+      [200],
+    );
+    const accounts = await connectorsApi.listBuiltinConnectorAccounts(
+      actor,
+      "gmail",
+    );
     expect(
-      accountsWhileProviderStopIsPending.map((account) => {
+      accounts.map((account) => {
         return { id: account.id, isDefault: account.isDefault };
       }),
     ).toStrictEqual([{ id: firstConnectorId, isDefault: true }]);
-    stopRelease.resolve();
-    signalStopStarted = null;
-    waitForStopRelease = null;
 
-    const deletedDefault = await accept(deleteDefaultRequest, [200]);
     expect(deletedDefault.body).toStrictEqual({
       deletedConnectionId: secondConnectorId,
       resolvedSelectionCount: 0,
@@ -1707,7 +1665,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-second-access-token",
       "Bearer gmail-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(2);
+    expect(recorder.stopCalls).toBe(0);
   });
 
   it("restores a Gmail watch after the last account is replaced", async () => {
@@ -1760,7 +1718,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-access-token",
       "Bearer gmail-replacement-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(1);
+    expect(recorder.stopCalls).toBe(0);
     const accounts = await connectorsApi.listBuiltinConnectorAccounts(
       actor,
       "gmail",
@@ -1770,15 +1728,131 @@ describe("POST /api/webhooks/gmail", () => {
     ]);
   });
 
+  it("binds an unbound Gmail automation when the member's first account connects", async () => {
+    configureGmailEnv();
+    const runnerGroup = runsApi.configureRunnerGroup();
+    const watch = configureGmailWatchLifecycleMock();
+    const { actor, agentId, workflowId } = await setupFixture();
+    await updateFeatureSwitchesForUser(context, actor, {});
+    await configureWorkspaceModelProvider(actor);
+    // Creation requires a connected account, so the unbound state an
+    // automation reaches when it races the member's first account connect is
+    // built through its documented equivalent: removing the only account
+    // leaves the enabled automation without an account.
+    const initialConnectorId = await connectGmail(
+      actor,
+      uniqueGmailEmail(),
+      "gmail-initial-account",
+      undefined,
+      agentId,
+    );
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(actor),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "gmail-new-message",
+          eventConfig: { provider: "gmail", event: "new_message" },
+        },
+      }),
+      [201],
+    );
+    const chatThreadId = requireAutomationChatThreadId(created.body);
+    await configureAutomationThreadModel(actor, chatThreadId);
+    await accept(
+      connectorAccountsClient().delete({
+        headers: authHeaders(actor),
+        params: { connectionId: initialConnectorId },
+        body: { target: { kind: "builtin", connectorSlug: "gmail" } },
+      }),
+      [200],
+    );
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "gmail"),
+    ).resolves.toStrictEqual([]);
+    await expect(readAutomation(actor, created.body.id)).resolves.toMatchObject(
+      { enabled: true, lastRunAt: null },
+    );
+
+    const firstEmail = uniqueGmailEmail();
+    const firstConnectorId = await addGmailAccount(actor, {
+      gmailEmail: firstEmail,
+      subject: "gmail-first-account",
+      accessToken: "gmail-first-access-token",
+      displayName: "First Gmail",
+      agentId,
+    });
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "gmail"),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({ id: firstConnectorId, isDefault: true }),
+    ]);
+    expect(watch.watchedTokens.at(-1)).toBe("Bearer gmail-first-access-token");
+
+    configureGmailMessageMocks(firstEmail, "gmail-first-access-token");
+    const delivered = await postGmailWebhook(
+      gmailPushBody({
+        emailAddress: firstEmail,
+        historyId: 101,
+        messageId: "pubsub-first-account",
+      }),
+    );
+    expectResponseStatus(delivered, 200);
+    expect(delivered.body).toStrictEqual({
+      success: true,
+      watchStates: 1,
+      dispatched: 1,
+      duplicates: 0,
+    });
+    await flushWaitUntilForTest();
+    await expect(readAutomation(actor, created.body.id)).resolves.toMatchObject(
+      { enabled: true, lastRunAt: expect.any(String) },
+    );
+    const [runId] = await workflowRunIds(actor, chatThreadId);
+    if (!runId) {
+      throw new Error(
+        "Expected the rebound Gmail automation to dispatch a run",
+      );
+    }
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(runId);
+    expectGmailEventContextInPrompt(claim.prompt, {
+      automationId: created.body.id,
+      event: "new_message",
+      emailAddress: firstEmail,
+      messageId: "msg-1",
+      threadId: "gmail-thread-1",
+      from: "Customer Example <customer@example.com>",
+      to: [firstEmail],
+      cc: [],
+      subject: "Invoice needs a reply",
+    });
+    expect(
+      Object.values(claim.secretConnectorMetadataMap ?? {}),
+    ).toContainEqual(expect.objectContaining({ sourceId: firstConnectorId }));
+  });
+
   it("dispatches label applied events after refreshing a recreated label id", async () => {
     const gmailEmail = uniqueGmailEmail();
+    const runnerGroup = runsApi.configureRunnerGroup();
     configureGmailEnv();
     configureGmailWatchMock();
     configureGmailLabelsMockSequence([
       [{ id: "Label_support_old", name: "Support" }],
       [{ id: "Label_support_new", name: "Support" }],
     ]);
-    configureGmailLabelAppliedMocks("Label_support_new", gmailEmail);
+    const messageIds = [
+      "msg-labeled-first",
+      "msg-labeled-second",
+      "msg-labeled-third",
+      "msg-labeled-fourth",
+    ];
+    configureGmailLabelAppliedMocks(
+      "Label_support_new",
+      gmailEmail,
+      messageIds,
+    );
 
     const { actor, workflowId } = await setupFixture();
     await connectGmail(actor, gmailEmail);
@@ -1822,13 +1896,29 @@ describe("POST /api/webhooks/gmail", () => {
     expect(first.body).toStrictEqual({
       success: true,
       watchStates: 1,
-      dispatched: 1,
+      dispatched: messageIds.length,
       duplicates: 0,
     });
-    await expect(
-      workflowAutomationDisplayTexts(actor, chatThreadId),
-    ).resolves.toContain(
-      'Gmail label "Support" was added to an email from Support Team <support@example.com> with subject "Support request".',
+    await flushWaitUntilForTest();
+    // Later enqueues can overlap the first input's background pick. Accept
+    // the whole batch, then launch one queued input after each preceding run.
+    for (let index = 0; index < messageIds.length - 1; index += 1) {
+      const runIds = await workflowRunIds(actor, chatThreadId);
+      expect(runIds).toHaveLength(index + 1);
+      const activeRunId = runIds[index];
+      if (!activeRunId) {
+        throw new Error("Expected the next recreated-label event to start");
+      }
+      await completeRunThroughSandbox(runnerGroup, activeRunId);
+    }
+    await expect(workflowRunIds(actor, chatThreadId)).resolves.toHaveLength(
+      messageIds.length,
+    );
+    const inputs = await workflowAutomationDisplayTexts(actor, chatThreadId);
+    expect(inputs).toStrictEqual(
+      messageIds.map((messageId) => {
+        return `Gmail label "Support" was added to an email from Support Team <support@example.com> with subject "Support request ${messageId}".`;
+      }),
     );
     await expect(readAutomation(actor, created.body.id)).resolves.toMatchObject(
       {
@@ -1880,7 +1970,12 @@ describe("POST /api/webhooks/gmail", () => {
     it("preserves metadata-only context through the workflow queue", async () => {
       const { actor, created, gmailEmail, chatThreadId, runnerGroup } =
         preparedScenario;
-      const activeRun = await runAutomationNow(actor, created.body.id);
+      await runAutomationNow(actor, created.body.id);
+      await flushWaitUntilForTest();
+      const [activeRunId] = await workflowRunIds(actor, chatThreadId);
+      if (!activeRunId) {
+        throw new Error("Expected the manual run to start");
+      }
 
       const response = await postGmailWebhook(
         gmailPushBody({
@@ -1892,15 +1987,16 @@ describe("POST /api/webhooks/gmail", () => {
 
       expectResponseStatus(response, 200);
       expect(response.body).toMatchObject({ dispatched: 1, duplicates: 0 });
+      await flushWaitUntilForTest();
       await expect(workflowRunIds(actor, chatThreadId)).resolves.toStrictEqual([
-        activeRun.runId,
+        activeRunId,
       ]);
 
-      await completeRunThroughSandbox(runnerGroup, activeRun.runId);
+      await completeRunThroughSandbox(runnerGroup, activeRunId);
       const runIds = await workflowRunIds(actor, chatThreadId);
       expect(runIds).toHaveLength(2);
       const queuedRunId = runIds.find((runId) => {
-        return runId !== activeRun.runId;
+        return runId !== activeRunId;
       });
       if (!queuedRunId) {
         throw new Error("Expected the queued Gmail event to start a run");

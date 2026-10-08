@@ -1,20 +1,20 @@
 import SwiftUI
 
 struct ChatDetailView: View {
-  @Bindable var store: WorkspaceStore
-  let thread: ChatThread
-  @FocusState private var isComposing: Bool
+  @Bindable var conversation: ConversationStore
+  private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var hasPositionedHistory = false
   @State private var followsLatestMessage = true
   @State private var isAwayFromBottom = false
 
-  private var history: ChatHistory { store.histories[thread.id] ?? .empty }
-  private var messages: [ChatMessage] { store.messages(for: thread.id) }
-  private var draft: Binding<String> {
-    Binding(get: { store.drafts[thread.id] ?? "" }, set: { store.drafts[thread.id] = $0 })
+  private struct ContentMetrics: Equatable {
+    let height: CGFloat
+    let isAwayFromBottom: Bool
   }
 
+  private var history: ChatHistory { conversation.history ?? .empty }
+  private var messages: [ChatMessage] { conversation.messages }
   var body: some View {
     let displayedMessages = messages
     ScrollViewReader { proxy in
@@ -45,7 +45,7 @@ struct ChatDetailView: View {
           if !displayedMessages.isEmpty {
             Link(
               "Open conversation on web",
-              destination: store.webURL.appending(path: "chats/\(thread.id)")
+              destination: conversation.webURL.appending(path: "chats/\(thread.id)")
             )
             .font(.caption).foregroundStyle(.secondary)
           }
@@ -61,9 +61,12 @@ struct ChatDetailView: View {
       .environment(\.defaultMinListRowHeight, 0)
       .scrollContentBackground(.hidden)
       .scrollDismissesKeyboard(.interactively)
-      .refreshable { await store.loadHistory(thread.id) }
+      .refreshable { await conversation.refresh() }
       .onScrollPhaseChange { _, phase in
         if phase == .tracking || phase == .interacting { followsLatestMessage = false }
+        if phase == .idle && hasPositionedHistory && !isAwayFromBottom {
+          followsLatestMessage = true
+        }
       }
       .onScrollGeometryChange(for: Bool.self) { geometry in
         geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY > 20
@@ -81,8 +84,7 @@ struct ChatDetailView: View {
             Image(systemName: "arrow.down")
               .font(.system(size: 18, weight: .medium))
               .frame(width: 44, height: 44)
-              .background(.regularMaterial, in: Circle())
-              .overlay(Circle().strokeBorder(.quaternary, lineWidth: 0.5))
+              .glassEffect(.regular.interactive(), in: Circle())
               .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
           }
           .buttonStyle(.plain)
@@ -91,32 +93,71 @@ struct ChatDetailView: View {
           .padding(.bottom, 16)
         }
       }
-      .onScrollGeometryChange(for: CGSize.self) { geometry in
-        geometry.contentSize
-      } action: { _, _ in
-        if followsLatestMessage && !displayedMessages.isEmpty {
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 8).onChanged { value in
+          if abs(value.translation.height) > abs(value.translation.width) {
+            followsLatestMessage = false
+          }
+        }
+      )
+      .onScrollGeometryChange(for: ContentMetrics.self) { geometry in
+        ContentMetrics(
+          height: geometry.contentSize.height,
+          isAwayFromBottom: geometry.contentSize.height + geometry.contentInsets.bottom
+            - geometry.visibleRect.maxY > 20)
+      } action: { previous, current in
+        // Correct an existing bottom request after text/images acquire their final height.
+        // Measuring a row while already at the bottom, or while reading history, is a no-op.
+        if hasPositionedHistory && followsLatestMessage && current.isAwayFromBottom
+          && current.height > previous.height
+        {
           proxy.scrollTo("conversation-bottom", anchor: .bottom)
         }
       }
-      .task(id: displayedMessages.last?.id) {
+      .task(id: displayedMessages.last) {
         guard !displayedMessages.isEmpty else { return }
+        // Incoming updates preserve the reading position; a local send follows its new bubble.
+        guard
+          !hasPositionedHistory || followsLatestMessage
+            || conversation.pending.contains(where: { $0.id == displayedMessages.last?.id })
+        else { return }
         followsLatestMessage = true
         await Task.yield()
         guard !Task.isCancelled else { return }
         if hasPositionedHistory {
-          withAnimation { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+          withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+            proxy.scrollTo("conversation-bottom", anchor: .bottom)
+          }
         } else {
           proxy.scrollTo("conversation-bottom", anchor: .bottom)
           hasPositionedHistory = true
         }
       }
+      .onChange(of: history.executionState) { _, _ in
+        if hasPositionedHistory && followsLatestMessage {
+          proxy.scrollTo("conversation-bottom", anchor: .bottom)
+        }
+      }
     }
-    .navigationTitle(thread.displayTitle)
-    .navigationBarTitleDisplayMode(.inline)
-    .safeAreaInset(edge: .bottom, spacing: 0) { composer }
-    .task(id: thread.id) { await store.loadHistory(thread.id) }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      ChatComposerView(
+        draft: $conversation.draft, isBusy: conversation.isSending || conversation.isStopping,
+        showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
+        error: conversation.error,
+        attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
+        submit: {
+          if history.canStop
+            && conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          {
+            await conversation.stop()
+          } else {
+            await conversation.send()
+          }
+        }, refresh: { await conversation.refresh() })
+    }
+    .task(id: thread.id) { await conversation.refresh() }
     .overlay {
-      if store.loadingThreads.contains(thread.id) && store.histories[thread.id] == nil {
+      if conversation.isLoading && conversation.history == nil {
         ProgressView("Loading conversation…").padding(20).background(
           .regularMaterial, in: Capsule())
       }
@@ -137,17 +178,20 @@ struct ChatDetailView: View {
         Text("Notice")
           .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
       }
-      MessageBodyView(text: message.text, baseURL: store.webURL)
-        .foregroundStyle(message.isError ? Color.red : Color.primary)
-        .padding(.leading, message.role == .assistant ? 6 : 0)
-      if let pending = store.pending[thread.id]?.first(where: { $0.id == message.id }) {
+      MessageBodyView(
+        text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown
+      )
+      .equatable()
+      .foregroundStyle(message.isError ? Color.red : Color.primary)
+      .padding(.leading, message.role == .assistant ? 6 : 0)
+      if let pending = conversation.pending.first(where: { $0.id == message.id }) {
         HStack {
           Text(pending.needsRetry ? "Delivery not confirmed" : "Sending…")
             .font(.caption).foregroundStyle(.secondary)
           if pending.needsRetry {
-            Button("Check and retry") { Task { await store.retry(pending, in: thread) } }
+            Button("Check and retry") { Task { await conversation.retry(pending) } }
               .font(.caption)
-              .disabled(store.sendingThreads.contains(thread.id))
+              .disabled(conversation.isSending)
           }
         }
       }
@@ -163,48 +207,4 @@ struct ChatDetailView: View {
     }
   }
 
-  private var composer: some View {
-    VStack(spacing: 10) {
-      if let error = store.threadErrors[thread.id] {
-        VStack(alignment: .leading, spacing: 6) {
-          Text(error).font(.caption).foregroundStyle(.red)
-          HStack {
-            Button("Refresh") { Task { await store.loadHistory(thread.id) } }
-            Spacer()
-            Link("Open on web", destination: store.webURL.appending(path: "chats/\(thread.id)"))
-          }.font(.caption)
-        }
-      }
-      HStack(alignment: .bottom, spacing: 10) {
-        TextField("Message Okou", text: draft, axis: .vertical)
-          .lineLimit(1...6)
-          .focused($isComposing)
-          .padding(.horizontal, 14).padding(.vertical, 12)
-          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22))
-          .accessibilityIdentifier("message-input")
-        Button {
-          Task {
-            if showsStop { await store.stop(thread) } else { await store.send(in: thread) }
-          }
-        } label: {
-          Image(systemName: showsStop ? "stop.fill" : "arrow.up")
-            .font(.system(size: 18, weight: .semibold))
-            .frame(width: 42, height: 42)
-        }
-        .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
-        .accessibilityLabel(showsStop ? "Stop" : "Send message")
-        .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
-        .disabled(
-          (!showsStop && draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            || store.sendingThreads.contains(thread.id)
-            || store.stoppingThreads.contains(thread.id) || store.needsUpgrade)
-      }
-    }
-    .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
-    .background(.bar)
-  }
-
-  private var showsStop: Bool {
-    history.canStop && draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-  }
 }

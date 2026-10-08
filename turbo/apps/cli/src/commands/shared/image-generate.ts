@@ -1,7 +1,6 @@
 import { Command, InvalidArgumentError } from "commander";
 import chalk from "chalk";
 import { generateWebImage } from "../../lib/api/domains/web";
-import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
 import { createArtifactPresentation } from "./artifact-return";
@@ -11,8 +10,7 @@ import {
   prepareArtifactVisibility,
   type ArtifactVisibility,
 } from "./artifact-visibility";
-import { createStyledImageCompilationPacket } from "./image-style-authoring";
-import { runDefaultImageModelFromEnvironment } from "./run-default-image-model";
+import { createStyledImageCompilationInstructions } from "./image-style-authoring";
 import {
   findImageStyle,
   listImageStyles,
@@ -23,15 +21,13 @@ import {
 } from "@okouai/core/image-model-catalog";
 import { formatRegistryListing } from "./resource-listing";
 import { dispatchGenerate } from "../generate/lib/dispatch";
-import type { GenerationType } from "../generate/lib/lister";
 
 interface ImageOptions {
   prompt?: string;
   compiledPrompt?: string;
   rawPrompt?: string;
   provider?: string;
-  model: string;
-  size: string;
+  size?: string;
   quality: string;
   background: string;
   format: string;
@@ -52,24 +48,17 @@ interface ImageOptions {
   visibility?: ArtifactVisibility;
 }
 
-interface ImageGenerateCommandConfig {
-  name: string;
-  generationType: GenerationType;
-  usageCommand: string;
-  examples: string;
-}
-
 type ImagePromptMode = "compile" | "compiled" | "raw";
 
-function requireImageModeError(usageCommand: string): Error {
+function requireImageModeError(): Error {
   const styles = listImageStyles();
   const message = [
     "Choose one image prompt mode",
     "",
     "Modes:",
-    `  Compile styled prompt: ${usageCommand} --style ${styles[0]?.id ?? "<style-id>"} --prompt "..." --compile`,
-    `  Generate compiled prompt: ${usageCommand} --compiled-prompt "..."`,
-    `  Generate raw prompt: ${usageCommand} --raw-prompt "..."`,
+    `  Compile styled prompt: okou generate image --style ${styles[0]?.id ?? "<style-id>"} --prompt "..." --compile`,
+    '  Generate compiled prompt: okou generate image --compiled-prompt "..."',
+    '  Generate raw prompt: okou generate image --raw-prompt "..."',
     "",
     "Available styles:",
     formatRegistryListing(styles, "image styles"),
@@ -77,7 +66,7 @@ function requireImageModeError(usageCommand: string): Error {
   return new Error(message);
 }
 
-function unknownStyleError(id: string, usageCommand: string): Error {
+function unknownStyleError(id: string): Error {
   const styles = listImageStyles();
   const message = [
     `Unknown image style: ${id}`,
@@ -86,7 +75,7 @@ function unknownStyleError(id: string, usageCommand: string): Error {
     formatRegistryListing(styles, "image styles"),
     "",
     `Example:`,
-    `  ${usageCommand} --style ${styles[0]?.id ?? "<style-id>"} --prompt "..." --compile`,
+    `  okou generate image --style ${styles[0]?.id ?? "<style-id>"} --prompt "..." --compile`,
   ].join("\n");
   return new Error(message);
 }
@@ -150,46 +139,13 @@ function resolvePromptInput(options: ImageOptions): string | undefined {
   return options.compiledPrompt ?? options.rawPrompt ?? options.prompt;
 }
 
-function resolveImageRequestModel(
-  command: Command,
-  model: string,
-): string | undefined {
-  const modelSource = command.getOptionValueSource("model");
-  const hasRunDefault =
-    runDefaultImageModelFromEnvironment() !== undefined ||
-    decodeSandboxTokenPayload() !== undefined;
-  return hasRunDefault && modelSource === "default" ? undefined : model;
-}
+const DEFAULT_IMAGE_MODEL_ALIAS =
+  IMAGE_MODEL_CONFIGS[DEFAULT_IMAGE_MODEL].alias;
+const IMAGE_MODEL_DETAIL = `Image model if direct image generation is used: the user's Settings › Built-in tools image model (default ${DEFAULT_IMAGE_MODEL_ALIAS})`;
+const DEFAULT_SIZE_DESCRIPTION = "1024x1024, or auto with --image-url";
 
-function resolveImageRequestSize(
-  command: Command,
-  options: ImageOptions,
-): string {
-  if (command.getOptionValueSource("size") !== "default") {
-    return options.size;
-  }
-  if (options.imageUrl.length > 0) {
-    return "auto";
-  }
-
-  const selectedModel =
-    command.getOptionValueSource("model") === "default"
-      ? (runDefaultImageModelFromEnvironment() ?? options.model)
-      : options.model;
-  return selectedModel === IMAGE_MODEL_CONFIGS["seedream-5-0-lite-260128"].alias
-    ? "auto"
-    : options.size;
-}
-
-function imageModelPreferenceDetail(command: Command, model: string): string {
-  const runDefaultModel = runDefaultImageModelFromEnvironment();
-  if (runDefaultModel === undefined) {
-    return `Model preference if direct image generation is used: ${model}`;
-  }
-  if (command.getOptionValueSource("model") === "default") {
-    return `Run default model if direct image generation is used: ${runDefaultModel}; omit --model so the server applies it`;
-  }
-  return `Explicit model if direct image generation is used: ${model}`;
+function requestedSizeDetail(size: string | undefined): string {
+  return `Requested size: ${size ?? `model default (${DEFAULT_SIZE_DESCRIPTION})`}`;
 }
 
 function hasImagePromptModeRequest(options: ImageOptions): boolean {
@@ -211,10 +167,7 @@ function imageExecutionOnlyOption(
   return options.json ? "--json" : undefined;
 }
 
-function resolveImagePromptMode(
-  options: ImageOptions,
-  usageCommand: string,
-): ImagePromptMode {
+function resolveImagePromptMode(options: ImageOptions): ImagePromptMode {
   const hasCompiledPrompt = options.compiledPrompt !== undefined;
   const hasRawPrompt = options.rawPrompt !== undefined;
   const compile = options.compile === true;
@@ -227,7 +180,7 @@ function resolveImagePromptMode(
   }
 
   if ([compile, hasCompiledPrompt, hasRawPrompt].filter(Boolean).length !== 1) {
-    throw requireImageModeError(usageCommand);
+    throw requireImageModeError();
   }
 
   if (compile && !options.style) {
@@ -249,11 +202,9 @@ function resolveImagePromptMode(
   return "raw";
 }
 
-export function createImageGenerateCommand(
-  config: ImageGenerateCommandConfig,
-): Command {
+export function createImageGenerateCommand(): Command {
   return new Command()
-    .name(config.name)
+    .name("image")
     .description("Generate a billed image file from a prompt")
     .option(
       "--prompt <text>",
@@ -278,14 +229,8 @@ export function createImageGenerateCommand(
     .option("--json", "Print the complete generation result as JSON")
     .addOption(createArtifactVisibilityOption())
     .option(
-      "--model <model>",
-      "Model: gpt-image-1 (default), gpt-image-2, gpt-image-2.5-flare, gpt-image-2.5-sunburst, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, seedream5-pro, seedream5-lite, nano-banana-2, or nano-banana-2-lite",
-      IMAGE_MODEL_CONFIGS[DEFAULT_IMAGE_MODEL].alias,
-    )
-    .option(
       "--size <size>",
-      "Image size: auto, WIDTHxHEIGHT, or a model-specific resolution preset; support varies by model",
-      "1024x1024",
+      `Image size: auto, WIDTHxHEIGHT, or a model-specific resolution preset; support depends on the image model selected in Settings (default: ${DEFAULT_SIZE_DESCRIPTION})`,
     )
     .option(
       "--quality <quality>",
@@ -343,7 +288,14 @@ export function createImageGenerateCommand(
       const styles = listImageStyles();
       return `
 Examples:
-${config.examples}
+  Compile styled prompt: okou generate image --style image-style:notion-illustration --prompt "A product manager mapping a launch plan" --compile
+  Generate compiled:     okou generate image --compiled-prompt "A Notion-style brush-pen illustration..."
+  Generate raw:          okou generate image --raw-prompt "A watercolor fox"
+  Pipe compile prompt:   cat prompt.txt | okou generate image --style image-style:notion-illustration --compile
+  Size and quality:      okou generate image --compiled-prompt "A poster" --size 1024x1536 --quality high
+  Image-to-image:        okou generate image --compiled-prompt "Turn this mockup into a polished product shot" --image-url https://example.com/mockup.png
+  List providers:        okou generate image
+  Use a connector:       okou generate image --provider replicate
 
 Output:
   Prints the generated /f/ image file URL and metadata with --compiled-prompt
@@ -357,13 +309,19 @@ Output:
 Notes:
   - Authenticates via OKOU_TOKEN (requires file:write capability)
   - Charges org credits after successful image generation
-  - Uses OpenAI, fal.ai, and BytePlus for built-in image model execution
+  - Uses OpenAI and fal.ai for built-in image model execution
+  - The image model is not a command option. Built-in generation uses the
+    image model selected in Settings › Built-in tools, or
+    ${DEFAULT_IMAGE_MODEL_ALIAS} when none is selected. The result reports the
+    model that ran.
 
 Models:
+  The image model selected in Settings can be any of the following; billing
+  depends on the model.
   - OpenAI: gpt-image-2.5-flare and gpt-image-2.5-sunburst.
     GPT Image 2.5 generations bill the returned text input, image input,
     and image output tokens using configured model pricing.
-  - fal.ai: gpt-image-1 (default), gpt-image-2, flux-2-pro, ideogram-4,
+  - fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4,
     flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2,
     nano-banana-2-lite.
     GPT Image models bill by fal output image quality and size.
@@ -373,25 +331,23 @@ Models:
     bills the first processed megapixel separately from additional input and
     output megapixels. Ideogram 4 maps low/medium/high quality to
     Turbo/Balanced/Quality output-megapixel pricing.
-  - BytePlus: seedream5-pro and seedream5-lite.
-    BytePlus generations bill the documented provider cost plus 25%, rounded
-    up to whole credits after the request's output and reference costs are
-    combined.
 
 Options:
+  Support for size, quality, background, format, and provider controls
+  depends on the image model selected in Settings.
   - Prompt modes: choose exactly one mode. Use --style <id> --prompt "..."
     --compile to prepare a styled prompt-compilation packet, --compiled-prompt
     to generate from an agent-compiled prompt, or --raw-prompt to generate
     without a style. stdin is supported for --prompt in compile mode.
-  - Size: GPT Image 2 and 2.5 accept auto or WIDTHxHEIGHT. Popular sizes include
+  - Size: defaults to ${DEFAULT_SIZE_DESCRIPTION}; the server
+    applies the default for the selected model when --size is omitted.
+    GPT Image 2 and 2.5 accept auto or WIDTHxHEIGHT. Popular sizes include
     1024x1024,
     1536x1024, 1024x1536, 2048x2048, 2048x1152, 3840x2160,
     and 2160x3840. Custom sizes must have edges <= 3840px, both
     edges divisible by 16, long:short ratio <= 3:1, and total pixels
     between 655,360 and 8,294,400. gpt-image-1 uses auto, 1024x1024,
     1536x1024, or 1024x1536.
-    seedream5-pro accepts 1K, 1.5K, 2K, auto, or supported custom sizes;
-    seedream5-lite accepts 2K, 3K, 4K, auto, or supported custom sizes.
     qwen-image-3 and flux-2-pro accept at most 4,194,304 total pixels.
   - Quality: low, medium, high, or auto. Low is fastest for drafts.
     GPT Image 2.5 also accepts xhigh and max for more detailed output.
@@ -399,15 +355,15 @@ Options:
     Flux, Qwen, and Seedream do not support transparent backgrounds.
     GPT Image 2.5 supports transparent backgrounds with png or webp.
   - Format: png, jpeg, or webp for GPT Image, Nano Banana 2, and qwen-image-3
-    models; png or jpeg for other fal and BytePlus models.
+    models; png or jpeg for other fal models.
   - fal-only controls: --seed and --safety-tolerance for supported fal models;
     --enhance-prompt for flux-pro-1.1. --compression and --moderation low are
     not supported on the fal-backed image path. Ideogram prompt expansion is
     disabled because Okou supplies the final prompt and expansion costs extra.
   - Image-to-image: pass --image-url to use the model's edit/reference path.
     GPT Image 2.5 accepts up to 16 source images and an optional mask.
-    Nano Banana 2 models and Seedream 5 Lite accept up to 14 source images;
-    Seedream 5 Pro accepts up to 10; flux-2-pro accepts up to 9;
+    Nano Banana 2 models accept up to 14 source images;
+    flux-2-pro accepts up to 9;
     qwen-image-3 accepts up to 3. Flux Redux accepts --image-prompt-strength
     to override the provider default; GPT edit models accept --input-fidelity
     and supported models accept --mask-image-url.
@@ -416,9 +372,9 @@ Image Styles:
 ${formatRegistryListing(styles, "image styles")}`;
     })
     .action(
-      withErrorHandler(async (options: ImageOptions, command: Command) => {
+      withErrorHandler(async (options: ImageOptions) => {
         const dispatch = await dispatchGenerate({
-          generationType: config.generationType,
+          generationType: "image",
           provider: options.provider,
           prompt: resolvePromptInput(options),
           all: options.all,
@@ -431,7 +387,7 @@ ${formatRegistryListing(styles, "image styles")}`;
         });
         if (dispatch.outcome === "handled") return;
         const resolvedPrompt = dispatch.prompt;
-        const mode = resolveImagePromptMode(options, config.usageCommand);
+        const mode = resolveImagePromptMode(options);
 
         if (mode === "compile") {
           if (options.visibility) {
@@ -450,16 +406,16 @@ ${formatRegistryListing(styles, "image styles")}`;
           }
           const style = findImageStyle(styleId);
           if (!style) {
-            throw unknownStyleError(styleId, config.usageCommand);
+            throw unknownStyleError(styleId);
           }
 
-          const packet = createStyledImageCompilationPacket({
+          const instructions = createStyledImageCompilationInstructions({
             prompt: resolvedPrompt,
             style,
             sourceMode: options.styleSource,
             details: [
-              imageModelPreferenceDetail(command, options.model),
-              `Requested size: ${options.size}`,
+              IMAGE_MODEL_DETAIL,
+              requestedSizeDetail(options.size),
               `Requested quality: ${options.quality}`,
               `Requested background: ${options.background}`,
               `Requested format: ${options.format}`,
@@ -472,7 +428,7 @@ ${formatRegistryListing(styles, "image styles")}`;
             ],
           });
 
-          console.log(packet.instructions);
+          console.log(instructions);
           return;
         }
 
@@ -487,8 +443,7 @@ ${formatRegistryListing(styles, "image styles")}`;
         );
         const generated = await generateWebImage({
           prompt: resolvedPrompt,
-          model: resolveImageRequestModel(command, options.model),
-          size: resolveImageRequestSize(command, options),
+          size: options.size,
           quality: options.quality,
           background: options.background,
           outputFormat: options.format,

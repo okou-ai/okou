@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
-  createSpriteAuthoringPacket,
+  createSpriteAuthoringInstructions,
   type SpritePlan,
 } from "../shared/sprite-authoring";
 import { dispatchGenerate } from "./lib/dispatch";
@@ -11,7 +11,6 @@ import {
 } from "../shared/artifact-visibility";
 
 const SPRITE_USAGE_COMMAND = "okou generate sprite";
-const DEFAULT_MODEL = "gpt-image-2";
 const AGENT_DECIDES = "agent decides";
 
 const ASSET_TYPES = [
@@ -98,7 +97,6 @@ interface SpriteOptions {
   readonly margin?: string;
   readonly effectPolicy?: string;
   readonly reference?: string;
-  readonly model: string;
   readonly name?: string;
   readonly visibility?: ArtifactVisibility;
 }
@@ -169,11 +167,6 @@ export const spriteCommand = new Command()
     "--reference <url>",
     "Reference image URL for identity/style consistency",
   )
-  .option(
-    "--model <model>",
-    "Recommended image model for raw sheets",
-    DEFAULT_MODEL,
-  )
   .option("--name <slug>", "Output bundle name/slug")
   .addOption(createArtifactVisibilityOption())
   .addHelpText(
@@ -191,13 +184,14 @@ Examples:
 
 Output:
   Prints a sprite source-selection packet for the current agent: the resolved
-  plan, the recommended image model, the upstream sprite skill to resolve, and
-  the hard containment rules for grids, identity, and FX.
+  plan, the image generation guidance, the upstream sprite skill to resolve,
+  and the hard containment rules for grids, identity, and FX.
   With no --prompt and no piped input, prints the generation choices instead.
 
 Notes:
-  - The agent generates each raw sheet with built-in image generation
-    (gpt-image-2 recommended) on a solid magenta background, then runs the
+  - The agent generates each raw sheet with built-in image generation, which
+    uses the image model selected in Settings › Built-in tools, on a solid
+    magenta background, then runs the
     sprite skill's local processor for chroma-key cleanup, frame extraction,
     alignment, QC, and transparent/GIF export.
   - Raw sprite art must originate from image generation, never from code-drawn
@@ -237,15 +231,14 @@ Notes:
         margin: options.margin ?? AGENT_DECIDES,
         effectPolicy: options.effectPolicy ?? AGENT_DECIDES,
         reference: options.reference ?? "none",
-        model: options.model,
         name: slugify(options.name ?? prompt),
       };
 
-      const packet = createSpriteAuthoringPacket({
+      const instructions = createSpriteAuthoringInstructions({
         prompt,
         plan,
         visibility: options.visibility,
       });
-      console.log(packet.instructions);
+      console.log(instructions);
     }),
   );

@@ -2,13 +2,8 @@ import {
   sshCredentialsContract,
   type SshCredentialResponse,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
-import {
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
-import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -20,10 +15,6 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
-import {
-  catalogConnectorFixture,
-  mockConnectorOverview,
-} from "../../team-page/__tests__/team-page-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -39,7 +30,6 @@ const auth = Object.freeze({
   },
 });
 const id = "b0000000-0000-4000-8000-000000000001";
-const agentId = "c0000000-0000-4000-8000-000000000001";
 const base: SshConnectionResponse = Object.freeze({
   id,
   displayName: "Deployment",
@@ -86,7 +76,7 @@ test("An existing credential can be reused without entering or reading its secre
     requests.push(body);
     return respond(201, base);
   });
-  await page("/connectors/ssh?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog");
   const hostFields = within(dialog).getByRole("group", { name: "Host" });
   const credentialFields = within(dialog).getByRole("group", {
@@ -332,7 +322,7 @@ test("An unused credential can be deleted with confirmation and the rendered rev
   expect(queryAction("button", "Delete credential")).toBeNull();
 });
 
-test("Connection warnings explain the failure and recover through notifications without changing grants", async () => {
+test("Connection warnings explain the failure and recover through notifications", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, {
       connections: [
@@ -391,7 +381,7 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
       },
     });
   });
-  await page("/connectors/ssh?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog");
   await selectNewCredential(dialog);
   await fill(within(dialog).getByLabelText("Display name"), "Deployment");
@@ -427,7 +417,7 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
-async function page(path = "/connectors/ssh") {
+async function page(path = "/connectors?scope=remote-control&type=ssh") {
   await setupPage({
     context,
     path,
@@ -435,18 +425,328 @@ async function page(path = "/connectors/ssh") {
   });
 }
 
-test("SSH is a Connectors detail page with a working return breadcrumb", async () => {
+test.each([
+  { initialCarrier: "Direct", binding: "bound" },
+  { initialCarrier: "Direct", binding: "retained" },
+  { initialCarrier: "Cloudflare", binding: "bound" },
+  { initialCarrier: "Cloudflare", binding: "retained" },
+] as const)(
+  "A $initialCarrier edit cannot accept a $binding Tailscale conflict into the legacy editor",
+  async ({ initialCarrier, binding }) => {
+    const accessId = "e0000000-0000-4000-8000-000000000001";
+    const initial: SshConnectionResponse =
+      initialCarrier === "Direct"
+        ? base
+        : {
+            ...base,
+            port: 443,
+            transport: { type: "cloudflare_access", configId: accessId },
+          };
+    let current: SshConnectionResponse = initial;
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, {
+        configs: [
+          {
+            id: accessId,
+            name: "Deployment gateway",
+            scope: "personal",
+            revision: 1,
+            generation: 1,
+            sshHosts: [{ id: base.id, displayName: base.displayName }],
+            createdAt: base.createdAt,
+            updatedAt: base.updatedAt,
+          },
+        ],
+      });
+    });
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [current] });
+    });
+    const requests: unknown[] = [];
+    context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+      requests.push(body);
+      // A later capable API may change the saved carrier from another client.
+      current = {
+        ...base,
+        host: "100.80.10.20",
+        generation: 2,
+        learnedHostKey: {
+          algorithm: "ssh-ed25519",
+          fingerprint: "SHA256:retained",
+        },
+        transport:
+          binding === "bound"
+            ? {
+                type: "tailscale",
+                configId: "f0000000-0000-4000-8000-000000000001",
+              }
+            : { type: "tailscale", needsRebind: true },
+      };
+      return respond(409, {
+        error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
+      });
+    });
+    await page();
+    await screen.findByText(
+      `${initial.username}@${initial.host}:${initial.port}`,
+    );
+    click(getAction("button", "Edit host"));
+    const dialog = await screen.findByRole("dialog");
+    await fill(within(dialog).getByLabelText("Display name"), "Unsaved draft");
+    await waitFor(() => {
+      expect(getAction("button", "Save", dialog)).toBeEnabled();
+    });
+    click(getAction("button", "Save", dialog));
+    await within(dialog).findByText("Latest saved settings");
+    await within(dialog).findByText("Tailscale");
+    expect(
+      within(dialog).getByText(
+        "This host now uses Tailscale. Tailscale editing and rebinding are not available here yet. Cancel this edit to keep its saved transport.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      getAction("button", "Keep my changes with this version", dialog),
+    ).toBeDisabled();
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+      "Unsaved draft",
+    );
+    expect(screen.getByText("SHA256:retained")).toBeInTheDocument();
+    expect(requests).toStrictEqual([
+      {
+        expectedGeneration: 1,
+        displayName: "Unsaved draft",
+        host: initial.host,
+        port: initial.port,
+        credential: { id: credential.id },
+        transport:
+          initialCarrier === "Direct"
+            ? { type: "direct" }
+            : { type: "cloudflare_access", configId: accessId },
+      },
+    ]);
+    click(getAction("button", "Cancel", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(getAction("button", "Edit host")).toBeDisabled();
+    expect(screen.getByText("SHA256:retained")).toBeInTheDocument();
+  },
+);
+
+test("Bound Tailscale hosts stay distinguishable and cannot enter the legacy carrier editor", async () => {
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, {
+      connections: [
+        {
+          ...base,
+          transport: {
+            type: "tailscale",
+            configId: "e0000000-0000-4000-8000-000000000001",
+          },
+        },
+      ],
+    });
+  });
+  await page();
+  const title = await screen.findByRole("heading", { name: base.displayName });
+  const card = title.closest("article");
+  if (!card) {
+    throw new Error("Expected production host card");
+  }
+  expect(within(card).getByText("Tailscale")).toBeVisible();
+  expect(getAction("button", "Edit host", card)).toBeDisabled();
+  expect(getAction("button", "Delete host", card)).toBeEnabled();
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test.each([
+  {
+    type: "tailscale",
+    notice:
+      "This host needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
+  },
+  {
+    type: "cloudflare_access",
+    notice:
+      "This host needs a new Cloudflare Access configuration. Edit it to rebind or choose Direct. It will not connect until you do.",
+  },
+] as const)(
+  "A retained $type host explains its actual recovery availability",
+  async ({ type, notice }) => {
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, {
+        connections: [
+          {
+            ...base,
+            host: type === "tailscale" ? "100.80.10.20" : base.host,
+            port: type === "cloudflare_access" ? 443 : base.port,
+            learnedHostKey: {
+              algorithm: "ssh-ed25519",
+              fingerprint: "SHA256:retained",
+            },
+            transport:
+              type === "tailscale"
+                ? { type: "tailscale", needsRebind: true }
+                : { type: "cloudflare_access", needsRebind: true },
+          },
+        ],
+      });
+    });
+    context.mocks.api(
+      chatRemoteAccessContract.listHostDefaults,
+      ({ respond }) => {
+        return respond(200, {
+          ssh: [
+            {
+              connectionId: base.id,
+              displayName: base.displayName,
+              defaultEnabled: false,
+            },
+          ],
+          vnc: [],
+        });
+      },
+    );
+    await page();
+    const card = await screen.findByRole("article");
+    expect(within(card).getByRole("alert").textContent).toBe(notice);
+    expect(within(card).getByText("SHA256:retained")).toBeInTheDocument();
+    expect(getAction("button", "Edit host", card)).toHaveProperty(
+      "disabled",
+      type === "tailscale",
+    );
+    expect(getAction("button", "Reset host key", card)).toBeEnabled();
+    expect(getAction("button", "Delete host", card)).toBeEnabled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  },
+);
+
+async function openAddHostPage() {
+  await page();
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add host");
+    }),
+  );
+}
+
+test("SSH host settings update the chat remote access default", async () => {
+  let enabled = false;
+  let updatedParams: { protocol: string; connectionId: string } | undefined;
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [base] });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            connectionId: id,
+            displayName: "Deployment",
+            defaultEnabled: enabled,
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.updateHostDefault,
+    ({ params, body, respond }) => {
+      updatedParams = {
+        protocol: params.protocol,
+        connectionId: params.connectionId,
+      };
+      enabled = body.enabled;
+      return respond(200, {
+        connectionId: id,
+        displayName: "Deployment",
+        defaultEnabled: enabled,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=ssh",
+    auth,
+    featureSwitches: {},
+  });
+  const toggle = await screen.findByRole("switch", {
+    name: "Enabled by default for chats",
+  });
+  await waitFor(() => {
+    expect(toggle).not.toBeDisabled();
+  });
+  expect(toggle).not.toBeChecked();
+  await userEvent.click(toggle);
+  await waitFor(() => {
+    expect(enabled).toBeTruthy();
+    expect(
+      screen.getByRole("switch", { name: "Enabled by default for chats" }),
+    ).toBeChecked();
+  });
+  expect(updatedParams).toStrictEqual({ protocol: "ssh", connectionId: id });
+});
+
+test("SSH host default can retry after its settings fail to load", async () => {
+  let failed = true;
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [base] });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return failed
+        ? respond(500, {
+            error: { code: "INTERNAL_ERROR", message: "private default error" },
+          })
+        : respond(200, {
+            ssh: [
+              {
+                connectionId: id,
+                displayName: "Deployment",
+                defaultEnabled: true,
+              },
+            ],
+            vnc: [],
+          });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=ssh",
+    auth,
+    featureSwitches: {},
+  });
+  await screen.findByText("Couldn't load remote access.");
+  expect(document.body.textContent).not.toContain("private default error");
+  expect(
+    screen.queryByRole("switch", { name: "Enabled by default for chats" }),
+  ).toBeNull();
+  failed = false;
+  click(
+    await waitFor(() => {
+      return getAction("button", "Retry");
+    }),
+  );
+  await expect(
+    screen.findByRole("switch", {
+      name: "Enabled by default for chats",
+    }),
+  ).resolves.toBeChecked();
+});
+
+test("SSH is managed in Connectors Remote control", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
   });
   await page();
   await screen.findByText("0 hosts configured");
-  expect(pathname()).toBe("/connectors/ssh");
-  const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
-  expect(within(breadcrumb).getByText("SSH")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  expect(pathname()).toBe("/connectors");
+  expect(window.location.search).toBe("?scope=remote-control&type=ssh");
+  expect(screen.getByRole("heading", { name: "SSH" })).toBeInTheDocument();
   expect(
     getAction(
       "link",
@@ -454,7 +754,13 @@ test("SSH is a Connectors detail page with a working return breadcrumb", async (
       screen.getByRole("navigation", { name: "Sidebar" }),
     ),
   ).toHaveAttribute("aria-current", "page");
-  click(getAction("link", "Connectors", breadcrumb));
+  click(
+    getAction(
+      "link",
+      "Connectors",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
   await screen.findByPlaceholderText("Find connectors");
   expect(pathname()).toBe("/connectors");
 });
@@ -505,7 +811,7 @@ test.each(["paste", "file"])(
     });
     await page();
     await screen.findByText(
-      "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
+      "No SSH hosts configured. Add a host, then enable it by default or in individual chats.",
     );
     click(getAction("button", "Add host"));
     const dialog = await screen.findByRole("dialog");
@@ -725,75 +1031,154 @@ test("Credential replacement retains input during saving and clears secrets on c
   expect(within(reopened).getByLabelText("Private key")).toHaveValue("");
 });
 
-test("Reset requires confirmation, generation conflict refreshes without retry, and deletion is explicit", async () => {
-  const learned = {
-    ...base,
-    learnedHostKey: { algorithm: "ssh-ed25519", fingerprint: "SHA256:fixture" },
-  };
-  let hosts: SshConnectionResponse[] = [learned];
-  const resetRequests: unknown[] = [];
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: hosts });
-  });
-  context.mocks.api(
-    sshConnectionsContract.resetHostKey,
-    ({ body, respond }) => {
-      resetRequests.push(body);
-      if (body.expectedGeneration === 2) {
-        hosts = [{ ...learned, generation: 3, learnedHostKey: null }];
-        return respond(200, hosts[0]!);
-      }
-      hosts = [{ ...learned, generation: 2 }];
-      return respond(409, {
-        error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
-      });
+test.each([
+  { name: "Direct", carrier: "Direct", connection: base },
+  {
+    name: "Cloudflare Access",
+    carrier: "Cloudflare Access",
+    connection: {
+      ...base,
+      port: 443,
+      transport: {
+        type: "cloudflare_access",
+        configId: "e0000000-0000-4000-8000-000000000001",
+      },
     },
-  );
-  context.mocks.api(sshConnectionsContract.delete, ({ respond }) => {
-    hosts = [];
-    return respond(204);
-  });
-  await page();
-  await screen.findByText("SHA256:fixture");
-  click(getAction("button", "Reset host key"));
-  const reset = await screen.findByRole("dialog");
-  expect(screen.getByText("SHA256:fixture")).toBeInTheDocument();
-  expect(
-    within(reset).getByText(/Only reset after independently verifying/),
-  ).toBeInTheDocument();
-  expect(reset).toHaveAccessibleDescription(
-    "Only reset after independently verifying the new server identity. The next connection will trust and learn a new host key.",
-  );
-  click(getAction("button", "Reset host key", reset));
-  await screen.findByRole("alert");
-  expect(screen.getByText("SHA256:fixture")).toBeInTheDocument();
-  expect(getAction("button", "Reset host key", reset)).toBeDisabled();
-  expect(resetRequests).toStrictEqual([{ expectedGeneration: 1 }]);
-  click(
+  },
+  {
+    name: "Tailscale",
+    carrier: "Tailscale",
+    connection: {
+      ...base,
+      host: "100.80.10.20",
+      transport: {
+        type: "tailscale",
+        configId: "e0000000-0000-4000-8000-000000000001",
+      },
+    },
+  },
+  {
+    name: "Tailscale needs rebind",
+    carrier: "Tailscale",
+    connection: {
+      ...base,
+      host: "100.80.10.20",
+      transport: { type: "tailscale", needsRebind: true },
+    },
+  },
+] satisfies readonly {
+  name: string;
+  carrier: string;
+  connection: SshConnectionResponse;
+}[])(
+  "$name reset requires confirmation and reviews the actual carrier before explicit retry or deletion",
+  async ({ carrier, connection }) => {
+    // A saved identity can survive a carrier change before native Tailscale delivery.
+    const learned = {
+      ...connection,
+      learnedHostKey: {
+        algorithm: "ssh-ed25519",
+        fingerprint: "SHA256:fixture",
+      },
+    };
+    if (
+      "transport" in connection &&
+      connection.transport.type === "cloudflare_access"
+    ) {
+      context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+        return respond(200, {
+          configs: [
+            {
+              id: "e0000000-0000-4000-8000-000000000001",
+              name: "Deployment gateway",
+              scope: "personal",
+              revision: 1,
+              generation: 1,
+              sshHosts: [{ id: base.id, displayName: base.displayName }],
+              createdAt: base.createdAt,
+              updatedAt: base.updatedAt,
+            },
+          ],
+        });
+      });
+    }
+    let hosts: SshConnectionResponse[] = [learned];
+    const resetRequests: unknown[] = [];
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: hosts });
+    });
+    context.mocks.api(
+      sshConnectionsContract.resetHostKey,
+      ({ body, respond }) => {
+        resetRequests.push(body);
+        if (body.expectedGeneration === 2) {
+          hosts = [{ ...learned, generation: 3, learnedHostKey: null }];
+          return respond(200, hosts[0]!);
+        }
+        hosts = [{ ...learned, generation: 2 }];
+        return respond(409, {
+          error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
+        });
+      },
+    );
+    context.mocks.api(sshConnectionsContract.delete, ({ respond }) => {
+      hosts = [];
+      return respond(204);
+    });
+    await page();
+    await screen.findByText("SHA256:fixture");
+    click(getAction("button", "Reset host key"));
+    const reset = await screen.findByRole("dialog");
+    expect(screen.getByText("SHA256:fixture")).toBeInTheDocument();
+    expect(
+      within(reset).getByText(/Only reset after independently verifying/),
+    ).toBeInTheDocument();
+    expect(reset).toHaveAccessibleDescription(
+      "Only reset after independently verifying the new server identity. The next connection will trust and learn a new host key.",
+    );
+    click(getAction("button", "Reset host key", reset));
+    await within(reset).findByText("Latest saved settings");
+    expect(within(reset).getByRole("alert")).toBeInTheDocument();
+    expect(
+      within(reset)
+        .queryAllByText(/^(Direct|Cloudflare Access|Tailscale)$/u)
+        .map((element) => {
+          return element.textContent;
+        }),
+    ).toStrictEqual([carrier]);
+    expect(screen.getByText("SHA256:fixture")).toBeInTheDocument();
+    expect(getAction("button", "Reset host key", reset)).toBeDisabled();
+    expect(resetRequests).toStrictEqual([{ expectedGeneration: 1 }]);
+    click(
+      await waitFor(() => {
+        return getAction("button", "Keep my changes with this version", reset);
+      }),
+    );
     await waitFor(() => {
-      return getAction("button", "Keep my changes with this version", reset);
-    }),
-  );
-  await waitFor(() => {
-    return expect(getAction("button", "Reset host key", reset)).toBeEnabled();
-  });
-  click(getAction("button", "Reset host key", reset));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(screen.queryByText("SHA256:fixture")).toBeNull();
-  expect(resetRequests).toStrictEqual([
-    { expectedGeneration: 1 },
-    { expectedGeneration: 2 },
-  ]);
-  click(getAction("button", "Delete host"));
-  const remove = await screen.findByRole("dialog");
-  expect(screen.getByText("deploy@ssh.example.com:22")).toBeInTheDocument();
-  click(getAction("button", "Delete host", remove));
-  await screen.findByText(
-    "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
-  );
-});
+      return expect(getAction("button", "Reset host key", reset)).toBeEnabled();
+    });
+    click(getAction("button", "Reset host key", reset));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(screen.queryByText("SHA256:fixture")).toBeNull();
+    expect(resetRequests).toStrictEqual([
+      { expectedGeneration: 1 },
+      { expectedGeneration: 2 },
+    ]);
+    click(getAction("button", "Delete host"));
+    const remove = await screen.findByRole("dialog");
+    expect(
+      screen.getByText(
+        `${base.username}@${connection.host}:${connection.port}`,
+      ),
+    ).toBeInTheDocument();
+    click(getAction("button", "Delete host", remove));
+    await screen.findByText(
+      "No SSH hosts configured. Add a host, then enable it by default or in individual chats.",
+    );
+  },
+);
 
 test("An ordinary owner can manage SSH without feature overrides", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -801,7 +1186,7 @@ test("An ordinary owner can manage SSH without feature overrides", async () => {
   });
   await setupPage({
     context,
-    path: "/connectors/ssh",
+    path: "/connectors?scope=remote-control&type=ssh",
   });
   await screen.findByText("deploy@ssh.example.com:22");
   expect(getAction("button", "Add host")).toBeEnabled();
@@ -893,219 +1278,4 @@ test("Changing owner closes the credential form and clears its fields", async ()
   expect(
     screen.queryByDisplayValue("old-owner-canary"),
   ).not.toBeInTheDocument();
-});
-
-test("A visible shared Agent offers the current user's SSH authorization", async () => {
-  const agent: AgentResponse = {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: "another-owner",
-    displayName: "Shared Agent",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
-    visibility: "public",
-  };
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  let enabled = true;
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled });
-  });
-  context.mocks.api(agentSshAccessContract.update, ({ body, respond }) => {
-    enabled = body.enabled;
-    return respond(200, { enabled });
-  });
-  await page(`/agents/${agentId}?tab=authorization`);
-  const control = await screen.findByRole("switch", {
-    name: "Revoke SSH access",
-  });
-  expect(control).toBeChecked();
-  click(control);
-  await screen.findByRole("switch", { name: "Grant SSH access" });
-  expect(
-    screen.getByRole("switch", { name: "Grant SSH access" }),
-  ).not.toBeChecked();
-});
-
-test("Changing users hides the previous user's SSH grant while the new grant loads", async () => {
-  const agent: AgentResponse = {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: "shared-agent-owner",
-    displayName: "Shared Agent",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
-    visibility: "public",
-  };
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  const nextOwner = context.mocks.deferred<void>();
-  let changing = false;
-  context.mocks.api(sshConnectionsContract.summary, async ({ respond }) => {
-    if (changing) {
-      await nextOwner.promise;
-    }
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: !changing });
-  });
-  await page(`/agents/${agentId}?tab=authorization`);
-  await screen.findByRole("switch", { name: "Revoke SSH access" });
-  const clerk = context.mocks.clerk();
-  changing = true;
-  act(() => {
-    clerk.user(
-      { id: "other-owner", fullName: "Other Owner" },
-      { token: "other-token" },
-    );
-    clerk.stateChanged();
-  });
-  await waitFor(() => {
-    expect(screen.queryByRole("switch", { name: /SSH access/ })).toBeNull();
-  });
-  nextOwner.resolve();
-  const control = await screen.findByRole("switch", {
-    name: "Grant SSH access",
-  });
-  expect(control).not.toBeChecked();
-});
-
-test("Owner Authorization offers SSH access while Profile has no SSH controls", async () => {
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  const agent: AgentResponse = {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: auth.user.id,
-    displayName: "Research",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
-    visibility: "private",
-  };
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  let enabled = false;
-  context.mocks.api(agentSshAccessContract.get, ({ params, respond }) => {
-    expect(params.agentId).toBe(agentId);
-    return respond(200, { enabled });
-  });
-  context.mocks.api(
-    agentSshAccessContract.update,
-    ({ body, params, respond }) => {
-      expect(params.agentId).toBe(agentId);
-      enabled = body.enabled;
-      return respond(200, body);
-    },
-  );
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  await page(`/agents/${agentId}?tab=profile`);
-  await screen.findByDisplayValue("Research");
-  expect(
-    screen.queryByRole("switch", { name: /SSH access/ }),
-  ).not.toBeInTheDocument();
-  click(getAction("button", "Authorization"));
-  const control = await screen.findByRole("switch", {
-    name: "Grant SSH access",
-  });
-  expect(control).not.toBeChecked();
-  expect(
-    screen.getByText(
-      "Allow this Agent to execute commands on all your current and future configured SSH hosts. This is separate from connector permissions.",
-    ),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByText(/No connected services yet/),
-  ).not.toBeInTheDocument();
-  click(control);
-  await waitFor(() => {
-    return expect(
-      screen.getByRole("switch", { name: "Revoke SSH access" }),
-    ).toBeChecked();
-  });
-  click(screen.getByRole("switch", { name: "Revoke SSH access" }));
-  await waitFor(() => {
-    return expect(
-      screen.getByRole("switch", { name: "Grant SSH access" }),
-    ).not.toBeChecked();
-  });
-});
-
-test("SSH uses connector authorization search", async () => {
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  const agent: AgentResponse = {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: auth.user.id,
-    displayName: "Research",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
-    visibility: "private",
-  };
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: true });
-  });
-  const github = catalogConnectorFixture(
-    connectorSlugSchema.parse("github"),
-    "GitHub",
-    { hasPermissions: false },
-  );
-  mockConnectorOverview(context, [github]);
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, []);
-  });
-  await page(`/agents/${agentId}?tab=authorization`);
-  await screen.findByRole("switch", { name: "Revoke SSH access" });
-  await screen.findByRole("switch", { name: "Grant GitHub access" });
-  click(getAction("button", "Find connectors"));
-  const search = screen.getByPlaceholderText("Find connectors...");
-  await fill(search, "ssh");
-  expect(
-    screen.getByRole("switch", { name: "Revoke SSH access" }),
-  ).toBeChecked();
-  expect(
-    screen.queryByRole("switch", { name: /GitHub access/ }),
-  ).not.toBeInTheDocument();
-  await fill(search, "github");
-  expect(
-    screen.queryByRole("switch", { name: /SSH access/ }),
-  ).not.toBeInTheDocument();
-  await fill(search, "");
-  expect(
-    screen.getByRole("switch", { name: "Revoke SSH access" }),
-  ).toBeChecked();
 });

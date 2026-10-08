@@ -25,7 +25,6 @@ class _PendingCounter:
 
 
 _in_flight_flows = _PendingCounter("flows")
-_buffered_reports = _PendingCounter("buffered_reports")
 _pending_reports = _PendingCounter("reports")
 
 
@@ -33,7 +32,7 @@ def reset_for_tests() -> None:
     """Reset mutable counter state between tests."""
     global _buffered_usage_events
     with _counter_lock:
-        for counter in (_in_flight_flows, _buffered_reports, _pending_reports):
+        for counter in (_in_flight_flows, _pending_reports):
             counter.value = 0
             counter.underflow_logged = False
         _buffered_usage_events = 0
@@ -51,7 +50,7 @@ def delivery_snapshot() -> dict[str, object]:
     with _counter_lock:
         return {
             "flows": _in_flight_flows.value,
-            "buffered": _buffered_usage_events + _buffered_reports.value,
+            "buffered": _buffered_usage_events,
             "reports": _pending_reports.value,
             "outcomes": dict(_outcomes),
         }
@@ -118,36 +117,6 @@ class PendingReportLease(_CounterLease):
 def admit_pending_report() -> PendingReportLease:
     _increment_counter(_pending_reports)
     return PendingReportLease()
-
-
-class BufferedReportLease(_CounterLease):
-    """Own the runner-visible count for one retained, unadmitted webhook report.
-
-    Keep the lease with its report while webhook-delivery admission remains
-    retryable, including when admission returns ``False``. Release it exactly
-    once after delivery admits the report or after deliberate terminal discard,
-    eviction, or reset.
-
-    Premature release can let the runner shutdown drain advance before handoff.
-    Failing to release the lease can hold the drain pending until its bounded
-    timeout.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(_buffered_reports)
-
-
-def admit_buffered_report() -> BufferedReportLease:
-    """Count one retained report and return its terminal-release lease.
-
-    Calling this function immediately adds the report to the retained-report
-    contribution of the runner-facing aggregate ``buffered`` snapshot. The
-    caller must keep the returned lease with the report while webhook-delivery
-    admission returns ``False``, then release it according to the lease
-    contract. A report rejected before this function is called owns no lease.
-    """
-    _increment_counter(_buffered_reports)
-    return BufferedReportLease()
 
 
 def _increment_counter(counter: _PendingCounter) -> None:

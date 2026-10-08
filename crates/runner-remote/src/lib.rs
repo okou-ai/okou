@@ -1,5 +1,6 @@
 //! Assignment-bound guest RPC, remote usage, SSH, and VNC services.
 
+pub mod guest_duplex;
 pub mod guest_rpc;
 pub mod run_usage;
 pub mod ssh;

@@ -5,14 +5,11 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { isNotFoundResponse, notFound } from "../../lib/error";
-import {
-  consumePersonalClaudeCodeSubscriptionReset$,
-  consumePersonalCodexRateLimitResetCredit$,
-} from "../services/model-provider-subscription-usage.service";
+import { consumePersonalCodexRateLimitResetCredit$ } from "../services/model-provider-subscription-usage.service";
 import type { RouteEntry } from "../route-entry";
-import { writeDb$ } from "../external/db";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { listPersonalModelProviderAccounts } from "../services/model-provider-account.service";
+import { personalModelProviderAccounts } from "../services/model-provider-account.service";
+
+const accounts$ = personalModelProviderAccounts(organizationAuthContext$);
 
 const resetSubscriptionUsageInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -22,10 +19,7 @@ const resetSubscriptionUsageInner$ = command(
     );
     signal.throwIfAborted();
 
-    if (
-      params.type !== "codex-oauth-token" &&
-      params.type !== "claude-code-oauth-token"
-    ) {
+    if (params.type !== "codex-oauth-token") {
       return notFound(`Provider "${params.type}" not found`);
     }
 
@@ -37,28 +31,17 @@ const resetSubscriptionUsageInner$ = command(
       return bodyResult.response;
     }
 
-    const featureSwitchContext = await get(
-      userFeatureSwitchContext(auth.orgId, auth.userId),
+    const activeAccount = (await get(accounts$)).modelProviders.find(
+      (provider) => {
+        return provider.type === params.type && provider.isActive;
+      },
     );
-    signal.throwIfAborted();
-    const activeAccount = (
-      await listPersonalModelProviderAccounts({
-        db: set(writeDb$),
-        orgId: auth.orgId,
-        userId: auth.userId,
-        featureSwitchContext,
-      })
-    ).modelProviders.find((provider) => {
-      return provider.type === params.type && provider.isActive;
-    });
     if (!activeAccount) {
       return notFound(`Provider "${params.type}" not found`);
     }
 
     const result = await set(
-      params.type === "claude-code-oauth-token"
-        ? consumePersonalClaudeCodeSubscriptionReset$
-        : consumePersonalCodexRateLimitResetCredit$,
+      consumePersonalCodexRateLimitResetCredit$,
       {
         orgId: auth.orgId,
         userId: auth.userId,

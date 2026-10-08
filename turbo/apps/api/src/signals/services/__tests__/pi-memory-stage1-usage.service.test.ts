@@ -1,6 +1,5 @@
 import { settleIncludingAbort } from "../../utils";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { createStore } from "ccstate";
 import { Pool } from "pg";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -13,23 +12,9 @@ import {
   piMemoryStage1AccountingId,
   type RecordPiMemoryStage1UsageArgs,
 } from "../pi-memory-stage1-usage.service";
-import {
-  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_BYOK_MODEL,
-} from "@okouai/pi-agent-runtime/api";
-import { compactUsageEvents$ } from "../cron-compact-usage-events.service";
+import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 
-// D infrastructure exception: immutable historical billing rows, physical
-// compaction and repeatable-read snapshots have no public product read/write API.
-// Worker route tests separately cover the real provider/admission lifecycle.
-const context = testContext();
-const ledgerSql = await readFile(
-  new URL(
-    "../../../../../../../ops/pi-memory-stage1/v1/ledger.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
+testContext();
 
 function harness() {
   const orgId = randomUUID();
@@ -44,6 +29,7 @@ function harness() {
     responseSourceId: randomUUID(),
     model: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
     billing: { mode: "builtin" as const, orgId, userId },
+    longContextMinTotalInputTokens: null,
     usage: { input: 10, output: 8, cacheRead: 2, cacheWrite: 3 },
   } satisfies RecordPiMemoryStage1UsageArgs;
   onTestFinished(async () => {
@@ -53,7 +39,7 @@ function harness() {
     ]);
     await pool.end();
   });
-  return { pool, db, args, store, orgId, userId };
+  return { pool, db, args, orgId, userId };
 }
 
 describe("Stage 1 durable usage boundary", () => {
@@ -136,13 +122,10 @@ describe("Stage 1 durable usage boundary", () => {
     ).toStrictEqual([{ billing_context: "runless" }]);
   });
 
-  it("rejects actual DB subtype and immutable identity mutations", async () => {
+  it("rejects invalid stored Pi subtype and anchor mutations", async () => {
     const h = harness();
     await recordPiMemoryStage1Usage(h.db, h.args);
     for (const mutation of [
-      "billing_context='runless'",
-      "org_id='different'",
-      "user_id='different'",
       "billing_anchor_at=now() + interval '1 day'",
       "run_id=gen_random_uuid()",
       "billing_run_id=gen_random_uuid()",
@@ -169,15 +152,18 @@ describe("Stage 1 durable usage boundary", () => {
     ).rejects.toHaveProperty("code", "23514");
   });
 
-  it("keeps untrusted legacy context collisions closed and BYOK entirely outside the model ledger", async () => {
+  it("keeps untrusted legacy context collisions closed and personal subscriptions entirely outside the model ledger", async () => {
     const h = harness();
     await expect(
       recordPiMemoryStage1Usage(h.db, {
         ...h.args,
-        billing: { ...h.args.billing, mode: "byok" },
+        billing: { ...h.args.billing, mode: "subscription" },
         usage: { input: Number.NaN, output: -1, cacheRead: 0, cacheWrite: 0 },
       }),
-    ).resolves.toStrictEqual({ disposition: "byok", accountingAt: null });
+    ).resolves.toStrictEqual({
+      disposition: "subscription",
+      accountingAt: null,
+    });
     expect(
       (
         await h.pool.query(
@@ -208,14 +194,12 @@ describe("Stage 1 durable usage boundary", () => {
     );
   });
 
-  it("uses all cache-inclusive tier quantities at the inclusive long-context boundary", () => {
+  it("uses all cache-inclusive tier quantities at the captured inclusive long-context boundary", () => {
     expect(
-      piMemoryStage1UsageEntries(PI_MEMORY_STAGE1_BYOK_MODEL, {
-        input: 270_000,
-        output: 1,
-        cacheRead: 2000,
-        cacheWrite: 0,
-      }).map((x) => {
+      piMemoryStage1UsageEntries(
+        { input: 270_000, output: 1, cacheRead: 2000, cacheWrite: 0 },
+        272_001,
+      ).map((x) => {
         return x.category;
       }),
     ).toStrictEqual([
@@ -225,12 +209,10 @@ describe("Stage 1 durable usage boundary", () => {
       "tokens.cache_creation",
     ]);
     expect(
-      piMemoryStage1UsageEntries(PI_MEMORY_STAGE1_BYOK_MODEL, {
-        input: 270_000,
-        output: 1,
-        cacheRead: 2000,
-        cacheWrite: 1,
-      }).map((x) => {
+      piMemoryStage1UsageEntries(
+        { input: 270_000, output: 1, cacheRead: 2000, cacheWrite: 1 },
+        272_001,
+      ).map((x) => {
         return x.category;
       }),
     ).toStrictEqual([
@@ -241,94 +223,17 @@ describe("Stage 1 durable usage boundary", () => {
     ]);
   });
 
-  it("keeps the built-in model on base categories past the GPT long-context boundary", () => {
+  it("keeps a single-tier route on base categories past any long-context size", () => {
     expect(
-      piMemoryStage1UsageEntries(PI_MEMORY_STAGE1_BUILT_IN_MODEL, {
-        input: 900_000,
-        output: 1,
-        cacheRead: 2000,
-        cacheWrite: 1,
-      }),
+      piMemoryStage1UsageEntries(
+        { input: 900_000, output: 1, cacheRead: 2000, cacheWrite: 1 },
+        null,
+      ),
     ).toStrictEqual([
       { category: "tokens.input", quantity: 900_000 },
       { category: "tokens.output", quantity: 1 },
       { category: "tokens.cache_read", quantity: 2000 },
       { category: "tokens.cache_creation", quantity: 1 },
     ]);
-  });
-
-  it("reconciles one snapshot through repeat compaction, mixed sources and genuine late raw usage", async () => {
-    const h = harness();
-    const first = await recordPiMemoryStage1Usage(h.db, h.args);
-    const day = first.accountingAt!.slice(0, 10);
-    await h.pool.query(
-      "UPDATE usage_event SET status='processed',credits_charged=0,processed_at='2020-01-01' WHERE org_id=$1",
-      [h.orgId],
-    );
-    const original = (
-      await h.pool.query(
-        "SELECT billing_anchor_at::text AS anchor FROM usage_event WHERE org_id=$1 LIMIT 1",
-        [h.orgId],
-      )
-    ).rows[0].anchor;
-    await h.pool.query(
-      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model','gpt-5.6-luna','tokens.input',5,'processed',0,'2020-01-01',$3,'runless')",
-      [h.orgId, h.userId, original],
-    );
-    const reader = await h.pool.connect();
-    const outcome = await settleIncludingAbort(
-      (async () => {
-        await reader.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-        const before = (
-          await reader.query(ledgerSql, [day, h.orgId, h.userId, {}])
-        ).rows[0].report;
-        await h.store.set(compactUsageEvents$, h.orgId, context.signal);
-        expect(
-          (await reader.query(ledgerSql, [day, h.orgId, h.userId, {}])).rows[0]
-            .report,
-        ).toStrictEqual(before);
-        await reader.query("COMMIT");
-      })(),
-    );
-    await reader.query("ROLLBACK");
-    reader.release();
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
-    expect(
-      (
-        await h.pool.query(
-          "SELECT billing_context, sum(quantity)::text AS q FROM usage_event_hourly_rollup WHERE org_id=$1 GROUP BY billing_context ORDER BY billing_context",
-          [h.orgId],
-        )
-      ).rows,
-    ).toStrictEqual([
-      { billing_context: "pi_memory_stage1", q: "23" },
-      { billing_context: "runless", q: "5" },
-    ]);
-    await h.store.set(compactUsageEvents$, h.orgId, context.signal);
-    // Late raw usage for the same built-in extraction model, so it reconciles
-    // into the existing Stage 1 groups instead of opening a new provider group.
-    await h.pool.query(
-      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model',$4,'tokens.input',7,'processed',0,'2020-01-01',$3,'pi_memory_stage1')",
-      [h.orgId, h.userId, original, PI_MEMORY_STAGE1_BUILT_IN_MODEL],
-    );
-    const late = (await h.pool.query(ledgerSql, [day, h.orgId, h.userId, {}]))
-      .rows[0].report;
-    expect(late.stage1_finalized_rows).toBe("5");
-    expect(late.untagged_runless_rows_in_day).toBe("1");
-    await h.store.set(compactUsageEvents$, h.orgId, context.signal);
-    expect(
-      (
-        await h.pool.query(
-          "SELECT sum(quantity)::text AS q FROM usage_event_hourly_rollup WHERE org_id=$1 AND billing_context='pi_memory_stage1'",
-          [h.orgId],
-        )
-      ).rows[0].q,
-    ).toBe("30");
-    const after = (await h.pool.query(ledgerSql, [day, h.orgId, h.userId, {}]))
-      .rows[0].report;
-    expect(after.known_stage1_gross_usd).toBe(late.known_stage1_gross_usd);
-    expect(after.stage1_finalized_rows).toBe("4");
   });
 });

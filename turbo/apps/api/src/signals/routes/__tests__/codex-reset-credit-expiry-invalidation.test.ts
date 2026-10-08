@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -10,8 +9,9 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { codexDeviceAuthRoutes } from "../codex-device-auth";
-import { modelProvidersRoutes } from "../model-providers";
+
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
+
 import {
   createCodexExpiryFixture,
   credentials,
@@ -27,10 +27,10 @@ const fixture = createCodexExpiryFixture(context);
 
 describe("Codex expiry invalidation and identity isolation", () => {
   it.each([false, true])(
-    "invalidates on ambiguous consume failure, accounts=%s",
-    async (accounts) => {
+    "invalidates on ambiguous consume failure, account route=%s",
+    async (accountRoute) => {
       const remote = upstream();
-      const user = await fixture({ accounts });
+      const user = await fixture({ accountRoute });
       expectExpiry(await user.list(), remote.expiry);
       let consumeCalls = 0;
       server.use(
@@ -58,7 +58,9 @@ describe("Codex expiry invalidation and identity isolation", () => {
     "fences an in-flight expiry across %s",
     async (mutation) => {
       const remote = upstream();
-      const user = await fixture({ accounts: mutation === "replace-account" });
+      const user = await fixture({
+        accountRoute: mutation === "replace-account",
+      });
       const started = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<Response>(context.signal);
       remote.details = () => {
@@ -143,7 +145,7 @@ describe("Codex expiry invalidation and identity isolation", () => {
 
   it("preserves another concrete account's cooldown across connect and reconnect", async () => {
     const remote = upstream();
-    const first = await fixture({ accounts: true });
+    const first = await fixture({ accountRoute: true });
     remote.details = () => {
       return new HttpResponse(null, {
         status: 429,
@@ -159,7 +161,6 @@ describe("Codex expiry invalidation and identity isolation", () => {
     };
     first.session();
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: randomUUID(),
     });
     const device = setupApp({ context, routes: codexDeviceAuthRoutes })(
@@ -210,7 +211,7 @@ describe("Codex expiry invalidation and identity isolation", () => {
     expect(remote.detailsCalls).toBe(before + 1);
   });
 
-  it("isolates org connect metadata from the personal cooldown", async () => {
+  it("isolates another member's connect metadata from the personal cooldown", async () => {
     const remote = upstream();
     const user = await fixture();
     remote.details = () => {
@@ -220,24 +221,12 @@ describe("Codex expiry invalidation and identity isolation", () => {
     remote.details = () => {
       return expiryResponse(remote.expiry);
     };
-    user.session();
-    const result = await accept(
-      setupApp({ context, routes: modelProvidersRoutes })(
-        modelProvidersMainContract,
-      ).upsert({
-        headers,
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: user.auth.raw },
-        },
-      }),
-      [200, 201],
-    );
-    expect(result.body.provider.type).toBe("codex-oauth-token");
-    expect(remote.detailsCalls).toBe(3);
+    const otherMember = await fixture({ orgId: user.orgId });
+    expect(otherMember.userId).not.toBe(user.userId);
+    expectExpiry(await otherMember.list(), remote.expiry);
+    const callsAfterOtherMember = remote.detailsCalls;
     expectExpiry(await user.list(), null);
-    expect(remote.detailsCalls).toBe(3);
+    expect(remote.detailsCalls).toBe(callsAfterOtherMember);
   });
 
   it.each(["credential", "account"] as const)(
@@ -259,7 +248,7 @@ describe("Codex expiry invalidation and identity isolation", () => {
   it("fences an old flight when current credentials rotate without reconnect", async () => {
     mockNow(Date.UTC(2030, 0, 1));
     const remote = upstream();
-    const user = await fixture({ accounts: true });
+    const user = await fixture({ accountRoute: true });
     const started = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<Response>(context.signal);
     remote.details = () => {

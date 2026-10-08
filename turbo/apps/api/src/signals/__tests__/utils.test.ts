@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   clearAllDetached,
-  settleIncludingAbort,
+  collectAllDetachedErrorsForTest,
   detach,
   joinAll,
   joinAllInOrder,
   Mechanism,
+  settleIncludingAbort,
   startUntrackedBestEffortCleanup,
 } from "../utils";
 
@@ -65,6 +66,44 @@ describe("clearAllDetached", () => {
     await clearAllDetached();
 
     expect(completed).toStrictEqual(["tracked"]);
+  });
+
+  it("preserves the first-error contract after draining every failure", async () => {
+    const firstError = new Error("first detached failure");
+    const secondError = new Error("second detached failure");
+    detach(Promise.reject(firstError), Mechanism.WaitUntil);
+    detach(Promise.reject(secondError), Mechanism.WaitUntil);
+
+    await expect(clearAllDetached()).rejects.toBe(firstError);
+    await expect(collectAllDetachedErrorsForTest()).resolves.toStrictEqual([]);
+  });
+});
+
+describe("collectAllDetachedErrorsForTest", () => {
+  it("reports distinct failures including work scheduled while draining", async () => {
+    const firstError = new Error("outer detached failure");
+    const secondError = new Error("nested detached failure");
+    const completed: string[] = [];
+    const runNestedWork = async () => {
+      await Promise.resolve();
+      completed.push("inner");
+      throw secondError;
+    };
+    detach(
+      Promise.resolve().then(() => {
+        detach(runNestedWork(), Mechanism.WaitUntil);
+        completed.push("outer");
+        throw firstError;
+      }),
+      Mechanism.WaitUntil,
+    );
+
+    await expect(collectAllDetachedErrorsForTest()).resolves.toStrictEqual([
+      firstError,
+      secondError,
+    ]);
+    expect(completed).toStrictEqual(["outer", "inner"]);
+    await expect(collectAllDetachedErrorsForTest()).resolves.toStrictEqual([]);
   });
 });
 

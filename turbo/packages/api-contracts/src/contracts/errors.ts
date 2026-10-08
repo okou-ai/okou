@@ -1,11 +1,6 @@
 import { z } from "zod";
 import { formatRunBalanceError } from "./run-balance-errors";
-import {
-  getCanonicalModelDisplayName,
-  normalizeRunModelId,
-  type ModelProviderCredentialScope,
-  type ModelProviderType,
-} from "./model-providers";
+import type { ModelProviderType } from "./model-providers";
 import type { ModelProviderFramework } from "./model-provider-types";
 import {
   knownRunFailureReasonSchema,
@@ -61,10 +56,6 @@ export const ApiError = {
   REQUEST_DEADLINE_EXCEEDED: {
     status: 503 as const,
     code: "REQUEST_DEADLINE_EXCEEDED",
-  },
-  PROVIDER_DELETED: {
-    status: 422 as const,
-    code: "PROVIDER_DELETED",
   },
   CODEX_AUTH_JSON_SHAPE_INVALID: {
     status: 400 as const,
@@ -132,9 +123,10 @@ export const RUN_ERROR_GUIDANCE: Record<
       "okou connector permission-request computer-use --permission computer-use:write",
   },
   NO_MODEL_PROVIDER: {
-    title: "No model provider configured",
-    guidance: "Configure a model provider to start running agents.",
-    cliHint: "okou model-provider set --help",
+    title: "No model provider is available for this run",
+    guidance:
+      "Try again shortly, or connect a personal Claude Code or Codex subscription in Settings.",
+    cliHint: "okou model ls",
   },
   INSUFFICIENT_CREDITS: {
     title: "Credits depleted",
@@ -193,11 +185,6 @@ export const RUN_ERROR_GUIDANCE: Record<
     title: "Model temporarily unavailable",
     guidance:
       "Every built-in model route for this model is temporarily unavailable. Please try again later.",
-  },
-  PROVIDER_DELETED: {
-    title: "Model provider unavailable",
-    guidance:
-      "The model provider used by this thread has been deleted. Start a new chat thread to continue.",
   },
   TOO_MANY_REQUESTS: {
     title: "Concurrent run limit reached",
@@ -265,19 +252,13 @@ const AGENT_EXECUTION_TIMEOUT_RUN_ERROR =
   /^Agent execution timed out after [1-9]\d* seconds$/u;
 
 export const CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE =
-  "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.";
+  "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.";
 
 export const CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE =
-  "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.";
-
-export const CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE =
-  "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.";
-
-export const CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE =
-  "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.";
+  "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.";
 
 export const CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE =
-  "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.";
+  "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.";
 
 const CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL = "Claude Model";
 export const CLAUDE_PROVIDER_OVERLOADED_GUIDANCE =
@@ -350,18 +331,11 @@ export const ACTIONABLE_RUN_ERROR_SNIPPETS = [
   "weekly limit",
   CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE,
   CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE,
-  CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE,
-  CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE,
   CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE,
 ] as const;
 
 type ClaudeCodeCredentialRecovery = {
   readonly modelProviderType: ModelProviderType | null | undefined;
-  readonly modelProviderCredentialScope:
-    | ModelProviderCredentialScope
-    | null
-    | undefined;
-  readonly canManageOrgModelProviders: boolean;
   readonly modelProvidersUrl: string | undefined;
 };
 
@@ -415,25 +389,27 @@ function isClaudeProviderOverloadedErrorMessage(message: string): boolean {
   return false;
 }
 
+/**
+ * The label is the catalog display name the caller resolved for the run's
+ * model; this module has no catalog access and never derives names itself.
+ */
 function formatClaudeProviderOverloadedMessage(
-  selectedModel: string | null | undefined,
+  selectedModelLabel: string | null | undefined,
 ): string {
-  const trimmedModel = selectedModel?.trim();
-  const modelLabel = trimmedModel
-    ? getCanonicalModelDisplayName(normalizeRunModelId(trimmedModel))
-    : CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL;
+  const modelLabel =
+    selectedModelLabel?.trim() || CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL;
   return `${modelLabel} ${CLAUDE_PROVIDER_OVERLOADED_GUIDANCE}`;
 }
 
 export function formatClaudeProviderOverloadedRunError(params: {
   readonly message: string;
-  readonly selectedModel?: string | null;
+  readonly selectedModelLabel?: string | null;
 }): string | undefined {
   const errorMessage = params.message.trim();
   if (!isClaudeProviderOverloadedErrorMessage(errorMessage)) {
     return undefined;
   }
-  return formatClaudeProviderOverloadedMessage(params.selectedModel);
+  return formatClaudeProviderOverloadedMessage(params.selectedModelLabel);
 }
 
 function isJsonWhitespace(char: string | undefined): boolean {
@@ -642,8 +618,48 @@ function isClaudeCodeTermsAcceptanceRequiredError(
   );
 }
 
+const REPLACEMENT_SEPARATOR = " was replaced by ";
+
+function replacementSubscriptionSuffix(
+  subscriptionLabel: "Codex" | "Claude",
+): string {
+  return `, which requires a ${subscriptionLabel} subscription. Select Auto or connect your ${subscriptionLabel} subscription.`;
+}
+
+/** Linear-time match for formatReplacementSubscriptionRequiredMessage output. */
+function isReplacementSubscriptionRequiredMessage(message: string): boolean {
+  for (const subscriptionLabel of ["Codex", "Claude"] as const) {
+    const suffix = replacementSubscriptionSuffix(subscriptionLabel);
+    if (!message.endsWith(suffix)) {
+      continue;
+    }
+    const head = message.slice(0, message.length - suffix.length);
+    const separatorIndex = head.indexOf(REPLACEMENT_SEPARATOR);
+    return (
+      separatorIndex > 0 &&
+      separatorIndex + REPLACEMENT_SEPARATOR.length < head.length
+    );
+  }
+  return false;
+}
+
+/**
+ * A retired model whose successor runs only through a personal subscription
+ * the member has not connected. The pick shows it unchanged.
+ */
+export function formatReplacementSubscriptionRequiredMessage(args: {
+  readonly replacedModelLabel: string;
+  readonly successorLabel: string;
+  readonly subscriptionLabel: "Codex" | "Claude";
+}): string {
+  return `${args.replacedModelLabel}${REPLACEMENT_SEPARATOR}${args.successorLabel}${replacementSubscriptionSuffix(args.subscriptionLabel)}`;
+}
+
 export function isActionableRunError(errorMessage: string): boolean {
   return (
+    errorMessage === "Presentation template not found" ||
+    isReplacementSubscriptionRequiredMessage(errorMessage) ||
+    errorMessage === "Custom template not found" ||
     isAgentExecutionTimeoutRunError(errorMessage) ||
     isCodexOAuthReconnectRequiredRunError(errorMessage) ||
     isCodexChatGptAccountUnsupportedModelRunError(errorMessage) ||
@@ -672,32 +688,12 @@ function withOptionalActionUrl(
 function formatClaudeCodeCredentialRecoveryMessage(
   recovery: ClaudeCodeCredentialRecovery,
 ): string | undefined {
-  if (recovery.modelProviderType === "claude-code-oauth-token") {
-    return withOptionalActionUrl(
-      CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE,
-      "Reconnect Claude Code",
-      recovery.modelProvidersUrl,
-    );
-  }
-
-  if (recovery.modelProviderType !== "anthropic-api-key") {
+  if (recovery.modelProviderType !== "claude-code-oauth-token") {
     return undefined;
   }
-
-  if (
-    recovery.modelProviderCredentialScope === "org" &&
-    !recovery.canManageOrgModelProviders
-  ) {
-    return withOptionalActionUrl(
-      CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE,
-      "Share with an admin",
-      recovery.modelProvidersUrl,
-    );
-  }
-
   return withOptionalActionUrl(
-    CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE,
-    "Open Model Providers",
+    CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE,
+    "Reconnect Claude Code",
     recovery.modelProvidersUrl,
   );
 }
@@ -767,10 +763,10 @@ function formatReconnectRunError(
 
 function formatOverloadedRunError(
   framework: ModelProviderFramework | null | undefined,
-  selectedModel: string | null | undefined,
+  selectedModelLabel: string | null | undefined,
 ): string {
   if (framework === "claude-code") {
-    return formatClaudeProviderOverloadedMessage(selectedModel);
+    return formatClaudeProviderOverloadedMessage(selectedModelLabel);
   }
   if (framework === "codex") {
     return CODEX_PROVIDER_OVERLOADED_MESSAGE;
@@ -782,7 +778,7 @@ function formatStructuredRunError(params: {
   readonly failureReason: RunFailureReasonToken;
   readonly errorMessage: string;
   readonly framework?: ModelProviderFramework | null;
-  readonly selectedModel?: string | null;
+  readonly selectedModelLabel?: string | null;
   readonly modelProviderType?: ModelProviderType | null;
   readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
 }): string {
@@ -830,12 +826,15 @@ function formatStructuredRunError(params: {
     case "terms": {
       return withOptionalActionUrl(
         CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE,
-        "Open Model Providers",
+        "Open model settings",
         params.claudeCodeCredentialRecovery?.modelProvidersUrl,
       );
     }
     case "overloaded": {
-      return formatOverloadedRunError(params.framework, params.selectedModel);
+      return formatOverloadedRunError(
+        params.framework,
+        params.selectedModelLabel,
+      );
     }
     case "usage-limit": {
       return isActionableRunError(params.errorMessage)
@@ -863,7 +862,8 @@ export function formatRunErrorForExternalSurface(params: {
   readonly message: string;
   readonly failureReason?: RunFailureReasonToken;
   readonly framework?: ModelProviderFramework | null;
-  readonly selectedModel?: string | null;
+  /** Catalog display name of the run's model, resolved by the caller. */
+  readonly selectedModelLabel?: string | null;
   readonly modelProviderType?: ModelProviderType | null;
   readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
   readonly insufficientCredits?:
@@ -885,7 +885,7 @@ export function formatRunErrorForExternalSurface(params: {
       failureReason: params.failureReason,
       errorMessage,
       framework: params.framework,
-      selectedModel: params.selectedModel,
+      selectedModelLabel: params.selectedModelLabel,
       modelProviderType,
       claudeCodeCredentialRecovery: params.claudeCodeCredentialRecovery,
     });
@@ -897,7 +897,7 @@ export function formatRunErrorForExternalSurface(params: {
 
   const claudeOverloadedMessage = formatClaudeProviderOverloadedRunError({
     message: errorMessage,
-    selectedModel: params.selectedModel,
+    selectedModelLabel: params.selectedModelLabel,
   });
   if (claudeOverloadedMessage !== undefined) {
     return claudeOverloadedMessage;
@@ -906,7 +906,7 @@ export function formatRunErrorForExternalSurface(params: {
   if (isClaudeCodeTermsAcceptanceRequiredError(errorMessage)) {
     return withOptionalActionUrl(
       CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE,
-      "Open Model Providers",
+      "Open model settings",
       params.claudeCodeCredentialRecovery?.modelProvidersUrl,
     );
   }

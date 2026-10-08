@@ -1,35 +1,26 @@
 import {
   GET_STARTED_REWARDS,
-  GET_STARTED_REWARD_TTL_MS,
   getStartedQuestKeySchema,
   type GetStartedClaim,
   type GetStartedQuestKey,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { and, count, desc, eq, or, sql } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
+import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
-import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
-import { grantOrgCredits } from "./onboarding-credit-grants.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { db$, writeDb$ } from "../external/db";
 
 export type GetStartedClaimRow = typeof getStartedClaims.$inferSelect;
 
-/** Resolve the same registry and persisted overrides used by the App. */
-export async function getStartedRewardsEnabled(
-  db: Pick<Db, "select">,
-  orgId: string,
-  userId: string,
-): Promise<boolean> {
-  const context = await loadUserFeatureSwitchContext(db, orgId, userId);
-  return isFeatureEnabled(FeatureSwitchKey.GetStartedQuests, context);
-}
+/**
+ * Every custom connector a user connects shares this one connector-quest
+ * source. Custom connector identity is user-controlled (any user can create,
+ * delete, and recreate connectors with the same credentials), so a per-connector
+ * source would let one user farm the reward without limit.
+ */
+export const CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY = "custom";
 
 export function getStartedUtcDay(at: Date): string {
   return at.toISOString().slice(0, 10);
@@ -78,349 +69,142 @@ export function getStartedClaimResponse(
   };
 }
 
-export async function createGetStartedClaim(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly actorUserId?: string;
-    readonly questKey: GetStartedQuestKey;
-    readonly sourceKey: string;
-    readonly completedAt?: Date;
-    readonly invitationId?: string;
-    readonly inviteeUserId?: string;
-    readonly postUrl?: string;
-    readonly runId?: string;
-    readonly workflowId?: string;
-    readonly sourceEventId?: string;
+export const createGetStartedClaim$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly actorUserId?: string;
+      readonly questKey: GetStartedQuestKey;
+      readonly sourceKey: string;
+      readonly completedAt?: Date;
+      readonly invitationId?: string;
+      readonly inviteeUserId?: string;
+      readonly postUrl?: string;
+      readonly runId?: string;
+      readonly workflowId?: string;
+      readonly sourceEventId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<GetStartedClaimRow> => {
+    const db = set(writeDb$);
+    const reward = GET_STARTED_REWARDS[args.questKey];
+    const actorUserId = args.actorUserId ?? args.userId;
+    const [created] = await db
+      .insert(getStartedClaims)
+      .values({
+        orgId: args.orgId,
+        actorUserId,
+        beneficiaryUserId: reward.target === "user" ? args.userId : null,
+        questKey: args.questKey,
+        sourceKey: args.sourceKey,
+        rewardAmount: reward.amount,
+        rewardTarget: reward.target,
+        completedAt: args.completedAt,
+        invitationId: args.invitationId,
+        inviteeUserId: args.inviteeUserId,
+        postUrl: args.postUrl,
+        runId: args.runId,
+        workflowId: args.workflowId,
+        sourceEventId: args.sourceEventId,
+        nextAttemptAt: nowDate(),
+        createdAt: nowDate(),
+        updatedAt: nowDate(),
+      })
+      .onConflictDoNothing({
+        target: [
+          getStartedClaims.actorUserId,
+          getStartedClaims.questKey,
+          getStartedClaims.sourceKey,
+        ],
+      })
+      .returning();
+    signal.throwIfAborted();
+    if (created) {
+      return created;
+    }
+    const [existing] = await db
+      .select()
+      .from(getStartedClaims)
+      .where(
+        and(
+          eq(getStartedClaims.actorUserId, actorUserId),
+          eq(getStartedClaims.questKey, args.questKey),
+          eq(getStartedClaims.sourceKey, args.sourceKey),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!existing) {
+      throw new Error("Get started claim was not persisted");
+    }
+    return existing;
   },
-): Promise<GetStartedClaimRow | null> {
-  if (!(await getStartedRewardsEnabled(tx, args.orgId, args.userId))) {
-    return null;
-  }
-  const reward = GET_STARTED_REWARDS[args.questKey];
-  const actorUserId = args.actorUserId ?? args.userId;
-  const [created] = await tx
-    .insert(getStartedClaims)
-    .values({
-      orgId: args.orgId,
-      actorUserId,
-      beneficiaryUserId: reward.target === "user" ? args.userId : null,
-      questKey: args.questKey,
-      sourceKey: args.sourceKey,
-      rewardAmount: reward.amount,
-      rewardTarget: reward.target,
-      completedAt: args.completedAt,
-      invitationId: args.invitationId,
-      inviteeUserId: args.inviteeUserId,
-      postUrl: args.postUrl,
-      runId: args.runId,
-      workflowId: args.workflowId,
-      sourceEventId: args.sourceEventId,
-      nextAttemptAt: nowDate(),
-      createdAt: nowDate(),
-      updatedAt: nowDate(),
-    })
-    .onConflictDoNothing({
-      target: [
-        getStartedClaims.actorUserId,
-        getStartedClaims.questKey,
-        getStartedClaims.sourceKey,
-      ],
-    })
-    .returning();
-  if (created) {
-    return created;
-  }
-  const [existing] = await tx
-    .select()
-    .from(getStartedClaims)
-    .where(
-      and(
-        eq(getStartedClaims.actorUserId, actorUserId),
-        eq(getStartedClaims.questKey, args.questKey),
-        eq(getStartedClaims.sourceKey, args.sourceKey),
-      ),
-    )
-    .limit(1);
-  if (!existing) {
-    throw new Error("Get started claim was not persisted");
-  }
-  return existing;
-}
+);
 
-async function lockRedemption(
-  tx: Tx,
+type RewardAvailability =
+  | {
+      readonly kind: "ineligible";
+      readonly reason: "already_redeemed" | "limit_reached";
+    }
+  | { readonly kind: "available"; readonly slots: readonly (number | null)[] };
+
+export function getRewardAvailabilityFromAwards(
   claim: GetStartedClaimRow,
   rewardKey: string,
-): Promise<void> {
-  const owner =
-    claim.rewardTarget === "org" ? claim.orgId : claim.beneficiaryUserId;
-  const keys = [
-    `get-started:owner:${claim.questKey}:${owner}`,
-    `get-started:reward:${rewardKey}`,
-  ].sort();
-  for (const key of keys) {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`,
-    );
-  }
-}
-
-async function markIneligible(
-  tx: Tx,
-  id: string,
-  reason: string,
-): Promise<GetStartedClaimRow> {
-  const [row] = await tx
-    .update(getStartedClaims)
-    .set({
-      status: "ineligible",
-      reason,
-      updatedAt: nowDate(),
-      leaseId: null,
-      leaseExpiresAt: null,
-    })
-    .where(eq(getStartedClaims.id, id))
-    .returning();
-  if (!row) {
-    throw new Error("Get started claim disappeared during redemption");
-  }
-  return row;
-}
-
-/** Call in the transaction owning completion, or a worker's short finalization transaction. */
-export async function grantGetStartedClaim(
-  tx: Tx,
-  input: GetStartedClaimRow,
-  rewardKey: string,
-  evidenceText?: string,
-): Promise<GetStartedClaimRow> {
-  await lockRedemption(tx, input, rewardKey);
-  const [claim] = await tx
-    .select()
-    .from(getStartedClaims)
-    .where(eq(getStartedClaims.id, input.id))
-    .for("update");
-  if (!claim) {
-    throw new Error("Get started claim disappeared before redemption");
-  }
-  if (input.leaseId !== null && claim.leaseId !== input.leaseId) {
-    return claim;
-  }
-  if (
-    claim.status === "granted" ||
-    claim.status === "ineligible" ||
-    claim.status === "rejected"
-  ) {
-    return claim;
-  }
-  const [existing] = await tx
-    .select({ id: getStartedClaims.id })
-    .from(getStartedClaims)
-    .where(eq(getStartedClaims.rewardKey, rewardKey))
-    .limit(1);
-  if (existing) {
-    return markIneligible(tx, claim.id, "already_redeemed");
-  }
-
-  const ownerCondition =
-    claim.rewardTarget === "org"
-      ? eq(getStartedClaims.orgId, claim.orgId)
-      : eq(getStartedClaims.beneficiaryUserId, requiredBeneficiary(claim));
-  const [awards] = await tx
-    .select({ total: count() })
-    .from(getStartedClaims)
-    .where(
-      and(
-        ownerCondition,
-        eq(getStartedClaims.questKey, claim.questKey),
-        eq(getStartedClaims.status, "granted"),
-      ),
-    );
-  if (!awards) {
-    throw new Error("Get started award count is missing");
-  }
+  awards: readonly {
+    readonly rewardKey: string | null;
+    readonly rewardSlot: number | null;
+  }[],
+): RewardAvailability {
   const limit = GET_STARTED_REWARDS[claim.questKey].limit;
-  if (limit !== null && awards.total >= limit) {
-    return markIneligible(tx, claim.id, "limit_reached");
+  if (
+    awards.some((award) => {
+      return award.rewardKey === rewardKey;
+    })
+  ) {
+    return { kind: "ineligible", reason: "already_redeemed" };
   }
-
-  const grantedAt = nowDate();
-  const expiresAt = new Date(grantedAt.getTime() + GET_STARTED_REWARD_TTL_MS);
-  let memberCreditGrantId: string | null = null;
-  let orgCreditRecordId: string | null = null;
-  if (claim.rewardTarget === "user") {
-    const grant = await createUsagePackCreditGrant(tx, {
-      orgId: claim.orgId,
-      userId: requiredBeneficiary(claim),
-      grantType: "bonus",
-      idempotencyKey: `get-started:${claim.id}`,
-      amount: claim.rewardAmount,
-      expiresAt,
-    });
-    memberCreditGrantId = grant.id;
-  } else {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext(${`credit_${claim.orgId}`}))`,
+  if (limit === null) {
+    return { kind: "available", slots: [null] };
+  }
+  if (awards.length >= limit) {
+    return { kind: "ineligible", reason: "limit_reached" };
+  }
+  if (claim.questKey === "invite") {
+    const occupied = new Set(
+      awards.map((award) => {
+        return award.rewardSlot;
+      }),
     );
-    const [record] = await tx
-      .insert(creditExpiresRecord)
-      .values({
-        orgId: claim.orgId,
-        source: "get_started_reward",
-        amount: claim.rewardAmount,
-        remaining: claim.rewardAmount,
-        expiresAt,
-        createdAt: grantedAt,
-      })
-      .returning({ id: creditExpiresRecord.id });
-    if (!record) {
-      throw new Error("Get started organization credit was not persisted");
-    }
-    orgCreditRecordId = record.id;
-    await grantOrgCredits(tx, claim.orgId, claim.rewardAmount);
+    return {
+      kind: "available",
+      slots: Array.from({ length: limit }, (_, index) => {
+        return index + 1;
+      }).filter((slot) => {
+        return !occupied.has(slot);
+      }),
+    };
   }
-  const [granted] = await tx
-    .update(getStartedClaims)
-    .set({
-      status: "granted",
-      rewardKey,
-      rewardSlot:
-        claim.questKey === "invite"
-          ? awards.total + 1
-          : claim.questKey === "workflow" || claim.questKey === "share"
-            ? 1
-            : null,
-      memberCreditGrantId,
-      orgCreditRecordId,
-      grantedAt,
-      expiresAt,
-      ...(evidenceText === undefined
-        ? {}
-        : { evidenceText, reviewedAt: grantedAt }),
-      completedAt: claim.completedAt ?? grantedAt,
-      updatedAt: grantedAt,
-      reason: null,
-      leaseId: null,
-      leaseExpiresAt: null,
-    })
-    .where(eq(getStartedClaims.id, claim.id))
-    .returning();
-  if (!granted) {
-    throw new Error("Get started grant was not committed");
-  }
-  return granted;
+  return {
+    kind: "available",
+    slots: [claim.questKey === "slack" ? null : 1],
+  };
 }
 
-function requiredBeneficiary(claim: GetStartedClaimRow): string {
-  if (!claim.beneficiaryUserId) {
-    throw new Error("Personal reward has no beneficiary");
-  }
-  return claim.beneficiaryUserId;
-}
-
-export async function awardCompletedGetStartedQuest(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly questKey: "connector" | "slack" | "checkin";
-    readonly sourceKey: string;
-  },
-): Promise<GetStartedClaimRow | null> {
-  const claim = await createGetStartedClaim(tx, {
-    ...args,
-    completedAt: nowDate(),
-  });
-  if (!claim) {
-    return null;
-  }
-  const rewardKey =
-    args.questKey === "slack"
-      ? `slack:${args.sourceKey}`
-      : `${args.questKey}:${args.userId}:${args.sourceKey}`;
-  return grantGetStartedClaim(tx, claim, rewardKey);
-}
-
-export async function getStartedStatus(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly isAdmin: boolean;
-  },
-): Promise<GetStartedStatus> {
-  const at = nowDate();
-  const owner = or(
-    eq(getStartedClaims.beneficiaryUserId, args.userId),
-    and(
-      eq(getStartedClaims.orgId, args.orgId),
-      eq(getStartedClaims.questKey, "slack"),
-    ),
-  );
-  const groups = await db
-    .select({
-      questKey: getStartedClaims.questKey,
-      status: getStartedClaims.status,
-      total: count(),
-    })
-    .from(getStartedClaims)
-    .where(owner)
-    .groupBy(getStartedClaims.questKey, getStartedClaims.status);
-  const [today] = await db
-    .select({ id: getStartedClaims.id })
-    .from(getStartedClaims)
-    .where(
-      eq(
-        getStartedClaims.rewardKey,
-        `checkin:${args.userId}:${getStartedUtcDay(at)}`,
-      ),
-    )
-    .limit(1);
-  // The reward key ends in the UTC day, and ISO days sort chronologically, so
-  // the most recent claims come back first without a date column of their own.
-  const checkinDays = await db
-    .select({ rewardKey: getStartedClaims.rewardKey })
-    .from(getStartedClaims)
-    .where(
-      and(
-        eq(getStartedClaims.beneficiaryUserId, args.userId),
-        eq(getStartedClaims.questKey, "checkin"),
-      ),
-    )
-    .orderBy(desc(getStartedClaims.rewardKey))
-    .limit(400);
-  const [share] = await db
-    .select()
-    .from(getStartedClaims)
-    .where(
-      and(
-        eq(getStartedClaims.beneficiaryUserId, args.userId),
-        eq(getStartedClaims.questKey, "share"),
-      ),
-    )
-    .orderBy(
-      desc(sql`${getStartedClaims.status} = 'granted'`),
-      desc(getStartedClaims.createdAt),
-      desc(getStartedClaims.id),
-    )
-    .limit(1);
-  const recent = await db
-    .select()
-    .from(getStartedClaims)
-    .where(
-      and(
-        owner,
-        eq(getStartedClaims.orgId, args.orgId),
-        eq(getStartedClaims.status, "granted"),
-      ),
-    )
-    .orderBy(desc(getStartedClaims.grantedAt), desc(getStartedClaims.id))
-    .limit(20);
-  const quests = getStartedQuestKeySchema.options
+function getStartedQuests(
+  groups: readonly {
+    readonly questKey: GetStartedClaimRow["questKey"];
+    readonly status: GetStartedClaimRow["status"];
+    readonly total: number;
+  }[],
+  isAdmin: boolean,
+  claimedToday: boolean,
+): GetStartedStatus["quests"] {
+  return getStartedQuestKeySchema.options
     .filter((key) => {
-      return args.isAdmin || (key !== "slack" && key !== "invite");
+      return isAdmin || (key !== "slack" && key !== "invite");
     })
     .map((key) => {
       const reward = GET_STARTED_REWARDS[key];
@@ -448,26 +232,111 @@ export async function getStartedStatus(
         pendingCount,
         canEarnMore:
           key === "checkin"
-            ? !today
+            ? !claimedToday
             : reward.limit === null || claimedCount < reward.limit,
       };
     });
-  return {
-    serverNow: at.toISOString(),
-    nextResetAt: new Date(
-      Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1),
-    ).toISOString(),
-    claimedToday: Boolean(today),
-    checkinStreak: countCheckinStreak(
-      checkinDays.flatMap((row) => {
-        // A check-in always carries its day in the reward key, but the column
-        // is nullable for the quests that do not need one.
-        return row.rewardKey === null ? [] : [row.rewardKey.slice(-10)];
-      }),
-      getStartedUtcDay(at),
-    ),
-    quests,
-    shareClaim: share ? getStartedClaimResponse(share) : null,
-    recentGrants: recent.map(getStartedClaimResponse),
-  };
 }
+
+export const getStartedStatus$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly isAdmin: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<GetStartedStatus> => {
+    const db = get(db$);
+    const at = nowDate();
+    const owner = or(
+      eq(getStartedClaims.beneficiaryUserId, args.userId),
+      and(
+        eq(getStartedClaims.orgId, args.orgId),
+        eq(getStartedClaims.questKey, "slack"),
+      ),
+    );
+    const [groups, [today], checkinDays, [share], recent] = await Promise.all([
+      db
+        .select({
+          questKey: getStartedClaims.questKey,
+          status: getStartedClaims.status,
+          total: count(),
+        })
+        .from(getStartedClaims)
+        .where(owner)
+        .groupBy(getStartedClaims.questKey, getStartedClaims.status),
+      db
+        .select({ id: getStartedClaims.id })
+        .from(getStartedClaims)
+        .where(
+          eq(
+            getStartedClaims.rewardKey,
+            `checkin:${args.userId}:${getStartedUtcDay(at)}`,
+          ),
+        )
+        .limit(1),
+      // The reward key ends in the UTC day, and ISO days sort chronologically, so
+      // the most recent claims come back first without a date column of their own.
+      db
+        .select({ rewardKey: getStartedClaims.rewardKey })
+        .from(getStartedClaims)
+        .where(
+          and(
+            eq(getStartedClaims.beneficiaryUserId, args.userId),
+            eq(getStartedClaims.questKey, "checkin"),
+          ),
+        )
+        .orderBy(desc(getStartedClaims.rewardKey))
+        .limit(400),
+      db
+        .select()
+        .from(getStartedClaims)
+        .where(
+          and(
+            eq(getStartedClaims.beneficiaryUserId, args.userId),
+            eq(getStartedClaims.questKey, "share"),
+          ),
+        )
+        .orderBy(
+          desc(sql`${getStartedClaims.status} = 'granted'`),
+          desc(getStartedClaims.createdAt),
+          desc(getStartedClaims.id),
+        )
+        .limit(1),
+      db
+        .select()
+        .from(getStartedClaims)
+        .where(
+          and(
+            owner,
+            eq(getStartedClaims.orgId, args.orgId),
+            eq(getStartedClaims.status, "granted"),
+          ),
+        )
+        .orderBy(desc(getStartedClaims.grantedAt), desc(getStartedClaims.id))
+        .limit(20),
+    ]);
+    signal.throwIfAborted();
+    const quests = getStartedQuests(groups, args.isAdmin, Boolean(today));
+    return {
+      serverNow: at.toISOString(),
+      nextResetAt: new Date(
+        Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1),
+      ).toISOString(),
+      claimedToday: Boolean(today),
+      checkinStreak: countCheckinStreak(
+        checkinDays.flatMap((row) => {
+          // A check-in always carries its day in the reward key, but the column
+          // is nullable for the quests that do not need one.
+          return row.rewardKey === null ? [] : [row.rewardKey.slice(-10)];
+        }),
+        getStartedUtcDay(at),
+      ),
+      quests,
+      shareClaim: share ? getStartedClaimResponse(share) : null,
+      recentGrants: recent.map(getStartedClaimResponse),
+    };
+  },
+);

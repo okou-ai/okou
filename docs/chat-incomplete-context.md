@@ -13,8 +13,7 @@ output, terminal, follow-up, usage, and active-input events cannot move that
 position. `control.interrupt` refers to its target run and does not establish
 ownership. Revoked events still establish ordering; the separate visibility
 predicate determines whether the run has visible history and which content can
-be included. Historical `input.goal` rows provide no queue or execution
-authority.
+be included.
 
 The reader walks at most 21 candidate runs in one recursive SQL statement and
 stops querying older anchors as soon as it reaches a successful run. Each step
@@ -82,7 +81,7 @@ terminal event when setup requires a materialized successful anchor.
 
 The candidate limit bounds selected rounds and subsequent text retrieval, not
 the number of physical rows an index scan can examine. Long-thread plans must
-be checked against `chat_events_thread_seq_unique`, `idx_chat_events_run_id`
+be checked against `chat_events_thread_seq_unique`, `chat_events_run_event_seq_unique`
 and the revocation index; a full-history aggregate or sort must not be assumed
 cheap because its output has a LIMIT.
 

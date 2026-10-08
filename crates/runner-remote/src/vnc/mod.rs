@@ -62,9 +62,16 @@ impl From<rfb_client::Error> for Failure {
             | Error::InvalidPlainPassword
             | Error::InvalidAppleDhUsername
             | Error::InvalidAppleDhPassword
+            | Error::InvalidAppleSrpUsername
+            | Error::InvalidAppleSrpPassword
+            | Error::InvalidAppleRsaSrpUsername
+            | Error::InvalidAppleRsaSrpPassword
+            | Error::InvalidRsaAesCredential
             | Error::InvalidTrustRoots
             | Error::InvalidServerName => Self::InvalidCredential,
-            Error::AuthenticationFailed | Error::Tls(_) => Self::AuthenticationFailed,
+            Error::AuthenticationFailed | Error::RsaServerKeyMismatch | Error::Tls(_) => {
+                Self::AuthenticationFailed
+            }
             Error::UnsupportedSecurity | Error::UnsupportedRfbVersion => Self::UnsupportedProfile,
             Error::ResourceLimit | Error::ImageTooLarge => Self::ResourceExhausted,
             _ => Self::Protocol,

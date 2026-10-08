@@ -129,6 +129,19 @@ const mutateWorkflowSkillStoragePresignedUrlCacheState$ = command(
       case "read-cache-by-object-key-prefix": {
         return await readCacheByObjectKeyPrefixForAction(db, body, signal);
       }
+      case "set-cache-expiration": {
+        await db
+          .update(systemStoragePresignedUrlCache)
+          .set({ expiresAt: new Date(body.expires_at) })
+          .where(
+            objectKeyPrefixCondition(
+              body.object_key_prefix,
+              cacheScope(body.scope),
+            ),
+          );
+        signal.throwIfAborted();
+        return actionOk();
+      }
     }
   },
 );

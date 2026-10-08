@@ -22,66 +22,117 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "c093e0ffdab988d2a8a071809f90d87fa3e79f20" ]; then
-      [ "${MOCK_READER_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "febec8a3399be74b0f14a89cb9f42e39dd5ce69f" ]; then
-      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
-        [ "${MOCK_BLANK_RUNNER_FLOOR_VALID:-1}" = "1" ]
-      else
-        [ "${MOCK_BLANK_TARGET_FLOOR_VALID:-1}" = "1" ]
-      fi
-    elif [ "${3:-}" = "6d391117e4fead19e2105136fb2792a6e77801d8" ]; then
-      # Goal guards apply only to the API; Runner floors are checked separately.
-      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
-        exit 1
-      fi
-      [ "${MOCK_GOAL_TARGET_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "2c231766e383b651867893852cfb47dcc78af0bd" ]; then
-      [ "${4:-}" != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ] &&
-        [ "${MOCK_GOAL_SCHEMA_READER_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "077a9a644986e13bed4750796f91e55c4a876aad" ]; then
-      [ "${4:-}" != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ] &&
-        [ "${MOCK_GOAL_SCHEMA_REPAIR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "669d0befc9a181e44e3f1f9e39093efddabcc0f8" ]; then
-      [ "${MOCK_CLIENT_PRODUCT_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "eb2f211a9af41450d0d5dad10c0c8ad12fac0a24" ]; then
-      [ "${MOCK_PREPARED_DOMAIN_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "065f970bbb8c21c10ef709495d5824d0a6183e50" ]; then
-      [ "${MOCK_ARTIFACT_CHAT_WRITER_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "dddddddddddddddddddddddddddddddddddddddd" ]; then
-      [ "${MOCK_PRIVACY_CLEANUP_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
-      [ "${MOCK_SNAPSHOT_R2_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
-      [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "f205ec54fc463f43b1106a3659e5d6a8c979cab8" ]; then
-      [ "${4:-}" != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ] &&
-        [ "${MOCK_HOSTED_PUBLICATION_RUNTIME_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "8a5e1299b4d26bd114ccec017b84b7a83fb4a164" ]; then
-      [ "${MOCK_PERSONAL_SUBSCRIPTION_PRIORITY_FLOOR_VALID:-1}" = "1" ]
+    if [ "${3:-}" = "febec8a3399be74b0f14a89cb9f42e39dd5ce69f" ]; then
+      [ "${MOCK_BLANK_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6" ]; then
-      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
-        [ "${MOCK_BALANCE_RUNNER_FLOOR_VALID:-1}" = "1" ]
-      else
-        [ "${MOCK_BALANCE_TARGET_FLOOR_VALID:-1}" = "1" ]
-      fi
-    elif [ "${3:-}" = "8d8f3a3e14d23f7471e0773bd9acb988f59217af" ]; then
-      [ "${MOCK_PI_LAUNCH_VERSIONS_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "322efb6d72508e15b90dc788100a776da1485751" ]; then
-      [ "${MOCK_PI_SESSION_DIGEST_FLOOR_VALID:-1}" = "1" ]
+      [ "${MOCK_BALANCE_RUNNER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4558c9fac46ce1a96a25745b477b32b70dab7ae6" ]; then
+      [ "${MOCK_CHAT_THREAD_DRAFT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38" ]; then
+      [ "${MOCK_CHAT_THREAD_DRAFT_OWNER_KEY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "cdeec36c168636b1a2e510e660eb6139c9c4e07a" ]; then
+      [ "${MOCK_COMPUTER_USE_AUDIT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "98b5515ae2874128734b19a17b96dc8c6c7afe47" ]; then
+      [ "${MOCK_CHAT_SEARCH_GIN_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "ee863a302a6c547f94e50ec4069f70910d68bee2" ]; then
+      [ "${MOCK_ADVISORY_LOCK_PREPARATION_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "84ac71914345b8360f3df43cc2cd47f0a8af7a23" ]; then
+      [ "${MOCK_QUEUED_RUN_PROMOTION_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "553fc566b7e9be2cd4a8c1de314d55939b99490a" ]; then
+      [ "${MOCK_UNIFIED_CHAT_QUEUE_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da" ]; then
+      [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
+      [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
+      [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
+      [ "${MOCK_PUBLIC_BRAND_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "3333333333333333333333333333333333333333" ]; then
+      [ "${MOCK_AGENT_RUN_HEARTBEAT_DROP_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4444444444444444444444444444444444444444" ]; then
+      [ "${MOCK_PERSONAL_SUBSCRIPTION_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5555555555555555555555555555555555555555" ]; then
+      [ "${MOCK_SNAPSHOT_JSONB_DROP_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "6666666666666666666666666666666666666666" ]; then
+      [ "${MOCK_STRIPE_PORTAL_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7777777777777777777777777777777777777777" ]; then
+      [ "${MOCK_CHAT_EVENT_SCHEMA_HEADER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "8888888888888888888888888888888888888888" ]; then
+      [ "${MOCK_RETIRED_PREFERENCE_COLUMNS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
+      [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
+      [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1212121212121212121212121212121212121212" ]; then
+      [ "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
+      [ "${MOCK_VIDEO_MODEL_COLUMNS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1313131313131313131313131313131313131313" ]; then
+      [ "${MOCK_IMAGE_MODEL_THREAD_COLUMNS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1515151515151515151515151515151515151515" ]; then
+      [ "${MOCK_VIDEO_ENTITLEMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1616161616161616161616161616161616161616" ]; then
+      [ "${MOCK_RETIRED_MODEL_CONFIGURATION_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1717171717171717171717171717171717171717" ]; then
+      [ "${MOCK_CHAT_THREAD_PROVIDER_PIN_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1818181818181818181818181818181818181818" ]; then
+      [ "${MOCK_DEAD_MODEL_PROVIDER_COLUMNS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1919191919191919191919191919191919191919" ]; then
+      [ "${MOCK_CONNECTOR_CATALOG_RELEASE_2_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "3737373737373737373737373737373737373737" ]; then
+      [ "${MOCK_MODEL_ROUTE_STATE_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "3838383838383838383838383838383838383838" ]; then
+      [ "${MOCK_PI_STABLE_CONTEXT_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
     ;;
+  log)
+    if [[ "$*" == *1255_retire_public_brand.sql* ]]; then
+      printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
+    elif [[ "$*" == *1259_drop_agent_runs_last_heartbeat_at.sql* ]]; then
+      printf '%s\n' "${MOCK_AGENT_RUN_HEARTBEAT_DROP_COMMIT-3333333333333333333333333333333333333333}"
+    elif [[ "$*" == *1260_personal_subscription_account_only.sql* ]]; then
+      printf '%s\n' "${MOCK_PERSONAL_SUBSCRIPTION_COMMIT-4444444444444444444444444444444444444444}"
+    elif [[ "$*" == *1261_drop_chat_thread_snapshot_jsonb.sql* ]]; then
+      printf '%s\n' "${MOCK_SNAPSHOT_JSONB_DROP_COMMIT-5555555555555555555555555555555555555555}"
+    elif [[ "$*" == *stripe-portal-purpose-only* ]]; then
+      printf '%s\n' "${MOCK_STRIPE_PORTAL_COMMIT-6666666666666666666666666666666666666666}"
+    elif [[ "$*" == *chat-event-schema-header-retired* ]]; then
+      printf '%s\n' "${MOCK_CHAT_EVENT_SCHEMA_HEADER_COMMIT-7777777777777777777777777777777777777777}"
+    elif [[ "$*" == *1274_drop_retired_voice_reasoning_collection_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_RETIRED_PREFERENCE_COLUMNS_COMMIT-8888888888888888888888888888888888888888}"
+    elif [[ "$*" == *1283_drop_retired_video_model_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_VIDEO_MODEL_COLUMNS_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
+    elif [[ "$*" == *1287_drop_image_model_thread_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_IMAGE_MODEL_THREAD_COLUMNS_COMMIT-1313131313131313131313131313131313131313}"
+    elif [[ "$*" == *1315_drop_retired_video_entitlement.sql* ]]; then
+      printf '%s\n' "${MOCK_VIDEO_ENTITLEMENT_COMMIT-1515151515151515151515151515151515151515}"
+    elif [[ "$*" == *1330_drop_retired_model_configuration_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_RETIRED_MODEL_CONFIGURATION_COMMIT-1616161616161616161616161616161616161616}"
+    elif [[ "$*" == *1332_drop_chat_thread_provider_pin_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_CHAT_THREAD_PROVIDER_PIN_COMMIT-1717171717171717171717171717171717171717}"
+    elif [[ "$*" == *1333_drop_dead_model_provider_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_DEAD_MODEL_PROVIDER_COLUMNS_COMMIT-1818181818181818181818181818181818181818}"
+    elif [[ "$*" == *1334_connector_catalog_release_2_contraction.sql* ]]; then
+      printf '%s\n' "${MOCK_CONNECTOR_CATALOG_RELEASE_2_COMMIT-1919191919191919191919191919191919191919}"
+    elif [[ "$*" == *1338_retire_model_route_state.sql* ]]; then
+      printf '%s\n' "${MOCK_MODEL_ROUTE_STATE_COMMIT-3737373737373737373737373737373737373737}"
+    elif [[ "$*" == *1343_retire_pi_stable_context.sql* ]]; then
+      printf '%s\n' "${MOCK_PI_STABLE_CONTEXT_COMMIT-3838383838383838383838383838383838383838}"
+    elif [[ "$*" == *chat-event-v8* ]]; then
+      printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
+    elif [[ "$*" == *browser-session-mutations* ]]; then
+      printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
+    elif [[ "$*" == *1282_drop_retired_integration_agent_tables.sql* ]]; then
+      printf '%s\n' "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_COMMIT-1212121212121212121212121212121212121212}"
+    else
+      exit 2
+    fi
+    ;;
   tag)
     printf 'vm0-v1.2.3\n'
-    ;;
-  log)
-    if [[ "$*" == *chat-thread-snapshot-object.ts* ]]; then
-      printf '%s\n' "${MOCK_SNAPSHOT_R2_READER_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
-    else
-      printf '%s\n' "${MOCK_PRIVACY_READER_COMMIT-dddddddddddddddddddddddddddddddddddddddd}"
-    fi
     ;;
   show)
     printf '[package]\nversion = "1.2.3"\n'
@@ -172,12 +223,38 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
-grep -Fxq "git merge-base --is-ancestor f205ec54fc463f43b1106a3659e5d6a8c979cab8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the hosted publication runtime floor"
-grep -Fxq "git merge-base --is-ancestor 8d8f3a3e14d23f7471e0773bd9acb988f59217af ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi launch-config version reader floor"
-grep -Fxq "git merge-base --is-ancestor 322efb6d72508e15b90dc788100a776da1485751 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi session-construction digest reader floor"
-grep -Fxq "git merge-base --is-ancestor 065f970bbb8c21c10ef709495d5824d0a6183e50 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the artifact/chat explicit-writer floor"
-grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot R2 reader floor"
-grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
+grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
+grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft owner key floor"
+grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
+grep -Fxq "git merge-base --is-ancestor 3d93ff8d4b4a07a5888e3030e69b340f40da0ad4 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the R2-only chat thread snapshot floor"
+grep -Fxq "git merge-base --is-ancestor 3333333333333333333333333333333333333333 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the agent_runs heartbeat column drop floor"
+grep -Fxq "git merge-base --is-ancestor 4444444444444444444444444444444444444444 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the personal subscription account-only floor"
+grep -Fxq "git merge-base --is-ancestor cdeec36c168636b1a2e510e660eb6139c9c4e07a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the computer-use audit column cutover floor"
+grep -Fxq "git merge-base --is-ancestor 98b5515ae2874128734b19a17b96dc8c6c7afe47 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat search GIN maintenance removal floor"
+grep -Fxq "git merge-base --is-ancestor ee863a302a6c547f94e50ec4069f70910d68bee2 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the advisory replacement protocol floor"
+grep -Fxq "git merge-base --is-ancestor 84ac71914345b8360f3df43cc2cd47f0a8af7a23 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the queued run promotion removal floor"
+grep -Fxq "git merge-base --is-ancestor 553fc566b7e9be2cd4a8c1de314d55939b99490a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the unified chat queue release floor"
+grep -Fxq "git merge-base --is-ancestor fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the runner steer endpoints floor"
+grep -Fxq "git merge-base --is-ancestor 45b537a596a153a91b76c3bc7223187840f52775 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video generation retirement floor"
+grep -Fxq "git merge-base --is-ancestor 5555555555555555555555555555555555555555 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
+grep -Fxq "git merge-base --is-ancestor 6666666666666666666666666666666666666666 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Stripe Portal purpose-only floor"
+grep -Fxq "git merge-base --is-ancestor 8888888888888888888888888888888888888888 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired preference column drop floor"
+grep -Fxq "git merge-base --is-ancestor 1212121212121212121212121212121212121212 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired integration agent table drop floor"
+grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video model column drop floor"
+grep -Fxq "git merge-base --is-ancestor 1313131313131313131313131313131313131313 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the image model thread column drop floor"
+grep -Fxq "git merge-base --is-ancestor 1515151515151515151515151515151515151515 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video entitlement column drop floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1330_drop_retired_model_configuration_columns.sql" "${tmp_dir}/boundaries.log" || fail "retired model configuration floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 1616161616161616161616161616161616161616 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired model configuration column drop floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1332_drop_chat_thread_provider_pin_columns.sql" "${tmp_dir}/boundaries.log" || fail "chat thread provider pin floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 1717171717171717171717171717171717171717 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread provider pin column drop floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql" "${tmp_dir}/boundaries.log" || fail "dead model provider column floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 1818181818181818181818181818181818181818 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the dead model provider column drop floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1334_connector_catalog_release_2_contraction.sql" "${tmp_dir}/boundaries.log" || fail "connector catalog Release 2 floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 1919191919191919191919191919191919191919 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the connector catalog Release 2 floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1338_retire_model_route_state.sql" "${tmp_dir}/boundaries.log" || fail "model route state floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 3737373737373737373737373737373737373737 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model route state floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql" "${tmp_dir}/boundaries.log" || fail "Pi stable-context retirement floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 3838383838383838383838383838383838383838 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi stable-context retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -186,49 +263,388 @@ runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
 
 : >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates hosted publication version-column retirement" \
-  run_resolver "${tmp_dir}/hosted-publication-floor.output" \
-  MOCK_HOSTED_PUBLICATION_RUNTIME_FLOOR_VALID=0
-grep -Fq 'f205ec54fc463f43b1106a3659e5d6a8c979cab8' "${tmp_dir}/failure.err" || fail "hosted publication rejection must identify the canonical runtime transition"
-[ ! -s "${tmp_dir}/hosted-publication-floor.output" ] || fail "old hosted publication API must not publish outputs"
-[ ! -s "${tmp_dir}/failure.out" ] || fail "old hosted publication API must not print resolved targets"
+assert_failure "Rollback target predates the chat thread draft child-only writer" \
+  run_resolver "${tmp_dir}/chat-thread-draft-floor.output" MOCK_CHAT_THREAD_DRAFT_FLOOR_VALID=0
+grep -Fq '4558c9fac46ce1a96a25745b477b32b70dab7ae6' "${tmp_dir}/failure.err" || fail "draft contraction rejection must identify the child-only writer commit"
+[ ! -s "${tmp_dir}/chat-thread-draft-floor.output" ] || fail "pre-child-writer API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "hosted publication floor rejection must precede API and Runner artifact resolution"
+  fail "pre-child-writer API target must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
-assert_failure "predates owner-aware provider balance failures" \
-  run_resolver "${tmp_dir}/balance-target.output" MOCK_BALANCE_TARGET_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/balance-target.output" ] || fail "incompatible API target must not publish outputs"
-if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
-  fail "incompatible API target must fail before artifact or host access"
-fi
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the Pi launch-config version reader" \
-  run_resolver "${tmp_dir}/pi-launch-versions-floor.output" MOCK_PI_LAUNCH_VERSIONS_FLOOR_VALID=0
-grep -Fq '8d8f3a3e14d23f7471e0773bd9acb988f59217af' "${tmp_dir}/failure.err" || fail "Pi launch-config version rejection must identify the reader commit"
-[ ! -s "${tmp_dir}/pi-launch-versions-floor.output" ] || fail "pre-reader API target must not publish outputs"
-if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
-  fail "pre-reader API target must fail before artifact or host access"
-fi
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the Pi session-construction digest reader" \
-  run_resolver "${tmp_dir}/pi-session-digest-floor.output" MOCK_PI_SESSION_DIGEST_FLOOR_VALID=0
-grep -Fq '322efb6d72508e15b90dc788100a776da1485751' "${tmp_dir}/failure.err" || fail "Pi session-construction rejection must identify the reader commit"
-[ ! -s "${tmp_dir}/pi-session-digest-floor.output" ] || fail "pre-digest-reader API target must not publish outputs"
+assert_failure "Rollback target predates the computer-use audit approval column cutover" \
+  run_resolver "${tmp_dir}/computer-use-audit-floor.output" MOCK_COMPUTER_USE_AUDIT_FLOOR_VALID=0
+grep -Fq 'cdeec36c168636b1a2e510e660eb6139c9c4e07a' "${tmp_dir}/failure.err" || fail "audit column contraction rejection must identify the cutover commit"
+[ ! -s "${tmp_dir}/computer-use-audit-floor.output" ] || fail "pre-cutover API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "pre-digest-reader API target must fail before artifact or host access"
+  fail "pre-cutover API target must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates artifact/chat explicit writers" \
-  run_resolver "${tmp_dir}/artifact-chat-floor.output" MOCK_ARTIFACT_CHAT_WRITER_FLOOR_VALID=0
-grep -Fq '065f970bbb8c21c10ef709495d5824d0a6183e50' "${tmp_dir}/failure.err" || fail "artifact/chat rejection must identify the last explicit writer commit"
-[ ! -s "${tmp_dir}/artifact-chat-floor.output" ] || fail "pre-writer API target must not publish outputs"
+assert_failure "Rollback target predates the chat search GIN maintenance removal" \
+  run_resolver "${tmp_dir}/chat-search-gin-floor.output" MOCK_CHAT_SEARCH_GIN_FLOOR_VALID=0
+grep -Fq '98b5515ae2874128734b19a17b96dc8c6c7afe47' "${tmp_dir}/failure.err" || fail "pgstattuple drop rejection must identify the maintenance removal commit"
+[ ! -s "${tmp_dir}/chat-search-gin-floor.output" ] || fail "pre-removal API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "pre-writer API target must fail before artifact or host access"
+  fail "pre-removal API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the advisory lock replacement protocols" \
+  run_resolver "${tmp_dir}/advisory-lock-preparation-floor.output" MOCK_ADVISORY_LOCK_PREPARATION_FLOOR_VALID=0
+grep -Fq 'ee863a302a6c547f94e50ec4069f70910d68bee2' "${tmp_dir}/failure.err" || fail "advisory retirement rejection must identify the preparation commit"
+[ ! -s "${tmp_dir}/advisory-lock-preparation-floor.output" ] || fail "pre-preparation API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-preparation API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the queued run promotion removal" \
+  run_resolver "${tmp_dir}/queued-run-promotion-floor.output" MOCK_QUEUED_RUN_PROMOTION_FLOOR_VALID=0
+grep -Fq '84ac71914345b8360f3df43cc2cd47f0a8af7a23' "${tmp_dir}/failure.err" || fail "agent_run_queue drop rejection must identify the queued run promotion removal commit"
+[ ! -s "${tmp_dir}/queued-run-promotion-floor.output" ] || fail "pre-#37063 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-#37063 API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the unified chat queue release" \
+  run_resolver "${tmp_dir}/unified-chat-queue-floor.output" MOCK_UNIFIED_CHAT_QUEUE_FLOOR_VALID=0
+grep -Fq '553fc566b7e9be2cd4a8c1de314d55939b99490a' "${tmp_dir}/failure.err" || fail "active input delivery drop rejection must identify the release 3 merge commit"
+[ ! -s "${tmp_dir}/unified-chat-queue-floor.output" ] || fail "pre-#37082 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-#37082 API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the runner steer endpoints" \
+  run_resolver "${tmp_dir}/runner-steer-endpoints-floor.output" MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID=0
+grep -Fq 'fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da' "${tmp_dir}/failure.err" || fail "steer endpoint rejection must identify the release 4 merge commit"
+[ ! -s "${tmp_dir}/runner-steer-endpoints-floor.output" ] || fail "pre-#37115 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-#37115 API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the video generation retirement" \
+  run_resolver "${tmp_dir}/video-generation-retirement-floor.output" MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID=0
+grep -Fq '45b537a596a153a91b76c3bc7223187840f52775' "${tmp_dir}/failure.err" || fail "video retirement rejection must identify the #37242 merge commit"
+[ ! -s "${tmp_dir}/video-generation-retirement-floor.output" ] || fail "pre-#37242 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-#37242 API target must fail before artifact or host access"
+fi
+
+for cutover_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Stripe Portal purpose-only cutover" \
+    run_resolver "${tmp_dir}/stripe-portal-history.output" "MOCK_STRIPE_PORTAL_COMMIT=${cutover_commit}"
+  [ ! -s "${tmp_dir}/stripe-portal-history.output" ] || fail "invalid Stripe Portal history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Stripe Portal purpose-only cutover" \
+  run_resolver "${tmp_dir}/stripe-portal-floor.output" MOCK_STRIPE_PORTAL_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/stripe-portal-floor.output" ] || fail "pre-cutover API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Stripe Portal cutover floor must fail before artifact or host access"
+fi
+
+for retirement_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Chat Event schema header retirement" \
+    run_resolver "${tmp_dir}/chat-event-schema-header-history.output" "MOCK_CHAT_EVENT_SCHEMA_HEADER_COMMIT=${retirement_commit}"
+  [ ! -s "${tmp_dir}/chat-event-schema-header-history.output" ] || fail "invalid Chat Event schema header history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Chat Event schema header retirement" \
+  run_resolver "${tmp_dir}/chat-event-schema-header-floor.output" MOCK_CHAT_EVENT_SCHEMA_HEADER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/chat-event-schema-header-floor.output" ] || fail "pre-retirement API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Chat Event schema header floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged retired preference column drop" \
+    run_resolver "${tmp_dir}/retired-preference-columns-history.output" "MOCK_RETIRED_PREFERENCE_COLUMNS_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/retired-preference-columns-history.output" ] || fail "invalid retired preference column drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired preference column drop" \
+  run_resolver "${tmp_dir}/retired-preference-columns-floor.output" MOCK_RETIRED_PREFERENCE_COLUMNS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/retired-preference-columns-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "retired preference column drop floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged video model column drop" \
+    run_resolver "${tmp_dir}/video-model-columns-history.output" "MOCK_VIDEO_MODEL_COLUMNS_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/video-model-columns-history.output" ] || fail "invalid video model column drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the video model column drop" \
+  run_resolver "${tmp_dir}/video-model-columns-floor.output" MOCK_VIDEO_MODEL_COLUMNS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/video-model-columns-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "video model column drop floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged image model thread column drop" \
+    run_resolver "${tmp_dir}/image-model-thread-columns-history.output" "MOCK_IMAGE_MODEL_THREAD_COLUMNS_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/image-model-thread-columns-history.output" ] || fail "invalid image model thread column drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the image model thread column drop" \
+  run_resolver "${tmp_dir}/image-model-thread-columns-floor.output" MOCK_IMAGE_MODEL_THREAD_COLUMNS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/image-model-thread-columns-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "image model thread column drop floor must fail before artifact or host access"
+fi
+
+# This is the current rollback safety boundary, not retired-feature absence.
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged video entitlement column drop" \
+    run_resolver "${tmp_dir}/video-entitlement-history.output" "MOCK_VIDEO_ENTITLEMENT_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/video-entitlement-history.output" ] || fail "invalid video entitlement history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid video entitlement history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the video entitlement column drop" \
+  run_resolver "${tmp_dir}/video-entitlement-floor.output" MOCK_VIDEO_ENTITLEMENT_FLOOR_VALID=0
+grep -Fq '1515151515151515151515151515151515151515' "${tmp_dir}/failure.err" || fail "video entitlement rejection must identify the canonical drop commit"
+[ ! -s "${tmp_dir}/video-entitlement-floor.output" ] || fail "incompatible entitlement API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "video entitlement floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged retired model configuration column drop" \
+    run_resolver "${tmp_dir}/retired-model-configuration-history.output" "MOCK_RETIRED_MODEL_CONFIGURATION_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/retired-model-configuration-history.output" ] || fail "invalid retired model configuration history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid retired model configuration history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired model configuration column drop" \
+  run_resolver "${tmp_dir}/retired-model-configuration-floor.output" MOCK_RETIRED_MODEL_CONFIGURATION_FLOOR_VALID=0
+grep -Fq '1616161616161616161616161616161616161616' "${tmp_dir}/failure.err" || fail "retired model configuration rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/retired-model-configuration-floor.output" ] || fail "pre-drop API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "retired model configuration floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged chat thread provider pin column drop" \
+    run_resolver "${tmp_dir}/chat-thread-provider-pin-history.output" "MOCK_CHAT_THREAD_PROVIDER_PIN_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/chat-thread-provider-pin-history.output" ] || fail "invalid chat thread provider pin history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid chat thread provider pin history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat thread provider pin column drop" \
+  run_resolver "${tmp_dir}/chat-thread-provider-pin-floor.output" MOCK_CHAT_THREAD_PROVIDER_PIN_FLOOR_VALID=0
+grep -Fq '1717171717171717171717171717171717171717' "${tmp_dir}/failure.err" || fail "chat thread provider pin rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/chat-thread-provider-pin-floor.output" ] || fail "pre-drop API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "chat thread provider pin floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged dead model provider column drop" \
+    run_resolver "${tmp_dir}/dead-model-provider-columns-history.output" "MOCK_DEAD_MODEL_PROVIDER_COLUMNS_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/dead-model-provider-columns-history.output" ] || fail "invalid dead model provider column history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid dead model provider column history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the dead model provider column drop" \
+  run_resolver "${tmp_dir}/dead-model-provider-columns-floor.output" MOCK_DEAD_MODEL_PROVIDER_COLUMNS_FLOOR_VALID=0
+grep -Fq '1818181818181818181818181818181818181818' "${tmp_dir}/failure.err" || fail "dead model provider column rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/dead-model-provider-columns-floor.output" ] || fail "pre-drop API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "dead model provider column floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged connector catalog Release 2 contraction" \
+    run_resolver "${tmp_dir}/connector-catalog-release-2-history.output" "MOCK_CONNECTOR_CATALOG_RELEASE_2_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/connector-catalog-release-2-history.output" ] || fail "invalid connector catalog Release 2 history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid connector catalog Release 2 history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the connector catalog Release 2 contraction" \
+  run_resolver "${tmp_dir}/connector-catalog-release-2-floor.output" MOCK_CONNECTOR_CATALOG_RELEASE_2_FLOOR_VALID=0
+grep -Fq '1919191919191919191919191919191919191919' "${tmp_dir}/failure.err" || fail "connector catalog Release 2 rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/connector-catalog-release-2-floor.output" ] || fail "pre-Release 2 API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "connector catalog Release 2 floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged model route state retirement" \
+    run_resolver "${tmp_dir}/model-route-state-history.output" "MOCK_MODEL_ROUTE_STATE_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/model-route-state-history.output" ] || fail "invalid model route state history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid model route state history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the model route state retirement" \
+  run_resolver "${tmp_dir}/model-route-state-floor.output" MOCK_MODEL_ROUTE_STATE_FLOOR_VALID=0
+grep -Fq '3737373737373737373737373737373737373737' "${tmp_dir}/failure.err" || fail "model route state rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/model-route-state-floor.output" ] || fail "pre-retirement API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "model route state floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Pi stable-context retirement" \
+    run_resolver "${tmp_dir}/pi-stable-context-history.output" "MOCK_PI_STABLE_CONTEXT_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/pi-stable-context-history.output" ] || fail "invalid Pi stable-context retirement history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Pi stable-context retirement history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Pi stable-context retirement" \
+  run_resolver "${tmp_dir}/pi-stable-context-floor.output" MOCK_PI_STABLE_CONTEXT_FLOOR_VALID=0
+grep -Fq '3838383838383838383838383838383838383838' "${tmp_dir}/failure.err" || fail "Pi stable-context retirement rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/pi-stable-context-floor.output" ] || fail "pre-retirement API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Pi stable-context retirement floor must fail before artifact or host access"
+fi
+
+for v8_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Chat Event V8 migration" \
+    run_resolver "${tmp_dir}/chat-event-v8-history.output" "MOCK_CHAT_EVENT_V8_COMMIT=${v8_commit}"
+  [ ! -s "${tmp_dir}/chat-event-v8-history.output" ] || fail "invalid Chat Event V8 history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Chat Event V8 migration" \
+  run_resolver "${tmp_dir}/chat-event-v8-floor.output" MOCK_CHAT_EVENT_V8_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/chat-event-v8-floor.output" ] || fail "pre-V8 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Chat Event V8 floor must fail before artifact or host access"
+fi
+
+for mutation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Browser session mutation contract" \
+    run_resolver "${tmp_dir}/browser-session-mutations-history.output" "MOCK_BROWSER_SESSION_MUTATIONS_COMMIT=${mutation_commit}"
+  [ ! -s "${tmp_dir}/browser-session-mutations-history.output" ] || fail "invalid Browser mutation history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Browser session mutation contract" \
+  run_resolver "${tmp_dir}/browser-session-mutations-floor.output" MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/browser-session-mutations-floor.output" ] || fail "incompatible Browser mutation API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Browser mutation floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged retired integration agent table drop" \
+    run_resolver "${tmp_dir}/retired-integration-agent-tables-history.output" "MOCK_RETIRED_INTEGRATION_AGENT_TABLES_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/retired-integration-agent-tables-history.output" ] || fail "invalid retired integration agent table drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired integration agent table drop" \
+  run_resolver "${tmp_dir}/retired-integration-agent-tables-floor.output" MOCK_RETIRED_INTEGRATION_AGENT_TABLES_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/retired-integration-agent-tables-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "retired integration agent table drop floor must fail before artifact or host access"
+fi
+
+for retirement_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged public_brand retirement" \
+    run_resolver "${tmp_dir}/public-brand-history.output" "MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT=${retirement_commit}"
+  [ ! -s "${tmp_dir}/public-brand-history.output" ] || fail "invalid public_brand history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the public_brand retirement" \
+  run_resolver "${tmp_dir}/public-brand-floor.output" MOCK_PUBLIC_BRAND_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/public-brand-floor.output" ] || fail "pre-retirement API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "public_brand retirement floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged agent_runs heartbeat column drop" \
+    run_resolver "${tmp_dir}/agent-run-heartbeat-history.output" "MOCK_AGENT_RUN_HEARTBEAT_DROP_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/agent-run-heartbeat-history.output" ] || fail "invalid agent_runs heartbeat drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the agent_runs heartbeat column drop" \
+  run_resolver "${tmp_dir}/agent-run-heartbeat-floor.output" MOCK_AGENT_RUN_HEARTBEAT_DROP_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/agent-run-heartbeat-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "agent_runs heartbeat column drop floor must fail before artifact or host access"
+fi
+
+for account_only_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged personal subscription account-only migration" \
+    run_resolver "${tmp_dir}/personal-subscription-history.output" "MOCK_PERSONAL_SUBSCRIPTION_COMMIT=${account_only_commit}"
+  [ ! -s "${tmp_dir}/personal-subscription-history.output" ] || fail "invalid personal subscription history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the personal subscription account-only store" \
+  run_resolver "${tmp_dir}/personal-subscription-floor.output" MOCK_PERSONAL_SUBSCRIPTION_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/personal-subscription-floor.output" ] || fail "pre-account-only API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "personal subscription account-only floor must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the R2-only chat thread snapshot API" \
+  run_resolver "${tmp_dir}/snapshot-r2-only-floor.output" MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID=0
+grep -Fq '3d93ff8d4b4a07a5888e3030e69b340f40da0ad4' "${tmp_dir}/failure.err" || fail "R2-only rejection must identify the #36945 merge commit"
+[ ! -s "${tmp_dir}/snapshot-r2-only-floor.output" ] || fail "pre-R2-only API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "R2-only floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged chat thread snapshot JSONB drop" \
+    run_resolver "${tmp_dir}/snapshot-jsonb-history.output" "MOCK_SNAPSHOT_JSONB_DROP_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/snapshot-jsonb-history.output" ] || fail "invalid snapshot JSONB drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat thread snapshot JSONB drop" \
+  run_resolver "${tmp_dir}/snapshot-jsonb-floor.output" MOCK_SNAPSHOT_JSONB_DROP_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/snapshot-jsonb-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "snapshot JSONB drop floor must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat thread draft owner key writer" \
+  run_resolver "${tmp_dir}/chat-thread-draft-owner-key-floor.output" MOCK_CHAT_THREAD_DRAFT_OWNER_KEY_FLOOR_VALID=0
+grep -Fq '7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38' "${tmp_dir}/failure.err" || fail "draft owner key rejection must identify the owner key commit"
+[ ! -s "${tmp_dir}/chat-thread-draft-owner-key-floor.output" ] || fail "pre-owner-key API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-owner-key API target must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
@@ -260,83 +676,11 @@ target_commit=$target_commit_before
 [ ! -s "${tmp_dir}/boundaries.log" ] || fail "invalid target must fail before external boundaries"
 
 : >"${tmp_dir}/boundaries.log"
-assert_failure \
-  "first compatible release is 89c6a521944e2ac8550da424f164db08f4f80f0c" \
-  run_resolver \
-  "${tmp_dir}/reader-floor.output" \
-  MOCK_READER_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/reader-floor.output" ] || fail "incompatible reader target must not publish outputs"
-if grep -qE '^(curl|aws) ' "${tmp_dir}/boundaries.log"; then
-  fail "reader-floor rejection must happen before artifact resolution"
-fi
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Target commit predates the blank sandbox status reader" \
-  run_resolver "${tmp_dir}/blank-target-floor.output" MOCK_BLANK_TARGET_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/blank-target-floor.output" ] || fail "old blank reader target must not publish outputs"
-if grep -q '^curl ' "${tmp_dir}/boundaries.log"; then
-  fail "blank reader target rejection must precede artifact resolution"
-fi
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Target commit predates the Okou Goal retirement boundary" \
-  run_resolver "${tmp_dir}/goal-target-floor.output" \
-  MOCK_READER_FLOOR_VALID=1 MOCK_BLANK_TARGET_FLOOR_VALID=1 MOCK_GOAL_TARGET_FLOOR_VALID=0
-grep -Fq "first compatible release is 1f68f182a2457ec3aea52d8063be2bd2d2263abd (API 1.571.1)" \
-  "${tmp_dir}/failure.err" || fail "Goal rejection must identify the first compatible API release"
-[ ! -s "${tmp_dir}/goal-target-floor.output" ] || fail "pre-S1 API target must not publish outputs"
-[ ! -s "${tmp_dir}/failure.out" ] || fail "pre-S1 API target must not print resolved targets"
-if grep -qE '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "Goal target rejection must precede API and Runner artifact resolution"
-fi
-
-: >"${tmp_dir}/boundaries.log"
 assert_failure "Runner release runner-rs-v1.2.3 predates the blank sandbox status reader" \
   run_resolver "${tmp_dir}/blank-runner-floor.output" MOCK_BLANK_RUNNER_FLOOR_VALID=0
 [ ! -s "${tmp_dir}/blank-runner-floor.output" ] || fail "old Runner artifact must not publish outputs"
 if grep -q 'api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
   fail "blank reader artifact rejection must precede asset resolution"
-fi
-
-# S1/S2/S3-only and original-S4-without-repair targets fail before any artifacts.
-for floors in "0 0" "1 0" "0 1"; do
-  read -r reader repair <<<"$floors"
-  : >"${tmp_dir}/boundaries.log"
-  assert_failure "lacks the combined S4 Goal schema compatibility boundary" \
-    run_resolver "${tmp_dir}/schema-floor.output" \
-    MOCK_GOAL_SCHEMA_READER_VALID="$reader" MOCK_GOAL_SCHEMA_REPAIR_VALID="$repair"
-  grep -Fq "4a4881bf84cb1d79723fd38c83e00f2215bb1e31 (API 1.580.0)" \
-    "${tmp_dir}/failure.err" || fail "schema rejection must identify the verified release"
-  [ ! -s "${tmp_dir}/schema-floor.output" ] || fail "unsafe schema target published output"
-  [ ! -s "${tmp_dir}/failure.out" ] || fail "unsafe schema target printed resolved targets"
-  if grep -qE '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-    fail "schema rejection must precede API and Runner artifact resolution"
-  fi
-done
-
-# Targets that still declare client_product fail before any artifacts.
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Target commit predates the computer_use_hosts.client_product drop" \
-  run_resolver "${tmp_dir}/client-product-floor.output" MOCK_CLIENT_PRODUCT_FLOOR_VALID=0
-grep -Fq "669d0befc9a181e44e3f1f9e39093efddabcc0f8" "${tmp_dir}/failure.err" ||
-  fail "client_product rejection must identify the drop commit"
-[ ! -s "${tmp_dir}/client-product-floor.output" ] || fail "pre-drop API target must not publish outputs"
-[ ! -s "${tmp_dir}/failure.out" ] || fail "pre-drop API target must not print resolved targets"
-if grep -qE '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "client_product rejection must precede API and Runner artifact resolution"
-fi
-
-# Targets that still declare morning_brief_default_eligible_at fail before any artifacts.
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Target commit predates the org_members_metadata.morning_brief_default_eligible_at drop" \
-  run_resolver "${tmp_dir}/morning-brief-eligibility-floor.output" \
-  MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID=0
-grep -Fq "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" "${tmp_dir}/failure.err" ||
-  fail "morning brief eligibility rejection must identify the drop commit"
-[ ! -s "${tmp_dir}/morning-brief-eligibility-floor.output" ] || fail "pre-drop API target must not publish outputs"
-[ ! -s "${tmp_dir}/failure.out" ] || fail "pre-drop API target must not print resolved targets"
-if grep -qE '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "morning brief eligibility rejection must precede API and Runner artifact resolution"
 fi
 
 release_target_script="${tmp_dir}/resolve-release-target.sh"
@@ -441,8 +785,8 @@ ruby -e '
     raise "release tag projection mismatch: missing=#{missing_paths.sort}, unknown=#{unknown_paths.sort}, duplicates=#{duplicate_paths.sort}"
   end
 
-  desktop_release_created = "$" + "{{ steps.release.outputs[\x27turbo/apps/desktop--release_created\x27] }}"
-  desktop_version = "$" + "{{ steps.release.outputs[\x27turbo/apps/desktop--version\x27] }}"
+  desktop_release_created = "$" + "{{ steps.release.outputs[\x27desktop--release_created\x27] }}"
+  desktop_version = "$" + "{{ steps.release.outputs[\x27desktop--version\x27] }}"
   unless resolver_env.fetch("DESKTOP_RELEASE_CREATED") == desktop_release_created &&
       resolver_env.fetch("DESKTOP_VERSION") == desktop_version
     raise "release tag resolver must derive the Okou Desktop tag from the Desktop release outputs"
@@ -629,90 +973,5 @@ ruby - \
   raise "deploy-app must upload the archived App artifact" unless artifact_upload_run.include?("/dist.tar.gz")
   raise "deploy-app must not upload per-file App artifacts" if artifact_upload_run.include?("aws s3 cp turbo/apps/platform/dist")
 RUBY
-: >"${tmp_dir}/boundaries.log"
-assert_failure "first supported release is eb2f211a9af41450d0d5dad10c0c8ad12fac0a24" \
-  run_resolver "${tmp_dir}/prepared-domain-floor.output" MOCK_PREPARED_DOMAIN_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/prepared-domain-floor.output" ] || fail "unprepared API must not publish outputs"
-if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
-  fail "prepared writer floor must be checked before artifact resolution"
-fi
-
-for reader_commit in "" invalid; do
-  : >"${tmp_dir}/boundaries.log"
-  assert_failure "Cannot resolve the merged marketing privacy cleanup preparation" \
-    run_resolver "${tmp_dir}/privacy-history.output" "MOCK_PRIVACY_READER_COMMIT=${reader_commit}"
-  [ ! -s "${tmp_dir}/privacy-history.output" ] || fail "missing privacy history must not publish outputs"
-  if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
-    fail "missing privacy history must fail before artifact resolution"
-  fi
-done
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates marketing privacy storage cleanup preparation" \
-  run_resolver "${tmp_dir}/privacy-floor.output" MOCK_PRIVACY_CLEANUP_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/privacy-floor.output" ] || fail "old privacy cleanup must not publish outputs"
-if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
-  fail "privacy floor must be checked before artifact resolution"
-fi
-
-for reader_commit in "" invalid; do
-  : >"${tmp_dir}/boundaries.log"
-  assert_failure "Cannot resolve the merged chat thread snapshot R2 reader" \
-    run_resolver "${tmp_dir}/snapshot-r2-history.output" "MOCK_SNAPSHOT_R2_READER_COMMIT=${reader_commit}"
-  [ ! -s "${tmp_dir}/snapshot-r2-history.output" ] || fail "missing R2 reader history must not publish outputs"
-  if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
-    fail "missing R2 reader history must fail before artifact resolution"
-  fi
-done
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the chat thread snapshot R2 reader" \
-  run_resolver "${tmp_dir}/snapshot-r2-floor.output" MOCK_SNAPSHOT_R2_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/snapshot-r2-floor.output" ] || fail "old snapshot reader must not publish outputs"
-if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
-  fail "snapshot R2 reader floor must be checked before artifact resolution"
-fi
-
-# Verify the real Git history boundary, including the cleanup file's later
-# deletion. The canonical introduction on main, rather than a PR branch SHA,
-# is the boundary that a retained release must contain.
-history_dir="${tmp_dir}/privacy-history"
-reader_path=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
-git init --initial-branch=main -q "$history_dir"
-git -C "$history_dir" config user.name "Rollback test"
-git -C "$history_dir" config user.email "rollback-test@example.invalid"
-git -C "$history_dir" -c commit.gpgsign=false commit --allow-empty -qm initial
-old_reader=$(git -C "$history_dir" rev-parse HEAD)
-git -C "$history_dir" update-ref refs/remotes/origin/main HEAD
-missing_reader=$(git -C "$history_dir" log --reverse --first-parent --diff-filter=A --format=%H origin/main -- "$reader_path" | sed -n '1p')
-[ -z "$missing_reader" ] || fail "unprepared main must not invent a privacy reader"
-git -C "$history_dir" checkout -qb privacy-preparation
-mkdir -p "${history_dir}/$(dirname "$reader_path")"
-printf 'prepared cleanup fixture\n' >"${history_dir}/${reader_path}"
-git -C "$history_dir" add "$reader_path"
-git -C "$history_dir" -c commit.gpgsign=false commit -qm preparation
-branch_reader=$(git -C "$history_dir" rev-parse HEAD)
-git -C "$history_dir" checkout -q main
-git -C "$history_dir" -c commit.gpgsign=false merge --no-ff -qm preparation-merge privacy-preparation
-prepared_reader=$(git -C "$history_dir" rev-parse HEAD)
-[ "$prepared_reader" != "$branch_reader" ] || fail "history fixture must distinguish branch and main introduction"
-git -C "$history_dir" rm -q "$reader_path"
-git -C "$history_dir" -c commit.gpgsign=false commit -qm contraction
-git -C "$history_dir" update-ref refs/remotes/origin/main HEAD
-resolved_reader=$(git -C "$history_dir" log --reverse --first-parent --diff-filter=A --format=%H origin/main -- "$reader_path" | sed -n '1p')
-[ "$resolved_reader" = "$prepared_reader" ] || fail "file deletion must preserve the original prepared reader boundary"
-if git -C "$history_dir" merge-base --is-ancestor "$resolved_reader" "$old_reader"; then
-  fail "unprepared release must remain outside the privacy rollback boundary"
-fi
-git -C "$history_dir" merge-base --is-ancestor "$resolved_reader" "$prepared_reader" || fail "prepared release must remain supported"
-git -C "$history_dir" merge-base --is-ancestor "$resolved_reader" HEAD || fail "contracted release must remain supported"
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Target commit predates personal subscription priority" \
-  run_resolver "${tmp_dir}/personal-priority-floor.output" \
-  MOCK_PERSONAL_SUBSCRIPTION_PRIORITY_FLOOR_VALID=0
-grep -q '8a5e1299b4d26bd114ccec017b84b7a83fb4a164' "${tmp_dir}/failure.err" || fail "priority rejection must identify B"
-[ ! -s "${tmp_dir}/personal-priority-floor.output" ] || fail "pre-B target must not publish outputs"
-if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
-  fail "priority rejection must precede artifact resolution"
-fi
 
 echo "resolve-production-rollback-target tests passed"

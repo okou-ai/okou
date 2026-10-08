@@ -21,9 +21,21 @@ export const vncCredentials = pgTable(
     username: varchar("username", { length: 255 }),
     authMethod: varchar("auth_method", {
       length: 32,
-      enum: ["vnc_password", "username_password", "apple_dh_username_password"],
+      enum: [
+        "vnc_password",
+        "username_password",
+        "qemu_scram_sha256",
+        "rsa_aes_password",
+        "rsa_aes_username_password",
+        "apple_dh_username_password",
+        "apple_srp_username_password",
+        "apple_rsa_srp_username_password",
+        "client_certificate",
+        "client_certificate_vnc_password",
+      ],
     }).notNull(),
-    encryptedPassword: text("encrypted_password").notNull(),
+    encryptedPassword: text("encrypted_password"),
+    encryptedClientIdentity: text("encrypted_client_identity"),
     revision: integer("revision").default(1).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -54,11 +66,11 @@ export const vncCredentials = pgTable(
       ),
       check(
         "chk_vnc_credentials_auth",
-        sql`(${table.authMethod} = 'vnc_password' AND ${table.username} IS NULL) OR (${table.authMethod} = 'username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 255) OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 63)`,
+        sql`(${table.authMethod} = 'rsa_aes_password' AND ${table.username} IS NULL) OR (${table.authMethod} = 'rsa_aes_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 255) OR (${table.authMethod} IN ('client_certificate', 'client_certificate_vnc_password') AND ${table.username} IS NULL) OR (${table.authMethod} = 'vnc_password' AND ${table.username} IS NULL) OR (${table.authMethod} = 'username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 255) OR (${table.authMethod} = 'qemu_scram_sha256' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 255 AND ${table.username} COLLATE "C" ~ '^[!-~]+$' AND ${table.username} !~ '[=,]') OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 63) OR (${table.authMethod} = 'apple_srp_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 255) OR (${table.authMethod} = 'apple_rsa_srp_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 234)`,
       ),
       check(
         "chk_vnc_credentials_password",
-        sql`char_length(${table.encryptedPassword}) > 0`,
+        sql`(${table.authMethod} = 'client_certificate' AND ${table.encryptedPassword} IS NULL AND ${table.encryptedClientIdentity} IS NOT NULL AND char_length(${table.encryptedClientIdentity}) > 0) OR (${table.authMethod} = 'client_certificate_vnc_password' AND ${table.encryptedPassword} IS NOT NULL AND char_length(${table.encryptedPassword}) > 0 AND ${table.encryptedClientIdentity} IS NOT NULL AND char_length(${table.encryptedClientIdentity}) > 0) OR (${table.authMethod} NOT IN ('client_certificate', 'client_certificate_vnc_password') AND ${table.encryptedPassword} IS NOT NULL AND char_length(${table.encryptedPassword}) > 0 AND ${table.encryptedClientIdentity} IS NULL)`,
       ),
       check("chk_vnc_credentials_revision", sql`${table.revision} > 0`),
     ];

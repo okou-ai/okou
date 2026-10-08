@@ -1,22 +1,18 @@
-import type {
-  ModelProviderResponse,
-  ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  personalModelProvidersMainContract,
-  personalModelProvidersByTypeContract,
   personalModelProviderAccountsByIdContract,
+  personalModelProvidersByTypeContract,
+  personalModelProvidersMainContract,
+  personalSubscriptionsContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { nowDate } from "../../lib/time.ts";
 import { mockApi } from "../msw-contract.ts";
-
-const RESETTABLE_PROVIDER_TYPES = new Set<ModelProviderType>([
-  "codex-oauth-token",
-  "claude-code-oauth-token",
-]);
 
 // Mock personal model providers data — empty by default
 let mockPersonalModelProviders: ModelProviderResponse[] = [];
+
+export function getMockPersonalModelProviders(): readonly ModelProviderResponse[] {
+  return mockPersonalModelProviders;
+}
 
 export function setMockPersonalModelProviders(
   providers: ModelProviderResponse[],
@@ -32,6 +28,16 @@ export function resetMockPersonalModelProviders(): void {
 }
 
 export const apiPersonalModelProvidersHandlers = [
+  mockApi(personalSubscriptionsContract.get, ({ params, respond }) => {
+    const provider = mockPersonalModelProviders.find((candidate) => {
+      return candidate.id === params.id;
+    });
+    return provider
+      ? respond(200, provider)
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Subscription not found" },
+        });
+  }),
   mockApi(
     personalModelProviderAccountsByIdContract.getById,
     ({ params, respond }) => {
@@ -53,65 +59,7 @@ export const apiPersonalModelProvidersHandlers = [
     return respond(200, { modelProviders: mockPersonalModelProviders });
   }),
 
-  // POST /api/me/model-providers - Create or update a personal model provider
-  mockApi(personalModelProvidersMainContract.upsert, ({ body, respond }) => {
-    const now = nowDate().toISOString();
-    const existing = mockPersonalModelProviders.find((p) => {
-      return p.type === body.type;
-    });
-    const created = !existing;
-
-    const provider: ModelProviderResponse = {
-      id: existing?.id ?? crypto.randomUUID(),
-      type: body.type,
-      framework: "claude-code",
-      secretName:
-        body.type === "claude-code-oauth-token"
-          ? "CLAUDE_CODE_OAUTH_TOKEN"
-          : "ANTHROPIC_API_KEY",
-      authMethod: body.authMethod ?? null,
-      secretNames: body.secrets ? Object.keys(body.secrets) : null,
-      isDefault: existing?.isDefault ?? false,
-      selectedModel: body.selectedModel ?? null,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      needsReconnect: false,
-      lastRefreshErrorCode: null,
-    };
-
-    if (existing) {
-      mockPersonalModelProviders = mockPersonalModelProviders.map((p) => {
-        return p.type === body.type ? provider : p;
-      });
-    } else {
-      mockPersonalModelProviders.push(provider);
-    }
-
-    return respond(created ? 201 : 200, { provider, created });
-  }),
-
-  // DELETE /api/me/model-providers/:type - Delete a personal model provider
-  mockApi(
-    personalModelProvidersByTypeContract.delete,
-    ({ params, respond }) => {
-      const existing = mockPersonalModelProviders.find((p) => {
-        return p.type === params.type;
-      });
-
-      if (!existing) {
-        return respond(404, {
-          error: { message: "Model provider not found", code: "NOT_FOUND" },
-        });
-      }
-
-      mockPersonalModelProviders = mockPersonalModelProviders.filter((p) => {
-        return p.type !== params.type;
-      });
-      return respond(204);
-    },
-  ),
-
-  // POST /api/me/model-providers/:type/subscription-reset - Reset subscription usage
+  // POST /api/me/model-providers/:type/subscription-reset - Reset Codex usage
   mockApi(
     personalModelProvidersByTypeContract.resetSubscriptionUsage,
     ({ params, respond }) => {
@@ -119,7 +67,7 @@ export const apiPersonalModelProvidersHandlers = [
         return p.type === params.type;
       });
 
-      if (!existing || !RESETTABLE_PROVIDER_TYPES.has(params.type)) {
+      if (!existing || params.type !== "codex-oauth-token") {
         return respond(404, {
           error: { message: "Model provider not found", code: "NOT_FOUND" },
         });
@@ -197,7 +145,7 @@ export const apiPersonalModelProvidersHandlers = [
       const selected = mockPersonalModelProviders.find((provider) => {
         return provider.id === params.id;
       });
-      if (!selected || !RESETTABLE_PROVIDER_TYPES.has(selected.type)) {
+      if (!selected || selected.type !== "codex-oauth-token") {
         return respond(404, {
           error: {
             message: "Model provider account not found",
@@ -217,7 +165,7 @@ export const apiPersonalModelProvidersHandlers = [
       const selected = mockPersonalModelProviders.find((provider) => {
         return provider.id === params.id;
       });
-      if (!selected || !RESETTABLE_PROVIDER_TYPES.has(selected.type)) {
+      if (!selected || selected.type !== "codex-oauth-token") {
         return respond(404, {
           error: {
             message: "Model provider account not found",

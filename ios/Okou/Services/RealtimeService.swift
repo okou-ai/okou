@@ -7,8 +7,8 @@ final class RealtimeService {
   private let userID: String
   private let workspaceID: String
   private let tokenProvider: @Sendable () async throws -> Data
-  private let onChange: @MainActor () -> Void
-  private let onConnection: @MainActor (String) -> Void
+  private let onChange: @MainActor (ChatInvalidation) -> Void
+  private let onConnection: @MainActor (RealtimeConnectionStatus) -> Void
   private var realtime: ARTRealtime?
   private var generation = UUID()
   private var connectionAvailability = Availability.connecting
@@ -25,8 +25,8 @@ final class RealtimeService {
   init(
     userID: String, workspaceID: String,
     tokenProvider: @escaping @Sendable () async throws -> Data,
-    onChange: @escaping @MainActor () -> Void,
-    onConnection: @escaping @MainActor (String) -> Void
+    onChange: @escaping @MainActor (ChatInvalidation) -> Void,
+    onConnection: @escaping @MainActor (RealtimeConnectionStatus) -> Void
   ) {
     self.userID = userID
     self.workspaceID = workspaceID
@@ -71,21 +71,16 @@ final class RealtimeService {
         @unknown default: connectionAvailability = .connecting
         }
         reportAvailability()
-        if state == .connected { onChange() }
+        if state == .connected { onChange(.reconnected) }
       }
     }
     for name in channelNames {
       let channel = realtime.channels.get(name)
       channel.subscribe { [weak self] message in
-        let name = message.name ?? ""
-        guard
-          name == "threadListChanged" || name == "chatThreadReadCursorUpdated"
-            || name.hasPrefix("chatThreadMessageCreated:")
-            || name.hasPrefix("chatThreadDetailChanged:")
-        else { return }
+        guard let invalidation = ChatInvalidation(notification: message.name ?? "") else { return }
         Task { @MainActor [weak self] in
           guard let self, self.generation == generation else { return }
-          onChange()
+          onChange(invalidation)
         }
       }
       channel.on { [weak self] change in
@@ -100,7 +95,7 @@ final class RealtimeService {
           @unknown default: channelAvailability[name] = .unavailable
           }
           reportAvailability()
-          if state == .attached { onChange() }
+          if state == .attached { onChange(.reconnected) }
         }
       }
     }
@@ -110,18 +105,18 @@ final class RealtimeService {
   private func reportAvailability() {
     switch connectionAvailability {
     case .disconnected:
-      onConnection("Disconnected")
+      onConnection(.disconnected)
     case .unavailable:
-      onConnection("Live updates unavailable. Pull to refresh.")
+      onConnection(.unavailable)
     case .connecting:
-      onConnection("Connecting")
+      onConnection(.connecting)
     case .connected:
       if channelNames.allSatisfy({ channelAvailability[$0] == .connected }) {
-        onConnection("Connected")
+        onConnection(.connected)
       } else if channelAvailability.values.contains(.unavailable) {
-        onConnection("Live updates unavailable. Pull to refresh.")
+        onConnection(.unavailable)
       } else {
-        onConnection("Connecting")
+        onConnection(.connecting)
       }
     }
   }

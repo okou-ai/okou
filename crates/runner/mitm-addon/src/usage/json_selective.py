@@ -186,12 +186,6 @@ class JsonExtractionResult:
     later value is parsed. This includes descendant scalar values, exact and
     wildcard array counts, object presence, and value presence.
 
-    ``discarded_scalar_paths`` identifies selected strings discarded by their
-    configured overflow policy and intentionally retains that evidence across
-    duplicate occurrences. ``selected_string_max_raw_bytes`` retains the
-    maximum encoded JSON string length observed at each selected path across
-    duplicate occurrences.
-
     Configured scalar-consistency tracking is separate from the normal result
     containers and evaluates every occurrence, including overwritten duplicates.
 
@@ -206,8 +200,6 @@ class JsonExtractionResult:
     wildcard_array_counts: dict[WildcardPath, dict[str, int]] = field(default_factory=dict)
     object_present: set[Path] = field(default_factory=set)
     value_present: set[Path] = field(default_factory=set)
-    discarded_scalar_paths: set[Path] = field(default_factory=set)
-    selected_string_max_raw_bytes: dict[Path, int] = field(default_factory=dict)
     error: str | None = None
 
 
@@ -283,10 +275,8 @@ class JsonSelectiveExtractor:
     object-presence, and value-presence observations. Unrelated wildcard
     observations are retained.
 
-    The diagnostic result fields ``discarded_scalar_paths`` and
-    ``selected_string_max_raw_bytes`` intentionally retain information from all
-    duplicate occurrences. Configured ``scalar_consistency_paths`` also tracks
-    every occurrence, including values overwritten in the normal result. See
+    Configured ``scalar_consistency_paths`` tracks every occurrence, including
+    values overwritten in the normal result. See
     ``tests/test_json_selective_observations.py`` and
     ``tests/test_json_selective_strings.py`` for focused contract examples.
 
@@ -388,8 +378,6 @@ class JsonSelectiveExtractor:
         self.wildcard_array_counts: dict[WildcardPath, dict[str, int]] = {}
         self.object_present: set[Path] = set()
         self.value_present: set[Path] = set()
-        self.discarded_scalar_paths: set[Path] = set()
-        self.selected_string_max_raw_bytes: dict[Path, int] = {}
         self._scalar_consistency: dict[Path, _ScalarConsistency] = {}
 
         self._stack: list[_Frame] = []
@@ -409,8 +397,6 @@ class JsonSelectiveExtractor:
         self.wildcard_array_counts.clear()
         self.object_present.clear()
         self.value_present.clear()
-        self.discarded_scalar_paths.clear()
-        self.selected_string_max_raw_bytes.clear()
         self._scalar_consistency.clear()
 
         self._stack.clear()
@@ -522,10 +508,6 @@ class JsonSelectiveExtractor:
             else {},
             object_present=set(self.object_present) if complete else set(),
             value_present=set(self.value_present) if complete else set(),
-            discarded_scalar_paths=(set(self.discarded_scalar_paths) if complete else set()),
-            selected_string_max_raw_bytes=(
-                dict(self.selected_string_max_raw_bytes) if complete else {}
-            ),
             error=self._error,
         )
 
@@ -967,8 +949,6 @@ class JsonSelectiveExtractor:
         state.raw.append(b)
         if len(state.raw) > state.max_bytes:
             if state.role == "key" or state.overflow_policy == "discard":
-                if state.role == "selected" and state.path is not None:
-                    self.discarded_scalar_paths.add(state.path)
                 state.raw = None
                 return
             self._error = "string limit exceeded"
@@ -1002,10 +982,6 @@ class JsonSelectiveExtractor:
         if state.raw is None:
             self._value_complete()
             return
-        self.selected_string_max_raw_bytes[state.path] = max(
-            len(state.raw),
-            self.selected_string_max_raw_bytes.get(state.path, 0),
-        )
         if _contains_surrogate(value):
             self._value_complete()
             return

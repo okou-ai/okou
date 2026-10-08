@@ -14,6 +14,7 @@ use crate::storage_manifest::StorageManifest;
 
 pub const MAX_HELD_SANDBOX_STATES: usize = 1024;
 pub const MAX_HELD_WORKSPACE_STATES: usize = 1024;
+pub const MAX_ACTIVE_REUSE_PRODUCERS: usize = 1024;
 pub const MAX_WORKSPACE_CACHES_PER_REUSE_KEY: usize = 8;
 pub const MAX_WORKSPACE_CACHES_PER_HEARTBEAT: usize = 1024;
 pub const WORKSPACE_AFFINITY_VERSION: u8 = 1;
@@ -140,6 +141,14 @@ pub struct ExecutionContext {
     pub billable_firewalls: Vec<String>,
     #[serde(default)]
     pub model_usage_provider: Option<String>,
+    /// Total-input threshold at which `model_usage_provider` usage bills the
+    /// long-context tier, captured by the API from the run's Built-in route.
+    /// `Some(0)` is the API's explicit single-tier marker and must be
+    /// forwarded unchanged. Absent only from APIs that predate catalog
+    /// thresholds; only then does the addon fall back to its generated map
+    /// keyed by provider.
+    #[serde(default)]
+    pub model_usage_long_context_min_total_input_tokens: Option<u64>,
     #[serde(default)]
     pub codex_runtime_config: Option<CodexRuntimeConfig>,
     /// Raw Pi launch config retained so additive API fields survive forwarding
@@ -152,6 +161,9 @@ pub struct ExecutionContext {
     /// Chat Thread id used as Pi's official JSONL session id.
     #[serde(default)]
     pub pi_session_id: Option<String>,
+    /// Raw installed-CLI launch requirements, forwarded to the guest.
+    #[serde(default)]
+    pub pi_installed_cli_requirement: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1759,6 +1771,16 @@ pub struct HeldWorkspaceState {
     pub workspace_caches: Vec<WorkspaceCacheCapability>,
 }
 
+/// An active run that can still produce an exact reusable sandbox. This is not
+/// an idle sandbox: the claimant must verify the predecessor locally.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveReuseProducer {
+    pub run_id: RunId,
+    pub reuse_key: String,
+    pub profile: String,
+}
+
 /// Runner state snapshot sent to the server via heartbeat.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1776,6 +1798,9 @@ pub struct HeartbeatState {
     pub admittable_profiles: Vec<String>,
     pub held_sandbox_states: Vec<HeldSandboxState>,
     pub held_workspace_states: Vec<HeldWorkspaceState>,
+    pub active_reuse_producers: Vec<ActiveReuseProducer>,
+    /// Host-local WSS ingress service state, not public WSS reachability.
+    pub wss_ingress_service_active: bool,
     pub mode: String,
 }
 
@@ -1806,10 +1831,6 @@ pub struct CompleteRequest {
     /// failed before the runner reached a reliable final decision.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_reuse_result: Option<WorkspaceReuseResult>,
-    /// Active-input deliveries observed in the guest receipt journal but not
-    /// confirmed through the direct receipt route before process exit.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub active_input_delivery_ids: Vec<String>,
 }
 
 /// Outcome of the sandbox-reuse decision made at job dispatch time. `Reused`
@@ -1969,27 +1990,13 @@ mod tests {
             "sandboxToken": "tok",
             "cliAgentType": "pi",
             "piSessionId": "22222222-2222-4222-8222-222222222222",
-            "piLaunchConfig": {
-                "schemaVersion": 2,
-                "apiFirstTurn": {
-                    "schemaVersion": 1,
-                    "resourceSnapshotDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "manifestUrl": "https://storage.example/manifest.json",
-                    "sessionUrl": "https://storage.example/session.jsonl",
-                    "deadlineAt": 2000000000000_u64,
-                    "baseSession": {
-                        "sessionId": "22222222-2222-4222-8222-222222222222",
-                        "sha256": null
-                    },
-                    "sandboxEventSequenceStart": 1
-                }
-            },
+            "piLaunchConfig": { "schemaVersion": 2 },
             "piModelConfig": {
-                "provider": "deepseek",
-                "baseUrl": "https://api.deepseek.com/",
-                "model": "deepseek-v4-flash",
+                "provider": "openrouter",
+                "baseUrl": "https://openrouter.ai/api/v1",
+                "model": "openai/gpt-6-luna",
                 "apiKeyEnv": "OPENAI_API_KEY",
-                "credentialSecretName": "DEEPSEEK_API_KEY"
+                "credentialSecretName": "OPENROUTER_API_KEY"
             },
             "platformEnvironment": {},
             "connectorRuntimeTargets": []
@@ -2018,7 +2025,7 @@ mod tests {
                 .pi_model_config
                 .as_ref()
                 .and_then(|config| config["model"].as_str()),
-            Some("deepseek-v4-flash")
+            Some("openai/gpt-6-luna")
         );
     }
 
@@ -2274,7 +2281,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: Vec::new(),
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json.get("runId").is_some());
@@ -2285,7 +2291,6 @@ mod tests {
         assert!(json.get("sandboxId").is_none());
         assert!(json.get("sandboxReuseResult").is_none());
         assert!(json.get("workspaceReuseResult").is_none());
-        assert!(json.get("activeInputDeliveryIds").is_none());
     }
 
     #[test]
@@ -2300,7 +2305,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: Vec::new(),
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["error"], "timeout");
@@ -2325,7 +2329,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: Vec::new(),
         };
 
         let json = serde_json::to_value(&req).unwrap();
@@ -2346,16 +2349,11 @@ mod tests {
             sandbox_id: Some(sid),
             sandbox_reuse_result: Some(SandboxReuseResult::Reused),
             workspace_reuse_result: Some(WorkspaceReuseResult::SandboxReused),
-            active_input_delivery_ids: vec!["aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_string()],
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["sandboxId"], "11111111-2222-3333-4444-555555555555");
         assert_eq!(json["sandboxReuseResult"], "reused");
         assert_eq!(json["workspaceReuseResult"], "sandboxReused");
-        assert_eq!(
-            json["activeInputDeliveryIds"],
-            serde_json::json!(["aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"])
-        );
     }
 
     #[test]
@@ -2831,6 +2829,12 @@ mod tests {
                     workspace_affinity_version: WORKSPACE_AFFINITY_VERSION,
                 }],
             }],
+            active_reuse_producers: vec![ActiveReuseProducer {
+                run_id: "22222222-2222-4222-8222-222222222222".parse().unwrap(),
+                reuse_key: "thread:thread-abc".into(),
+                profile: "vm0/default".into(),
+            }],
+            wss_ingress_service_active: true,
             mode: "running".into(),
         };
         let json: serde_json::Value = serde_json::to_value(&state).unwrap();
@@ -2864,6 +2868,12 @@ mod tests {
                         "workspaceAffinityVersion": 1
                     }]
                 }],
+                "activeReuseProducers": [{
+                    "runId": "22222222-2222-4222-8222-222222222222",
+                    "reuseKey": "thread:thread-abc",
+                    "profile": "vm0/default"
+                }],
+                "wssIngressServiceActive": true,
                 "mode": "running"
             })
         );
@@ -2904,11 +2914,14 @@ mod tests {
             admittable_profiles: vec!["vm0/default".into()],
             held_sandbox_states: Vec::new(),
             held_workspace_states: Vec::new(),
+            active_reuse_producers: Vec::new(),
+            wss_ingress_service_active: false,
             mode: "running".into(),
         };
 
         let serialized = serde_json::to_value(state).unwrap();
         assert_eq!(serialized["heldSandboxStates"], json!([]));
         assert_eq!(serialized["heldWorkspaceStates"], json!([]));
+        assert_eq!(serialized["activeReuseProducers"], json!([]));
     }
 }

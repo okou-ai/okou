@@ -1,8 +1,5 @@
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import type {
-  ModelProviderType,
-  ModelProviderFramework,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 
 import {
   parseCodexAuthJson,
@@ -20,80 +17,8 @@ import { logger } from "../../lib/log";
 import { settle, tapError, throwIfAbort } from "../utils";
 
 /**
- * Shape of an upserted provider row that the paste handler serializes into the
- * REST response. Subset of the internal `ModelProviderInfo` (drops `userId`,
- * `tokenExpiresAt`) — kept here so both org and personal routes share one DTO.
- */
-interface UpsertedProvider {
-  id: string;
-  modelProviderId?: string;
-  isActive?: boolean;
-  type: ModelProviderType;
-  framework: ModelProviderFramework;
-  secretName: string | null;
-  authMethod?: string | null;
-  secretNames?: string[] | null;
-  isDefault: boolean;
-  selectedModel: string | null;
-  accountEmail?: string | null;
-  workspaceName?: string | null;
-  planType?: string | null;
-  subscriptionResetPeriod?: string | null;
-  subscriptionNextResetAt?: Date | string | null;
-  needsReconnect: boolean;
-  lastRefreshErrorCode: string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-}
-
-function serializeDate(value: Date | string): string {
-  return typeof value === "string" ? value : value.toISOString();
-}
-
-function serializeNullableDate(
-  value: Date | string | null | undefined,
-): string | null {
-  return value ? serializeDate(value) : null;
-}
-
-/**
- * Serialize an upserted model-provider row into the REST DTO shape (Date →
- * ISO string). Shared between org and personal paste handlers so the wire
- * format cannot drift.
- */
-function serializeUpsertedProvider(provider: UpsertedProvider) {
-  return {
-    id: provider.id,
-    ...(provider.modelProviderId
-      ? { modelProviderId: provider.modelProviderId }
-      : {}),
-    ...(provider.isActive !== undefined ? { isActive: provider.isActive } : {}),
-    type: provider.type,
-    framework: provider.framework,
-    secretName: provider.secretName,
-    authMethod: provider.authMethod ?? null,
-    secretNames: provider.secretNames ?? null,
-    isDefault: provider.isDefault,
-    selectedModel: provider.selectedModel,
-    accountEmail: provider.accountEmail ?? null,
-    workspaceName: provider.workspaceName ?? null,
-    planType: provider.planType ?? null,
-    subscriptionResetPeriod: provider.subscriptionResetPeriod ?? null,
-    subscriptionNextResetAt: serializeNullableDate(
-      provider.subscriptionNextResetAt,
-    ),
-    needsReconnect: provider.needsReconnect,
-    lastRefreshErrorCode: provider.lastRefreshErrorCode,
-    createdAt: serializeDate(provider.createdAt),
-    updatedAt: serializeDate(provider.updatedAt),
-  };
-}
-
-/**
- * Caller-supplied upsert. Org route binds this to
- * `upsertOrgMultiAuthModelProvider`, personal route binds it to a closure
- * over `upsertUserMultiAuthModelProvider(orgId, userId, ...)`. Both signatures
- * normalize to the same shape from the handler's perspective.
+ * Caller-supplied upsert. Personal routes bind it to
+ * `upsertPersonalModelProviderAccount$`.
  */
 type UpsertCodexProvider = (args: {
   authMethod: "auth_json";
@@ -103,7 +28,6 @@ type UpsertCodexProvider = (args: {
     CHATGPT_ACCOUNT_ID: string;
     CHATGPT_ID_TOKEN: string;
   };
-  selectedModel: string | undefined;
   metadata: {
     externalAccountId: string;
     accountEmail: string | null;
@@ -114,34 +38,16 @@ type UpsertCodexProvider = (args: {
     subscriptionNextResetAt?: Date | null;
   };
 }) => Promise<
-  | { provider: UpsertedProvider; created: boolean }
+  | { provider: ModelProviderResponse; created: boolean }
   | PersonalProviderAccountErrorResponse
 >;
 
-/**
- * Common args shared by both scopes. Split out so the discriminated union
- * below can intersect each scope's identity fields onto the same payload
- * without repeating the paste-flow inputs.
- */
-interface CodexAuthJsonPasteCommonArgs {
+interface CodexAuthJsonPasteArgs {
+  orgId: string;
+  userId: string;
   rawAuthJson: string;
-  selectedModel: string | undefined;
   upsert: UpsertCodexProvider;
 }
-
-/**
- * Discriminated union over the calling scope. The org variant carries only
- * `orgId`; the personal variant additionally requires `userId`. Encoded in
- * the type system (rather than as a doc-comment on a `userId?: string`) so
- * the personal call site cannot compile without a real userId.
- */
-type CodexAuthJsonPasteArgs =
-  | ({ scope: "org"; orgId: string } & CodexAuthJsonPasteCommonArgs)
-  | ({
-      scope: "personal";
-      orgId: string;
-      userId: string;
-    } & CodexAuthJsonPasteCommonArgs);
 
 /**
  * Handle the codex-oauth-token + auth_json paste-based connect flow.
@@ -150,21 +56,15 @@ type CodexAuthJsonPasteArgs =
  * derived `CHATGPT_*` fields via the caller-supplied upsert. The raw
  * `CODEX_AUTH_JSON` blob is NEVER persisted (per Epic #11974 / #7365).
  *
- * Shared implementation for API org and personal model-provider paste routes.
+ * Shared implementation for personal model-provider paste and device-auth
+ * routes.
  */
 export async function handleCodexAuthJsonPaste(
   args: CodexAuthJsonPasteArgs,
   signal: AbortSignal,
 ) {
-  const log = logger(
-    args.scope === "personal"
-      ? "api:personal-model-providers"
-      : "api:org-model-providers",
-  );
-  const logContext =
-    args.scope === "personal"
-      ? { orgId: args.orgId, userId: args.userId }
-      : { orgId: args.orgId };
+  const log = logger("api:personal-model-providers");
+  const logContext = { orgId: args.orgId, userId: args.userId };
 
   const pasteResult = await settle(
     (async () => {
@@ -203,7 +103,6 @@ export async function handleCodexAuthJsonPaste(
             CHATGPT_ACCOUNT_ID: parsed.accountId,
             CHATGPT_ID_TOKEN: parsed.idToken,
           },
-          selectedModel: args.selectedModel,
           metadata: {
             externalAccountId: parsed.accountId,
             accountEmail:
@@ -226,11 +125,9 @@ export async function handleCodexAuthJsonPaste(
       if ("status" in upserted) {
         return upserted;
       }
-      const { provider, created } = upserted;
-
       return {
-        status: (created ? 201 : 200) as 200 | 201,
-        body: { provider: serializeUpsertedProvider(provider), created },
+        status: (upserted.created ? 201 : 200) as 200 | 201,
+        body: upserted,
       };
     })(),
     signal,
@@ -243,24 +140,17 @@ export async function handleCodexAuthJsonPaste(
   const { error } = pasteResult;
   throwIfAbort(error);
   if (isCodexAuthJsonFreePlanError(error)) {
-    log.debug(
-      args.scope === "personal"
-        ? "rejected personal codex auth_json paste: free plan"
-        : "rejected codex auth_json paste: free plan",
-      logContext,
-    );
+    log.debug("rejected personal codex auth_json paste: free plan", logContext);
     return createErrorResponse(
       "CODEX_FREE_PLAN_REJECTED",
       "ChatGPT free plan is not supported — upgrade to Plus or higher.",
     );
   }
   if (isCodexAuthJsonShapeError(error)) {
-    log.warn(
-      args.scope === "personal"
-        ? "rejected personal codex auth_json paste: shape"
-        : "rejected codex auth_json paste: shape",
-      { ...logContext, errorMessage: error.message },
-    );
+    log.warn("rejected personal codex auth_json paste: shape", {
+      ...logContext,
+      errorMessage: error.message,
+    });
     return createErrorResponse("CODEX_AUTH_JSON_SHAPE_INVALID", error.message);
   }
   throw error;

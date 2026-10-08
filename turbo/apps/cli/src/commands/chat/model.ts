@@ -1,28 +1,40 @@
-import { isMemberModelPolicyAvailable } from "@okouai/api-contracts/contracts/member-model-policy";
+import type { ChatThreadMetadata } from "@okouai/api-contracts/contracts/chat-threads";
+import { isMemberRunModelAvailable } from "@okouai/api-contracts/contracts/member-run-model";
+import type { ModelCatalogResponse } from "@okouai/api-contracts/contracts/model-catalog";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import chalk from "chalk";
 import { Command } from "commander";
-import type { ChatThreadMetadata } from "@okouai/api-contracts/contracts/chat-threads";
-import type {
-  OrgModelPoliciesResponse,
-  OrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
-import { getModelDisplayName } from "@okouai/core/model-display-name";
 import {
   getChatThread,
   updateChatThreadModelSelection,
 } from "../../lib/api/domains/chat";
-import { listModelPolicies } from "../../lib/api/domains/model-policies";
+import { getModelCatalog } from "../../lib/api/domains/model-catalog";
+import { listRunModels } from "../../lib/api/domains/run-models";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
+  AUTO_MODEL_LABEL,
+  formatCatalogModelSelection,
+  formatCatalogThreadModel,
+  formatModelSelectionArgument,
+  getCatalogModelDisplayName,
+  getCatalogModelEfforts,
+  isCatalogModelActive,
+  parseModelSelectionArgument,
+  resolveCatalogModel,
+  sortByCatalogOrder,
+} from "../../lib/domain/model-catalog-display";
+import {
   formatModelProviderRoute,
-  formatModelPolicyStatus,
-} from "../../lib/domain/model-policy-display";
-import { isUuid } from "../../lib/utils/uuid";
+  formatRunModelStatus,
+} from "../../lib/domain/run-model-display";
 import { getOkouChatThreadId } from "../../lib/okou-env";
+import { isUuid } from "../../lib/utils/uuid";
+import { parseChatEffort } from "./shared";
 
 interface ModelOptions {
   readonly help?: boolean;
   readonly thread?: string;
+  readonly effort?: string;
 }
 
 function getCurrentChatThreadId(): string | undefined {
@@ -35,115 +47,208 @@ function printUsageError(message: string, hint: string): never {
   process.exit(1);
 }
 
-function switchablePolicies(policies: readonly OrgModelPolicy[]) {
-  return policies.filter((policy) => {
-    return isMemberModelPolicyAvailable(policy);
-  });
+/** Pickers only offer active catalog models the member can use. */
+function switchablePolicies(
+  catalog: ModelCatalogResponse,
+  models: readonly AvailableRunModel[],
+) {
+  return sortByCatalogOrder(
+    catalog,
+    models.filter((runModel) => {
+      return (
+        isCatalogModelActive(catalog, runModel.model) &&
+        isMemberRunModelAvailable(runModel)
+      );
+    }),
+  );
 }
 
-function formatModelName(policy: OrgModelPolicy): string {
-  return `${policy.modelLabel} ${chalk.dim(`(${policy.model})`)}`;
+/** The display name with the argument that selects it, such as `Auto (auto)`. */
+function formatModelName(
+  catalog: ModelCatalogResponse,
+  model: string | null,
+): string {
+  const name =
+    model === null
+      ? AUTO_MODEL_LABEL
+      : getCatalogModelDisplayName(catalog, model);
+  return `${name} ${chalk.dim(`(${formatModelSelectionArgument(model)})`)}`;
 }
 
-function printSwitchableModels(policies: readonly OrgModelPolicy[]): void {
-  const switchable = switchablePolicies(policies);
+function printSwitchableModels(
+  catalog: ModelCatalogResponse,
+  models: readonly AvailableRunModel[],
+): void {
+  const switchable = switchablePolicies(catalog, models);
   if (switchable.length === 0) {
     console.log(chalk.dim("No switchable models are available for this user"));
     return;
   }
 
-  for (const policy of switchable) {
-    const defaultMarker = policy.isDefault ? chalk.dim(" (default)") : "";
-    console.log(`  - ${formatModelName(policy)}${defaultMarker}`);
-    console.log(`    provider: ${formatModelProviderRoute(policy)}`);
+  for (const runModel of switchable) {
+    const defaultMarker =
+      runModel.model === null ? chalk.dim(" (default)") : "";
+    const efforts = getCatalogModelEfforts(
+      catalog,
+      resolveCatalogModel(catalog, runModel.model),
+    );
+    console.log(
+      `  - ${formatModelName(catalog, runModel.model)}${defaultMarker}`,
+    );
+    console.log(`    provider: ${formatModelProviderRoute(runModel)}`);
+    console.log(
+      `    efforts: ${efforts.length > 0 ? efforts.join(", ") : "none"}`,
+    );
   }
-}
-
-function formatThreadModel(
-  thread: ChatThreadMetadata,
-  policies: OrgModelPoliciesResponse,
-): string {
-  const model = thread.selectedModel ?? policies.workspaceDefaultModel;
-  if (!model) {
-    return "(default)";
-  }
-  const policy = policies.policies.find((candidate) => {
-    return candidate.model === model;
-  });
-  return `${policy?.modelLabel ?? getModelDisplayName(model)} (${model})`;
 }
 
 function printCurrentModel(
   thread: ChatThreadMetadata,
-  policies: OrgModelPoliciesResponse,
+  catalog: ModelCatalogResponse,
 ): void {
   console.log(chalk.green("✓ Chat thread loaded"));
   console.log(chalk.dim(`  Thread: ${thread.id}`));
   console.log(chalk.dim(`  Title:  ${thread.title ?? "(untitled)"}`));
-  console.log(chalk.dim(`  Model:  ${formatThreadModel(thread, policies)}`));
+  console.log(
+    chalk.dim(
+      `  Model:  ${formatCatalogThreadModel(catalog, thread.selectedModel, thread.modelSettings)}`,
+    ),
+  );
 }
 
 async function printModelHelp(command: Command): Promise<void> {
-  const result = await listModelPolicies();
+  const [result, catalog] = await Promise.all([
+    listRunModels(),
+    getModelCatalog(),
+  ]);
   console.log(command.helpInformation().trimEnd());
   console.log();
   console.log(chalk.bold("Switchable models:"));
-  printSwitchableModels(result.policies);
+  printSwitchableModels(catalog, result.models);
   console.log();
-  console.log("Use the model id in parentheses:");
-  console.log(chalk.cyan("  okou chat model [--thread <thread-id>] <model>"));
+  console.log(
+    "Effort levels depend on the model; Claude uses extra where Codex uses xhigh.",
+  );
+  console.log("Use the model id in parentheses, or auto for Auto:");
+  console.log(
+    chalk.cyan(
+      "  okou chat model [--thread <thread-id>] <model> [--effort <level>]",
+    ),
+  );
+  console.log(
+    chalk.cyan("  okou chat model [--thread <thread-id>] --effort <level>"),
+  );
 }
 
 async function printCurrentModelAndChoices(threadId: string): Promise<void> {
-  const [thread, result] = await Promise.all([
+  const [thread, result, catalog] = await Promise.all([
     getChatThread({ threadId }),
-    listModelPolicies(),
+    listRunModels(),
+    getModelCatalog(),
   ]);
 
-  printCurrentModel(thread, result);
+  printCurrentModel(thread, catalog);
   console.log();
   console.log(chalk.bold("Switchable models:"));
-  printSwitchableModels(result.policies);
+  printSwitchableModels(catalog, result.models);
   console.log();
   console.log("Switch models:");
   console.log(chalk.cyan(`  okou chat model --thread ${threadId} <model>`));
 }
 
-async function switchModel(threadId: string, model: string): Promise<void> {
-  const result = await listModelPolicies();
-  const policy = result.policies.find((candidate) => {
+async function switchModel(
+  threadId: string,
+  model: string | null,
+  effort?: string,
+): Promise<void> {
+  const [result, catalog] = await Promise.all([
+    listRunModels(),
+    getModelCatalog(),
+  ]);
+  if (model !== null) {
+    const resolved = resolveCatalogModel(catalog, model);
+    if (resolved !== model) {
+      printUsageError(
+        `Model is retired: ${model}`,
+        `Use its replacement: okou chat model ${resolved}`,
+      );
+    }
+  }
+  const runModel = result.models.find((candidate) => {
     return candidate.model === model;
   });
 
-  if (!policy) {
-    printUsageError(`Unknown model: ${model}`, "Run: okou chat model --help");
-  }
-
-  if (!isMemberModelPolicyAvailable(policy)) {
-    const status = formatModelPolicyStatus(policy);
-    const reason = status ? ` (${status})` : "";
+  const argument = formatModelSelectionArgument(model);
+  if (!runModel) {
     printUsageError(
-      `Model is not switchable: ${model}${reason}`,
+      `Unknown model: ${argument}`,
       "Run: okou chat model --help",
     );
   }
 
+  if (!isMemberRunModelAvailable(runModel)) {
+    const status = formatRunModelStatus(runModel);
+    const reason = status ? ` (${status})` : "";
+    printUsageError(
+      `Model is not switchable: ${argument}${reason}`,
+      "Run: okou chat model --help",
+    );
+  }
+
+  const reasoningEffort =
+    effort === undefined
+      ? undefined
+      : parseChatEffort(effort, { catalog, model });
   const updated = await updateChatThreadModelSelection({
     threadId,
     model,
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
   });
 
   console.log(chalk.green("✓ Chat model updated"));
   console.log(chalk.dim(`  Thread: ${updated.threadId}`));
-  console.log(chalk.dim(`  Model:  ${policy.modelLabel} (${model})`));
+  console.log(
+    chalk.dim(
+      `  Model:  ${formatCatalogModelSelection(catalog, model)}${reasoningEffort ? ` · effort ${reasoningEffort}` : ""}`,
+    ),
+  );
+}
+
+async function updateCurrentEffort(
+  threadId: string,
+  effort: string,
+): Promise<void> {
+  const [thread, catalog] = await Promise.all([
+    getChatThread({ threadId }),
+    getModelCatalog(),
+  ]);
+  // A retired selection runs as its replacement, so the effort applies there.
+  const model =
+    thread.selectedModel === null
+      ? null
+      : resolveCatalogModel(catalog, thread.selectedModel);
+  const reasoningEffort = parseChatEffort(effort, { catalog, model });
+  await updateChatThreadModelSelection({
+    threadId,
+    model,
+    reasoningEffort,
+  });
+  console.log(chalk.green("✓ Chat model updated"));
+  console.log(chalk.dim(`  Thread: ${threadId}`));
+  console.log(
+    chalk.dim(
+      `  Model:  ${formatCatalogModelSelection(catalog, model)} · effort ${reasoningEffort}`,
+    ),
+  );
 }
 
 export const modelCommand = new Command()
   .name("model")
   .description("Show or switch the current web chat thread model")
-  .argument("[model]", "Model id to use for this chat thread")
+  .argument("[model]", "Model id to use for this chat thread, or auto for Auto")
   .helpOption(false)
   .option("--thread <id>", "Chat thread ID (defaults to OKOU_CHAT_THREAD_ID)")
+  .option("--effort <level>", "Set reasoning effort for the selected model")
   .option("-h, --help", "Show help with switchable models")
   .addHelpText(
     "after",
@@ -152,10 +257,14 @@ Examples:
   Show this chat model:     okou chat model
   Show another chat model:  okou chat model --thread <thread-id>
   Switch this model:        okou chat model claude-sonnet-5
+  Switch to Auto:           okou chat model auto
   Switch another model:     okou chat model --thread <thread-id> claude-sonnet-5
+  Switch with effort:       okou chat model claude-opus-5-5 --effort extra
+  Change only effort:      okou chat model --effort max
 
 Notes:
   - Defaults --thread to OKOU_CHAT_THREAD_ID
+  - Effort levels depend on the model; Claude uses extra where Codex uses xhigh
   - Authenticates via OKOU_TOKEN (requires chat-thread:write capability to switch)`,
   )
   .action(
@@ -181,11 +290,19 @@ Notes:
         }
 
         if (!model) {
-          await printCurrentModelAndChoices(threadId);
+          if (options.effort !== undefined) {
+            await updateCurrentEffort(threadId, options.effort);
+          } else {
+            await printCurrentModelAndChoices(threadId);
+          }
           return;
         }
 
-        await switchModel(threadId, model);
+        await switchModel(
+          threadId,
+          parseModelSelectionArgument(model),
+          options.effort,
+        );
       },
     ),
   );

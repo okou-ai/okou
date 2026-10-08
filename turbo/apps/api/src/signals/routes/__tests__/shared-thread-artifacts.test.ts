@@ -1,3 +1,4 @@
+import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -52,7 +53,7 @@ const runs = createRunsApi(context);
 const mocks = createRouteMocks(context);
 
 beforeEach(() => {
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("R2_HOSTED_SITES_ACCESS_KEY_ID", "snapshot-hosted-key");
@@ -103,7 +104,7 @@ async function fixture() {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Resource snapshot",
   });
@@ -328,16 +329,10 @@ async function fixture() {
     content: string,
     omitted = "Unselected private information",
   ) {
-    const sent = await accept(
-      chat.requestSendEvent(
-        actor,
-        { agentId: agent.agentId, prompt: content },
-        [201],
-      ),
-      [201],
-    );
-    await flushWaitUntilForTest();
-    const { threadId, runId } = sent.body;
+    const { threadId, runId } = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: content,
+    });
     await chat.requestSendEvent(
       actor,
       { agentId: agent.agentId, threadId, prompt: omitted },
@@ -350,9 +345,6 @@ async function fixture() {
     });
     if (!event) {
       throw new Error("Expected selected message");
-    }
-    if (!runId) {
-      throw new Error("Expected a run for the selected message");
     }
     return { threadId, runId, eventId: event.id, content };
   }
@@ -1239,15 +1231,24 @@ test.each(["publish", "delete", "cancel"] as const)(
       }
       return result;
     });
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     server.use(
-      http.post("https://openrouter.ai/api/v1/chat/completions", async () => {
+      http.post(VERTEX_TEXT_URL, async () => {
         titleEntered.resolve(undefined);
         await releaseTitle.promise;
         providerReturned.resolve(undefined);
         return HttpResponse.json({
-          choices: [
-            { finish_reason: "stop", message: { content: "Shared report" } },
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: "Shared report",
+                  },
+                ],
+              },
+            },
           ],
         });
       }),
@@ -1324,6 +1325,118 @@ test.each(["publish", "delete", "cancel"] as const)(
     });
   },
 );
+
+test("a losing snapshot creator preserves the ordinary share that won its client ID", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const privateSelection = await f.selection(file.url);
+  const ordinarySelection = await f.selection(
+    "Ordinary conversation remains readable",
+  );
+  const id = randomUUID();
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  const originalSend = context.mocks.s3.send.getMockImplementation()!;
+  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    const response = await originalSend(command);
+    if (
+      command instanceof PutObjectCommand &&
+      command.input.Key === `shared-thread-artifacts/okou/${id}.json` &&
+      command.input.IfNoneMatch === "*"
+    ) {
+      entered.resolve(undefined);
+      await release.promise;
+    }
+    return response;
+  });
+  const pending = api()(sharedThreadsContract).create({
+    headers: headers(f.actor),
+    params: { threadId: privateSelection.threadId },
+    body: { id, eventIds: [privateSelection.eventId] },
+  });
+  const outcome = Promise.allSettled([pending]);
+  onTestFinished(async () => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+    await outcome;
+  });
+  await entered.promise;
+  await accept(
+    api()(sharedThreadsContract).create({
+      headers: headers(f.actor),
+      params: { threadId: ordinarySelection.threadId },
+      body: { id, eventIds: [ordinarySelection.eventId] },
+    }),
+    [201],
+  );
+  release.resolve(undefined);
+  await accept(pending, [409]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id } }),
+    [200],
+  );
+  expect(shared.body.messages).toContainEqual(
+    expect.objectContaining({
+      content: "Ordinary conversation remains readable",
+    }),
+  );
+  await accept(api()(sharedThreadsContract).meta({ params: { id } }), [200]);
+});
+
+test("deletes an unpublished snapshot while copying and never republishes its grant", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const selection = await f.selection(file.url);
+  const id = randomUUID();
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  const originalSend = context.mocks.s3.send.getMockImplementation()!;
+  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    if (command instanceof CopyObjectCommand) {
+      entered.resolve(undefined);
+      await release.promise;
+    }
+    return originalSend(command);
+  });
+  const pending = api()(sharedThreadsContract).create({
+    headers: headers(f.actor),
+    params: { threadId: selection.threadId },
+    body: { id, eventIds: [selection.eventId] },
+  });
+  const outcome = Promise.allSettled([pending]);
+  onTestFinished(async () => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+    await outcome;
+  });
+  await entered.promise;
+  await accept(api()(sharedThreadsContract).get({ params: { id } }), [404]);
+  await accept(api()(sharedThreadsContract).meta({ params: { id } }), [404]);
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id },
+    }),
+    [204],
+  );
+  release.resolve(undefined);
+  await accept(pending, [400]);
+  await accept(api()(sharedThreadsContract).get({ params: { id } }), [404]);
+  await accept(api()(sharedThreadsContract).meta({ params: { id } }), [404]);
+  expect(
+    (await chat.listArtifactCatalog(f.actor, { kind: "shared-thread" }))
+      .artifacts,
+  ).toStrictEqual([]);
+  await accept(
+    api()(artifactReferencesContract).resolve({
+      headers: headers(f.actor),
+      params: { reference: referenceName(file.url) },
+    }),
+    [200],
+  );
+});
 
 test("drains an in-flight copy before rolling back another copy's failure", async () => {
   const f = await fixture();

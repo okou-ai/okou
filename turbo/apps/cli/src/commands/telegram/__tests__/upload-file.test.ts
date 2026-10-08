@@ -121,20 +121,19 @@ describe("okou telegram upload-file command", () => {
       "cli",
       "--file",
       testFilePath,
-      "--bot-id",
-      "123456789",
-      "--chat-id",
+      "--to",
       "-1001234567890",
-      "--caption",
+      "--text",
       "Daily report",
-      "--message-thread-id",
+      "--topic",
       "42",
+      "--json",
     ]);
 
     expect(putReceivedContentType).toBe("application/pdf");
     expect(completeBody).toMatchObject({
       uploadId: "00000000-0000-4000-8000-000000000001",
-      botId: "123456789",
+      botId: "official",
       chatId: "-1001234567890",
       contentType: "application/pdf",
       caption: "Daily report",
@@ -142,19 +141,20 @@ describe("okou telegram upload-file command", () => {
     });
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    const parsed = JSON.parse(stdout) as Record<string, unknown>;
-    expect(parsed).toMatchObject({
-      messageId: 321,
+    expect(JSON.parse(stdout)).toStrictEqual({
+      integration: "telegram",
       chatId: "-1001234567890",
-      fileId: "tg-file-id",
-      filename: "report.pdf",
-      mimetype: "application/pdf",
-      size: 20,
-      url: expectedUrl,
+      messages: [{ id: "321", url: null }],
+      file: {
+        name: "report.pdf",
+        contentType: "application/pdf",
+        size: 20,
+        url: expectedUrl,
+      },
     });
   });
 
-  it("respects --content-type override", async () => {
+  it("respects --content-type override and prints a human summary", async () => {
     const dataPath = join(tmpDir, "data.bin");
     writeFileSync(dataPath, "a,b\n1,2");
 
@@ -194,17 +194,19 @@ describe("okou telegram upload-file command", () => {
       "cli",
       "-f",
       dataPath,
-      "--bot-id",
-      "123456789",
-      "-c",
+      "--to",
       "@channel",
       "--content-type",
       "text/csv",
     ]);
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    const parsed = JSON.parse(stdout) as Record<string, unknown>;
-    expect(parsed.mimetype).toBe("text/csv");
+    expect(stdout).toContain("✓ File uploaded (id: 322)");
+    expect(stdout).toContain("chat: @channel");
+    expect(stdout).toContain("file: data.bin (text/csv, 7 bytes)");
+    expect(stdout).toContain(
+      "url: https://app.example/f/user/00000000-0000-4000-8000-000000000002/data.bin",
+    );
   });
 
   it("errors when the file does not exist", async () => {
@@ -214,9 +216,7 @@ describe("okou telegram upload-file command", () => {
         "cli",
         "-f",
         join(tmpDir, "missing.pdf"),
-        "--bot-id",
-        "123456789",
-        "-c",
+        "--to",
         "-1001234567890",
       ]);
     }).rejects.toThrow("process.exit called");
@@ -226,24 +226,22 @@ describe("okou telegram upload-file command", () => {
     );
   });
 
-  it("errors when message-thread-id is not a positive integer", async () => {
+  it("errors when --topic is not a positive integer", async () => {
     await expect(async () => {
       await uploadFileCommand.parseAsync([
         "node",
         "cli",
         "-f",
         testFilePath,
-        "--bot-id",
-        "123456789",
-        "-c",
+        "--to",
         "-1001234567890",
-        "--message-thread-id",
+        "--topic",
         "not-a-number",
       ]);
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining("message-thread-id must be a positive integer"),
+      expect.stringContaining("--topic must be a positive integer"),
     );
   });
 
@@ -282,9 +280,7 @@ describe("okou telegram upload-file command", () => {
         "cli",
         "-f",
         testFilePath,
-        "--bot-id",
-        "123456789",
-        "-c",
+        "--to",
         "-1001234567890",
       ]);
     }).rejects.toThrow("process.exit called");

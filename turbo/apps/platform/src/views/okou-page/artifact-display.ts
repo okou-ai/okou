@@ -16,8 +16,18 @@ type ArtifactDisplayKind =
 
 type ArtifactTitleMetadata = Pick<
   AttachmentArtifactMetadata,
-  "artifactKind" | "contentType" | "createdAt" | "filename" | "size"
+  | "aliasUrl"
+  | "artifactKind"
+  | "contentType"
+  | "createdAt"
+  | "filename"
+  | "size"
 >;
+
+export interface ArtifactTitleLink {
+  readonly href: string;
+  readonly label: string;
+}
 
 type ArtifactTitleKind =
   | "presentation"
@@ -240,15 +250,63 @@ export function artifactFallbackSubtitle(
   return artifactKindTitle(artifactTitleKind(kind, filename, undefined));
 }
 
+function hostedSiteLink(
+  aliasUrl: string | undefined,
+): ArtifactTitleLink | null {
+  if (!aliasUrl || !URL.canParse(aliasUrl)) {
+    return null;
+  }
+  const url = new URL(aliasUrl);
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return null;
+  }
+  const path = url.pathname === "/" ? "" : url.pathname;
+  return { href: url.href, label: `${url.host}${path}` };
+}
+
+/**
+ * A public hosted site is addressed by its own URL, so the header shows that
+ * address in place of the entry filename. Private sites have no public alias
+ * and keep the filename.
+ */
+export function artifactTitleLink(
+  kind: ArtifactDisplayKind,
+  meta: ArtifactTitleMetadata,
+): ArtifactTitleLink | null {
+  return artifactTitleKind(kind, meta.filename, meta.artifactKind) ===
+    "hosted-site"
+    ? hostedSiteLink(meta.aliasUrl)
+    : null;
+}
+
+function hostedSiteSubtitle(meta: ArtifactTitleMetadata): string {
+  const updated = i18n.t(
+    ($) => {
+      return $.artifacts.metadata.updated;
+    },
+    {
+      date: formatArtifactGeneratedTime(meta.createdAt),
+    },
+  );
+  // The artifact is recorded when the site is published, so its creation time
+  // is when this version went live. Byte size says nothing useful about a site.
+  return hostedSiteLink(meta.aliasUrl)
+    ? updated
+    : [artifactKindTitle("hosted-site"), updated].join(" · ");
+}
+
 export function artifactTitleSubtitle(
   kind: ArtifactDisplayKind,
   meta: ArtifactTitleMetadata,
   options: { readonly showSize?: boolean } = {},
 ): string {
   const titleKind = artifactTitleKind(kind, meta.filename, meta.artifactKind);
+  if (titleKind === "hosted-site") {
+    return hostedSiteSubtitle(meta);
+  }
   const parts = [artifactKindTitle(titleKind)];
   const format = artifactFormat(meta);
-  if (format && titleKind !== "hosted-site") {
+  if (format) {
     parts.push(format);
   }
   if (options.showSize ?? true) {

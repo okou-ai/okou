@@ -1,8 +1,5 @@
 import { z } from "zod";
 import {
-  piApiFirstTurnConfigSchema,
-  activeInputDeliveryReserveResponseSchema,
-  activeInputDeliveryReceiptResponseSchema,
   artifactMissingRootPolicySchema,
   builtInModelProviderConnectionSourceSchema,
   piLaunchConfigSchema,
@@ -11,10 +8,11 @@ import {
   piModelConfigV3Schema,
   runnersModelProviderFailuresContract,
   runnerCancellationResponseSchema,
+  runnerNextSteerableInputResponseSchema,
+  runnerSteeredInputResponseSchema,
   sessionHistoryEncodingSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
-import { piNativeTypeBindings } from "./pi-native-types";
 import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
@@ -87,16 +85,20 @@ export const rustTypeModuleDocs = [
     ],
   },
   {
-    rustModulePath: ["runners", "runs", "active_inputs"],
-    rustDoc: ["DTOs for durable active-input delivery."],
+    rustModulePath: ["runners", "runs", "steerable_inputs"],
+    rustDoc: [
+      "DTOs for steering prompts and run-targeted budgets into a running run.",
+    ],
   },
   {
-    rustModulePath: ["runners", "runs", "active_inputs", "reserve"],
-    rustDoc: ["DTOs for reserving or retrieving active-input delivery."],
+    rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
+    rustDoc: [
+      "DTOs for reading the next steerable prompt or run-targeted budget.",
+    ],
   },
   {
-    rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
-    rustDoc: ["DTOs for recording active-input acceptance receipts."],
+    rustModulePath: ["runners", "runs", "steerable_inputs", "steered"],
+    rustDoc: ["DTOs for declaring a prompt or run-targeted budget steered."],
   },
   {
     rustModulePath: ["runners", "runs", "model_provider_failures"],
@@ -183,7 +185,6 @@ export const rustTypeBindings = [
   },
   ...sshTypeBindings,
   ...vncTypeBindings,
-  ...piNativeTypeBindings,
   {
     schema: modelProviderCodexRuntimeConfigSchema,
     rustModulePath: ["runners", "runs"],
@@ -205,7 +206,6 @@ export const rustTypeBindings = [
           name: ["Display name recorded for the Codex provider."],
           baseUrl: ["Base URL for the provider's Responses API."],
           envKey: ["Environment variable containing the provider credential."],
-          httpHeaders: ["Optional static HTTP headers for provider requests."],
           requiresOpenaiAuth: [
             "Optional override for Codex's built-in OpenAI authentication requirement.",
           ],
@@ -221,9 +221,7 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema: piLaunchConfigSchema
-      .unwrap()
-      .safeExtend({ apiFirstTurn: piApiFirstTurnConfigSchema }),
+    schema: piLaunchConfigSchema.unwrap(),
     rustModulePath: ["runners", "runs"],
     rustTypeName: "PiLaunchConfig",
     direction: "response",
@@ -235,7 +233,6 @@ export const rustTypeBindings = [
         ],
         fields: {
           schemaVersion: ["Pi launch contract version."],
-          apiFirstTurn: ["Configuration for the API-mediated first turn."],
           memoryRecall: [
             "Optional frozen memory-summary selection for API and Sandbox parity.",
           ],
@@ -288,42 +285,6 @@ export const rustTypeBindings = [
           ready: ["The launch epoch contains an authenticated summary."],
         },
       },
-      {
-        rustTypeName: "PiLaunchConfigApiFirstTurn",
-        rustDoc: ["API-mediated first-turn configuration for Pi."],
-        fields: {
-          schemaVersion: ["Pi API first-turn contract version."],
-          resourceSnapshotDigest: [
-            "Digest identifying the runtime resource snapshot.",
-          ],
-          manifestUrl: ["URL of the first-turn resource manifest."],
-          sessionUrl: ["URL of the first-turn session JSONL."],
-          deadlineAt: ["Unix timestamp in milliseconds for first-turn expiry."],
-          baseSession: ["Checkpoint used as the base Pi session."],
-          sandboxEventSequenceStart: [
-            "First sandbox event sequence number for the resumed session.",
-          ],
-          requiredPiAgentRuntimeVersion: [
-            "Exact pi-agent-runtime release the API prepared this turn with;",
-            "the guest execs the rootfs-installed CLI only on an exact match.",
-          ],
-          minCliVersion: [
-            "Lowest installed Okou CLI release allowed to run this launch payload.",
-          ],
-          requiredPiSessionConstructionDigest: [
-            "Digest of the session construction the API prepared this turn with;",
-            "when present it replaces the runtime version as the parity key.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "PiLaunchConfigApiFirstTurnBaseSession",
-        rustDoc: ["Pi session checkpoint used as the first-turn base."],
-        fields: {
-          sessionId: ["Pi session identifier."],
-          sha256: ["Nullable lowercase SHA-256 of the base session JSONL."],
-        },
-      },
     ],
   },
   {
@@ -352,30 +313,13 @@ export const rustTypeBindings = [
           credentialSecretName: [
             "API-owned credential secret backing the environment entry.",
           ],
-          credentialHeader: [
-            "Optional non-secret custom gateway credential header policy.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigCredentialHeader",
-        rustDoc: ["Non-secret custom gateway credential header policy."],
-        fields: {
-          name: ["Request header name."],
-          valueTemplate: [
-            "Header value template containing the credential placeholder exactly once.",
-          ],
         },
       },
       {
         rustTypeName: "PiModelConfigProvider",
         rustDoc: ["Model providers supported by the Pi runtime contract."],
         variants: {
-          deepseek: ["DeepSeek provider."],
-          moonshotai: ["Moonshot AI provider."],
-          openai: ["OpenAI provider."],
           openrouter: ["OpenRouter provider."],
-          "vercel-ai-gateway": ["Vercel AI Gateway provider."],
           codex: ["Codex provider."],
         },
       },
@@ -407,7 +351,6 @@ export const rustTypeBindings = [
           "Environment variables supported for Pi provider credentials.",
         ],
         variants: {
-          ANTHROPIC_AUTH_TOKEN: ["Anthropic authentication token."],
           OPENAI_API_KEY: ["OpenAI-compatible API key."],
           CHATGPT_ACCESS_TOKEN: ["ChatGPT access token."],
         },
@@ -456,8 +399,6 @@ export const rustTypeBindings = [
         rustTypeName: "PiModelConfigV2Provider",
         rustDoc: ["Native Pi catalog providers supported by this generation."],
         variants: {
-          deepseek: ["DeepSeek provider."],
-          openai: ["OpenAI public API provider."],
           openrouter: ["OpenRouter provider."],
           "openai-codex": ["OpenAI Codex subscription provider."],
         },
@@ -488,24 +429,11 @@ export const rustTypeBindings = [
         fields: {
           environment: ["Sandbox environment entry containing the value."],
           secretName: ["API-owned encrypted secret containing the value."],
-          credentialHeader: [
-            "Optional non-secret custom gateway header policy.",
-          ],
         },
         variants: {
           "api-key": ["Public Responses API-key binding."],
           "access-token": ["ChatGPT access-token binding."],
           "account-id": ["ChatGPT account-ID binding."],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigV2CredentialBindingApiKeyCredentialHeader",
-        rustDoc: ["Non-secret custom gateway credential header policy."],
-        fields: {
-          name: ["Request header name."],
-          valueTemplate: [
-            "Header value template containing the credential placeholder exactly once.",
-          ],
         },
       },
     ],
@@ -561,8 +489,6 @@ export const rustTypeBindings = [
               variants:
                 dialect === "OpenaiResponses"
                   ? {
-                      deepseek: ["DeepSeek provider."],
-                      openai: ["OpenAI public API provider."],
                       openrouter: ["OpenRouter provider."],
                     }
                   : { "openai-codex": ["OpenAI Codex subscription provider."] },
@@ -585,7 +511,9 @@ export const rustTypeBindings = [
               rustDoc: ["Dialect-constrained request service tiers."],
               variants:
                 dialect === "OpenaiResponses"
-                  ? { priority: ["Public Responses priority service tier."] }
+                  ? {
+                      priority: ["Public Responses priority service tier."],
+                    }
                   : { fast: ["Native Codex Responses fast service tier."] },
             },
             {
@@ -598,24 +526,11 @@ export const rustTypeBindings = [
                 secretName: [
                   "API-owned encrypted secret containing the value.",
                 ],
-                credentialHeader: [
-                  "Optional non-secret custom gateway header policy.",
-                ],
               },
               variants: {
                 "api-key": ["Public Responses API-key binding."],
                 "access-token": ["ChatGPT access-token binding."],
                 "account-id": ["ChatGPT account-ID binding."],
-              },
-            },
-            {
-              rustTypeName: `PiModelConfigV3${dialect}CredentialBindingApiKeyCredentialHeader`,
-              rustDoc: ["Non-secret custom gateway credential header policy."],
-              fields: {
-                name: ["Request header name."],
-                valueTemplate: [
-                  "Header value template containing the credential placeholder exactly once.",
-                ],
               },
             },
           ];
@@ -624,52 +539,43 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema: activeInputDeliveryReserveResponseSchema,
-    rustModulePath: ["runners", "runs", "active_inputs", "reserve"],
+    schema: runnerNextSteerableInputResponseSchema,
+    rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
     rustTypeName: "Response",
     direction: "response",
     declarations: [
       {
         rustTypeName: "Response",
-        rustDoc: ["API outcome when reserving or retrieving active input."],
+        rustDoc: [
+          "Next prompt or run-targeted budget a running run may steer.",
+        ],
         fields: {
-          deliveryId: ["Stable identity for the reserved delivery batch."],
-          eventIds: ["Ordered source chat-event identities in the batch."],
-          prompt: ["Materialized prompt sent to the active Guest."],
-          reason: ["Reason the pending input could not be reserved."],
-        },
-        variants: {
-          reserved: ["A stable delivery batch is ready for Guest delivery."],
-          empty: ["No pending active input is available."],
-          terminal: ["The run is terminal and has no open delivery."],
-          held: ["An open delivery remains held for a non-running run."],
-          rejected: ["Pending input cannot currently be reserved."],
+          input: ["Steerable input, or absent when nothing can be steered."],
         },
       },
       {
-        rustTypeName: "ResponseRejectedReason",
-        rustDoc: ["Reason an active-input reservation was rejected."],
-        variants: {
-          payload_too_large: [
-            "The delivery-aware control payload exceeds the frame limit.",
-          ],
-          run_not_running: ["The target run is no longer running."],
+        rustTypeName: "ResponseInput",
+        rustDoc: ["Prompt or run-targeted budget the run may steer."],
+        fields: {
+          eventId: ["Source chat-event identity to declare steered."],
+          prompt: ["Materialized prompt sent to the active Guest."],
         },
       },
     ],
   },
   {
-    schema: activeInputDeliveryReceiptResponseSchema,
-    rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
+    schema: runnerSteeredInputResponseSchema,
+    rustModulePath: ["runners", "runs", "steerable_inputs", "steered"],
     rustTypeName: "Response",
     direction: "response",
     declarations: [
       {
         rustTypeName: "Response",
-        rustDoc: ["API outcome after recording active-input acceptance."],
-        variants: {
-          delivered: ["The delivery receipt was accepted idempotently."],
-          rejected: ["The delivery can no longer be accepted."],
+        rustDoc: [
+          "API outcome after declaring a prompt or run-targeted budget steered.",
+        ],
+        fields: {
+          outcome: ["The input is consumed by this run, idempotently."],
         },
       },
     ],
@@ -1061,9 +967,6 @@ export const rustTypeBindings = [
           ],
           workspaceReuseResult: [
             "Optional outcome of the workspace reuse decision.",
-          ],
-          activeInputDeliveryIds: [
-            "Optional active-input delivery receipts recovered during completion.",
           ],
           checkpoint: [
             "Optional final checkpoint persisted atomically with completion.",

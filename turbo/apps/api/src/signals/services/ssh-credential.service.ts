@@ -12,19 +12,21 @@ import {
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { command } from "ccstate";
 import { and, asc, eq, sql } from "drizzle-orm";
+import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
-import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
-import { checkSshCreationId } from "./ssh-creation.service";
+import { publishSshRuntimeInvalidation$ } from "./ssh-runtime-wakeup.service";
+import { sshCreationResult } from "./ssh-creation.service";
 
 interface Owner {
   readonly orgId: string;
   readonly userId: string;
 }
-type Transaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type SshResult<T> =
   | { readonly ok: true; readonly value: T }
   | {
@@ -58,15 +60,19 @@ const failures = {
 export function sshCredentialFailure(reason: keyof typeof failures) {
   return { ok: false as const, ...failures[reason] };
 }
-export async function lockSshOwner(
-  tx: Pick<Transaction, "execute">,
-  owner: Owner,
-): Promise<void> {
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`ssh_connection_owner:${owner.orgId}:${owner.userId}`}, 0))`,
+/** The RESTRICT credential FK reports 23001; a NO ACTION check reports 23503. */
+export function isSshCredentialReferenceViolation(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint === "ssh_connections_credential_owner_fk" &&
+    (isForeignKeyViolation(error) ||
+      ("code" in error.cause && error.cause.code === "23001"))
   );
 }
-const metadata = Object.freeze({
+const sshCredentialMetadata = Object.freeze({
   id: sshCredentials.id,
   name: sshCredentials.name,
   username: sshCredentials.username,
@@ -75,24 +81,16 @@ const metadata = Object.freeze({
   createdAt: sshCredentials.createdAt,
   updatedAt: sshCredentials.updatedAt,
 });
-type Metadata = Pick<typeof sshCredentials.$inferSelect, keyof typeof metadata>;
-function ownedCredential(owner: Owner, id: string) {
+type Metadata = Pick<
+  typeof sshCredentials.$inferSelect,
+  keyof typeof sshCredentialMetadata
+>;
+export function ownedSshCredential(owner: Owner, id: string) {
   return and(
     eq(sshCredentials.id, id),
     eq(sshCredentials.orgId, owner.orgId),
     eq(sshCredentials.userId, owner.userId),
   );
-}
-export async function findSshCredential(
-  db: Pick<ReadonlyDb, "select">,
-  owner: Owner,
-  id: string,
-): Promise<Metadata | undefined> {
-  const [row] = await db
-    .select(metadata)
-    .from(sshCredentials)
-    .where(ownedCredential(owner, id));
-  return row;
 }
 function response(
   row: Metadata,
@@ -105,48 +103,56 @@ function response(
     hosts,
   };
 }
-export async function listSshCredentials(
-  db: ReadonlyDb,
-  owner: Owner,
-): Promise<SshCredentialResponse[]> {
-  const rows = await db
-    .select({
-      credential: metadata,
-      host: { id: sshConnections.id, displayName: sshConnections.displayName },
-    })
-    .from(sshCredentials)
-    .leftJoin(
-      sshConnections,
-      and(
-        eq(sshConnections.credentialId, sshCredentials.id),
-        eq(sshConnections.orgId, sshCredentials.orgId),
-        eq(sshConnections.userId, sshCredentials.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(sshCredentials.orgId, owner.orgId),
-        eq(sshCredentials.userId, owner.userId),
-      ),
-    )
-    .orderBy(
-      asc(sshCredentials.createdAt),
-      asc(sshCredentials.id),
-      asc(sshConnections.id),
-    );
-  const values = new Map<string, SshCredentialResponse>();
-  for (const row of rows) {
-    let value = values.get(row.credential.id);
-    if (!value) {
-      value = response(row.credential, []);
-      values.set(value.id, value);
+export const listSshCredentials$ = command(
+  async (
+    { set },
+    owner: Owner,
+    signal: AbortSignal,
+  ): Promise<SshCredentialResponse[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        credential: sshCredentialMetadata,
+        host: {
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+        },
+      })
+      .from(sshCredentials)
+      .leftJoin(
+        sshConnections,
+        and(
+          eq(sshConnections.credentialId, sshCredentials.id),
+          eq(sshConnections.orgId, sshCredentials.orgId),
+          eq(sshConnections.userId, sshCredentials.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(sshCredentials.orgId, owner.orgId),
+          eq(sshCredentials.userId, owner.userId),
+        ),
+      )
+      .orderBy(
+        asc(sshCredentials.createdAt),
+        asc(sshCredentials.id),
+        asc(sshConnections.id),
+      );
+    signal.throwIfAborted();
+    const values = new Map<string, SshCredentialResponse>();
+    for (const row of rows) {
+      let value = values.get(row.credential.id);
+      if (!value) {
+        value = response(row.credential, []);
+        values.set(value.id, value);
+      }
+      if (row.host) {
+        value.hosts.push(row.host);
+      }
     }
-    if (row.host) {
-      value.hosts.push(row.host);
-    }
-  }
-  return [...values.values()];
-}
+    return [...values.values()];
+  },
+);
 async function encryptAuthentication(
   auth: SshAuthentication,
   context: FeatureSwitchContext,
@@ -190,210 +196,208 @@ export async function prepareSshCredentialSelection(
     ? { id: selection.id }
     : { create: await prepareCredential(selection.create, context) };
 }
-export async function selectSshCredential(
-  tx: Transaction,
-  owner: Owner,
-  selection: Awaited<ReturnType<typeof prepareSshCredentialSelection>>,
-): Promise<SshResult<Metadata>> {
-  if (selection.id !== undefined) {
-    const row = await findSshCredential(tx, owner, selection.id);
-    return row ? { ok: true, value: row } : sshCredentialFailure("notFound");
-  }
-  const [row] = await tx
-    .insert(sshCredentials)
-    .values({ ...owner, ...selection.create })
-    .returning(metadata);
-  if (!row) {
-    throw new Error("SSH credential insert returned no row");
-  }
-  return { ok: true, value: row };
-}
-export async function createSshCredential(args: {
-  readonly db: Db;
-  readonly owner: Owner;
-  readonly body: CreateSshCredentialRequest;
-  readonly id: string;
-  readonly featureContext: FeatureSwitchContext;
-}): Promise<SshResult<SshCredentialResponse | undefined>> {
-  const prepared = await prepareCredential(args.body, args.featureContext);
-  const row = await args.db.transaction(async (tx) => {
-    await lockSshOwner(tx, args.owner);
-    const creation = await checkSshCreationId(
-      tx,
-      args.owner,
-      sshCredentials,
-      args.id,
-    );
+export const createSshCredential$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly owner: Owner;
+      readonly body: CreateSshCredentialRequest;
+      readonly id: string;
+      readonly featureContext: FeatureSwitchContext;
+    },
+  ): Promise<SshResult<SshCredentialResponse | undefined>> => {
+    const db = set(writeDb$);
+    const prepared = await prepareCredential(args.body, args.featureContext);
+    const [existing] = await get(db$)
+      .select({
+        orgId: sshCredentials.orgId,
+        userId: sshCredentials.userId,
+      })
+      .from(sshCredentials)
+      .where(eq(sshCredentials.id, args.id));
+    const creation = sshCreationResult(args.owner, existing);
     if (!creation.ok) {
       return creation;
     }
     if (!creation.value) {
-      return { ok: true as const, value: undefined };
+      return { ok: true, value: undefined };
     }
-    const [created] = await tx
-      .insert(sshCredentials)
-      .values({ ...args.owner, ...prepared, id: args.id })
-      .returning(metadata);
+    // The primary key, not the unlocked preflight, arbitrates concurrent creates.
+    const inserted = await settle(
+      db
+        .insert(sshCredentials)
+        .values({ ...args.owner, ...prepared, id: args.id })
+        .returning(sshCredentialMetadata),
+    );
+    if (!inserted.ok) {
+      if (!isUniqueViolation(inserted.error, "ssh_credentials_pkey")) {
+        throw inserted.error;
+      }
+      const [existing] = await get(db$)
+        .select({ orgId: sshCredentials.orgId, userId: sshCredentials.userId })
+        .from(sshCredentials)
+        .where(eq(sshCredentials.id, args.id));
+      const creation = sshCreationResult(args.owner, existing);
+      return creation.ok && existing
+        ? { ok: true, value: undefined }
+        : {
+            ok: false,
+            kind: "conflict",
+            code: SSH_ERROR_CODES.RESOURCE_ID_CONFLICT,
+            message:
+              "This resource ID cannot be used for this SSH configuration.",
+          };
+    }
+    const [created] = inserted.value;
     if (!created) {
       throw new Error("SSH credential insert returned no row");
     }
-    return { ok: true as const, value: response(created, []) };
-  });
-  if (row.ok && row.value) {
     await publishSshClientInvalidation(args.owner);
-  }
-  return row;
-}
-export async function updateSshCredential(args: {
-  readonly db: Db;
+    return { ok: true, value: response(created, []) };
+  },
+);
+interface UpdateSshCredentialArgs {
   readonly owner: Owner;
   readonly credentialId: string;
   readonly body: UpdateSshCredentialRequest;
   readonly featureContext: FeatureSwitchContext;
-}): Promise<SshResult<SshCredentialResponse>> {
-  const initial = await findSshCredential(
-    args.db,
-    args.owner,
-    args.credentialId,
+}
+
+const MAX_SSH_REVISION = 2_147_483_647;
+function ownerHostsUsingCredential(owner: Owner, credentialId: string) {
+  return and(
+    eq(sshConnections.credentialId, credentialId),
+    eq(sshConnections.orgId, owner.orgId),
+    eq(sshConnections.userId, owner.userId),
   );
-  if (!initial) {
-    return sshCredentialFailure("notFound");
-  }
-  if (initial.revision !== args.body.expectedRevision) {
-    return sshCredentialFailure("conflict");
-  }
-  const encrypted =
-    args.body.authentication === undefined
-      ? undefined
-      : await encryptAuthentication(
-          args.body.authentication,
-          args.featureContext,
-        );
-  const result = await args.db.transaction(async (tx) => {
-    await lockSshOwner(tx, args.owner);
-    // Pin/observation lock a connection before sharing its credential. Keep that order.
-    const hosts = await tx
+}
+
+export const updateSshCredential$ = command(
+  async (
+    { set },
+    args: UpdateSshCredentialArgs,
+  ): Promise<SshResult<SshCredentialResponse>> => {
+    const db = set(writeDb$);
+    const [initial] = await db
+      .select(sshCredentialMetadata)
+      .from(sshCredentials)
+      .where(ownedSshCredential(args.owner, args.credentialId));
+    if (!initial) {
+      return sshCredentialFailure("notFound");
+    }
+    if (initial.revision !== args.body.expectedRevision) {
+      return sshCredentialFailure("conflict");
+    }
+    if (initial.revision === MAX_SSH_REVISION) {
+      return sshCredentialFailure("exhausted");
+    }
+    const hosts = await db
       .select({
         id: sshConnections.id,
         displayName: sshConnections.displayName,
         generation: sshConnections.generation,
       })
       .from(sshConnections)
-      .where(
-        and(
-          eq(sshConnections.credentialId, args.credentialId),
-          eq(sshConnections.orgId, args.owner.orgId),
-          eq(sshConnections.userId, args.owner.userId),
-        ),
-      )
-      .orderBy(asc(sshConnections.id))
-      .for("update");
-    const [current] = await tx
-      .select(metadata)
-      .from(sshCredentials)
-      .where(ownedCredential(args.owner, args.credentialId))
-      .for("update");
-    if (!current) {
-      return sshCredentialFailure("notFound");
-    }
-    if (current.revision !== args.body.expectedRevision) {
-      return sshCredentialFailure("conflict");
-    }
+      .where(ownerHostsUsingCredential(args.owner, args.credentialId))
+      .orderBy(asc(sshConnections.id));
     const effectiveChange =
-      encrypted !== undefined ||
+      args.body.authentication !== undefined ||
       (args.body.username !== undefined &&
-        args.body.username !== current.username);
+        args.body.username !== initial.username);
     if (
-      current.revision === 2_147_483_647 ||
-      (effectiveChange &&
-        hosts.some((host) => {
-          return host.generation === 2_147_483_647;
-        }))
+      effectiveChange &&
+      hosts.some((host) => {
+        return host.generation === MAX_SSH_REVISION;
+      })
     ) {
       return sshCredentialFailure("exhausted");
     }
-    const [updated] = await tx
-      .update(sshCredentials)
-      .set({
-        name: args.body.name,
-        username: args.body.username,
-        ...encrypted,
-        revision: current.revision + 1,
-        updatedAt: nowDate(),
-      })
-      .where(ownedCredential(args.owner, args.credentialId))
-      .returning(metadata);
-    if (!updated) {
-      throw new Error("SSH credential update returned no row");
-    }
-    if (effectiveChange && hosts.length > 0) {
-      await tx
-        .update(sshConnections)
+    const encrypted =
+      args.body.authentication === undefined
+        ? undefined
+        : await encryptAuthentication(
+            args.body.authentication,
+            args.featureContext,
+          );
+    const invalidate = effectiveChange && hosts.length > 0;
+    const updated = await db.transaction(async (tx) => {
+      if (invalidate) {
+        await tx
+          .update(sshConnections)
+          .set({
+            generation: sql`${sshConnections.generation} + 1`,
+            updatedAt: nowDate(),
+          })
+          .where(ownerHostsUsingCredential(args.owner, args.credentialId));
+      }
+      const [row] = await tx
+        .update(sshCredentials)
         .set({
-          generation: sql`${sshConnections.generation} + 1`,
+          name: args.body.name,
+          username: args.body.username,
+          ...encrypted,
+          revision: sql`${sshCredentials.revision} + 1`,
           updatedAt: nowDate(),
         })
-        .where(
-          and(
-            eq(sshConnections.credentialId, args.credentialId),
-            eq(sshConnections.orgId, args.owner.orgId),
-            eq(sshConnections.userId, args.owner.userId),
-          ),
-        );
+        .where(ownedSshCredential(args.owner, args.credentialId))
+        .returning(sshCredentialMetadata);
+      return row;
+    });
+    if (!updated) {
+      return sshCredentialFailure("notFound");
     }
-    return {
-      ok: true as const,
-      value: response(
-        updated,
-        hosts.map(({ id, displayName }) => {
-          return { id, displayName };
-        }),
-      ),
-      invalidate: effectiveChange && hosts.length > 0,
-    };
-  });
-  if (result.ok) {
-    if (result.invalidate) {
-      await publishSshRuntimeInvalidation(args.db, {
+    if (invalidate) {
+      await set(publishSshRuntimeInvalidation$, {
         ...args.owner,
         connectionId: null,
       });
     } else {
       await publishSshClientInvalidation(args.owner);
     }
-  }
-  return result;
-}
-export async function deleteSshCredential(args: {
-  readonly db: Db;
-  readonly owner: Owner;
-  readonly credentialId: string;
-  readonly expectedRevision: number;
-}): Promise<SshResult<undefined>> {
-  const result = await args.db.transaction(async (tx) => {
-    await lockSshOwner(tx, args.owner);
-    const current = await findSshCredential(tx, args.owner, args.credentialId);
+    return {
+      ok: true,
+      value: response(
+        updated,
+        hosts.map(({ id, displayName }) => {
+          return { id, displayName };
+        }),
+      ),
+    };
+  },
+);
+export const deleteSshCredential$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: Owner;
+      readonly credentialId: string;
+      readonly expectedRevision: number;
+    },
+  ): Promise<SshResult<undefined>> => {
+    const db = set(writeDb$);
+    const [current] = await db
+      .select({ revision: sshCredentials.revision })
+      .from(sshCredentials)
+      .where(ownedSshCredential(args.owner, args.credentialId));
     if (!current) {
       return sshCredentialFailure("notFound");
     }
     if (current.revision !== args.expectedRevision) {
       return sshCredentialFailure("conflict");
     }
-    const [host] = await tx
-      .select({ id: sshConnections.id })
-      .from(sshConnections)
-      .where(eq(sshConnections.credentialId, current.id))
-      .limit(1);
-    if (host) {
-      return sshCredentialFailure("inUse");
+    // The RESTRICT credential FK rejects deleting a credential used by a host.
+    const deletion = await settle(
+      db
+        .delete(sshCredentials)
+        .where(ownedSshCredential(args.owner, args.credentialId)),
+    );
+    if (!deletion.ok) {
+      if (isSshCredentialReferenceViolation(deletion.error)) {
+        return sshCredentialFailure("inUse");
+      }
+      throw deletion.error;
     }
-    await tx
-      .delete(sshCredentials)
-      .where(ownedCredential(args.owner, current.id));
-    return { ok: true as const, value: undefined };
-  });
-  if (result.ok) {
     await publishSshClientInvalidation(args.owner);
-  }
-  return result;
-}
+    return { ok: true, value: undefined };
+  },
+);

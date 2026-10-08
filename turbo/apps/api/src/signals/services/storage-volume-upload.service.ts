@@ -1,105 +1,156 @@
 import { command } from "ccstate";
-
-import { testOverride } from "../../lib/singleton";
-import { writeDb$, type Db } from "../external/db";
+import { repairVolumeIndexSql } from "./storage-volume-publication-sql";
+import { eq } from "drizzle-orm";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
+import { writeDb$ } from "../external/db";
+import { nowDate } from "../../lib/time";
+import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import {
-  commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
   type PrepareVolumeServerSideInput,
 } from "./storage-volume-publication.service";
 import {
-  completePiStableContextPublication,
-  lockPiStableContextPublication,
-  refreshPiStableContextStorageDemands,
-  type PiStableContextPublicationFence,
-} from "./pi-stable-context-generation.service";
+  storageVersionMatches,
+  StorageVersionIdentityConflictError,
+  type PreparedStorageVersion,
+} from "./storage-version-registration.service";
+import { piResourceProjectionValues } from "./pi-resource-version-index.service";
+import {
+  consumePublicationFence,
+  type StoragePublicationFence,
+} from "./storage-publication-fence.service";
 
 interface UploadedVolume {
   readonly storageName: string;
   readonly versionId: string;
 }
-
 type UploadVolumeServerSideInput = PrepareVolumeServerSideInput & {
-  readonly stableContextPublication?: PiStableContextPublicationFence;
+  readonly publicationFence?: StoragePublicationFence;
 };
-
-class StalePiStableContextPublicationError extends Error {}
-
-export function isStalePiStableContextPublicationError(
-  error: unknown,
-): boolean {
-  return error instanceof StalePiStableContextPublicationError;
+class StalePublicationFenceError extends Error {}
+export function isStalePublicationFenceError(error: unknown): boolean {
+  return error instanceof StalePublicationFenceError;
 }
 
-interface StorageVolumeUploadHooks {
-  readonly afterStorageCommit?: (db: Db) => Promise<void>;
-}
-
-const storageVolumeUploadHooks = testOverride<StorageVolumeUploadHooks>(() => {
-  return {};
+const preparedStorageVersionColumns = Object.freeze({
+  storageId: storageVersions.storageId,
+  versionId: storageVersions.id,
+  s3Key: storageVersions.s3Key,
+  size: storageVersions.size,
+  archiveSize: storageVersions.archiveSize,
+  fileCount: storageVersions.fileCount,
+  message: storageVersions.message,
+  createdBy: storageVersions.createdBy,
 });
-
-export function setStorageVolumeUploadHooksForTest(
-  hooks: StorageVolumeUploadHooks,
-): void {
-  storageVolumeUploadHooks.set(hooks);
+function storageVersionValues(version: PreparedStorageVersion) {
+  return {
+    id: version.versionId,
+    storageId: version.storageId,
+    s3Key: version.s3Key,
+    size: version.size,
+    archiveSize: version.archiveSize,
+    fileCount: version.fileCount,
+    message: version.message,
+    createdBy: version.createdBy,
+  };
+}
+function storageHeadValues(volume: PreparedServerSideVolume) {
+  return {
+    headVersionId: volume.version.versionId,
+    size: volume.version.size,
+    fileCount: volume.version.fileCount,
+    updatedAt: volume.updatedAt,
+  };
 }
 
-export function clearStorageVolumeUploadHooksForTest(): void {
-  storageVolumeUploadHooks.clear();
+function preparedProjection(volume: PreparedServerSideVolume) {
+  return volume.piResourceIndex?.kind === "prepared"
+    ? piResourceProjectionValues(
+        volume.piResourceIndex.projection,
+        volume.version.archiveSize,
+      )
+    : undefined;
 }
 
-export async function commitPreparedVolumeUpload(
-  args: {
-    readonly db: Db;
-    readonly volume: PreparedServerSideVolume;
-    readonly stableContextPublication?: PiStableContextPublicationFence;
+interface PreparedVolumePublication {
+  readonly volume: PreparedServerSideVolume;
+  readonly publicationFence?: StoragePublicationFence;
+}
+
+/** Prepared objects are immutable inputs. The transaction never leaves this command. */
+const commitPreparedVolumeUpload$ = command(
+  async (
+    { set },
+    args: PreparedVolumePublication,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const version = args.volume.version;
+    const fence = args.publicationFence;
+    const projection = preparedProjection(args.volume);
+    await db.transaction(async (tx) => {
+      // The version insert's FK check keeps the Storage parent from being
+      // deleted, and the HEAD UPDATE below then owns that row implicitly.
+      await tx
+        .insert(storageVersions)
+        .values(storageVersionValues(version))
+        .onConflictDoNothing();
+      const [stored] = await tx
+        .select(preparedStorageVersionColumns)
+        .from(storageVersions)
+        .where(eq(storageVersions.id, version.versionId));
+      if (!stored || !storageVersionMatches(stored, version)) {
+        throw new StorageVersionIdentityConflictError(version.versionId);
+      }
+      const [storage] = await tx
+        .update(storages)
+        .set(storageHeadValues(args.volume))
+        .where(eq(storages.id, version.storageId))
+        .returning({ id: storages.id });
+      signal.throwIfAborted();
+      if (!storage) {
+        throw new Error("Prepared volume Storage no longer exists");
+      }
+      if (projection) {
+        await tx
+          .insert(piResourceVersionIndexes)
+          .values({
+            storageVersionId: version.versionId,
+            extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
+            ...projection,
+          })
+          .onConflictDoUpdate({
+            target: [
+              piResourceVersionIndexes.storageVersionId,
+              piResourceVersionIndexes.extractorVersion,
+            ],
+            set: projection,
+          });
+      } else if (!args.volume.piResourceIndex) {
+        await tx
+          .insert(piResourceVersionIndexes)
+          .values({
+            storageVersionId: version.versionId,
+            extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
+            sourceArchiveSize: version.archiveSize,
+          })
+          .onConflictDoNothing();
+        await tx.execute(repairVolumeIndexSql(version));
+      }
+      signal.throwIfAborted();
+      if (!fence) {
+        return;
+      }
+      if (!(await consumePublicationFence(tx, fence, nowDate()))) {
+        throw new StalePublicationFenceError(
+          "Storage publication was superseded before Storage HEAD commit",
+        );
+      }
+    });
   },
-  signal: AbortSignal,
-): Promise<void> {
-  // Every source publisher and aggregate publisher takes immutable Storage
-  // parents before generation/head locks. A stale fence rolls this Storage
-  // commit back with the transaction instead of introducing the reverse
-  // generation → Storage order used by Workflow deletion.
-  await commitPreparedVolumeServerSide(
-    { db: args.db, volume: args.volume },
-    signal,
-  );
-  await storageVolumeUploadHooks.get().afterStorageCommit?.(args.db);
-  if (
-    args.stableContextPublication &&
-    !(await lockPiStableContextPublication(
-      args.db,
-      args.stableContextPublication,
-    ))
-  ) {
-    throw new StalePiStableContextPublicationError(
-      "Stable-context publication was superseded before Storage HEAD commit",
-    );
-  }
-  if (args.stableContextPublication) {
-    await refreshPiStableContextStorageDemands(
-      args.db,
-      args.stableContextPublication,
-      {
-        storageId: args.volume.version.storageId,
-        versionId: args.volume.version.versionId,
-        archiveSize: args.volume.version.archiveSize,
-        fileCount: args.volume.version.fileCount,
-      },
-    );
-  }
-  if (
-    args.stableContextPublication &&
-    !(await completePiStableContextPublication(
-      args.db,
-      args.stableContextPublication,
-    ))
-  ) {
-    throw new Error("Stable-context publication fence changed while locked");
-  }
-}
+);
 
 export const uploadVolumeServerSide$ = command(
   async (
@@ -108,19 +159,11 @@ export const uploadVolumeServerSide$ = command(
     signal: AbortSignal,
   ): Promise<UploadedVolume> => {
     const volume = await set(prepareVolumeServerSide$, args, signal);
-    const writeDb = set(writeDb$);
-    await writeDb.transaction(async (tx) => {
-      await commitPreparedVolumeUpload(
-        {
-          db: tx,
-          volume,
-          ...(args.stableContextPublication
-            ? { stableContextPublication: args.stableContextPublication }
-            : {}),
-        },
-        signal,
-      );
-    });
+    await set(
+      commitPreparedVolumeUpload$,
+      { volume, publicationFence: args.publicationFence },
+      signal,
+    );
     signal.throwIfAborted();
     return {
       storageName: volume.storageName,

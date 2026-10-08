@@ -1,46 +1,49 @@
+import { usagePackUsdSchema } from "@okouai/api-contracts/contracts/billing";
+import {
+  orgRoleSchema,
+  type OrgMember,
+  type OrgMembersResponse,
+  type OrgMessageResponse,
+  type OrgRole,
+} from "@okouai/api-contracts/contracts/org-members";
+import type { OrgResponse } from "@okouai/api-contracts/contracts/orgs";
+import { orgCache } from "@okouai/db/schema/org-cache";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
+import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
+import { usagePackAllocations } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { orgCache } from "@okouai/db/schema/org-cache";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { usagePackAllocations } from "@okouai/db/schema/usage-pack-subscription";
-import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
-import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import type { OrgResponse } from "@okouai/api-contracts/contracts/orgs";
-import {
-  orgRoleSchema,
-  type OrgMessageResponse,
-  type OrgMember,
-  type OrgMembersResponse,
-  type OrgRole,
-} from "@okouai/api-contracts/contracts/org-members";
-import { usagePackUsdSchema } from "@okouai/api-contracts/contracts/billing";
-
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { badRequestMessage, notFound } from "../../lib/error";
+import { now, nowDate } from "../../lib/time";
 import {
   clerk$,
   createClerkReadContext,
   type ClerkReadContext,
 } from "../external/clerk";
+import { fetchClerkMembershipRequests } from "../external/clerk-membership-requests";
 import {
   listAllOrganizationMemberships,
   listAllPendingOrganizationInvitations,
   listAllUserOrganizationMemberships,
 } from "../external/clerk-organization-lists";
-import { fetchClerkMembershipRequests } from "../external/clerk-membership-requests";
-import { badRequestMessage, notFound } from "../../lib/error";
-import { now, nowDate } from "../../lib/time";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { onRejection, settle } from "../utils";
-import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
-import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
+import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
+import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
+import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
+import { deleteDiscordOrgData } from "./discord-owner-cleanup.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
+import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import {
   cancelUsagePackMemberRemovalReservation,
-  reserveUsagePackMemberRemoval,
   removeUsagePackMemberAllocation,
+  reserveUsagePackMemberRemoval,
 } from "./usage-pack-allocation-change.service";
+import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import { fetchUserProfileMap } from "./user-profile-directory.service";
 
 const clerkOrgIdentitySchema = z.object({
@@ -313,26 +316,42 @@ export const orgDetail$ = command(
   },
 );
 
-async function commitOrgMemberRemoval(
-  db: Db,
-  args: { readonly orgId: string; readonly userId: string },
-  reservationId: string | null,
-  deleteMembership: () => Promise<void>,
-): Promise<void> {
-  // Once Clerk accepts the deletion, billing and resource cleanup must finish
-  // even if the originating request disconnects.
-  const commitSignal = new AbortController().signal;
-  await onRejection(deleteMembership(), async () => {
-    await cancelUsagePackMemberRemovalReservation(db, reservationId);
-  });
-  commitSignal.throwIfAborted();
-  await removeUsagePackMemberAllocation(db, args, commitSignal);
-  commitSignal.throwIfAborted();
-  await refundUsagePackMemberCredits(db, args, commitSignal);
-  commitSignal.throwIfAborted();
-  await cleanupOrgMemberResources(db, args, commitSignal);
-  commitSignal.throwIfAborted();
-}
+const commitOrgMemberRemoval$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    continuation: {
+      readonly reservationId: string | null;
+      readonly deleteMembership: () => Promise<void>;
+      readonly onSlotsReleased: (slots: readonly ReleasedRunSlot[]) => void;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const { reservationId, deleteMembership, onSlotsReleased } = continuation;
+    const db = set(writeDb$);
+    // Once Clerk accepts the deletion, billing and resource cleanup must finish
+    // even if the originating request disconnects.
+    await onRejection(deleteMembership(), async () => {
+      await cancelUsagePackMemberRemovalReservation(db, reservationId);
+    });
+    signal.throwIfAborted();
+    const emptyCancellation = await removeUsagePackMemberAllocation(
+      db,
+      args,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (emptyCancellation) {
+      await set(cancelEmptyUsagePackSubscription$, emptyCancellation, signal);
+      signal.throwIfAborted();
+    }
+    await refundUsagePackMemberCredits(db, args, signal);
+    signal.throwIfAborted();
+    await set(cleanupOrgMemberResources$, args, onSlotsReleased, signal);
+    signal.throwIfAborted();
+  },
+);
 
 export const leaveOrg$ = command(
   async (
@@ -355,12 +374,23 @@ export const leaveOrg$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await commitOrgMemberRemoval(writeDb, args, reservationId, async () => {
-      await client.organizations.deleteOrganizationMembership({
-        organizationId: args.orgId,
-        userId: args.userId,
-      });
-    });
+    await set(
+      commitOrgMemberRemoval$,
+      args,
+      {
+        reservationId,
+        deleteMembership: async () => {
+          await client.organizations.deleteOrganizationMembership({
+            organizationId: args.orgId,
+            userId: args.userId,
+          });
+        },
+        onSlotsReleased: (slots) => {
+          set(scheduleReleasedSlotPicks$, slots, signal);
+        },
+      },
+      new AbortController().signal,
+    );
     signal.throwIfAborted();
 
     return { message: "Left org" };
@@ -415,16 +445,22 @@ export const removeOrgMember$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await commitOrgMemberRemoval(
-      writeDb,
+    await set(
+      commitOrgMemberRemoval$,
       { orgId: args.orgId, userId: target.id },
-      reservationId,
-      async () => {
-        await client.organizations.deleteOrganizationMembership({
-          organizationId: args.orgId,
-          userId: target.id,
-        });
+      {
+        reservationId,
+        deleteMembership: async () => {
+          await client.organizations.deleteOrganizationMembership({
+            organizationId: args.orgId,
+            userId: target.id,
+          });
+        },
+        onSlotsReleased: (slots) => {
+          set(scheduleReleasedSlotPicks$, slots, signal);
+        },
       },
+      new AbortController().signal,
     );
     signal.throwIfAborted();
 
@@ -627,6 +663,8 @@ export const deleteOrg$ = command(
     }
 
     await client.organizations.deleteOrganization(args.orgId);
+    signal.throwIfAborted();
+    await deleteDiscordOrgData(writeDb, args.orgId);
     signal.throwIfAborted();
 
     return { message: "Organization deleted" };

@@ -294,9 +294,11 @@ impl JobProvider for LocalProvider {
             feature_flags: req.feature_flags,
             billable_firewalls: vec![],
             model_usage_provider: None,
+            model_usage_long_context_min_total_input_tokens: None,
             codex_runtime_config: None,
             pi_launch_config: None,
             pi_model_config: None,
+            pi_installed_cli_requirement: None,
             pi_session_id: None,
         };
         let active_input_source = req.active_input.unwrap_or(false).then(|| {

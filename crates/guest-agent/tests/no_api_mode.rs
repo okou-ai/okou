@@ -95,7 +95,6 @@ async fn no_api_mode_drains_background_webhook_users_without_network_client()
         "reused",
         "sandboxReused",
         Some(1),
-        &[],
     )
     .await;
     drop(complete_log_guard);
@@ -105,20 +104,19 @@ async fn no_api_mode_drains_background_webhook_users_without_network_client()
         "no-API complete path must return before touching the disabled HTTP client: {complete_log}"
     );
 
-    let delivery_id = "60fca608-d174-4c1a-a1b2-57607b3adf46";
-    let receipt_log_path = tmp.path().join("active-input-receipt-system.log");
-    let receipt_log_guard = SystemLogOverrideGuard::set(&receipt_log_path);
-    let active_input = ActiveInputRuntime::new_with_receipts(
+    let event_id = "60fca608-d174-4c1a-a1b2-57607b3adf46";
+    let steered_log_path = tmp.path().join("active-input-steered-system.log");
+    let steered_log_guard = SystemLogOverrideGuard::set(&steered_log_path);
+    let active_input = ActiveInputRuntime::new_enabled(
         &runtime.config.run_id,
         &runtime.config.prompt,
-        tmp.path().join("active-input-receipts.json"),
         http.clone(),
-    )?;
+    );
     let active_input_controller = active_input.controller();
     let mut active_input_writer = active_input.into_writer();
     assert_eq!(
         active_input_controller.handle_control_payload(
-            &guest_contracts::active_input::encode_active_input(delivery_id, "local follow-up")?,
+            &guest_contracts::active_input::encode_active_input(event_id, "local follow-up")?,
         ),
         ActiveInputControlOutcome::Accepted,
     );
@@ -129,15 +127,14 @@ async fn no_api_mode_drains_background_webhook_users_without_network_client()
     active_input_writer.mark_writing(&active_input_frame.uuid);
     active_input_writer.mark_backend_accepted_without_replay(&active_input_frame)?;
     active_input_controller.close_terminal();
-    assert_eq!(
-        active_input_controller.finalize_receipts().await?,
-        vec![delivery_id.to_string()],
-    );
-    drop(receipt_log_guard);
-    let receipt_log = std::fs::read_to_string(&receipt_log_path).unwrap_or_default();
+    active_input_controller
+        .finalize_steered_declarations()
+        .await?;
+    drop(steered_log_guard);
+    let steered_log = std::fs::read_to_string(&steered_log_path).unwrap_or_default();
     assert!(
-        !receipt_log.contains("Active-input receipt attempt failed"),
-        "local active input must not attempt an API receipt: {receipt_log}",
+        !steered_log.contains("Steered declaration failed"),
+        "local active input must not attempt a steered declaration: {steered_log}",
     );
 
     let active_input =

@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.40.3",
+  "version": "1.46.22",
   "private": true,
   "type": "module",
   "exports": {
@@ -31,13 +31,7 @@
     "@earendil-works/pi-coding-agent": "0.87.1",
     "@langfuse/pi-observability-plugin": "0.1.2",
     "@okouai/api-contracts": "workspace:*",
-    "@okouai/connectors": "workspace:*",
-    "@smithy/core": "3.33.3",
-    "@smithy/node-http-handler": "4.12.1",
     "gpt-tokenizer": "^3.4.0",
-    "http-proxy-agent": "7.0.2",
-    "https-proxy-agent": "7.0.6",
-    "undici": "7.29.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
@@ -51,6 +45,6 @@
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }

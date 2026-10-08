@@ -21,7 +21,6 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "deel\0oauth": FeatureSwitchKey.DeelConnector,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
   "expensify\0api-token": FeatureSwitchKey.ExpensifyConnector,
-  "figma\0oauth": FeatureSwitchKey.FigmaConnector,
   "garmin-connect\0oauth": FeatureSwitchKey.GarminConnectConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "monday-mcp\0automatic": FeatureSwitchKey.MondayConnector,

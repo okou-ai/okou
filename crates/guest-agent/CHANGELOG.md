@@ -1,5 +1,147 @@
 # Changelog
 
+## [0.104.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.2...guest-agent-v0.104.3) (2026-10-07)
+
+
+### Refactoring
+
+* remove custom provider and gateway traces ([#37890](https://github.com/okou-ai/okou/issues/37890)) ([f59490d](https://github.com/okou-ai/okou/commit/f59490d298d2c0b3c3b903d005846e13524bc59e))
+* retire cooldown, ultrafast, us routing and model provider leftovers ([#37884](https://github.com/okou-ai/okou/issues/37884)) ([a9c3270](https://github.com/okou-ai/okou/commit/a9c3270099034c0f7ee73f6c730b07efa7d1d733))
+
+## [0.104.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.1...guest-agent-v0.104.2) (2026-10-07)
+
+
+### Refactoring
+
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+
+## [0.104.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.0...guest-agent-v0.104.1) (2026-10-07)
+
+
+### Refactoring
+
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+
+## [0.104.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.4...guest-agent-v0.104.0) (2026-10-04)
+
+
+### Features
+
+* **cli:** observe pi startup without changing launch behavior ([#37663](https://github.com/okou-ai/okou/issues/37663)) ([8d86ffc](https://github.com/okou-ai/okou/commit/8d86ffcc10b0af36c5bf6452ada0fd8ffe60f1ce))
+
+## [0.103.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.3...guest-agent-v0.103.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* **guest-agent:** retry session history uploads ([#37590](https://github.com/okou-ai/okou/issues/37590)) ([6f9a019](https://github.com/okou-ai/okou/commit/6f9a019bdb3a28c725f395a9e26f7c7461b818b4))
+* preserve pi length completion and cap luna effort at xhigh ([#37607](https://github.com/okou-ai/okou/issues/37607)) ([acb1094](https://github.com/okou-ai/okou/commit/acb10941881de41850f70ab3a4930f22041812b0))
+
+## [0.103.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.2...guest-agent-v0.103.3) (2026-10-02)
+
+## [0.103.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.1...guest-agent-v0.103.2) (2026-10-02)
+
+
+### Refactoring
+
+* **guest-agent:** require codex oauth workspace id ([#37436](https://github.com/okou-ai/okou/issues/37436)) ([a9d39fc](https://github.com/okou-ai/okou/commit/a9d39fc804a4a802b6621142c8a2fd00dca89c18))
+
+## [0.103.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.0...guest-agent-v0.103.1) (2026-10-01)
+
+## [0.103.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.102.2...guest-agent-v0.103.0) (2026-10-01)
+
+
+### Features
+
+* **runner:** install embedded cli into rootfs ([#37422](https://github.com/okou-ai/okou/issues/37422)) ([aaae6c3](https://github.com/okou-ai/okou/commit/aaae6c3bb9c52be47911fd7244ae789a54419929))
+
+## [0.102.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.102.1...guest-agent-v0.102.2) (2026-09-30)
+
+## [0.102.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.102.0...guest-agent-v0.102.1) (2026-09-30)
+
+## [0.102.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.101.1...guest-agent-v0.102.0) (2026-09-30)
+
+
+### Features
+
+* add gpt 6.1 sol and astra ultrafast ([#37387](https://github.com/okou-ai/okou/issues/37387)) ([53d4d10](https://github.com/okou-ai/okou/commit/53d4d1053c8408f02ac66ee812cf601023aca3d2))
+
+## [0.101.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.101.0...guest-agent-v0.101.1) (2026-09-29)
+
+
+### Refactoring
+
+* remove retired terra and okou model variants ([#37368](https://github.com/okou-ai/okou/issues/37368)) ([e9a6e7a](https://github.com/okou-ai/okou/commit/e9a6e7a92cf3a408831a392afbc882e714037e22))
+
+## [0.101.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.100.0...guest-agent-v0.101.0) (2026-09-29)
+
+
+### Features
+
+* add opt-in claude sonnet 5.5 support ([#37361](https://github.com/okou-ai/okou/issues/37361)) ([7d0ab10](https://github.com/okou-ai/okou/commit/7d0ab10383588e7706a5560a14c5b7af3dde712a))
+
+## [0.100.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.99.0...guest-agent-v0.100.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+
+## [0.99.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.14...guest-agent-v0.99.0) (2026-09-28)
+
+
+### Features
+
+* **observability:** record chat first-output latency stages ([#37222](https://github.com/okou-ai/okou/issues/37222)) ([2de0ca0](https://github.com/okou-ai/okou/commit/2de0ca0595e1b0d6f8311b5684e2caf103a5b06e))
+
+## [0.98.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.13...guest-agent-v0.98.14) (2026-09-28)
+
+
+### Bug Fixes
+
+* **guest-agent:** checkpoint bounded pi compact history ([#37106](https://github.com/okou-ai/okou/issues/37106)) ([06b651a](https://github.com/okou-ai/okou/commit/06b651ad612ab9d0002f54bd87ad281447407c26))
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
+## [0.98.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.12...guest-agent-v0.98.13) (2026-09-28)
+
+## [0.98.12](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.11...guest-agent-v0.98.12) (2026-09-27)
+
+## [0.98.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.10...guest-agent-v0.98.11) (2026-09-26)
+
+## [0.98.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.9...guest-agent-v0.98.10) (2026-09-25)
+
+## [0.98.9](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.8...guest-agent-v0.98.9) (2026-09-25)
+
+## [0.98.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.7...guest-agent-v0.98.8) (2026-09-24)
+
+## [0.98.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.6...guest-agent-v0.98.7) (2026-09-24)
+
+
+### Bug Fixes
+
+* **guest-agent:** avoid double-counting guest cpu time ([#36627](https://github.com/okou-ai/okou/issues/36627)) ([f9087f0](https://github.com/okou-ai/okou/commit/f9087f092b79d12b87632b32d6091f3121abdf14))
+
+
+### Documentation
+
+* **guest-agent:** clarify best-effort artifact membership ([#36593](https://github.com/okou-ai/okou/issues/36593)) ([2481198](https://github.com/okou-ai/okou/commit/24811983eafbb9785385da607b6afac4f36deeb6))
+
+
+### Performance Improvements
+
+* **test:** reduce rust coverage fixture overhead ([#36597](https://github.com/okou-ai/okou/issues/36597)) ([b89d4c3](https://github.com/okou-ai/okou/commit/b89d4c3688a8b2f14b03a2dd14a9e6792ae113c0))
+
+## [0.98.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.5...guest-agent-v0.98.6) (2026-09-24)
+
+
+### Documentation
+
+* **rust:** correct Codex cleanup caller reference ([#36553](https://github.com/okou-ai/okou/issues/36553)) ([7ae4bff](https://github.com/okou-ai/okou/commit/7ae4bff91af19cb48a6db38f00bc31809aba9f64))
+
 ## [0.98.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.4...guest-agent-v0.98.5) (2026-09-24)
 
 

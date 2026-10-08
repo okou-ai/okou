@@ -1,4 +1,4 @@
-import { open, readFile, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, stat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
@@ -9,6 +9,7 @@ import {
   piModelConfigSchema,
   type PiLaunchPayload,
 } from "@okouai/api-contracts/contracts/runners";
+import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import {
   PiMemoryPhase2EngineError,
   materializePiAgentModelConfig,
@@ -20,21 +21,17 @@ import {
   type PiMemoryToolSourceUse,
   type PiPreparationObservation,
 } from "@okouai/pi-agent-runtime/node";
-
-import {
-  describePiApiFirstTurnHandoffDegrade,
-  resolvePiApiFirstTurnHandoff,
-  type PiApiFirstTurnBoundaryControl,
-} from "./pi-api-first-turn-handoff";
 import { piLangfuseTracesContract } from "@okouai/api-contracts/contracts/pi-langfuse";
+import {
+  PI_PREPARATION_TIMING_ENV,
+  startPiCliObservation,
+  writePiPreparationTiming,
+} from "./pi-startup-timing";
 
 const RUN_ID_ENV = "OKOU_RUN_ID";
 const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
-const PI_PREPARATION_TIMING_ENV = "OKOU_PI_PREPARATION_TIMING";
-const PI_API_FIRST_TURN_BOUNDARY_CONTROL_TYPE =
-  "vm0_pi_api_first_turn_boundary";
 const PI_MEMORY_PHASE2_VALIDATION_FILENAME = "maintenance-validation.json";
 
 function recordPiMemoryRecallOutcome(
@@ -67,22 +64,13 @@ export function recordPiMemoryToolSourceUse(
  * The sandbox host has no telemetry sink of its own, so guest-agent stays the
  * single writer of the sandbox operation log: it recognizes this envelope on
  * stderr and records `pi_prepare_<phase>`. The ingestion boundary then stamps
- * `source: sandbox`, which is what separates these from the API-first observer's
- * identically named operations.
+ * `source: sandbox`.
  */
 export function recordPiPreparationTiming(
   runId: string,
   observation: PiPreparationObservation,
 ): void {
-  process.stderr.write(
-    `${JSON.stringify({
-      type: "pi_preparation_timing",
-      runId,
-      phase: observation.phase,
-      durationMs: observation.durationMs,
-      outcome: observation.outcome,
-    })}\n`,
-  );
+  writePiPreparationTiming(runId, observation);
 }
 
 export interface PiSandboxAgentConfig {
@@ -115,31 +103,91 @@ function parseJsonEnv(env: NodeJS.ProcessEnv, name: string): unknown {
 async function readLaunchPayload(
   env: NodeJS.ProcessEnv,
 ): Promise<PiLaunchPayload> {
-  const path = requiredEnv(env, PI_LAUNCH_PAYLOAD_FILE_ENV);
-  const raw = await readFile(path, "utf8");
-  return piLaunchPayloadSchema.parse(JSON.parse(raw) as unknown);
+  const finish = startPiCliObservation("cli_launch_payload");
+  let outcome: "success" | "error" = "error";
+  try {
+    const path = requiredEnv(env, PI_LAUNCH_PAYLOAD_FILE_ENV);
+    const raw = await readFile(path, "utf8");
+    const payload = piLaunchPayloadSchema.parse(JSON.parse(raw) as unknown);
+    outcome = "success";
+    return payload;
+  } finally {
+    finish(outcome);
+  }
 }
 
-async function writePiApiFirstTurnBoundaryControl(
-  control: PiApiFirstTurnBoundaryControl,
-): Promise<void> {
-  const line = `${JSON.stringify({
-    type: PI_API_FIRST_TURN_BOUNDARY_CONTROL_TYPE,
-    ...control,
-  })}\n`;
-  await new Promise<void>((resolve, reject) => {
-    process.stdout.write(line, (error) => {
-      if (error) {
-        reject(
-          new Error("Pi API first-turn boundary control could not be written", {
-            cause: error,
-          }),
-        );
-      } else {
-        resolve();
+function isPiSessionFileName(name: string, sessionId: string): boolean {
+  if (!name.endsWith(".jsonl")) {
+    return false;
+  }
+  const stem = name.slice(0, -".jsonl".length);
+  return (
+    stem === sessionId ||
+    stem.endsWith(`-${sessionId}`) ||
+    stem.endsWith(`_${sessionId}`)
+  );
+}
+
+/**
+ * Open the run's Pi session file, creating a fresh one on the first turn.
+ *
+ * The Runner restores a resumed session from the execution context's
+ * `resumeSession` (inline `sessionHistory` or blob `historyRef`) as
+ * `restored-<sessionId>.jsonl`; a reused sandbox keeps the file its previous
+ * run appended to. The most recently modified file for the session wins.
+ */
+async function resolvePiSessionFile(args: {
+  readonly sessionDir: string;
+  readonly sessionId: string;
+  readonly cwd: string;
+}): Promise<string> {
+  const finish = startPiCliObservation("cli_session_file");
+  let outcome: "success" | "error" = "error";
+  try {
+    const names = await readdir(args.sessionDir).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") {
+          return [];
+        }
+        throw error;
+      },
+    );
+    let latest: { readonly path: string; readonly modifiedAt: number } | null =
+      null;
+    for (const name of names) {
+      if (!isPiSessionFileName(name, args.sessionId)) {
+        continue;
       }
-    });
-  });
+      const path = join(args.sessionDir, name);
+      const { mtimeMs } = await stat(path);
+      if (latest === null || mtimeMs > latest.modifiedAt) {
+        latest = { path, modifiedAt: mtimeMs };
+      }
+    }
+    if (latest !== null) {
+      outcome = "success";
+      return latest.path;
+    }
+    const sessionFile = join(args.sessionDir, `${args.sessionId}.jsonl`);
+    await mkdir(args.sessionDir, { recursive: true });
+    const file = await open(sessionFile, "wx", 0o600);
+    try {
+      await file.writeFile(
+        createPiSessionJsonl({
+          cwd: args.cwd,
+          sessionId: args.sessionId,
+          timestamp: new Date().toISOString(),
+        }),
+        "utf8",
+      );
+    } finally {
+      await file.close();
+    }
+    outcome = "success";
+    return sessionFile;
+  } finally {
+    finish(outcome);
+  }
 }
 
 /**
@@ -151,25 +199,47 @@ async function writePiApiFirstTurnBoundaryControl(
 export async function piSandboxAgentConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<PiSandboxAgentConfig> {
-  const runId = requiredEnv(env, RUN_ID_ENV);
-  const langfuseConfig = piLangfuseRelayConfig(env, runId);
-  const parsedModel = piModelConfigSchema.parse(
-    parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
-  );
-  return {
-    runId,
-    sessionId: requiredEnv(env, PI_SESSION_ID_ENV),
-    launchPayload: await readLaunchPayload(env),
-    reportPreparationTiming: env[PI_PREPARATION_TIMING_ENV] === "1",
-    model: await materializePiAgentModelConfig({
-      config: parsedModel,
-      target: "sandbox-firewall",
+  const finishConfig = startPiCliObservation("cli_config");
+  let configOutcome: "success" | "error" = "error";
+  try {
+    const runId = requiredEnv(env, RUN_ID_ENV);
+    const langfuseConfig = piLangfuseRelayConfig(env, runId);
+    const parsedModel = piModelConfigSchema.parse(
+      parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
+    );
+    const config = {
+      runId,
+      sessionId: requiredEnv(env, PI_SESSION_ID_ENV),
+      launchPayload: await readLaunchPayload(env),
+      reportPreparationTiming: env[PI_PREPARATION_TIMING_ENV] === "1",
+      model: await materializeSandboxModel(parsedModel, env),
+      ...(langfuseConfig ? { langfuseConfig } : {}),
+    };
+    configOutcome = "success";
+    return config;
+  } finally {
+    finishConfig(configOutcome);
+  }
+}
+
+async function materializeSandboxModel(
+  config: ReturnType<typeof piModelConfigSchema.parse>,
+  env: NodeJS.ProcessEnv,
+): Promise<PiAgentModelConfig> {
+  const finish = startPiCliObservation("cli_credentials");
+  let outcome: "success" | "error" = "error";
+  try {
+    const model = await materializePiAgentModelConfig({
+      config,
       resolveCredential(binding) {
         return requiredEnv(env, binding.environment);
       },
-    }),
-    ...(langfuseConfig ? { langfuseConfig } : {}),
-  };
+    });
+    outcome = "success";
+    return model;
+  } finally {
+    finish(outcome);
+  }
 }
 
 function piLangfuseRelayConfig(
@@ -195,12 +265,10 @@ function piLangfuseRelayConfig(
 }
 
 /**
- * Resolve the API-first handoff and run the official sandbox-owned Pi RPC host.
+ * Open the run's Pi session and run the official sandbox-owned Pi RPC host.
  *
- * The handoff resolver validates the immutable manifest, authoritative session,
- * and ownership mode. V3 and V4 manifests emit a schema V2 private control
- * carrying the explicit ownership mode. This host writes that control before
- * entering `runPiOfficialRpcMode`.
+ * The sandbox owns the whole turn. This host writes the private startup
+ * control before entering `runPiOfficialRpcMode`.
  *
  * The guest-agent consumes that control record before admitting any official
  * Pi RPC record, so the control is not an agent event, Chat event, transcript
@@ -267,24 +335,16 @@ export async function runPiSandboxAgentLoop(args: {
     return;
   }
   const sessionDir = args.sessionDir ?? CANONICAL_PI_SESSION_DIR;
-  const handoff = await resolvePiApiFirstTurnHandoff({
-    config: args.config.launchPayload.launchConfig.apiFirstTurn,
+  const cwd = args.cwd ?? process.cwd();
+  const sessionFile = await resolvePiSessionFile({
     sessionDir,
     sessionId: args.config.sessionId,
+    cwd,
   });
-  if (handoff.degraded) {
-    // Plain text: guest-agent only parses the preparation-timing envelope on
-    // stderr and keeps everything else as a failure-tail diagnostic.
-    console.error(
-      "Pi API first-turn handoff restarted from H0 as sandbox-first: " +
-        describePiApiFirstTurnHandoffDegrade(handoff.degraded),
-    );
-  }
-  await writePiApiFirstTurnBoundaryControl(handoff.boundaryControl);
   return await runPiOfficialRpcMode({
     sessionId: args.config.sessionId,
     sessionDir,
-    cwd: args.cwd ?? process.cwd(),
+    cwd,
     agentDir: args.agentDir ?? PI_AGENT_DIR,
     model: args.config.model,
     appendSystemPrompt: args.config.launchPayload.appendSystemPrompt,
@@ -306,11 +366,7 @@ export async function runPiSandboxAgentLoop(args: {
           },
         }
       : {}),
-    sessionFile: handoff.sessionFile,
-    ownershipTransferMode: handoff.ownershipTransferMode,
-    ...(handoff.langfuseParent
-      ? { langfuseParent: handoff.langfuseParent }
-      : {}),
+    sessionFile,
     ...(args.config.langfuseConfig
       ? { langfuseConfig: args.config.langfuseConfig }
       : {}),

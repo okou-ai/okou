@@ -1,5 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use guest_contracts::active_input::encoded_active_input_len;
@@ -8,10 +6,7 @@ use uuid::Uuid;
 
 use api_contracts::generated::{
     constants::runners::ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES as ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES_U64,
-    types::runners::runs::active_inputs::{
-        receipt::Response as ActiveInputReceiptResponse,
-        reserve::Response as ActiveInputReserveResponse,
-    },
+    types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
 };
 
 use crate::error::ProviderResult;
@@ -32,11 +27,12 @@ const _: () = assert!(
 );
 
 pub fn identified_active_input_payload_len(text: &str) -> Result<usize, serde_json::Error> {
-    let delivery_id = Uuid::nil().hyphenated().to_string();
-    encoded_active_input_len(&delivery_id, text)
+    let event_id = Uuid::nil().hyphenated().to_string();
+    encoded_active_input_len(&event_id, text)
 }
 
-pub fn local_active_input_delivery_id(run_id: RunId, sequence: u64) -> String {
+/// Stable input identity for a local-queue entry, which has no chat event.
+pub fn local_active_input_event_id(run_id: RunId, sequence: u64) -> String {
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
         format!("vm0:local-active-input:{run_id}:{sequence}").as_bytes(),
@@ -61,35 +57,34 @@ pub struct ApiActiveInputSource {
     run_id: RunId,
     sandbox_token: String,
     notifications: ActiveInputSubscription,
-    consecutive_read_failures: u32,
-}
-
-#[derive(Clone)]
-pub struct ApiActiveInputRecovery {
-    api: ApiClient,
-    run_id: RunId,
-    sandbox_token: String,
 }
 
 pub enum ActiveInputBatch {
     Local(Vec<ActiveInputEntry>),
-    Api(ActiveInputReserveResponse),
+    Api(NextSteerableInputResponse),
 }
 
 const LOCAL_ACTIVE_INPUT_POLL_INTERVAL: Duration = Duration::from_millis(250);
-pub const API_ACTIVE_INPUT_RECHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ACTIVE_INPUT_NOTIFICATION_CAPACITY: usize = 256;
-const API_ACTIVE_INPUT_RETRY_INITIAL_INTERVAL: Duration = Duration::from_millis(250);
-const API_ACTIVE_INPUT_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(4);
 
+/// Wakes API active-input readers. A reader only reads on its first pass and
+/// after a wakeup: there is no periodic recheck and no read retry.
 #[derive(Clone)]
 pub struct ActiveInputNotifications {
-    sender: broadcast::Sender<RunId>,
+    sender: broadcast::Sender<ActiveInputWake>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ActiveInputWake {
+    /// An `active-input` push for one run.
+    Run(RunId),
+    /// Every active run: pushes may have been lost while Ably was disconnected.
+    All,
 }
 
 pub struct ActiveInputSubscription {
     run_id: RunId,
-    receiver: broadcast::Receiver<RunId>,
+    receiver: broadcast::Receiver<ActiveInputWake>,
 }
 
 impl ActiveInputNotifications {
@@ -107,7 +102,12 @@ impl ActiveInputNotifications {
     }
 
     pub fn notify(&self, run_id: RunId) {
-        let _ = self.sender.send(run_id);
+        let _ = self.sender.send(ActiveInputWake::Run(run_id));
+    }
+
+    /// Wake every subscribed run once, e.g. after Ably reconnects.
+    pub fn notify_all(&self) {
+        let _ = self.sender.send(ActiveInputWake::All);
     }
 }
 
@@ -118,13 +118,16 @@ impl Default for ActiveInputNotifications {
 }
 
 impl ActiveInputSubscription {
-    async fn wait(&mut self) {
+    pub(crate) async fn wait(&mut self) {
         loop {
             match self.receiver.recv().await {
-                Ok(run_id) if run_id == self.run_id => return,
-                Ok(_) => {}
+                Ok(ActiveInputWake::Run(run_id)) if run_id == self.run_id => return,
+                Ok(ActiveInputWake::All) => return,
+                Ok(ActiveInputWake::Run(_)) => {}
+                // A lagged receiver may have missed its own wakeup.
                 Err(broadcast::error::RecvError::Lagged(_)) => return,
-                Err(broadcast::error::RecvError::Closed) => return,
+                // No wakeup can arrive any more; never spin on a closed channel.
+                Err(broadcast::error::RecvError::Closed) => std::future::pending::<()>().await,
             }
         }
     }
@@ -146,19 +149,7 @@ impl ActiveInputSource {
             run_id,
             sandbox_token,
             notifications,
-            consecutive_read_failures: 0,
         })
-    }
-
-    pub fn api_recovery(&self) -> Option<ApiActiveInputRecovery> {
-        match self {
-            Self::LocalQueue(_) => None,
-            Self::Api(source) => Some(ApiActiveInputRecovery {
-                api: source.api.clone(),
-                run_id: source.run_id,
-                sandbox_token: source.sandbox_token.clone(),
-            }),
-        }
     }
 
     pub async fn read(&mut self, min_sequence: u64) -> ProviderResult<ActiveInputBatch> {
@@ -182,71 +173,86 @@ impl ActiveInputSource {
         }
     }
 
+    /// Local queues poll; API sources wait for a run or reconnect wakeup.
+    /// The caller owns cancellation.
     pub async fn wait_until_next_read(&mut self) {
         match self {
             Self::LocalQueue(_) => tokio::time::sleep(LOCAL_ACTIVE_INPUT_POLL_INTERVAL).await,
-            Self::Api(source) => {
-                tokio::select! {
-                    () = source.notifications.wait() => {}
-                    () = tokio::time::sleep(API_ACTIVE_INPUT_RECHECK_INTERVAL) => {}
-                }
-            }
+            Self::Api(source) => source.notifications.wait().await,
+        }
+    }
+}
+
+async fn read_api_active_input(source: &ApiActiveInputSource) -> ProviderResult<ActiveInputBatch> {
+    source
+        .api
+        .next_steerable_input(source.run_id, &source.sandbox_token)
+        .await
+        .map(ActiveInputBatch::Api)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::ActiveInputNotifications;
+    use runner_types::ids::RunId;
+
+    const WAKE_TIMEOUT: Duration = Duration::from_secs(5);
+    const NO_WAKE: Duration = Duration::from_millis(20);
+
+    #[tokio::test]
+    async fn run_notification_wakes_only_that_run() {
+        let notifications = ActiveInputNotifications::new();
+        let target = RunId::new_v4();
+        let mut target_subscription = notifications.subscribe(target);
+        let mut other_subscription = notifications.subscribe(RunId::new_v4());
+
+        notifications.notify(target);
+
+        tokio::time::timeout(WAKE_TIMEOUT, target_subscription.wait())
+            .await
+            .expect("the notified run wakes");
+        assert!(
+            tokio::time::timeout(NO_WAKE, other_subscription.wait())
+                .await
+                .is_err(),
+            "another run's notification must not wake this run"
+        );
+    }
+
+    #[tokio::test]
+    async fn notify_all_wakes_every_run_once() {
+        let notifications = ActiveInputNotifications::new();
+        let mut subscriptions =
+            [RunId::new_v4(), RunId::new_v4()].map(|run_id| notifications.subscribe(run_id));
+
+        notifications.notify_all();
+
+        for subscription in &mut subscriptions {
+            tokio::time::timeout(WAKE_TIMEOUT, subscription.wait())
+                .await
+                .expect("every run wakes");
+            assert!(
+                tokio::time::timeout(NO_WAKE, subscription.wait())
+                    .await
+                    .is_err(),
+                "one broadcast wakes each run exactly once"
+            );
         }
     }
 
-    /// Back off failed API reads independently of local polling and Guest control.
-    /// The base doubles from 250 ms to 4 s; run/attempt jitter uses 80%-100% of
-    /// that base to spread shared-outage retries without exceeding the cap.
-    /// Notifications do not bypass this delay; the caller owns cancellation.
-    pub async fn wait_after_read_error(&self) {
-        let delay = match self {
-            Self::LocalQueue(_) => LOCAL_ACTIVE_INPUT_POLL_INTERVAL,
-            Self::Api(source) => {
-                let exponent = source.consecutive_read_failures.saturating_sub(1).min(4);
-                let base = API_ACTIVE_INPUT_RETRY_INITIAL_INTERVAL
-                    .saturating_mul(1_u32 << exponent)
-                    .min(API_ACTIVE_INPUT_RETRY_MAX_INTERVAL);
-                let mut hasher = DefaultHasher::new();
-                source.run_id.hash(&mut hasher);
-                source.consecutive_read_failures.hash(&mut hasher);
-                let jitter_per_mille = 800 + hasher.finish() % 201;
-                let delay =
-                    Duration::from_millis(base.as_millis() as u64 * jitter_per_mille / 1_000);
-                tracing::info!(
-                    run_id = %source.run_id,
-                    consecutive_failures = source.consecutive_read_failures,
-                    retry_delay_ms = delay.as_millis() as u64,
-                    "active-input API read retry scheduled"
-                );
-                delay
-            }
-        };
-        tokio::time::sleep(delay).await;
-    }
-}
+    #[tokio::test]
+    async fn closed_notifications_never_wake() {
+        let notifications = ActiveInputNotifications::new();
+        let mut subscription = notifications.subscribe(RunId::new_v4());
+        drop(notifications);
 
-impl ApiActiveInputRecovery {
-    pub async fn record_delivery(
-        &self,
-        delivery_id: &str,
-    ) -> ProviderResult<ActiveInputReceiptResponse> {
-        self.api
-            .record_active_input_delivery(self.run_id, &self.sandbox_token, delivery_id)
-            .await
+        assert!(
+            tokio::time::timeout(NO_WAKE, subscription.wait())
+                .await
+                .is_err(),
+            "a closed channel must not turn into a read loop"
+        );
     }
-}
-
-async fn read_api_active_input(
-    source: &mut ApiActiveInputSource,
-) -> ProviderResult<ActiveInputBatch> {
-    let response = source
-        .api
-        .reserve_active_inputs(source.run_id, &source.sandbox_token)
-        .await;
-    source.consecutive_read_failures = if response.is_ok() {
-        0
-    } else {
-        source.consecutive_read_failures.saturating_add(1)
-    };
-    response.map(ActiveInputBatch::Api)
 }

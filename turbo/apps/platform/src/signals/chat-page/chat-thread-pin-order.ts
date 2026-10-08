@@ -1,15 +1,14 @@
 import { command, computed } from "ccstate";
 import { chatThreadPinOrderContract } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  comparePinnedThreads,
-  moveChatThreadPinOrder,
-} from "@okouai/core/chat-thread-pin-order";
+import { moveChatThreadPinOrder } from "@okouai/core/chat-thread-pin-order";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { apiClient$ } from "../api-client.ts";
+import { chatThreads$ } from "../agent-chat.ts";
 import { accept } from "../../lib/accept.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
+import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
 import {
   eventDrivenChatThreads$,
   registerOptimisticChatThreadEvent$,
@@ -19,7 +18,9 @@ export const pinnedThreadReorderEnabled$ = computed((get) => {
   const archivedOnly =
     get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true &&
     get(chatThreadOnlyArchived$);
-  return !get(chatThreadOnlyUnread$) && !archivedOnly;
+  return (
+    !get(chatThreadOnlyUnread$) && !archivedOnly && !get(chatThreadOnlyMuted$)
+  );
 });
 
 interface PinMove {
@@ -84,21 +85,17 @@ export const stepPinnedThread$ = command(
     direction: -1 | 1,
     signal: AbortSignal,
   ) => {
-    const threads = get(eventDrivenChatThreads$);
-    const thread = threads.find((item) => {
-      return item.id === threadId;
+    const threads = await get(chatThreads$);
+    signal.throwIfAborted();
+    const pins = threads.filter((item) => {
+      return item.pinnedAt !== null;
     });
-    if (!thread) {
-      return;
-    }
-    const pins = threads
-      .filter((item) => {
-        return item.agentId === thread.agentId && item.pinnedAt !== null;
-      })
-      .sort(comparePinnedThreads);
     const index = pins.findIndex((item) => {
       return item.id === threadId;
     });
+    if (index === -1) {
+      return;
+    }
     const target = pins[index + direction];
     if (target) {
       await set(

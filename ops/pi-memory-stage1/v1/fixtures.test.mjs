@@ -24,7 +24,7 @@ function evaluate(rows, now) {
       row.level === "info" &&
       row.fields.context === "PiMemoryStage1Cost" &&
       row.fields.operation === "pi_memory_stage1" &&
-      row.fields.billingMode !== "byok" &&
+      row.fields.billingMode !== "subscription" &&
       Date.parse(row._time) >= start - 2 * dayMs &&
       Date.parse(row._time) < Date.parse(now),
   );

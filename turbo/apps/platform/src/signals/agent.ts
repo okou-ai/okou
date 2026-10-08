@@ -26,9 +26,30 @@ export const defaultAgentId$ = computed(async (get) => {
 
 const internalAgentByIdReload$ = state(0);
 
+const defaultAgent$ = computed(async (get) => {
+  get(internalAgentByIdReload$);
+  const defaultId = await get(defaultAgentId$);
+  if (!defaultId) {
+    return null;
+  }
+  const client = get(apiClient$)(agentsByIdContract);
+  const result = await accept(client.get({ params: { id: defaultId } }), [200]);
+  return result.body;
+});
+
+/**
+ * The default agent resolves through `defaultAgent$` so callers that address
+ * it by id share one request with the default-agent consumers.
+ */
 export function agentById(id: string): Computed<Promise<AgentResponse>> {
   return computed(async (get) => {
     get(internalAgentByIdReload$);
+    if (id === (await get(defaultAgentId$))) {
+      const defaultAgent = await get(defaultAgent$);
+      if (defaultAgent) {
+        return defaultAgent;
+      }
+    }
     const client = get(apiClient$)(agentsByIdContract);
     const result = await accept(client.get({ params: { id } }), [200]);
     return result.body;
@@ -39,14 +60,6 @@ export const reloadAgentById$ = command(({ set }) => {
   set(internalAgentByIdReload$, (prev) => {
     return prev + 1;
   });
-});
-
-const defaultAgent$ = computed(async (get) => {
-  const defaultId = await get(defaultAgentId$);
-  if (!defaultId) {
-    return null;
-  }
-  return get(agentById(defaultId));
 });
 
 export const defaultAgentName$ = computed(async (get) => {

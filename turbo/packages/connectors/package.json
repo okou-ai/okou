@@ -1,6 +1,6 @@
 {
   "name": "@okouai/connectors",
-  "version": "3.15.3",
+  "version": "3.16.7",
   "private": true,
   "type": "module",
   "exports": {
@@ -32,9 +32,13 @@
       "import": "./src/connector-catalog/contracts.ts",
       "types": "./src/connector-catalog/contracts.ts"
     },
-    "./connector-catalog/runtime-projection": {
-      "import": "./src/connector-catalog/runtime-projection.ts",
-      "types": "./src/connector-catalog/runtime-projection.ts"
+    "./connector-catalog/entry-columns": {
+      "import": "./src/connector-catalog/entry-columns.ts",
+      "types": "./src/connector-catalog/entry-columns.ts"
+    },
+    "./connector-catalog/entry-payload": {
+      "import": "./src/connector-catalog/entry-payload.ts",
+      "types": "./src/connector-catalog/entry-payload.ts"
     },
     "./connector-catalog/version": {
       "import": "./src/connector-catalog/version.ts",
@@ -122,6 +126,6 @@
     "oxlint-tsgolint": "7.0.2001",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }

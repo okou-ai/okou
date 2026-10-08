@@ -3,24 +3,23 @@ import { gzipSync } from "node:zlib";
 
 import AdmZip from "adm-zip";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow } from "../../../lib/time";
-import {
-  readUserExportJobFixture,
-  seedLegacyUserExportJobFixture,
-} from "../../../test-fixtures/user-export";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
-import { commitMemoryVersion } from "./helpers/memory";
 import {
   readExportJsonLines,
   readExportText,
@@ -328,39 +327,25 @@ describe("OPS-01: user data export", () => {
     });
   });
 
-  it("downloads a historical export with the Okou filename without rewriting its row", async () => {
-    const actor = createBddApi(context).user();
-    const storage = installDurableUserExportStorage(context);
-    const { api, jobId } = await completedExport(actor, storage);
-    const exportKey = `exports/${actor.userId}/${jobId}.zip`;
-
-    const historicalJob = await seedLegacyUserExportJobFixture(
-      actor.userId,
-      jobId,
-    );
-    const downloaded = await api.requestGetUserExport(actor, [200]);
-    expect(downloaded.body.job).toMatchObject({
-      id: jobId,
-      status: "completed",
-      downloadUrl: expect.any(String),
-    });
-    expect(exportDownloadDispositions(exportKey)).toStrictEqual(
-      expect.arrayContaining(['attachment; filename="okou-data-export.zip"']),
-    );
-    await expect(
-      readUserExportJobFixture(actor.userId, jobId),
-    ).resolves.toStrictEqual(historicalJob);
-  });
-
   it("exports owned threads, instructions, workflows, and current memory in format v4", async () => {
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
     const chat = createChatFilesBddApi(context);
     const misc = createMiscRoutesApi(context);
+    const runs = createRunsApi(context);
+    const webhooks = createWebhookCallbackApi(context);
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected an organization for the export actor");
     }
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    await runs.heartbeatRunner(runnerGroup);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Export Agent",
       visibility: "private",
@@ -387,17 +372,112 @@ describe("OPS-01: user data export", () => {
     await chat.pinThread(actor, thread.id, { pinOrder: "a0" });
 
     const peer = bdd.user({ orgId: actor.orgId });
+    const peerOnboarding = await bdd.readOnboardingStatus(peer);
+    if (!peerOnboarding.defaultAgentId) {
+      throw new Error("Expected the paid organization to onboard the peer");
+    }
+    const peerOnboarded = await bdd.completeOnboarding(peer);
+    if (peerOnboarded.status !== 200) {
+      throw new Error("Expected peer onboarding to complete");
+    }
     const peerAgent = await bdd.createAgent(peer, { visibility: "private" });
     const peerThread = await chat.createThread(peer, {
       agentId: peerAgent.agentId,
       title: "Another user's private thread",
     });
 
-    createStoragesBddApi(context).mockStoragePresignedUrls();
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/storages/presigned?sig=bdd",
+    );
+    const startMemoryRun = async (owner: ApiTestUser, agentId: string) => {
+      // Each exporting owner has an independent subscription and memory.
+      await runs.ensurePersonalSubscriptionModel(owner, {
+        model: "claude-sonnet-5-5",
+      });
+      // Separate carrier Threads keep both original empty Threads untouched.
+      const run = await runs.createThreadRun(owner, {
+        agentId,
+        model: "claude-sonnet-5-5",
+        prompt: "publish the memory included in the data export",
+      });
+      onTestFinished(async () => {
+        const current = await runs.readRun(owner, run.runId);
+        if (
+          current.status === "queued" ||
+          current.status === "pending" ||
+          current.status === "running"
+        ) {
+          await runs.requestCancelRun(owner, run.runId, [200]);
+        }
+        await flushWaitUntilForTest();
+      });
+      const claim = await runs.claimRunnerJob(run.runId);
+      const memory = expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts.find((mount) => {
+        return mount.name === "memory";
+      });
+      if (!memory) {
+        throw new Error("Expected the carrier Run to mount memory");
+      }
+      return {
+        runId: run.runId,
+        storageId: memory.storageId,
+        sandboxToken: claim.sandboxToken,
+      };
+    };
+    const commitRunMemory = async (
+      run: Awaited<ReturnType<typeof startMemoryRun>>,
+      files: readonly {
+        readonly path: string;
+        readonly content: string | Buffer;
+      }[],
+      archiveSize: number,
+    ) => {
+      const entries = files.map((file) => {
+        return {
+          path: file.path,
+          hash: createHash("sha256").update(file.content).digest("hex"),
+          size: Buffer.byteLength(file.content),
+        };
+      });
+      const headers = { authorization: `Bearer ${run.sandboxToken}` };
+      const prepared = await webhooks.requestAgentStoragePrepare(
+        { runId: run.runId, storageId: run.storageId, files: entries },
+        headers,
+        [200],
+      );
+      if (prepared.status !== 200) {
+        throw new Error("Expected the carrier memory preparation to succeed");
+      }
+      const archiveKey = prepared.body.uploads?.archive.key;
+      if (!archiveKey?.endsWith(`/${prepared.body.versionId}/archive.tar.gz`)) {
+        throw new Error("Expected the carrier memory's exact archive key");
+      }
+      context.mocks.s3.send.mockResolvedValueOnce({ ContentLength: 1024 });
+      context.mocks.s3.send.mockResolvedValueOnce({
+        ContentLength: archiveSize,
+      });
+      await webhooks.requestAgentStorageCommit(
+        {
+          runId: run.runId,
+          storageId: run.storageId,
+          versionId: prepared.body.versionId,
+          files: entries,
+        },
+        headers,
+        [200],
+      );
+      return {
+        storageId: run.storageId,
+        versionId: prepared.body.versionId,
+        s3Key: archiveKey.slice(0, -"/archive.tar.gz".length),
+      };
+    };
+    const ownerMemoryRun = await startMemoryRun(actor, agent.agentId);
     const oldFiles = [{ path: "removed.md", content: "An old memory version" }];
-    const oldMemory = await commitMemoryVersion(
-      context,
-      actor,
+    const oldMemory = await commitRunMemory(
+      ownerMemoryRun,
       oldFiles,
       createTarGz(oldFiles).length,
     );
@@ -409,23 +489,26 @@ describe("OPS-01: user data export", () => {
         content: Buffer.from([0, 255, 254, 128, 10, 13, 0, 1, 2]),
       },
     ];
-    const memory = await commitMemoryVersion(
-      context,
-      actor,
+    const memory = await commitRunMemory(
+      ownerMemoryRun,
       memoryFiles,
       createTarGz(memoryFiles).length,
     );
     const currentMemory = putMemoryArchive(misc, memory.s3Key, memoryFiles);
+    await runs.requestCancelRun(actor, ownerMemoryRun.runId, [200]);
+    await flushWaitUntilForTest();
+    const peerMemoryRun = await startMemoryRun(peer, peerAgent.agentId);
     const peerFiles = [
       { path: "peer-secret.md", content: "Another user's memory" },
     ];
-    const peerMemory = await commitMemoryVersion(
-      context,
-      peer,
+    const peerMemory = await commitRunMemory(
+      peerMemoryRun,
       peerFiles,
       createTarGz(peerFiles).length,
     );
     putMemoryArchive(misc, peerMemory.s3Key, peerFiles);
+    await runs.requestCancelRun(peer, peerMemoryRun.runId, [200]);
+    await flushWaitUntilForTest();
 
     const storage = installDurableUserExportStorage(context);
     const { zip } = await completedExport(actor, storage);

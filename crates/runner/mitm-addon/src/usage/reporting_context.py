@@ -8,7 +8,6 @@ from platform_api import get_api_url
 from .underbilling import log_usage_underbilling
 
 USAGE_EVENT_WEBHOOK_PATH = "/api/webhooks/agent/usage-event"
-AGENT_TELEMETRY_WEBHOOK_PATH = "/api/webhooks/agent/telemetry"
 
 
 class UsageReportingContext:
@@ -38,9 +37,6 @@ class UsageReportingContext:
 
     def usage_event_url(self) -> str:
         return self._url_for(USAGE_EVENT_WEBHOOK_PATH)
-
-    def telemetry_url(self) -> str:
-        return self._url_for(AGENT_TELEMETRY_WEBHOOK_PATH)
 
 
 def log_usage_reporting_context_missing(

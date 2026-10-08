@@ -248,7 +248,32 @@ describe("private HTML preview gateway", () => {
     },
   );
 
-  it("denies reconstructed aliases, immutable URLs, raw storage paths, wrong tokens and brands", async () => {
+  it("serves previews issued in the legacy layout on the legacy host", async () => {
+    const { env, objects, grant, manifest } = fixture();
+    const legacyPrefix = `private-sites/vm0/${deploymentId}`;
+    objects.clear();
+    objects.set(
+      `private-previews/vm0/${token}.json`,
+      JSON.stringify({ ...grant, publicBrand: "vm0" }),
+    );
+    objects.set(
+      `${legacyPrefix}/manifest.json`,
+      JSON.stringify({ ...manifest, publicBrand: "vm0" }),
+    );
+    objects.set(`${legacyPrefix}/index.html`, "<h1>Legacy report</h1>");
+
+    const legacy = await fetchWorker(
+      new Request(`https://pv-${token}.sites.vm0.io/`),
+      env,
+    );
+    const current = await fetchWorker(new Request(`${origin}/`), env);
+
+    expect(legacy.status).toBe(200);
+    expect(await legacy.text()).toBe("<h1>Legacy report</h1>");
+    expect(current.status).toBe(404);
+  });
+
+  it("denies reconstructed aliases, immutable URLs, raw storage paths, wrong tokens and hosts", async () => {
     const { env } = fixture();
     for (const url of [
       "https://private-report.okou.app/",

@@ -1,3 +1,9 @@
+import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
+import {
+  allowanceAvailability,
+  allowanceAvailabilityQuery,
+} from "./usage-allowance-availability-plan";
+import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { isDeepStrictEqual } from "node:util";
 
 import {
@@ -10,7 +16,7 @@ import {
   type SocialDataQuoteResponse,
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
-import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { command } from "ccstate";
@@ -28,12 +34,7 @@ import {
 import { writeDb$, type Db } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import {
-  checkManagedCreditsInDb,
-  recordManagedUsageInTransaction,
-} from "./managed-usage.service";
-import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
+import { checkManagedCreditsSnapshotInDb } from "./managed-usage.service";
 import {
   inspectSocialDataProviderPlan,
   readSocialDataProviderRun,
@@ -47,7 +48,6 @@ import {
   SocialDataProviderError,
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
-import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 
 export const SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS = 240_000;
 const CLAIM_MS = 180_000;
@@ -94,17 +94,6 @@ function providerFor(platform: SocialDataRequest["platform"]): string {
   return `monid/${platform}`;
 }
 
-async function admitSocialOwner(
-  tx: Tx,
-  owner: Pick<Actor, "userId" | "orgId">,
-): Promise<boolean> {
-  // Legacy Clerk cleanup records its durable closure in this shared subject fence.
-  return await admitPiStableContextSubjects(tx, [
-    { subjectKind: "user", subjectId: owner.userId },
-    { subjectKind: "organization", subjectId: owner.orgId },
-  ]);
-}
-
 function creditsFor(cost: number, unitPrice: number, unitSize: number): number {
   if (
     ![cost, unitPrice, unitSize].every(Number.isSafeInteger) ||
@@ -149,26 +138,6 @@ function publicJob(job: Job): SocialDataJobResponse {
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
   });
-}
-
-async function requireEnabled(
-  db: Db,
-  auth: Actor,
-  signal: AbortSignal,
-): Promise<ErrorResponse | null> {
-  const context = await loadUserFeatureSwitchContext(
-    db,
-    auth.orgId,
-    auth.userId,
-  );
-  signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.SocialDataJobs, context)
-    ? null
-    : errorResponse(
-        403,
-        "FEATURE_NOT_AVAILABLE",
-        "Social data jobs are not enabled for this account.",
-      );
 }
 
 function ownerWhere(auth: Pick<Actor, "orgId" | "userId">, jobId: string) {
@@ -253,10 +222,6 @@ export const quoteSocialData$ = command(
     | ErrorResponse
   > => {
     const db = set(writeDb$);
-    const disabled = await requireEnabled(db, args.auth, signal);
-    if (disabled) {
-      return disabled;
-    }
     const result = await settle(
       (async () => {
         const estimate = await inspectSocialDataProviderPlan(
@@ -304,7 +269,7 @@ async function checkBudget(
     readonly resolution: UsagePricingResolution;
   },
   signal: AbortSignal,
-): Promise<ErrorResponse | null> {
+): Promise<ErrorResponse | "allowance_refresh_required" | null> {
   if (args.maxCredits < args.estimatedCredits) {
     return errorResponse(
       402,
@@ -338,7 +303,12 @@ async function checkBudget(
   if (args.maxCredits === 0) {
     return null;
   }
-  return await checkManagedCreditsInDb(
+  const at = nowDate();
+  const allowanceRows = await tx
+    .select()
+    .from(allowanceAvailabilityQuery(args.auth.orgId, at));
+  signal.throwIfAborted();
+  return await checkManagedCreditsSnapshotInDb(
     tx,
     {
       orgId: args.auth.orgId,
@@ -355,6 +325,7 @@ async function checkBudget(
       enforceBalance: true,
     },
     args.resolution,
+    allowanceAvailability(allowanceRows, at),
     signal,
   );
 }
@@ -369,19 +340,16 @@ async function admitJob(
     readonly resolution: UsagePricingResolution;
   },
   signal: AbortSignal,
-): Promise<CreatedResponse | ErrorResponse> {
-  if (!(await admitSocialOwner(tx, args.auth))) {
-    return errorResponse(
-      403,
-      "SOCIAL_DATA_OWNER_UNAVAILABLE",
-      "This account cannot start Social data jobs.",
-    );
+): Promise<CreatedResponse | ErrorResponse | "allowance_refresh_required"> {
+  const [owner] = await tx
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, args.auth.orgId))
+    .for("no key update");
+  signal.throwIfAborted();
+  if (!owner) {
+    return errorResponse(404, "NOT_FOUND", "Organization not found.");
   }
-  signal.throwIfAborted();
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`social-data:${args.auth.orgId}`}, 0))`,
-  );
-  signal.throwIfAborted();
   const [duplicate] = await tx
     .select()
     .from(socialDataJobs)
@@ -443,10 +411,6 @@ export const createSocialDataJob$ = command(
     signal: AbortSignal,
   ): Promise<CreatedResponse | ErrorResponse> => {
     const db = set(writeDb$);
-    const disabled = await requireEnabled(db, args.auth, signal);
-    if (disabled) {
-      return disabled;
-    }
     const [existing] = await db
       .select()
       .from(socialDataJobs)
@@ -461,9 +425,26 @@ export const createSocialDataJob$ = command(
         const estimate = await inspectSocialDataProviderPlan(plan, signal);
         signal.throwIfAborted();
         const resolution = get(usagePricingResolution$);
-        return await db.transaction((tx) => {
+        const admitted = await db.transaction((tx) => {
           return admitJob(tx, { ...args, plan, estimate, resolution }, signal);
         });
+        if (admitted !== "allowance_refresh_required") {
+          return admitted;
+        }
+        // The owner-row transaction has ended. External Stripe preparation and
+        // the allowance CAS refresh must not run while that row is owned.
+        await set(resolveUsageAllowanceAvailability$, args.auth.orgId, signal);
+        signal.throwIfAborted();
+        const refreshed = await db.transaction((tx) => {
+          return admitJob(tx, { ...args, plan, estimate, resolution }, signal);
+        });
+        return refreshed === "allowance_refresh_required"
+          ? errorResponse(
+              402,
+              "INSUFFICIENT_CREDITS",
+              "Insufficient credits. Please add credits to continue.",
+            )
+          : refreshed;
       })(),
       signal,
     );
@@ -524,18 +505,11 @@ async function readClaimOutcome(
   const plan = jobPlan(job);
   let outcome: SocialDataProviderRun;
   if (job.startedAt === null) {
-    const starting = await db.transaction(async (tx) => {
-      if (!(await admitSocialOwner(tx, job))) {
-        return undefined;
-      }
-      signal.throwIfAborted();
-      const [admitted] = await tx
-        .update(socialDataJobs)
-        .set({ status: "running", startedAt: nowDate() })
-        .where(and(claimedWhere(claim), isNull(socialDataJobs.stopRequestedAt)))
-        .returning();
-      return admitted;
-    });
+    const [starting] = await db
+      .update(socialDataJobs)
+      .set({ status: "running", startedAt: nowDate() })
+      .where(and(claimedWhere(claim), isNull(socialDataJobs.stopRequestedAt)))
+      .returning();
     signal.throwIfAborted();
     if (!starting) {
       await finishFree(db, claim, "cancelled");
@@ -640,69 +614,26 @@ async function saveClaimOutcome(
 }
 
 const settleSocialDataJob$ = command(
-  async ({ get, set }, claim: Claim, signal: AbortSignal): Promise<void> => {
+  async ({ set }, claim: Claim, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    const resolution = get(usagePricingResolution$);
-    const effects = await db.transaction(async (tx) => {
-      if (!(await admitSocialOwner(tx, claim.job))) {
-        await finishFree(tx, claim, "cancelled");
-        return null;
-      }
-      signal.throwIfAborted();
-      await lockUsageEventCompaction(tx, "shared");
-      signal.throwIfAborted();
-      const [job] = await tx
-        .select()
-        .from(socialDataJobs)
-        .where(claimedWhere(claim))
-        .for("update");
-      signal.throwIfAborted();
-      if (!job || job.creditsCharged !== null) {
-        return null;
-      }
-      if (job.actualCostUsdMicros === null) {
-        throw new Error("Completed Social data job has no settlement cost");
-      }
-      const receipt =
-        job.actualCostUsdMicros === 0 || job.maxCredits === 0
-          ? null
-          : await recordManagedUsageInTransaction(
-              tx,
-              {
-                actor: {
-                  orgId: job.orgId,
-                  userId: job.userId,
-                  ...(job.billingRunId ? { runId: job.billingRunId } : {}),
-                },
-                resource: {
-                  kind: "social",
-                  provider: providerFor(job.platform),
-                  category: BILLING_CATEGORY,
-                  quantity: job.actualCostUsdMicros,
-                },
-                label: "Okou Social",
-                idempotencyKey: job.usageIdempotencyKey,
-                pricingSnapshot: {
-                  unitPrice: job.unitPrice,
-                  unitSize: job.unitSize,
-                  creditsLimit: job.maxCredits,
-                },
-              },
-              resolution,
-              signal,
-            );
-      signal.throwIfAborted();
-      await tx
-        .update(socialDataJobs)
-        .set({
-          creditsCharged: receipt?.creditsCharged ?? 0,
-          reservedCredits: 0,
-          completedAt: nowDate(),
-          updatedAt: nowDate(),
-        })
-        .where(claimedWhere(claim));
-      return receipt?.effects ?? null;
-    });
+    const [current] = await db
+      .select({
+        creditsCharged: socialDataJobs.creditsCharged,
+      })
+      .from(socialDataJobs)
+      .where(claimedWhere(claim));
+    signal.throwIfAborted();
+    if (!current || current.creditsCharged !== null) {
+      return;
+    }
+    const effects = await set(
+      settleOrgUsage$,
+      {
+        orgId: claim.job.orgId,
+        social: { jobId: claim.job.id, expiresAt: claim.expiresAt },
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (effects) {
       await set(

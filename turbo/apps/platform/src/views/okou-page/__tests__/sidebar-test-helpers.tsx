@@ -4,6 +4,8 @@ import { expect, vi } from "vitest";
 
 import {
   chatThreadByIdContract,
+  chatThreadArchiveContract,
+  chatThreadMuteContract,
   chatThreadPinContract,
   chatThreadRenameContract,
   chatThreadUnpinContract,
@@ -21,7 +23,10 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 export const context = testContext();
 
@@ -41,6 +46,8 @@ export interface SidebarThread {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly pinnedAt?: string | null;
+  readonly archived?: boolean;
+  readonly muted?: boolean;
   readonly renamedAt?: string | null;
   /** Overrides the ordering-derived `sortAt` when a test asserts on its age. */
   readonly sortAt?: string;
@@ -73,9 +80,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     },
     {
@@ -86,9 +90,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     },
     {
@@ -99,9 +100,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     },
   ];
@@ -120,9 +118,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       displayName: displayNameById[params.id] ?? null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     });
   });
@@ -215,11 +210,12 @@ function sidebarThreadSnapshot(
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
         pinnedAt: thread.pinnedAt ?? null,
+        archived: thread.archived ?? false,
+        muted: thread.muted ?? false,
         renamedAt: thread.renamedAt ?? null,
         selectedModel: null,
         serviceTier: null,
         computerUseHostId: null,
-        selectedVideoModel: null,
       };
     }),
     latestEventId: null,
@@ -237,7 +233,13 @@ export function mockChatThreadSnapshot(
 ): void {
   targetContext.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await remoteGate;
-    return respond(200, sidebarThreadSnapshot(threads()));
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(
+        targetContext,
+        sidebarThreadSnapshot(threads()),
+      ),
+    );
   });
   targetContext.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -694,6 +696,44 @@ export function mockSidebarThreadStory(
     ({ params, respond }) => {
       threads = threads.map((thread) => {
         return thread.id === params.id ? { ...thread, pinnedAt: null } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadMuteContract.mute,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id ? { ...thread, muted: true } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadMuteContract.unmute,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id ? { ...thread, muted: false } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadArchiveContract.archive,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id ? { ...thread, archived: true } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadArchiveContract.unarchive,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id
+          ? { ...thread, archived: false }
+          : thread;
       });
       return respond(204);
     },

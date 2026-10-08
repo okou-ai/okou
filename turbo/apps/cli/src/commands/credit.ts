@@ -11,7 +11,6 @@ import { withErrorHandler } from "../lib/command/with-error-handler";
 import { decodeSandboxTokenPayload } from "../lib/api/sandbox-token";
 import { getPlatformOrigin } from "../lib/platform-url";
 import {
-  currentPlanAllowsVideo,
   currentPlanCanBuyCredits,
   currentTokenCanReadBilling,
 } from "./shared/billing-capabilities";
@@ -87,13 +86,6 @@ function printCreditStatus(billing: BillingStatusResponse): void {
       currentPlanCanBuyCredits(billing)
         ? chalk.green("yes")
         : chalk.yellow("no")
-    }`,
-  );
-  console.log(
-    `  Built-in video generation: ${
-      currentPlanAllowsVideo(billing)
-        ? chalk.green("available")
-        : chalk.yellow("unavailable")
     }`,
   );
   console.log(

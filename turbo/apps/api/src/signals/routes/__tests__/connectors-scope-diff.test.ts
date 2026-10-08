@@ -15,10 +15,10 @@ import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-import { seedConnectorStorageRow } from "./helpers/connector-credential-storage-state";
+
 import { builtinConnectorsRoutes } from "../connectors";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 
@@ -112,30 +112,6 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
     );
     expectApiError(response.body);
     expect(response.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("returns 404 when the stored connector runtime method is unavailable", async () => {
-    const actor = bdd.user();
-    if (actor.orgId === null) {
-      throw new Error("Expected test actor organization");
-    }
-    await seedConnectorStorageRow(context, {
-      orgId: actor.orgId,
-      userId: actor.userId,
-      connectorSlug: "openai",
-      authMethod: "unavailable-method",
-      storageVersion: 1,
-    });
-
-    const response = await connectorsApi.requestScopeDiff(
-      actor,
-      "openai",
-      [404],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("NOT_FOUND");
-    await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "openai");
   });
 
   it("returns an empty diff when stored scopes match current scopes exactly", async () => {

@@ -8,13 +8,13 @@ import {
 } from "@okouai/api-contracts/contracts/social-data";
 import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { useSingleConnectionPoolFixture } from "../../../test-fixtures/database-pool";
 import {
@@ -30,8 +30,8 @@ import { testUsageStateRoutes } from "../test-usage-state";
 import { usageRecordRoutes } from "../usage-record";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
+import { postUsageAllowanceInvoicePaid } from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
 const ROUTES = Object.freeze([
@@ -94,17 +94,9 @@ async function pricing(unitPrice = 7): Promise<UsagePricingFixture> {
   return fixture;
 }
 
-async function enable(actor: ApiTestUser & { readonly orgId: string }) {
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.SocialDataJobs]: true,
-  });
-}
-
 async function seedActor({
-  enabled = true,
   singleConnection = false,
 }: {
-  readonly enabled?: boolean;
   readonly singleConnection?: boolean;
 } = {}): Promise<SocialActor> {
   const actor = createBddApi(context).user();
@@ -113,9 +105,6 @@ async function seedActor({
   }
   const orgActor = { ...actor, orgId: actor.orgId };
   await createRunsApi(context).grantProEntitlement(orgActor);
-  if (enabled) {
-    await enable(orgActor);
-  }
   mockEnv("OKOU_SOCIAL_MONID_API_KEY", "test-social-source-key");
   if (singleConnection) {
     await flushWaitUntilForTest();
@@ -131,6 +120,23 @@ async function credits(actor: SocialActor): Promise<number> {
     [200],
   );
   return response.body.credits;
+}
+
+async function grantAllowance(actor: SocialActor, expiresAt: Date) {
+  const subscriptionId = `sub_social_allowance_${randomUUID()}`;
+  await postUsageAllowanceInvoicePaid(context.signal, {
+    orgId: actor.orgId,
+    userId: actor.userId,
+    customerId: `cus_social_allowance_${randomUUID()}`,
+    subscriptionId,
+    effectiveAt: new Date(nowDate().getTime() - 2 * 86_400_000),
+    expiresAt,
+    shortWindowSeconds: 5 * 60 * 60,
+    shortWindowUnits: 100,
+    weeklyWindowSeconds: 7 * 24 * 60 * 60,
+    weeklyWindowUnits: 100,
+  });
+  return subscriptionId;
 }
 
 async function readJob(actor: SocialActor, jobId: string) {
@@ -331,8 +337,8 @@ function tikhubPlanSource(options: {
 }
 
 describe("Social data jobs", () => {
-  it("requires authentication and the feature switch", async () => {
-    const actor = await seedActor({ enabled: false });
+  it("requires authentication", async () => {
+    const actor = await seedActor();
     const before = await credits(actor);
     await accept(
       client(actor)(socialDataContract).quote({
@@ -340,13 +346,6 @@ describe("Social data jobs", () => {
         body: COMMENT_REQUEST,
       }),
       [401],
-    );
-    await accept(
-      client(actor)(socialDataContract).quote({
-        headers: authenticate(actor),
-        body: COMMENT_REQUEST,
-      }),
-      [403],
     );
     await expect(credits(actor)).resolves.toBe(before);
   });
@@ -697,6 +696,283 @@ describe("Social data jobs", () => {
     await expect(credits(actor)).resolves.toBe(before);
   });
 
+  it("reserves the remaining budget for only one concurrent collection", async () => {
+    const actor = await seedActor();
+    const observed = source({ start: "async" });
+    const before = await credits(actor);
+    const maxCredits = Math.floor(before / 2) + 1;
+
+    const responses = await Promise.all(
+      [createBody({ maxCredits }), createBody({ maxCredits })].map((body) => {
+        return accept(
+          client(actor)(socialDataContract).create({
+            headers: authenticate(actor),
+            body,
+          }),
+          [202, 402],
+        );
+      }),
+    );
+    expect(
+      responses
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([202, 402]);
+    const accepted = responses.find((response) => {
+      return response.status === 202;
+    });
+    if (!accepted) {
+      throw new Error("Expected one admitted Social data job");
+    }
+    const running = await readJob(actor, accepted.body.jobId);
+    expect(running.body).toMatchObject({
+      status: "running",
+      billing: { state: "pending", reservedCredits: maxCredits },
+    });
+    expect(observed.runRequests).toBe(1);
+    await expect(credits(actor)).resolves.toBe(before);
+    observed.pollStatus = "completed";
+    await readJob(actor, accepted.body.jobId);
+  });
+
+  it("settles a billable Social result inline against issued allowance windows", async () => {
+    const actor = await seedActor();
+    const before = await credits(actor);
+    await grantAllowance(actor, new Date(nowDate().getTime() + 86_400_000));
+    const observed = source({ start: "async", actualCostMicros: 10_000 });
+    const created = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: createBody({ maxCredits: before + 50 }),
+      }),
+      [202],
+    );
+    await readJob(actor, created.body.jobId);
+    observed.pollStatus = "completed";
+
+    const completed = await readJob(actor, created.body.jobId);
+
+    expect(completed.body.billing).toMatchObject({
+      state: "settled",
+      creditsCharged: 0,
+      reservedCredits: 0,
+    });
+    const status = await accept(
+      client(actor)(billingStatusContract).get({
+        headers: authenticate(actor),
+      }),
+      [200],
+    );
+    if (!status.body.usageAllowance) {
+      throw new Error("Expected issued windows after inline settlement");
+    }
+    expect(
+      Object.fromEntries(
+        status.body.usageAllowance.windows.map((window) => {
+          return [window.kind, window.consumedUnits];
+        }),
+      ),
+    ).toStrictEqual({ short: 70, weekly: 70 });
+    await expect(credits(actor)).resolves.toBe(before);
+  });
+
+  it("uses remaining allowance when credits cannot cover the reserved budget", async () => {
+    const actor = await seedActor();
+    const before = await credits(actor);
+    await grantAllowance(actor, new Date(nowDate().getTime() + 86_400_000));
+    const observed = source({ start: "async" });
+    const created = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: createBody({ maxCredits: before + 50 }),
+      }),
+      [202],
+    );
+    const running = await readJob(actor, created.body.jobId);
+    expect(running.body.billing).toMatchObject({
+      state: "pending",
+      reservedCredits: before + 50,
+    });
+    observed.pollStatus = "completed";
+    const completed = await readJob(actor, created.body.jobId);
+    expect(completed.body.billing).toMatchObject({
+      state: "settled",
+      creditsCharged: 0,
+      reservedCredits: 0,
+    });
+    await expect(credits(actor)).resolves.toBe(before);
+
+    const rejected = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: createBody({ maxCredits: before + 100 }),
+      }),
+      [402],
+    );
+    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+  });
+
+  it.each(["active", "canceled"])(
+    "refreshes expired allowance before admission when Stripe reports %s",
+    async (subscriptionStatus) => {
+      const actor = await seedActor();
+      const before = await credits(actor);
+      const subscriptionId = await grantAllowance(
+        actor,
+        new Date(nowDate().getTime() - 3_600_000),
+      );
+      const observed = source({ start: "async" });
+      context.mocks.stripe.subscriptions.retrieve.mockClear();
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+        id: subscriptionId,
+        status: subscriptionStatus,
+        items: {
+          data: [
+            {
+              current_period_end: Math.floor(
+                (nowDate().getTime() + 86_400_000) / 1000,
+              ),
+            },
+          ],
+        },
+      });
+      const response = await accept(
+        client(actor)(socialDataContract).create({
+          headers: authenticate(actor),
+          body: createBody({ maxCredits: before + 50 }),
+        }),
+        [202, 402],
+      );
+      expect(response.status).toBe(subscriptionStatus === "active" ? 202 : 402);
+      expect(
+        context.mocks.stripe.subscriptions.retrieve,
+      ).toHaveBeenCalledExactlyOnceWith(subscriptionId);
+      if (response.status === 202) {
+        const running = await readJob(actor, response.body.jobId);
+        expect(running.body.billing.reservedCredits).toBe(before + 50);
+        const rejected = await accept(
+          client(actor)(socialDataContract).create({
+            headers: authenticate(actor),
+            body: createBody({ maxCredits: before + 50 }),
+          }),
+          [402],
+        );
+        expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+        observed.pollStatus = "completed";
+        await readJob(actor, response.body.jobId);
+      } else {
+        expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+        expect(observed.runRequests).toBe(0);
+      }
+    },
+  );
+
+  it("preserves newer paid allowance when an older provider refresh completes", async () => {
+    const actor = await seedActor();
+    const before = await credits(actor);
+    const subscriptionId = await grantAllowance(
+      actor,
+      new Date(nowDate().getTime() - 3_600_000),
+    );
+    const observed = source({ start: "async" });
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    context.mocks.stripe.subscriptions.retrieve.mockImplementationOnce(
+      async () => {
+        started.resolve();
+        await release.promise;
+        return {
+          id: subscriptionId,
+          status: "canceled",
+          items: { data: [] },
+        };
+      },
+    );
+    const pending = accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: createBody({ maxCredits: before + 50 }),
+      }),
+      [202, 402],
+    );
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve();
+      }
+      await pending;
+    });
+    await started.promise;
+    await postUsageAllowanceInvoicePaid(context.signal, {
+      orgId: actor.orgId,
+      userId: actor.userId,
+      customerId: `cus_social_allowance_${randomUUID()}`,
+      subscriptionId,
+      effectiveAt: nowDate(),
+      expiresAt: new Date(nowDate().getTime() + 86_400_000),
+      shortWindowSeconds: 5 * 60 * 60,
+      shortWindowUnits: 100,
+      weeklyWindowSeconds: 7 * 24 * 60 * 60,
+      weeklyWindowUnits: 100,
+    });
+    release.resolve();
+    const result = await pending;
+    await expect(credits(actor)).resolves.toBe(before);
+    // A caller may either adopt the current snapshot before admission or
+    // reject its old snapshot. A fresh normal request must use the paid fact.
+    const created =
+      result.status === 202
+        ? result
+        : await accept(
+            client(actor)(socialDataContract).create({
+              headers: authenticate(actor),
+              body: createBody({ maxCredits: before + 50 }),
+            }),
+            [202],
+          );
+    observed.pollStatus = "completed";
+    const completed = await readJob(actor, created.body.jobId);
+    expect(completed.body.billing).toMatchObject({
+      state: "settled",
+      creditsCharged: 0,
+    });
+    await expect(credits(actor)).resolves.toBe(before);
+  });
+
+  it("admits a credit-funded job when expired allowance cannot reach Stripe", async () => {
+    const actor = await seedActor();
+    const subscriptionId = await grantAllowance(
+      actor,
+      new Date(nowDate().getTime() - 3_600_000),
+    );
+    const observed = source({ start: "async" });
+    context.mocks.stripe.subscriptions.retrieve.mockClear();
+    context.mocks.stripe.subscriptions.retrieve.mockRejectedValue(
+      new Error("Stripe is unavailable"),
+    );
+    const created = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: createBody(),
+      }),
+      [202],
+    );
+    const running = await readJob(actor, created.body.jobId);
+    expect(running.body).toMatchObject({
+      status: "running",
+      billing: { state: "pending", reservedCredits: 28 },
+    });
+    expect(context.mocks.stripe.subscriptions.retrieve).not.toHaveBeenCalled();
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      id: subscriptionId,
+      status: "canceled",
+      items: { data: [] },
+    });
+    observed.pollStatus = "completed";
+    await readJob(actor, created.body.jobId);
+  });
+
   it("caps a successful settlement at the admitted budget", async () => {
     const actor = await seedActor();
     source({ actualCostMicros: 10_000 });
@@ -850,7 +1126,6 @@ describe("Social data jobs", () => {
         orgId: identity.orgId,
         usagePricingResolution: owner.usagePricingResolution,
       };
-      await enable(foreign);
       const foreignClient = client(foreign)(socialDataContract);
       await accept(
         foreignClient.get({

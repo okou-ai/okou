@@ -32,8 +32,6 @@ import {
   type ComposerConnectorAccountSignals,
 } from "./composer-connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
-import { sshAccessForAgent } from "../ssh.ts";
-import { vncAccessForAgent } from "../vnc-access.ts";
 
 export interface ComposerConnectorAuthorizationState {
   readonly agentId: string;
@@ -61,6 +59,7 @@ export interface ComposerConnectorUiState {
   readonly popoverSearch: string;
   readonly popoverOpen: boolean;
   readonly popoverHasOpened: boolean;
+  readonly remoteMenuOpen: boolean;
   readonly popoverSortOrder: readonly string[] | null;
   readonly permissionConnectorSlug: ConnectorSlug | null;
   readonly directoryTab: ConnectorDirectoryTab;
@@ -114,20 +113,6 @@ export interface ComposerConnectorSignals {
     Promise<readonly PlatformUserPermissionGrant[]>
   >;
   readonly accounts: ComposerConnectorAccountSignals;
-  readonly sshAccess$: Computed<
-    Promise<{
-      readonly identity: string;
-      readonly agentId: string;
-      readonly enabled: boolean;
-    } | null>
-  >;
-  readonly vncAccess$: Computed<
-    Promise<{
-      readonly identity: string;
-      readonly agentId: string;
-      readonly enabled: boolean;
-    } | null>
-  >;
 }
 
 /** Browse reads ask for no keyword; the category, when set, scopes them. */
@@ -146,6 +131,7 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     popoverSearch: "",
     popoverOpen: false,
     popoverHasOpened: false,
+    remoteMenuOpen: false,
     popoverSortOrder: null,
     permissionConnectorSlug: null,
     directoryTab: "discover",
@@ -321,18 +307,6 @@ export function createComposerConnectorSignals(
   threadId?: string,
 ): ComposerConnectorSignals {
   const ui = createConnectorUiSignals();
-  const sshAccessForAgent$ = sshAccessForAgent(agentId);
-  const vncAccessForAgent$ = vncAccessForAgent(agentId);
-  const sshAccess$ = computed(async (get) => {
-    return get(ui.connectorUiState$).popoverHasOpened
-      ? await get(sshAccessForAgent$)
-      : null;
-  });
-  const vncAccess$ = computed(async (get) => {
-    return get(ui.connectorUiState$).popoverHasOpened
-      ? await get(vncAccessForAgent$)
-      : null;
-  });
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {
     const [overview, authorization] = await Promise.all([
@@ -413,7 +387,5 @@ export function createComposerConnectorSignals(
     connectorPermissionMetadata$,
     connectorPermissionGrants$,
     accounts: createComposerConnectorAccountSignals(threadId),
-    sshAccess$,
-    vncAccess$,
   };
 }

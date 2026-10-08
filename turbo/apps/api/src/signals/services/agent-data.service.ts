@@ -12,7 +12,7 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, asc, desc, eq, or } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
-import { agentDisplayName } from "@okouai/core/public-brand";
+import { agentDisplayName } from "@okouai/core/brand-presentation";
 
 import { db$ } from "../external/db";
 
@@ -24,9 +24,6 @@ export function agentResponse(row: {
   readonly description: string | null;
   readonly sound: string | null;
   readonly avatarUrl: string | null;
-  readonly modelProviderId: string | null;
-  readonly selectedModel: string | null;
-  readonly preferPersonalProvider: boolean;
   readonly visibility: "public" | "private";
 }): AgentResponse {
   return {
@@ -45,9 +42,6 @@ export function agentResponse(row: {
       defaultAgentId: row.defaultAgentId,
       avatarUrl: row.avatarUrl,
     }),
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: row.visibility,
   };
 }
@@ -96,9 +90,6 @@ export function agentList(
         description: agents.description,
         sound: agents.sound,
         avatarUrl: agents.avatarUrl,
-        modelProviderId: agents.modelProviderId,
-        selectedModel: agents.selectedModel,
-        preferPersonalProvider: agents.preferPersonalProvider,
         visibility: agents.visibility,
       })
       .from(agents)
@@ -127,9 +118,6 @@ export function agentDetail(args: {
         description: agents.description,
         sound: agents.sound,
         avatarUrl: agents.avatarUrl,
-        modelProviderId: agents.modelProviderId,
-        selectedModel: agents.selectedModel,
-        preferPersonalProvider: agents.preferPersonalProvider,
         visibility: agents.visibility,
       })
       .from(agents)
@@ -209,4 +197,16 @@ export function agentCustomConnectorGrants(args: {
       });
     },
   );
+}
+
+export interface BootstrapAgent {
+  readonly id: string;
+  readonly orgId: string;
+  readonly owner: string;
+  readonly visibility: "public" | "private";
+  readonly name: string;
+  readonly displayName: string | null;
+  readonly description: string | null;
+  readonly sound: string | null;
+  readonly defaultAgentId: string | null;
 }

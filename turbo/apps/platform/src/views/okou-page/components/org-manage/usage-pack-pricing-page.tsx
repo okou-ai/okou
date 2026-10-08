@@ -28,7 +28,13 @@ import type {
   UsagePackMigrationPreviewResponse,
   UsagePackMigrationRevisionPreviewResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLoadable,
+  useLoadableState,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { MouseEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -866,9 +872,7 @@ function PlanPrice({
 
 /* Each plan keeps its complete value story in one list. Concurrency leads both
    lists, so 3 against 10 is still the first comparison without becoming a
-   second visual hierarchy between the price and the bullets. Pro names three
-   flagship models rather than asking "Every model" to carry the claim, then
-   keeps BYOK as its own value prop.
+   second visual hierarchy between the price and the bullets.
 
    The built-in research APIs ship on Pro, so they sit in Pro's list. One line
    covers SEO, lead, web, and market data instead of three, which names the
@@ -891,12 +895,8 @@ function PlanPrice({
    only once ORG_PLAN_ENTITLEMENT_TIER_VALUES carries a per-tier connector
    limit and createCustomConnector$ enforces it.
 
-   Nine rows on each side, every row a single line at this width, so the columns
-   align row for row across the divider.
-
-   The dialog is a fixed 43rem, leaving 570px for the columns, which Pro's nine
-   rows sit exactly on. A tenth row has to replace one, and any row that wraps
-   costs the same height as a new row. */
+   The dialog is a fixed 43rem, leaving 570px for the columns. Any row that
+   wraps costs the same height as a new row. */
 function planHighlights(tier: UsagePackPlanTier): readonly string[] {
   const concurrentAgents = i18n.t(
     ($) => {
@@ -943,16 +943,7 @@ function planHighlights(tier: UsagePackPlanTier): readonly string[] {
   return [
     concurrentAgents,
     i18n.t(($) => {
-      return $.billing.plans.highlights.models;
-    }),
-    i18n.t(($) => {
-      return $.billing.plans.features.byok;
-    }),
-    i18n.t(($) => {
       return $.billing.plans.highlights.automations;
-    }),
-    i18n.t(($) => {
-      return $.billing.plans.highlights.videoGeneration;
     }),
     i18n.t(($) => {
       return $.billing.plans.highlights.builtInResearchData;
@@ -1200,28 +1191,17 @@ function pricingStepTitle(step: PricingStep): string {
    The dialog is mounted only while the flow is open, so the plan catalog and
    the subscription it loads stay owned by the flow rather than by every visit
    to the billing tab. */
-function PricingStepDialog({
+export function BillingPricingDialog({
   children,
-  flush = false,
-  onBack,
   onClose,
   onOpenChangeComplete,
-  open = true,
-  step,
-  title,
-  total,
+  open,
 }: {
   readonly children: ReactNode;
-  readonly flush?: boolean;
-  readonly onBack?: () => void;
   readonly onClose: () => void;
   readonly onOpenChangeComplete?: (open: boolean) => void;
-  readonly open?: boolean;
-  readonly step: PricingStep;
-  readonly title?: string;
-  readonly total: PricingStepTotal;
+  readonly open: boolean;
 }) {
-  const { t } = useTranslation();
   return (
     <Dialog
       open={open}
@@ -1239,40 +1219,68 @@ function PricingStepDialog({
         height={688}
         contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
-        {/* The close button is an item in this row rather than a box pinned to
-            the frame, so the title, the step counter and the close glyph share
-            one centre line and one right inset. */}
-        <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 space-y-0 border-b border-[hsl(var(--gray-200))] py-0 pl-6 pr-4 text-left">
-          {onBack && <PricingBackButton onBack={onBack} />}
-          <DialogTitle className="min-w-0 flex-1 text-base font-medium leading-none">
-            {title ?? pricingStepTitle(step)}
-          </DialogTitle>
-          <PricingStepIndicator current={step} total={total} />
-          <DialogClose
-            render={
-              <IconButton
-                className="-ml-1 shrink-0 text-muted-foreground hover:text-foreground"
-                aria-label={t(($) => {
-                  return $.settings.shared.close;
-                })}
-              />
-            }
-          >
-            <X size={20} />
-          </DialogClose>
-        </DialogHeader>
-        {/* No bottom inset on the scrolling body: a step that ends in an action
-            bar lets the bar sit on the frame's edge. Otherwise the bar would
-            float a padding's width above the frame whenever the body is short
-            enough not to scroll. */}
-        <DialogBody
-          scrollable={!flush}
-          className={cn("flex flex-col", !flush && "overflow-y-auto px-5 pt-5")}
-        >
-          {children}
-        </DialogBody>
+        {children}
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function PricingStepContent({
+  children,
+  flush = false,
+  onBack,
+  step,
+  title,
+  total,
+}: {
+  readonly children: ReactNode;
+  readonly flush?: boolean;
+  readonly onBack?: () => void;
+} & (
+  | {
+      readonly step: PricingStep;
+      readonly total: PricingStepTotal;
+      readonly title?: string;
+    }
+  | {
+      readonly step?: undefined;
+      readonly total?: undefined;
+      readonly title: string;
+    }
+)) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {/* The close button shares the header row with its title and steps. */}
+      <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 space-y-0 border-b border-[hsl(var(--gray-200))] py-0 pl-6 pr-4 text-left">
+        {onBack && <PricingBackButton onBack={onBack} />}
+        <DialogTitle className="min-w-0 flex-1 text-base font-medium leading-none">
+          {title ?? (step !== undefined && pricingStepTitle(step))}
+        </DialogTitle>
+        {step !== undefined && (
+          <PricingStepIndicator current={step} total={total} />
+        )}
+        <DialogClose
+          render={
+            <IconButton
+              className="-ml-1 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label={t(($) => {
+                return $.settings.shared.close;
+              })}
+            />
+          }
+        >
+          <X size={20} />
+        </DialogClose>
+      </DialogHeader>
+      {/* No bottom inset: a step's action bar sits on the frame's edge. */}
+      <DialogBody
+        scrollable={!flush}
+        className={cn("flex flex-col", !flush && "overflow-y-auto px-5 pt-5")}
+      >
+        {children}
+      </DialogBody>
+    </>
   );
 }
 
@@ -1442,8 +1450,8 @@ function PlanSelectionStep({
 
 function useUsagePackMembers(): readonly MemberDisplay[] | undefined {
   const userLoadable = useLastLoadable(currentUserInfo$);
-  const membersLoadable = useLoadable(orgMembers$);
-  const pendingInvitationsLoadable = useLoadable(orgPendingInvitations$);
+  const membersLoadable = useLastLoadable(orgMembers$);
+  const pendingInvitationsLoadable = useLastLoadable(orgPendingInvitations$);
   const user = userLoadable.state === "hasData" ? userLoadable.data : undefined;
   const orgMembers =
     membersLoadable.state === "hasData" ? membersLoadable.data : undefined;
@@ -2101,6 +2109,17 @@ function UsagePackChangeCharges({
   );
 }
 
+function useUsagePackDataReady(): boolean {
+  const managementState = useLoadableState(usagePackManagementAsync$);
+  const membersState = useLoadableState(orgMembers$);
+  const invitationsState = useLoadableState(orgPendingInvitations$);
+  return (
+    managementState === "hasData" &&
+    membersState === "hasData" &&
+    invitationsState === "hasData"
+  );
+}
+
 /* The last step of a subscription change. It repeats the monthly ledger the
    configuration step already showed and adds what the change costs today, so
    it reads as that step's conclusion rather than a separate decision. The
@@ -2108,10 +2127,12 @@ function UsagePackChangeCharges({
    button used to do, and the confirm keeps the configuration step's place and
    shape at the foot of the dialog. */
 function PackageReviewStep({
+  dataReady,
   plan,
   preview,
   totals,
 }: {
+  readonly dataReady: boolean;
   readonly plan: UsagePackPlan;
   readonly preview: UsagePackSubscriptionChangePreviewResponse;
   readonly totals: MemberUsageTotals;
@@ -2145,7 +2166,7 @@ function PackageReviewStep({
         <Button
           type="button"
           className="h-10 w-full text-sm font-medium"
-          disabled={confirming}
+          disabled={confirming || !dataReady}
           onClick={() => {
             detach(submitChange(), Reason.DomCallback);
           }}
@@ -2370,6 +2391,7 @@ function managedSubscriptionChangeState({
 }
 
 function ManagedSubscriptionActionBar({
+  dataReady,
   downgradeNotice,
   error,
   hasPaidUsagePack,
@@ -2380,6 +2402,7 @@ function ManagedSubscriptionActionBar({
   previewing,
   restoresScheduledDowngrade,
 }: {
+  readonly dataReady: boolean;
   readonly downgradeNotice: ReactNode;
   readonly error: string | null;
   readonly hasPaidUsagePack: boolean;
@@ -2405,6 +2428,7 @@ function ManagedSubscriptionActionBar({
         type="button"
         className="h-10 w-full text-sm font-medium"
         disabled={
+          !dataReady ||
           !membersLoaded ||
           !hasPaidUsagePack ||
           (hasPendingChange && !hasScheduledDowngrade) ||
@@ -2425,6 +2449,7 @@ function ManagedSubscriptionActionBar({
 
 function ManagedSubscriptionOrderSummary({
   catalog,
+  dataReady,
   defaultUsage,
   management,
   members,
@@ -2432,6 +2457,7 @@ function ManagedSubscriptionOrderSummary({
   selections,
 }: ManagedSubscriptionOrderSummaryProps & {
   readonly catalog: readonly MemberUsagePackOption[];
+  readonly dataReady: boolean;
   readonly defaultUsage: MemberUsageSelection;
 }) {
   const pageSignal = useGet(pageSignal$);
@@ -2508,6 +2534,7 @@ function ManagedSubscriptionOrderSummary({
       )}
       {hasSubscriptionAction && (
         <ManagedSubscriptionActionBar
+          dataReady={dataReady}
           downgradeNotice={downgradeNotice}
           error={error}
           hasPaidUsagePack={hasPaidUsagePack}
@@ -2538,6 +2565,7 @@ function PackageConfigurationStep({
 }) {
   const selections = useGet(memberUsageSelections$);
   const allMembers = useUsagePackMembers();
+  const dataReady = useUsagePackDataReady();
   const activeMembers = allMembers?.filter((member) => {
     return !member.isPending;
   });
@@ -2582,7 +2610,14 @@ function PackageConfigurationStep({
      component and reuses the totals rather than resolving the member list a
      second time. */
   if (preview) {
-    return <PackageReviewStep plan={plan} preview={preview} totals={totals} />;
+    return (
+      <PackageReviewStep
+        dataReady={dataReady}
+        plan={plan}
+        preview={preview}
+        totals={totals}
+      />
+    );
   }
 
   return (
@@ -2603,6 +2638,7 @@ function PackageConfigurationStep({
         {management ? (
           <ManagedSubscriptionOrderSummary
             catalog={catalog}
+            dataReady={dataReady}
             defaultUsage={defaultUsage}
             management={management}
             members={members}
@@ -3271,15 +3307,13 @@ function UsagePackMigrationPage({
   );
 }
 
-export function UsagePackMigrationDialogs({
+export function UsagePackMigrationContent({
   currentTier,
   migration,
   migrationOpen,
   migrationTargetTier,
   onBack,
   onClose,
-  onOpenChangeComplete,
-  open,
   onSelect,
 }: {
   readonly currentTier: BillingTier;
@@ -3288,8 +3322,6 @@ export function UsagePackMigrationDialogs({
   readonly migrationTargetTier: UsagePackPlanTier | null;
   readonly onBack: () => void;
   readonly onClose: () => void;
-  readonly onOpenChangeComplete?: (open: boolean) => void;
-  readonly open?: boolean;
   readonly onSelect: (tier: UsagePackPlanTier) => void;
 }) {
   const migrationPreview = useGet(usagePackMigrationPreview$);
@@ -3315,7 +3347,7 @@ export function UsagePackMigrationDialogs({
     configuring &&
     (revising ? migrationRevisionPreview !== null : migrationPreview !== null);
   return (
-    <PricingStepDialog
+    <PricingStepContent
       flush={!configuring}
       step={reviewing ? 3 : configuring ? 2 : 1}
       title={
@@ -3326,8 +3358,6 @@ export function UsagePackMigrationDialogs({
           : undefined
       }
       total={3}
-      open={open}
-      onOpenChangeComplete={onOpenChangeComplete}
       onBack={
         reviewing
           ? revising
@@ -3337,7 +3367,6 @@ export function UsagePackMigrationDialogs({
             ? onBack
             : undefined
       }
-      onClose={onClose}
     >
       {configurationStep ? (
         <UsagePackMigrationPage
@@ -3355,25 +3384,19 @@ export function UsagePackMigrationDialogs({
           onSelect={onSelect}
         />
       )}
-    </PricingStepDialog>
+    </PricingStepContent>
   );
 }
 
-export function UsagePackPricingDialogs({
+export function UsagePackPricingContent({
   checkoutAllowed,
   currentTier,
   grantedPlanCheckoutAllowed,
-  onClose,
-  onOpenChangeComplete,
-  open,
   onReplaceCancellationWithPro,
 }: {
   readonly checkoutAllowed: boolean;
   readonly currentTier: BillingTier;
   readonly grantedPlanCheckoutAllowed: boolean;
-  readonly onClose: () => void;
-  readonly onOpenChangeComplete?: (open: boolean) => void;
-  readonly open?: boolean;
   readonly onReplaceCancellationWithPro?: () => void;
 }) {
   const selectedPlanTier = useGet(selectedUsagePackPlan$);
@@ -3382,7 +3405,7 @@ export function UsagePackPricingDialogs({
   const changePreview = useGet(usagePackSubscriptionChangePreview$);
   const closePreview = useSet(closeUsagePackSubscriptionChangePreview$);
   const catalogLoadable = useLoadable(memberUsagePackOptionsAsync$);
-  const managementLoadable = useLoadable(usagePackManagementAsync$);
+  const managementLoadable = useLastLoadable(usagePackManagementAsync$);
   const catalog =
     catalogLoadable.state === "hasData" ? catalogLoadable.data : null;
   const management =
@@ -3407,12 +3430,10 @@ export function UsagePackPricingDialogs({
   const preview = management === null ? null : changePreview;
   const reviewing = selectedPlan !== undefined && preview !== null;
   return (
-    <PricingStepDialog
+    <PricingStepContent
       flush={!selectedPlan}
       step={reviewing ? 3 : selectedPlan ? 2 : 1}
       total={management === null ? 2 : 3}
-      open={open}
-      onOpenChangeComplete={onOpenChangeComplete}
       onBack={
         reviewing
           ? closePreview
@@ -3422,7 +3443,6 @@ export function UsagePackPricingDialogs({
               }
             : undefined
       }
-      onClose={onClose}
     >
       {!catalog || !managementLoaded ? (
         <div
@@ -3480,6 +3500,6 @@ export function UsagePackPricingDialogs({
           }}
         />
       )}
-    </PricingStepDialog>
+    </PricingStepContent>
   );
 }

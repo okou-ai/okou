@@ -4,21 +4,7 @@ import { webhookGoogleCalendarContract } from "@okouai/api-contracts/contracts/w
 import type { RouteEntry } from "../route-entry";
 import { request$ } from "../context/hono";
 import { now } from "../../lib/time";
-import {
-  clearGoogleCalendarBeforeRunStartHookForTest as clearBeforeRunStartHook,
-  dispatchGoogleCalendarWebhook$,
-  setGoogleCalendarBeforeRunStartHookForTest as setBeforeRunStartHook,
-} from "../services/google-calendar-automation-event.service";
-
-export function setGoogleCalendarBeforeRunStartHookForTest(
-  hook: Parameters<typeof setBeforeRunStartHook>[0],
-): void {
-  setBeforeRunStartHook(hook);
-}
-
-export function clearGoogleCalendarBeforeRunStartHookForTest(): void {
-  clearBeforeRunStartHook();
-}
+import { dispatchGoogleCalendarWebhook$ } from "../services/google-calendar-automation-event.service";
 
 function jsonError(message: string, status: 400 | 401 | 429 | 503): Response {
   return Response.json({ error: message }, { status });

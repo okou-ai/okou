@@ -1,181 +1,93 @@
-import { findModelMenuOption } from "./chat-model-menu-test-helpers.ts";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { act, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-
 import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { fillComposer } from "./chat-test-helpers.ts";
+  findModelOption,
+  openModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
+
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockSubscriptionRunModel } from "../../../mocks/handlers/api-run-models.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
   context,
   findButton,
   installRunChat,
   NEW_CHAT_PATH,
-  queryButton,
 } from "./chat-run-test-fixtures.ts";
+import { fillComposer } from "./chat-test-helpers.ts";
 
 const ACCOUNT_ID = "34240000-0000-4000-a000-000000000002";
 
-function policy(
-  availability: NonNullable<OrgModelPolicy["memberEffective"]>["availability"],
-): OrgModelPolicy {
-  return {
-    id: "34240000-0000-4000-a000-000000000001",
-    model: "gpt-5.6-sol",
+function runModel(
+  availability: AvailableRunModel["memberEffective"]["availability"],
+): AvailableRunModel {
+  return mockSubscriptionRunModel("gpt-5.6-sol", {
     modelLabel: "GPT 5.6 Sol",
-    isDefault: true,
-    defaultProviderType: "built-in",
-    runtimeProviderType: "openai-api-key",
-    credentialScope: "org",
-    modelProviderId: null,
-    routeStatus: "valid",
-    routeStatusReason: null,
-    memberEffective: {
-      providerType: "codex-oauth-token",
-      runtimeProviderType: "codex-oauth-token",
-      credentialScope: "member",
-      availability,
-      accountSelection: "capture_required",
-    },
-    createdAt: "2026-09-15T00:00:00.000Z",
-    updatedAt: "2026-09-15T00:00:00.000Z",
-  };
+    providerType: "codex-oauth-token",
+    availability,
+  });
 }
 
-test.each(
-  (["compact", "flyout"] as const).flatMap((layout) => {
-    return [
-      { layout, modelLabel: "GPT 5.6 Sol", source: "ChatGPT (Codex)" },
-      {
-        layout,
-        modelLabel: "Claude Sonnet 5",
-        source: "Claude Code (OAuth Token)",
-      },
-    ];
-  }),
-)(
-  "Shows $source as BYOK in the $layout picker with personal source help",
-  async ({ layout, modelLabel, source }) => {
-    const user = userEvent.setup({ delay: null });
-    context.mocks.browser.matchMedia((query) => {
-      return query === "(min-width: 640px)" && layout !== "compact";
-    });
+test.each([{ modelLabel: "GPT 5.6 Sol" }, { modelLabel: "Claude Sonnet 5" }])(
+  "Shows $modelLabel in the model panel as just its model name",
+  async ({ modelLabel }) => {
     installRunChat({ selectedModel: "gpt-5.6-sol" });
-    context.mocks.data.orgModelPolicies([
-      {
-        ...policy("available"),
-        defaultProviderType: "openai-api-key",
-        routeStatus: "missing_provider",
-        routeStatusReason: "The selected workspace provider is missing.",
-      },
-      {
-        ...policy("available"),
-        id: "34430000-0000-4000-a000-000000000003",
-        model: "claude-sonnet-5",
+    context.mocks.data.availableRunModels([
+      runModel("available"),
+      mockSubscriptionRunModel("claude-sonnet-5", {
         modelLabel: "Claude Sonnet 5",
-        isDefault: false,
-        runtimeProviderType: "anthropic-api-key",
-        memberEffective: {
-          providerType: "claude-code-oauth-token",
-          runtimeProviderType: "claude-code-oauth-token",
-          credentialScope: "member",
-          availability: "available",
-          accountSelection: "capture_required",
-        },
-      },
+        providerType: "claude-code-oauth-token",
+      }),
     ]);
     await setupPage({
       context,
       path: NEW_CHAT_PATH,
     });
-    const trigger = await waitFor(() => {
-      // Wait for the requested menu while feature switches load.
-      const button = queryButton("GPT 5.6 Sol");
-      if (button?.getAttribute("aria-haspopup") !== "menu") {
-        throw new Error("The model menu trigger is not ready");
-      }
-      return button;
-    });
-    expect(trigger).not.toHaveTextContent("BYOK");
-    click(trigger);
-    if (layout === "compact") {
-      const overview = await screen.findByRole("region", { name: "Models" });
-      const changeModel = queryAllByRoleFast("menuitem", overview).find(
-        (item) => {
-          return (
-            item.getAttribute("aria-label") === "Change Chat model, GPT 5.6 Sol"
-          );
-        },
-      );
-      if (!changeModel) {
-        throw new Error("The Models menu has no Chat model navigation");
-      }
-      click(changeModel);
-    }
+    await composerModelTrigger("GPT 5.6 Sol");
+    const panel = await openModelPanel("GPT 5.6 Sol");
 
-    const option = await findModelMenuOption((name) => {
+    const option = await findModelOption((name) => {
       return name.includes(modelLabel);
-    });
+    }, panel);
     expect(option).not.toHaveAttribute("aria-disabled", "true");
     expect(option).not.toBeDisabled();
-    expect(option).not.toHaveTextContent("$");
-    expect(option).not.toHaveTextContent(source);
-    const badge = within(option).getByText("BYOK");
-    await user.hover(badge);
-    await expect(
-      screen.findByText("Used only in your runs, with your own credentials."),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByText(`${source}:`)).toBeInTheDocument();
+    expect(option.textContent?.trim()).toBe(modelLabel);
   },
 );
 
 test("Uses the effective subscription for reasoning and Fast guidance", async () => {
-  const user = userEvent.setup({ delay: null });
   installRunChat({
     selectedModel: "gpt-5.6-sol",
     codexServiceTier: "fast",
     modelSettings: { "gpt-5.6-sol": { effort: "max" } },
   });
-  context.mocks.data.orgModelPolicies([
-    {
-      ...policy("available"),
-      defaultProviderType: "openai-api-key",
-      routeStatus: "missing_provider",
-      routeStatusReason: "The selected workspace provider is missing.",
-    },
-  ]);
+  context.mocks.data.availableRunModels([runModel("available")]);
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.PiLoop]: true,
-    },
   });
   await screen.findByRole("textbox", { name: "Message" });
-  click(await findButton("Effort, Max"));
-  const settings = await screen.findByRole("dialog");
+  const settings = await openModelPanel("GPT 5.6 Sol, Max, Fast");
   expect(
     within(settings).getByRole("slider", { name: "Effort" }),
   ).toHaveAttribute("aria-valuetext", "Max");
-  expect(within(settings).getByRole("switch", { name: "Fast" })).toBeChecked();
-  await user.hover(within(settings).getByText("Fast"));
-  await expect(
-    screen.findByText("1.5× model speed · 2.5× ChatGPT usage"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText(/2× Okou model credits/u)).not.toBeInTheDocument();
+  expect(
+    within(settings).getByRole("switch", { name: "Fast mode" }),
+  ).toBeChecked();
+  expect(within(settings).getByText("Lower usage")).toBeVisible();
+  expect(within(settings).getByText("Higher usage")).toBeVisible();
+  expect(
+    within(settings).getByText("2.5× subscription usage"),
+  ).toBeInTheDocument();
 });
 
-test("Reconnects the current personal candidate despite an organization API route", async () => {
+test("Reconnects the personal subscription used by the selected model", async () => {
   installRunChat({ selectedModel: "gpt-5.6-sol" });
-  context.mocks.data.orgModelPolicies([policy("reconnect_required")]);
+  context.mocks.data.availableRunModels([runModel("reconnect_required")]);
   context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
     return respond(200, {
       modelProviders: [
@@ -183,11 +95,6 @@ test("Reconnects the current personal candidate despite an organization API rout
           id: ACCOUNT_ID,
           type: "codex-oauth-token",
           framework: "codex",
-          secretName: null,
-          authMethod: "auth_json",
-          secretNames: ["CODEX_AUTH_JSON"],
-          isDefault: false,
-          selectedModel: null,
           isActive: true,
           needsReconnect: true,
           lastRefreshErrorCode: "refresh_token_expired",
@@ -233,70 +140,18 @@ test("Reconnects the current personal candidate despite an organization API rout
   expect(composer).toHaveTextContent("Do not send until reconnected");
 });
 
-test("Keeps an unconverted missing subscription on Connect instead of Built-in", async () => {
-  installRunChat({ selectedModel: "gpt-5.6-sol" });
-  context.mocks.data.orgModelPolicies([
-    {
-      ...policy("unavailable"),
-      defaultProviderType: "codex-oauth-token",
-      runtimeProviderType: "codex-oauth-token",
-      credentialScope: "member",
-    },
-  ]);
-  context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
-    return respond(200, { modelProviders: [] });
-  });
-  context.mocks.api(codexDeviceAuthContract.start, ({ body, respond }) => {
-    expect(body).toStrictEqual({ scope: "personal", mode: "add" });
-    return respond(200, {
-      sessionToken: "member-route-connect",
-      type: "codex",
-      status: "pending",
-      scope: "personal",
-      browserUrl: "https://auth.openai.com/codex/device",
-      verificationCode: "CONN-3424",
-      expiresIn: 60,
-      interval: 1,
-    });
-  });
-  context.mocks.api(codexDeviceAuthContract.complete, ({ respond }) => {
-    return respond(200, { status: "pending", errorMessage: null });
-  });
-  await setupPage({ context, path: NEW_CHAT_PATH });
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  await fillComposer(composer, "Keep the subscription route");
-  await expect(findButton("Send")).resolves.toBeDisabled();
-  click(await findButton("Configure model"));
-  const dialog = await screen.findByRole("dialog", { name: "Connect Codex" });
-  await expect(
-    within(dialog).findByText("CONN-3424"),
-  ).resolves.toBeInTheDocument();
-});
-
 test("Refreshes the account target on explicit reconnect after a remote account switch", async () => {
   const secondAccountId = "34240000-0000-4000-a000-000000000003";
   let switched = false;
   let accountReads = 0;
   let requestedAccount: unknown;
   installRunChat({ selectedModel: "gpt-5.6-sol" });
-  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
-    const currentPolicy = policy(switched ? "reconnect_required" : "available");
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
+    const currentModel = runModel(
+      switched ? "reconnect_required" : "available",
+    );
     return respond(200, {
-      revision: "revision-1",
-      writePreconditionRequired: false,
-      modelsAvailableToAdd: [],
-      policies: [
-        {
-          ...currentPolicy,
-          defaultProviderType: "codex-oauth-token",
-          runtimeProviderType: "codex-oauth-token",
-          credentialScope: "member",
-          // The initial old API response makes the current account read lazy.
-          memberEffective: switched ? currentPolicy.memberEffective : undefined,
-        },
-      ],
-      workspaceDefaultModel: "gpt-5.6-sol",
-      workspaceDefaultPolicyId: currentPolicy.id,
+      models: [currentModel],
     });
   });
   context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
@@ -307,11 +162,6 @@ test("Refreshes the account target on explicit reconnect after a remote account 
           id: switched ? secondAccountId : ACCOUNT_ID,
           type: "codex-oauth-token",
           framework: "codex",
-          secretName: null,
-          authMethod: "auth_json",
-          secretNames: ["CODEX_AUTH_JSON"],
-          isDefault: false,
-          selectedModel: null,
           isActive: true,
           needsReconnect: switched,
           lastRefreshErrorCode: switched ? "refresh_token_expired" : null,
@@ -340,9 +190,6 @@ test("Refreshes the account target on explicit reconnect after a remote account 
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    },
   });
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fillComposer(composer, "Preserve this draft during reconnect");
@@ -351,7 +198,7 @@ test("Refreshes the account target on explicit reconnect after a remote account 
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
         "user:test-user-123",
-        "modelPoliciesChanged",
+        "runModelsChanged",
       ),
     ).toBeTruthy();
   });
@@ -362,7 +209,7 @@ test("Refreshes the account target on explicit reconnect after a remote account 
   act(() => {
     context.mocks.ably.triggerOnChannel(
       "user:test-user-123",
-      "modelPoliciesChanged",
+      "runModelsChanged",
       null,
     );
   });

@@ -1,6 +1,7 @@
 import type { ChatEventRow } from "./chat-event-rows";
+import type { ChatEventType } from "./chat-events";
 import { chatEventSchema, type ChatEvent } from "./chat-threads";
-import { visibleChatEventRowContent } from "./retired-goal-archive";
+import { visiblePiMemoryCitationText } from "./pi-memory-citations";
 
 function requiredRowField<T>(
   value: T | null,
@@ -22,7 +23,10 @@ function requiredRowField<T>(
  */
 export function chatEventFromRow(row: ChatEventRow): ChatEvent {
   const payload = row.payload;
-  const visibleContent = visibleChatEventRowContent(row);
+  const visibleContent =
+    payload?.content === undefined
+      ? null
+      : visiblePiMemoryCitationText(payload.content);
   const base = {
     id: row.id,
     threadId: row.chatThreadId,
@@ -31,24 +35,13 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
       row.eventType === "control.interrupt"
         ? undefined
         : (row.runId ?? undefined),
-    runGroupId:
-      row.contextType === "goal" && row.contextId !== null
-        ? row.contextId
-        : undefined,
     runEventId: row.runEventId ?? undefined,
     revokesEventId: row.revokesEventId ?? undefined,
     seqId: row.seqId,
     sequenceNumber: row.runEventSequenceNumber,
     createdAt: row.createdAt,
   };
-  const reducedBase = {
-    id: row.id,
-    threadId: row.chatThreadId,
-    seqId: row.seqId,
-    createdAt: row.createdAt,
-  };
-
-  const candidates: Record<ChatEventRow["eventType"], () => unknown> = {
+  const candidates: Record<ChatEventType, () => unknown> = {
     "input.prompt": () => {
       return {
         ...base,
@@ -67,18 +60,6 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         eventType: "input.automation",
         content: null,
         userMessage: payload?.userMessage ?? undefined,
-      };
-    },
-    "input.goal": () => {
-      return {
-        ...reducedBase,
-        eventType: "input.goal",
-        content: null,
-        userMessage: requiredRowField(
-          payload?.userMessage ?? null,
-          row.eventType,
-          "userMessage",
-        ),
       };
     },
     "input.budget": () => {
@@ -120,48 +101,11 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         error: requiredRowField(payload?.error ?? null, row.eventType, "error"),
       };
     },
-    "output.thinking": () => {
-      return {
-        ...base,
-        eventType: "output.thinking",
-        content: null,
-        thinking: requiredRowField(
-          payload?.thinking ?? null,
-          row.eventType,
-          "thinking",
-        ),
-      };
-    },
     "output.followups": () => {
       return {
         ...base,
         eventType: "output.followups",
         content: requiredRowField(visibleContent, row.eventType, "content"),
-      };
-    },
-    "run.queued": () => {
-      return {
-        ...base,
-        eventType: "run.queued",
-        runId: requiredRowField(row.runId, row.eventType, "runId"),
-        content: requiredRowField(
-          payload?.content ?? null,
-          row.eventType,
-          "content",
-        ),
-      };
-    },
-    "run.dequeued": () => {
-      return {
-        ...base,
-        eventType: "run.dequeued",
-        runId: requiredRowField(row.runId, row.eventType, "runId"),
-        content: null,
-        revokesEventId: requiredRowField(
-          row.revokesEventId,
-          row.eventType,
-          "revokesEventId",
-        ),
       };
     },
     "run.completed": () => {
@@ -216,26 +160,6 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
           "revokesEventId",
         ),
       };
-    },
-    "browser.open": () => {
-      return { ...base, eventType: "browser.open", content: null };
-    },
-    "browser.close": () => {
-      return { ...base, eventType: "browser.close", content: null };
-    },
-    "goal.open": () => {
-      return {
-        ...reducedBase,
-        eventType: "goal.open",
-        content: requiredRowField(
-          payload?.content ?? null,
-          row.eventType,
-          "content",
-        ),
-      };
-    },
-    "goal.close": () => {
-      return { ...reducedBase, eventType: "goal.close", content: null };
     },
     "usage.recorded": () => {
       return {

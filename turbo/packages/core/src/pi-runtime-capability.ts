@@ -2,6 +2,14 @@
  * Model identities the pinned Pi runtime can resolve, grouped by the Pi catalog
  * provider that owns them.
  *
+ * Identities are runtime knowledge, not a product model list. Built-in
+ * Responses routes ask the runtime for the route's `upstream_model`, so a
+ * model added only as catalog rows is admitted to Pi when its route points at
+ * an upstream model listed here (for example a new catalog model whose
+ * `openrouter-codex` route sends `openai/gpt-6-luna`). Only routes that pin
+ * `catalogModel` (the Codex subscription and OpenRouter presets) resolve by
+ * the catalog model ID.
+ *
  * This is a leaf data module on purpose. `@okouai/core/pi-execution` is part of
  * the Platform browser bundle graph, so Pi admission must never reach for
  * `@earendil-works/pi-ai` to answer a capability question. The entries below
@@ -15,13 +23,7 @@
  * route and fails when this module and the runtime disagree in either
  * direction.
  */
-export const PI_CATALOG_PROVIDERS = [
-  "anthropic",
-  "deepseek",
-  "openai",
-  "openai-codex",
-  "openrouter",
-] as const;
+export const PI_CATALOG_PROVIDERS = ["openai-codex", "openrouter"] as const;
 
 export type PiCatalogProvider = (typeof PI_CATALOG_PROVIDERS)[number];
 
@@ -32,50 +34,14 @@ export interface PiRuntimeIdentity {
 }
 
 export const PI_RUNTIME_RESOLVABLE_MODELS = {
-  // `claude-fable-5-1` is absent because the Fable frontier line runs on the
-  // Claude Code vendor harness, so no admitted route asks Pi to resolve it.
-  anthropic: [
-    "claude-opus-5-5",
-    "claude-opus-5",
-    "claude-opus-4-8",
-    "claude-sonnet-5",
-    "claude-sonnet-4-6",
-  ],
-  // `deepseek-flash` and `deepseek-v4.1-flash` exist only as hand-pinned
-  // definitions; the pinned upstream DeepSeek catalog does not carry them.
-  deepseek: [
-    "deepseek-flash",
-    "deepseek-v4.1-flash",
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-  ],
-  openai: [
-    "gpt-6-sol",
-    "gpt-6-luna",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-  ],
   "openai-codex": [
+    "gpt-6.1-sol",
     "gpt-6-sol",
     "gpt-6-luna",
     "gpt-5.6-sol",
-    "gpt-5.6-terra",
     "gpt-5.6-luna",
   ],
-  openrouter: [
-    "okou-1.0",
-    "okou-1.0-pro",
-    "okou-1.0-max",
-    "deepseek/deepseek-v4.1-flash",
-    "deepseek/deepseek-v4-flash",
-    "deepseek/deepseek-v4-pro",
-    "openai/gpt-6-sol",
-    "openai/gpt-6-luna",
-    "openai/gpt-5.6-sol",
-    "openai/gpt-5.6-terra",
-    "openai/gpt-5.6-luna",
-  ],
+  openrouter: ["okou-1.0"],
 } as const satisfies Record<PiCatalogProvider, readonly string[]>;
 
 const RESOLVABLE_BY_PROVIDER: Readonly<

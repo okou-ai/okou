@@ -1,5 +1,10 @@
 # Morning Brief source collection
 
+> Historical Native design record: collection preview and execution entrypoints
+> were removed in retirement stage 2. The remaining occurrence and revocation
+> structures support historical cleanup; this is not a live collection contract.
+> See [deployment compatibility](deployment-compatibility.md).
+
 The `simple-morning-brief` pipeline replaces the Morning Brief Official Workflow
 Run with a server-side pipeline. This document owns the first real piece of that
 execution: an explicitly invoked, bounded Slack collection and the occurrence,
@@ -32,7 +37,7 @@ authorized invocation. Schedule ownership stays with the legacy automation.
 API route table, so an operator can really invoke it on a development server or
 a protected preview deployment. `isPreviewEndpointAllowed` runs before
 authentication, so production answers `404` without doing any auth work, and it
-stays `404` even when `simpleMorningBrief` is enabled for the caller. On a
+stays `404` even when `FeatureSwitchKey.NativeMorningBrief` is enabled for the caller. On a
 preview deployment the request additionally needs the deployment's
 protection-bypass secret. That secret is environment protection, never owner
 authentication.
@@ -42,7 +47,7 @@ authenticated organization and user; the native `slack:read` capability is
 required; and the only input is a scheduled anchor. No owner, workspace,
 channel, credential or `CRON_SECRET` can be supplied.
 
-Admission resolves, in order: the `simpleMorningBrief` switch for this owner,
+Admission resolves, in order: the `FeatureSwitchKey.NativeMorningBrief` switch for this owner,
 the canonical installed-and-enabled Morning Brief, the member's timezone, the
 installation's Agent, a fresh exact-member Clerk membership, and the native
 Slack binding. Each failure is an explicit non-executing outcome returned before
@@ -91,9 +96,8 @@ installation, schedule and Agent, and the Slack workspace and user.
   This request never sleeps, and there is no inline retry loop.
 - **Commit-time admission.** Waiting for a database lock can outlast a
   60-second lease, so every lease, retry and lifetime comparison reads the clock
-  _after_ the transition's own waits. Claiming and finalizing take erasure
-  admission, then the member row, then the occurrence row with `FOR UPDATE`, and
-  only then sample the instant they decide against. A request timestamp, a
+  _after_ the transition's own waits. Claiming and finalizing take the member
+  row, then the occurrence row with `FOR UPDATE`, and only then sample the instant they decide against. A request timestamp, a
   transaction-start `now()` or a statement clock read before a row wait is not
   that instant. One case is deliberately narrower: when no occurrence row exists
   yet, the first attempt's lease clock is read before its own `INSERT`, which
@@ -157,9 +161,8 @@ no background reader refills it. This deliberately replaces the evictable
 cache is not execution authority. A second key to `agents` covers the Agent
 lifecycle deletion that invalidates the installation.
 
-Claiming and finalizing both take erasure admission first with
-`assertErasureSubjectWritable`, held through `COMMIT`, then lock and recheck that
-member row with `FOR KEY SHARE`. Neither ever creates the parent.
+Claiming and finalizing both lock and recheck that member row with
+`FOR KEY SHARE`. Neither ever creates the parent.
 
 That lock orders two transactions but does not survive either of them, and the
 parent is deleted only at the very end of each cleanup. The durable half of the
@@ -219,14 +222,14 @@ before cleanup may still be observed by its own caller afterwards, and no
 wall-clock guarantee is claimed against arbitrary external revocation.
 
 **Deploy order.** The stamp is migration 1154, an additive nullable column. The
-cleanup writers are unconditional and are not behind `simpleMorningBrief`, so
+cleanup writers are unconditional and are not behind `FeatureSwitchKey.NativeMorningBrief`, so
 the migration must ship before the API artifact that writes them; an older
 artifact simply never reads or writes the column. See
 [deployment compatibility](deployment-compatibility.md#morning-brief-collection-revocation-stamp-34860).
 
 This is explicit-invocation authority only. It certifies no autonomous scheduler
 recovery. Durable membership and materialization ownership, and global deletion
-readiness, remain S7 gates; the Clerk erasure bridge is still unregistered.
+readiness, remain S7 gates.
 
 ## The Slack source contract
 

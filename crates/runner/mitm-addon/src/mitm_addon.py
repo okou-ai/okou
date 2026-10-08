@@ -7,14 +7,13 @@ This addon runs on the runner HOST (not inside sandboxes) and:
 2. Looks up the source sandbox's runId from the proxy registry
 3. Injects auth headers for configured firewall rules (proxy-side token replacement)
 4. Logs network activity per-run to JSONL files
-5. Reports model-provider failures plus model-provider and connector usage
+5. Reports model-provider and connector usage
 6. Participates in runner-triggered webhook delivery drain before proxy shutdown
 """
 
 import asyncio
 import base64
 import binascii
-import os
 import tempfile
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -29,7 +28,7 @@ import addon_process_logging
 # --- Sub-module imports ---
 #
 # auth_base_forwarder/body_capture/connector_diagnostics/connector_intent/content_length/
-# http_header_syntax/matching/model_provider_failure/model_websocket_usage/registry/
+# http_header_syntax/matching/model_websocket_usage/registry/
 # response_encoding_negotiation/
 # response_streaming/
 # runner_flush_lifecycle/terminal_usage/upstream_admission/usage/websocket_framing/
@@ -39,8 +38,7 @@ import addon_process_logging
 #      ``body_capture.X(...)`` / ``connector_diagnostics.X(...)`` /
 #      ``connector_intent.X(...)`` /
 #      ``content_length.X(...)`` /
-#      ``matching.X(...)`` / ``model_provider_failure.X(...)`` /
-#      ``model_websocket_usage.X(...)`` / ``registry.X(...)`` /
+#      ``matching.X(...)`` / ``model_websocket_usage.X(...)`` / ``registry.X(...)`` /
 #      ``response_streaming.X(...)`` / ``runner_flush_lifecycle.X(...)`` /
 #      ``terminal_usage.X(...)`` /
 #      ``upstream_admission.X(...)`` / ``usage.X(...)`` /
@@ -54,7 +52,6 @@ import aws_sigv4_hash_executor
 import body_capture
 import builtin_host_policy
 import codex_model_catalog_cache
-import codex_output_timing
 import connector_diagnostics
 import connector_intent
 import content_length
@@ -65,7 +62,6 @@ import http_local_responses
 import http_network_log
 import matching
 import mitmproxy_compat
-import model_provider_failure
 import model_websocket_usage
 import platform_api
 import registry
@@ -152,6 +148,7 @@ _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
     metadata_keys.AUTH_CACHE_HIT,
     metadata_keys.AUTH_URL_REWRITE,
     metadata_keys.MODEL_USAGE_PROVIDER,
+    metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
 )
 
 _AUTH_BASE_BODYLESS_METHODS = frozenset(("GET", "HEAD"))
@@ -241,10 +238,6 @@ def configure(updated: set[str]) -> None:
     platform_api.configure_client_headers(
         client_session_id=ctx.options.okou_client_session_id,
         client_version=ctx.options.okou_client_version,
-    )
-    model_provider_failure.configure_reporting(
-        api_url=get_api_url(),
-        bearer_credential=os.environ.get(model_provider_failure.RUNNER_AUTH_ENV, ""),
     )
     if "okou_usage_flush_interval_seconds" in updated:
         usage.configure_usage_buffer(
@@ -1124,7 +1117,6 @@ async def _try_firewall_request_stream_from_headers(
             request_end_stream=request_end_stream is True,
         )
         if flow.response is None:
-            model_provider_failure.admit_flow(flow)
             request_streaming.configure_request_stream(flow, capture_body=capture_body)
     except (asyncio.CancelledError, Exception):
         _release_terminal_flow_state(flow, release_tracking=True)
@@ -1297,10 +1289,6 @@ def _block_request_classification(
         http_local_responses.block_gmail_send(flow)
         return
     if classification.kind == "firewall_ambiguous":
-        if connector_diagnostics.maybe_make_connector_owner_local_response(
-            flow, classification, commit=True
-        ):
-            return
         _set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
         return
     if classification.kind == "firewall_block":
@@ -1444,6 +1432,7 @@ async def request(flow: http.HTTPFlow) -> None:
             )
             flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
             flow.metadata.pop(metadata_keys.MODEL_USAGE_PROVIDER, None)
+            flow.metadata.pop(metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS, None)
             flow_metadata.set_firewall_decision(flow.metadata, "ALLOW")
             if _is_websocket_upgrade_request(flow):
                 flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
@@ -1518,8 +1507,6 @@ async def request(flow: http.HTTPFlow) -> None:
                     require_connected=require_connected,
                     request_end_stream=True,
                 )
-                if flow.response is None:
-                    model_provider_failure.admit_flow(flow)
             return
 
         if classification.kind == "allow":
@@ -1663,51 +1650,21 @@ def websocket_message(flow: http.HTTPFlow) -> None:
     if not flow_metadata.run_id(flow.metadata):
         return
     if getattr(message, "from_client", False):
-        failure_client_enabled = model_provider_failure.should_observe_websocket_client_event(flow)
-        usage_enabled = model_websocket_usage.is_enabled(flow)
-        usage_client_enabled = model_websocket_usage.should_observe_client_event(flow)
-        if not failure_client_enabled and not usage_enabled:
+        if not model_websocket_usage.should_observe_client_event(flow):
             return
         body = message.content.encode() if isinstance(message.content, str) else message.content
-        if not failure_client_enabled and not usage_client_enabled:
-            event = usage.inspect_openai_responses_event_json(body)
-            if usage.is_model_provider_usage_billable(flow):
-                codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
-            return
         event = usage.inspect_openai_responses_client_event_json(body)
-        if failure_client_enabled:
-            model_provider_failure.observe_websocket_client_event(
-                flow,
-                request_kind=event.request_kind,
-                is_prewarm=event.is_prewarm,
-            )
-        if usage_enabled and usage.is_model_provider_usage_billable(flow):
-            codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
-        if usage_client_enabled:
-            model_websocket_usage.observe_client_event(flow, event)
+        model_websocket_usage.observe_client_event(flow, event)
+        return
+    if not model_websocket_usage.is_enabled(flow):
         return
     body = message.content.encode() if isinstance(message.content, str) else message.content
-    failure_enabled = model_provider_failure.should_observe_websocket_server_event(flow)
-    usage_enabled = model_websocket_usage.is_enabled(flow)
-    if not failure_enabled and not usage_enabled:
-        return
     event = usage.inspect_openai_responses_event_json(body)
-    if usage_enabled and usage.is_model_provider_usage_billable(flow):
-        codex_output_timing.observe_server_event(flow, event.event_type)
     inspection = usage.inspect_openai_responses_server_event(
         event,
-        include_lifecycle=(
-            model_websocket_usage.should_inspect_server_lifecycle(flow, event)
-            if usage_enabled
-            else False
-        ),
-        include_usage=usage_enabled,
-        include_failure=failure_enabled,
+        include_lifecycle=model_websocket_usage.should_inspect_server_lifecycle(flow, event),
     )
-    if failure_enabled:
-        model_provider_failure.observe_websocket_server_event(flow, inspection.failure)
-    if usage_enabled:
-        model_websocket_usage.feed_usage(flow, inspection)
+    model_websocket_usage.feed_usage(flow, inspection)
 
 
 def _response_size(flow: http.HTTPFlow) -> int:
@@ -1744,7 +1701,6 @@ def _release_terminal_flow_state(
         websocket_framing.log_limit_violation(flow)
         websocket_retention.release_terminal_messages(flow)
         terminal_usage.release_model_websocket_terminal_state(flow)
-        codex_output_timing.release_flow_state(flow)
     request_classification.pop_cached_classification(flow)
     flow.metadata.pop(_FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS, None)
     release_aws_sigv4_request_inspection(flow)
@@ -1758,15 +1714,13 @@ def _release_terminal_flow_state(
     if release_aws_sigv4_body_admission:
         aws_sigv4_body_admission.release_from_flow(flow)
     if release_tracking:
-        model_provider_failure.release_flow(flow)
         terminal_usage.release_tracked_flow(flow)
         websocket_framing.release_flow_state(flow)
 
 
 def websocket_end(flow: http.HTTPFlow) -> None:
-    """Settle model-provider failure and usage for a WebSocket-upgraded response."""
+    """Settle model-provider usage for a WebSocket-upgraded response."""
     try:
-        model_provider_failure.finish_websocket(flow)
         run_id = flow_metadata.run_id(flow.metadata)
         if run_id:
             terminal_usage.report_model_provider_usage_once(flow, run_id)
@@ -1778,10 +1732,7 @@ def _should_retain_model_websocket_tracking(flow: http.HTTPFlow) -> bool:
     return response_streaming.is_confirmed_websocket_upgrade_response(
         flow,
         websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    ) and (
-        model_websocket_usage.is_enabled(flow)
-        or model_provider_failure.should_observe_websocket_server_event(flow)
-    )
+    ) and model_websocket_usage.is_enabled(flow)
 
 
 def response(flow: http.HTTPFlow) -> Awaitable[None] | None:
@@ -1893,7 +1844,6 @@ def _finish_response_handling(
 
     request_size = _request_size(flow)
     status_code = flow.response.status_code if flow.response else 0
-    model_provider_failure.finish_http_response(flow)
 
     # Log HTTP network entry for this run. DNS/kmsg rows are produced by the
     # Rust runner; api-contracts is the shared network-log schema boundary.
@@ -1985,7 +1935,6 @@ def _handle_error(flow: http.HTTPFlow) -> None:
     firewall_action = flow_metadata.firewall_action(flow.metadata)
 
     connector_diagnostics.handle_error(flow)
-    model_provider_failure.finish_connection_error(flow)
 
     request_size = _request_size(flow)
     error_msg = flow.error.msg if flow.error else "unknown error"
@@ -2054,8 +2003,7 @@ def done():
     responses. JSONL writer shutdown is also bounded and best-effort; if it times
     out, process shutdown continues with accepted log entries possibly still
     pending. After joining the usage executor, retained billing and diagnostic
-    work is drained through synchronous delivery. Model-provider
-    failure delivery stops admission and receives one bounded drain window.
+    work is drained through synchronous delivery.
     Catalog validation and SigV4 hashing close admission and join their bounded
     off-loop work.
     """
@@ -2084,15 +2032,12 @@ def _drain_addon_workers() -> None:
                 auth_base_forwarder.shutdown_forward_request_workers(wait=False)
         finally:
             try:
-                model_provider_failure.shutdown()
+                codex_model_catalog_cache.shutdown()
             finally:
                 try:
-                    codex_model_catalog_cache.shutdown()
+                    aws_sigv4_hash_executor.shutdown()
                 finally:
-                    try:
-                        aws_sigv4_hash_executor.shutdown()
-                    finally:
-                        shutdown_log_writer()
+                    shutdown_log_writer()
 
 
 # ============================================================================

@@ -3,7 +3,7 @@ import {
   integrationsSlackUploadCompleteContract,
   type SlackUploadCompleteBody,
 } from "@okouai/api-contracts/contracts/integrations";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { CURRENT_LINK_LAYOUT } from "@okouai/api-contracts/contracts/link-layout";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -16,8 +16,8 @@ import {
 import { completeCanonicalSlackDelivery$ } from "../services/canonical-slack-asset-delivery.service";
 import { recordSlackUploadedFile$ } from "../services/run-uploaded-files.service";
 import { slackOrgInstallation } from "../services/slack-data.service";
+import { resolveSlackTargetChannel$ } from "../services/slack-message-context.service";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const noInstallation = Object.freeze({
   status: 404 as const,
@@ -31,10 +31,11 @@ const noInstallation = Object.freeze({
 
 function buildSlackUploadMetadata(
   body: SlackUploadCompleteBody,
+  channel: string,
   file: SlackFileInfo | undefined,
 ): Record<string, unknown> {
   return {
-    channel: body.channel,
+    channel,
     ...(body.threadTs ? { threadTs: body.threadTs } : {}),
     ...(body.title ? { title: body.title } : {}),
     ...(body.initialComment ? { initialComment: body.initialComment } : {}),
@@ -100,6 +101,7 @@ const completeCanonicalUpload$ = command(
         body: {
           fileId: body.fileId,
           permalink: "",
+          channel: delivery.channelId,
           assetId: body.canonicalAssetId,
           deliveryStatus: "failed" as const,
           deliveryError: delivery.message,
@@ -114,6 +116,7 @@ const completeCanonicalUpload$ = command(
       body: {
         fileId: delivery.fileId,
         permalink: delivery.permalink,
+        channel: delivery.channelId,
         assetId: body.canonicalAssetId,
         deliveryStatus: "delivered" as const,
       },
@@ -126,16 +129,30 @@ interface DirectCompletionArgs {
   readonly runId: string | undefined;
   readonly userId: string;
   readonly orgId: string;
-  readonly publicBrand: PublicBrand;
   readonly client: SlackClient;
 }
 
 const completeDirectUpload$ = command(
   async ({ set }, args: DirectCompletionArgs, signal: AbortSignal) => {
     const { body, client } = args;
+    const target = await set(
+      resolveSlackTargetChannel$,
+      {
+        client,
+        userId: args.userId,
+        orgId: args.orgId,
+        channel: body.channel,
+        user: body.user,
+      },
+      signal,
+    );
+    if ("status" in target) {
+      return target;
+    }
+    const channel = target.channelId;
     const completeResult = await client.completeUploadExternal({
       fileId: body.fileId,
-      channel: body.channel,
+      channel,
       threadTs: body.threadTs,
       title: body.title,
       initialComment: body.initialComment,
@@ -179,8 +196,8 @@ const completeDirectUpload$ = command(
         contentType: file?.mimetype ?? null,
         sizeBytes: file?.size ?? null,
         url: permalink || null,
-        publicBrand: args.publicBrand,
-        metadata: buildSlackUploadMetadata(body, file),
+        layout: CURRENT_LINK_LAYOUT,
+        metadata: buildSlackUploadMetadata(body, channel, file),
       },
       signal,
     );
@@ -190,6 +207,7 @@ const completeDirectUpload$ = command(
       body: {
         fileId: body.fileId,
         permalink,
+        channel,
       },
     };
   },
@@ -197,7 +215,6 @@ const completeDirectUpload$ = command(
 
 const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const publicBrand = PUBLIC_BRAND;
   const runId =
     "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
 
@@ -241,7 +258,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       runId,
       userId: auth.userId,
       orgId: auth.orgId,
-      publicBrand,
       client,
     },
     signal,

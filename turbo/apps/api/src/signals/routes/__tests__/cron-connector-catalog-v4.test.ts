@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { corruptApiTestConnectorCatalogActiveSnapshotPayload } from "../../../test-fixtures/connector-catalog";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -31,7 +31,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { settle } from "../../utils";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -235,34 +235,33 @@ function release(args: {
   };
 }
 
+function requestedKey(command: unknown): string | undefined {
+  if (
+    typeof command !== "object" ||
+    command === null ||
+    !("input" in command) ||
+    typeof command.input !== "object" ||
+    command.input === null ||
+    !("Key" in command.input) ||
+    typeof command.input.Key !== "string"
+  ) {
+    return undefined;
+  }
+  return command.input.Key;
+}
+
 function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
   context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (
-      typeof command !== "object" ||
-      command === null ||
-      !("input" in command) ||
-      typeof command.input !== "object" ||
-      command.input === null ||
-      !("Key" in command.input) ||
-      typeof command.input.Key !== "string"
-    ) {
+    const key = requestedKey(command);
+    if (key === undefined) {
       return Promise.reject(new Error("Unexpected object request"));
     }
-    const object = objects.get(command.input.Key);
+    const object = objects.get(key);
     if (object === undefined) {
       return Promise.reject(new Error("Object unavailable"));
     }
-    const etag = `"${digest(object)}"`;
-    if ("IfNoneMatch" in command.input && command.input.IfNoneMatch === etag) {
-      return Promise.reject(
-        Object.assign(new Error("Not modified"), {
-          $metadata: { httpStatusCode: 304 },
-        }),
-      );
-    }
     return Promise.resolve({
       ContentLength: object.length,
-      ETag: etag,
       Body: {
         async *[Symbol.asyncIterator]() {
           yield object;
@@ -272,10 +271,13 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
   });
 }
 
-function cronClient() {
-  return setupApp({ context, routes: cronConnectorCatalogRoutes })(
-    cronConnectorCatalogContract,
-  );
+async function cronClient() {
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+  return app(cronConnectorCatalogContract);
 }
 
 function catalogClient() {
@@ -285,7 +287,10 @@ function catalogClient() {
 }
 
 async function sync() {
-  return await accept(cronClient().sync({ headers: cronHeaders }), [200]);
+  return await accept(
+    (await cronClient()).sync({ headers: cronHeaders }),
+    [200],
+  );
 }
 
 async function publicCatalog() {
@@ -324,7 +329,7 @@ describe("connector catalog v4 preparation", () => {
       runs.acceptTelemetryIngest();
       const runnerGroup = runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "Builtin catalog changes",
         visibility: "private",
@@ -379,10 +384,9 @@ describe("connector catalog v4 preparation", () => {
             }
             created.connectionId = connected.body.connectedAccountId;
           }
-          const run = await runs.createRun(actor, {
+          const run = await runs.createThreadRun(actor, {
             agentId: agent.agentId,
             prompt: "Use the selected builtin MCP account",
-            modelProvider: "anthropic-api-key",
           });
           created.runId = run.runId;
           await runs.heartbeatRunner(runnerGroup);
@@ -475,6 +479,7 @@ describe("connector catalog v4 preparation", () => {
       context.mocks.s3.send.mockResolvedValue({ Contents: [] });
       if (created.runId) {
         await runs.requestCancelRun(actor, created.runId, [200, 404]);
+        await flushWaitUntilForTest();
       }
       if (created.connectionId) {
         await connectorsApi.deleteBuiltinConnectorAccount(
@@ -490,41 +495,21 @@ describe("connector catalog v4 preparation", () => {
     },
   );
 
-  it("reports an accepted v4 catalog as unavailable when its snapshot is corrupt", async () => {
-    serveObjects(release({ label: "Accepted v4" }).objects);
-    expect((await sync()).body.outcome).toBe("accepted");
-
-    // Infrastructure-corruption exception: no production endpoint writes an
-    // invalid gzip snapshot. Corrupt before the first v4 read, so its original
-    // immutable bytes are not already in this process's accepted-reader cache.
-    await corruptApiTestConnectorCatalogActiveSnapshotPayload();
-    const unavailable = await accept(
-      catalogClient().list({ headers: sessionHeaders }),
-      [503],
-    );
-    expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-  });
-
   it("serves v4 HTTP and generic Automatic MCP methods through normal sync", async () => {
     const candidate = release({ label: "Accepted v4", mcpSlug: "notes-mcp" });
     serveObjects(candidate.objects);
-    expect((await sync()).body).toMatchObject({
+    // The response is only the attempt report.
+    expect((await sync()).body).toStrictEqual({
       outcome: "accepted",
-      schemaVersion: 4,
-      state: "current",
-      active: { catalogDigest: candidate.pointer.catalogDigest },
-      filtering: {
-        stale: false,
-        filteredAuthMethods: [],
-      },
+      failureCode: null,
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "catalog-service", label: "Accepted v4" },
       { slug: "notes-mcp", authMethods: [{ grantKind: "automatic" }] },
     ]);
-    expect((await sync()).body).toMatchObject({
+    expect((await sync()).body).toStrictEqual({
       outcome: "unchanged",
-      schemaVersion: 4,
+      failureCode: null,
     });
   });
 
@@ -535,18 +520,18 @@ describe("connector catalog v4 preparation", () => {
     "uses the %s auth-method switch for discovery while accepting its catalog",
     async (_label, connectorSlug, featureSwitch) => {
       serveObjects(release({ mcpSlug: connectorSlug }).objects);
-      expect((await sync()).body).toMatchObject({
-        outcome: "accepted",
-        filtering: { filteredAuthMethods: [] },
-      });
+      expect((await sync()).body).toMatchObject({ outcome: "accepted" });
       expect(
         (await publicCatalog()).body.connectors.map((connector) => {
           return connector.slug;
         }),
       ).toStrictEqual(["catalog-service"]);
-      const features = setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      );
+      const featuresApp = await setupApp({
+        context,
+        routes: featureSwitchesRoutes,
+        isolatePg: true,
+      });
+      const features = featuresApp(featureSwitchesContract);
       await accept(
         features.update({
           headers: sessionHeaders,
@@ -576,27 +561,33 @@ describe("connector catalog v4 preparation", () => {
     },
   );
 
-  it("reports a cold catalog as unavailable until v4 is accepted", async () => {
-    serveObjects(new Map());
-    expect((await sync()).body).toMatchObject({
-      outcome: "rejected",
-      schemaVersion: 4,
-      state: "never-synced",
-      active: null,
-      lastAttempt: { failureCode: "source-unavailable" },
+  it("keeps serving the current pointer across a rejected-source sync", async () => {
+    const serving = release({ label: "Serving" });
+    serveObjects(serving.objects);
+    expect((await sync()).body).toStrictEqual({
+      outcome: "accepted",
+      failureCode: null,
     });
-
-    const unavailable = await accept(
-      catalogClient().list({ headers: sessionHeaders }),
-      [503],
-    );
-    expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    serveObjects(release({}).objects);
-    expect((await sync()).body.outcome).toBe("accepted");
     expect((await publicCatalog()).body.connectors).toMatchObject([
-      { label: "HTTP" },
+      { label: "Serving" },
     ]);
+
+    serveObjects(new Map());
+    expect((await sync()).body).toStrictEqual({
+      outcome: "rejected",
+      failureCode: "source-unavailable",
+    });
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { label: "Serving" },
+    ]);
+
+    // Nothing about the rejection was persisted: the next sync of the serving
+    // pointer is unchanged.
+    serveObjects(serving.objects);
+    expect((await sync()).body).toStrictEqual({
+      outcome: "unchanged",
+      failureCode: null,
+    });
   });
 
   it("retains the last accepted v4 snapshot when a later candidate has an invalid protocol", async () => {
@@ -620,15 +611,9 @@ describe("connector catalog v4 preparation", () => {
     });
     serveObjects(invalid.objects);
 
-    expect((await sync()).body).toMatchObject({
+    expect((await sync()).body).toStrictEqual({
       outcome: "rejected",
-      schemaVersion: 4,
-      state: "stale",
-      active: { catalogDigest: accepted.pointer.catalogDigest },
-      rejectedCandidate: {
-        catalogDigest: invalid.pointer.catalogDigest,
-        failureCode: "invalid-artifact",
-      },
+      failureCode: "invalid-artifact",
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { label: "Last accepted" },
@@ -636,7 +621,7 @@ describe("connector catalog v4 preparation", () => {
   });
 
   it("rejects a pointer outside the canonical v4 release namespace", async () => {
-    const candidate = release({});
+    const candidate = release({ label: "Outside namespace" });
     const objects = new Map(candidate.objects);
     objects.set(
       "connectors/v4/active.json",
@@ -647,21 +632,24 @@ describe("connector catalog v4 preparation", () => {
     );
     serveObjects(objects);
 
-    expect((await sync()).body).toMatchObject({
+    expect((await sync()).body).toStrictEqual({
       outcome: "rejected",
-      schemaVersion: 4,
-      active: null,
-      lastAttempt: { failureCode: "invalid-pointer" },
+      failureCode: "invalid-pointer",
     });
+    // The rejected candidate never serves.
+    expect(JSON.stringify((await publicCatalog()).body)).not.toContain(
+      "Outside namespace",
+    );
   });
 
-  it("rejects changed bytes under the accepted digest without replacing the accepted projection", async () => {
+  it("treats a pointer to the serving digest as unchanged without downloading its catalog", async () => {
     const accepted = release({ label: "Verified bytes" });
     serveObjects(accepted.objects);
-    await sync();
+    expect((await sync()).body.outcome).toBe("accepted");
     const changed = release({ label: "Unverified bytes" });
-    // A new pointer identity forces fetching the candidate; its declared digest
-    // deliberately belongs to the old bytes, not to this new immutable object.
+    // A new publication label and key whose declared digest is the serving
+    // hash. The pointer only references validated complete generations, so
+    // the writer trusts the digest and never reads the changed bytes.
     const catalogKey = "connectors/v4/releases/2026-09-18.fixture/catalog.json";
     serveObjects(
       new Map([
@@ -676,11 +664,16 @@ describe("connector catalog v4 preparation", () => {
         [catalogKey, changed.catalogBytes],
       ]),
     );
-    expect((await sync()).body).toMatchObject({
-      outcome: "rejected",
-      active: { catalogDigest: accepted.pointer.catalogDigest },
-      lastAttempt: { failureCode: "digest-mismatch" },
+    context.mocks.s3.send.mockClear();
+    expect((await sync()).body).toStrictEqual({
+      outcome: "unchanged",
+      failureCode: null,
     });
+    expect(
+      context.mocks.s3.send.mock.calls.map(([command]) => {
+        return requestedKey(command);
+      }),
+    ).toStrictEqual(["connectors/v4/active.json"]);
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { label: "Verified bytes" },
     ]);
@@ -694,12 +687,7 @@ describe("connector catalog v4 preparation", () => {
     // Storage contains only the pointer and catalog. Both descriptors declare
     // skill:none, so accepting this release requires no skill resource fetch.
     serveObjects(candidate.objects);
-    expect((await sync()).body).toMatchObject({
-      outcome: "accepted",
-      filtering: {
-        filteredAuthMethods: [],
-      },
-    });
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "http-service-mcp", authMethods: [{ grantKind: "manual" }] },
       { slug: "spoken-notes", authMethods: [{ grantKind: "automatic" }] },

@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import { waitFor } from "@testing-library/react";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -11,7 +10,6 @@ import {
   waitAblyLoopUntil$,
   waitAblyPayloadLoopUntil$,
   waitAblyInvalidationLoopUntil$,
-  setRealtimeDegradedNotifier$,
   setSharedWorkerRealtimeBridge$,
 } from "../realtime.ts";
 import { clerk$, setupClerk$ } from "../auth.ts";
@@ -56,9 +54,6 @@ beforeEach(() => {
       signal?.throwIfAborted();
       return await readClerkToken(resolvedClerk, signal);
     },
-  });
-  context.store.set(setRealtimeDegradedNotifier$, () => {
-    toast.error("Realtime connection degraded");
   });
 });
 
@@ -298,7 +293,7 @@ test("A pending live-update listener starts after realtime connects", async () =
 
 test("Workspace live updates stay in the active workspace", async () => {
   mockSignedInUser();
-  const topic = "modelPoliciesChanged";
+  const topic = "runQueueChanged";
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -702,7 +697,6 @@ test("Payload updates received during subscription initialization are applied", 
 test("A permanently bad live update does not block later updates", async () => {
   mockSignedInUser();
   const topic = "connectorPermissionUpdated";
-  const toastError = vi.spyOn(toast, "error").mockReturnValue("toast-id");
   const handled: unknown[] = [];
   let poisonAttempts = 0;
   const loop$ = command((_ctx, payload: unknown, _signal: AbortSignal) => {
@@ -738,13 +732,11 @@ test("A permanently bad live update does not block later updates", async () => {
   await expect(loopPromise).resolves.toBeUndefined();
   expect(poisonAttempts).toBe(8);
   expect(handled).toStrictEqual([{ messageId: "message-1" }]);
-  expect(toastError).toHaveBeenCalledTimes(1);
 });
 
 test("A persistent refresh error pauses until a new update", async () => {
   mockSignedInUser();
   const topic = "connectorPermissionUpdated";
-  const toastError = vi.spyOn(toast, "error").mockReturnValue("toast-id");
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -770,9 +762,8 @@ test("A persistent refresh error pauses until a new update", async () => {
   context.mocks.ably.trigger(topic);
 
   await waitFor(() => {
-    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(runs).toBe(4);
   });
-  expect(runs).toBe(4);
 
   context.mocks.ably.trigger(topic);
   await expect(loopPromise).resolves.toBeUndefined();

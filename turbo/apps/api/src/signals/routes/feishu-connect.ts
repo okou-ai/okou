@@ -7,10 +7,7 @@ import {
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import {
-  PUBLIC_BRAND_PRESENTATION,
-  PUBLIC_BRAND,
-} from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -20,7 +17,7 @@ import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { InvalidFeishuCredentialsError } from "../external/feishu-client";
 import type { RouteEntry } from "../route-entry";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { settle } from "../utils";
 import {
   configureFeishuInstallation$,
@@ -61,11 +58,7 @@ const feishuIntegrationDisabled$ = computed((get) => {
 
 const feishuIntegrationEnabled$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const context = await loadUserFeatureSwitchContext(
-    get(db$),
-    auth.orgId,
-    auth.userId,
-  );
+  const context = await get(userFeatureSwitchContext(auth.orgId, auth.userId));
   return isFeatureEnabled(
     FEISHU_PLATFORMS[get(feishuPlatform$)].featureSwitch,
     context,
@@ -74,7 +67,7 @@ const feishuIntegrationEnabled$ = computed(async (get) => {
 
 function appIdInUse(platformName: string) {
   return conflict(
-    `This ${platformName} App ID is already registered in ${PUBLIC_BRAND_PRESENTATION.brandName}`,
+    `This ${platformName} App ID is already registered in ${BRAND_PRESENTATION.brandName}`,
   );
 }
 
@@ -88,7 +81,6 @@ const getStatus$ = computed(async (get) => {
       orgId: auth.orgId,
       platform: get(feishuPlatform$),
       userId: auth.userId,
-      publicBrand: PUBLIC_BRAND,
       isAdmin: auth.orgRole === "admin",
     }),
   );
@@ -119,7 +111,6 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
     return get(feishuIntegrationDisabled$);
   }
   const auth = get(organizationAuthContext$);
-  const publicBrand = PUBLIC_BRAND;
   if (auth.orgRole !== "admin") {
     return adminRequired(get(feishuPlatformName$));
   }
@@ -135,7 +126,6 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
         orgId: auth.orgId,
         platform: get(feishuPlatform$),
         userId: auth.userId,
-        publicBrand,
         ...bodyResult.data,
       },
       signal,
@@ -152,9 +142,6 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw configured.error;
   }
   const result: ConfigureFeishuResult = configured.value;
-  if (result.kind === "agent_not_found") {
-    return badRequestMessage("Select an agent from this organization");
-  }
   if (result.kind === "installation_not_found") {
     return notFound(`${get(feishuPlatformName$)} integration not found`);
   }
@@ -176,7 +163,6 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       platform: get(feishuPlatform$),
       userId: auth.userId,
-      publicBrand,
       isAdmin: auth.orgRole === "admin",
       preferredInstallationId: result.installationId,
     }),
@@ -198,7 +184,6 @@ const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       platform: get(feishuPlatform$),
       userId: auth.userId,
-      publicBrand: PUBLIC_BRAND,
       isAdmin: true,
     }),
   );
@@ -245,14 +230,10 @@ const updateInstallation$ = command(
         platform: get(feishuPlatform$),
         userId: auth.userId,
         installationId: params.installationId,
-        defaultAgentId: bodyResult.data.defaultAgentId,
         setupCompleted: bodyResult.data.setupCompleted,
       },
       signal,
     );
-    if (updated.kind === "agent_not_found") {
-      return badRequestMessage("Select an agent from this organization");
-    }
     if (updated.kind === "installation_not_found") {
       return notFound(`${get(feishuPlatformName$)} integration not found`);
     }
@@ -266,7 +247,6 @@ const updateInstallation$ = command(
         orgId: auth.orgId,
         platform: get(feishuPlatform$),
         userId: auth.userId,
-        publicBrand: PUBLIC_BRAND,
         isAdmin: auth.orgRole === "admin",
         preferredInstallationId: params.installationId,
       }),
@@ -317,7 +297,6 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       platform: get(feishuPlatform$),
       userId: auth.userId,
-      publicBrand: PUBLIC_BRAND,
       isAdmin: auth.orgRole === "admin",
     }),
   );

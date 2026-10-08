@@ -1,6 +1,4835 @@
 # Deployment Compatibility
 
-## Codex OAuth workspace ID preparation
+## Connector catalog column reads (expand release)
+
+Migrations `1339_expand_connector_catalog_entry_columns` and
+`1340_backfill_connector_catalog_entry_columns` prepare removal of the large
+`connector_catalog_entries.payload`. The entry identity remains `(hash, slug)`
+and the catalog pointer remains `(schema_version, hash)`. No publication,
+Runner, App or API response schema changes.
+
+Independent columns hold `label`, `description`, `category`, `icon`, `tags`,
+`generation`, `auth_methods`, `mcp`, `skill`, `firewall` and
+`permission_summary`. The API computes the summary during immutable entry
+preparation using the existing permission and compact-default-policy semantics.
+It is application-derived, not part of the publisher artifact or its hash.
+Any later change to that derivation must explicitly backfill retained hashes;
+same-hash writer retries do not refresh immutable entries.
+
+The first migration only adds nullable columns. The second backfills every
+retained generation, separately from the DDL transaction so the data rewrite
+does not retain the column-addition lock. `mcp` stays SQL NULL for connectors
+without an MCP descriptor. New writers atomically insert every column together
+with `payload`; skill registration and complete-generation pointer publication
+keep their existing order and interruption behavior.
+
+**Reads.** List, search, discovery, status, connected briefs, one-click connect
+items and onboarding catalog reads select display/authentication columns and
+the stored permission summary. Account-status projections select only slug,
+auth methods and MCP metadata, reusing the existing executable-method rules.
+The display catalog cache contains no firewall or skill objects. Permission details select runtime fields only for the named
+slug. Runtime captures, sync, Pi recapture and staff diagnostics use independent
+column selections instead of returning the complete payload. (Staff
+diagnostics were later removed; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07). Pi
+recapture was retired with the
+[stable-context tables](#pi-stable-context-tables-retired-2026-10-07).) Runtime consumers
+that materialize full executable connectors still load auth, skill and firewall
+fields; this change does not claim a new minimal runtime projection or measured
+S1–S3 latency improvement.
+
+**Mixed versions and bounded fallback.** Migrations must run before promotion
+of the new API. The previous API keeps reading and writing `payload`, including
+inserts after the backfill. Therefore the new columns are temporarily nullable,
+and `connector-catalog-columns.ts` uses SQL `COALESCE` per field for those rows.
+Permission-summary fallback computes the same summary inside PostgreSQL; no
+whole payload crosses the database boundary. MCP absence is distinguished from
+an old writer using the required `auth_methods` projection, so normal non-MCP
+reads do not consult payload. Both old and new writers can publish during this
+window. A new API against a pre-expansion database is unsupported. Rollback to
+the previous API remains supported because payload is preserved and dual-written.
+
+**Contraction gate.** [Follow-up #37899](https://github.com/okou-ai/okou/issues/37899)
+must verify that payload-only writers and
+rollback targets have drained, reconcile any remaining unprojected retained
+rows, remove the field-level fallbacks, and make required projections NOT NULL
+(`mcp` remains optional). Physically dropping payload additionally requires that
+no serving or rollback API still declares/writes it. Migrations precede API
+promotion, so this release's dual writer cannot serve while payload is dropped.
+Ship a payload-independent writer before the destructive migration unless an
+explicit deployment boundary guarantees the dual writer has drained. Do not
+combine these stages merely because reads no longer return payload.
+
+This PR prepares that contraction; it neither drops payload nor activates or
+releases production changes.
+
+## Pi stable-context tables retired (2026-10-07)
+
+The Pi stable-context cache never had a production reader and is removed from
+the API: run launch builds the stable prompt directly, and the API no longer
+invalidates, records demand for, materializes, garbage-collects or drains
+stable-context heads, artifacts or Pi resource snapshots. The materialize cron
+response no longer has a `stableContext` field (only Vercel cron calls it).
+
+Migration `1343_retire_pi_stable_context` drops `pi_stable_context_heads`,
+`pi_stable_context_artifacts`, `pi_stable_context_artifact_resources` and
+`pi_resource_snapshots` with their indexes, checks and foreign keys. It keeps
+the reserve-before-IO publication fence for Agent instructions and Workflow
+volumes, which still rejects an older, slower upload with `409` once a newer
+reservation exists. Its tables are renamed: `pi_stable_context_generations` to
+`storage_publication_generations` and `pi_stable_context_publications` to
+`storage_publication_tokens`. Their primary keys, generation checks and the
+token index are renamed to the matching `storage_publication_*` names. The
+generation table drops `publication_state` and its state check, which only the
+stable-context reader consumed.
+
+Dropping the three tables with foreign keys briefly takes exclusive locks on
+`agents`, `storages` and `storage_versions`. The default 1s `lock_timeout`
+bounds the wait, so a busy moment can fail the migration; a retry resolves it.
+
+Database ordering: migrations run before API promotion. Every API built before
+1343 writes the dropped tables and the old generation and publication table
+names on Agent update, instructions, Workflow create/update/delete/visibility,
+Storage HEAD publication, connector, permission, feature-switch and catalog
+writes, Clerk and Agent deletion, and its crons. It fails on those paths
+(`42P01`/`42703`) until it drains. This is not rolling-compatible; the
+interruption while the previous API drains is accepted by explicit owner
+decision (2026-10-07). No preparatory release or compatibility branch is
+required. Acceptance of that risk is not an instruction to deploy.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1343_retire_pi_stable_context.sql` and rejects earlier targets
+before artifact or host access. Recovering below it requires a reviewed forward
+migration that recreates the old tables before an older API serves.
+
+## Connector catalog diagnostics removed (2026-10-07)
+
+Staff diagnose connector catalog state with masked database queries against
+`connector_catalog` and `connector_catalog_entries`. The API no longer computes
+catalog diagnostics anywhere.
+
+**Staff endpoint.** The staff-only, OkouDebug-gated `diagnostics` route of
+`connectorCatalogContract` (`GET` under `/api/connector-catalog`), its handler,
+and the Settings debug "Connector catalog" block with its translations are
+removed. An old Platform build that opens Settings debug as staff already
+accepted `403` and `404` from this endpoint as "no diagnostics"
+(`accept(..., [200, 403, 404])`) and rendered nothing. Against a new API the
+path falls through to the `:connectorSlug` detail route, which returns `404`
+for the non-existent `diagnostics` connector (or `403` without
+`connector:read`), so the old block still renders nothing. Only a catalog
+outage (`503`) would surface as an error, inside that staff-only block. No CLI
+command or user flow reads this endpoint. A new Platform against an old API
+makes no request.
+
+**Cron sync response.** `/api/cron/sync-connector-catalog` now returns only
+the writer's report of the attempt it just made: `{ outcome, failureCode }`.
+`schemaVersion`, `state`, `active`, `pointer`, `filtering` and
+`credentialStorage` are removed, together with the API diagnostics service,
+the connector credential storage readiness counts and their schemas. The
+remaining sync schemas (failure code and attempt report) now live in
+`contracts/connector-catalog-sync`. Sync behavior (accept, unchanged, reject,
+and keeping the serving pointer after a rejection) is unchanged.
+
+The release workflow's best-effort post-deploy call now logs
+`{ outcome, failureCode }` and warns when `outcome` is neither `accepted` nor
+`unchanged` (a rejection, or a missing outcome). It still never fails the
+deploy. The step calls the API deployment it just created from the same
+commit (`steps.deploy.outputs.url`), so the workflow and the API agree on the
+response. The check only needs `outcome`, which pre-change API builds also
+return (alongside extra diagnostics fields the summary ignores), so a rerun or
+rollback that pairs this workflow with an older API still works. An empty
+generation is no longer
+reported by this check; query the masked database for it. The Vercel cron
+ignores the response body.
+
+There are no schema, data or writer behavior changes.
+
+## Frozen model provider state dropped (2026-10-07)
+
+Owner decision (Ethan, 2026-10-07): data no live reader uses is removed.
+Custom migration `1337_retire_unused_model_route_data` clears
+`run_model_catalog.pi_route_class` values other than `gpt-codex`, resets the
+already-rejected `chat_threads.selected_model = 'deepseek/deepseek-v4-pro'`
+pins to NULL (unpinned, which resolves to Auto). The retired-vendor
+`built_in_model_keys` rows are deleted by main's
+`1335_clear_unselectable_thread_models_and_unused_model_keys`; the owner revokes
+those keys upstream outside this change.
+
+Generated migration `1338_retire_model_route_state` narrows
+`chk_run_model_catalog_pi_route_class` to NULL or `gpt-codex` (the table has a
+handful of rows, so the check is added and validated directly), drops
+`model_provider_auth_sessions.sandbox_id` with its partial index, and drops the
+frozen OAuth copies on `model_providers`: `token_expires_at`,
+`needs_reconnect`, `last_refresh_error_code`, `workspace_name`, `plan_type`,
+`subscription_reset_period` and `subscription_next_reset_at`. The live values
+are on `model_provider_accounts`, which every current reader already uses. The
+new API selects explicit `model_providers` columns, and the Pi memory phase 2
+credential gate uses the account's `needs_reconnect` only.
+
+Database ordering: migrations run before API promotion. An API built before
+1338 selects every `model_providers` column when listing, connecting,
+activating or deleting personal subscription accounts, and every
+`model_provider_auth_sessions` column in the Claude Code and Codex device
+authorization flows, so those paths receive `42703` until it drains. This drop
+is **not rolling-compatible**. A new API against the old schema is compatible
+because it never names the dropped columns. An API built before 1337 that is
+still draining is unaffected by the data changes: the cleared pins were
+already rejected.
+
+**Accepted rollout interruption (1338, model provider columns):** Ethan
+explicitly accepted (2026-10-07) a brief unavailability during deployment while
+the outgoing API drains, so personal subscription account and device
+authorization reads from a pre-1338 API may receive `42703` in that window. No
+preparatory release or old-column compatibility branch is required. Acceptance
+of that risk is not an instruction to deploy.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1338_retire_model_route_state.sql` and rejects earlier
+targets before artifact or host access. Recovering below it requires a reviewed
+forward migration that recreates the columns before an older API serves. This
+does not claim production activation.
+
+## Ultrafast service tier retired (2026-10-07)
+
+Ultrafast is retired across the App, API, contracts, runner and proxy pricing.
+Migration `1336_retire_ultrafast_data` clears stored Ultrafast selections:
+`chat_threads.codex_service_tier`, `org_members_metadata.service_tier`, and the
+`model_routes.service_tiers` / `default_service_tier` values. Migration
+`1338_retire_model_route_state` then limits route tiers to `priority`
+and adds `chk_chat_threads_codex_service_tier` (NULL or `fast`) and
+`chk_org_members_metadata_service_tier` (NULL or `priority`). The two new checks
+are added `NOT VALID` and validated in a separate statement after 1338 repeats
+the Ultrafast cleanup, so a value written by a draining pre-1338 API cannot fail
+validation. 1338 runs in one transaction, so the lock taken by `ADD CONSTRAINT`
+is held through the `VALIDATE` scan, bounded by the migration statement
+timeout.
+
+New requests that send `ultrafast` are rejected with 400. Immutable history
+(thread events, snapshots, client caches and queued chat input model
+selections) still reads a stored Ultrafast value as Standard (null) instead of
+failing; `agent_runs.codex_service_tier` and usage `.ultrafast` categories stay
+readable for historical runs and billing. An API built before 1338 that is
+still draining can only fail when it writes `ultrafast`, which the current
+catalog no longer offers. Rolling back below this change restores no Ultrafast
+offering because 1336 removed it from the catalog data.
+
+## Built-in model candidate cooldown removed (2026-10-07)
+
+Owner decision (Ethan, 2026-10-07): Auto has one platform route, so a provider
+failure fails that run and the next request tries the route again. The API no
+longer reads or writes a route cooldown when resolving Auto for new runs, queued
+claims or Pi memory maintenance. The staff cooldown diagnostics endpoints
+(`GET`/`DELETE /api/model-providers/cooldown-diagnostics`), their Settings
+debug block, and the test-runtime cooldown actions are removed. Generated
+migration `1338_retire_model_route_state` drops
+`built_in_model_candidate_cooldown`; its rows were transient deadlines with no
+history value, so nothing is converted or archived.
+
+Runner: the mitm addon no longer observes or reports model provider failures,
+and the Runner no longer passes `OKOU_MITM_RUNNER_TOKEN` to mitmdump. Runners
+released before this change still `POST
+/api/runners/runs/:runId/model-provider-failures` best-effort. The endpoint and
+its contract stay: it authenticates the caller and returns
+`{ "outcome": "ignored" }` without reading the run or the body, so old Runners
+see the same success shape they already accept. Remove the endpoint, its
+contract and generated Rust bindings once production Runners no longer send
+these reports (no Runner after this change calls it).
+
+App: a stale App build that opens Settings debug as staff receives `404` from
+the removed diagnostics endpoint inside that debug-only block; no user flow
+depends on it.
+
+Database ordering: migrations run before API promotion. Every API built before
+1338 queries the table while resolving the Auto route for run claims and Pi
+memory maintenance, and writes it from runner failure reports, so it receives
+`42P01` on those paths until it drains. This drop is not rolling-compatible.
+A new API against the old schema is compatible because it never names the
+table.
+
+**Accepted rollout interruption (1338, cooldown table):** Ethan explicitly accepted
+(2026-10-07) a brief unavailability during deployment while the outgoing API
+drains, so Auto run claims, Pi memory maintenance and runner failure reports
+handled by a pre-1338 API may receive `42P01` in that window. No preparatory
+release or old-table compatibility branch is required. Prefer the same rollout
+as 1332/1333 or low traffic. Acceptance of that risk is not an instruction to
+deploy.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1338_retire_model_route_state.sql` and rejects earlier
+targets before artifact or host access. Recovering below it requires a reviewed
+forward migration that recreates the table before an older API serves. This
+does not claim production activation.
+
+## OpenRouter US routing removed (2026-10-07)
+
+Platform OpenRouter traffic always uses the global `https://openrouter.ai/api/v1`
+endpoint. The US model allowlist, the `https://us.openrouter.ai` origin, the
+routing context on `getModelProviderPiEndpoint` / `getModelProviderFirewall`,
+and the inline per-run model-provider firewall that carried a US base URL are
+deleted. Managed Auto and Pi memory runs now use the built-in
+`openrouter-codex` firewall by name, as member-owned and non-allowlisted
+built-in runs already did.
+
+Readers of captured US endpoints are removed too. A queued or active Pi run
+whose captured `OPENAI_BASE_URL` is the US endpoint would no longer match the
+global Pi endpoint and would fail Pi model configuration. Production showed no
+Built-in US-routed run since 2026-10-04 and no in-flight run carrying a US
+endpoint, so no drain gate or migration is required. Runner, guest, and mitm
+code never special-cased the US origin; old Runners receive the same built-in
+firewall name they already resolve. No persisted schema changes.
+
+## Unselectable chat thread models and unused built-in keys cleared
+
+Data-only migration `1335_clear_unselectable_thread_models_and_unused_model_keys`
+has two parts.
+
+It deletes the `built_in_model_keys` rows for `zai`, `anthropic`, `openai`,
+`deepseek`, `minimax` and `moonshot`. Built-in runs read only the
+`openrouter` key (`AUTO_RUN_KEY_VENDOR`). Every API at or above the 1332
+rollback floor selects or resolves only that vendor, so no deployable API
+reads the deleted rows. MaskDB (2026-10-07) showed exactly these seven
+vendors. The deleted keys still need to be revoked at each vendor; that is a
+separate operator action.
+
+It also returns chat threads to Auto when the API cannot resolve their stored
+`selected_model`. A selection is resolvable when it is a `run_model_catalog`
+model (active or replaced) or the upstream id of a `model_routes` row. These
+are the two lookups of `catalogModelForSelectedId`, evaluated against the
+database catalog at migration time. MaskDB (2026-10-07) showed 252 such rows
+across 43 users. They are leftovers of retired providers, for example
+`claude-sonnet-4.6` (213), `vm0-model` (11), `kimi-k2.5`, `claude-opus-4.6`,
+`deepseek/deepseek-v4-pro`, MiniMax ids, `deepseek-chat`, `gpt-5.3*` and
+`codex`. On production these rows, and the 65k threads pinned to active
+catalog models without a route, were already remapped by an operator SQL on
+2026-10-07 (unrouted models to their subscription successors or `okou-1.0`,
+unknown ids to `okou-1.0`, each with its `model_selection_updated` event), so
+this part is expected to change no production row; it still cleans other
+environments. Each thread is changed the same way as picking Auto in the model
+selection route, in one transaction:
+
+- `selected_model` and `codex_service_tier` become NULL and `updated_at` is
+  set; `model_settings` is kept.
+- One `model_selection_updated` event with a NULL model is appended to the
+  owner's `(user_id, org_id)` stream. A `service_tier_updated` event with a
+  NULL tier follows it when a tier was cleared. Sequence positions are
+  reserved per stream in key order, as in 1213 and 1299.
+- Threads without an agent have no event stream and get no event.
+- The update re-checks the selection under its row lock, so a selection an API
+  changes concurrently is kept and gets no event.
+
+Clients apply the appended events after their snapshot position. No snapshot
+or cache needs a rewrite.
+
+Old and new APIs both treat NULL as Auto, so either order of migration and API
+deploy is compatible. The migration adds no schema and does not move the
+rollback floor. Rolling back does not restore the deleted keys or selections;
+nothing at or above the floor reads them.
+`scripts/test-unselectable-thread-model-cleanup.ts` covers the snapshot
+change, the appended events and their sequence, retained selections, the
+remaining OpenRouter key and an idempotent rerun.
+
+## Connector catalog Release 2 follow-up
+
+Release 1 and Release 2 are deployed (production API 1.712.5, `82cab4d`, with
+migration 1334 applied). This follow-up removes the remaining compatibility
+surface and records the final behavior; it has no schema migration.
+
+**Diagnostics `catalogVersion` alias removed.** Staff diagnostics and the cron
+sync response now report `active: { catalogDigest }` only. The
+`active.catalogVersion` hash alias is gone from the contract, the API, the
+Platform debug panel (which shows the digest instead of an "active version")
+and its translations. Ethan confirmed (2026-10-07) that the old clients have
+exited; a staff debug panel loaded before the deploy shows the field as "None"
+until it reloads. A new App against an older API ignores the extra field; the
+release workflow only checks `active != null`. (Superseded: staff diagnostics
+and the Platform debug panel were later removed, the cron sync response no
+longer carries `active`, and the release workflow checks only `outcome`; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).)
+Other `catalogVersion` fields are not this alias and stay:
+
+- The persisted connector permission baseline and Runner execution context
+  `catalogIdentity.catalogVersion` (`storedConnectorPermissionBaselineSchema`,
+  `catalogIdentityFromCapture`). It is a required field of a strict, persisted
+  v1 shape that stored rows and Runner payloads still carry; removing it would
+  need a baseline schema version change and a Runner-side rollout.
+- The Runner builtin firewall catalog `catalogVersion`
+  (`/api/runners/builtin-firewalls` response, `RunnerRuntimeFirewallCatalog`).
+  It is a short digest label the Rust Runner and the mitm addon validate as
+  non-empty and store in their caches; it is a Runner protocol field.
+- The publication label `catalogVersion` of the v4 pointer and artifact, which
+  validation uses to bind the canonical release key, and which the preview
+  seed response, writer logs and dev seed report. It is not stored.
+
+**`invalid-compression` removed.** The failure code had no producer after the
+gzip snapshot codec was deleted in Release 2. It is removed from
+`CONNECTOR_CATALOG_VALIDATION_FAILURE_CODES` and therefore from the cron
+`failureCode` enum. No persisted state carries failure codes any more.
+
+**Required and optional entries.** The current reader contract (after #37893)
+is described under
+[business readers](#connector-catalog-business-readers-on-pointer-and-immutable-entries):
+every reader omits an agent-enabled connector that is missing from the
+captured generation, as if the user had never authorized it, and Runner
+runtime sync reports the target `absent`. Run launch omits it while the
+connector stays enabled.
+
+**Known, accepted behavior: brief pointer regression between two writers.**
+Two callers run the writer: the hourly cron and the release workflow's
+post-deploy sync. Each reads `connectors/v4/active.json` independently and
+last writer wins. If the publication advances between their reads and the
+writer holding the older publication commits last, the pointer briefly returns
+to the previous complete generation; the next hourly sync republishes the
+newer one. Readers always see a complete generation and Pi invalidation
+follows each actual switch. Runtime wakeups compare against the generation the
+writer read before publishing, so a connector that differs only between the
+two newer publications may wait for that next sync to wake its Runs. Ethan accepted this (2026-10-07); there is
+no compare-and-swap or monotonic guard.
+
+**Final catalog architecture.** The former staged v4 rollout guide is removed;
+its still-current content is:
+
+- The pointer must name `connectors/v4/releases/<catalogVersion>/catalog.json`;
+  only artifact schema version 4 is accepted.
+- An explicit `mcp` descriptor, never the `-mcp` naming convention, makes a
+  connector MCP. MCP descriptors declare `skill: { kind: "none" }` and register
+  no skill resources. Methods filtered by capability are expected and do not
+  reject an otherwise valid catalog.
+- An accepted change to a connector's runtime-bearing `mcp`, `authMethods` or
+  `firewall` wakes affected builtin HTTP and MCP Runs so the Runner resolves the
+  current endpoint, credentials and firewall policy. Removing a builtin
+  connector from the catalog wakes active Runs too, and runtime sync reports
+  the registered target `absent`, as if it were never authorized: the Runner
+  drops its policy and credential injection, and new launches omit the
+  connector. If a later generation restores the connector, the next wakeup
+  reports it `available` again. Builtin MCP execution and Automatic
+  authentication are described under
+  [Builtin MCP execution](#builtin-mcp-execution).
+
+## Connector catalog Release 2 contraction (migration 1334)
+
+Release 2 removes the legacy connector catalog storage and writer state that
+Release 1 (#37820, #37861) stopped reading. Migration
+`1334_connector_catalog_release_2_contraction` drops
+`connector_catalog_runtime_projections`,
+`connector_catalog_runtime_projection_sets`,
+`connector_catalog_compatibility_evaluation`,
+`connector_catalog_active_snapshot` and `connector_catalog_sync_state`
+(dependents first, without `CASCADE`; the only foreign keys are among these
+tables). It also drops `connector_catalog.activated_at`, `catalog_version`,
+`catalog_header` and `entry_slugs`, and the redundant
+`connector_catalog_entries` projections `label`, `description`, `category`,
+`auth_methods`, `firewall`, `storage_name`, `version_id` and `mcp_endpoint`.
+No reader selected those projections; every consumer reads `payload`. The
+final schema is the pointer `connector_catalog(schema_version PK, hash)` and
+immutable entries `connector_catalog_entries(hash, slug, payload)` with
+`PK(hash, slug)`. There is no data conversion or backfill: existing entry rows
+and payloads, including generations captured by Runs, Pi contexts and
+permission baselines, are kept unchanged and stay readable by hash.
+
+**Writer.** `/api/cron/sync-connector-catalog` (hourly, plus the release
+workflow call) downloads `connectors/v4/active.json` with a plain GET. A
+pointer whose digest equals the serving hash is `unchanged` without downloading
+the catalog, because only complete, validated generations are ever published.
+Otherwise it downloads the referenced release and keeps every existing
+validation boundary: pointer schema and canonical release key, size limits,
+byte digest, artifact schema, public-leakage and relationship checks, and the
+bundled skill storage/version identity checks at registration. It then
+prepares the complete generation (reusing entries already present at that
+hash, registering missing skills, and inserting the rest with batched
+`INSERT ... ON CONFLICT DO NOTHING` of at most 100 rows) before one
+transaction upserts the pointer. The upsert is conditional, so exactly one
+concurrent writer observes a given switch, including the very first
+publication; runtime wakeups follow that commit. A failure or interruption
+before the pointer commit leaves the previous generation serving and at most an
+unreferenced partial generation that a retry at the same hash completes.
+Entries of earlier hashes are never rewritten or deleted, and unreferenced
+generations are not garbage-collected.
+
+One scheduled writer is assumed and last writer wins; there is no sync state,
+compare-and-swap, revision, ETag reuse or rejection cache. A rejected
+publication is not persisted: each attempt logs a warning with the failure
+code and is revalidated by the next attempt, while the current pointer keeps
+serving. Compatibility is evaluated on demand from captured entries and the
+current executable capability; the persisted evaluation and its cron
+reconciler are removed. Existing hash, schema, source, capability-digest and
+validator-identity fences (including the permission-baseline validation
+authority fast path) are unchanged, and there is no legacy gzip or R2 read
+fallback. The connectors package drops its now-unused gzip snapshot codec.
+
+**Response contracts.** The cron sync response is the staff diagnostics body
+(`schemaVersion`, `state`, `active`, `pointer`, `filtering`,
+`credentialStorage`) plus `outcome` and `failureCode` for the attempt just
+made. `state` is `stale` when that attempt was rejected while a pointer
+serves. `lastAttempt`, `lastSuccessAt`, `rejectedCandidate` and
+`active.activatedAt` are removed. (`active.catalogVersion`, then a hash
+alias, was removed by the [Release 2 follow-up](#connector-catalog-release-2-follow-up).) The release workflow's post-deploy call logs
+`outcome`, `failureCode`, `state` and `pointer.entryCount`; its readiness check
+(`state == "current"`, `active != null`, `filtering.stale == false`) keeps its
+meaning and remains a best-effort warning that never fails the deploy. Staff
+diagnostics are unchanged. (The cron sync response was later reduced to
+`outcome` and `failureCode`, and the readiness check to `outcome`; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).) The preview seed response keeps
+`catalogVersion` (the validated publication label, which is not stored),
+`catalogDigest` and the sorted `connectorSlugs` of the validated publication,
+so the CI preview workflow is unchanged.
+
+**Compatibility and drain.** Migrations run before the API is promoted, so the
+previous production API serves while 1334 is applied.
+
+- A Release 1 API (descending from `e664957caa2056a336595e55f475001b81247fd0`,
+  #37861) reads only `connector_catalog(schema_version, hash)` and
+  `connector_catalog_entries(hash, slug, payload)` in business, runtime, App
+  and staff paths, so those keep working against the contracted schema. Its
+  catalog writer (cron sync, compatibility reconcile, preview and dev seed)
+  still names the dropped tables and columns and fails with `42P01`/`42703`
+  before it can change the pointer; the next scheduled sync from the new API
+  publishes normally. No user-facing read depends on that writer.
+- An API without #37861 (production served API 1.712.3,
+  `e1e0a3851dcdb35c6b7f8ddb41bc21cd746f50f7`, when this change was written)
+  still reads the legacy stores in business paths. It must never serve after
+  1334: connector lists, runs and diagnostics would fail.
+- A new API against a database without 1334 is unsupported: its pointer insert
+  omits the old `NOT NULL` columns.
+
+**Required order.** Merging to `main` is not a deployment, but the next
+release applies 1334 automatically before promoting its API. Therefore:
+
+1. A release containing #37861 must first be deployed to production through
+   the normal release path, and production `/api/build-info` must report a
+   commit descending from `e664957caa2056a336595e55f475001b81247fd0`.
+2. Every API instance and background task built before #37861 must have
+   drained, so the only API that can serve while 1334 runs is a Release 1 API.
+3. Only then may this change merge, so that its release is the one that runs 1334. If it merges earlier, Release 1 and Release 2 would ship in one
+   release and 1334 would run while a pre-Release-1 API serves.
+
+This document does not record that those preconditions are met, nor any
+production deployment, migration or query plan.
+
+**Rollback floor.** The rollback resolver resolves the first-parent `main`
+commit that adds `1334_connector_catalog_release_2_contraction.sql` and rejects
+earlier targets before artifact or host access. It descends from the 1333
+floor. After 1334 no earlier API is a rollback target: Release 1 APIs lose
+their catalog writer and older APIs lose their catalog readers.
+
+## Legacy chat thread provider pin columns dropped
+
+Follow-up to the run model schema contraction below (#37856). Chat threads
+persist only `selected_model`; every run resolves it to platform Auto or the
+caller's personal subscription. The legacy `chat_threads.model_provider_id`,
+`model_provider_type` and `model_provider_credential_scope` columns had no
+reader that used them: every writer stored NULL, and the only reader
+(`ownedChatThread`) parsed and discarded the values. No response, event,
+snapshot, CLI or iOS payload carries them. MaskDB (2026-10-07) showed 1479
+legacy rows with a type set, all with `model_provider_id` NULL and only
+`built-in`, `codex-oauth-token` or `claude-code-oauth-token` types; nothing
+reads those values. Generated migration
+`1332_drop_chat_thread_provider_pin_columns` drops the three columns. There is
+no data conversion or backfill.
+
+Migrations run before API promotion. An API built before 1332 still declares
+the columns, so its chat thread inserts, its `ownedChatThread` select and any
+bare `select()`/`returning()` on `chat_threads` receive `42703` until it
+drains. `chat_threads` is a hot table, so this is not a rolling-compatible
+contraction. A new API against the old schema is compatible: it never names
+the three nullable columns, so its inserts leave them NULL and its selects
+ignore them.
+
+**Accepted rollout interruption:** Ethan explicitly accepted (2026-10-07) a
+brief unavailability of roughly ten-odd seconds during deployment while the
+outgoing API drains, so chat thread reads and writes may receive `42703` in
+that window. This bounded interruption is accepted for this contraction; no
+preparatory release or old-column compatibility branch is required. Prefer the
+same rollout as 1330 or low traffic. Acceptance of that risk is not an
+instruction to merge or deploy this PR.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1332_drop_chat_thread_provider_pin_columns.sql` and rejects earlier
+targets before artifact or host access. That commit descends from the 1330
+floor. Recovering below it requires a reviewed forward migration that restores
+the columns before an older API serves. This does not claim production
+activation.
+
+## Additive immutable connector entry columns
+
+> Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):
+> legacy tables, pointer metadata and entry projection columns described
+> below no longer exist.
+
+Migrations `1328_connector_catalog_entry_columns` and
+`1329_backfill_connector_catalog_entry_columns` add and backfill `label`,
+`description`, `category`, `auth_methods`, `firewall`, `storage_name`,
+`version_id` and `mcp_endpoint` on immutable entries. The complete `payload`, `(hash, slug)`
+identity, publication bytes and all reader contracts remain unchanged.
+Apply these migrations before deploying the new API; new API/old database is
+unsupported because full sync and preview initialization write the new columns.
+
+Old API/new database continues to read and write payload-only entries. The
+additive columns remain nullable for that overlap; old writers can leave them
+empty after the backfill. Existing `(hash, slug)` entries are trusted preparation
+receipts and are never rewritten on retry. Neither full preparation nor the
+unchanged-catalog shortcut is a reconciliation pass. Do not switch readers to these columns
+until old writers have drained and any remaining payload-only rows have been
+reconciled in a separately authorized change. This PR does not switch readers
+or establish a query-performance improvement.
+
+Bundled skills project `storageName` and `versionId`; absent skills store NULL
+in both columns. The storage prefix is derivable as
+`__system__/volume/${storageName}/${versionId}` and is not an additional column.
+The original skill descriptor and its validation remain in `payload`. Rollback
+to the old API is supported without dropping columns or changing payloads.
+Catalog skill registration reuses the metadata owned by an already registered
+storage/version rather than comparing size, archive size, file count, message
+or creator against another catalog copy. New versions still receive their
+initial metadata from the validated artifact; concurrent registrations are
+idempotent and cannot overwrite an existing version. Canonical system owner,
+storage name, version and object-path identity remain enforced at the
+registration boundary. Other storage writers keep their existing contracts.
+The skill object path is derived from storage name and version without another
+prefix validation during registration; artifact validation owns that check.
+Readers continue using storage/version metadata for mount preparation.
+
+Full preparation first lists existing entries for the candidate hash and reuses
+them without revalidating payloads or their storage metadata. It registers all
+missing entries' storage versions before publishing those entries via
+`INSERT ... ON CONFLICT DO NOTHING`. Only after every entry write completes can
+the owning acceptance transaction CAS-update the schema-versioned catalog
+pointer. Entry existence is therefore a preparation receipt, and pointer
+publication is the completed-generation receipt. The payload readback and
+whole-generation manifest comparison are removed from preparation. Downloaded
+artifact validation and the existing acceptance CAS/legacy bridge remain.
+A losing or interrupted preparer may leave unreferenced storage versions or
+partial entries; they are reusable on retry, with no garbage collector added.
+
+Old and new APIs can coexist without changing storage/version or artifact
+shapes. The old API may still reject a catalog whose redundant metadata differs
+from the stored version; the new API accepts it and retains the storage-owned
+metadata. Rolling back restores that stricter catalog acceptance behavior.
+No production migration, deployment or storage write is executed by this PR.
+
+## Connector catalog business readers on pointer and immutable entries
+
+> Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):
+> legacy tables, pointer metadata and entry projection columns described
+> below no longer exist.
+
+Release 1 moves catalog consumers off legacy storage. It is not the
+destructive Release 2. Business/runtime reads (Run capture, Pi
+recapture, public lists/search/discovery/connect surfaces, account refresh,
+Runner firewall catalog, DCR current-identity checks, and permission-baseline
+refresh) use `connector_catalog(schema_version, hash)` and
+`connector_catalog_entries(hash, slug, payload)`. They do not read the slug
+manifest, compressed active snapshot, or persisted compatibility result.
+Full reads capture the hash first and load retained immutable entries at that
+hash, in slug order; switching the pointer cannot strand that capture. Selected
+reads capture pointer and entries in one statement. Compatibility is calculated
+from the captured entries and current code/configuration capability, with the
+existing hash/capability-keyed process cache retained for full-catalog reads.
+Without a manifest, a missing entry and a slug the generation never had are
+indistinguishable. A delisted connector cannot be disconnected or
+unauthorized by the user, so no per-slug or selected-entry reader fails on
+it; each treats the slug as if it were never authorized. The current contract
+is:
+
+- Run capture at launch and the Run MCP connector list omit an agent-enabled
+  connector or admitted account whose entry is missing at the captured hash.
+  The Run launches without it and the MCP list leaves it out. The agent keeps
+  its enabled-connector setting, and the connector returns once a later
+  generation contains it again.
+- Runner runtime sync reports that registered builtin target as `absent`
+  (`connector-unavailable`). The Runner removes its firewall policy, and a
+  later `available` result after the connector returns restores it.
+  `unresolved` remains for credential and refresh problems on a connector that
+  is still in the catalog.
+- Optional reads (search, discovery, connect items, connected briefs,
+  single-item status/permission and account GETs, stored-connection lists,
+  account lifecycle refresh, display filters, and metadata-only custom
+  permission-bundle dependencies) omit the slug or return not-found.
+
+This contract does not probe all slugs or restore a manifest, and a
+missing slug in one reader is never a global catalog failure. Runners
+already handle builtin `absent`, so no Runner protocol change is required.
+A missing pointer or an empty
+whole-catalog generation fails unavailable; there is no legacy or R2 read
+fallback. The pointer read selects only `schema_version` and `hash`; no
+business reader reads `connector_catalog.catalog_header`, which writers still
+populate until Release 2. Public list, discovery and status responses no longer
+return `categoryMetadata`; connectors carry only their `category` id, and
+discovery keeps `categoryConnectorCounts`. The App ships in the same change:
+it derives categories only from connector `category` ids (existing localized
+copy for known ids, id-derived names otherwise, ordered by name, ungrouped) and
+no longer reads `categoryMetadata`. App and API deploy independently, in either
+order. A new App with an old API ignores the field it still returns. An App
+bundle loaded before this change, talking to a new API, receives no category
+metadata: it shows id-derived names, loses category grouping and the
+Connectors-page category filter, and the chat directory uses id-derived
+names, until the page reloads. Browsing, search, connect and runs are unaffected. That
+degradation is accepted; the API does not keep a `catalog_header` read for old
+bundles. The
+Runner firewall projection's own digest uses canonical JSON object-key order,
+so loading the same content from JSONB cannot change its identity. The opaque
+digest/version can change once relative to the old noncanonical projection;
+Runner caches already invalidate by that identity and do not recompute it from
+response serialization. No Runner protocol or firewall body shape changes.
+
+There is no schema migration or stored-data rewrite. The writer still validates
+and completely prepares entries before publishing the pointer, and atomically
+maintains the legacy snapshot, compatibility rows and pointer metadata. The
+legacy synchronization CAS/rejection state and compatibility reconciler are
+unchanged. Staff diagnostics move off the legacy stores in the same change
+(below).
+
+New API/existing DB requires the pointer and entries to have been materialized
+by the existing synchronizer; a legacy gzip row alone is not readiness. Old
+API/new DB remains supported because no table or field is removed and all
+compatibility writes remain. No production activation, backfill, release or
+migration is executed by this change.
+
+The persisted permission baseline and stored Pi execution-context schemas are
+unchanged. New baseline identity retains the v1 wire fields: `catalogDigest`
+contains the hash and `catalogVersion` is a legacy required alias containing
+that same hash, not a publication label or comparison key. Old baseline rows
+with their original publication version remain readable without rewriting:
+currentness compares hash, schema, source and capability (and preserves the
+existing validation-authority fast-path fence), not `catalogVersion`. A changed
+capability/validator still takes the existing canonical full refresh, now also
+from immutable entries. An old API claiming a newly captured baseline can take
+its existing version-mismatch full refresh; legacy serving state remains intact.
+Pi source-vector fields and Runner payload shapes remain unchanged. Native
+route coverage claims old v1 baseline contexts for both Claude Code and Pi,
+including their original publication version, after removing legacy serving
+rows from the case-owned database. Production performance and deployed
+old/new-instance acceptance remain separate verification boundaries.
+
+### Connector catalog staff diagnostics on pointer and immutable entries
+
+Staff diagnostics (the OkouDebug-only `diagnostics` route under
+`/api/connector-catalog`, since removed; see
+[its removal](#connector-catalog-diagnostics-removed-2026-10-07))
+no longer read `connector_catalog_sync_state`,
+`connector_catalog_active_snapshot`,
+`connector_catalog_compatibility_evaluation` or the runtime projection tables.
+Each request reads `connector_catalog(schema_version, hash)` and the
+`connector_catalog_entries` at that hash (only the slug, auth methods and MCP
+presence that compatibility evaluates), then calls
+`evaluateConnectorCatalogCompatibility` against the current executable
+capability. Diagnostics do not read `catalog_version`, `activated_at`,
+`catalog_header` or `entry_slugs`, so they survive the removal of those
+columns, and there is no manifest comparison. Nothing new is persisted or
+cached.
+
+Response fields:
+
+- `pointer` (new): `{ schemaVersion, hash, entryCount }`, or `null`
+  without a pointer. `entryCount: 0` is an unavailable generation: the API
+  logs a warning and reports `filtering` with `stale: true` and
+  `evaluatedAt: null`.
+- `active`: `{ catalogDigest }`, carrying the hash; `activatedAt` is omitted.
+  (The `catalogVersion` hash alias it originally also carried was removed by
+  the [Release 2 follow-up](#connector-catalog-release-2-follow-up).)
+- `state`: `never-synced` without a pointer, `current` otherwise. `stale`
+  stays in the enum for older API responses but is no longer emitted.
+- `filtering`: evaluated per request. `evaluatedAt` is the request time.
+- `lastAttempt`, `lastSuccessAt` and `rejectedCandidate` are removed. Only the
+  writer's sync state records them, so the API omits them instead of
+  reporting nulls that would look like "never attempted".
+
+Rolling deploy: the old Platform debug panel already null-guards every
+removed field (`lastAttempt ?`, `active?.activatedAt ?? null`,
+`formatTimestamp(lastSuccessAt)` on a falsy value, `rejectedCandidate ?`), so
+it renders them as "None" against a new API. The panel is behind the
+staff-only OkouDebug switch, so the new panel adds no handling for older API
+responses: the contract requires `pointer`, and a new panel served by an old
+API shows its fields as "None" until that API is replaced. No CLI command reads
+this endpoint.
+
+The cron sync response (`/api/cron/sync-connector-catalog`) carries the same
+`pointer`, `filtering` and `credentialStorage`, plus the writer's report of
+the attempt it just made: `outcome`, `state` (`stale` after a rejected
+candidate while an older catalog keeps serving), `active` (publication label
+and activation time), `lastAttempt`, `lastSuccessAt` and `rejectedCandidate`.
+`syncConnectorCatalog$` returns that report from its own sync state, and it
+goes away with that state in Release 2. The release workflow's best-effort
+readiness check (`state`, `active`, `filtering.stale`) keeps the same meaning.
+With an empty generation, it now warns. (The response's diagnostics fields
+and this readiness check were later removed; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).)
+
+The remaining legacy reads in API source are all internal to the writer. They
+stay until the Release 2 contraction because old API instances still depend
+on the writes they guard:
+
+- `connector-catalog-sync.service.ts` `readSyncState` (sync state joined with
+  the active snapshot) provides the sync attempt's CAS baseline, observed
+  pointer and rejection cache, and the attempt report described above.
+- `connector-catalog-compatibility.service.ts` `reconcileCompatibility` takes
+  locking reads (`lockSyncState`, `activeSnapshotForUpdate` and the existing
+  evaluation's validation authority) before it rewrites compatibility rows.
+- `preview-connector-catalog.service.ts` only writes and deletes the preview
+  source's legacy rows, in the same transaction as the pointer; it reads none.
+
+There are no schema, data or writer behavior changes.
+
+## Organization OpenRouter preset override
+
+Migration `1324_org_openrouter_preset` adds nullable
+`org_metadata.openrouter_preset`. Apply the migration before deploying the new
+API. Old API/new database ignores the additive field and keeps its global
+catalog route; new API/old database is unsupported because org context reads
+the column. No Runner or Pi payload shape changes are required.
+
+For the Built-in `okou-1.0` OpenRouter route, new execution contexts use
+`org_metadata.openrouter_preset ?? model_routes.upstream_model`. The org-owned
+catalog projection never mutates the shared global catalog. Subscription
+routes are unchanged. Pi memory maintenance uses the
+same org-specific projection. Already launched Runs keep their captured route;
+operator changes apply to subsequent launches.
+
+The field is operator-managed in this change, with no product write endpoint
+or UI. Store a full `@preset/<slug>` reference accessible to the managed
+OpenRouter account. `NULL` clears the override. Empty or invalid values are not
+normalized to the default, and database/provider failures do not silently
+switch models. Presets must remain compatible with the `okou-1.0` runtime
+capability and token-limit contract; this change does not introduce dynamic
+backing-model metadata or different billing prices.
+
+## Run model schema contraction
+
+Migrations 1325–1327 and 1330/1331 leave the model schema with fixed platform
+Auto (`okou-1.0` on `openrouter-codex`) and members' personal Codex/Claude
+subscriptions; the DeepSeek memory binding is unchanged. 1330 drops
+`agents.model_provider_id`, `agents.selected_model`,
+`agents.prefer_personal_provider`, `model_providers.secret_id` and
+`org_plan_entitlements.support_byok` and narrows the `model_routes` provider
+checks; 1331 deletes organization-owned (`__org__`) `model_providers` rows.
+There is no data conversion or backfill.
+
+This contraction has no rolling API or old-client compatibility: the API,
+App/worker, CLI and iOS use `/api/run-models` together. An API built before
+1330 reads the dropped columns, so it must not serve after 1330 is applied;
+applying 1330/1331 therefore requires an owner-accepted interruption, which
+this document does not record. Stored selections that are neither Auto nor an
+available personal subscription model are rejected; they never become Auto.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1330_drop_retired_model_configuration_columns.sql` and rejects
+earlier targets before artifact or host access. That commit descends from, and
+so supersedes, the earlier run model schema contraction
+(`014fe1867c6d1830fd35b03c3d77491da5aaa36a`). This does not claim production
+activation.
+
+Migration 1333 then drops the constant `model_providers.auth_method`,
+`model_providers.is_default`, `model_providers.selected_model`,
+`model_routes.price_tier` and `run_model_catalog.is_system_default` columns.
+Every API built before it still selects them in personal subscription and
+model catalog reads, so the same no-rolling-compatibility rule applies: a
+pre-1333 API still draining after 1333 is applied fails those reads (accepted
+below), and the rollback resolver rejects
+targets before the first-parent `main` commit that adds
+`1333_drop_dead_model_provider_columns.sql`. On the wire, `/api/model-catalog`
+no longer sends `isSystemDefault` or `priceTier`, personal provider responses
+no longer send `secretName`, `authMethod`, `secretNames`, `isDefault` or
+`selectedModel`, the provider upsert request no longer accepts
+`selectedModel`, and `/api/run-models` no longer sends `routeStatusReason` or
+the never-produced `unavailable` availability. App, CLI and iOS read none of
+the removed fields. `routeStatus` stays on the wire because shipped iOS builds
+decode it as a required string; current iOS decodes it as optional.
+
+**Accepted rollout interruption (1333):** Ethan explicitly accepted
+(2026-10-07) a brief unavailability during deployment while the outgoing API
+drains, so model catalog, run execution and run-model reads from a pre-1333 API
+may receive `42703` in that window. This bounded interruption is accepted for
+this contraction; no preparatory release or old-column compatibility branch is
+required. Prefer the same rollout as 1330/1332 or low traffic. Acceptance of
+that risk is not an instruction to deploy.
+
+Operator-only `org_metadata.openrouter_preset` overrides remain, with NULL
+using `@preset/okou-1-0`. Actual pricing/credits, historical usage, image
+generation and connectors retain their existing storage. See
+[current model APIs](model-catalog.md).
+
+## Complete official connector catalog initialization in CI preview
+
+> Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):
+> legacy tables, pointer metadata and entry projection columns described
+> below no longer exist.
+
+`deploy-api` still runs `db:dev-seed --preview-onboarding-catalog` and then
+calls `/api/cron/seed-preview-onboarding-catalog`; the flag and path keep their
+historical names so the workflow is unchanged. Both now initialize the complete
+validated official R2 publication. This replaces the former onboarding/Runner
+E2E projection (32 connectors), which left every other official connector
+absent once business readers moved to immutable entries. There is no subset,
+slug allowlist or legacy gzip/R2 read fallback, and readers are unchanged.
+
+Initialization reuses the production synchronizer's entry preparation. It
+lists entries already present at the publication hash, registers bundled skill
+storages/versions (and their Pi resource index rows) for the missing entries,
+then writes those entries. Only after every entry exists does one transaction
+upsert the schema-versioned pointer with the full slug manifest, together with
+the legacy compressed snapshot, synchronization state and compatibility row
+that older API instances still read. The previous generation keeps serving if
+download, byte-digest validation, skill registration or an entry write fails.
+Each deploy resets the preview Neon branch from its parent, so dev-seed performs
+a cold initialization. The post-deploy call finds the generation complete and
+only repeats download, validation and the pointer transaction. Pi invalidation
+and runtime wakeups remain production-synchronizer behavior.
+
+Entry preparation, for both production synchronization and preview, writes
+missing entries in multi-row `INSERT ... ON CONFLICT DO NOTHING` statements of
+at most 100 entries in publication order, instead of one statement per entry.
+Entry existence remains the preparation receipt; an interrupted preparer can
+leave whole batches, which a retry reuses. Production publication
+`2026-10-04.4587` has 4,597 entries and 4,554 bundled skills, 30.6 MB raw
+(5.5 MB compressed), and about 55 MiB of entry rows including derived columns.
+That is 46 entry statements, the largest about 1.8 MiB. Before the projection,
+the per-entry full synchronizer took 3.5 to 8.4 minutes (median about 6) within
+`deploy-api`'s 25-minute job, from a GitHub runner to the Neon test project.
+With batched writes, that publication initializes cold in about 8 seconds
+against local PostgreSQL, including a simulated 20 ms round trip; the repeated
+post-deploy call takes about 3 seconds. A CI preview deploy against Neon
+installed all 4,597 entries in about 11 seconds (dev-seed about 15 seconds,
+post-deploy call about 7 seconds).
+
+The workflow is unchanged, and the endpoint's response shape is unchanged; its
+slug list is now the complete manifest. Rolling back to the projection API
+reinstalls the projection on the next deploy, because the branch is reset first. Never promote this test database into production. No
+schema migration, production configuration, App/Runner protocol or release
+action is part of this change.
+
+## Personal subscription CLI and Reset Cards
+
+Subscription controls add a single-account usage GET at
+`/api/me/subscriptions/:id`, additive optional `subscriptionResetSupported`
+metadata, and `subscription:read` / `subscription:switch` run capabilities.
+Existing human list, activation, and Codex reset behavior remain unchanged.
+No database migration, stored Run update, Runner protocol change, or account
+selection change is required. Reset stays user-confirmed; no agent reset
+capability is issued.
+
+New API with old App/CLI preserves the existing routes and response fields;
+older readers ignore the new optional metadata. Older token readers already
+filter unknown capability names rather than rejecting newer tokens. New CLI
+with old API cannot use the new single-account endpoint or subscription agent
+capabilities: it reports the API denial or missing endpoint rather than
+falling back to a different account. New App with old API renders the Reset
+Card unavailable and cannot submit a reset through it. Old App with new API
+continues to use the existing Codex controls.
+
+Existing URLs remain exact-account descriptors with one stable idempotency
+key, not bearer authorizations. The standalone page and card require an owned
+account in the signed-in current organization. Roll out the new API and App
+before relying on links in external integrations. Rollback restores the old
+interface without modifying active accounts or running Runs; retained new
+links may be unavailable until the supporting versions return. This PR does
+not enable production overrides, deploy, or update the Web floor.
+
+## File lifetime independent of Run provenance
+
+Migration 1323 drops only `run_uploaded_files.run_id -> agent_runs.id`.
+The nullable UUID, its indexes and upsert identity are unchanged. File ownership,
+thread `SET NULL`, media/delivery/queue child foreign keys, object URLs and public
+response shapes remain unchanged. A short file-table lock serializes the
+association precondition with the drop under the normal 1s lock and 10s statement
+timeouts. Unreconciled thread/org associations from run-backed chat files reject
+the migration atomically; this migration does not perform another backfill.
+
+Run, thread and Agent deletion no longer imply file or artifact deletion.
+The new API removes Run-scoped catalog cleanup from all Run/Agent deleters.
+Account erasure remains distinct: verified Clerk user/org deletion explicitly
+removes files and catalog entries through their own user/org, direct thread,
+projection and pending-queue ownership. It works even after the Run and Agent
+are gone, and it preserves other owners' files. Files own their media, delivery
+and pending-catalog cleanup; Run IDs are not erasure selectors.
+
+Apply 1322, drain writers older than its association-capturing API, reconcile
+associations, then apply 1323 before the new API. New API/old database still has
+Run cascading file deletion, so it does not provide the new retention contract.
+Old API/new database preserves file rows but can still remove their catalog
+projections when it deletes a Run/Agent; a retained pending queue can restore
+those projections. Its account erasure also cannot remove independently retained
+files after their Run is gone. Do not process account erasure during that
+DB/API cutover gap, and drain old API requests/jobs before accepting the new
+retention and erasure contract. Rollback to the old API does not restore either
+contract; re-adding the Run FK is not a safe automatic rollback because retained
+provenance may no longer resolve. Keep the new lifecycle API as the rollback
+floor once these semantics are in use.
+
+The owning-event reader path remains for cross-thread ownership and nullable
+associations. No Run purge, Run-ID column removal, object-storage deletion,
+release, production migration or deployment is initiated by this source PR.
+
+## Chat-derived readers without historical Run joins
+
+Migration 1322 backfills existing run-backed files' nullable thread and org
+associations in UUID-keyset batches, preserving existing associations, owners,
+URLs and run IDs. Apply it before the new API. The migration is atomic and
+retains the normal lock timeout, with a bounded 120-second statement timeout
+for the complete batched backfill. A timeout rolls back the entire backfill;
+production execution and acceptance are separate from this source PR.
+
+New upload writers capture the thread and org in the existing file/queue
+transaction. The common writer covers hosted, web, Slack, Telegram, GitHub,
+Feishu, Teams and AgentPhone outputs; canonical published assets already save
+these associations. Run IDs, foreign keys, upsert identities, public response
+shapes and Runner/App/CLI protocols remain unchanged.
+
+New readers use direct file associations or owning chat events, never a live
+Run fallback. The event path preserves cross-thread associations and files
+written by a draining old API; control.interrupt targets are not ownership.
+A direct backfilled association remains readable after its events leave the
+hot window. Catalog authorship still resolves the owning thread's user, and
+Drive export retains thread/file owner authorization and run-scoped identity.
+Artifact-change invalidation likewise resolves the live thread owner from file
+associations first, retaining the owning-event fallback and the existing topic.
+This includes uploads and preview completion after execution ends; a deleted
+thread is not notified and its files remain independently owned.
+
+Titles, notifications, follow-ups and Home evidence derive unfinished runs
+from active rows without a terminal chat event; terminal active rows retained
+while the Runner stops are not classified as unfinished. Home uses that same
+predicate for fresh evidence and cached existing-thread destinations, retaining
+the separate pending-input exclusion. Completed Home examples require
+run.completed events inside the already authorized thread
+set, not a historical Run status. Final terminal publication is the boundary:
+a Run status change before its event is committed does not expose a completed
+example prematurely.
+
+Old API/new database continues using its historical Run reads and may omit
+file associations; the new reader's event path supports those writes. New
+API/old database retains the same schema, but historical files whose owning
+events were archived need the backfill before switching readers. Rollback
+restores the old reader behavior without discarding captured file associations.
+Drain old writers and reconcile remaining associations before a later contract
+PR removes the Run foreign key or the event compatibility path. No Run record,
+column, foreign key or artifact is deleted here; no deployment, release or
+production backfill is executed by this PR.
+
+## Claude Code manual usage reset retirement
+
+Retire `claudeCodeUsageReset` and the Claude Code-only grant query and redeem
+request introduced in #36165. Ordinary Claude Code profile and usage-window
+reads, OAuth connection, and the existing Codex reset contracts remain intact.
+No stored credentials, database schema, usage history, or provider grants change.
+
+New App with old API explicitly limits reset controls to Codex, even if an old
+API response or cached Claude Code account still carries reset credits. Old App
+with new API stops receiving Claude Code reset credits; a stale reset control
+receives the existing not-found response from the type-based, account-based,
+or failed-run reset endpoint. Those endpoints continue to support Codex with
+their existing account ownership and identity checks. No wire shape changes or
+Web floor update are needed. An old API can still redeem Claude Code resets
+until it drains; source cleanup alone does not disable a serving old revision.
+Rollback restores that revision's feature-switch-controlled behavior. This PR
+does not change production overrides, merge, deploy, or revoke provider grants.
+
+## MCP original-input event identity (#37750)
+
+This is an explicitly authorized breaking MCP tool-schema cutover, not a Web,
+CLI, Runner or persisted-data change. MCP sends return
+`{threadId,eventId,createdAt}` for the original accepted input, instead of the
+ordinary Web null-Run acknowledgement. MCP-generated UUIDs are passed through
+the existing internal Web `clientEventId`; callers cannot provide replay keys.
+`get_chat_input({threadId,eventId})` reads canonical input metadata and a separate
+native consuming-Run observation. `get_run_status({runId})` replaces the previous
+Run-only tool name without an alias. MCP recall uses `eventId`, not a physical
+replacement selector, and acknowledges only canonical recalled input state.
+
+MCP user history/search references now preserve the original input ID across
+replacement; assistant outputs keep their own ID. Physical `seqId` remains the
+current revision/order coordinate, so cached references containing both an
+origin ID and a stale sequence must be refreshed. Cached tool schemas must be
+rediscovered after cutover. All serving APIs must use the same MCP definition
+before clients rely on it; an old API cannot provide this correlation contract.
+Rollback restores the old MCP tools and requires rediscovery, but does not
+rewrite inputs, Runs or snapshots. No compatibility alias or dual task lifecycle
+is retained by request.
+
+The bounded archive-plus-tail reader handles retained source identity without
+new tables, backfills or archive versions. Unknown/unauthorized inputs,
+unreadable history and unobservable consuming Runs are explicit failures,
+not fabricated queued work. Read limits and storage cost remain documented in
+`docs/mcp-server.md`; recall can use two separately bounded canonical reads.
+Existing OAuth/member/thread/organization authority and Web's atomic revoke
+edge remain required. Ordinary Web/CLI send responses, Runner protocols,
+canonical writers and native Run responses are unchanged. The empty Run field
+continues to exist on ordinary Web responses for their existing clients.
+
+This fixes missing correlation in the existing MCP surface; it adds no separate
+feature-flagged execution path. It does not introduce reliable MCP Events,
+exact-send replay, indexed unlimited lookup, automatic merge or production
+activation. A lost send response remains ambiguous and must not be retried
+automatically.
+
+## Autonomous delegation budget expansion
+
+Migration 1319 widens the Run and workflow automation autonomy checks from
+`0..10` to `0..32` and changes the automation column default to 32. Apply it
+before the new API writes budgets above 10. Historical Run and automation
+budgets are preserved: this migration does not refill an exhausted chain or
+rewrite an explicitly smaller budget. New human inputs and default automation
+creation receive 32; delegated Runs and Run-finished watchers still inherit
+exactly their source budget minus one, and a zero-budget source is rejected.
+
+Old APIs remain compatible with the expanded database and continue assigning
+10 to human inputs. They can consume persisted budgets above 10 using the same
+integer decrement rule. An old Official Workflow validator can reject a new
+Blueprint budget above 10 until that API drains. No App, CLI or Runner wire
+shape changes. Rolling back the API retains the wider constraints and stored
+budgets; it must not restore the old database checks while rows above 10 exist.
+Existing automations retain their stored budget unless the normal authorized
+reconfiguration or reconciliation path changes it. This source PR does not
+resume rejected inputs, alter live automations, merge, deploy or release.
+
+## Thread mute (staff organization rollout)
+
+`ChatThreadMuting` is independent of archiving and defaults to disabled with the
+same staff organization allowlist. Migration 1318 adds `chat_threads.muted`
+(default false, non-null) and a nullable mute payload to `chat_thread_events`.
+Apply the expansion before the new API; old writers omit both columns safely.
+Do not enable mute while old APIs still serve indicators, terminal callbacks or
+push delivery, since those versions do not enforce mute.
+
+Mute changes use the existing `sort_touched` event with an optional `muted`
+payload, not a new strict-enum kind. The event captures the thread's existing
+`lastMessageAt`; old readers ignore the payload without promoting activity.
+New readers change only mute, preserving activity and metadata timestamps.
+Snapshot mute fields are optional on the wire and normalize to false for old
+snapshots and cached projections. The metadata shortcut response requires
+`muted`: every serving and rollback-eligible API emits it, so the App no
+longer defaults a missing value. The compactor captures the canonical mute
+state. The existing snapshot/event version remains
+unchanged and old readers continue to parse the stream.
+
+New App/old API has no mute operation (404); keep the rollout switch disabled
+until the serving API understands it. Old App/new API continues to receive
+filtered unread indicators and suppressed pushes, though it has no mute menu or
+icon. Mute preserves read cursors and active indicators; bulk agent mark-read
+excludes muted threads. Terminal success/failure still writes content and
+activity, but its UPDATE tests the current mute value before unarchiving.
+External channel result deliveries and realtime invalidations remain intact.
+
+Rollback preserves the additive columns and stored mute state, but old APIs do
+not honor that state. Rollback therefore requires disabling access and accepting
+that enforcement is unavailable until a mute-aware API is restored. This PR does
+not activate production overrides, deploy or update the Web floor.
+
+## Firewall auth effective expiry (#37670)
+
+Firewall auth keeps the existing `expiresAt` response shape. For refreshable
+sources, the API subtracts its existing OAuth refresh buffer from the earliest
+source expiry, then takes the minimum with other authorization deadlines such
+as the billable credit lease. Stored provider expiry remains accurate; credit
+leases are not reduced by the token buffer. A finite effective deadline needs
+positive remaining lifetime (`expiresAt - now > 0`). Sources at that boundary
+refresh normally; if the bounded refresh still produces no positive horizon,
+auth fails closed while keeping any persisted credential rotation. No expiry
+clamp, repeated refresh loop or past-deadline success exception is added.
+
+Existing Runner versions already honor `expiresAt`, so new API/old Runner and
+new API/new Runner use the corrected cutoff without a Runner upgrade. Any
+Runner resolving auth from old API retains the old timing; an existing cached
+entry keeps its old deadline until normal expiry or invalidation. API serving
+and retained rollback revisions must be verified separately from source/CI
+acceptance. Null still means non-expiring only for non-billable auth; unrelated
+custom/automatic/non-refreshable paths keep their existing behavior. No new
+protocol field, persisted state, Run snapshot or database migration is involved.
+
+Rollback restores the prior cache timing without changing stored credentials
+or authorization. This correction does not invalidate other Runs on arbitrary
+forced rotation, serialize concurrent refreshes, replay provider requests, or
+change the accepted rare rotating-token reconnect tradeoff. Parent #37668 stays
+open for incident request-level attribution and serving-version verification;
+synthetic coverage does not establish Notion old-token invalidation or resolve
+its reported 401s.
+
+## Runner-local INFO R2 keys
+
+Only existing ordinary Runner INFO events gain `r2_key` or a
+`r2_storage_sources` list containing keys and logical name/version/mount
+correlation. Event names, levels, counts and conditions are unchanged. These
+sources retain the original API identity when cache delivery rewrites URLs to
+`file://`; the list does not assert every source downloaded in every batch.
+Native R2 URL keys are decoded once and bounded to 1024 bytes, without signing
+parameters, fragments or userinfo. Unknown CDN/Worker/custom endpoints and local
+paths contribute no inferred key. Template keys use the SDK's key construction.
+
+Runner Start's existing formatter tees INFO to stderr and the local rolling
+Runner file, configured for daily rotation and seven-file retention per release
+prefix. This does not impose a global seven-day retention limit on earlier-release
+files or journal entries; other Runner commands use stderr. These events do not
+match the existing Axiom ingest filter. No new key fields
+are added to WARN/ERROR, Guest logs, addon network logs, sandbox-operation
+telemetry, API logs/contracts, Platform responses or metric labels. Existing URL
+and error-text policies are unchanged; this is not universal redaction.
+
+Keys can contain sensitive tenant identifiers or paths. Local file and journal
+access and retention remain relevant; omitting credentials does not make keys
+public. Missing fields do not imply no R2 download, and existing log-free paths
+remain log-free. No API/Guest/addon/Platform rollout, protocol change, migration or
+Web floor is needed. A normal Runner rollout is needed to observe these fields;
+production activation or deployment is not included in this PR. Runner rollback
+removes the local attributes only, without changing download behavior.
+
+## File transcription and Seedream 5 retirement
+
+- Remove `okou video transcribe` and `/api/voice-io/stt`; old CLIs receive
+  `404` for that intentionally retired operation. Camera and frame extraction
+  remain available. Microphone input still uses the Gemini segment endpoint,
+  with unchanged authentication, quota policy, and response shape.
+- Remove Seedream 5 Pro and Lite from the shared image catalog, aliases, CLI
+  guidance, direct-provider execution, pricing seeds, and deployment secrets.
+  Seedream 4 continues through fal.ai. Existing member preferences and run
+  snapshots that name an unavailable model use the existing catalog
+  normalization and default model (`gpt-image-2.5-flare`). No database migration
+  or rewrite of usage history is required.
+- Old App with new API: a cached picker can still show a retired model; saving
+  it fails validation until reload. Reads normalize retired settings to unset.
+  New App with old API: the smaller picker never submits a retired selection;
+  an old API can continue serving an already-stored selection until it drains.
+  No Web floor change is included.
+- Direct image jobs accepted by the old API finish in that deployment's own
+  finite request lifetime. Completed artifacts, invoices, pricing records, and
+  historical usage remain readable; this does not delete provider-side data.
+  Rollback to an older API restores its older catalog and requires its original
+  deployment configuration. Production release and provider-secret deletion
+  are separate operations, not performed by this source change.
+
+## Legacy Free organization tier retirement
+
+The owner confirmed that production no longer writes the legacy Free tier and
+approved one PR for code retirement and database contraction. A read-only MaskDB
+check found no legacy Free metadata, entitlement plan keys, or pending targets.
+The two entitlement-only organizations were already migrated to Limited Free
+without creating metadata. These observations do not establish a production
+migration-journal receipt or a deployed constraint.
+
+The retirement migration normalizes remaining legacy rows in other environments
+and prohibits the old value in `org_metadata.tier`, its pending subscription
+target, and `org_plan_entitlements.plan_key`. It preserves credits, grant expiry,
+status, configuration and billing provenance. Missing or conflicting companion
+entitlements and subscription-linked legacy rows fail the transaction for
+operator review; entitlement-only legacy rows are supported. Paid organizations
+with a legacy pending target keep their current plan and get a Limited Free target.
+
+All current creation paths, contracts, capability tables, readers and test
+fixtures use `limited-free-1`; no legacy-tier adapter remains. The Slack starter
+writer is updated in the same PR without changing credit-grant idempotency.
+Deployment must not select an API that can write the old tier after contraction;
+rollback to such a writer is unsupported. This owner-approved single-PR rollout
+does not authorize deployment or production writes.
+
+Historical migrations and external-data migration scripts remain immutable
+records. Credit category `free`, localized Free labels and ChatGPT/Codex Free
+subscription checks are independent contracts and are unchanged.
+
+## Retired video entitlement contraction
+
+Video generation admission was removed in #37242. The remaining
+`video_generation_allowed` column is only propagated through entitlement
+snapshots, model bootstrap, pending-credit reads and Billing status; no current
+product action consumes it. This cleanup removes that propagation, the Billing
+response field and the shared Drizzle declaration. Generated migration
+`1315_drop_retired_video_entitlement` drops only that column. Historical usage,
+credit records, accepted artifacts and shipped migrations remain unchanged.
+
+**Accepted rollout interruption:** Ethan explicitly accepted brief unavailability
+during deployment and requested that #37580 be marked ready for review. Migrations
+run before API promotion. The outgoing API still selects and writes this column,
+including bare Drizzle INSERT/SELECT/RETURNING, so ordinary overlapping deployment
+produces `42703` errors for Billing, model admission and entitlement/reward writes
+until it drains. This bounded interruption is accepted for this contraction; no
+preparatory release or old-column compatibility branch is required. Acceptance
+of that risk is not an instruction to merge or deploy this PR, and it does not
+waive the rollback floor below.
+
+New API/new App and CLI use the reduced capability shape. New App/old API works:
+the removed response property is surplus data. The outgoing production App and
+CLI do not enable Billing response validation; their remaining product actions
+never read this property, so its omission does not require a new Web build floor.
+App tests do validate responses, as do callers explicitly opting into validation:
+an external client pinned to the old required-field schema must update. Sandbox
+CLI packages are run-captured; this change does not rewrite an existing Run's
+package or payload. This is source-level compatibility evidence, not deployed
+mixed-client verification.
+
+The rollback resolver uses the canonical main commit introducing migration 1315
+as the API floor. Pre-cleanup APIs are not compatible with the contracted schema.
+Rollback promotes artifacts, not database columns: recovery below this floor
+requires a reviewed forward restoration migration before the old API serves.
+No production deployment, Web-floor update or provider action is part of this PR.
+
+Historical SQL fixtures and the pro-suspend transition validator retain the
+field because they replay pre-retirement migrations, not current capability
+behavior. Old migration snapshots remain immutable; the new Drizzle snapshot
+contains the contracted schema.
+
+## MCP Web-parity protocol simplification
+
+The owner explicitly approved removal of the MCP-specific chat protocol in
+[#37513](https://github.com/okou-ai/okou/issues/37513). MCP is a thin adapter to
+ordinary Web chat commands, not a separately versioned creation/replay product.
+The dedicated `create_chat_thread` tool, required `requestId`, 24-hour exact
+replay contract, input receipts/references, `nextAction` handoffs and server-side
+status waiting are removed rather than retained behind a compatibility branch.
+Clients must refresh tool discovery and use the current input schemas. An
+uncertain send must not be automatically retried as a new intent.
+
+Sending without a thread id creates an ordinary conversation; sending with one
+continues it. Acceptance does not imply Run admission, delivery or completion:
+read ordinary conversation events and Run facts for the resulting state. MCP
+editing, revocation and stopping may expose only operations with equivalent Web
+semantics. OAuth, scopes, tenant ownership and ordinary Web client-event identity
+are not relaxed by this protocol deletion.
+
+This is an intentional MCP client-contract change, not a historical message
+migration or a Runner protocol change. Existing stored message/source decoding
+remains readable; no old MCP protocol fallback or dual-write path is required.
+Rolling back restores the prior advertised MCP tools and contracts, while normal
+Web chat data remains in its existing format. This approval does not waive other
+persisted-state, database or deployment-compatibility contracts.
+
+MCP send input is `{agentId, prompt, threadId?, model?}`. Status reads take
+`{runId}` and return the ordinary Web Run response. Old protocol arguments are
+rejected, not replayed or silently translated. The common metadata command no
+longer accepts the MCP-only mutation identity; Web metadata event IDs retain
+their existing behavior. Mixed MCP-serving versions can advertise different tool
+schemas during deployment; clients must use the serving version's schema rather
+than assume old request replay is available.
+
+## Owner-selected RSA-AES VNC (default off; #37500)
+
+Migration `1313_rsa_aes_vnc` adds an independent nullable RSA wire-key pin and
+expands exact credential/profile checks; existing rows, ciphertext, revisions and
+generations are preserved. Apply this expansion before code that selects the new
+column. Required RSA pins cannot occupy CA/serverName fields; other profiles must
+retain a null RSA pin. ne requires saved SSH and literal loopback in storage as
+well as API/native admission.
+
+The owner's preactivation compatibility waiver applies to this disabled non-GA
+surface: no old/new VNC version overlap gate, legacy credential reader or protocol
+downgrade is added. This does not waive data preservation, exact pre-KMS capability,
+current owner/run/chat/member/SSH authority, trust or bounded resource checks. Old
+implementations cannot be assumed to support new RSA rows. Keep the expansion on
+rollback and keep VncAccess disabled; source/CI/engine interop do not prove a real
+product PNG or authorize production activation. Parent delivery and activation
+remain separate from this child PR.
+
+## Pi official model-limit corrections (2026-10-02)
+
+The shared Pi resolver applies verified context/output corrections by exact
+catalog provider and model; see the
+[model-limit audit](../turbo/packages/pi-agent-runtime/src/model-limits-audit.md).
+It preserves source admission, opaque deployments, dialect compatibility,
+credentials, pricing and reasoning defaults. Public API capacity, subscription
+runtime defaults and gateway primary-provider limits remain distinct.
+
+The internal session-construction hash document now includes the correction
+table as well as prompt/tool profiles. Its format is internal; the public launch
+and installed manifest still carry the same opaque SHA-256 string. This changes
+parity for a limits-only fix, so a new API cannot silently reuse an old installed
+CLI with stale corrected limits. New API/old CLI and old API/new CLI use the
+existing task-captured immutable package on a mismatch; matching versions can
+reuse the installed bundle. Older captured contexts retain their digest/package.
+No DDL, event or launch generation, historical rewrite, deployment activation,
+or independent compaction/summary policy change is part of this correction.
+
+## Long-context threshold in the Runner payload (2026-10-01)
+
+The long-context pricing threshold is catalog data:
+`model_routes.long_context_min_total_input_tokens` (NULL = single tier).
+The API captures the assigned route's threshold in
+`modelUsageLongContextMinTotalInputTokens` (`0` = single tier). The Runner
+forwards the captured value to the addon, which uses it for usage classification.
+
+The owner has waived rollback to pre-catalog versions. Deploy the catalog API
+before deploying this cleanup, and drain pre-catalog API instances before the
+schema contraction. Runner binaries and their addons deploy together; ongoing
+runs retain their captured execution contexts. Model pricing configuration
+remains in the database.
+
+Usage displays now name model usage rows by `agent_runs.selected_model`, joined
+by `run_id`. This is a read-time API projection: stored `usage_event`,
+`usage_event_hourly_rollup` rows and existing `usage.recorded` chat events are
+unchanged. An old App shows the new response values through its existing
+catalog mapping. No database migration is involved.
+
+## Agent instruction transaction-free preparation
+
+Instruction PUT reserves the existing same-key Pi token and canonical Storage
+generation in a short authorized transaction before archive/manifest IO. Its
+final transaction rechecks current Agent permission/name, Storage identity and
+that exact token before publishing. Failed or cancelled work settles only its
+own token. A superseded preparation returns the additive `409 CONFLICT` response;
+request and successful response shapes remain unchanged. Existing consumers
+already treat non-200 updates as failures and must not blindly retry a conflict.
+
+No schema or token format changes. Old transaction-held API writers share the
+same source locks and keyed publication fencing with new prepared writers; the
+old lock-held IO remains until those instances drain. Rollback restores the old
+transaction boundary. Readers keep following the last committed HEAD throughout
+preparation. Bootstrap already uses the shared preparation/DB-only publication
+helpers; with both callers migrated, the unused transaction wrapper is retired.
+This does not make R2 keys immutable or recover token/byte obligations from
+process termination; see [Storage version publication](storage-version-publication.md).
+
+## Storage version reuse and reference-first Clerk cleanup
+
+Registered Storage versions are reused from their database metadata without an
+R2 existence probe or normal re-upload. Server-side publishers await archive and
+manifest PUT success before registering a version; client-direct first commits
+retain pre-transaction upload verification. The initial empty artifact remains
+an explicitly archive-less version. No Storage row shape changes.
+
+Clerk deletion now commits Storage/export reference removal together with
+handler-version-1 `storage-object-cleanup` jobs in the existing `background_jobs`
+table before touching those R2 objects. Prefixes and output keys survive owner
+and source-row deletion, partial provider failures, and worker lease expiry.
+Older workers ignore this new kind and cannot erase the queued obligation; a
+rollback delays cleanup until compatible workers return. Older deletion code
+still uses R2-first ordering until it drains. Existing user-deletion jobs retain
+their current handler/checkpoint contract and can resume through the new code.
+See [Storage version publication](storage-version-publication.md) for the bounded
+cleanup, legacy shared-prefix policy, and remaining immutable-key/late-PUT scope.
+
+## Bootstrap private-generation publication and advisory retirement
+
+Bootstrap seed IO now finishes before canonical parent publication. Each new
+attempt prepares a disjoint Storage UUID/prefix without registering a row. A
+short transaction arbitrates the canonical owner/name, takes its parent directly
+`FOR UPDATE`, checks default freshly and publishes only the elected generation.
+An incumbent HEAD is preserved; only a versionless empty container may be
+retired. Agent/metadata/credits/index references commit atomically. Exact failed
+or losing generations reuse handler-v1 storage-object-cleanup inventory; no
+schema, version identity, Runner reader or public API contract changes.
+
+The initial metadata insert now checks configured policies, like the existing
+conflict-update branch: policies configured before a metadata row exists retain
+Custom instead of being switched to Auto. On conflict, configured policies retain
+the stored mode; an unconfigured new org still starts in Auto. The policy and
+catalog schemas and paid-tier behavior do not change.
+
+At the owner's direction, mixed old/new bootstrap API writers are outside this
+change's acceptance scope. No runtime version dispatch or legacy bootstrap path
+is retained, and the earlier preparation-stage writer-drain/rollback gate is not
+an acceptance requirement for this PR. This is a scope decision, not a claim that
+serving builds were inspected. Other deployment and retirement contracts are
+unchanged.
+
+Concurrent attempts using this implementation keep disjoint UUIDs/prefixes.
+Canonical parent ownership and uniqueness select one default; losers enqueue
+only their own prefixes. Existing canonical Storage/version/index rows retain
+their shape and key layout, with no persisted-state conversion or migration.
+Published instructions and legitimate versionless empty reservations remain
+part of the data contract, independent of writer-version coexistence.
+
+Compensation fences an uncertain publication by probing the same candidate's
+primary key under a private probe name, then reads only that captured UUID/prefix.
+It removes only a newly inserted, unpublished probe; any live captured parent is
+retained. Recovery SQL has one-second lock and five-second statement timeouts,
+independent of request cancellation, without lock retries. Cleanup failure does
+not reinterpret a successful publication or replace the original failure.
+Process crashes before inventory and provider late PUTs still need #37402's grace
+sweep. No grace period or complete orphan-GC guarantee is introduced here. The
+[publication protocol](storage-version-publication.md#bootstrap-seed-publication)
+details canonical election, empty-parent recovery and bounded cleanup.
+
+## Astra Ultrafast temporarily disabled (2026-09-30)
+
+> Superseded: Ultrafast was retired on 2026-10-07 (see "Ultrafast service tier
+> retired"); this section is a historical record and is not a re-enablement path.
+
+Ultrafast is no longer advertised in model run options. Both model pickers hide
+its entry. The API rejects new Ultrafast thread selections, member preferences,
+and sends, including sends retaining an existing Ultrafast thread pin. Users
+with such a pin must select Standard or Fast before sending again. New threads
+ignore a previously saved Ultrafast member preference and use Standard.
+Run creation and claim reject Ultrafast even on direct OpenAI API-key routes;
+already queued Ultrafast work is not silently downgraded. This pause leaves
+Standard, Fast, reasoning efforts, and GPT 6.1 Sol unchanged.
+
+No schema, enum, historical event reader, Runner protocol, or billing-category
+changes are made. Historical Ultrafast data and usage remain readable, and
+already running sandboxes are not interrupted. Old clients can still show the
+entry, but receive `400` from the new API when enabling or sending with it. An
+old API instance may still accept Ultrafast until the API rollout completes;
+the new App alone does not disable old API instances. Rolling back restores the
+previous availability. Re-enabling requires verified account-specific tier
+discovery, rather than assuming subscription eligibility from the model name.
+
+With the global model catalog below, this pause is catalog data rather than a
+code check: migration 1298 seeds the `gpt-6-astra` `openai-api-key` route with
+`service_tiers = {priority}` only, so every Ultrafast check (pickers, member
+preference, thread selection, send, run creation and claim) finds no route
+offering it and returns `400`. Re-enabling is a `model_routes` data change.
+
+> **Superseded.** Migration `1326_prune_retired_model_routes` deleted the
+> `gpt-6-astra` `openai-api-key` route along with every other non-subscription,
+> non-Auto route. The remaining `gpt-6-astra` `codex-oauth-token` route still
+> lists only `priority`, so Ultrafast stays unavailable.
+
+## Global model catalog and projected system default (2026-09-30)
+
+> **Historical record, superseded.** This and other dated global-catalog
+> sections describe their original rollouts. For current model selection they
+> are superseded by [Run model schema contraction](#run-model-schema-contraction);
+> they are not instructions to restore policy projection, organization BYOK,
+> custom gateways or general platform-model routing.
+
+The server model catalog (`run_model_catalog` plus `model_routes`, served by
+`GET /api/model-catalog`) becomes the only authority for model names, order,
+the system default, retirement and replacement, price tiers and route
+capabilities; code model labels and `ORG_DEFAULT_RUN_MODEL` are no longer
+product authority, and the system default is the DB row with
+`is_system_default = true`. Code still owns runtime adapters, keyed by
+provider (Built-in concrete provider vendor pool, BYOK/subscription provider
+type), never by model ID: `SUPPORTED_RUN_MODELS`, `SupportedRunModel`,
+`isSupportedRunModel` and `supportedRunModelSchema` are removed, so a model
+added only as catalog and route rows on an existing protocol is configurable
+and runnable by the new API, IM model pickers and CLI (Pi too, when its route's
+upstream model is one the pinned Pi runtime resolves). No schema change; the
+previous API still rejects such a row as unsupported, so operators add
+catalog-only models after this API is fully deployed. The CLI no longer
+pre-rejects model IDs outside its bundled list; an old CLI still does. Free-plan
+model access is catalog data (`built_in_on_restricted_plans`, migration 1300,
+true only for `okou-1.0`), read by model policy writes, run admission and the
+Platform; the static `isLimitedFree1RestrictedRunModel` allowlist is gone and
+is not reproduced. Free plans (`limited-free-1` and legacy `free`, whose
+`restricted_built_in_models` migration 1300 backfills to true) run only
+`okou-1.0` on Built-in, or a model on the member's own connected Claude Code or
+Codex subscription route; organization BYOK and custom gateways are no longer
+free-plan entitlements. During the rolling window the old API still enforces
+its code allowlist against the backfilled legacy Free rows, which only narrows
+access earlier; stored selections that become restricted fail explicitly
+(`PRO_REQUIRED`) rather than being rewritten. Custom-gateway mapping
+follows the model's routes instead of hard-coded model IDs. The organization default is not configurable: the
+catalog system default (`okou-1.0`, Auto) is projected into every
+organization's `GET /api/model-policies` as a non-deletable system policy and
+is not stored per organization. Resolution is thread selection, then member
+preference, then the system default. Stored selections of retired models
+resolve along the replacement chain (`claude-fable-5` → `claude-fable-5-1`,
+`claude-opus-4-8` → `claude-opus-5-5`, `claude-sonnet-4-6` →
+`claude-sonnet-5-5`, `deepseek-v4-pro` and `gpt-5.5` → `gpt-6-luna`); a
+replacement never transplants credentials, and a selection whose provider type
+has no route on the replacement fails explicitly. Chains may have several hops,
+constrained by `lineage_rank` (each hop strictly increases it). App credit
+usage and history show a run's own model name from the catalog, including
+retired models, never the replacement's name. Built-in runtime candidates
+come from enabled `model_routes` rows, and the API takes BYOK and
+subscription upstream IDs from the route's `upstream_model`; the Pi execution
+config in `@okouai/core` consumes the catalog route data. The `OkouModels` feature
+switch is removed. See [the design note](model-catalog.md).
+
+Migrations:
+
+- `1297_okou_1_0_fixed_org_default` intentionally changes no data; the system
+  default is projected from the catalog.
+- `1298_global_model_catalog` adds `display_name`, `sort_order`,
+  `is_system_default`, `replaced_by`, `lineage_rank` and
+  `replaced_by_lineage_rank` to `run_model_catalog` (rank-based acyclic
+  replacement chains, no triggers) and adds `model_routes`. It seeds every
+  recognized model, the system default, the approved replacements and routes
+  (Built-in candidates, BYOK and personal subscription routes). Unrecognized
+  rows are kept with their ID as label, sorted last, and no routes. `gpt-5.6-terra`,
+  `okou-1.0-pro` and `okou-1.0-max` (seeded by migrations 1191 and 1194; code
+  support removed by #37363 and #37368; MaskDB on 2026-09-30 shows zero
+  references in `chat_threads`, `org_model_policies`, `org_members_metadata`,
+  `agents` and `model_providers`) are kept with their former labels, no
+  routes, and are retired into the
+  owner-approved targets `gpt-6-luna`, `okou-1.0` and `okou-1.0`. The previous
+  API does not offer them either: they have no adapter or route and are not
+  addable.
+- `1299_model_catalog_stored_selections` rewrites mutable stored selections of
+  retired models to their final replacement: `org_model_policies.model` (only
+  onto a replacement route of the same provider type; incompatible retired
+  policies are dropped and merged duplicates keep one row), `org_members_metadata.selected_model`
+  and `model_settings`, `agents.selected_model` and
+  `model_providers.selected_model`, and chat thread selections
+  (`chat_threads.selected_model` and `model_settings`, with one
+  `model_selection_updated` event per re-pinned thread; a thread whose
+  provider pin cannot serve the replacement keeps its retired model and the
+  API resolves it on read). It is re-runnable and serializes with API policy
+  writes through the per-organization advisory lock. It never touches history
+  (`agent_runs`, `chat_events` including queued inputs, usage and billing,
+  session conversations) or custom-gateway `model_mappings`; the API rechecks
+  queued inputs at dispatch. `org_plan_entitlements.restricted_built_in_models`
+  is a boolean flag (MaskDB: 968 true and 32 false in the first 1000 rows) that
+  turns on the catalog's restricted-plan flags and stores no model IDs, so
+  1299 has nothing to rewrite there.
+- Production impact of 1299: as of MaskDB on 2026-09-30, no chat thread,
+  organization policy, member preference, agent or model provider references
+  any of `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`,
+  `deepseek-v4-pro`, `gpt-5.5`, `gpt-5.6-terra`, `okou-1.0-pro` or
+  `okou-1.0-max`. The migration rewrites zero production rows. Every rewrite
+  statement scans its table once (no `selected_model`/`model` index exists);
+  on synthetic data at production scale (162,621 chat threads, 32,810
+  policies) the whole migration took 0.21 s with zero matches and 1.01 s with
+  10% matches, and 1.29 s at 5x scale with 1% matches, far below a 10 s
+  statement timeout, so batching is unnecessary. 1299 analyzes its rewrite
+  map before the chat thread scan; without it the planner sorted every thread
+  first (2.0 s at 5x). Evidence and the verified/unverified boundary:
+  `turbo/packages/db/MIGRATIONS.md`, "Migration 1299 performance evidence".
+- `1300_model_catalog_restricted_plans` adds the
+  two restricted-plan flags to `run_model_catalog` with defaults and seeds
+  them from the former code allowlist. Additive; the previous API ignores the
+  columns.
+- `1301_model_catalog_pi_route_class` (in progress in this PR) adds nullable
+  `run_model_catalog.pi_route_class` with a check constraint and seeds it
+  from the former `@okouai/core` Pi policy. Additive; the previous API
+  ignores the column and keeps its static Pi policy.
+- Queue pick: an input enqueued by the previous API is re-resolved by the new
+  API against the catalog at the pick (provider-prefixed upstream IDs and
+  replacements included); runs that already started are unaffected. The
+  pick no longer seeds per-organization policies under the policy advisory
+  lock; the projected system default replaces that write.
+
+App, iOS and CLI require `GET /api/model-catalog` for the system default,
+names and capabilities. Deploy the catalog API before these clients. The
+owner accepted breaking older clients and waived pre-catalog rollback.
+Schema contraction requires the catalog API to be fully deployed first.
+
+## Integration model commands are thread-scoped (2026-09-29)
+
+The integration `/model` command now reads the effective model of an existing
+routed chat thread (using the organization default when the thread's stored
+choice is unavailable) and updates only that thread through the existing
+metadata path. It no longer writes the member's shared model preference; new
+threads continue to initialize from the member preference and then the
+organization default. A command without an existing route does not create a
+thread or change a preference. Slack slash commands identify only the main DM
+route; other Slack contexts need a main DM conversation first. Slack, Teams,
+and Discord model pickers bind to the original chat thread and reject stale
+submissions if that route changes. Telegram and AgentPhone no longer recognize
+the session-reset command: unrecognized slash inputs use their ordinary message
+paths, including agent admission when addressed and connected.
+
+This is an API-only behavior change with no schema, event, queue payload, App,
+CLI, or Runner contract change. Existing queued inputs retain their captured
+model. During an API rollout an older instance can still accept a model command
+and write the member preference as well as a routed thread; after promotion,
+new instances read and update only the thread. Old Slack modals and Teams cards
+lack the original chat-thread binding and must be reopened; old Discord model
+controls lack the signed thread tag and expire rather than changing another
+conversation. No retained compatibility reader or rollback floor is needed;
+rolling back the API temporarily restores the previous command behavior.
+
+The release-7 section below records the behavior at that historical release,
+not the new command contract.
+
+## Image model thread columns and `image_model_updated` dropped
+
+Final step of "Image model becomes a member setting" (#37246, released
+2026-09-28 23:53 UTC). The owner chose to remove the tombstone tests, dead
+projections and the whole compatibility layer in one change.
+
+- Migration `1287_drop_image_model_thread_columns` deletes the remaining
+  `image_model_updated` thread events (five production rows per MaskDB on
+  2026-09-29 01:13 UTC, the latest from 2026-09-28 05:25 UTC, before #37246
+  was released) and recreates `chat_thread_event_kind` without that value in a
+  single table rewrite of `chat_thread_events`. At that observation the tables
+  held 147,134 events and 162,361 threads; only the five retired events are
+  deleted. It then drops `selected_image_model` from both tables. MaskDB's
+  index metadata shows no index on either column. The committed schema and
+  migration history have no dependent constraint; MaskDB does not expose the
+  constraint catalog or either column, so live constraints and non-null counts
+  cannot be queried through it. The member setting
+  `org_members_metadata.selected_image_model` and the run snapshot
+  `agent_runs.selected_image_model` stay.
+- `POST /api/chat-threads/:id/image-model` and its contract are removed. The
+  create body no longer declares `imageModel`, and thread metadata, thread
+  events and snapshot projections no longer carry `selectedImageModel`. The
+  contract, core replay, API, Platform and CLI no longer know the
+  `image_model_updated` kind.
+- `POST /api/image-io/generate` no longer declares `model`. The request schema
+  remains `.passthrough()`: unknown keys are retained, not stripped or rejected.
+  A released CLI that still sends `model` is accepted and the value is never
+  read: the route passes the resolved model (run snapshot, else
+  member setting, else default) to `parseImageOptions`. Stored job requests
+  still carry their normalized model and are re-parsed by the provider webhook,
+  so `parseImageModel` and the alias table stay.
+- Runs no longer receive `OKOU_DEFAULT_IMAGE_MODEL`, and
+  `DEFAULT_IMAGE_MODEL_ENV` is removed.
+
+Release decision: the owner accepted shipping this without first raising the
+Web client floor.
+
+- The floor is App 0.982.0, the last build before #37246. Its snapshot and
+  event schemas already treat `selectedImageModel` as optional, it does not
+  validate thread metadata responses, and a missing value reads as no thread
+  pin, so removing the field itself does not break thread-list sync. Fresh
+  projections without a pin display the member setting. Cached pins and old
+  server snapshot archives can still display stale selections until the new
+  App is loaded or the cached snapshot is replaced. Archives shed the field
+  when compacted again. Changing the composer image picker registers
+  an optimistic pin and then returns `404`; that optimistic state remains until
+  reload. Runs have used the member setting since #37246. Its create
+  requests still send `imageModel`, which the create body schema strips.
+- Older CLIs inside a run detect the sandbox token and omit `model` unless
+  explicitly given `--model`; the
+  server chooses the model in either case.
+  Without `OKOU_DEFAULT_IMAGE_MODEL` their size default falls back to
+  `1024x1024`, or `auto` with `--image-url`. The formerly incompatible model
+  has since been retired as documented above. Their snapshot and event schemas treat
+  `selectedImageModel` as optional, so chat thread reads are unaffected.
+
+Release prerequisite: release #37268 published CLI 9.373.0 but skipped
+[production Runner rebuild](https://github.com/okou-ai/okou/actions/runs/36498080195/job/109188223120)
+and
+[promotion](https://github.com/okou-ai/okou/actions/runs/36498080195/job/109188968213).
+The preceding verified production rootfs
+[installed CLI 9.371.0](https://github.com/okou-ai/okou/actions/runs/36426838612/job/108946499812).
+A rootfs-installed CLI does not expire with an individual run, so a two-hour
+drain does not establish its retirement. The default-size failure that required
+CLI 9.373.0 has since been superseded by the model retirement documented above.
+This cleanup does not change CLI launch paths or the installed-CLI floor.
+
+Old and new versions during deploy:
+
+- Migrations run before API promotion. The previous API still declares the
+  columns, so its inserts and bare `select()`/`returning()` on `chat_threads`
+  and `chat_thread_events` receive `42703` until it drains, as with `1283`. Its
+  raw thread-event insert names `selected_image_model` explicitly, so every
+  thread event it writes (create, rename, pin, model selection, archive) fails
+  in that window. Both are hot tables; release this change at low traffic.
+- Previous API with the new App or CLI: the previous API still sends
+  `selectedImageModel`, which the object schemas strip. The new App never calls
+  the image-model route. Before the migration, any retained
+  `image_model_updated` event is rejected by the new clients and the new API's
+  event parser. The migration must precede their promotion; after migration,
+  the previous API instead has the column errors above until it drains.
+- New API with App 0.982.0: see the release decision above.
+- Cached state: a cached snapshot or event that still has
+  `selectedImageModel` parses and the key is stripped. A browser that cached an
+  `image_model_updated` event fails its strict IndexedDB read. The existing
+  degraded path then loads the server snapshot and replaces the local snapshot
+  and event log, with no Sentry report. The CLI cache discards an unparseable
+  file and rebuilds it from the snapshot in the same way. A deleted event cursor
+  receives `410` and reloads the snapshot unless it still equals the valid
+  snapshot watermark.
+- iOS keeps its `imageModelUpdated` wire case, and its decoders do not
+  require `selectedImageModel`; it never called the image-model route. The
+  new event responses and freshly compacted projections omit both.
+
+Rollback promotes artifacts without restoring schema, so
+`resolve-production-rollback-target.sh` rejects API targets that predate the
+canonical main commit that added `1287`. Recovering past that commit requires a
+forward-fix migration that restores the columns and the enum value.
+
+## Chat Event V8 (2026-09-28)
+
+This is step 2 of the Chat Event V8 plan. `CURRENT_CHAT_EVENT_SCHEMA_VERSION`
+becomes 8; the current V8 contract is documented in
+[Chat Event schema versioning](./chat-event-schema-versioning.md#v8).
+
+Migration `1286_chat_event_v8` is non-transactional and re-runnable. It first
+replaces `chat_events_event_type_check`, `chat_events_context_type_check` and
+`chat_events_input_context_type_check` with their V8 versions as `NOT VALID`
+and drops the three Goal payload checks, so new writes are held to V8
+immediately. It then commits bounded batches: it walks the `chat_events` and
+`agent_runs` primary keys in 5,000-row ranges (neither table indexes the
+rewritten columns), deletes the eight retired event types, rewrites `goal` and
+`github` contexts and Goal userMessage parts, and moves the `goal` run and
+uploaded-file sources to `automation-schedule`. Thread and agent drafts lose
+their Goal parts and saved shares lose `runGroupIndex`. Finally it validates
+the three checks. Every rewrite selects only rows that still hold a retired
+value, so an interrupted or completed run can be repeated. The procedures take
+row locks only, under a `1s` lock timeout; the constraint swaps take a brief
+`ACCESS EXCLUSIVE` lock on `chat_events` and `chat_event_snapshots`. On
+2026-09-28 the rewrite covered about 146,000 deleted rows, 63,000 Goal input
+rows, 360,000 other Goal rows and 124,000 Goal runs. The input context check
+now also covers `input.rejected`. Production rejections replace a queued input
+and inherit its context, so no hot row lacked one; a context-less rejection in
+the table or a V7 Snapshot becomes `web`.
+
+`chat_event_snapshots.archive_schema_version` now accepts 7 and 8 and defaults
+to 8. A thread's V8 pointer is published beside its V7 pointer by the adjacent
+V7 to V8 Snapshot migration.
+
+Migration `1294_retire_v7_chat_event_snapshots` deletes V7 pointer rows in
+committed 5,000-primary-key ranges and tightens the constraint to
+`archive_schema_version = 8`. Before deleting, it fails closed if any V7 pointer
+lacks a V8 pointer for the same thread; the `NOT VALID` constraint blocks new
+V7 rows while the existing rows are removed. It does not delete R2 objects.
+PR-3 also removes the V7 upgrade service, previous-pointer cron joins, read-time
+publication, V7 cursor coverage and dual-version history/MCP/provenance/export
+selection, together with their obsolete fixtures, tests and lint exemptions.
+The historical 1286 rewrite validator is retired; a focused 1294 validator
+protects pointer deletion, unchanged V8 rows, batching, fail-closed checks and
+retry. Run this migration only after no pre-V8 API can serve or be selected for
+rollback; the existing `chat-event-v8` rollback floor enforces the rollback
+boundary, and the outgoing V8 API writes only version 8.
+
+Browser open/close now accept an empty request body and no longer echo
+`lifecycleEventId`; browser create/use responses also omit that field. The Web
+client floor is 0.982.0, above the 0.979.1 build at #37225 that stopped emitting
+browser lifecycle events. Supported clients do not require the echo. The new
+App must not reach an API predating this empty-body contract: even earlier V8
+APIs require `eventId`. The `.github/rollback-floors/browser-session-mutations`
+marker raises the API rollback floor to the canonical main commit that adds
+this contract, matching the owner's forward-only release decision. The
+resolver rejects unresolved history and incompatible targets before artifact
+or host access. Released CLIs using create/use do not require
+`lifecycleEventId`.
+
+1286 release precheck: migration 1286 runs before API promotion, so the
+serving API must no longer write any retired type, context or source. The
+production API must already contain
+`d687f84782c736f451682e7066caffb3696f6306` (#37225), which stopped the last
+writers. Do not release this change while production or a
+rollback target predates that commit.
+
+Compatibility:
+
+- Old App, CLI or iOS reading V8: V8 rows are a strict subset of V7, so V7
+  readers accept them. The Web client floor is not raised.
+- New App against a rolled-back API: the old API serves V7 rows and Snapshots
+  that the V8 reader rejects. The marker
+  `.github/rollback-floors/chat-event-v8` therefore sets the API rollback floor
+  to the main commit that adds it. `resolve-production-rollback-target.sh`
+  must reject targets that predate that commit, as it does for
+  `chat-event-schema-header-retired`.
+- Old API during the deploy window: it only writes V7 Snapshot pointers and
+  rows that V8 accepts, and it reads its own V7 pointers.
+- MCP chat history no longer returns the retired events; it has not returned
+  them since #37225 projected them away.
+
+## Image model becomes a member setting (2026-09-28)
+
+Built-in image generation now uses one image model per workspace member:
+`org_members_metadata.selected_image_model`, edited in Settings › Built-in
+tools, else `DEFAULT_IMAGE_MODEL`, which changes from `gpt-image-1` to
+`gpt-image-2.5-flare`. Members without a stored value move to the new default.
+No onboarding or seed path writes the member value. Run creation snapshots the
+resolved model onto `agent_runs.selected_image_model` as before, but no longer
+reads `chat_threads.selected_image_model`. The `SettingsToolsTab` and
+`PaidToolControls` feature switches are removed, so the Tools tab is shown to
+every member. There is no migration.
+
+With video generation retired (#37242), new threads pin no media model at
+all. The composer never shows the image model: the staff `composerModelPanel`
+switch still chooses between the #37229 panel and the legacy menu with its
+effort chip, and both list only chat models. #37848 has since removed that
+switch and the legacy menu; the composer uses the #37229 panel, which lists
+only chat models. The undocumented `birefnet` and `clarity-upscaler` transform
+models are removed.
+
+The compatibility layer this release kept for older Web App builds, iOS and
+released CLIs (the thread image-model route, the create body `imageModel`, the
+thread `selectedImageModel` projection, the `image_model_updated` event kind,
+the image generation body `model` and `OKOU_DEFAULT_IMAGE_MODEL`) is removed by
+"Image model thread columns and `image_model_updated` dropped" above.
+
+`PUT /api/user-model-preference` still requires the run preference. A request
+that echoes the stored `selectedModel` and `serviceTier` without a
+`modelSettingsPatch` skips org model policy admission, so a member whose stored
+chat model has left the policy can still change their image model. Older APIs
+reject that case with `400`; the new Settings dropdown then reports a save
+error until the API is promoted. Org model policies were later removed; see
+[Run model schema contraction](#run-model-schema-contraction).
+
+## Video model columns and `video_model_updated` dropped (#37249)
+
+Final contract step of the video retirement (#37242, #37256).
+
+- Migration `1283_drop_retired_video_model_columns` drops
+  `selected_video_model` from `chat_threads`, `org_members_metadata`,
+  `agent_runs` and `chat_thread_events`, deletes the remaining
+  `video_model_updated` thread events (one row in production per MaskDB on
+  2026-09-28) and recreates `chat_thread_event_kind` without that value in a
+  single table rewrite of `chat_thread_events`. It re-adds
+  `agent_runs_metadata_presence_check` without the dropped column as
+  `NOT VALID`; `1284_validate_agent_runs_metadata_presence_check` validates it
+  in its own transaction, so the `agent_runs` scan does not hold the
+  `ACCESS EXCLUSIVE` lock.
+- The contract, core replay, API, Platform and CLI no longer know the
+  `video_model_updated` kind or the `selectedVideoModel` field on thread
+  metadata, thread events or snapshot projections. Historical usage and credit
+  records are unaffected: `chat_events` usage payloads never carried the field,
+  and the video model catalog stays for historical display.
+
+Release decision: the owner accepted shipping this without first raising the
+Web client floor and without waiting for #37256 to be released on its own.
+
+- App 0.981.0 (the current floor) still requires `selectedVideoModel` when it
+  parses IndexedDB thread events and snapshots and the R2 snapshot archive, so
+  its thread-list sync fails once the field is gone. This is accepted: after
+  the App from this release is promoted, a reload loads a build that does not
+  need the field. Between API and App promotion, a reload still loads 0.981.0.
+- Sandbox CLIs from before #37256 also require the field in the snapshot
+  archive; their chat thread reads fail until they drain (about two hours).
+- If #37256 ships in the same release, the previous API still reads the
+  columns explicitly as well; it falls into the same `42703` window below.
+
+Old and new versions during deploy:
+
+- Migrations run before API promotion. The previous API still declares the
+  columns, so its inserts and bare `select()`/`returning()` on those four
+  tables receive `42703` until it drains, as with `1274`. `agent_runs`,
+  `chat_threads` and `chat_thread_events` are hot tables; release this change
+  at low traffic.
+- Previous API with the new App or CLI: the previous API still sends
+  `selectedVideoModel: null`, which the object schemas strip. It writes no
+  `video_model_updated` event.
+- New API with App 0.981.0: see the release decision above; the tab recovers
+  on reload once the new App is promoted.
+- Cached state: a cached snapshot that still has `selectedVideoModel` parses
+  and the key is stripped. A browser that cached a `video_model_updated` event
+  fails its strict IndexedDB read. The existing degraded path then loads the
+  server snapshot and replaces the local snapshot and event log, with no
+  Sentry report. The CLI cache discards an unparseable file and rebuilds it
+  from the snapshot in the same way. A client whose saved cursor was a deleted
+  event receives `410` and reloads the snapshot.
+- iOS decoders do not require `selectedVideoModel`, and the server no longer
+  sends it or a `video_model_updated` event. iOS decodes thread events only
+  from the server and never persists them, so its `videoModelUpdated` wire
+  case was removed.
+
+Rollback promotes artifacts without restoring schema, so
+`resolve-production-rollback-target.sh` rejects API targets that predate the
+canonical main commit that added `1283`. Recovering past that commit requires a
+forward-fix migration that restores the columns and the enum value.
+
+## Unified chat queue final cleanup (after release 7)
+
+This change contracts what release 7 (#37200, released in #37237) retired and
+removes compatibility that no longer has a reader.
+
+**Migration 1282: retired integration agent tables.** Migration
+`1282_drop_retired_integration_agent_tables` drops
+`slack_user_agent_preferences`, `discord_user_agent_preferences`,
+`feishu_user_agent_preferences`, `feishu_platform_user_agent_preferences`,
+`teams_user_agent_preferences`, `telegram_user_agent_preferences`,
+`agentphone_user_agent_preferences`, `telegram_user_links` and
+`telegram_installations`, and the column
+`feishu_org_installations.default_agent_id`, together with their Drizzle
+declarations. It first deletes the self-hosted Telegram rows from the two
+shared tables, then drops `telegram_chat_thread_routes.telegram_user_link_id`
+and `telegram_messages.installation_id` with their partial indexes and
+one-owner checks, and makes the official owner
+(`telegram_official_user_link_id`, `official_org_id`) `NOT NULL`. The chat
+threads of the deleted self-hosted routes remain as history; self-hosted
+Telegram messages are 30-day context rows. Dropping the foreign keys briefly
+locks `agents` and `discord_org_connections`, and `SET NOT NULL` scans the two
+small Telegram tables, all under the default 1 s `lock_timeout`.
+
+Gate evidence: release 7 removed every read and write of the tables and the
+Feishu/Lark column (the runtime Feishu mapping already omitted it), and no
+fixture, cron, erasure or export list names them. Release 7 is live in
+production (`91223f52`), the last output from an earlier API (`f06f2e0f`) was at
+2026-09-28 13:25:49 UTC, and the API rollback floor is release 7. The one-time
+KMS 013 recovery manifest treats `telegram_installations.encrypted_bot_token`
+as optional, like `agent_run_queue`, so snapshots from either side of the drop
+verify. The 1279 transition validator is retired because 1279 no longer
+replays on the contracted shapes (see `turbo/packages/db/MIGRATIONS.md`).
+
+Release 7 APIs still declare `telegram_messages.installation_id` and
+`telegram_chat_thread_routes.telegram_user_link_id` and name them in Telegram
+message and route inserts. The migration runs before API promotion, so until
+the release 7 API drains its official Telegram message and route inserts
+receive `42703`. This window is accepted, as for `1274`; release at low
+traffic. The other dropped tables and the Feishu column are not named by any
+release 7 statement.
+
+**API rollback floor: this change**, resolved from the first main commit that
+adds `1282_drop_retired_integration_agent_tables.sql` in
+`resolve-production-rollback-target.sh`. Rollback promotes artifacts without
+restoring schema, and every earlier API names the dropped Telegram columns.
+
+**Integration `/model` also switches the current thread.** Integration `/model`
+commands (Slack DM picker, Discord `/okou model`, the Teams model card,
+Feishu/Lark, official Telegram and AgentPhone) now also switch the model of the
+conversation's existing chat thread. They reuse the web thread model-selection
+path, so the thread row and its `model_selection_updated` and
+`service_tier_updated` events are written exactly as a web switch writes them.
+A context without a routed chat thread changes only the member default, and the
+next new thread initializes from it. This is code-only. During the rollout an
+old API instance only updates the member default. Teams model cards now carry
+the route key of the conversation where `/model` was sent; a card posted before
+this change has none and is answered with a notice to send `/model` again,
+without changing any model.
+
+**Chat send response `status` removed.** The `POST /api/chat/events` 201
+response contract no longer declares the optional `status` field. Only APIs
+that created a run synchronously returned it, and every API at or above the
+release 7 floor returns only `runId: null`, `threadId` and `createdAt`. Nothing
+changes on the wire and no App, iOS or CLI build reads the field.
+
+Kept compatibility, with the unmet condition:
+
+- `runId: null` in the chat send response: user-installed CLIs, MCP and token
+  clients have no version floor and may still read the key.
+- `queued` run status and historical `run.queued`/`run.dequeued` rows: persisted
+  data that must still parse; no migration removes it.
+- Nullable `chat_events.model_selection` and pick rejecting inputs without it:
+  historical inputs have no captured model.
+- Legacy `direct-message:<agentId>:<model>` route keys handled by
+  `/new_session`, and the pick-time rebinding of threads bound to a former
+  per-user agent: persisted routes and thread bindings without a data migration.
+- `piInstalledCliRequirement` optional in the execution context: tightening it
+  is a separate Runner/Guest protocol change without a documented deadline.
+- `GET /api/integrations/telegram/bots` for older CLIs: deployed CLIs have no
+  version floor.
+- Official Workflow queue marker decoding (#29908): its writers still write the
+  markers.
+
+## Direct PUT checksum removal and Browser file uploads (#37241)
+
+The shared presigner no longer puts `x-amz-checksum-sha256` into a required
+request header or the signed URL. The host CLI keeps its original PUT with
+`Content-Type`; no host prepare/complete workflow changes. The same removal
+also applies to Discord canonical PUTs. This deliberately drops
+R2 enforcement of the client-declared byte hash. A holder of a hosted or
+Discord PUT URL can replace its object with different bytes while that URL is
+valid (the host URL expires after 48 hours). The request's `Content-Type` is
+also not signed, so a replay can change the object's media type. The
+client-provided SHA-256 and host manifest are not trusted proof of the
+originally intended bytes. Host
+manifests still carry `immutableContent: true` for their existing serving and
+cache policy; that marker must **not** be interpreted as an R2 overwrite
+barrier. Treat replay-versus-cache consistency as an accepted limitation until
+server-owned sealing or cache-policy changes are separately approved.
+
+Browser native file input no longer computes or transports a file SHA-256 and
+apply no longer compares a readback digest. Prepare still requires an exact
+pending request and issues a ten-minute temporary PUT URL, using the same
+shared ten-minute Browser idle-lease duration; the provider's absolute timeout
+and request/target state can still end the operation earlier. Apply still
+checks downloaded byte length and the 10 MiB aggregate / three-file limits,
+then uses the existing exact target, pending/uncertain, and 15-second CDP
+boundaries. Cancellation attempts object cleanup, but a holder of an unexpired
+PUT URL can recreate a temporary object after cleanup; the 24-hour R2
+lifecycle rule remains the eventual backstop. No production CORS or feature
+switch is changed. The non-GA Browser wire shape changes directly, with no
+legacy compatibility path. Roll out the API and Platform changes together
+while the production file-input feature remains disabled.
+
+## Chat Event V8 preparation: retired writers stop (2026-09-28)
+
+This is step 1 of the Chat Event V8 plan. It changes no wire protocol: the row
+schema, `CHAT_EVENT_TYPES`, the database checks and
+`CURRENT_CHAT_EVENT_SCHEMA_VERSION` stay at V7.
+
+- The API no longer writes `output.thinking` (Codex reasoning items) or
+  `browser.open` / `browser.close` (viewer open, viewer close and instance
+  suspension). The browser `open` and `close` endpoints still require the
+  request `eventId` and return it unchanged as `lifecycleEventId`. `use` and
+  `create` keep returning `lifecycleEventId: null`.
+- Shared threads no longer write `runGroupIndex`. The field stays optional in
+  the contract because saved shares may still carry it.
+- The `chatEventFromRow` projection drops the eight types in
+  `V7_ONLY_CHAT_EVENT_TYPES` (`input.goal`, `goal.open`, `goal.close`,
+  `run.queued`, `run.dequeued`, `output.thinking`, `browser.open`,
+  `browser.close`) and no longer derives `runGroupId`. `ChatEvent` is built
+  inside each artifact from raw V7 rows and is never sent over the network.
+  MCP chat history reads therefore no longer return thinking, goal or browser
+  events.
+- Platform removes run-group folding, goal cards, queue markers, the thinking
+  marker and the browser sidebar auto-open. Historical goal parts render as
+  plain text. The Platform read cursor follows raw rows, so a thread whose
+  latest rows are dropped types still catches up.
+
+Compatibility:
+
+- New Platform, old API: the old API may still return the retired rows, which
+  the new projection drops. It persists the browser lifecycle event under the
+  `eventId` the new Platform still sends, and returns that ID.
+- Old Platform, new API: the old Platform receives no new retired rows, so its
+  thinking marker and auto-open do not trigger for new activity. Its optimistic
+  `browser.open` / `browser.close` event is never confirmed by a server row; it
+  stays hidden local state until the page reloads. The echoed
+  `lifecycleEventId` matches what it sent.
+- Old and new APIs read the same V7 rows and snapshots. Historical retired
+  rows remain valid V7 data until V8.
+
+V8 (PR-2) deletes these rows and tightens the database checks, so it assumes
+production has no writer for them. After this change is released, raise the API
+rollback floor to its main commit so that no rollback target writes the retired
+types; that floor update is a separate follow-up and is not part of this change.
+
+## Video retirement follow-up: accepted-job paths and video model reads removed
+
+Follow-up to the retirement below, tracked in #37249.
+
+- The API no longer completes video or avatar jobs accepted by a
+  pre-retirement API. The retired video-provider webhook routes are
+  removed (callbacks now receive `404`). A fal success callback for a video job
+  is logged and acknowledged without completing the job; a fal failure
+  callback still fails it. Status reads of
+  finished jobs, existing video artifacts, and historical usage and credit
+  records are unchanged. `JOGGAI_API_KEY`, `JOGGAI_WEBHOOK_SECRET`, and the
+  API's `MINIMAX_API_KEY` are no longer read.
+- The API no longer reads or writes the `selected_video_model` columns on
+  threads, thread events, members, or runs. Thread metadata, thread events,
+  and compacted snapshots still send `selectedVideoModel: null`, because Web
+  clients at the current floor require the field. Historical
+  `video_model_updated` events stay readable and replay as no-ops.
+- The Web client floor is raised to `0.981.0`, the App build that retired
+  video generation (live in production from release #37254). Older tabs
+  receive `426` and reload, so no client still reaches the removed routes and
+  controls.
+- The production API rollback resolver now rejects targets that do not contain
+  #37242 (`VIDEO_GENERATION_RETIREMENT_COMMIT`), so a rollback cannot restore
+  an API that accepts video jobs. Before merge, a read-only MaskDB query
+  confirmed no `video` job is within its 30-minute timeout in `queued` or
+  `running`.
+
+Old and new versions during deploy:
+
+- Previous API with the new App: the new App treats `selectedVideoModel` as
+  optional and ignores it, so the historical values the previous API still
+  returns have no effect.
+- New API with the floor-level App: it receives `selectedVideoModel: null`
+  and no video model control reads it.
+- Jobs: a video or avatar job still in flight would not complete; the gate
+  above requires that none remain.
+
+No database migration is included. Dropping the columns, the
+`video_model_updated` kind, and the wire field is the next step under #37249,
+after this API is the rollback floor and this App build is the Web client
+floor.
+
+## MCP user-message source reader preparation (#37233)
+
+The API contract and App can parse and display a server-owned MCP source part
+with a bounded OAuth client ID and optional client-name snapshot. Direct chat
+sends reject caller-authored MCP parts. No production `/mcp` message writer
+emits this part in the reader-preparation release; older API/App builds continue
+to receive the previous text-only MCP input shape, and the new readers continue
+to accept historical source kinds.
+
+Strict older V7 Chat Event readers cannot parse an MCP source kind. The writer
+slice (#37234) therefore requires independently verified promotion of prepared
+API/App readers, an enforced Web client floor for older App builds, prepared or
+excluded serving/rollback API readers and persisted-history consumers, and
+completed old CLI context drain. This is a future gate, not satisfied merely by
+merging this PR. See [Chat Event schema versioning](./chat-event-schema-versioning.md).
+
+## Video, voice, and talking-avatar generation retired
+
+Built-in video, voice (text-to-speech), and talking-avatar video generation are
+removed. The API no longer serves `/api/video-io/generate`,
+`/api/voice-io/speech`, `/api/avatar-video/generate`,
+`/api/avatar-video/avatars`, or `/api/avatar-video/voices` (each including its
+`/private` variant), and the CLI no longer has `okou generate video`,
+`okou generate voice`, or `okou generate avatar-video`. Chat sends that select a
+video or avatar template are rejected at admission. The App no longer offers
+video or avatar templates, a video model picker, the retired paid-tool
+toggles, or the `newUserVideoPickers` switch.
+
+Old and new versions during deploy:
+
+- Old Sandbox CLI with the new API: a run created before this release may still
+  call a removed route and receive `404`. This is accepted; the CLI is not kept
+  compatible with removed API routes, and commit-addressed CLI artifacts live
+  about two hours.
+- Old App with the new API: a still-open tab may still show retired controls.
+  A video or avatar template send is rejected, and its thread video model write
+  (`POST /api/chat-threads/:id/video-model`, now removed) fails. Its default
+  video model and create-thread `videoModel` fields are stripped by the request
+  schemas and ignored; paid-tool writes keep their contract. These failures
+  are limited to retired controls and are accepted until the tab reloads. Do
+  not raise the Web client floor in this release: production promotes the API
+  before the App, so the floor is raised in a follow-up release after this App
+  build is live (#37249).
+- New App with the old API: the App simply stops calling the retired surfaces.
+- Jobs accepted before the deploy: provider webhooks, status reads, artifacts,
+  and billing for already accepted video and avatar jobs keep working
+  (`webhooks-built-in-generations`, `built-in-generation`). The window is the
+  old API's drain plus the 30-minute video job timeout, extended while a
+  pre-retirement API remains a rollback target (a rollback re-enables
+  submissions). Remove those paths under #37249.
+- Inputs queued before the deploy with a video or avatar template run without
+  that template once picked by the new API; they are not rejected after
+  acceptance.
+
+New threads and runs no longer resolve or store a video model; the member
+default is no longer written or returned. Thread metadata and thread events
+still expose the historical `selectedVideoModel` value (null for new threads;
+the follow-up above sends null for all threads), and the `video_model_updated`
+event kind stays readable for replay.
+
+No database migration is included. Historical usage and credit records keep
+their `video` and `audio` rows and display names. Dropping the thread, member,
+run, and event video model columns is left for #37249, after the client floor
+excludes the old App. `video_model_updated` is a strict enum member of
+persisted events, so historical events must be compacted or migrated first.
+
+## Chat send diagnostics and model admission (release 5)
+
+Migration `1277_chat_network_body_captures` adds a sparse table keyed by the
+input chat-event ID. Only sends requesting `captureNetworkBodies` write a row,
+in the same transaction as the input. The table also records the owning thread
+for cascade cleanup and a creation timestamp; it does not store model choices
+or general send options. Pick reads the marker and passes the existing capture
+flag to run creation, which retains the production staff-organization gate.
+
+The migration runs before API promotion. Older APIs ignore the additive table,
+and existing inputs without a marker keep capture disabled. During mixed API
+operation or rollback, an older picker does not read the marker, so a capture
+request it consumes may launch without network-body capture. The marker grants
+no permission and changes no Runner protocol. Once a new API creates the run,
+capture uses the existing persisted run configuration. No new rollback floor
+is required.
+
+Chat sends no longer accept structured `runOptions.video`. The nested request
+schema strips this unknown key from older clients; the other run options remain
+supported. New clients omit the key and work with older APIs. The Create
+composer still includes its video instructions in the message's agent-only
+additional information, but there is no structured video-options persistence.
+
+Model admission happens when an input is picked. A thread's selected model
+that is unavailable in its workspace rejects the input as `bad_request`; a
+configured route that the plan does not cover rejects it as
+`insufficient_credits`. The picker no longer switches a persisted selection to
+another model. This also applies to inputs queued before the policy changed.
+Older pickers retain their previous fallback behavior during API rollout or
+rollback; the event and thread data shapes are unchanged.
+
+## Retired preference and occurrence columns dropped (2026-09-28)
+
+Migration `1274_drop_retired_voice_reasoning_collection_columns` drops
+`org_members_metadata.voice_input_model`,
+`morning_brief_native_occurrences.collection_facts` and
+`chat_threads.reasoning_effort`, and removes their Drizzle declarations. This
+is the contract step for the voice input model retirement (#36561), the Morning
+Brief collection account retirement (#36719) and the pre-GA thread reasoning
+effort column, whose effort now lives in `model_settings`. No current API reads
+or writes any of the three columns.
+
+Gate evidence: both retirements are ancestors of the current API rollback floor
+(`08c7ad2455c8fcd2b043ba8fe3639b558cb98b48`, #37110) and of the production API
+(`api-v1.686.2`, `218ac4f621983bc708209505bd5f20df3ccda064`). No supported
+rollback target reads or writes the values.
+
+Every API before this change still declares the columns, so Drizzle names them
+in `insert` column lists and in bare `select()`/`returning()` on those three
+tables. As with `1228`, `test:migration-consistency` requires the declaration
+and the physical schema to agree, so declaration removal and the drop ship in
+one release. Migrations run before API promotion. Until the previous API drains,
+its chat thread, member preference and Morning Brief occurrence statements
+receive `42703`. That window (about 20 seconds in the `1228` release) is
+accepted; release this change at low traffic.
+
+Rollback promotes artifacts without restoring schema, so
+`resolve-production-rollback-target.sh` rejects API targets that predate the
+canonical main commit that added `1274`. Recovering past that commit requires a
+forward-fix migration that restores the columns.
+
+The migration replay tests for `1156` (GPT 5.5 retirement) and `1213` clone the
+current schema. The `1156` replay restores `chat_threads.reasoning_effort` in its
+clone because that historical migration still clears the column; the `1213`
+fixture no longer inserts it.
+
+## Custom API request headers retired (2026-09-27)
+
+The API no longer reads, echoes, or allows these request headers in first-party
+CORS preflight: `X-Chat-Event-Schema-Version`, `X-Client-Product`,
+`X-CSRF-Token`, `X-Requested-With`, `Accept-Version`, and `X-Api-Version`. The
+response header `X-Chat-Event-Schema-Version` is no longer exposed. The last
+four had no first-party sender. Desktop sent `X-Client-Product` from its
+Electron main process, which does not use CORS; the API now ignores it.
+
+Chat Event schema negotiation is replaced by the general client rules in
+[Chat Event schema versioning](./chat-event-schema-versioning.md). Web App
+builds before this change send the schema header on Chat Event reads and reject
+responses that do not echo it. Once the new API serves, a still-open old tab
+fails Chat Event preflight and cannot receive `426 Upgrade Required` for those
+reads until it is reloaded. Its other API requests still pass preflight and can
+receive `426` after the Web client floor is raised. Raising that floor to the
+first App build containing this change is therefore a required follow-up release
+step. CLI artifacts live at most about two hours and need no separate floor.
+
+Older APIs require the schema header and answer header-free Chat Event reads
+with `400`. The marker `.github/rollback-floors/chat-event-schema-header-retired`
+therefore sets the API rollback floor: `resolve-production-rollback-target.sh`
+rejects any target that predates the main commit adding it.
+
+## Browser native-input handoff guidance (#37087)
+
+The agent tool prompt now prefers native input over direct Browser takeover only
+when both thread Browser access and the existing `BrowserNativeInput` switch are
+enabled. The API still enforces the switch for input actions; an older CLI or
+agent prompt cannot grant access. When the switch is off, the new prompt does
+not advertise native input and keeps viewer takeover as a last resort.
+
+The required `browserNativeInputEnabled` prompt input is written on new runs
+and recomputed from the current feature context on stable-context recapture.
+Older persisted inputs without it remain readable: recapture uses their
+existing trigger source and thread Browser state, then constructs fresh prompt
+inputs before calling the prompt builder. The flag participates in the
+feature-prompt digest so a changed switch state cannot silently reuse the old
+cached guidance. Older API versions ignore the new semantic field; no database
+migration or rollback floor is needed.
+
+### Safe tab inspection across native-input callbacks (#37311)
+
+A fresh `agent-browser` attachment may restore a locally persisted tab binding
+or select an unrelated live tab; the binding is not guaranteed across sandboxes
+or provider restarts, and `okou browser use` does not enable strict `--pin-tab`.
+Browser continuation guidance uses `okou browser tab list` to inspect safe
+current-session IDs, selected state and HTTP(S) origins. If non-sensitive page
+and step evidence confirms the selected tab, the agent keeps it; otherwise it
+uses `okou browser tab select <id>` only to inspect a candidate, then confirms
+the intended page before any navigation or submission. Neither an origin nor a
+selected flag proves the page identity, even with a single matching tab. The
+CLI discards untrusted child output, and the prompt forbids directly invoking
+raw `agent-browser` tab-list or tab-switch commands: their tool output can
+expose full URLs, titles and OAuth parameters even if not quoted to the user.
+The CLI cannot recover the native action's exact page target. If identification
+remains ambiguous or the page is missing, the agent stops instead of guessing.
+A successful native input write still does not submit the website form or
+establish login.
+
+The API prompt and these CLI commands are delivered in the same code change.
+New launch contexts bind the serving API's CLI package, but queued runs may
+retain an older CLI that lacks the safe commands. The prompt explicitly stops
+when safe tab inspection is unavailable and never invokes the raw commands as
+a fallback. No stored Browser action, callback, provider contract, or
+feature-switch state changes, so older API/CLI pairs retain their previous
+guidance and behavior.
+
+## Member source-first onboarding completion column (2026-09-27)
+
+Migration `1269_org_member_onboarding_completed_at` adds the nullable
+`org_members_metadata.onboarding_completed_at` column. It is a metadata-only
+`ADD COLUMN` without a default, so it takes a brief `ACCESS EXCLUSIVE` lock
+under the default 1s lock timeout and rewrites no rows.
+
+The column records one non-admin member's own completion of the source-first
+onboarding. `GET /api/onboarding/status` reads it only for a non-admin whose
+`OnboardingSourcesFirst` switch is on, and `POST /api/onboarding/complete`
+writes it only for a non-admin caller. Admin status and completion are
+unchanged and never touch the column.
+
+Old and new versions during deploy:
+
+- Old API with the migrated database: it neither reads nor writes the column,
+  keeps every member at `needsOnboarding: false` and still refuses member
+  completion with `403`. A rollback therefore only stops offering the flow to
+  members; members who already completed keep their stamp for a later
+  roll-forward.
+- New API with an old app: an old app already routes a non-admin with
+  `needsOnboarding: true` through the member branch (no invite, no Slack) and
+  would reach the old ready step, which skips completion for members and
+  starts their first chat. The new API counts that chat as use, so the member
+  is not sent back into onboarding. This is reachable only for members with
+  the non-GA switch on, so no compatibility code is added
+  (`docs/fallback.md` section 2).
+- New app with an old API: the old API never reports `needsOnboarding: true`
+  for a member, so the new member branch, including its completion request,
+  is unreachable.
+
+No API rollback floor is needed.
+
+## Unified chat queue (release 7): current launch compatibility
+
+Release 7 completes the unified queue and removes compatibility code made
+unreachable by release 6:
+
+- The reserve and receipt endpoints
+  (`POST /api/runners/runs/:runId/active-inputs/reserve` and
+  `.../active-inputs/deliveries/:deliveryId/receipt`), their contracts and Rust
+  bindings, and `activeInputDeliveryIds` with its completion-time settlement.
+  Only `steerable-inputs/next` and `steerable-inputs/:eventId/steered` remain.
+  They also steer run-targeted `input.budget` events: a replacement retains
+  its type and gains the current `runId`, with the revoke edge providing
+  idempotence. Completion revokes any unconsumed warning. The Runner/Guest
+  response shape remains the existing event ID and prompt.
+  The completion body is not strict, so a stray `activeInputDeliveryIds` is
+  stripped.
+- The Guest reads installed-CLI requirements from `piInstalledCliRequirement`
+  in the captured execution context. `okou run usage` accepts only the
+  `sandboxProxy` source.
+- `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` remains **9.370.3**, the launch-payload
+  compatibility floor. A newer published CLI does not justify raising it:
+  eligible installed CLIs must still satisfy the captured runtime/session
+  construction identity, otherwise the Guest uses the commit-addressed
+  `CLI_PKG_URL`. Do not lower the floor without proving that older strict CLI
+  readers accept the current launch payload.
+
+The completed rollout gates and predecessor handoff protocol no longer
+constrain deployments. The independent Chat Event V8, Browser session mutation
+and migration 1315 rollback checks are later first-parent main commits than
+this release, so they subsume its former standalone rollback marker. Those
+checks remain mandatory in `resolve-production-rollback-target.sh`.
+
+### Integration DM threads and org default agent
+
+- **DM routes (migration 1279).** The main direct-message conversation of each
+  integration identity now maps to one chat thread through the fixed route key
+  `direct-message:main` (Slack `thread_ts`, Feishu and Teams `thread_id`,
+  Discord `session_key`, official Telegram and AgentPhone `root_message_id`).
+  The migration keeps the most recently used `direct-message:%` route per
+  connection/link ID (regardless of older channel IDs), rewrites its key to
+  the constant. It preserves every thread's model, provider and service-tier
+  selection and writes no thread or chat-thread events. It deletes the other
+  DM route rows; their chat threads and canonical input
+  messages remain as history. Existing Discord route foreign keys also cascade
+  deletion to the detached route's private launch context and ingress rows.
+  No new table, column or constraint is introduced. Deploy window:
+  the migration runs before the new API, so an old API instance that receives a
+  DM in that window no longer finds its `direct-message:<agentId>:<model>` key,
+  creates a new thread and inserts an old-style route. After promotion the new
+  API uses the `direct-message:main` thread; the window thread stays as
+  history and its old-style route is unused. Rollback to an earlier API has the
+  same effect: each DM opens one new old-style thread, and replaying the
+  migration later folds it back in by recency.
+- **Model selection at enqueue (migration 1281).** Web and every integration
+  use the same rule. Existing threads use their stored model, or the org
+  default when that model is unavailable. New threads initialize their model
+  from the member preference, then the org default; explicit web model choices
+  remain normal thread edits. Each input captures the effective model, tier
+  and reasoning effort in the nullable server-only JSONB
+  `chat_events.model_selection`. A thread's unavailable choice is not
+  overwritten merely because an input uses the org default. Pick validates
+  the captured choice without consulting current thread/member preferences;
+  if it is unavailable, the input becomes `input.rejected` without fallback.
+  `direct-message:main` is only a route key and has no model semantics.
+  Model settings update the thread normally. Integration `/model` commands
+  still set the member default for newly created threads; `/new_session`
+  remains an intentional conversation reset.
+  The additive column is separate from the strict public event payload, so
+  old API/App/SharedWorker readers and archive paths can ignore it. Migrations
+  precede new code; old writers omit the column and remain valid. No hot-table
+  backfill is performed: pending inputs from an outgoing API lack a captured
+  model and are rejected by the new pick instead of being re-resolved. Steering
+  inputs into an already-running run uses that run's existing model. Keep the
+  column on rollback; the existing rollback resolver floors remain unchanged.
+- **Org default agent only.** Integrations no longer read or write the
+  `*_user_agent_preferences` tables or installation-level `default_agent_id`;
+  every integration message runs the org default agent. The tables and columns
+  are not dropped in this release because the migration runs before the new
+  code and earlier APIs still read them; a later release or the daily
+  compatibility cleanup drops them. Rolling back restores the old per-user
+  selections, which were left untouched. A legacy integration thread bound to
+  a former per-user preference moves once to the immutable org default at pick,
+  in the same transaction as the new run and session binding. The single-row
+  CAS matches thread ID, owner and former agent; it has no default-change
+  subquery or visibility branch. Rebinding starts a new native/Pi session. The existing
+  `sort_touched` event carries an explicit optional `reassignedAgentId`;
+  updated clients replay that identity update without resetting other metadata.
+  Ordinary activity and optimistic pin-order events may carry an old `agentId`
+  and never reassign the thread. Older clients ignore the additive field and
+  retain their previous agent until they load a newer canonical snapshot.
+- **Feishu/Lark installation binding (migration 1279).** Every physical
+  `feishu_org_installations.default_agent_id` is set to its org default for
+  both platforms. The default cannot change or be deleted, so the retained
+  `ON DELETE CASCADE` foreign key no longer follows a retired user selection.
+  Old instances read the same default; the new runtime mapping omits the
+  retired column, which is dropped only in a later compatibility cleanup.
+  The migration changes routes and installation bindings only, with no
+  `chat_threads` or event-table updates and no lock-timeout adjustment.
+- **Agent reassignment events (migration 1280).** The nullable UUID column
+  `chat_thread_events.reassigned_agent_id` records only canonical reassignment
+  facts, in the same transaction as the thread and run binding. No DM routing
+  table changes. Existing events and outgoing API INSERTs leave the column
+  null; the new API omits it from ordinary event responses. Both full and
+  incremental event reads include it on reassignment events. The migration
+  runs before the new API, so outgoing API statements remain valid; the new
+  API requires the column before promotion. App/SharedWorker/IndexedDB use the
+  optional contract field and keep accepting earlier events without it. An old
+  App may also omit the field from cached events; upgrading does not change
+  those cached facts, and a newer canonical snapshot resolves their identity.
+  This field adds no rollback floor beyond the existing rollback resolver floors. Keep the
+  column on rollback; older APIs and Apps can ignore it, while snapshots read
+  the canonical thread agent directly. It is a permanent event fact with no
+  compatibility fallback or removal deadline.
+- **Self-hosted Telegram bots retired.** Only the official shared bot remains.
+  The API no longer reads or writes `telegram_installations` or
+  `telegram_user_links`, and the register, setup-status, bot delete and bot
+  default-agent routes are removed; bot-scoped Telegram routes answer `404` for
+  any bot other than `official`. Webhooks that the nine self-hosted bots still
+  have registered with Telegram are not deleted and receive `404`. Their chat
+  threads remain as history. Dropping the two tables is left to a later
+  release, like the preference tables. The Discord agent-preference route is
+  removed as well; an old App tab calling it receives `404`.
+  The Telegram CLI no longer has `bot list`, `--bot-id` or `--as`: message
+  send, upload and download use the official bot directly. The unified `--to`,
+  `--reply-to`, `--topic` and `--json` options remain, including `--to me`. The existing official
+  bot API paths remain usable by deployed CLIs. Integration notes and CLI
+  help no longer ask the user to choose a bot.
+
+### Pi memory and queue cleanup
+
+Maintenance admission and job binding run through `persistProducerRunBinding`
+in the launch transaction. The core accepts a generic no-agent identity,
+threadless session parameters and an explicitly empty secret namespace; claim
+validates session owner and organization without reading Pi jobs. Pi memory
+retains its own leases, fences, retries, result publication and cleanup/cancel
+protection. Only maintenance completion takes the existing memory-storage
+lock. The bypass still occupies a slot without applying the org concurrency
+limit, and releases through the same org-pick path.
+
+An idle queued head that cannot launch is consumed as `input.rejected`, even
+when assembly or rejection formatting fails. Only an actual active run leaves
+an unchanged head for a later pick. Concurrency admission stays in the picker;
+there is no create-time 429/waiting result. Stripe capacity changes schedule
+org picks through `waitUntil`. Entry-owned context rows commit with their input,
+and idempotent sends that append nothing do not touch `queued_chat_threads`.
+The existing runless-input predicate and index from #37193 are unchanged.
+
+## Unified chat queue (release 4)
+
+Migration `1273_drop_active_input_delivery_tables` drops
+`active_input_delivery_items`, then `active_input_deliveries`, and their schema.
+Release 3 (#37082) removed every read and write of both tables. Dropping them
+removes their foreign keys to `chat_events`, `agent_runs` and `chat_threads`,
+which takes a brief `ACCESS EXCLUSIVE` lock on each referenced table under the
+default 1 s `lock_timeout`.
+
+**Merge gate:** merge only after release 3 (#37082) is released to production
+and every earlier API instance has drained (no Axiom output from an earlier API
+commit).
+
+**API rollback floor: release 3**, main commit
+`553fc566b7e9be2cd4a8c1de314d55939b99490a`, pinned in
+`resolve-production-rollback-target.sh`. Release 2 APIs reserve steered input by
+writing the dropped tables. Rolling back to release 3 is safe: it never names
+the dropped tables and understands every replacement event this release writes.
+
+Release 4 also adds two runner steer endpoints next to the unchanged reserve
+and receipt endpoints: `GET /api/runners/runs/:runId/steerable-inputs/next`
+returns the next run-less, unrevoked `input.prompt` after the queue input the
+run consumed last, without writing, and
+`POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered` consumes it
+with the same replacement event as receipt. No Runner calls them yet; the
+current Runner keeps using reserve, receipt and `activeInputDeliveryIds`, so the
+additive endpoints need no deploy order. A later Runner that calls them
+requires an API at or above this release.
+
+## Unified chat queue (release 3)
+
+Every input, from web sends and MCP to integrations and automations, enters
+through one enqueue entry: upsert `queued_chat_threads`, append the run-less
+`input.prompt` or `input.automation` event, then pick the thread once. One pick
+path launches runs; a running sandbox run consumes `input.prompt` by steering.
+Both consume an input the same way: a replacement event carrying the `runId`
+with `revokesEventId` set to the input, so the unique revoke edge is the only
+mutual exclusion. Schedule coalescing, already best-effort and lock-free since
+the prepared-key retirement, moves out of admission to the schedule trigger,
+which revokes its old unconsumed schedule tick (never a manual Run now) when it enqueues the new one;
+a journaled Morning Brief tick does so only after its claim succeeds, in the
+same transaction. Only `CONCURRENT_RUN_LIMIT` keeps
+an input waiting; every other launch failure appends `input.rejected`.
+
+Steering no longer reads or writes `active_input_deliveries` or
+`active_input_delivery_items`. Reserve returns the source `chat_events` id as
+the delivery ID without writing; receipt and completion insert the run's
+replacement on the revoke edge. Release 4 drops the tables. See
+[active input delivery](./active-input-delivery.md). Runner and Guest do not
+change: they treat the delivery ID as an opaque UUID.
+
+**Merge gate:** merge only after release 2 (#37063) is merged and released to
+production, every earlier API instance has drained (no Axiom output from an
+earlier API commit), and the API rollback floor is at release 2. The
+[`agent_run_queue` drop](#agent_run_queue-dropped-release-3) already enforces
+that floor, so this change adds no migration and no new floor.
+
+Rolling back to release 2 is safe: this release persists no new shape, and
+replacement events look the same to both. This release writes no delivery rows,
+so release 2 reserves new ones for inputs this release left pending. Delivery
+rows that release 2 itself opened during the overlap are the exception: a
+receipt or terminal callback that reached this release left them `open`, and
+release 2 settles an open delivery only in its own run's receipt or terminal
+callback. After a rollback, such a row keeps hiding its source input from
+release 2's pick and steering until the row is settled by hand or the user
+sends again; an input this release already picked is consumed and unaffected.
+**Accepted risk:** this touches only inputs reserved in the overlap window
+whose run's callbacks ran on this release and that were still pending at the
+rollback.
+
+Old and new instances during deploy:
+
+- Enqueue and pick: both APIs admit through `queued_chat_threads` with the same
+  lease, idle-thread and capacity checks, so either picks input the other
+  enqueued. An older API still coalesces a schedule tick inside admission
+  while this release revokes the old tick from the trigger, so an overlapping
+  tick can add one extra automation input. This is accepted.
+- Steering: release 2 reserves by writing a delivery row and returns its ID;
+  this release returns the source event ID. A receipt or completion that reaches
+  the other API cannot settle that ID, so the source input stays run-less and a
+  later pick runs it again. The same holds for release 2 deliveries left
+  unsettled across the deploy. **Accepted risk:** for the few minutes both APIs
+  serve, and for those old deliveries, the model may see the same steered
+  message twice. No message is lost, and no compatibility fallback is added.
+- Pi API-first runs no longer steer. A message sent during such a run stays
+  queued and is picked after the run releases its slot. Release 2 instances
+  may still hand such a turn to a sandbox; both outcomes consume the input once
+  through the revoke edge.
+
+## `agent_run_queue` dropped (release 3)
+
+Migration `1272_drop_agent_run_queue` drops `agent_run_queue` and its schema.
+#37063 (`84ac71914345b8360f3df43cc2cd47f0a8af7a23`) removed every read and write
+of the table. Before this release, production evidence showed (2026-09-27, read
+at 12:12–12:14 UTC):
+
+- The first production API containing #37063 (`6b624e6e`) went live at
+  08:34:16Z; every API promotion since contains it.
+- Axiom `vm0-traces-prod`: the last `vm0-api` span from a version without
+  #37063 was at 08:34:15Z; the last hour only has versions containing it.
+- MaskDB: `agent_run_queue` has 0 rows, `agent_runs` has no `queued` run, and no
+  `run.queued` event was written in the last 24 hours.
+
+**API rollback floor: `84ac71914345b8360f3df43cc2cd47f0a8af7a23`** (#37063),
+raised from #37034 and enforced by `resolve-production-rollback-target.sh`. The
+#37034 API still reads `agent_run_queue` while promoting, so it would fail on
+the dropped table. The KMS 013 recovery manifest treats the table as optional so
+snapshots from either side of the drop verify.
+
+## Legacy queued-run promotion retired (release 2)
+
+#37034 stopped creating `agent_runs` rows with `status = 'queued'`: input that
+arrives at org capacity stays in `chat_events` without a run and
+`queued_chat_threads` schedules its thread. #37034 kept the legacy promotion
+(`agent_run_queue` payload decryption, `drainOrgQueue$` and the
+`run.queued`/`run.dequeued` markers) only to drain queued runs left by older
+instances. This release deletes it: no API reads or writes `agent_run_queue`,
+and nothing appends queue markers. Historical `run.queued`/`run.dequeued` rows
+still parse and render, and `queued` stays a valid historical run status. The
+`agent_run_queue` table and schema remain until release 3 drops them.
+
+Migration `1268_retire_legacy_run_queue_promotion` deletes any
+`active_agent_runs` row whose run is still `queued` (the production gate
+expects none), so the table only holds rows of pending and running runs, plus
+started terminal runs until their runner is released. It also drops
+`chat_events_pending_queue_idx` concurrently: every pending-input read is
+scoped to one thread (or a bounded set of threads) and takes run-less input
+rows through the thread indexes, then drops revoked rows through
+`chat_events_revokes_event_id_not_null_unique`.
+
+**Release gate:** ship this release only after the #37034 release is live in
+production and every earlier API has drained, so no queued run remains to be
+promoted.
+
+**API rollback floor: `4d4c7599bbece03bab5c1851da467702685bc1ea`** (#37034's
+merge commit). Rolling back to #37034 is safe: it creates only pending runs,
+and its leftover promotion finds nothing to promote. Older APIs create queued
+runs that no deployed API promotes, so those messages would never start.
+`resolve-production-rollback-target.sh` rejects targets below this floor.
+
+Old and new instances during deploy:
+
+- This API with the #37034 API: both create only pending runs and admit queued
+  input through `queued_chat_threads`. The #37034 API still runs the legacy
+  promotion, which finds no queued run; this API ignores `agent_run_queue`.
+- Slot hand-off: this API wakes queued threads where an `active_agent_runs` row
+  is deleted (Runner completion of any kind, cancel of a never-started run,
+  claim failure, cron timeout) instead of from terminal chat callbacks. The
+  #37034 API still wakes from its callbacks and terminal side effects. Either
+  API picks with the same lease, idle-thread and capacity checks, so a run that
+  ends on the other API's instance is still handed off, and a duplicate wakeup
+  finds the thread busy or the organization full. No persisted shape changes.
+- Either API with the migrated database: neither depends on
+  `chat_events_pending_queue_idx`, and neither expects an active row for a
+  queued run.
+
+## Queue response fields removed (2026-09-27)
+
+No run waits in a queue since queued runs were retired, so `GET /api/runs/queue`
+returned `queue: []` and `estimatedTimePerRun: null`, which the App never
+rendered. #37079 made both optional in the contract; App builds from `0.973.0`
+tolerate their absence, and #37093 raised the client-version floor to
+`0.973.0`. This change removes both fields and `queueEntrySchema` from the
+contract and the API response. The floor and this removal ship in the same or
+consecutive API releases, so every App build that can still reach this API
+parses the response without them; older builds receive `426` first.
+`runningTasks` and `concurrency` are unchanged. Rolling the API back below
+#37093 is unaffected: older APIs still send the fields and the current App
+ignores them.
+
+## GitHub direct-chat readers retired (2026-09-27)
+
+#24941 removed the only producer of GitHub direct-chat input (`issue_comment`
+continues only through workflow automation). This change deletes its readers:
+the `github` queued-launch loader, the chat callback payload's `githubDelivery`
+field, the `github:chat` delivery callback writer and dispatcher, and the
+GitHub admission-failure delivery. The chat callback payload schema is
+passthrough, so a payload an older API wrote with `githubDelivery` still parses
+and is ignored; an older API reading a new payload sees the optional field as
+absent. No producer has existed since #24941, so no such payload or pending
+`github:chat` callback is in flight (production has one delivered row).
+`github:chat` stays in the SQL inline-only exclusion lists of the callback
+dispatch queries, so historical rows are never dispatched as HTTP callbacks.
+Persisted `context_type = 'github'` events and GitHub source annotations still
+parse and render; like `automation` and `goal`, a `github` context can no
+longer route a queued user message. No App, CLI or public contract changes.
+
+Migration `1270_drop_github_chat_tables` then drops `chat_github_context` and
+`github_chat_thread_routes`, and the queued-event monitor stops checking
+`github` contexts. The older API still has GitHub readers for both tables, but
+they only run for a `github` context event or a GitHub delivery callback, and
+production has neither pending (zero `github` context events; one delivered
+`github:chat` callback). Its queued-event monitor queries a context table only
+for context types present among the scanned events, so it never reaches the
+dropped table. `context_type = 'github'` stays in the `chat_events` check
+constraint as a historical value.
+
+## pgstattuple extension dropped (2026-09-26)
+
+Migration `1265_drop_pgstattuple` runs `DROP EXTENSION IF EXISTS pgstattuple`.
+`1178` installed it only so the chat search projector could read
+`public.pgstatginindex`. `1263` turned `fastupdate` off on the remaining chat
+search GIN index and #36990 removed that projector maintenance; #36990 reached
+production on 2026-09-26T04:49Z (release `224656bd`). No current code calls a
+`pgstattuple` function.
+
+**API rollback floor: `98b5515ae2874128734b19a17b96dc8c6c7afe47`** (#36990's
+merge commit). Earlier API artifacts call `public.pgstatginindex` at the start
+of every chat search projection tick; after this migration that call fails with
+`42883` and the tick projects nothing. Rolling the API back does not reinstall
+the extension. `.github/scripts/resolve-production-rollback-target.sh` enforces
+the floor.
+
+## Resource creation advisory lock retirement (2026-09-26)
+
+VNC host and credential creation now use their existing primary keys to
+arbitrate duplicate IDs. A losing insert rolls back the whole transaction,
+including any inline credential, before resolving an owned replay or an ID
+conflict. Only the requested table's primary-key violation is handled; unrelated
+constraint and database failures still propagate. Existing-resource VNC replays
+still skip KMS.
+
+Banking Connect creates sessions under a short `FOR NO KEY UPDATE` lock on the
+existing connection row, retaining the partial unique index for one pending
+session. The transaction rechecks ownership and live state, supersedes the old
+session, and inserts the replacement. Provider requests remain outside it. This
+lock mode is compatible with the foreign-key checks used by account syncing.
+
+`VncAccess` and `Banking` are both registered as default-disabled, non-GA
+features. Their advisory locks retire in the same release under the
+[pre-GA policy](fallback.md#2-features-behind-a-feature-switch-need-no-fallback).
+Mixed old/new API writers can make an old request fail with a unique-key error
+during the cutover; the existing constraints still prevent duplicate resources
+or pending sessions. This is the bounded pre-GA cutover exception, not a claim
+that the old and new locking protocols coordinate with each other. The API
+contracts and stored shapes do not change, and no migration is required.
+
+SSH and Cloudflare Access creation use the same exact-primary-key conflict
+recovery, including two admins creating the same organization-scoped Access
+configuration. Their resource-ID advisory lock is retired after the #37009
+preparation reached production. The separate owner lock remains; supported
+rollback targets must include the conflict recovery under the API floor below.
+
+## Resource and lifecycle synchronization cleanup (2026-09-26)
+
+Connector refresh failures now use the existing single conditional UPDATE,
+matching the connector identity, owner, auth method, and exact state revision.
+It cannot mark a subsequently reconnected account as needing reconnection.
+Other connector-state writers keep their current coordination.
+
+Migration `1266_feishu_installation_org_platform_unique` adds the missing
+unique key on Feishu/Lark `(org_id, platform)`. Configuration uses this key and
+the existing global `app_id` key, with exact owner/platform/app predicates on
+updates. The migration runs before the new API and fails on historical duplicate
+installations instead of choosing or deleting a bot. Feishu and Lark remain
+non-GA, so an old concurrent create may receive a unique violation during
+cutover under the pre-GA policy. No compatibility fallback is added.
+
+The canonical Agent mutation advisory key is removed. Its Stage 6 database
+bridge was dropped by #28880 on August 24. Agent edits/deletion retain their
+existing row protection, and child mutations check parent existence with
+compatible KEY SHARE reads before updating their own resources and generations.
+The separate public-Agent quota key remains. No stored shape or API contract
+changes. An outgoing connector-selection writer can still leave an inert
+non-FK generation or publication row after deletion; Agent foreign keys and
+builder existence checks prevent that metadata from restoring a resource or
+authorizing a run. Conflicting outgoing writers retain the existing
+transaction rollback and deletion-conflict responses.
+
+Browser profile creation prepares the external profile outside a transaction,
+then uses the thread's unique profile key to select the owner. Unused external
+profiles are reclaimed. Cleanup checks the target profile and exact session
+identity/version before removing state. The profile advisory key is retired;
+the exact cleanup predicates prevent cleanup of profile A from deleting a
+replacement B. Provider creation remains outside the transaction.
+
+The retired Native Morning Brief collector was the only production consumer
+of `chat_threads.provenance`. Its writes, service, and implementation-only
+tests are removed; the nullable column and historical migrations remain.
+Automation resolution now uses the existing unique owner binding and its row
+lock, without writing a reused destination thread. Its resolver advisory key
+is retired. The binding is locked before its destination is read, so concurrent
+resolvers observe the current binding instead of an earlier destination.
+Browser and the shared Morning Brief resolver are GA paths; both rely on the
+#37009 preparation and the API rollback floor below, not the non-GA catalog
+switch. No new lock or fallback is introduced.
+
+## Scoped advisory cleanup and owner-row preparation (2026-09-26)
+
+Nine more caller entrypoints stop acquiring redundant advisory locks:
+
+- The Workflow queue-head lookup is one primary-database SELECT. It reserves
+  nothing; final launch still claims the event's unique revoke edge and active
+  run identity in its own transaction.
+- Browser screenshot persistence is one UPSERT on the thread primary key.
+- Standalone SSH credential and Cloudflare Access creation retain exact-ID
+  conflict recovery, without the retired creation-ID key or the owner
+  key. SSH host deletion and host-key reset retain their exact host row lock,
+  ownership, generation, and foreign-key checks without the owner key.
+- Connector account rename retains the exact account row lock and an
+  owner/target-qualified UPDATE without the shared target helper.
+- Remote-host defaults use one owner-qualified UPDATE. The VNC path no longer
+  enters the three cleanup keys and owner key; override and binding mutations
+  keep their existing lifecycle protocol.
+- Failed Official Workflow installation cleanup no longer requests the catalog
+  and organization keys. Its required `installing` state and Workflow row lock
+  arbitrate against the activation CAS; installed uninstall is separate.
+
+These narrow removals preserve coordination with outgoing writers through the
+same primary keys, unique constraints, conditional writes, and existing row
+locks. Public-Agent quota acquisition also becomes conditional: public create
+and requests setting public visibility acquire it before the Agent row;
+private creation and other metadata edits do not. The seven-public-Agent limit
+is unchanged. No persisted shape changes.
+
+Social admission replaces its organization advisory key with
+`FOR NO KEY UPDATE` on the existing organization row. Reservation sums and the
+hundred-unsettled-job limit stay inside that transaction. Its allowance check
+is a read-only snapshot: it must not acquire the credit key while holding the
+organization row, because credit settlement acquires those in the reverse
+order. Only an insufficient-balance request with an expired allowance releases
+the transaction, refreshes the allowance once through the existing billing
+path, and repeats the complete admission check. Requests with sufficient
+credits do not acquire a new Stripe dependency. Provider job requests remain
+outside admission.
+
+Social is non-GA and uses the same-release cutover policy. Outgoing admissions
+still use the retired advisory key, so old and new writers can overshoot the
+reservation limit while overlapping. The new protocol preserves the limits
+among new writers; it does not claim mutual exclusion with old writers. No
+compatibility branch or additional advisory key is introduced.
+
+Five Official catalog readers (copy, run, reconciliation, installation, and
+uninstall) replace shared advisory acquisition with `FOR SHARE` on the existing
+accepted-catalog singleton. This conflicts with the old publisher's pointer
+UPSERT as well as the new publisher's row lock. Exact revisions and storage
+versions are immutable; Official runs and copies do not read a mutable Storage
+HEAD. New publication locks the singleton before changing dependent rows, uses
+the singleton primary key for first publication and an expected-pointer UPDATE
+thereafter, and commits the pointer, revisions, artifact heads, and
+reconciliation work together. A losing first publisher rolls back all writes.
+
+The publisher's catalog advisory key and the normal-admission organization key
+are retired after this preparation reached production.
+Official run admission takes its credit plan row before Workflow/Automation
+rows, matching reconciliation; the singleton protects accepted catalog reads
+and publication. These shared paths include GA Morning Brief, regardless of
+catalog discovery flags. Copy has a separate conflict-recovery preparation
+below; failed Run persistence and uninstall do not enter the plan lock and no
+longer acquire the organization key. Reconciliation retains its organization
+key for the additional Morning Brief row-order preparation below.
+
+Built-in generation admission now locks the existing Run row with
+`FOR NO KEY UPDATE` before expiring and counting admissions and inserting the
+winner. The three-active and fifty-started limits remain, and the transaction
+ends before provider requests. Its original advisory key is retired; serving
+admission writers and supported rollback targets use the same Run row protocol.
+
+User export now claims through the existing active-job partial unique index
+before checking the completed-job cooldown. A conflicting request returns the
+active job from a no-op conflict UPDATE, without a second-read gap or changing
+its timestamps. A new claim that fails the twenty-four-hour cooldown rolls
+back, and only a new accepted claim enqueues work. The GA admission key is
+retired; serving and supported rollback writers use this conflict-handling
+protocol rather than a bare INSERT.
+
+## Prepared advisory key retirement and writer preparation (2026-09-27)
+
+The supported production aliases and cron use API **1.682.4**, commit
+`931167c9d234821a3ffd186d7493058e92631cb3`, which includes #37009's replacement
+protocols. Current production was verified on 2026-09-27. For this cutover,
+Ethan confirmed production readiness and excluded retained deployment URLs
+from the supported serving surface; their continued existence is not a
+retirement gate. This does not claim that the retained deployments were deleted
+or that their endpoints reject requests.
+
+Seven prepared acquisition sites now retire: Browser profile, automation
+destination resolver, SSH creation-ID, user export admission, built-in
+generation admission, Official catalog publisher, and the Official
+normal-admission organization site.
+
+**API rollback floor: `c639e3397602b5c9b049315c7a99f5ed2e23e660`** (#37009).
+`.github/scripts/resolve-production-rollback-target.sh` rejects older API
+artifacts before artifact selection. A supported rollback retains the same
+constraint, existing-owner-row, and catalog protocols even if it still acquires
+the retired advisory keys. No schema migration is needed for this retirement.
+
+Morning Brief dormant reconciliation needs one further preparation. Its
+reservation/staging paths already take native owner authority before the
+Workflow, but validation/finalization in API 1.682.4 take the same rows in the
+reverse order. The organization key currently serializes those transactions.
+Validation/finalization now follow native authority, Workflow, then
+Automation/identity, reusing the existing locks. Keep the reconciliation
+organization key until this preparation covers serving and supported rollback
+versions and outgoing reconciliation transactions drain. #37009 alone does not
+satisfy this new gate: a new reservation without the organization key could hold
+native authority while an outgoing validation holds the Workflow, leaving each
+waiting for the other's row. The native authority still owns the selected
+Morning Brief lineage and first-materialization mirror; it is not redundant.
+
+Official failed Run persistence and installed uninstall no longer acquire the
+organization advisory key. Both retain the accepted-catalog singleton read,
+the existing parent/Workflow/Automation row protection, and exact installation
+and revision validation. The failed Run branch does not admit credit, and
+uninstall performs provider cleanup after commit. Neither enters the credit
+plan after Workflow rows, so these removals do not depend on the separate
+normal-admission ordering preparation above.
+
+Workflow event admission now acquires the queue key only for schedule
+automations, including manual schedule executions that must coordinate with
+cron coalescing. Event automations retain their delivery identities, source
+transition CAS, transactional event insertion, and final Run claim. Connector
+and check-in rewards have no total-count cap: their shared redemption helper
+retains the exact reward key, claim and credit transaction but skips the owner
+key and count query. Capped rewards keep their existing protocol. Old and new
+requests still coordinate on each reward identity; no migration or rollout
+wait is required for these narrower entrances.
+
+Official copy now handles only the private owner/Agent/name unique constraint
+after the complete copy transaction has rolled back, returning the existing
+name-conflict response and cleaning up the unpublished volume. Different
+Official source installations can target the same private name without sharing
+a source row, so row protection alone cannot replace this conflict handling.
+The copy organization key remains until this preparation covers all serving
+writers, outgoing copy requests have drained, and supported rollback targets
+include it. The earlier #37009 preparation does not contain this recovery.
+
+Device authorization prepares tokens before its commit transaction. The
+existing connector account target serializes start and completion; the exact
+poll claim, connector credentials, and completion marker now commit together.
+A superseded claim writes no credentials, and a failed credential write also
+rolls back the session transition. Provider work and post-commit cleanup remain
+outside the transaction. The device-specific key stays on start and completion
+until every serving and supported rollback writer uses this atomic protocol
+and old requests drain: an outgoing completion can otherwise persist stale
+credentials in its separate transaction after a replacement start. No new lock
+key, lock table, schema migration, or persisted shape is introduced.
+
+## Advisory prechecks and exact-identity callers (2026-09-27)
+
+Browser's active-to-suspended and expired-claim release operations use their
+existing conditional UPDATE directly. Non-event-source connector selection
+clear keeps parent KEY SHARE protection, exact selection identity and atomic
+generation invalidation; the six automation event sources keep the target
+key for source reprojection. Connector/check-in rewards use the existing
+actor/quest/source unique claim, claim row lock and transactional credit
+idempotency instead of the exact reward key. Bootstrap finalization reuses the
+key already held by its caller in the same transaction. These narrower callers
+coordinate with outgoing writers through unchanged SQL predicates, constraints
+and existing row protection. No schema or API contract changes are required.
+
+Ordinary allowance availability now reads the existing single-query snapshot.
+Only `allowance_refresh_required` enters the existing credit-locked Stripe
+refresh transaction. Missing windows still report their entitlement limits;
+window initialization, authoritative admission, settlement and payment-failure
+grace rules are unchanged. Neither the previous committed precheck nor this
+snapshot reserves units for a later operation. Telemetry retains both timing
+series, with zero credit-lock wait for a snapshot.
+
+SSH host create/update translate only
+`ssh_connections_credential_owner_fk` violations to the existing credential
+404 after the whole write transaction rolls back. This is preparation, not
+permission to remove credential deletion's owner key: rotation currently locks
+host rows before the credential, while DELETE locks the credential before its
+RESTRICT check can lock a newly attached host. The existing owner key prevents
+that cycle. Future removal needs a compatible lifecycle lock order and the
+precise error handling in all serving/rollback writers; this batch leaves the
+key and rotation ordering in place.
+
+## Constraint arbitration and narrower advisory entrances (2026-09-27)
+
+Get Started redemption now uses its existing reward-key, beneficiary/quest/slot
+and Slack-org unique constraints instead of the reward/owner advisory keys.
+The claim row lock still owns completion. A savepoint rolls back the entire
+credit grant and claim update before interpreting an exact unique conflict;
+invite allocation is bounded to the existing 15 global beneficiary slots.
+Connector/check-in keep their exact actor/quest/source claim protocol. No schema
+or persisted API shape changes. Get Started remains a pre-GA feature: outgoing
+old capped-grant writers still encounter the same constraints and may roll back
+a conflicting request, but cannot commit duplicate rewards or exceed the cap.
+
+Calendar previous-channel cleanup uses the unchanged watch/current/previous
+channel predicates in one UPDATE. Connector deletion/replacement reuses the
+first account-target acquisition in its existing transaction; custom deletion
+still takes it before reading the account. Bootstrap reservation keeps its
+membership upserts while finalization and compensation retain their key.
+Standalone VNC credential creation retains all shared cleanup scopes, unique
+creation identity and owner checks. Pi failure commits still decide
+cancellation under the final lifecycle arbiter. Social settlement retains its
+original first-acquisition order and committed ledger transaction. These scoped
+removals introduce no unsupported old/new writer combination.
+
+Official copy skips the organization key only when reading its initial source
+snapshot. It still holds catalog and existing source rows, releases that
+transaction before external preparation, then takes the organization key and
+revalidates the complete source for final publication. This does not retire the
+final publication key or relax its separate serving/rollback gate.
+
+SSH deletion prepares a short explicit READ COMMITTED transaction: lock the exact
+credential FOR UPDATE, validate its revision, read references in a separate fresh
+statement without locking hosts, then DELETE by owner/id/revision RETURNING.
+The credential lock blocks new FK attachments while the fresh reference check
+sees attachments committed before it acquired the lock. An existing host returns
+the same in-use response before DELETE's RESTRICT check can wait on a rotating
+host. Missing/stale-revision responses and rotation/pin ordering are unchanged.
+The deletion caller retains the owner advisory key until both this preparation
+and #37071's exact host-FK-to-404 handling cover serving and supported rollback
+versions and old transactions drain. The other owner callers remain necessary.
+No new key or migration is introduced.
+
+At this batch's 2026-09-27 verification, `api.okou.ai/api/build-info` still
+reported API `1.683.0`, commit
+`d97a36a06c664b149d2598d5e14a12e7cbd4ea5b`. The newer main release version alone
+does not establish serving coverage for SSH or the earlier Device auth,
+Official copy publication and Official reconciliation preparations.
+
+## Soft limits and prepared-key retirement (2026-09-27)
+
+Both `api.okou.ai/api/build-info` and `api.vm0.ai/api/build-info` now report API
+**1.684.2**, commit `6b624e6e1b23a45386db5c07f9b21a8ffdd8af9f`. Production
+[promotion run 36306299421](https://github.com/okou-ai/okou/actions/runs/36306299421)
+completed its API promotion at **2026-09-27T08:33:45Z**. The aliases were
+rechecked after the API's configured 300-second maximum invocation duration
+had elapsed. This covers the supported alias/cron writer surface and outgoing
+requests; retained deployment URLs remain outside the serving boundary already
+accepted above. It is not a claim that those retained deployments were deleted.
+
+**API rollback floor: `ee863a302a6c547f94e50ec4069f70910d68bee2`** (#37076).
+The canonical resolver now rejects earlier targets before selecting artifacts.
+This includes #37057's complete-copy-conflict recovery, atomic device completion
+and native-before-Workflow reconciliation order, plus #37071's exact SSH host-FK
+error recovery and #37076's parent-first credential-deletion protocol.
+
+Official copy, Device auth and Official reconciliation retire their advisory
+SQL sites. SSH credential deletion also stops entering its owner helper. The
+other SSH owner callers remain. Supported outgoing/rollback writers may still
+take these keys, but both versions retain the same unique constraints, account
+transaction, row order and conditional writes. Deletion preserves its fresh
+READ COMMITTED reference check, revision predicate and complete-rollback host
+error mapping. No schema, stored payload or client/Runner protocol changes.
+
+The Public Agent limit is explicitly soft: a request that observes a full
+organization is rejected; overlapping requests may both create or publish.
+Pending schedule coalescing is also best-effort. A concurrent cron/manual pair
+can admit two legitimate events, each of which follows normal Run admission
+and billing. Exact scheduled-occurrence claims, event identities, transactional
+source transitions, FIFO and Run/event consumption are unchanged. These product
+semantics apply during mixed-version serving as well: an old writer's advisory
+key does not serialize a new writer, and that accepted overshoot needs no new
+counter or coordination protocol.
+
+VNC Agent access retains shared cleanup scopes and existing Agent row
+protection; thread override clear only deletes its exact owned selection.
+Calendar retry retention keeps its exact channel predicate and cancellation
+rollback. Pi's provider preflight only reads eligibility; it leaves authoritative
+publication/cancellation checks intact. These narrower entrances require no new
+writer preparation.
+
+## Custom account, Browser and bootstrap owner protocols (2026-09-27)
+
+This is writer preparation. All three advisory keys and their acquisition
+expressions remain; no schema, persisted payload, public API response or
+rollback-floor change is introduced. Old and new API instances still coordinate
+on their existing keys throughout this release.
+
+Custom account mutations retain the definition credential-contract protection
+already taken by creation and exact deletion. Default changes lock the affected
+accounts in ID order with `FOR NO KEY UPDATE`; deletion uses that order for the
+deleted account and promotion candidate, then upgrades only the deleted account
+to `FOR UPDATE`. A fresh READ COMMITTED statement clears its selections after
+the upgrade. Promotion does not block a selection's FK KEY SHARE on the sibling.
+SET handles only `fk_chat_thread_connector_selections_custom_connector` after
+whole-transaction rollback; initial thread creation handles that same FK within
+one selection savepoint and omits that vanished account. Other failures propagate.
+Definition deletion, Feishu uninstall and owner cleanup keep their existing
+protocols; no early account KEY SHARE is added to selection writes.
+
+Browser creation and resume prepare exact owned-thread unique outcomes. Provider
+publication inserts its instance before changing the exact logical browser, in
+the same order as physical stop. The logical write compares its observed state;
+failure rolls back the instance and screen before mapping to the existing
+conflict response and reclaiming the provider. Rejected publication skips the
+generic mark-error path; real provider failures can only mark their original
+claim. Fresh claims explicitly write the same millisecond timestamp format as
+resume, avoiding Date round-trip precision loss. The old advisory key did not
+span provider HTTP or establish a unique cross-provider attempt generation;
+this preparation does not claim to fix every pre-existing stale observation.
+Retention continues to use its exact claim and provider-profile identity.
+
+Bootstrap's final transaction atomically ensures the real Storage parent using
+its existing owner/name unique constraint, preserving the incumbent row's ID,
+prefix and metadata on conflict. After acquiring that parent it reads the
+default Agent in a fresh statement before writing seed instructions. The
+publication attempt captures its actual Storage ID and prefix before S3 work.
+After rollback, compensation only locks/deletes that captured generation and
+rechecks the default Agent after acquiring the row; an absent old row never
+redirects cleanup to a new same-name Storage. S3 cleanup uses the captured prefix
+after the database transaction. The existing S3 work inside the publication
+transaction remains and the Storage row is held earlier.
+
+Before a later key-retirement PR, this preparation must cover supported serving
+and rollback versions, and unprepared in-flight work must drain. The current
+rollback floor does not prove coverage of code introduced by this preparation.
+In particular, old custom deletion can hold a sibling FOR UPDATE while waiting
+for a selection; a new keyless selection can hold that selection while waiting
+for the sibling. Old bootstrap compensation can read no default, wait for the
+Storage, and delete a newer publisher's successful instructions without
+rechecking. Old Browser publication still uses unconditional thread writes.
+Retaining the common advisory keys prevents introducing those mixed-writer
+combinations in this PR. No production release or activation is part of it.
+
+## Workflow import source column (2026-09-25)
+
+Migration `1264_workflow_import_source` adds the nullable
+`workflows.import_source` column. It is a metadata-only `ADD COLUMN` without a
+default, so it takes a brief `ACCESS EXCLUSIVE` lock under the default 1s lock
+timeout and rewrites no rows.
+
+The skill import writes the column when it creates a workflow, from the
+`provider` claim in the session token; the workflow list and detail responses
+expose it as an optional `importSource`. An older API neither reads nor writes
+the column, so a rollback only stops tagging new imports, and an older app
+ignores the extra response field. A newer app reads a missing `importSource`
+from an older API as untagged; that optional field is a bounded rollout
+fallback, removed once the pre-change API is no longer serving or retained as
+a rollback target. The session request body and token now require `provider`.
+Skill import is still behind the non-GA `OnboardingSourcesFirst` and
+`WorkflowSkillImport` switches, so an older app's bodyless session request and
+a session token issued before this change are rejected rather than kept
+compatible, per `docs/fallback.md` section 2. No API rollback floor is needed.
+
+## Chat search GIN index drops fastupdate and API maintenance; audit approval column contracted (2026-09-26)
+
+Migration `1263_chat_search_gin_fastupdate_off_drop_audit_approval` is
+non-transactional and does two things.
+
+It first drops `computer_use_command_audit_events.approval_outcome` under a 1 s
+`lock_timeout` and 10 s `statement_timeout`, since `DROP COLUMN` needs a brief
+ACCESS EXCLUSIVE lock. #36984 stopped naming that column in audit INSERT and
+SELECT, and its API reached production on 2026-09-26T02:28Z (release
+`d9daec96`). **API rollback floor: `cdeec36c168636b1a2e510e660eb6139c9c4e07a`**
+(#36984's merge commit). Earlier API artifacts name the column in every audit
+INSERT and would fail with `42703`; rollback does not restore the column.
+`.github/scripts/resolve-production-rollback-target.sh` enforces the floor. The
+migration-consistency adapter that restored this column in the generated
+schema is removed.
+
+It then runs
+`ALTER INDEX chat_event_search_messages_user_tsv_gin_idx SET (fastupdate = false)`
+and `gin_clean_pending_list` on that index, with `lock_timeout` raised to 10
+minutes and `statement_timeout` disabled, then resets both. `SET` takes SHARE
+UPDATE EXCLUSIVE and the flush works page by page, so neither blocks chat
+search reads or projector writes.
+
+The search projector no longer drains the pending list: it has no GIN
+maintenance budget, advisory lock or `pgstatginindex` call, and never defers
+candidates. `deferredThreads` is removed from the
+`/api/cron/project-chat-event-search` response, whose only caller is the Vercel
+cron, and the test-only projection route no longer accepts `gin_index_names`.
+
+A production-branch benchmark on 2026-09-26 (5,000 sampled real messages per
+run, one INSERT per transaction, warm cache) measured 21.2 s and 25.5 s total
+with fastupdate off against 14.6 s plus a 0.2 s flush with it on. p50 rose from
+0.11 ms to 0.55 ms and p99 from 46 ms to 67-79 ms. The largest single insert
+stayed about 0.5-0.6 s in both modes.
+
+New API/old DB is compatible: until the migration runs, PostgreSQL still
+flushes a full 4 MiB pending list in the foreground. Old API/new DB is
+compatible for the index: an older API finds zero pending pages and skips
+cleanup. The audit column floor above bounds API rollback. The `pgstattuple`
+extension stayed installed for rollback targets that still call
+`pgstatginindex`; `1265` later drops it behind #36990's rollback floor.
+
+## R2-only chat thread snapshot API rollback floor (2026-09-26)
+
+The production API rollback resolver rejects targets before the #36945
+main merge commit `3d93ff8d4b4a07a5888e3030e69b340f40da0ad4`. That API
+returns an R2 URL for every existing snapshot row; no supported rollback target
+returns non-empty inline snapshots.
+The commit preceded release #36948 (`4ecb619b5c409396edd5815a1ce65941cb29cd74`),
+whose production API promotion succeeded on 2026-09-25 at 23:13:47 UTC
+([release run](https://github.com/okou-ai/okou/actions/runs/36198938622/job/108284233073)).
+
+The floor and the JSONB column removal were deployed in release #36989
+([production run](https://github.com/okou-ai/okou/actions/runs/36213251627),
+API promotion succeeded 2026-09-26 03:02:37 UTC). The subsequent client cleanup
+removes Web App and CLI non-empty inline readers, the capability header from
+new client requests, and the non-empty inline contract. The empty response for
+a scope without a snapshot row is permanent and stays supported.
+
+The API CORS preflight allowlist no longer includes `X-Chat-Thread-Snapshot-R2`
+(#36375). The header-free App shipped in `0.970.1`, and the enforced Web
+client floor (`0.973.0`) excludes every header-sending bundle. A browser cannot
+receive `426 Upgrade Required` if preflight rejects the request first, so this
+removal followed the floor enforcement in production. It neither restores
+inline snapshot responses nor changes the empty response.
+
+## Chat thread snapshot JSONB column retired (2026-09-26)
+
+Migration `1261_drop_chat_thread_snapshot_jsonb` drops only
+`chat_thread_snapshots.chat_threads`. The API already reads the snapshot cursor
+and scoped R2 `object_key`, not the old JSONB body; the archive in R2 and the
+empty response for a scope without a snapshot row remain unchanged. A masked
+production census on 2026-09-26 00:14 UTC visited all 5,549 snapshot scopes
+in stable key order and observed no null `object_key` (paginated reads, not a
+single-transaction snapshot). This does not establish that every R2 object
+exists. The migration discards the old JSONB column and its contents, but
+leaves all R2 objects and their pointers untouched.
+
+Outgoing API artifacts still write an empty JSONB array on snapshot
+publication (via raw SQL or Drizzle). The owner explicitly accepts a temporary
+failure of that job while
+migrations run before the replacement API is promoted. It may upload an
+unreferenced immutable R2 object before its publish statement fails with
+`42703`; that invocation does not proceed to lifecycle-event pruning or R2
+snapshot garbage collection. Existing snapshot pointers, their R2 downloads,
+and the separate lifecycle-events API do not read the column. A new scope
+without a published snapshot takes the existing empty-snapshot plus event-tail
+path until the new compactor catches up. Verify the outgoing API is already an
+R2-only reader and that no older JSONB reader is still serving at migration
+time. The new API omits the column from both INSERT and UPDATE, so its
+compaction works against either side of the migration.
+
+Rollback does not restore the dropped column. The production rollback resolver
+therefore finds the first-parent main commit adding this migration and rejects
+all API targets before it, including the previous release whose compactor
+would fail and earlier APIs that still read JSONB. Until the new release is
+READY in production, no pre-migration API target is eligible; recovery requires
+fixing forward. This is the accepted single-release compatibility trade-off.
+The R2 JSON archive and its response contract are unchanged.
+
+## Personal subscription credentials become account-only (2026-09-26)
+
+Personal (`user_id <> '__org__'`) `claude-code-oauth-token` and
+`codex-oauth-token` credentials now live only in `model_provider_accounts` and
+`model_provider_account_secrets`. Organization subscriptions and API-key
+providers keep `model_providers` + `secrets` unchanged.
+
+Removed from the API:
+
+- the `secrets` mirror of the active account and the personal singleton fields
+  on `model_providers` (`token_expires_at`, `needs_reconnect`,
+  `last_refresh_error_code`, `secret_id`, `auth_method`, workspace/plan and
+  reset metadata are neither written nor read for personal rows; the columns
+  remain for organization providers);
+- lazy account seeding from legacy secrets, legacy bundle import, mirror/KMS
+  equivalence checks and the request-scoped coordination that existed only for
+  API 1.595.0 singleton writers (`docs/personal-subscription-run-identity.md`
+  formerly §A2), plus the sourceId-less personal reader;
+- every credential advisory and row lock on reads, run admission, connect,
+  reconnect, activation, disconnect and terminal cleanup. Token refresh keeps
+  the `model_provider_state` advisory lock.
+
+Migration `1260_personal_subscription_account_only` sets
+`model_providers.secret_id = NULL` for personal Claude/Codex providers, deletes
+their mirrored `secrets` rows (Claude token; Codex `CHATGPT_*`/`CODEX_AUTH_JSON`)
+and adds the unique index
+`idx_model_provider_accounts_provider_identity (model_provider_id, external_account_id)`
+(NULLs distinct). Connections merge by that identity with `INSERT ... ON
+CONFLICT`; concurrent conflicting account writes surface as `409`.
+
+Prerequisites: every personal Claude/Codex provider must own an account row
+before the migration (seeded 2026-09-26: 21 providers, 12 Claude + 9 Codex;
+the Codex seeds have NULL `external_account_id` until reconnect), and no
+duplicate non-NULL `(model_provider_id, external_account_id)` pair may exist.
+
+Overlap and rollback:
+
+- During the ~20s migration-to-promotion window (API overlap measured at
+  api-v1.673.0) the previous API still reads the mirror for some paths and may
+  report a personal subscription as unavailable or require reconnect. This is
+  accepted; no persisted data is lost because accounts are canonical.
+- This release is the API rollback floor for personal subscriptions. An older
+  API treats the missing mirror as an unavailable subscription and its legacy
+  import/seed paths could recreate or diverge from account state. The production
+  rollback resolver rejects API targets that predate the merge commit adding
+  `1260_personal_subscription_account_only.sql`; roll forward instead.
+
+## Computer Use audit column: code-only read/write cutover (2026-09-26)
+
+The production database still has
+`computer_use_command_audit_events.approval_outcome`. #36960 already changed
+the audit-list SELECT to project only response fields, but its Drizzle schema
+still declares the retired column. Drizzle therefore names it in audit INSERTs
+with `DEFAULT`, even though no writer supplies an approval outcome.
+
+This code-only release removes the Drizzle declaration without a migration.
+The new API's generated INSERT and SELECT no longer name the column; both work
+while the physical column still exists. Existing write-command and plugin
+audit route tests exercise the current endpoints against that retained schema.
+Older serving APIs can still insert because the column remains. Do not drop it
+until this version has been independently promoted to production, the old API
+instances have drained, and the production rollback floor excludes those old
+writers. The follow-up #36969 must remove the narrow migration-consistency
+test adapter for this retained nullable text column when it drops the physical
+column, and must raise the rollback floor to this cutover's canonical main
+merge commit. No screenshot decoder or index changes belong to this step.
+The contraction, adapter removal and rollback floor shipped with migration
+`1263_chat_search_gin_fastupdate_off_drop_audit_approval` (see the entry above).
+
+## Chat run admission moves to the `active_agent_runs` thread slot (pending)
+
+**Release ordering:** #36900 shipped separately in release #36948. #36955
+merged into main with migration `1258_active_agent_runs_step2.sql` and shipped
+separately in release #36974. #36980's step-3 migration
+`1259_drop_agent_runs_last_heartbeat_at.sql` must ship alone in its own release
+(#36986), with the previous API drained. #36975's
+`1261_drop_chat_thread_snapshot_jsonb.sql` must also ship independently and
+its previous API must drain before #36929 enters the merge queue. Only then
+may #36929 ship with migration `1262_active_agent_runs_chat_thread_slot.sql`,
+after #36976's `1260_personal_subscription_account_only.sql` and #36975's
+`1261` in the migration journal. The slot rollout requires the deployed
+step-3 API as its predecessor; the effective rollback floor also inherits the
+stricter #36976 account-only and #36975 snapshot-drop floors.
+
+#36955 owns the backfill for queued, pending, running and started terminal runs
+still within the recovery grace or heartbeating. #36929 does **not** repeat
+that backfill. Its migration keeps only the newest active row slotted per
+thread and adds the plain unique index on `active_agent_runs.chat_thread_id`.
+NULL thread IDs remain distinct. The new API's last launch statement inserts
+the active row with `ON CONFLICT (chat_thread_id) DO NOTHING`; a collision rolls
+back that launch as a lost queue claim and keeps the message queued. Queue-first
+admission, Web preflight and queue drain read the slot. Admission, completion,
+timeout and queued-run markers no longer lock the thread row; the session
+binding uses compare-and-set.
+
+**Mixed-version risk:** the step-3 API still inserts active rows without a
+thread-slot conflict handler. If its launch races a new API launch or a still-
+finishing terminal run, the unique index can reject its insert (`23505`): its
+launch rolls back and inline send returns a temporary HTTP 500. The separately
+enqueued input remains durable and can drain after slot release; no second run
+starts. This is a user-visible error, not seamless compatibility. The release
+owner must explicitly accept it and monitor errors and queue progress, or
+first provide an older-API conflict handler / avoid serving the older API
+after the index is created. Separating releases alone does not remove the
+rolling mixed-version window.
+
+## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
+
+**Draft columns and owner key.** Migration `1257_drop_chat_thread_draft_columns` drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`, and makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.
+
+`PATCH /api/chat-threads/:id` no longer reads the thread. It upserts or deletes the caller's own row and always returns `204`; the contract no longer declares `404`. A write to a missing or foreign thread lands in a row keyed to the caller that nobody else reads.
+
+**Rollback floor: `7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38`** (#36932). Older APIs name the dropped columns in thread inserts or upsert `ON CONFLICT (chat_thread_id)`. The resolver enforces this floor. #36932 entered production in release #36941 before this contraction. The account-erasure retirement below also independently prohibits rolling back to pre-#36927 APIs.
+
+**Read cursor.** mark-read, mark-unread and mark-agent-read run without a transaction or account-erasure admission:
+
+- mark-read reads the thread and Agent by primary key, reads the newest terminal marker, then advances the cursor with one single-row compare-and-set;
+- mark-unread is one single-row `UPDATE`;
+- mark-agent-read takes the same bounded candidates as the unread indicators (last message within seven days and newer than the cursor, newest 128) and advances each with its own compare-and-set. Older unread threads under the Agent are not bulk-marked read.
+
+Responses are unchanged.
+
+**Indexes.** Migration `1256_drop_redundant_chat_thread_indexes` (non-transactional) drops `idx_chat_threads_user_agent_updated` and `idx_chat_threads_user_last_read` with `CONCURRENTLY`. The planner serves their prefixes from `idx_chat_threads_user_agent_last_message` and `idx_chat_threads_user_last_message_id`. Read-cursor-only updates become HOT-eligible. No API names these indexes.
+
+**Snapshot compaction.** The cron no longer unions every thread, event and snapshot scope:
+
+- it pages `chat_thread_event_sequences` by primary key and reads snapshot heads by user;
+- it builds each projection from the org's Agent ids and the user's threads, with no join;
+- it skips the R2 upload when the projection's content hash is unchanged;
+- it publishes with one single-row compare-and-set;
+- it prunes compacted events with bounded reads and one `DELETE` by id.
+
+Agent deletion reads the affected thread ids and owners in bounded keyset pages before the deletion transaction. After commit it appends `deleted` lifecycle events in small batches using the single-statement sequence allocator, with the captured org id (the Agent is already gone). Batch failures are logged, not retried, and never roll back deletion; as with `sort_touched`, an occasional missing event is accepted. Event-page reads keep `deleted` tombstones visible after the Agent is gone while continuing to filter other events by live Agent. With these events driving snapshot invalidation, the 24-hour full refresh and repeated empty-scope publication are removed. A scope with no visible event and no snapshot remains empty. The projection's timestamp strings keep the exact `jsonb_build_object` format.
+
+## Public brand retirement contraction (2026-09-25)
+
+Phase 2 of #36766 contracts the columns that Phase 1 stopped reading. Migration
+`1255_retire_public_brand` drops `public_brand` from `slack_org_installations`,
+`slack_chat_ingress`, `chat_slack_context`, `discord_chat_ingress`,
+`chat_discord_context`, `feishu_org_installations`, `feishu_org_connections`,
+`feishu_chat_ingress`, `chat_feishu_context`, `teams_org_installations`,
+`chat_teams_context`, `telegram_installations`, `telegram_official_user_links`,
+`chat_telegram_context`, `github_installations` (with `setup_public_brand`),
+`chat_github_context`, `chat_automation_context`, `push_subscriptions`,
+`email_outbox`, `export_jobs`, `usage_pack_invitation_purchases`,
+`browser_sessions` and `socialkit_download_jobs`, and removes their Drizzle
+declarations.
+
+The per-row link layout marker is renamed, not dropped: `public_brand` becomes
+`link_layout_segment` on `hosted_sites`, `hosted_deployments`,
+`private_hosted_deployments`, `artifact_shares` and `shared_threads`, with the
+same `okou` / `vm0` values, `NOT NULL` and `DEFAULT 'okou'`. The unique key
+`idx_hosted_sites_id_public_brand` and the foreign keys
+`fk_hosted_deployments_site_public_brand` and
+`fk_private_hosted_deployments_site_public_brand` are renamed to their
+`link_layout_segment` spellings with `RENAME CONSTRAINT`, so no index is rebuilt
+and no foreign key is revalidated. Every statement is a catalog-only change
+under the default 1s lock timeout; no table is rewritten or scanned. No
+function, trigger or view references the retired columns.
+
+Gate evidence: the seven Phase 1 slices (#36768, #36770–#36774, #36777) are all
+in API release `api-v1.676.0`, and `api/production` serves release #36892
+(`api-v1.677.1`, `2be63cd`) since 2026-09-25 11:25 UTC; every earlier
+production API that remains deployable contains Phase 1.
+
+Phase 1 APIs no longer read these columns, but they still declare them.
+Drizzle names every declared column in `insert` column lists and in bare
+`select()`, so those APIs still reach `public_brand` on every table above,
+including the five layout tables. As with `1228`, `test:migration-consistency`
+requires the declaration and the physical schema to agree, so the declaration
+changes and the migration ship in one release. Migrations run before API
+promotion. In the window before the previous API drains, its Slack, Discord,
+Feishu, Teams, Telegram, GitHub and automation ingress/context statements,
+push, email, export, usage-pack invitation, browser-session and SocialKit
+statements, and its hosted-site, artifact-share and shared-thread statements
+receive `42703`. Release this change alone at low traffic; the promotion window
+after migration completion is about 20 seconds.
+
+This release also stops writing the rollout-only `publicBrand: "okou"` in chat,
+Slack, Discord, Feishu, Teams, Telegram, GitHub and workflow-automation
+result-email callback payloads and in built-in generation requests, and removes
+the run-level and queued-launch brand. The Phase 1 readers of those payloads do
+not declare or read the field, and stored payloads that still carry it keep
+parsing because the current readers strip unknown keys.
+
+The `agentphone:chat` payload was the rolling-deploy exception. The Phase 1
+reader (`agentPhoneChatCallbackPayloadSchema`) required `publicBrand`, so Phase 2
+kept writing the literal `"okou"` while Phase 1 instances might still serve or
+be selected as rollback targets. The Phase 2 reader no longer declares the field.
+
+Follow-up #36913 stops writing that literal. Phase 2's migration and API shipped
+to `api/production` in release #36970 (`191d95c`): the production migration
+completed at 2026-09-26 00:50 UTC and API deployment succeeded. The most recent
+pre-Phase-2 API (`4ecb619`) was marked inactive at 00:50 UTC and no longer has a
+Vercel production alias; at the 02:29 UTC check, production API aliases pointed
+to the later Phase-2-descendant `355e1ac`. The production rollback workflow
+checks out `main`, where its target resolver rejects any commit predating the
+canonical `1255_retire_public_brand` migration merge; the resolver test passes.
+Stored callbacks with the old extra field still parse because the current reader
+strips unknown keys.
+
+Stored R2 records keep their historical names: the `publicBrand` field of
+policies, delivery records, preview grants, pointers and manifests, the
+`public-brand` object metadata, the `publicBrand` key of
+`run_uploaded_files.metadata`, and the `<segment>` path components. Legacy
+links keep resolving: the host Worker reads only R2 and is unaffected by the
+column rename, and the API reads the unchanged `okou` / `vm0` values from
+`link_layout_segment` to lay out records derived from existing content. OAuth
+and install states are unaffected; Phase 1 already removed the brand from them.
+
+Rollback promotes artifacts without restoring schema. The production rollback
+resolver therefore rejects API targets that predate the canonical main commit
+that added `1255_retire_public_brand.sql`. Recovering past that commit requires
+a forward-fix migration that restores the columns and the old layout column
+name, not an artifact rollback.
+
+## Stripe payment-method Portal brand metadata retirement (2026-09-26)
+
+The restricted payment-method Billing Portal configuration is stored in Stripe,
+not in Postgres. The existing live Stripe account has one matching active
+configuration with `metadata.purpose=payment_method_management`, an old
+`metadata.managed_by=vm0` key and a legacy display name. The API now selects
+it by `purpose` alone; it does not select by brand or name. A fresh configuration
+writes only the purpose and uses a new brand-neutral idempotency key. An
+incomplete list or multiple matching configurations fail closed instead of
+choosing a different Portal configuration. Existing features, disabled login
+page and configuration ID are
+preserved. No database migration is needed.
+
+This code release does **not** remove Stripe's existing `managed_by` key:
+Stripe metadata updates merge omitted keys, and the old API still requires that
+key to find the same configuration. Wait until the purpose-only API is serving,
+all older API instances have drained, and the production rollback resolver
+excludes every pre-cutover API (using the first-parent main commit that adds
+`.github/rollback-floors/stripe-portal-purpose-only`). Only then update that
+same Stripe configuration in place: remove `metadata.managed_by`, rename its
+legacy display name to `Okou payment methods`, and leave
+`metadata.purpose=payment_method_management`, active status, and the restricted
+feature set unchanged. Read back the Stripe configuration and open a Portal
+session to verify that the same configuration ID remains in use and no second
+configuration was created. An older API restored outside the protected rollback
+path cannot be used after that provider update without a forward fix.
+
+## Account erasure retirement (2026-09-25)
+
+The whole account-erasure mechanism from EPIC #33745 is removed. It will be
+redesigned from scratch; until then account deletion runs the legacy Clerk
+cleanup, narrowed so that user deletion never deletes an Agent.
+
+- **Writer and reader fence.** API writes and reads no longer check whether
+  their user or organization was closed for erasure, take the shared subject
+  advisory lock, or set a custom `lock_timeout`/`statement_timeout` for it.
+  Nothing returns `subject_closed`, `account_closed`, "Account unavailable" or a
+  closure-only 404. The Computer Use host stop and command completion contracts
+  drop their `403` response; the Desktop client only handles `401`/`409` there.
+  `VNC_OWNER_CHANGED` leaves the VNC error contract and the App.
+- **Deletion hold (#36842).** The `clerk-user-deletion` job no longer yields for
+  24 hours before cleanup. Auth, firewall credential handoff, runner
+  cancellation state and X resource usage no longer look up a pending deletion
+  job; Clerk stops issuing tokens for a deleted user.
+- **Deletion job.** The Clerk `user.deleted` webhook still revokes shared-thread
+  artifacts, records one durable `clerk-user-deletion` job (#36236) and starts
+  it; the per-minute background-job cron reclaims unfinished work. The job now
+  runs only the legacy cleanup (`cleanupClerkDeletedUser$`, including the
+  empty-organization branch) and completes. There is no capture or verify
+  phase. Jobs queued by an older API with a `phase` or `safetyHold` checkpoint
+  simply run the idempotent cleanup. `organization.deleted` is unchanged: billing
+  cleanup in the webhook, then `cleanupClerkDeletedOrg$`.
+- **Agents are retained on user deletion.** User cleanup deletes no Agent and
+  never cascades through one. It removes only the user's own data by `user_id`:
+  their runs (cancelled first), sessions, chat threads and drafts, usage, stable
+  context, credentials, connectors, storages and the other per-user rows.
+  Agents the user owned keep `owner` pointing at the deleted user (no ownership
+  transfer), together with their instructions Storage, Workflows, Morning Brief
+  deliveries, other members' stable context, and other members' sessions,
+  threads and runs.
+  Other members' runs on those Agents are no longer cancelled. Organization
+  deletion is unchanged and still deletes every Agent in the organization.
+- **Executor and collectors.** The user executor, selector, ownership coverage
+  guard, relational sweep, every object/remote collector, shared blob erasure,
+  chat content deletion receipts and their late-content sweep, the dormant Clerk
+  bridge and the separate decision journal are deleted. Blob retention uses the
+  plain reference count again and upload intents are gone.
+- **X resource retention.** Clerk cleanup, telemetry ingestion and the
+  retention cron no longer take a global `x_resource_reads` advisory lock.
+  Ingestion still validates the UTC today/yesterday window, serializes claims
+  by the resource primary key, and holds the Run's SHARE lock while writing
+  usage. Cron reads at most 1,000 expired keys, then deletes only those keys
+  with a repeated day predicate in a separate statement. An insert committed
+  just after its final time check at midnight can leave an expired key until
+  the next retention tick; it cannot reopen the admission window. Database
+  global timeouts replace the per-transaction X resource and 100 ms Clerk
+  lifecycle overrides. An upload holding its Run lock may delay cleanup;
+  the user deletion job retries a failed attempt, organization cleanup does not.
+
+Rows written for a deleted account after its legacy cleanup committed are no
+longer swept by anything. That is the accepted gap until the redesign.
+
+Migration `1254_drop_account_erasure` follows the VNC migration `1253`, required
+agent-run context ownership migration `1252`, and Computer Use migration `1251`.
+It replaces the earlier, never-released
+`1248_drop_pi_stable_context_erasure_fences`. It drops the `account_erasure_*`
+tables (jobs, work, pages, sinks, selector dependencies, bridge ingress and
+replay), `chat_content_erasure_subjects`, `pi_stable_context_erasure_fences`,
+`blob_upload_intents`, and `blobs.erasure_pending`/`erasure_eligible_at` with
+their check constraint, in the same release by explicit decision rather than
+after a rollback window. An older API still serving during the overlap fails
+every path that touches those relations: account-erasure fence admission on
+almost every write, membership-cache refresh, Pi stable-context, connector,
+permission and Workflow admission, session-history blob retention and Clerk
+deletion. **Rolling the API back below this revision is unsupported.**
+
+Older entries below that mention account erasure, erasure admission, the
+relational sweep, collectors, the Clerk erasure bridge or deletion-status
+capabilities describe the retired mechanism.
+
+## Computer Use audit approval column: reader cutover (2026-09-25)
+
+`computer_use_command_audit_events.approval_outcome` belongs to the retired
+approval flow. No current writer sets it or response exposes it; a masked
+production census on 2026-09-25 found 0 non-null values across 11,258 audit
+rows. The audit-list API now selects only the fields it returns instead of the
+full table row; other audit reads already select individual columns. The
+physical Drizzle schema and database still declare `approval_outcome`, so this
+release does **not** drop or migrate the column. The HTTP response is unchanged.
+
+Drop the column in a follow-up release **after** this reader cutover has shipped
+to production, outgoing API instances have drained, and the enforced production
+API rollback floor is at or above this reader-cutover commit. Otherwise an
+older API's unqualified Drizzle `SELECT` would name the dropped column and fail
+with `42703` between database migration and API promotion (or after rollback).
+Reconfirm zero non-null rows before the DROP, remove the physical schema
+mapping in that same follow-up, and validate the old/new API/DB combinations.
+The column drop is not authorized by this preparatory release alone.
+
+## Discord file deliveries become fire and forget (2026-09-25)
+
+`POST /api/integrations/discord/files/complete` sends each upload operation to
+Discord at most once, without a nonce. A send that Discord rejects,
+rate-limits or never answers is recorded as a failed delivery with
+`retryable: false` and no `retryAfterSeconds`; a repeated completion returns the
+recorded outcome and never sends again. To retry, start a new upload operation.
+The enforced-nonce replay, its window and the stored retry deadline are
+removed, and new delivery rows no longer store a nonce.
+
+The delivery response no longer declares the unused optional
+`retryAfterSeconds` field, and the CLI no longer suggests retrying a failed or
+pending delivery. `pending` remains a valid response during concurrent
+completion; a repeated completion reports the recorded state without resending.
+Discord has no production users, so rows written by the previous replay flow
+need no migration; their extra JSONB keys are ignored.
+
+## Agent-run context ownership becomes required (2026-09-25)
+
+Migration `1252_chat_agent_run_context_owner_not_null` deletes
+`chat_agent_run_context` rows whose `source_user_id` or `source_org_id` is null,
+then makes both columns `NOT NULL`. Every API from the split writer on (API
+1.672.0) inserts a row only after reading both owners from the source thread and
+agent, so no rollback target writes a null owner. The deleted rows were written
+by older APIs; on 2026-09-25 all 955 had lost their source thread, so no owner
+could be derived. No code reads these rows, and the `chat_events.context_id`
+values that referenced 70 of them carry no foreign key.
+
+The Clerk legacy cleanup deletes these rows by copied ownership. The account-
+erasure collector and its captured replay are retired by this PR; older API
+instances cannot safely run against the dropped relations, and API rollback
+below this revision is unsupported as noted above.
+
+## Computer Use erasure admission and legacy host retirement (2026-09-25)
+
+Host START, command creation, the host directory and the audit-event list no
+longer take account-erasure admission or open transactions; START is one
+upsert and creation is a bounded host read plus one INSERT. A closed erasure
+subject is no longer refused with `403` by these routes; late writes
+are not swept until the deletion mechanism is redesigned.
+
+`POST /api/computer-use/hosts/start` now requires `installationId`. Hosts
+registered without one (the last was seen in August 2026) are no longer
+accepted, and stop always keeps the host as an offline installation instead of
+revoking it and clearing chat-thread bindings. Every current Desktop build
+sends `installationId`.
+
+Migration `1251_computer_use_commands_required_host_timeout` deletes commands
+left by the retired approval flow (and their audit rows), revokes any active
+host without an installation, and makes `computer_use_commands.host_id` and
+`timeout_ms` `NOT NULL`. Older APIs always write both columns for new commands,
+so they remain compatible after the migration.
+
+## Computer Use host sessions and command reads stop locking (2026-09-25)
+
+Computer Use heartbeat, command claim, command completion, host stop, command
+status reads and screenshot/plugin-content reads no longer open multi-statement
+transactions, take account-erasure admission locks or lock host/command rows.
+Each reads with plain bounded queries and writes with single-row conditional
+UPDATEs; a request that loses a race skips its write (heartbeat), reports
+`idle` (claim), or reports the command as already completed (completion).
+Heartbeats and claim polls only rewrite the host row when its reported state
+changed or `last_seen_at` is at least 30s old, and Desktop sends steady-state
+heartbeats every 15s instead of 2s.
+
+Observable differences:
+
+- A closed erasure subject is no longer refused with `403` by these routes; late
+  writes are not swept until the deletion mechanism is redesigned.
+- Claim is no longer serialized with stop. A claim that read the host just
+  before a concurrent stop can still start one command, which then fails
+  through the normal running-command timeout.
+- A command status read times out only the command being read. Other running
+  commands time out when they are read or when their host polls again.
+- Migration `1241_computer_use_host_liveness_indexes` (#36895) drops
+  `idx_computer_use_hosts_last_seen` and adds the partial unique index
+  `idx_computer_use_commands_running_host (host_id) WHERE status = 'running'`,
+  which now enforces one running command per host. Older APIs serialized claims
+  per host and never create a second running row, so they remain compatible.
+  While old and new APIs overlap, an old claim racing a new one for the same
+  host can hit the index and return one `500`; the Desktop recovers on its next
+  poll.
+
+## Active run state moves to `active_agent_runs` (2026-09-25, step 1 of 3)
+
+Heartbeats rewrote the wide `agent_runs` row and two heartbeat indexes that no
+query used, and activity snapshots were written through the run-content lock
+chain. Migration `1249` builds `idx_agent_runs_status` concurrently and drops
+`idx_agent_runs_status_heartbeat` and `idx_agent_runs_running_heartbeat`; no
+API names either index. Migration `1250` adds `active_agent_runs`, one narrow
+row per active run with an immutable `chat_thread_id` (no foreign key, null for
+threadless runs), and seeds it from queued, pending and running runs.
+
+A row lives while a runner may still work on the run. The new API inserts it as
+the launch transaction's last statement and refreshes its heartbeat on
+promotion, claim and every sandbox heartbeat. A run that never reached `running`
+loses the row when it turns terminal; a run that did, including one cancelled
+while running, keeps it until the completion webhook, the running-heartbeat
+timeout, or a cleanup sweep that releases rows of runs terminal and silent for
+the 120-second cancellation-recovery grace. Every release is the last
+statement of its transaction, after the provider-account cleanup. The follow-up
+per-thread admission index relies on this ordering. It still writes `agent_runs.last_heartbeat_at`, and timeout cleanup and capacity
+checks still read that column. Activity capture and the activity summary read
+and write only the active row with single-row compare-and-set updates; they no
+longer touch `run_activity_snapshots`, `chat_threads` or `chat_events`, and no
+longer pass the account-erasure write fence.
+
+During rollout, and on any rollback to an older API, the older API keeps writing
+`run_activity_snapshots`, creates runs without an active row (the new API shows
+no activity for them), and ends seeded runs without deleting their active row.
+New API instances no longer expire `run_activity_snapshots` rows; they stay
+until step 2 drops the table and remain erasable through the `agent_runs`
+cascade. An older API's account-erasure worker rejects the uncatalogued
+`active_agent_runs` table (`catalogue_uncovered`), so account deletions wait for
+a new worker during the migration-to-promotion window and on rollback. A row an
+older API abandons is either still live, or terminal and released by the
+stale-terminal sweep once its heartbeat and completion age past the grace; no
+reader treats it as more than activity for a run the summary already reports as
+ineligible, so none of these states needs a runtime fallback.
+
+## Active run state: readers and old storage retired (step 2 of 3)
+
+**Release gate:** #36900 / `c0a46af5` reached production in release #36948
+(run 36198938622); step 2 may enter the merge queue. Migration `1258` backfills
+missing active rows created by pre-#36900 API instances; it includes started
+terminal runs still within the 120-second recovery window or still heartbeating
+(except cancelled runs with completed recovery). It removes terminal rows only
+when _both_ completion and heartbeat are more than 120 seconds old, matching
+the existing stale-terminal sweep. The insert is idempotent on `run_id`.
+#36929 must rebase after this migration and remove its duplicate backfill;
+its own migration owns the unique `chat_thread_id` index and slot admission.
+
+Timeout cleanup now checks the active row's heartbeat (including its locked-run
+recheck); capacity excludes queued runs and expired pending runs but counts
+started terminal runs while their active row still exists. Launch, promotion,
+claim and sandbox heartbeats no longer write `agent_runs.last_heartbeat_at`.
+Activity and summary already use `active_agent_runs`; migration `1258` drops
+`run_activity_snapshots` and its ORM declaration. Once this release deploys,
+**do not roll back to #36900**: its timeout cleanup reads the now-stale
+`agent_runs.last_heartbeat_at`, and older APIs write the dropped snapshot
+table. Step 3 drops the old heartbeat column. Do not ship step 3 in this PR.
+
+## Active run state: `agent_runs.last_heartbeat_at` dropped (step 3 of 3)
+
+**Release gate:** step 2 (#36955, `e62567d3`) shipped alone in `api-v1.681.2`
+(release #36974). Promote the release carrying this change only after
+`api-v1.681.2` is live in production and the previous API has drained. Step 2
+is the first API that neither reads nor writes `agent_runs.last_heartbeat_at`;
+timeout cleanup, capacity and every heartbeat use `active_agent_runs`.
+
+Migration `1259` drops the column and this release removes its Drizzle
+declaration. `test:migration-consistency` requires both to ship together (as in
+`1228` and `1257`). Step 2 still declares the column, so Drizzle names it in
+every `agent_runs` insert, bare select and bare returning. Migrations run
+before API promotion; until the previous API drains, those statements on the
+old instances fail with `42703`, including run creation. Release this change
+alone at low traffic. The drop is metadata-only; the two heartbeat indexes on
+the column were already removed by `1249`.
+
+Rollback promotes artifacts without restoring schema, so the production
+rollback resolver rejects API targets that predate the canonical main commit
+that added `1259_drop_agent_runs_last_heartbeat_at.sql`. Recovery past it needs
+a forward-fix migration that restores the nullable column.
+
+## Chat thread archived rollout fallbacks removed (2026-09-25)
+
+Issue #36551 removes the bounded rollout fallbacks added with #36480. The
+`archived` field is now required in `chatThreadSnapshotProjectionSchema` and
+`chatThreadMetadataSchema`, and the `?? false` normalizations in chat thread
+event replay and the Platform metadata projection are gone.
+
+Evidence for each gate:
+
+- Web clients: the force-upgrade floor at this retirement was `0.963.3`;
+  #36480 first shipped in App `0.955.0`.
+- API rollback: the production rollback floor is `32e48c76` (#36885), which
+  contains #36480, so no API from before archiving is serving or retained as a
+  rollback target.
+- Snapshots: a MaskDB census found all 5536 `chat_thread_snapshots` rows were
+  updated after the first production API containing #36480 was deployed
+  (2026-09-24T06:12Z; oldest row updated 2026-09-24T13:00Z).
+
+IndexedDB caches are intentionally **not** reset (`CHAT_IDB_VERSION` is
+unchanged). A Web snapshot cache row last written by a pre-0.955.0 build now
+fails schema parsing and takes the existing degraded read path, which refetches
+from the API. The CLI chat thread cache likewise treats such a row as invalid
+and rebuilds it. No database migration is included.
+
+## R2 chat thread snapshot rollout fallbacks removed (2026-09-25)
+
+Issue #36375 removes the rollout fallbacks that #36320 added. Evidence for the
+removal gates:
+
+- The Web App client floor at this retirement was `0.963.3`. #36320 first
+  shipped in App `0.950.0`.
+- The owner confirmed that no CLI builds from before R2 support remain in use.
+- A MaskDB census found 5536 `chat_thread_snapshots` rows, none with
+  `object_key IS NULL`. Compaction writes only rows that have an object key.
+- The production API rollback floor is 32e48c76 (#36885), which descends from
+  #36320.
+
+The API no longer reads the legacy `chat_threads` JSONB. A row without an
+object key is now an error. A scope without a snapshot row returns the
+permanent empty `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
+shape. The App SharedWorker and CLI keep handling the inline contract variant for
+the API rollback window. They send the header, so current and rollback-window
+APIs return them an R2 URL whenever a row exists.
+
+At the time of #36942, one fallback remained: the native iOS TestFlight
+client (0.2.x) read only inline `chatThreads`, so the API materialized the R2
+archive for requests without the capability header. That branch was retired
+later on 2026-09-25 with explicit acceptance of breaking the old TestFlight
+builds; see "iOS inline chat thread snapshot response retired" below.
+
+## iOS inline chat thread snapshot response retired (2026-09-25)
+
+The owner approved removing the remaining header-less inline response for
+#36375 despite breaking old internal iOS TestFlight builds. For a scope with a
+compacted snapshot, `GET /api/chat-threads/snapshot` now returns a scoped,
+short-lived R2 URL whether or not `X-Chat-Thread-Snapshot-R2: 1` is present.
+The API no longer downloads and decompresses the R2 archive on behalf of a
+header-less client. A scope without a snapshot row still returns
+`{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
+
+Pre-fix iOS TestFlight builds decode only inline `chatThreads`, so they cannot
+load a non-empty compacted chat thread list from this API. The updated native
+client downloads and decodes the R2 archive. It also accepts inline responses
+from a scope without a snapshot row or a rollback-window API. Installed pre-fix
+builds remain incompatible until users install a TestFlight build containing
+the native client fix. There is no iOS minimum-version gate. This preserves
+the explicitly accepted break rather
+than reintroducing API-side R2 download and decompression for header-less
+requests. Web App and CLI still send the capability header and accept inline
+responses for the existing API rollback window: an older API behind the
+current rollback floor still branches on that header. Keep the header in CORS
+and the shared inline response variant until the API rollback floor advances
+past that implementation.
+
+## Thread draft contraction, release 2 (2026-09-25)
+
+Release 2 of the thread-draft move off `chat_threads` (#36173). Release 1
+(#36897, merge commit `4558c9fa`) made `chat_thread_drafts` the only draft
+store and writes `user_id` on every row.
+
+Migration `1248_contract_chat_thread_drafts` fills any missing `user_id` from
+the thread. It then deletes cleared tombstones (both draft values null) and rows
+whose thread no longer exists, makes `user_id` and `draft_user_message`
+`NOT NULL`, drops `chat_thread_drafts_draft_user_message_check`, and adds the
+unique index `uq_chat_thread_drafts_thread_user`. Release 1 always writes an
+owner and deletes on clear, so it stays compatible with the contracted table
+during rollout; its `ON CONFLICT (chat_thread_id)` upsert still matches the
+unchanged primary key.
+
+The API drops the two compatibility paths Release 1 declared. The drafts listing
+no longer filters null tombstones, and account erasure no longer reaches draft
+rows through the thread, because every row now has an owner. Draft upserts
+target `(chat_thread_id, user_id)`. `GET /api/chat-threads/:id/draft` no longer
+declares `404` (Release 1 already never returns it), and the App stops accepting
+it. The runtime `chat_threads` mapping no longer declares `draft_user_message`
+or `draft_attachments`, so no API from this release names them in an implicit
+`INSERT`, `SELECT` or `RETURNING`. The DDL schema still declares them.
+
+**API rollback floor: `4558c9fac46ce1a96a25745b477b32b70dab7ae6`** (#36897). An
+older API dual-writes a draft row without `user_id` and fails every draft save
+against this schema. The production rollback resolver enforces the floor.
+
+Release 3 is allowed only after this API is in production and becomes the
+rollback floor. It drops the two `chat_threads` draft columns and their check
+constraint, which Release 1 would still name in thread inserts. It also makes
+`(chat_thread_id, user_id)` the primary key and lets the draft `PATCH` skip the
+owner read, so a missing or foreign thread returns `204` instead of `404`.
+
+## Chat event retention and Discord delivery table retirement (2026-09-25)
+
+Discord has no production users, so this change ships without a staged
+compatibility window.
+
+- Migration `1246_drop_discord_chat_deliveries` drops `discord_chat_deliveries`
+  with its foreign keys into `chat_events`, then the
+  `chat_events_id_thread_unique` constraint that only backed the composite
+  foreign key, and the redundant `idx_chat_events_run_id` (covered by
+  `chat_events_run_event_seq_unique`). An API that predates #36879 fails its
+  Discord reply enqueue, and a user export on an older API fails its Discord
+  deliveries page until the rollout completes. Account erasure on an older API
+  also fails with `account_erasure_relational:catalogue_absent:discord_chat_deliveries`
+  and retries until it runs on this API; rolling back below this API stalls
+  erasure jobs the same way.
+- Migration `1247_chat_event_retention_cursors` adds the retention sweep
+  cursor. Retention now reads candidates with bounded, unlocked single-table
+  queries and deletes them by ID in short statements, without the advisory
+  lock, `FOR UPDATE SKIP LOCKED` or the in-transaction remainder scan. The cron
+  response drops `deleteLimit`, `candidates`, `skippedBatchLimit` and
+  `overlapPrevented` and adds `sweepRestarted`. An older API still running the
+  locked sweep is safe alongside the new one: both only delete rows that pass
+  the same holds.
+- The cancellation-recovery queue sweep only redrives barriers that expired in
+  the last ten minutes. Older barriers are left to per-thread admission and
+  callback paths, as for stale queue items.
+
+## Chat event write control retirement (2026-09-25)
+
+Migration `1245_drop_chat_event_write_control` drops `chat_event_write_control`
+together with its `preserve_chat_event_write_activation` trigger and function.
+APIs 1.674.0 and 1.675.0 read the control row on every chat event write, so the
+production rollback resolver now refuses targets before #36703 (`15117da781`,
+API 1.676.0), the release that removed that reader. The owner approved the new
+floor on 2026-09-25 while production served API 1.676.1. Migration precedes API
+promotion, and no API from 1.676.0 on reads or writes the table.
+
+APIs before this change still list the table in their account-erasure ownership
+inventory. While one of them serves after the migration (the release overlap or
+a rollback), its Clerk deletion jobs fail with
+`account_erasure_relational:catalogue_absent:chat_event_write_control` and retry
+every 60 seconds without losing their checkpoint, until an API with this change
+serves. The table was not account-scoped and had no foreign keys, so the
+relational sweep plan and its collector version are unchanged.
+
+## Thread drafts served only from `chat_thread_drafts` (2026-09-25)
+
+Thread composer drafts are read and written only through `chat_thread_drafts`
+(#36173). `PATCH /api/chat-threads/:id` reads the thread owner by primary key
+outside any transaction, then saves the draft with one upsert, or clears it by
+deleting the row. None of these paths writes or locks the `chat_threads` row, and draft writes no longer take
+the account-erasure admission. `GET /api/chat-threads/:id/draft`, the drafts
+listing and the user export read the child table. Request and response
+contracts are unchanged.
+
+`GET /api/chat-threads/:id/draft` reads only `chat_thread_drafts`, by thread id
+and the caller's `user_id`. A thread the caller does not own, a missing thread
+and a thread without a draft all return `200` with the empty draft instead of
+`404`; every App bundle maps a `404` to "no draft" and parses the empty draft to
+the same state, so the composer behaves identically. A draft row an older API
+inserted without `user_id` during the rollout reads as empty until the user's
+next save fills it. `PATCH` still reads the thread owner until the contract
+release keys drafts by `(chat_thread_id, user_id)`.
+
+Sending a message no longer touches the draft. The web client already clears
+its draft with its own `PATCH` alongside every send (since #24657, so every App
+bundle in use does), which made the server-side delete a duplicate write on
+the send path. Senders that do not clear the composer, such as MCP, agents and
+forwarded sends, now leave the user's draft in place. If the client's clearing
+`PATCH` fails, the sent text reappears as the draft.
+
+The web client now refetches the sidebar drafts listing only when a save adds
+or removes a thread's draft, instead of after every debounced save.
+
+Migration `1244_chat_thread_drafts_user_backfill` drops the
+`chat_thread_drafts` → `chat_threads` foreign key, so a draft write takes no
+lock on the thread row. It adds `chat_thread_drafts.user_id` with an index,
+copies drafts that exist only in the legacy `chat_threads.draft_user_message` /
+`draft_attachments` columns with `ON CONFLICT DO NOTHING`, and fills `user_id`
+from the thread. Every API since #36230 dual-writes both stores in one
+transaction, so an existing child row is already current. Production held 433
+legacy drafts (126 kB), 430 of them without a child row and none disagreeing
+with their child row (2026-09-25).
+
+Without the cascade, `DELETE /api/chat-threads/:id` removes the draft row with
+one statement after the thread deletion commits. Agent deletion, account
+deletion and other thread-deletion paths can leave an unreachable draft row
+behind; no API serves it, and cleaning it up belongs to deletion. Account
+erasure reaches draft rows by `user_id` and, for rows without one, through the
+thread while it exists.
+
+During the rollout an older API still dual-writes both stores and serves the
+legacy columns, so it keeps the child table current but does not see a draft
+the new API saved or cleared. An older API can also insert a child row without
+`user_id`; such a row is missing from the new drafts listing until the contract
+migration backfills it, and it is still read and cleared by thread id. Rolling
+the API back therefore only shows each thread's last draft from before this
+release; no draft is lost.
+
+The legacy columns and their check constraint stay in the schema, unused, for
+this release. The contract release drops them, backfills any `user_id` left null
+by the rollout and makes `user_id` `NOT NULL`; ship it only after this API is in
+production and set this release as the API rollback floor.
+
+## Morning Brief expired admission containment (2026-09-25)
+
+This is a partial, fail-closed incident slice, **not** the recovery of stalled
+Morning Brief schedules. With the global schedule-expiry switch off, API
+instances at this revision no longer select `daily-delivery` anchors older than
+30 minutes in the legacy due batch. A selected anchor that ages past that
+boundary before queue admission is also refused; the generic, unjournaled
+claim CAS applies the same cutoff to `daily-delivery` and checks that the row
+is still enabled. The cutoff is strict: exactly 30 minutes late remains due.
+The old anchors, historical claims, runs, queue events, native rows, enabled
+choice, Official installation and sent messages are not changed. Other due
+automations keep their existing expiry policy and are selected in stable
+next-run order instead of sharing an unordered batch with stalled briefs.
+
+This does not advance an old anchor to a future occurrence. The global expiry
+flag must **not** be enabled as a substitute: an earlier mismatched Native
+obligation still holds that path. The Native/Official decision fence and old
+callback settlement remain in place; the mixed-version disable/enable and
+reconciliation contract has not been proven under single-statement hot-path
+constraints. An older API poller can still select or claim an expired brief
+during rollout or after rollback. Therefore production release of this
+containment requires a separately approved deployment plan that prevents old
+pollers from admitting overdue briefs throughout the overlap and sets a
+rollback floor at this revision or later; absent that plan, do not promote it
+as a no-backfill guarantee. Already queued or running claims and email/Chat
+outcomes require separate evidence and handling, not age-based settlement.
+No database migration or client protocol change is included.
+
+## Chat search agent recency index dropped (2026-09-25)
+
+Migration `1242_drop_chat_search_agent_created_idx` drops
+`chat_event_search_messages_user_org_agent_id_created_idx` with
+`DROP INDEX CONCURRENTLY`. It does not block chat search reads or projector
+writes; it waits for older transactions on the table, so it raises
+`lock_timeout` to 10 minutes and disables `statement_timeout` for its own
+session, then resets both.
+
+Since #36456 no query orders this table by `(user_id, org_id, agent_id,
+created_at)`. Chat search and MCP chat search take keyword candidates from
+`chat_event_search_messages_user_tsv_gin_idx` and sort them in the query;
+projection writes and thread deletion use the primary key; account erasure
+deletes by `user_id`, which `chat_event_search_messages_user_org_created_idx`
+serves.
+Production statistics from 2026-09-17 to 2026-09-25 show 164 scans reading
+about 157,000 index tuples each, consistent with agent-scoped searches that
+walked an agent's whole history and filtered each row by keyword.
+
+No code names the index, so old API/new DB and new API/old DB are both
+compatible and no API rollback floor is needed. Restoring the index means
+rebuilding it concurrently; no data is lost.
+
+## Discord replies become fire and forget (2026-09-25)
+
+Discord replies and ingress notices are now posted once, directly after the
+transaction that creates their event commits, and only by the attempt that
+created it. A part Discord rejects, rate-limits or never answers ends the send;
+there is no retry, nonce replay, uncertain-part notice or cron redelivery. A
+repeated runner callback or terminal-marker replay does not post again, and a
+process lost between commit and send loses that reply. The canonical event
+stays readable in the Okou chat. Access checks and suppression after binding
+or channel revocation are unchanged.
+
+The API no longer writes or reads `discord_chat_deliveries`, and the test-only
+Discord delivery drain endpoint is removed. Migration
+`1246_drop_discord_chat_deliveries` drops the table (see above).
+
+## Completed Clerk deletion receipt index retirement (2026-09-25)
+
+Migration `1240_retire_clerk_deletion_receipt_index` drops
+`idx_background_jobs_completed_clerk_deletion`. Its only reader was the
+late-content sweep's receipt reconciliation for older APIs
+(`kind = 'clerk-user-deletion' AND status = 'completed' ORDER BY id`), which
+#36862 removed. No current query filters on that predicate.
+
+API rollback targets from 1.672.0 through 1.676.1 still run that reconciliation
+every minute. Without the index it becomes a sequential scan of
+`background_jobs`, which held 23 rows on 2026-09-25, so their results and
+correctness are unchanged. The migration takes a brief `ACCESS EXCLUSIVE` lock
+on that small table under the default 1s lock timeout.
+
+## Keyword-only chat search GIN index dropped (2026-09-25)
+
+Migration `1239_drop_chat_search_tsv_gin` drops
+`chat_event_search_messages_tsv_idx` with `DROP INDEX CONCURRENTLY`. It does not
+block chat search reads or projector writes; it waits for older transactions on
+the table, so it raises `lock_timeout` to 10 minutes and disables
+`statement_timeout` for its own session, then resets both.
+
+Ship it only after the API that stops maintaining this index (previous entry,
+#36885) is in production; that API was promoted in release #36887 (`f24f7192`).
+Chat search and MCP chat search already use the `(user_id, tsv)` index; queries
+and responses are unchanged. Restoring the index means rebuilding it
+concurrently; no data is lost.
+
+**API rollback floor: `32e48c76fea61c39d0962762e1bc2e0aa5a5cab0`** (#36885's
+merge commit). An API artifact that predates it names
+`chat_event_search_messages_tsv_idx` in chat search GIN maintenance; after this
+migration its `::regclass` cast fails with `42P01` and every projection tick
+fails before projecting a thread. Rolling the API back does not restore the
+index. The production rollback resolver
+(`.github/scripts/resolve-production-rollback-target.sh`) enforces the floor for
+API targets; verify manually with
+`gh api repos/okou-ai/okou/compare/32e48c76fea61c39d0962762e1bc2e0aa5a5cab0...<artifact-sha> --jq .status`
+and require `ahead` or `identical`.
+
+## Chat search stops maintaining the keyword-only GIN index (2026-09-25)
+
+Chat search and MCP chat search both filter by `user_id` before the keyword
+predicate, so the planner serves them from
+`chat_event_search_messages_user_tsv_gin_idx` (`1214`). After that index
+shipped, `SELECT chat_event_search_messages` on `/api/chat/search` fell from
+p90 3.5 s to 348 ms (Axiom, 2026-09-24T14:44Z to 2026-09-25T08:00Z).
+
+The search projector now drains only the `(user_id, tsv)` index from its
+30-second GIN maintenance budget. The keyword-only
+`chat_event_search_messages_tsv_idx` remains in the database for this release;
+its pending list is flushed by PostgreSQL in the foreground when it reaches the
+4 MiB `fastupdate` threshold, as for any unmaintained GIN index. No migration,
+query, or response change.
+
+Old API/new API remain compatible with the same database. This release must
+reach production before the follow-up migration drops
+`chat_event_search_messages_tsv_idx`: an API that still names the index in
+maintenance fails its projection tick once the index is gone. Rollback to an
+older API is safe until that migration ships.
+
+## Runner active-producer affinity for delayed finalization (2026-09-25)
+
+Every Runner heartbeat must include `activeReuseProducers`, even when empty.
+The API rejects a heartbeat that omits it; it no longer treats omission as an
+empty producer list. Each entry is a bounded exact `runId/reuseKey/profile`
+capability for a locally publishable active run. The additive
+`runner_state.active_reuse_producers` JSONB column retains its `[]` default for
+existing rows; the heartbeat handler always writes the supplied list.
+
+The API uses a producer capability only for the exact completed predecessor on
+the same Runner process generation and a fresh running heartbeat. Registration
+triggers an immediate but asynchronous producer heartbeat. A same-generation
+predecessor that completes before that snapshot reaches the API can still receive
+a completion-relative preference for at most 1.5s; this protects the current
+Runner's first-heartbeat race, not an omitted-field protocol. Producer-qualified
+claim priority instead expires at successor creation plus 2s and does not
+inherit the 30s heartbeat freshness interval. Runner-local pre-claim proof,
+running handoff, and global claim CAS remain unchanged. A stale or missed
+producer revocation can delay an individual cold claim only within the bounded
+successor-relative preference window; measure that tail cost alongside reuse.
+
+## App floor 0.963.3 retires the mark-read `unreads` field (2026-09-25)
+
+`POST /api/chat-threads/:id/mark-read` and
+`POST /api/chat-threads/:id/mark-unread` no longer return `unreads`; both
+response contracts now carry only `lastReadAt`. The field was the rollout
+fallback kept by the unread-snapshot change below.
+
+`app-v0.963.3` (release commit `f53bf151eef29e6e21711850d6237719ab4ffdcd`) is
+the first App that contains #36877 and no longer reads the field. Production
+App serves `0.965.0` at `a4794200e232f46f6f64eb8102067c6a367667d7`, a
+descendant of that release. This change raises the identified-App minimum
+version from `0.958.0` to `0.963.3`; older bundles receive `426` on their next
+API request before any route is matched and refresh into the live App. Do not
+roll the App back below `0.963.3` without also rolling the API back below this
+change.
+
+## Mark-read responses stop computing unread snapshots (2026-09-25)
+
+`POST /api/chat-threads/:id/mark-read` and
+`POST /api/chat-threads/:id/mark-unread` no longer compute the per-Agent unread
+snapshot and always return `unreads: []`. That snapshot used a correlated
+lateral query that dominated mark-read latency, and the App already derives
+unread state from `/api/indicators`. The new App no longer reads the field.
+
+Older App bundles still pass `unreads` to their optimistic read-mark pruning;
+an empty list only skips pruning, and those bundles already hide a local mark
+when indicators report a newer `unreadAt`. A new App talking to an older API
+ignores the populated field. The field was removed together with the App floor
+raise to `0.963.3` above.
+
+## Phone proactive sends target the caller's own link (2026-09-25)
+
+`POST /api/integrations/phone/message` and
+`POST /api/integrations/phone/upload-file/complete` now always deliver to the
+caller's own AgentPhone link, resolved by user and organization (a member has at
+most one link per organization). The request `toNumber` is optional and ignored.
+Previously the routes normalized `toNumber` as an SMS number, so email-shaped
+iMessage handles normalized to an empty string and every proactive send from
+an email-linked member failed with 404.
+
+CLIs released before this change still send `toNumber`; the API accepts and
+ignores it. The new CLI no longer sends `toNumber`. A new CLI talking to an
+older API (rollout overlap or API rollback) is rejected with 400 because the
+older contract requires `toNumber`; the send can be retried after the new API
+is live. Remove the contract field once CLI versions from before this change
+are no longer in use. Since the unified messaging flags (#37212), the phone
+commands' `--to` is a visible option that accepts only `me` (the default); a
+phone number there is rejected rather than ignored.
+
+## Platform and run pipeline public brand retirement (2026-09-25)
+
+Okou is the only product brand (#36766, slice E). The API no longer reads or
+writes `public_brand` on `push_subscriptions`, `email_outbox`, `export_jobs`,
+`usage_pack_invitation_purchases`, `browser_sessions` or
+`socialkit_download_jobs`. `shared_threads.public_brand` is owned by the
+artifact link layout (#36773), which writes the current layout segment and
+reads the stored segment to locate existing shares; this change only drops it
+from shared-thread responses and request plumbing. Reusing a pending
+usage-pack invitation checkout no longer filters by brand.
+
+Migration `1237_public_brand_okou_default_platform` sets the column default to
+`'okou'` on all seven tables (previously `'vm0'`, or no default on
+`browser_sessions` and `socialkit_download_jobs`). An old API reads `okou` from
+rows the new API inserts, and its own inserts still carry an explicit brand, so
+old API/new DB and rollback remain compatible. The columns and their ORM
+declarations stayed in place until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
+
+`GET /api/shared-threads/:id` and `GET /api/shared-threads/:id/meta` no longer
+return `publicBrand`. No App code reads it, and the App does not validate
+responses. The test-only email outbox state endpoint no longer returns
+`public_brand`.
+
+Chat run callbacks no longer read `publicBrand`. The persisted `chat` callback
+payload still carries a fixed `publicBrand: "okou"`, because an older API
+instance that processes the callback defaults a missing value to `vm0`; the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) stopped writing it. Stored callbacks that carry any
+`publicBrand`, including `vm0`, keep parsing because the payload schema passes
+unknown keys through, and the value is ignored. Provider delivery callback
+payloads keep the fixed value until their provider slices retire the field.
+Queued Feishu launches no longer require a run-level brand.
+
+A queued Web input whose context ID is the VM0-era Web ID now decodes exactly
+like the Okou Web ID. Writers still emit the Okou ID. Official Workflow queue
+markers, their IDs and their claim rules are unchanged (#29908).
+
+The internal custom connector OAuth start no longer takes a brand; the brand
+was never part of the persisted OAuth state, so no in-flight flow is affected.
+
+The Platform runtime configuration no longer carries `publicBrand`, and the
+Platform no longer sends the PostHog `public_brand` property or the Sentry
+`public_brand` tag. Queries that filter on `public_brand = 'okou'` must drop
+that filter; historical events keep the property.
+
+## Discord native history attachment URLs (2026-09-25)
+
+`GET /api/integrations/discord/messages` and `/replies` no longer return
+`attachments[].url` (the signed Discord CDN link); `id`, `filename`, `size` and
+`contentType` remain. Older CLI builds do not validate this response and print
+only attachment filenames, so they are unaffected; downloads use the
+attachment ID through `download-file`. `channel list` also stops returning
+forum and media channels. The Discord integration is default-off.
+
+## Teams and Telegram public brand retirement (2026-09-25)
+
+Teams and Telegram are Okou-only (#36766, slice C). The API no longer reads or
+writes `public_brand` on `teams_org_installations`, `chat_teams_context`,
+`telegram_installations`, `telegram_official_user_links` or
+`chat_telegram_context`. Queued Teams and Telegram launches and inbound-file
+materialization use the fixed `okou` brand. The official Telegram user-link
+lookup no longer copies a row's own brand back onto it, and
+`chat_telegram_context` rows with a null or `vm0` brand now launch normally
+instead of being dropped at claim time.
+
+Migration `1234_teams_telegram_public_brand_okou_default` sets the column
+default to `'okou'` on `chat_teams_context` (previously `NOT NULL` without a
+default), `chat_telegram_context` (previously no default),
+`telegram_installations` and `telegram_official_user_links` (both previously
+`'vm0'`), matching `teams_org_installations`. An old API therefore reads `okou`
+from rows the new API inserts, including the non-null brand its Telegram
+queued-launch path requires, so old API/new DB and rollback remain compatible.
+Existing rows keep their stored values; no current reader observes them. The
+columns and their ORM declarations stayed in place until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
+
+Teams and Telegram chat callback payloads, and the Teams delivery target inside
+persisted run payloads, still carry `publicBrand: "okou"`. APIs before this
+change require that key when they parse a pending callback or a claimed run, so
+removing it would break delivery during a rolling deploy or after an API
+rollback. The new readers ignore any stored value, including `vm0`. The
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) stopped writing the key.
+
+The Teams OAuth `state` no longer carries `publicBrand`, and the callback no
+longer requires it. A state issued by an older API still parses because the
+extra key is ignored. A state issued by the new API and returned to an older
+API instance during the rollout, or after an API rollback, is rejected as
+`Invalid connect state.`; the user restarts the Microsoft sign-in. States live
+only for one interactive sign-in, so no durable flow depends on the key.
+
+## Slack and Discord public brand retirement (2026-09-25)
+
+Slack and Discord are Okou-only. The API no longer reads or writes
+`public_brand` on `slack_org_installations`, `slack_chat_ingress`,
+`chat_slack_context`, `discord_chat_ingress` or `chat_discord_context`, and the
+Slack webhook handlers no longer overlay a request brand on the installation
+row (#36766, slice A).
+
+Migration `1233_slack_discord_public_brand_okou_default` sets the column default
+to `'okou'` on `slack_chat_ingress`, `chat_slack_context`,
+`discord_chat_ingress` and `chat_discord_context` (previously no default);
+`slack_org_installations` already defaulted to `'okou'`. An old API therefore
+reads a non-null `okou` brand from rows the new API inserts, so old API/new DB
+and rollback remain compatible. The columns and their ORM declarations stayed in
+place until the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
+
+Persisted callback payloads:
+
+- `slack:chat`: the reader no longer declares `publicBrand`, so stored payloads
+  that carry it keep parsing (the key is stripped). Older APIs require the
+  field, so the writer kept emitting the literal `publicBrand: "okou"` until
+  the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
+- `chat` callback `discordDelivery`: the target no longer declares
+  `publicBrand`; stored targets that carry it keep parsing. Older APIs require
+  `publicBrand: "okou"` on the stored target, so the persisted `chat` callback
+  kept writing that literal through `storedDiscordDeliveryTarget` until the
+  [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
+
+Slack OAuth state no longer carries `publicBrand`. During the Phase 1 rollout,
+the new API accepted states with the retired key, while an older API rejected
+states without it; the user restarted an affected install or connect. States
+expire after 15 minutes. Since Phase 2 #36909 shipped to `api/production` and
+the rollback floor excludes pre-Phase-2 APIs, no serving or rollback-target API
+can issue the old shape; its synthetic test and test-only signing export are
+removed. Current install/connect, signature and expiry coverage remains. The
+`?publicBrand=` install query parameter was already ignored.
+
+The test-only `/api/test/slack-state` contract no longer accepts
+`public_brand` or returns `publicBrand`; undeclared request keys are stripped.
+
+## Feishu public brand retirement (2026-09-25)
+
+Feishu and Lark are Okou-only (#36766, slice B). The API no longer reads or
+writes `public_brand` on `feishu_org_installations`, `feishu_org_connections`,
+`feishu_chat_ingress` or `chat_feishu_context`. Ingress processing and queued
+launches no longer reject a null brand, so stored null or `vm0` rows launch and
+deliver normally. The Feishu launch hands the fixed `okou` brand to the shared
+run pipeline; that run-level field is retired separately.
+
+Migration `1231_feishu_public_brand_okou_default` sets the column default to
+`'okou'` on all four tables (`feishu_org_installations` was `'vm0'`; the others
+had none). An old API therefore reads `okou` from rows the new API inserts,
+including the non-null brand that its ingress processor and queued-launch path
+require, so old API/new DB and rollback remain compatible. The columns and their
+ORM declarations stayed until the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
+
+Stored `feishu:chat` and `feishu:org` callback payloads keep parsing: current
+readers no longer declare `publicBrand`, so a stored brand is ignored. Older
+APIs still require the field, so writers kept stamping the fixed
+`FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND` value until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) excluded those APIs from rollback.
+
+Feishu OAuth state no longer carries `publicBrand`. During the Phase 1 rollout,
+states signed by an older API still verified because the extra key was stripped;
+a new state returned to an older API was rejected and the user retried. States
+expire after ten minutes. Since Phase 2 #36909 shipped to `api/production` and
+the rollback floor excludes pre-Phase-2 APIs, no serving or rollback-target API
+can issue the old shape; its synthetic test is removed. Current state signing,
+validation and expiry coverage remains.
+
+The Feishu and Lark connect status responses no longer return `publicBrand`,
+either at the top level or per installation. The App only copied the value into
+its installation list and never read it, and the App does not validate
+responses, so older App bundles are unaffected. The unused `publicBrand`
+argument of `startCustomConnectorOAuth2$` is removed; it never reached a
+persisted or external shape.
+
+## Account deletion local-data cleanup retirement (2026-09-25)
+
+Okou no longer deletes a deleted account's browser or Desktop local data. The
+API removes `POST /api/account-erasure/status-capability` and
+`GET /api/account-erasure/status`; the App no longer issues or stores status
+capabilities, polls deletion status, or purges account-scoped IndexedDB,
+voice-draft or onboarding bytes. Server-side account erasure is unchanged.
+
+An older App bundle or Desktop renderer keeps its detached lifecycle: its
+capability request and status polls now receive 404. Both calls already
+suppress error toasts; the capability failure is settled and a status 404 is
+skipped, so the old client simply stops purging. Its saved
+`account-erasure-status-capability:*` localStorage entries remain inert and
+are not migrated. A new App against an older API makes no such calls. Rollback
+is safe; an older API resumes serving the routes with the same signing key.
+
+## Artifact and hosted-site link layouts (2026-09-25)
+
+The retired VM0 brand survives only as the read-only _legacy link layout_
+(#36766). `LinkLayout` (`packages/api-contracts/src/contracts/link-layout.ts`)
+is `current` or `legacy`; every new publication, upload, generated artifact,
+conversation snapshot and preview grant uses `current`. The layout is resolved
+only from stored data and is never a product identity. Records derived from
+legacy content, such as a share, owner preview or pointer update of a legacy
+site, inherit that content's layout so previously issued links keep resolving.
+
+The persisted layout marker keeps its historical spelling; renaming it would
+break stored objects and deployed Workers:
+
+| Layout    | Segment / marker | Hosted origin                                             | Artifact CDN                     | Pointer namespace    |
+| --------- | ---------------- | --------------------------------------------------------- | -------------------------------- | -------------------- |
+| `current` | `okou`           | `OKOU_HOST_SCHEME`://…`OKOU_PUBLIC_HOST_DOMAIN`           | `OKOU_PUBLIC_ARTIFACTS_BASE_URL` | `sites/brands/okou/` |
+| `legacy`  | `vm0`            | `ZERO_HOST_SCHEME`://…`ZERO_HOST_DOMAIN` (`sites.vm0.io`) | `PUBLIC_ARTIFACTS_BASE_URL`      | `sites/`             |
+
+The segment appears in R2 keys (`artifact-shares/<segment>/`,
+`artifact-delivery/<segment>/html/`, `shared-thread-artifacts/<segment>/`,
+`shared-artifacts/<segment>/`, `private-sites/<segment>/`,
+`private-previews/<segment>/`, `shared-previews/<segment>/`), in the
+`publicBrand` field of stored R2 policies, delivery records, preview grants,
+pointers and manifests, in the `public-brand` object metadata, in the
+`publicBrand` key of `run_uploaded_files.metadata` and chat attachment
+metadata, and in the `link_layout_segment` column (named `public_brand` until
+the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25)) of `hosted_sites`,
+`hosted_deployments`, `private_hosted_deployments` and `artifact_shares`.
+Where a marker is absent — V1 artifact objects, V2 objects and canonical assets
+stored before the marker, pointers and manifests written before it, and
+historical public delivery writes — the layout is `legacy`. Present unknown
+values fail. The host Worker (#36766 slice G) uses the same segment names.
+Conversation snapshots are addressed through
+`shared_threads.link_layout_segment`, which remains their layout marker.
+
+Writers therefore keep emitting the `okou` marker on every current-layout
+object: deployed Workers and an older API treat a missing marker as legacy.
+The API no longer accepts or passes a brand for uploads, generations, hosted
+deployments, integration input files or conversation attachment copies.
+Legacy-layout hosted sites keep serving and keep their names reserved; a new
+publication never redeploys a legacy site and, as before, receives a fallback
+name in the current layout when a legacy site holds the requested name. Artifact preview images are new objects and use `current`; the video
+poster transform still runs on the source artifact's CDN origin. The private
+video poster request always uses the current `files.` host, which the Worker
+accepts for both domains.
+
+Migration `1235_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
+on the four `public_brand` columns, so any writer that omits the column
+records the current layout. The API still writes the segment explicitly on
+hosted sites, deployments, shares and shared threads, using the same layout that
+selects their URLs and keys, so rows do not depend on the migration having run.
+Old API/new DB and rollback remain compatible. The columns, the
+`(site_id, public_brand)` foreign keys and their unique key stay: they are the
+per-row layout marker for roughly 13.4k sites and 22.5k deployments. The
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) renamed the column, its unique key and foreign keys to
+`link_layout_segment` with unchanged values.
+
+Built-in generation jobs no longer read a brand. New job requests kept writing
+`__builtInGeneration.publicBrand = "okou"` until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25), so an older API that completed the job during rollout or rollback
+did not publish its result in the legacy layout. Stored requests that still carry any `publicBrand` value parse and the
+value is ignored.
+
+Environment names are unchanged because renaming deployed secrets is not safe
+in one release: `OKOU_*` configures the current layout and
+`PUBLIC_ARTIFACTS_BASE_URL` / `ZERO_HOST_*` configure only legacy-link
+reconstruction.
+
+## Host-worker storage layouts replace public brand (2026-09-25)
+
+`apps/host-worker` no longer models a public brand (#36766). It resolves hosted
+sites, previews and artifact shares through two read-only storage layouts: the
+**legacy** layout served on `HOST_DOMAIN` (`*.sites.vm0.io`) and the **current**
+layout served on `OKOU_HOST_DOMAIN` (`*.okou.app`). The persisted path segments
+`vm0` and `okou` remain layout constants, so every R2 key the Worker reads is
+unchanged: `sites/` and `sites/brands/okou/` pointers, `private-sites/`,
+`shared-artifacts/`, `private-previews/`, `shared-previews/`, `artifact-shares/`,
+`artifact-delivery/` and `shared-thread-artifacts/` prefixes, the
+`artifact-delivery/{segment}/registration.json` markers, and the
+`/__artifact-content/{segment}/` content-cache keys.
+
+Stored pointers, manifests, grants and registry records keep their historical
+`publicBrand` field. The Worker reads it only as the stored layout segment;
+pointers and manifests without it remain in the legacy layout permanently
+(#28449). Wrangler routes, domains and environment variable names are
+unchanged, and legacy `sh-` shares and the #32492 registration-marker fallback
+keep their existing behavior.
+
+This is a Worker-only refactor with identical request behavior, so it has no
+ordering requirement against the API, and a Worker rollback is safe in either
+direction. The API writers of these objects are retired separately; they must
+keep writing the same key layout and stored segment values until a planned
+storage migration replaces both sides.
+
+## GitHub and workflow automation public brand retirement (2026-09-25)
+
+Okou is the only product brand (#36766). The API no longer reads or writes
+`github_installations.public_brand`, `github_installations.setup_public_brand`,
+`chat_github_context.public_brand` or `chat_automation_context.public_brand`.
+Every value the API wrote there was already `okou`, and no reader changed
+behavior based on it: the setup brand selected by
+`findGithubInstallationByInstallationId` was unused, queued automation
+launches only required a non-null value, and queued GitHub launches now use
+the fixed `okou` run brand, as AgentPhone does. The GitHub webhook and manual
+"Run now" paths no longer pass a brand into workflow automation admission.
+
+Migration `1230_github_automation_public_brand_okou_default` sets the default
+to `'okou'` on `github_installations.setup_public_brand`,
+`chat_github_context.public_brand` and `chat_automation_context.public_brand`
+(previously `'vm0'`); `github_installations.public_brand` already defaulted to
+`'okou'`. An old API therefore reads `okou`, including the non-null automation
+brand its queue drain requires, from rows the new API inserts. Old API/new DB
+and rollback remain compatible. The columns and their Drizzle declarations
+stayed until the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
+
+GitHub App install state no longer carries `publicBrand` / `publicBrandSig`.
+The callback-redirect and requested-scope HMACs no longer include a brand and
+use new `v2` payload tags; the identity signature is unchanged. States that
+omit a brand are no longer treated as a signed `vm0` brand, and brand keys in
+a state are ignored. A GitHub install started on one API version and
+completed on the other fails signature validation and shows the existing
+"Invalid OAuth state" error; the user restarts the install. These states only
+live for one GitHub install round trip, so no compatibility path is kept.
+State-less callbacks (`setup_action=update`, provider errors) are unchanged.
+
+The `workflow-automation:result-email` callback reader no longer declares
+`publicBrand` and strips it instead of rejecting it, so callbacks persisted by
+earlier APIs still parse. The `github:chat` reader ignores the field in the
+same way. Writers still emit `publicBrand: "okou"` in the result-email payload
+because earlier APIs require the key in their strict schema; the generic
+`chat` callback brand and the `github:chat` writer belong to the run-level
+brand cleanup. The [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) removed these writes and raised the rollback
+floor past the APIs that require them. No App, CLI or public contract changes.
+
+## Discord canonical Chat sources (2026-09-24)
+
+The default-off Discord integration adds `discord` to the canonical Chat context,
+public source annotation, Run trigger, input-asset provenance, and billing source
+contracts. The schema migration expands existing CHECK constraints and updates
+`billing_usage_source` without rewriting historical events or billing identities.
+Every existing source remains legal for an older API after migration. New
+Discord writers require the provider tables and these expanded constraints, so
+the normal migration-before-promotion order applies.
+
+The new `discord_chat_deliveries` and `discord_gateway_receipts` tables also
+require the C ownership inventory. Older erasure workers, including workers with
+only the Discord foundation inventory, reject these unknown catalogue tables
+even when the feature is disabled. During the migration-to-compatible-API window,
+affected deletion jobs remain durable and retry after 60 seconds. Promote workers
+with the complete C inventory after migration and keep them available to drain
+the backlog. An API rollback below that inventory stalls those jobs until
+compatible workers return; do not weaken the catalogue guard.
+
+The delivery outbox binds an event to its canonical thread with a composite
+foreign key. Build its supporting `chat_events` unique index concurrently in a
+separate nontransactional migration. Attach a `UNIQUE` constraint with
+`USING INDEX` to reuse that index, then add the outbox foreign key. Expand the
+existing context and billing checks with `NOT VALID`, then validate them in
+a later transaction so scans do not hold the expansion's exclusive table locks.
+
+Discord thread creation uses the preparation API runtime mapping, so its implicit
+INSERT remains legal after the separately authorized legacy allocator contraction.
+The chat event contraction later removed that column and bridge. Discord
+input claims, required per-message context, canonical events and durable ingress
+completion stay atomic; the active mode moves weak thread activity updates after
+commit. Terminal callback replay repairs missing Discord outbox registration.
+The existing bounded late-content sweep also includes Discord context through its
+retained thread ownership.
+
+Discord's private context snapshot is stored separately from the immutable
+user-message document. Public event and snapshot projections carry only
+`{type:"source",kind:"discord",href?}`; binding IDs, authorization material and
+captured channel history are not public source fields. Existing messages keep
+their existing source and attachment shapes. Opaque application/message receipts
+commit with admission and survive connection or Chat deletion, preventing a lost
+ACK from launching the same task after reconnect. Separately namespaced guild
+removal receipts prevent replay from deleting a newer installation. These
+receipts retain no raw event, account identity, channel history or credential.
+
+Older strict public ChatEvent readers in the API and App do not recognize the
+new source literal. The CLI raw-history sync already preserves opaque
+`userMessage` payloads and string context types without projecting them.
+`discordIntegration` and the Gateway remain disabled by default; no production
+Discord records or activation are authorized by this implementation. Fixture
+validation uses matching current readers. Enabling the integration later requires
+compatible public ChatEvent readers and a reviewed activation/rollback plan; a
+rollback to an API that cannot parse Discord source annotations is not supported
+once such events exist. The new feature has no existing production users and
+adds no compatibility fallback or historical backfill.
+
+## Runner claim first-body-chunk timing (2026-09-24)
+
+The Runner records two optional, successful-claim-only operation durations: time after
+response headers until the first non-empty application-visible body chunk, and
+from that chunk until the full body is collected. Their sum is the existing
+`runner_claim_response_body_read` duration; they do not represent a server
+flush or physical wire-byte measurement. The claim request and response,
+including context and auth, remain unchanged. An older Runner emits neither
+operation; the new Runner uses the existing generic operation stream, which an
+older API accepts without a claim-contract change. Missing observations during
+a staggered rollout are not zero-valued timings. Compare deployed cohorts by
+Runner/API version, size, host and time before interpreting a shifted total
+read distribution, because the new observation reads an initial chunk before
+collecting the rest.
+
+## Native Morning Brief execution retirement (stage 2)
+
+Stage 1 removed Native admission in migration 1215 and the public API; the
+2026-09-24 production handoff check found all 456 Native schedule rows in `legacy`, zero
+personal `simpleMorningBrief: true` overrides, ten settled occurrences and
+current Official schedules for each enabled former Native member. Stage 2
+removes the Native cron, internal worker, debug trigger and preview endpoints,
+plus the Native generation/delivery entrypoints. It does not drop or rewrite
+historical tables, messages, email receipts or in-flight source collection rows.
+The two historical source collection attempts still marked `running` had expired
+leases and settled occurrences; their upstream outcomes and billing are not
+inferred and are never replayed by this change.
+
+The old App's Native-only Debug card or a caller of an old preview API may
+receive 404 after API promotion; a new App no longer renders that card. The
+Official Workflow preference, installation and scheduler APIs are retained.
+An older API still in flight can read the persisted `simpleMorningBrief` key;
+new API writes of `true` remain rejected even though the registry key and
+Native collection entrypoints are removed. Historical email admission still
+recognizes the distinct Native template and fails closed; it is not gated by
+the feature switch. No migration drops Native columns or contracts needed by
+retained historical cleanup and scheduling services. Do not remove their fail-closed outbox admission merely because the
+scheduler is gone. Releasing this PR needs a separate authorization and normal
+release/production checks; PR creation is not deployment approval.
+
+## Morning Brief Official-only storage authority (2026-10-07)
+
+This code stage removes all API consumers of the seven retired Native relations.
+`workflow_automations` owns the enabled choice, recurrence and next-run anchor;
+Official automation identities retain dormant choices and stable IDs. Enrollment,
+canonical installation selection, Official schedule claims and result email remain.
+Installation, reconciliation, toggles, timezone edits, admission, completion,
+expiry and lifecycle cleanup neither read nor mirror Native schedules, occurrences,
+collections, generations, deliveries, skips or installed preferences.
+
+Morning Brief expiry is enabled independently of general workflow expiry. A bounded
+lane moves an unclaimed anchor older than 30 minutes to the next future occurrence,
+without creating a Run, incrementing failures or mailing a missed brief. Exact
+Official row predicates and the claim journal fence concurrent admission, edits,
+settlement and expiry. An unsettled Official claim or pending queue input is held;
+reconciliation preserves its empty in-flight slot for completion. Admission holds
+a republished anchor until the current claim settles. Pre-journal callbacks can
+advance only a lineage without any Official claim records.
+
+The distinct historical `morning-brief-result` outbox template is terminally rejected
+before parsing, rendering or provider replay, including a previously committed
+provider request. Its body and rendered request are scrubbed; its provider key and
+an explicit unresolved-outcome error remain until ordinary outbox retention removes
+the failed record. Owner lifecycle cleanup also purges globally retired Native
+unsent intents directly from the outbox, without the former delivery association;
+completed mail and other templates are untouched. Rejection does not imply a previous provider attempt was never
+accepted. `official-automation-result` keeps its existing result callbacks,
+unsubscribe, suppression, retention and idempotent delivery contract.
+
+No database migration accompanies this code stage. Keep all seven tables and their
+columns while the outgoing API drains: old API writers can still require them, and
+old expiry/callback paths may fail to advance an anchor after the new API stops
+mirroring Native state. The new API can recover an unclaimed expired Official anchor
+on a later tick. Neither version re-enables Native execution; old clients continue
+to use the same Official preference and workflow APIs. Rolling back to the previous
+API restores its Native mirror dependency and may restore the stuck-anchor behavior;
+prefer a forward fix. Do not restore an API older than Native execution retirement.
+
+Before removing the Native generation retention worker in production, confirm the
+retired generation store has no remaining content that needs its bounded retention
+and no admitted producer can still write it. Later table contraction requires its
+own release after every outgoing API and worker has drained and the rollback floor
+excludes Native readers. Recheck historical content and Native outbox intents, purge
+as needed, and drop only the seven retired relations. Preserve the anonymous
+`morning_brief_platform_generation_receipts`, Official schedule claims, enrollment,
+workflows, chat events and ordinary email lifecycle. This stage is a code contract,
+not evidence of deployment or production recovery.
+
+## Native Morning Brief storage contraction (2026-10-07)
+
+Migration 1342 drops only the seven retired Native relations: schedule skips,
+occurrences, schedules, deliveries, generations, collection occurrences and
+installed preferences. Child tables are dropped before their parents without
+`CASCADE`; an unexpected dependency aborts the migration transaction. Anonymous
+platform generation cost receipts keep their existing schema and records.
+Official automation identities, claims, enrollment, workflow schedule skips,
+chat history and the ordinary email lifecycle remain authoritative.
+
+The reader/writer retirement in #37874 shipped in API 1.712.4 via #37878. Before
+preparing this contraction, production API 1.712.6 (commit
+`ad381f5bb282aa433ec34ae894a16ed8f4bb4896`) had completed promotion at
+2026-10-07 12:20:41 UTC. The 13:44:55–13:59:55 UTC trace window contained 48,797
+API spans, all on that commit; the API function maximum duration is 300 seconds.
+The existing production rollback floor for migration 1338 is commit
+`a9c3270099034c0f7ee73f6c730b07efa7d1d733`, which includes #37874 and excludes
+APIs that depend on Native storage. Keep that floor when deploying or rolling back.
+
+The production preflight found zero Native generation rows, all 10 Native
+occurrences settled, all 808 schedules in the legacy phase, and no unsent email
+outbox records. Two historical collection rows still say `running`, but their
+leases expired on September 20–21; they are not an active producer. These are
+observations at preparation time, not proof that migration 1342 has run. The
+contraction ships in a separate release; if deployment is delayed or producers
+change, recheck the drain, content, outbox and rollback gates before applying it.
+An API predating #37874 is incompatible with the contracted database; deployed
+retirement APIs and the new API both operate with or without these seven tables.
+
+## Morning Brief settings status and collection account retirement (2026-09-24)
+
+`GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,
+`timezone`, `lastDeliveredAt` or `lastRun`. The App does not validate API
+responses outside tests, so an older App bundle reading the new API sees the
+fields as absent and renders no next-run or delivery badge; a new App reading
+an older API ignores the extra fields.
+
+The `morningBriefChanged` realtime topic is retired: the API no longer
+publishes it and the App no longer subscribes to it, nor refetches the
+preference on `connector:changed`, `slack:changed` or a timezone update. The
+Settings card reflects server state when it loads. An older bundle keeps its
+subscription and simply receives nothing; an older API's publishes reach no
+subscriber in a new bundle. `connector:changed` and `slack:changed` are still
+published for their other consumers.
+
+Native Morning Brief execution no longer computes or writes the per-occurrence
+collection account, whose only reader was `lastRun`. The
+`morning_brief_native_occurrences.collection_facts` column is left in place
+because an older API may still write it during rollout; the new API neither
+reads nor writes it. Mixed versions are compatible: the column is nullable and
+nothing reads it. Rollback is safe; an older API simply resumes writing it.
+
+This API version still declares the column in Drizzle and uses full-row
+`select()`/`returning()` on the table, so the drop follows "Drop a Column as a
+Two-release Contract": first remove the Drizzle declaration in its own release,
+then drop the column in a later migration once every API that declares it has
+drained.
+
+Migration `1274` later dropped the column; see
+[Retired preference and occurrence columns dropped](#retired-preference-and-occurrence-columns-dropped-2026-09-28).
+
+## Discord verified foundation (2026-09-24)
+
+The Discord foundation adds seven new relations, their ownership constraints,
+and an additional unique key on the already unique chat-thread ID plus owner.
+Existing non-erasure API reads and writes remain legal after migration.
+The chat-thread ownership key also makes existing KEY SHARE locks retain the
+thread user until commit. No production writer transfers a thread between users;
+ordinary title, draft and other non-key updates remain legal. Race tests now
+exercise owner changes before the initial pin and observed blocking after it.
+New cleanup/export readers require the migration before API promotion, following
+the existing production release order. There are no historical Discord rows to
+backfill. `discordIntegration` remains disabled for every organization by
+default, and no Gateway or OAuth onboarding is activated by this change.
+
+Old account-erasure workers do not ignore the new relations: their catalogue
+coverage guard rejects tables absent from their compiled ownership inventory,
+even while Discord is disabled. During the migration-to-compatible-API window,
+affected deletion jobs remain durable and retry after 60 seconds; they require
+workers with the Discord inventory to progress. Promote compatible API workers
+after the migration and keep them available to drain this backlog. Rolling back
+to an API with the old inventory stalls those jobs until compatible workers
+return. Do not weaken the catalogue guard or treat feature-off state as erasure
+compatibility.
+
+Status/preferences are new API contracts. No existing client or Runner protocol
+changes. Gateway version 1 carries only Discord event data; the API owns Okou
+identity resolution. Gateway handler/relay implementations land in their own
+slices before activation.
+
+Account exports add a bounded Discord source phase only when owned Discord rows
+exist. Once an opted-in development/test account has a durable export checkpoint
+in that phase, an older API cannot resume it; finish or restart that export with
+the new API. This is a non-GA, default-off surface and introduces no compatibility
+reader or rollback fallback. Application credentials remain environment-owned
+and are never exported or revoked by guild removal.
+
+## Chat search user keyword GIN index (2026-09-24)
+
+Migration `1214_chat_search_user_tsv_gin` installs `btree_gin` and builds
+`chat_event_search_messages_user_tsv_gin_idx` on `(user_id, tsv)` with
+`CREATE INDEX CONCURRENTLY`. It does not block chat search reads or projector
+writes. The build waits for older transactions database-wide, so the migration
+raises `lock_timeout` to 10 minutes and disables `statement_timeout` for its
+own session, then resets both. A failed build is retried from the start: the
+migration drops any INVALID index concurrently before rebuilding it.
+
+The new index keeps `fastupdate`, like `chat_event_search_messages_tsv_idx`.
+The search projector's GIN maintenance now drains both indexes from one shared
+30-second tick budget, so a foreground 4 MiB pending-list flush does not land
+inside a projection transaction. The API role must own the new index for
+`gin_clean_pending_list`, as it does the existing one.
+
+Old API/new DB remains compatible: the old projector does not maintain the new
+index, but the old API only serves until promotion. New API/old DB is not a
+serving combination, because maintenance resolves the new index by name. The
+release must complete the migration before API promotion. Rollback keeps the
+extension and index and rolls back only the API. The search query and its
+responses are unchanged; the planner chooses the new index. The existing
+`chat_event_search_messages_tsv_idx` stays until production plans confirm it
+is unused.
+
+## AgentPhone public brand retirement (2026-09-24)
+
+AgentPhone is Okou-only. Production rows in `agentphone_connection_codes`,
+`agentphone_user_links`, `agentphone_messages` and `chat_agentphone_context`
+were set to `public_brand = 'okou'` before this change (#36650).
+
+The API no longer reads or writes those four `public_brand` columns. Queued
+AgentPhone launches and file materialization use the fixed `okou` brand, and
+`GET /api/integrations/agentphone/link` no longer returns `publicBrand`. No App
+reads that response field, and the App does not validate responses.
+
+Migration `1223_agentphone_public_brand_okou_default` sets the column default to
+`'okou'` on `agentphone_user_links` (previously `'vm0'`), `agentphone_messages`
+and `chat_agentphone_context` (previously no default), matching
+`agentphone_connection_codes`. An old API therefore reads `okou` from rows the
+new API inserts, including the non-null brand that its queued-launch path
+requires, so old API/new DB and rollback remain compatible. The columns and
+their ORM declarations stayed in place until the separate drop below.
+
+The connect link no longer carries `publicBrand` / `brandSig`, and the connect
+request contract no longer declares `publicBrand` / `publicBrandSignature`.
+`app-v0.958.0` (tag commit `9a3f9b6429d1b9d0a1c1400ed49e703038501735`) is the
+first App that neither reads nor posts them; production `app/production` was
+deployed at `66a534132b49` on 2026-09-24 13:24 UTC and later at `63ad2eed786e`,
+both descendants of #36651. App builds `0.954.0` to `0.957.x` still require
+`brandSig` to show Connect, so this change raises the identified-App minimum
+version to `0.958.0`; those bundles receive `426` on their next API request and
+refresh into the live App. Links expire after ten minutes. A body that still
+carries the brand fields is not rejected, because undeclared keys are stripped. An App rollback below
+that release also requires rolling back the API below this change, because the
+older connect page requires `brandSig`. An API rollback below the expand change
+(#36651) also requires rolling back the App, because the older API requires the
+brand fields.
+
+### Column drop (contract step, #36729)
+
+Migration `1228_drop_agentphone_public_brand` drops the four `public_brand`
+columns and removes their Drizzle declarations. Gate evidence: API release
+`api-v1.673.0` (release commit `11339e527110e22cc5c2e2a45a96464af283e0b3`)
+applied `1223` and promoted `api/production` at
+`c6495e1927c69bf5479300e841a9805df59d0a77` on 2026-09-24 23:49 UTC. Every
+earlier production API predates #36722; that deployment and its successors
+contain it.
+
+APIs after #36722 no longer read the value, but they still declare the columns.
+Drizzle names every declared column in `insert` column lists and in bare
+`select()`, so those APIs still reach `public_brand` on all four tables. As with
+`1107` and `1123`, `test:migration-consistency` requires the declaration and the
+physical schema to agree, so declaration removal and the drop ship in one
+release. Migrations run before API promotion. In the window before the previous
+API drains, its AgentPhone connect, inbound-message, user-link and chat-context
+statements receive `42703`. Release this change alone at low traffic; the
+`api-v1.673.0` promotion measured about 20 seconds from migration completion to
+deployment finish.
+
+Rollback promotes artifacts without restoring schema. The production rollback
+resolver therefore rejects API targets that predate the canonical main commit
+that added `1228_drop_agentphone_public_brand.sql`. Recovering past that commit
+requires a forward-fix migration that restores the columns, not an artifact
+rollback. The Slack, Feishu, Teams, Telegram and other `public_brand` columns are
+unaffected.
+
+## Voice input model selection retirement (2026-09-24)
+
+Voice input always uses Gemini 3.1 Flash-Lite on Vertex AI. The Debug
+preferences picker and the OpenRouter and fal transcription paths are removed;
+`POST /api/voice-io/transcribe/segment` no longer reads a member preference.
+
+`voiceInputModel` is removed from the user preferences contract without a
+compatibility window. Its only producer and consumer was the Debug picker behind
+the staff-only `_debug` switch, and the App does not validate API responses. An
+older bundle therefore only shows the default in that staff picker, and a staff
+update that carries nothing but this field is rejected as empty. The
+`org_members_metadata.voice_input_model` column is left in place: the new API
+neither reads nor writes it while an older API may still do so. Drop it in a
+separate migration after older API deployments drain.
+Migration `1274` later dropped it; see
+[Retired preference and occurrence columns dropped](#retired-preference-and-occurrence-columns-dropped-2026-09-28).
+
+## Guest storage batch timing attribution (2026-09-24)
+
+Runner storage batch operations now include optional Guest-server duration, a
+nonnegative Runner-minus-Guest residual when the pair is consistent, and a
+fixed timing state. The API explicitly validates and forwards these fields to
+the sandbox operation log. An older Runner omits them and remains accepted by
+the new API. An older API strips the new optional fields; storage application
+still works, but the extra timing is unavailable until the API is promoted.
+Deploy the API before the Runner to retain the new samples. Mixed-version
+production comparisons must report field coverage and Runner version mix;
+missing timing is never a zero duration. The Guest protocol and storage apply
+behavior are unchanged.
+
+## Guest decoded-storage input attribution (2026-09-27)
+
+A Guest helper with input-phase attribution emits fixed `guest_storage_apply_input_*`
+operation rows only for `--storage-files-stdin`: stale-manifest cleanup, bounded
+stdin read, frame split, manifest parse, combined file decode/validation, and
+mount-binding validation. Each attempted decoded input also emits one zero-time
+`guest_storage_apply_input_payload_bytes_*` row, classified from the framed
+**binary payload**, not the manifest JSON or whole envelope; failed cleanup,
+read or framing yields `unavailable_or_inconsistent`, not zero. A size row has
+`success: true` for the observation even if the input failed; use phase results
+and `download_total` to determine apply success. Later phases are absent after
+an earlier failure. Ordinary manifest modes emit no decoded-input rows.
+
+The actions are additive to the sandbox operation log: older Guest helpers emit
+no input rows, and a failed best-effort log write can also omit a row. Never
+interpret missing data as a zero duration, a zero-byte payload or a successful
+phase. Times are whole milliseconds; the decode phase combines copies and
+validation, not isolated copy time. Row emission itself is not included in the
+preceding phase timer. Pair versions and per-run ordered batches before
+comparing distributions; do not add independently aggregated phase percentiles
+or treat the remaining helper residual as removable decode time. No storage
+protocol, authorization, limit, cleanup or batch-order change is introduced.
+
+## Chat event split-write contraction (2026-09-25)
+
+Release 2 of [the two-release chat event rollout](chat-event-split-write-rollout.md)
+removes the legacy write mode. Production activated split writes at
+2026-09-25 00:06:25 UTC. Migration `contract_chat_event_sequence_bridge` locks
+`chat_threads` and `chat_event_write_control`, fails with SQLSTATE `55000` unless
+the control row is activated, and then drops the allocation bridge trigger,
+its function and `chat_threads.last_chat_event_seq_id`. A database without
+chat threads is activated by the migration. Every other database, including a
+shared preview parent, must run the documented control write first.
+
+Release 1 APIs remain compatible with the contracted schema only in active
+mode: their runtime mapping already omits the column. The rollback resolver
+refuses targets that predate the split writer; the activation marker is
+irreversible, so it no longer reads the database. Never null the activation
+marker or restore a pre-Release-1 binary. Those APIs still read the control row
+on every write, so the table stays until they leave the rollback window.
+
+## Chat event split-write preparation
+
+See [the two-release chat event rollout](chat-event-split-write-rollout.md) for
+the temporary allocation bridge, inactive global control, reader/writer drain,
+activation prerequisites, late-content maintenance, and postactivation rollback
+floor. That release retained the legacy column and bridge; the contraction
+above removes them after activation.
+
+## Codex 0.156.1 OAuth workspace routing
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
 Codex OAuth runs. The guest writes that ID into `auth.json` and both placeholder
@@ -8,15 +4837,72 @@ JWT claims. Access and refresh tokens remain placeholders; the firewall still
 injects real credentials into outbound requests.
 
 The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
-and Pi. This preparatory change keeps the Runner on Codex 0.155.1. An older
-Runner ignores the additive field; a newer Runner served by an older API, or
-claiming a context queued before API promotion, retains the original
-placeholder account ID when the new field is absent. An explicitly empty field
-is rejected as a broken API contract. Deploy this compatible change first;
-upgrade Codex to 0.156.1 only after the API rollout and old claimable contexts
-have drained. The follow-up upgrade and fallback removal are tracked by #36420.
+and Pi. PR #36402 deployed the additive selected-ID field before #36422 upgraded
+the Runner to Codex 0.156.1. The guest now requires a non-empty
+`CODEX_OAUTH_ACCOUNT_ID` in OAuth mode: missing, empty, or whitespace-only values
+fail setup before creating or replacing `auth.json` or the runtime model catalog.
+It no longer substitutes a fabricated workspace identity. API-key, no-auth, and
+Pi behavior is unchanged.
+
+An API containing #36402's writer works with both the previous and new guest.
+An older API or persisted context without the selected-ID field remains
+unsupported with Codex 0.156.1; the new guest rejects it before auth publication
+instead of attempting workspace discovery with a placeholder. The existing
+production rollback resolver requires targets to descend from
+`45b537a596a153a91b76c3bc7223187840f52775` (#37242), which contains the selected-ID
+writer at `422349af6b60adf89b7719a440b89ba76c10e25f` (#36402). This cleanup adds no
+rollback restriction or data migration. Any separately authorized rollback
+before #36402 would also need the older compatible Runner.
+
+Removal evidence recorded for #36420 on 2026-09-30 at 16:54 UTC:
+
+- Read-only MaskDB queries returned zero Codex OAuth runs created before
+  `2026-09-24 00:30:00` in `queued`, `pending`, or `running`, and zero persisted
+  `runner_job_queue` rows before that cutoff across all providers. The cutoff
+  conservatively follows the API writer's recorded 00:18:51 UTC deployment.
+  Execution-context JSON was not retrieved; these are old-row inventories, not a
+  direct field-presence census.
+- Production API deployment `6764085091` at main
+  `12bf1328f729cb92261515cb20331d0d49023a77` succeeded at 16:04:04 UTC and contains
+  the writer. GitHub ancestry comparison confirms the enforced rollback boundary
+  above also contains it.
+- #36422 recorded the owner's confirmation that old Runners and claimable old
+  contexts were drained, plus a successful real Codex OAuth run on local-11.
+  Those are historical upgrade receipts, not a new host-version inventory or a
+  live run of this cleanup head.
+
+Recheck these conditions before merge/release if serving or rollback state
+changes. This cleanup does not change the provider credential-rotation policy
+or claim a workspace-switch fix.
+
+## Chat thread archived flag (2026-09-24)
+
+Migration `1208_chat_thread_archived` adds `chat_threads.archived` (default
+`false`) and the `archived` / `unarchived` thread event kinds. It does not
+backfill: chats whose title starts with ✅ stay unarchived, and archiving no
+longer rewrites titles. Snapshot, metadata and replay readers treat an absent
+`archived` field as `false`, so snapshots compacted before this migration and
+responses from an older API remain valid. Those tolerant reads are rollout
+fallbacks tracked for removal by #36551.
+
+Old API code after the migration stays legal: the column has a default and the
+enum values are additive. New API code must not be promoted before the
+migration, because thread metadata, snapshot compaction and user export read
+`archived` unconditionally; the normal migration-before-promotion release order
+covers this.
+
+Only the new archive routes append the new event kinds, and those routes, the
+CLI commands that call them and the Web archive controls are all behind the
+`ChatThreadArchiving` switch. Web bundles, CLI builds
+and iOS builds from before this change parse thread event kinds strictly and
+fail to read a stream that contains an archive event until they update. A
+rollback of the API below this change leaves already appended archive events in
+the stream for those older readers; roll forward instead.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
+
+Historical rollout record; the current header-less inline branch has since
+been retired as described at the top of this document.
 
 Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
 `chat_thread_snapshots`. Existing rows continue to carry the legacy
@@ -48,6 +4934,10 @@ JSONB after the first R2 write would leave R2-backed snapshots unreadable;
 the production rollback resolver enforces the canonical main commit that first
 introduced `chat-thread-snapshot-object.ts` as the API reader floor. Recovery
 must stay at or above that floor or roll forward.
+
+The legacy JSONB read and the Web App/CLI inline fallbacks described above
+were removed on 2026-09-25. See "R2 chat thread snapshot rollout fallbacks
+removed" at the top of this file.
 
 ## Artifact catalog API handoff (2026-09-23)
 
@@ -153,10 +5043,10 @@ recreated. No schema migration is needed.
 
 The API and commit-addressed CLI now pin Pi 0.87.1. Its native catalog contains
 `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`, so the Pi admission table can
-route those models through Pi when their existing product policy and PiLoop
-switch allow it. This change does not make a model newly addable to an
-organization. GPT-6 Sol and Luna continue to use the global OpenRouter endpoint
-because neither is in the US endpoint allowlist.
+route those models through Pi when their existing product policy allows it.
+This change does not make a model newly addable to an
+organization. GPT-6 Sol and Luna continue to use the global OpenRouter
+endpoint.
 
 New Pi starts require the matching commit-addressed CLI artifact. Older CLI
 artifacts pinned to Pi 0.86.1 cannot resolve these three catalog models. Queued
@@ -271,6 +5161,12 @@ a rollback is unavoidable, restore the guarded worker before any affected
 instance reaches ordinary Browser cleanup.
 
 ## Onboarding model preference
+
+> **Superseded.** Organization model policies and the onboarding model seed
+> were retired with the fixed platform Auto model (#37746, #37856). Onboarding
+> completion no longer reads a Codex or Claude Code choice or writes any model
+> policy; personal subscriptions are connected per member. The text below is
+> kept as history.
 
 New organization seeds use GPT-6 Luna as the Built-in default for both Free and
 paid workspaces. Existing organizations keep their stored default, including
@@ -398,6 +5294,10 @@ cron convergence after release; a deferred watermark is never advanced.
 
 ## Pi stable-context schema rollout and rollback
 
+Status: retired by migration `1343_retire_pi_stable_context`; see
+[Pi stable-context tables retired](#pi-stable-context-tables-retired-2026-10-07).
+The history below describes the original rollout.
+
 Migration 1168, following retained main migrations through
 `1167_private_artifact_absolute_urls`, adds
 `pi_stable_context_erasure_fences`,
@@ -409,17 +5309,13 @@ or production backfill. Deploy the additive migration before an API that writes
 these rows. Existing Runner, Sandbox, CLI and persisted Pi resource-snapshot
 wire readers are unchanged.
 
-Legacy Clerk user and organization deletion closes a one-way subject digest in
-`pi_stable_context_erasure_fences` under the existing account-erasure advisory
-lock, in the same transaction that removes stable-context lifecycle rows. The
-real Clerk membership-cache refresh shares that admission and refuses a closed
-subject; generation initialization, demand registration, and publication make
-the same check. A refresh admitted before closure either finishes first and is
-subsequently cleaned up, or waits and observes the fence. The table is
-feature-local deletion finality: it does not register the dormant account-
-erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
-other product data. Keep stable-context activation on hold until migration 1168
-and this API writer are present on every serving API instance.
+Legacy Clerk user and organization deletion no longer writes
+`pi_stable_context_erasure_fences`, and no writer or reader consults it:
+membership-cache refresh, generation initialization, demand registration,
+publication, and connector, permission and Workflow writes proceed after
+deletion. Migration `1254_drop_account_erasure` drops the table. Keep
+stable-context activation on hold until migration 1168 is present on every
+serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
 generation/head treats the exact variant as missing and uses canonical
@@ -620,6 +5516,37 @@ rather than copying its bytes into a snapshot. This matches the behavior the
 App serving beside this one stays consistent. Existing private hosted
 deployments keep their rows and readers.
 
+Historical named HTML snapshot aliases can be converted to the same rolling
+public-site model. A new public upload may replace its own site's `publication`
+alias after validating the database owner, site, brand, source deployment,
+policy and retained token alias. It publishes the active pointer before changing
+the named registry record to `legacy-site`; conditional writes and site/share
+row locks preserve unrelated aliases and make interrupted completions retryable.
+An older completion also retains a newer R2 pointer if a previous database
+transaction failed after publishing it. The named URL and its download both
+follow the active deployment; `dpl-<deployment-id>` URLs remain immutable.
+
+The HTML delivery registry now bypasses the Worker's former 24-hour cache,
+including entries warmed by an older Worker. Deploy that Worker and the API
+writer change, and drain older serving API instances, before running the
+[bounded historical pointer migration](../turbo/packages/db/scripts/migrations/018-hosted-publication-pointers/README.md).
+The migration bootstraps the currently public snapshot without changing its
+bytes or presentation kind, verifies one canary before the remaining sites,
+and has no schema migration. Production execution uses an explicit reviewed
+site list and a private saved plan; public Actions artifacts contain only
+aggregate results. Deployment of this code does not run the migration.
+
+Old HTML share writes to Public or Organization return an actionable `400`;
+owner revocation remains supported. Snapshot policies lose only their named
+`publicSlug` during conversion, so the retained token still reads that snapshot
+and can be revoked independently of the public site. A fresh owner upload may
+replace its own revoked snapshot alias without reviving the token, but the
+historical bootstrap refuses revoked snapshots. File sharing is unchanged.
+Do not restore the older HTML snapshot writer after conversion: it can claim
+the named alias again or reject a redeploy. Roll forward with these ownership,
+token-reader and registry-cache fixes retained; never revert a migrated alias
+after its site has accepted a newer publication.
+
 Delivery caches accordingly. HTML documents are served `no-store` on public
 aliases, private previews and shared snapshots, because a redeploy replaces them
 under one address. Every other path keeps its existing policy, so prepare rejects
@@ -664,15 +5591,14 @@ the main-owned resolver before the physical drop deploys. Its API-only floor
 does not constrain the independently retained Runner tag. A migration journal
 entry cannot prove this serving/rollback boundary.
 
-New prepares bind each upload URL to its declared SHA-256 through the signed
-`x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
-`Content-Type`; identical-byte retries work, while different bytes fail R2's
-checksum validation. The root `/manifest.json` path is reserved for the server's
-delivery manifest. New database manifests carry `immutableContent: true`, which
-the API copies into its server-issued preview grants. The Worker trusts the grant
-for cache eligibility because old uploads could target `/manifest.json`. Completion of
-older drafts does not add that marker because their outstanding upload URLs
-were not checksum-bound.
+The earlier query-parameter checksum design was not deployed: development R2
+accepted different bytes under that signed URL, so it did not establish byte
+immutability. The root `/manifest.json` path is reserved for the server's
+delivery manifest. Database manifests may carry `immutableContent: true`, which
+the API copies into server-issued preview grants, but the marker does not
+prevent a holder of a still-valid direct PUT URL from replacing object bytes.
+Do not infer storage immutability from cache eligibility; see #37241 above.
+Completion of older drafts does not add the marker.
 
 The host Worker uses the shared `PRIVATE_ARTIFACT_CACHE_CONTROL` for successful
 private previews of marked deployments and immutable organization snapshots.
@@ -1003,69 +5929,57 @@ immutable: the publish step fails the release when the version already exists
 with different bytes, so one CLI version identifies exactly one bundle and the
 semantic version can serve as a compatibility identity.
 
-The runner build (`runner build --okou-cli-artifact DIR`) installs the versioned
-bundle into the rootfs customize layer at `/usr/local/lib/okou-cli/<version>/`
-with a `/usr/local/bin/okou` launcher and an installed manifest at
-`/usr/local/lib/okou-cli/installed.json`; the bundle bytes and the manifest are
-part of the rootfs hash, and `verify-rootfs.sh` asserts the install. Release
-runner builds install the CLI version tagged in `.release-please-manifest.json`
-at the same release commit; preview images install the commit artifact of their
-own head commit. A build without the artifact carries no CLI and keeps only the
-commit-addressed path below.
+A Runner compiled with an embedded CLI bundle installs its verified
+`package.tgz` into the rootfs customize layer at
+`/usr/local/lib/okou-cli/<version>/`. The compiled version, Pi SDK and session
+identity are validated against the explicitly supplied package manifest during
+compilation; only the package bytes are embedded. `runner build` stages those
+bytes alongside the embedded Guest binaries and writes `/usr/local/bin/okou`
+and `/usr/local/lib/okou-cli/installed.json`. The package bytes and installed
+manifest are part of the rootfs hash, and `verify-rootfs.sh` checks the
+installed manifest against the verified identity.
+
+New Runner binaries no longer accept `--okou-cli-artifact DIR`, and current
+release/preview orchestration does not stage a separate host CLI artifact. A
+local Runner compiled without embedded resources can still build a CLI-free
+rootfs with explicit Guest binary paths; Pi then uses the task's captured
+`CLI_PKG_URL` through `npx`. Already-deployed older Runner binaries retain their
+historical host-artifact option until replaced. Neither that old binary behavior
+nor the Guest's commit-addressed runtime fallback is removed retroactively.
 
 Compatibility is negotiated per run rather than by deployment order:
 
-- `piLaunchConfig.apiFirstTurn` carries two optional fields:
-  `requiredPiAgentRuntimeVersion` (the runtime the backend prepared the
-  API-first turn with) and `minCliVersion` (the lowest CLI release that
-  understands the current launch payload). They are optional so contexts
-  captured by earlier backends remain valid.
-- **The backend writes them.** This launch config is persisted in the
-  encrypted queue payload and decoded by whichever API instance serves the
-  claim, and `piApiFirstTurnConfigSchema` is strict, so a backend from before
-  these fields existed rejects a payload that carries them. The tolerant reader
-  shipped first with the writer off, in `8d8f3a3e14d23f7471e0773bd9acb988f59217af`
-  (#36000, released as api 1.657.0 in `1807fbf7e37dc98e99793a57e7799f6dc804ad53`);
-  the writer followed in its own release after that API was promoted. This is
-  the same staging the API-first usage handoff producer (#35413) used.
-
-  **API rollback floor: `8d8f3a3e14d23f7471e0773bd9acb988f59217af`** (#36000's
-  merge commit). An API artifact that predates it rejects, at claim time, every
-  queued Pi run created after the writer was enabled. The production rollback
-  resolver (`.github/scripts/resolve-production-rollback-target.sh`) enforces
-  the floor for API targets; verify manually with
-  `gh api repos/okou-ai/okou/compare/8d8f3a3e14d23f7471e0773bd9acb988f59217af...<artifact-sha> --jq .status`
-  and require `ahead` or `identical`. Retained Runner tags are not constrained:
-  the guest ignores unknown launch-config fields.
-
-- `piLaunchConfig.apiFirstTurn` also accepts the optional
-  `requiredPiSessionConstructionDigest`: a build-time SHA-256 over the
-  code-determined session construction (the system prompt template and the
-  ordered tool schemas for fixed inputs, one profile without and one with the
-  memory tools) that `@okouai/pi-agent-runtime` commits in
-  `session-construction-digest.json` and whose test fails while it is stale.
-  Every CLI artifact manifest carries the same value as
-  `sessionConstruction.digest`, and the runner build copies it into the
-  installed manifest. It moves only when code that feeds the constructed
-  session changes, in whichever package that code lives, whereas
-  `piAgentRuntime` also moves on dependency-only release bumps and therefore
-  forced the `npx` launch after most releases. **The backend writes it now**:
-  the reader shipped first in `322efb6d72508e15b90dc788100a776da1485751`
-  (#36142, released as api 1.659.0 in
-  `3ffd0d5086a02cd8328cf60defab7a242b682273`), and the writer followed
-  after that API was promoted. The production rollback resolver enforces this
-  reader as an additional API floor so old strict readers cannot claim queued
-  runs carrying the digest. Retained Runner tags are unaffected.
-- The guest agent execs the installed CLI only on a parity match at or above
-  the CLI floor. When the launch config carries
+- The captured execution context carries `piInstalledCliRequirement`, forwarded
+  by the Runner to the Guest. Its runtime version, minimum CLI version and
+  session-construction digest are separate from the strict `piLaunchConfig`.
+- `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` remains `9.370.3`. The Guest uses an
+  installed CLI only when its manifest satisfies the captured launch-payload
+  floor and runtime/session identity; otherwise it uses the run's
+  commit-addressed `CLI_PKG_URL`. New releases do not automatically raise the
+  compatibility floor.
+- `requiredPiSessionConstructionDigest` is a build-time SHA-256 over the
+  code-determined session construction that `@okouai/pi-agent-runtime` commits
+  in `session-construction-digest.json`. CLI artifact manifests carry it as
+  `sessionConstruction.digest`, and Runner builds copy it into the installed
+  manifest. It changes when session-construction inputs change, independently
+  of dependency-only runtime version bumps. The current rollback resolver's
+  independent floors already exclude APIs predating this context contract.
+- Official Runner binaries embed the source-bound CLI package alongside their
+  Guest binaries. A local full rootfs build without a bundled CLI remains
+  possible; neither preview nor production image preparation downloads a
+  separate CLI artifact onto the Runner host. Production Runner compilation
+  reuses the release target's verified canonical Turbo CLI package and manifest
+  retained by the versioned publisher; it does not rebuild CLI independently.
+  The guest agent execs only the installed CLI on a parity match at or above the
+  CLI floor. When the launch config carries
   `requiredPiSessionConstructionDigest`, parity means the installed manifest's
   `sessionConstruction.digest` is identical, and an installed CLI without a
   digest fails parity; otherwise parity means the installed `piAgentRuntime`
   equals `requiredPiAgentRuntimeVersion`. The installed `cli` must be at or
-  above `minCliVersion` in both cases. Every other case launches the
-  commit-addressed package through `npx`, which is always built from the
-  backend's commit; a launch config without the fields, or a rootfs without an
-  installed CLI, always takes the `npx` path.
+  above `minCliVersion` in both cases. Missing or incompatible installed
+  metadata selects the existing `npx` path using the task's API-captured
+  `CLI_PKG_URL`, not a moving latest package. A missing package URL on that
+  path still fails the run explicitly.
 - The runner advertises the installed versions as an optional `installedVersions`
   field of the claim body. Older backends ignore it; the current backend records
   it in claim telemetry as `runner_installed_cli_version` and
@@ -1074,18 +5988,21 @@ Compatibility is negotiated per run rather than by deployment order:
   artifact has a digest. The backend records it as
   `runner_installed_pi_session_construction_digest`; older installed artifacts
   omit it.
-- The CLI restarts a pending-tool API-first handoff from H0 as `sandbox-first`
-  when the required session-construction digest, or without one the required
-  runtime version, differs from what it bundles. A settled-session continuation
-  is a complete checkpoint and is never discarded for a parity difference.
+- Parity is checked by the Guest before spawning the CLI. A parity miss selects
+  the task's captured package rather than changing the restored session or
+  executing the incompatible installed bundle. The sandbox CLI opens the
+  restored session through the official RPC host; no digest-based H0 restart
+  is performed by that CLI path.
 
-Skew in either direction is therefore safe: a new backend with an old runner
-emits the fields into a launch config the old guest ignores, because the
-generated Rust bindings do not deny unknown fields; a new runner with an old
-backend sees no required version and launches through `npx`.
-Raise `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or
-handoff field becomes required. Retiring `CLI_PKG_URL` and the `npx` path
-follows the drain procedure below and is tracked in #35967.
+An old backend that omits the installed-CLI requirement keeps using the
+captured `CLI_PKG_URL` through `npx`. Queued contexts requiring a newer or
+otherwise incompatible CLI also retain this path rather than executing the
+incompatible rootfs install. The installed CLI is a parity-checked fast path,
+not an admission requirement; retaining the existing fallback avoids failing
+runs solely because API and Runner releases differ. Network/package failures
+on the fallback can still fail a run, and production rollout verification is
+still required. Continue raising `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION`
+whenever a launch-payload or handoff field becomes required.
 
 ### Commit-addressed CLI artifacts
 
@@ -1333,7 +6250,24 @@ provider ownership, a larger saved checkpoint selects sandbox-first execution
 from blob metadata. A V4 ownership-transfer manifest carries a presigned history
 reference; only the sandbox downloads and decompresses H0 for the next turn. The
 API still validates complete H2 history at checkpoint time, so its peak memory
-and validation work can exceed the raw file size.
+and validation work can exceed the raw file size. Like Claude and Codex, a
+Guest with Pi compact-generation selection attempts to select a 64 MiB-or-less
+native JSONL generation when the source exceeds 64 MiB, preserving the session
+ID, active context and latest native session name (including an optional name
+that clears an earlier title). A compact with no kept pre-compact entries can
+start that selected path itself. The Guest replaces its live file only after the
+API accepts the checkpoint. If selection or replacement staging fails while the
+original still fits within the 128 MiB upload bound, the Guest uploads the
+original instead. When the original exceeds that bound, selection
+failures (including unknown native record kinds, unsafe opaque extension state,
+globally visible labels or retained references) and replacement staging
+failures cause the new Guest to fail explicitly rather than send a missing H2
+hash. A late bounded-read size failure during a success checkpoint likewise
+fails locally. An older Guest can still fail the existing H2 hash check on
+oversized Pi files until its running jobs drain. New and old APIs read the
+selected native v3 H2 through the existing blob/hash contract; no wire change or
+migration is introduced. Rolling back the Guest restores the old oversized-file
+failure for new runs, but committed bounded native histories remain readable.
 
 V3 manifests remain the active format for API-produced H1 and small
 sandbox-first H0. The CLI accepts both formats and retains the same V2 Guest
@@ -1342,10 +6276,10 @@ CLI changes must ship through the same commit-addressed CLI artifact selection.
 Previously captured contexts retain their package and history reference; new
 contexts select the new reader. Old Runners already support 128 MiB history.
 
-Pi is enabled by default through `PiLoop`. Rolling the API back below this change
+Eligible routes use Pi. Rolling the API back below this change
 restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
-There is no history truncation, migration, or alternate reader for that rollback.
+That API rollback adds no stored-history rewrite, migration, or alternate reader.
 
 ### Pi Langfuse trace relay
 
@@ -1450,8 +6384,8 @@ from `X-Native-Gpt-6-Sol`: a Sol-capable artifact predating Luna must leave Luna
 jobs pending. The API excludes unsupported Luna jobs before the bounded poll
 lookup and rejects an unsupported direct claim with `404`, without changing the
 queued job. New Runners send both headers, while older APIs ignore the new
-header. No organization default or stored selection changes; a new catalog row
-must be admitted separately before an organization can add the model.
+header. No stored selection changes; the model is available only through a
+member's personal Codex subscription route.
 
 #### GPT 6 Sol native model readiness
 
@@ -1460,8 +6394,8 @@ whose bundled Guest supports GPT 6 Sol and its reasoning efforts. The API checks
 this capability after authorizing and validating the stored context, before
 claiming native `gpt-6-sol` or `openai/gpt-6-sol` work. A claimant without the
 exact capability receives the existing claim `404`; the job stays pending for
-a capable Runner. This covers Built-in and BYOK routes without changing any
-organization default or stored selection.
+a capable Runner. This covers personal subscription routes without changing any
+stored selection.
 
 Poll excludes unsupported Sol jobs before applying its candidate limit, so old
 Runners can still discover existing models behind a Sol job. Claim repeats the
@@ -1474,28 +6408,14 @@ existing models but cannot consume Sol jobs. Sol work waits until a supporting
 Runner is available. The capability remains necessary while an incompatible
 Runner is a supported rollback target; no database migration is involved.
 
-#### Claude Opus 5.5 native model readiness
+#### Claude Opus 5.5 native model readiness (retired)
 
-Poll and claim requests advertise `X-Native-Claude-Opus-5-5: 1` only from
-Runner artifacts whose bundled Guest accepts Claude Opus 5.5, its gateway alias,
-and the model's reasoning efforts. The API checks this capability before an old
-Runner can claim Claude Code work whose canonical `modelUsageProvider` is
-`claude-opus-5-5`. The logical identity is used instead of `ANTHROPIC_MODEL` so
-the guard also covers OpenRouter, Vercel, Azure deployment names, Bedrock
-foundation models and opaque cloud profiles.
-
-Poll excludes unsupported Opus 5.5 jobs before applying its candidate limit, so
-old Runners can still discover existing work behind one. Claim repeats the
-check for direct notifications and previously discovered work. A claimant
-without the header receives the existing claim `404`; the job remains pending
-for a capable Runner.
-
-The header leaves strict request bodies unchanged and is ignored by old APIs.
-During API-first promotion or Runner rollback, old Runners continue executing
-existing models while Opus 5.5 work waits. The model remains on the Claude Code
-harness until the pinned Pi catalog can resolve and verify it. No organization
-default or stored model selection changes, and no database migration is part of
-this compatibility boundary.
+The `X-Native-Claude-Opus-5-5` Runner capability and its poll/claim guard were
+removed with the expired compatibility cleanup (#37056); every serving and
+rollback-eligible Runner accepts Claude Opus 5.5. No API capability guard keys
+on `modelUsageProvider`, so a route pricing alias cannot bypass one. A future
+model capability guard must key on the run's actual model or captured route,
+never on the pricing identity.
 
 #### Runner process drain
 
@@ -1863,7 +6783,7 @@ remain compatible during the additive database migration and traffic overlap.
 
 Balance failures keep `insufficient_credits` for vm0 credit admission and add
 `provider_insufficient_credits` for upstream model-account balance. Completion
-stores that real failure reason for both BYOK and built-in runs. Public presentation
+stores that real failure reason for both personal-subscription and built-in runs. Public presentation
 uses persisted run ownership to display a platform-owned balance failure as
 "The current model is unavailable." and omit its billing reason from public chat
 metadata. Model unavailability is presentation, not a completion failure reason.
@@ -1886,7 +6806,7 @@ target and its independently resolved Runner tag, preventing an older writer or
 public reader from returning for new runs.
 
 This change does not certify alert delivery. #34219 remains open for actual
-built-in/BYOK production samples, Axiom monitor configuration and delivered-alert
+built-in/personal-subscription production samples, Axiom monitor configuration and delivered-alert
 verification. Runner INFO events are below the Axiom upload threshold, and the
 investigation token could not read monitor configuration.
 
@@ -2036,6 +6956,10 @@ from current `main`, so merging the floor constrains future canonical
 executions without a release or test rollback.
 
 ### Plan capability snapshot rollout compatibility
+
+> **Historical record.** The BYOK plan capability described here was retired
+> with organization BYOK (#37746, #37856); only the concurrency values remain
+> current.
 
 Migration `1187_expand_free_concurrency_byok` backfills only product-managed
 `org_plan_entitlements` rows for the Free concurrency/BYOK and Pro concurrency
@@ -2494,16 +7418,18 @@ triggers, and views after that release drains.
 SSH, including Direct and Cloudflare Access, is generally available. The
 `sshAccess` registry entry, overrides consumer, UI gates and API/Run gates are
 retired together. Existing registered-key filtering ignores retired overrides;
-no migration, data deletion or rewrite is needed. Owner isolation, Agent grants,
-winning Run/Runner authority, credential encryption and host trust remain required.
-The existing Run-lifetime authority cache and missed-notification window are unchanged.
+no migration, data deletion or rewrite is needed. Owner isolation,
+[chat remote access](thread-remote-access.md) host permission, winning
+Run/Runner authority, credential encryption and host trust remain required.
+The Run-lifetime authority
+cache and missed-notification window remain unchanged.
 
 Promote the API before the App. An older API can still enforce its rollout switch;
 the App retains its existing unavailable/error handling for that response, never
 an authorization bypass. Older loaded Apps may hide SSH until refreshed. Already
 created Runs retain their minted capabilities and prompt snapshot; create a new
 Run to obtain SSH guidance and capabilities. Runner/guest/CLI DTOs and stored
-hosts, credentials, pins, grants and observations do not change. Source-level GA
+hosts, credentials, pins and observations do not change. Source-level GA
 does not attest deployment state or waive the protected-reader constraints below.
 
 ## Cloudflare Access for SSH
@@ -2512,7 +7438,8 @@ The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
 Direct and Cloudflare Access are generally available with no rollout switches;
-the SSH Agent grant still covers both. The initial delivery used the
+the same [chat remote access](thread-remote-access.md) host permission applies
+to both transports. The initial delivery used the
 [pre-GA policy](fallback.md) and keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
@@ -2524,8 +7451,8 @@ acceptance and the owner-approved evidence boundaries at closure. #36038 added
 the standalone `/connectors/cloudflare-access` entry after SSH and VNC, and
 #36150 / PR #36152 removed the duplicate top-level management tab from
 `/connectors/ssh`. Access is reusable owner configuration, not a separately
-authorized Agent service. SSH remains its first consumer under the existing SSH
-Agent grant; general availability does not replace that permission.
+authorized Agent service. SSH remains its first consumer; current Run access
+requires the chat's effective permission for the exact SSH host.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
@@ -2629,9 +7556,9 @@ organization; a database trigger additionally rejects another user's personal
 Access. Organization rows have no user owner. A host with a null Access ID and
 `needs_rebind=true` remains a protected, unusable host with its 443/FQDN target
 and host-key pin intact, not a Direct host. Runner resolution, pinning and
-observations return unavailable, and Agent inventory omits it before any token
-decryption. The old SSH management response cannot represent this state and
-fails closed; no production path creates it in this foundation release.
+observations return unavailable before any token decryption. The old SSH
+management response cannot represent this state and fails closed; no production
+path creates it in this foundation release.
 
 The outgoing API remains compatible with the migrated schema for existing
 personal/Direct data: omitted columns receive their defaults, and its existing
@@ -2680,6 +7607,165 @@ shared row is bound, rolling back to a pre-foundation API or Runner is unsafe
 without first restoring a compatible authority reader. The temporary
 personal-only projection is retired only after #36261's rebind-capable App is
 live and #36262 raises the verified minimum App version.
+
+### Organization-to-personal Access conversion (#36262)
+
+PR #36449 (#36261) first shipped the rebind-capable App in `app-v0.954.0`.
+That tag targets commit `c0cb8cd57d3575a3a82045b0d4bfe8993cdf14b1`;
+the [production release run 35962027995](https://github.com/okou-ai/okou/actions/runs/35962027995)
+successfully promoted its App Worker at 2026-09-24 06:15 UTC and recorded
+version `0.954.0` on `app.okou.ai`. Production `app.okou.ai` was subsequently
+verified serving App `0.955.0` at commit
+`056f5ab8c347b116352f5353fb304b19796fa1c6`, a descendant of #36449's
+merge commit `f129327db18170f2bf9f43fae9bc9ec2245a9cf5`. The production
+App Worker promotion in [release run 35966963095](https://github.com/okou-ai/okou/actions/runs/35966963095)
+completed successfully on 2026-09-24. The later #36262 release raises the
+identified-App minimum version to `0.954.0`, so older identified Apps receive
+`426` before route matching and can refresh into the already-live recovery UI.
+It also retires the bounded personal-only Access response projection; current
+App requests already use `view=scoped`.
+
+Before #36992, the original conversion-preview endpoint contained only an
+aggregate count of other owners' SSH hosts and an opaque impact snapshot. The
+action requires a current organization admin, expected Access revision, and
+unchanged impact. The transaction locks
+the Access row before host rows, detaches other owners' references into
+`needs_rebind`, advances effective generations, then makes the same Access row
+personal to the admin without decrypting or replacing its Service Token.
+Admin-owned SSH references remain bound. After commit, Access-list and affected
+owner SSH/Runner invalidations are published. The existing best-effort notice
+limit still applies: a missed invalidation can leave cached authority usable
+for the remainder of an active Run; end the Run when immediate revocation is
+required.
+
+Migration `1210` must run before this API is promoted. Conversion writes cannot
+be rolled back to a pre-foundation API/Runner or an App older than `0.954.0`:
+those readers do not understand a retained protected host with no Access ID.
+Roll forward with compatible readers instead of interpreting such a host as
+Direct or deleting it. The API promotes before the App in the normal release;
+the prior production App verification makes that order safe for this writer.
+
+### Personal-to-organization Access promotion and reviewed deletion (#36707)
+
+Migration `1222` extends the database scope-change guard to allow the narrow
+Personal/owner -> Organization/no owner transition within the same
+organization, without moving the row, decrypting its Service Token or
+replacing existing SSH bindings. Deploy this migration **before** enabling the
+new API route. A current admin may promote only their own Personal row after
+reviewing its expanded audience; existing owner-host generations advance.
+Existing zero-reference DELETE and name/token PATCH request shapes remain
+compatible with scope-aware clients. Older API binaries remain compatible with
+the expanded trigger until new state is written; they do not offer the new
+promotion or reviewed delete operations.
+
+Before #36992, the legacy deletion-preview endpoint let a current admin review
+Organization deletion impact with owner identity and per-owner host counts. The
+optional opaque snapshot is required only when other owners' hosts are affected. DELETE rechecks the exact revision and host
+set under the Access-before-host lock, blocks any actor-owned reference, and
+atomically detaches only other owners' references into `needs_rebind` before
+deleting the config (the same-org FK remains restrictive). Profiles missing
+from the member directory are shown by stable owner ID; their hosts still
+count. Any changed host set requires a fresh review. No affected-member
+message, new SSH/Runner cache invalidation or active-Run cancellation is
+added by this delete path. Fresh reads and SSH resolutions treat retained hosts
+as protected and unusable until explicitly rebound. An already-running Run
+may retain cached capability until completion; this is an accepted bounded
+Run-lifetime window, not immediate revocation.
+
+The already-shipped rebind-capable App and shared-aware Runner are prerequisites.
+After a member binds a promoted row or a reviewed deletion writes
+`needs_rebind`, rollback to pre-foundation API/Runner or pre-rebind App is
+unsafe; roll forward with compatible readers. The API-before-App release order
+is safe once migration `1222` and those prerequisites are verified.
+
+### Cloudflare Access trigger retirement (#37355, #37369)
+
+The SSH create/update writer validates a referenced config in its transaction:
+it selects only a same-organization shared config or the actor's own Personal
+config with a config-row `FOR SHARE` lock before binding. Inline SSH creation
+inserts its Personal config in the same transaction. Config creation limits
+Organization scope to current admins; name/token update, reviewed delete and
+both conversion writers lock the config `FOR UPDATE` before changing it.
+Organization-to-Personal conversion detaches affected other-owner bindings
+before the scope change. Credential rotation, Runner pin updates and chat access
+updates change other SSH fields; Clerk user/org erasure deletes SSH references
+before their configs. The same-organization FK and scope/destination/rebind
+CHECKs remain independent database constraints.
+
+Personal-to-Organization promotion additionally checks only references to the
+selected locked config for a different owner, rejecting an incompatible
+retained binding before any update. Migration `1290_retire_cloudflare_access_triggers`
+then drops the two legacy Cloudflare Access triggers and their unused functions
+without replacing them. It retains historical migrations and ordinary
+constraints. Privileged direct SQL no longer receives these trigger-specific
+ownership and transition checks; use the supported API writers instead.
+
+**Mixed-version release boundary:** the owner chose one PR for the writer and
+contraction. Migrations run **before** the new API is promoted, and API rollback
+does not reinstall triggers. At the 2026-09-29 12:55 UTC inspection, the
+production Vercel aliases `api.okou.ai` and `api.vm0.ai` both resolved to READY
+API deployment `dpl_3VXLTDFhv46gJcnVPjSc4hs4EXac` at
+`8d7d64c6ca9daac1d35ed50d2e44fe19006998f7` (`api-v1.698.0`). The
+current rollback resolver already rejects APIs before the canonical commit
+`bb7996407cbf06854852966ef1c5fc04a390d4d2` that adds migration 1287.
+At that floor, the Cloudflare/SSH binding and owner-cleanup writer files are
+identical to the pre-PR main: supported old writers already reject another
+user's Personal binding and serialize scope/binding changes through config row
+locks. They lack the new promotion-side defensive check for an already corrupt
+retained binding, but supported writers could not create that state while the
+legacy triggers were enabled. The owner accepted this bounded migration-first
+window, not a general guarantee for external SQL, catalog drift or corrupted
+rows. Recheck the serving aliases and rollback floor before releasing the
+contraction. A PR merge, CI pass or smoke-clone migration does **not** establish
+production migration journal completion; record it only after the real release.
+
+### Cloudflare Access impact-review presentation (#36988)
+
+The new App requests the admin-only `GET /api/cloudflare-access/configs/:configId/impact-preview`
+with `operation=convert|delete`. It receives affected-member identities and one
+aggregate count of other-owned SSH hosts; it never receives another member's
+host ID, name, destination, credential or per-member host count from this new
+endpoint. The action's expected revision and exact impact snapshot are the
+same guarded values used by the existing conversion and deletion transactions.
+Directory names are best-effort: a null name does not establish former
+membership. The App shows an ID suffix only to disambiguate missing or duplicate
+names and never normally prints complete raw member IDs. Neither operation
+sends notifications or changes `needs_rebind`/Run/VNC behavior.
+
+### Legacy Access impact-preview retirement (#36992)
+
+The first named-preview App, `app-v0.970.1`, targets
+`56980b16a2d241acd05d29de63d5ff7d0a9a8019` and includes #36991 merge
+`b3119bb78e8523e6ce5dab33a541e4b5851aff81`. Production App Worker
+[deployment 6676046456](https://github.com/okou-ai/okou/deployments/6676046456)
+succeeded at `54f7df05ceb1446b8ff7db129dac302ac2d9fb94` with App `0.970.2`
+on 2026-09-26 07:23 UTC. Production API
+[deployment 6676030640](https://github.com/okou-ai/okou/deployments/6676030640)
+succeeded at that same commit on 2026-09-26 07:21 UTC; the later
+[deployment 6678761353](https://github.com/okou-ai/okou/deployments/6678761353)
+succeeded at descendant `00d9e144332c817636eeba3932fc86922d3c6db4`
+on 2026-09-26 12:23 UTC. All these releases include the new route.
+
+#36992 raises the identified-App minimum from `0.963.3` to `0.970.1` in the
+API, so an older App advertising a parseable version receives `426` **before**
+route matching on its next handled API request. An already-open tab must choose
+to reload; there is no forced background refresh. The general minimum-version
+mechanism does not force-upgrade a missing or unparseable version or a non-App
+client. The legacy `/conversion-preview` and `/deletion-preview` routes and
+response contracts are removed, as are the new App's 404 retries to those
+routes. The new `impact-preview` remains admin-only and returns identities and
+aggregate SSH host usage; conversion and deletion still recheck the exact
+snapshot and revision. A client that calls a removed route no longer obtains
+per-owner usage from it.
+
+At the requester's explicit direction, **older production rollback artifacts
+are not supported by this cleanup**. The production rollback dashboard still
+records older API/App releases; this change does not prove them compatible or
+remove them from history. Rolling API or App back below the #36991 and `0.970.1`
+boundaries requires a separate coordinated compatibility decision. Production
+API promotes before App; the capable App has already been confirmed live before
+this minimum is raised. Neither VNC enablement nor a production deployment is
+performed by the issue implementation PR.
 
 ## Feishu and Lark integration identity
 
@@ -2811,6 +7897,51 @@ discriminators. Roll back the Runner before the API; once a Runner can advertise
 X509Plain, retain the widened API request/response contract for the lifetime of
 that process.
 
+## VNC X509None owner-selected rollout (default off)
+
+Migration `1289_thick_bruce_banner` makes `vnc_connections.credential_id` nullable only for the
+exact `none` / `x509_none` profile; existing credential-backed rows and the
+retained direct-route default keep their meaning. Apply it before promoting an
+API that can write credentialless rows.
+
+- Old App with new API: existing credential-backed responses retain their shape.
+  An App predating this profile cannot be relied upon to read or edit new
+  credentialless metadata. Do not admit X509None rows while such clients need
+  to manage the owner's VNC hosts; a cached old App needs a refresh after the
+  compatible App is available.
+- New App with old API: the default-off switch keeps this owner flow hidden.
+  If staff enable it across a mixed deployment, the old API rejects X509None
+  selections and cannot return the new response shape; there is no fallback to
+  a credential-backed profile.
+- Old Runner with new API: its advertised profile list lacks the exact
+  `none` / `x509_none` tuple, so resolving such a saved row returns
+  `unsupported_profile` before KMS or a session. Existing profiles retain their
+  existing behavior.
+- New Runner with old API: it advertises the added direct and SSH tuples even
+  when resolving an older connection. The old strict `supportedProfiles`
+  request schema rejects that list, so **all** VNC resolves on that pairing
+  fail closed. Promote the compatible API before the new Runner; do not retry
+  with an old profile list or infer a downgrade.
+
+Before any X509None row is admitted, every serving API reader and intended API
+rollback target must understand the nullable credential and the new response
+variant; deploy the compatible App for owners who may encounter that row. An
+older API's credential inner join omits such rows, so rolling back below that
+reader after an X509None row exists is unsafe even if `VncAccess` is disabled
+again. A later rollback below the reader floor needs a separate verified data
+and drain decision. No merge, migration, CI result or this compatibility
+assessment activates `VncAccess` or certifies an Agent/server acceptance run.
+
+## VNC owner-selected QEMU client certificates (default off; #37375)
+
+Migration `1296_little_electro` follows `1295_chat_thread_canonical_session` and adds nullable `vnc_credentials.encrypted_client_identity`, relaxes `encrypted_password` only for `client_certificate`, and replaces the exact credential and connection profile checks. No old row is rewritten. Apply migration before promoting the new API. The old API sees a compatible nullable column and existing rows during the migration-to-promotion window. Do not admit new certificate-bearing rows until the compatible API and App are promoted, because an old API cannot parse new auth discriminators (and cannot safely resolve or list these records). The first main commit with the compatible API is an explicit **API reader rollback floor once any new row exists**; disabling the feature afterward does not remove that floor. This document is a rollout requirement, not evidence that the floor has already been installed or new rows have been admitted. A rollback below it needs a verified row cleanup and drained readers decision, not an implicit downgrade.
+
+- Old App with new API: existing rows preserve their response shape. New certificate-backed connections carry an additional `clientCertificateAuthentication` metadata field, so a strict old App cannot manage them; refresh the App before admitting such rows. New App with an old API: strict contracts reject new variants; do not submit them during mixed promotion.
+- Old Runner with new API: an exact new tuple is absent, so `unsupported_profile` is returned before decryption; existing `none/x509_none` and `vnc_password/x509_vnc` keep their certificate-free behavior. New Runner with old API: its widened strict `supportedProfiles` request is rejected; **all** VNC resolves fail closed on that pairing. Deploy API before Runner and do not retry a legacy tuple.
+- New API with new Runner: only the winning authorized Runner receives the KMS-decrypted identity in a private no-store response. The API rechecks authority after KMS. Owner/Agent list metadata never receives keys or passwords. Saved SSH permissions, TLS server CA/name, generation and active-session checks are unchanged. The operational KMS rotation recovery manifest lists both encrypted VNC columns; run that current-version recovery tool against a migrated schema (older snapshots need the corresponding older tool until migration), and verify both password and identity envelopes during key rotation.
+
+Neither migration, merge, CI, independently configured loopback QEMU acceptance nor the client CertificateRequest alone proves production server `verify-peer=on` or a real Agent session. Before production activation record the server's client-CA/ingress policy, untrusted-client rejection for both subtypes and a separate real owner→Agent→Runner capture; `verify-peer=off` is an insecure negative control that accepts an unrelated-CA client. Do not modify a production VNC server, SSH service or `VncAccess` in this change. A supported server-side revocation guarantee is not asserted.
+
 ## Testing Expectations
 
 Tests should cover cross-version behavior when a change touches a deployment
@@ -2848,10 +7979,6 @@ For persisted state changes:
 Do not add broad defensive fallbacks just to hide incompatibility. The goal is a
 specific compatibility contract for the rollout window, with clear deletion
 criteria after the old version is gone.
-
-## Pi native provider reader preparation
-
-For the generation 4 reader-first release, see [Pi native provider preparation](pi-native-provider-preparation.md). Its model generation is independent of launch snapshot V3. Native writers remain absent until the controller verifies compatible API readers and rollback targets, Runner capabilities, pinned CLI artifacts and existing-route health. The preparation merge alone does not close these gates.
 
 ## Connector OAuth completion receipts
 
@@ -2966,8 +8093,9 @@ require an accepted v4 snapshot. Later candidate failures retain v4, and a
 corrupt accepted v4 snapshot fails. Diagnostics describe the same v4 generation
 used by the current reader.
 
-[The v4 rollout guide](connector-catalog-v4.md) documents bootstrap, capability
-and rollback requirements. Production diagnostics reported active catalog
+The current catalog storage and writer are described under the
+[Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334).
+Production diagnostics reported active catalog
 `2026-09-19.4560` on 2026-09-20 Asia/Shanghai, opening the v4-only reader gate
 under [#34913](https://github.com/vm0-ai/okou/issues/34913). Historical v3
 objects and rows remain available to older rollback binaries through their own
@@ -3062,14 +8190,29 @@ snapshots, and exports. Private hosted preview tokens retain that same two-day
 lifetime. Provider-owned URLs and OAuth token lifetimes are unchanged.
 
 The app no longer renews preview credentials on a timer or after media errors.
-Presigned uploads and Runner/Guest object downloads make one application-level attempt;
-errors remain visible to the caller. Existing preview-resolution API contracts
-remain available to deployed older app and CLI versions. Old Runner versions can
-consume the longer-lived URLs without a wire-format change.
+Presigned uploads and Runner/Guest object downloads make one application-level
+attempt, except for content-addressed session-history uploads. History uploads
+make at most three total attempts (the initial PUT plus two retries) with the same
+presigned URL and exact bytes. They do not renew the URL or change request,
+upload, or overall run timeouts. Exhaustion preserves the existing unavailable
+history outcome; Pi H2 still rejects a checkpoint without a native history hash.
 
-Storage URL caches are read on demand and reuse unexpired entries. Missing or
-expired entries are signed once during the normal API request. There is no
-proactive refresh or retry. The cron endpoint is now
+Existing preview-resolution API contracts remain available to deployed older app
+and CLI versions. Old Runner versions can consume the longer-lived URLs without
+a wire-format change. Older Guests retain their single-attempt history policy;
+both policies use unchanged prepare-history and checkpoint wire contracts.
+
+Storage URL caches are read on demand. Updated APIs reuse manifest archive
+URLs in `system_storage`, `workflow_skill_storage`, and `readonly_storage` only
+with at least four hours remaining at selection, including captured or
+prefetched snapshots; exactly four hours remains reusable. Missing, expired,
+or below-margin entries use the existing signing path during the normal API
+request. This margin does not shorten the two-day signature lifetime or change
+cache keys. Private artifact previews retain their strict one-hour margin, and
+presentation template previews retain expiry-only reuse. Old APIs retain their
+previous reuse cutoff until deployed; archive URLs already persisted in Run
+contexts are not retroactively renewed. There is no proactive refresh or
+retry. The cron endpoint is now
 `/api/cron/prune-storage-presigned-urls` and only removes expired cache rows.
 Cache keys include the lifetime, so new code does not reuse the previous shorter
 policy. The database's required `refresh_after` and `last_requested_at` columns
@@ -3092,7 +8235,7 @@ required.
 Provider results already known at transfer are included. Pre-provider transfer
 is marked `no-inference`. A transfer made before a late provider result becomes
 known has no snapshot and stays explicitly unavailable in this initial
-handoff-only design. See [API-first run usage handoff](api-run-usage.md).
+handoff-only design. See [Sandbox run usage](api-run-usage.md).
 
 ## Current-run usage general availability
 
@@ -3205,7 +8348,7 @@ backfill, `LOCK TABLE` or historical scan, so apply it before promoting API
 code. An older API neither reads nor writes the table, and a rollback leaves it
 in place holding only derived rows.
 
-`FeatureSwitchKey.SimpleMorningBrief` stays off by default. While it is off the
+`FeatureSwitchKey.NativeMorningBrief` stays off by default. While it is off the
 Settings read and write paths behave exactly as before; turning it on makes the
 Settings writers copy the member's installed state into the projection and lets
 the Settings GET answer from that copy. Turning it back off immediately restores
@@ -3267,7 +8410,7 @@ switch is only half the story:
 - **New code before migration** reaches the table from two places. The collector
   itself is registered in the deployed route table but is gated by the
   development / protected-preview environment check and by the default-off
-  `FeatureSwitchKey.SimpleMorningBrief`, so it cannot run in production at all.
+  `FeatureSwitchKey.NativeMorningBrief`, so it cannot run in production at all.
   The cleanup revocation added to membership, user and organization deletion is
   **unconditional** — it is a `DELETE` that runs whenever those webhooks fire,
   with no feature check in front of it. A default-off switch does not protect
@@ -3372,7 +8515,7 @@ found no occurrence to delete, and long before the member row itself is removed.
 - **New code before migration** must not be promoted. Membership, user and
   organization cleanup write this column **unconditionally**, in the same
   transaction that already revokes run authority, with no feature check in front
-  of it; the default-off `simpleMorningBrief` switch does not protect it.
+  of it; the default-off `FeatureSwitchKey.NativeMorningBrief` switch does not protect it.
   Promoting the API artifact before migration 1154 has shipped would make those
   Clerk cleanup webhooks fail with `42703`. Claiming and finalizing read the
   column in the same unconditional statement that locks the member row.
@@ -3519,31 +8662,31 @@ production drain or full resource coverage. Record that evidence under #34615 as
 ## Saved Social data jobs
 
 The new `social_data_jobs` table and nullable `usage_event` pricing snapshot
-columns must exist before the new API starts. Reconciliation and
-scoped usage cleanup reference the table even when `socialDataJobs` is off.
-Old APIs ignore the additive schema; old usage events keep null snapshots and
-continue using the existing tariff lookup.
+columns must exist before a saved-job API starts. Reconciliation and
+scoped usage cleanup also reference the table. Old APIs ignore the additive
+schema; old usage events keep null snapshots and continue using the existing
+tariff lookup.
 
-Keep `socialDataJobs` disabled until all serving API instances and account
-cleanup workers contain this implementation. Older instances reject the new
-job endpoints, and older account cleanup does not remove saved jobs. Setting
-the flag during that mixed-version window is unsupported. Credential
-provisioning and operational pricing configuration are separate activation
-steps. New job settlement commits the priced usage event and durable job
+Saved jobs are globally available and their rollout switch is removed. All
+serving API instances and account cleanup workers must support saved jobs;
+older instances reject the job endpoints and older account cleanup does not
+remove saved jobs. Credential provisioning and operational pricing
+configuration remain separate operational steps. New job settlement commits the priced usage event and durable job
 receipt together, so legacy settlement workers cannot observe its pending
 event between those writes.
 
 The new CLI uses the saved-job protocol only when job controls are provided.
 An old API rejects those endpoints instead of silently running a different
 collection. Existing commands without job controls keep their current routes.
-New APIs retain list/get/cancel and reconciliation after disabling creation,
-so admitted work can drain. The Usage presentation change reads the existing
+List/get/cancel and reconciliation remain available for admitted work to drain.
+This cleanup does not add an admission-pause control. The Usage presentation change reads the existing
 breakdown contract; stored provider IDs remain unchanged.
 
 After activation, do not roll the API or workers below this implementation
-while jobs or usage receipts remain outstanding. Disable new admissions,
-finish or cancel admitted jobs, and verify durable settlement receipts before
-such a rollback. Database expansion is retained. A merged PR does not prove
+while jobs or usage receipts remain outstanding. A rollback below the saved-job
+implementation requires separately stopping new admissions, finishing or
+cancelling admitted jobs, and verifying durable settlement receipts; the
+removed rollout switch is no longer an admission control. Database expansion is retained. A merged PR does not prove
 fleet parity, the drain, or paid-provider readiness.
 
 ## Browser native input foundation (#35821)
@@ -3556,7 +8699,7 @@ data operation.
 The row is deliberately not an audit record. Its token hash is the primary
 key; searchable ownership, agent/thread authorization, provider-session
 identity, state, the strict versioned payload, and the two operational
-transition timestamps are the only persisted fields. Variant-specific callback
+transition timestamps are the only persisted fields. Input callback identities
 and exact-target data live only in that payload. Do not add a copied Browser
 expiry, originating run, diagnostic reason, or created/updated timestamps.
 
@@ -3589,12 +8732,25 @@ capture no page or DOM metadata and have no open endpoint. The existing
 thread-scoped Browser card opens the current Browser and its normal viewer
 heartbeat owns Browser access and lease renewal.
 
-The native input preflight endpoint is additive under the same switch. Deploy
-the API before a Platform build that requires preflight to open the editable
-form. An older Platform on the newer API still relies on the unchanged submit
-validation. Preflight performs one bounded provider lookup and read-only CDP
-connection per explicit form entry. A confirmed target mismatch marks a pending
-request stale; transient provider failures leave it pending for retry.
+The native input preflight endpoint uses the same team-only switch. It performs
+one bounded provider lookup and read-only CDP connection per explicit form
+entry, returning the verified control subtype and current applicable site
+constraints. The editable form first uses the persisted request fields while
+preflight runs in the background, then adopts the observed controls without
+discarding the draft. A completed failed check blocks submission and offers
+retry. Preflight does not hold the thread write lock during provider or CDP
+I/O, so submission can proceed while the check is pending. A confirmed target
+mismatch marks a pending request stale; transient provider failures leave it
+pending for retry. Apply rechecks the exact target and site constraints before
+any mutation, even when preflight has not completed.
+Per `docs/fallback.md`, this pre-GA feature does not require compatibility with
+earlier Platform, API, or persisted-action shapes.
+The general number field kind expands the strict shared request and preflight
+response contract while `BrowserNativeInput` remains team-only. The API derives
+number `min`, `max`, and `step` from the live control, transports submitted
+values as strings, and accepts an explicit empty value only for an optional
+number field. Existing persisted version-1 actions remain readable; no schema
+migration or old-client compatibility branch is required for this pre-GA change.
 
 The Browser action GET response can also report `callbackDelivered` for a
 terminal success or cancellation. It derives this fact from the matching
@@ -3608,6 +8764,21 @@ reload. An older Platform ignores the new field and retains its existing
 local behavior until updated. No callback receipt or submitted Browser value is
 written to the action row. Thread erasure removes the action and its Chat events
 together; ordinary action retention remains seven days for callback recovery.
+
+### Native file input (#36935)
+
+The new file kind uses the existing staff-only `browserNativeInput` switch.
+Per `docs/fallback.md`, this pre-GA feature does not need a separate file
+switch or old-Platform compatibility branch; staff using an older page during
+the cutover can refresh. File controls are never converted to text, and Browser
+takeover does not transfer a user's local file. Directory-selection
+(`webkitdirectory`) controls are unsupported and rejected, not flattened into
+an ordinary file selection.
+
+The file bytes exist only in the user's explicit, bounded apply request and the
+managed Browser's selected `FileList`; there is no intermediate storage or
+provider-host filesystem path. A website can react to `input`/`change` and
+read/upload the selected bytes itself even though Okou does not submit its form.
 
 ## OOM containment proof chain removal (#36027)
 
@@ -3659,3 +8830,142 @@ before and after this change, and a record with no proven OOM evidence now
 carries an empty classification instead of `unproven_containment`. The
 `oom_unproven_reason` field is gone. Dashboards or saved queries that compare
 `oom_classification` across this boundary will be wrong.
+
+## Discord native file delivery (#36646)
+
+Discord file commands use additive upload-init, materialize, complete, and
+identity-based download endpoints behind the default-off `discordIntegration`
+switch. Uploads retain one canonical asset and operation ID across provider
+retries. Native member uploads have no Run; Run-scoped uploads retain their actual
+Run source. The API validates the stored bytes before publication, then records
+Discord delivery independently from the canonical file URL.
+
+Migration `1232_discord_canonical_delivery_state` adds nullable `provider_state`
+to `canonical_asset_deliveries`. Existing Slack destinations keep their original
+JSON shape and have no Discord state. Outgoing API statements remain valid after
+the additive migration. The new API requires the migration before promotion;
+normal migration-before-promotion ordering provides this boundary. Discord
+reader/writer changes are non-GA and have no old-client compatibility branch.
+
+Deploy the capable API before using its matching CLI in an enabled test
+organization. Older CLIs lack these commands; a new CLI against an older API
+receives an unavailable endpoint. No Runner protocol or production activation is
+introduced. A revoked or rebound Discord connection cannot reuse the stored
+delivery destination. If a send might have succeeded but its receipt is missing,
+a prompt retry replays the persisted nonce with `enforce_nonce`, so Discord
+returns the original message instead of creating another. After the one-minute
+replay window the delivery stays uncertain and is never sent again. Explicit
+Discord rate-limit delays are persisted with the delivery attempt; subsequent
+completion requests return the remaining delay without sending early.
+
+## Browser advisory retirement (2026-09-29)
+
+The Browser thread key is retired after the preparation in #37097
+(`405c21452010c37e4ce2facd51c3f1b231646e7d`). Fresh creation and resume use the
+existing owned-thread partial unique index and exact state predicates. Instance
+publication inserts the provider instance and screen, then conditionally changes
+the observed logical Browser in the same command-local transaction. A lost
+logical claim rolls those inserts back. Stop, retention and profile retirement
+keep their existing exact resource identities and conditional writes.
+
+All eight Browser transaction scopes now belong to local commands. They execute
+SQL directly; neither a transaction parameter nor a transaction-capturing helper
+callback leaves the scope. Provider HTTP, CDP, encryption, object storage and
+realtime stay outside those transactions. Post-commit provider cleanup finishes
+its ownership handoff before the caller observes cancellation. No persisted
+field, public API shape, App floor or Runner contract changes.
+
+At the 2026-09-29 inspection, both public API build-info endpoints returned
+`020a4d8c4b1d8392a8cdda39b8206d9f643ca555` (API 1.695.0). Vercel's four production
+aliases (`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`, `vm0-api-prod.vm6.ai`) all
+resolved to READY deployment `dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ`, promoted at
+01:12:01 UTC. That commit descends from #37097, and more than one hour had elapsed
+since promotion when checked; the API's configured invocation bound is 300
+seconds. The normal rollback resolver also requires
+`45b537a596a153a91b76c3bc7223187840f52775`, a descendant of #37097, so supported
+rollback targets contain the Browser preparation. This is read-only rollout
+verification, not a new production deployment.
+
+Recheck serving and supported rollback versions before deployment if either
+changes. Do not restore a pre-#37097 Browser writer alongside the keyless API.
+The preceding prepared API and this version use the same existing constraints,
+state comparisons and statement order during rolling overlap.
+
+## Custom account advisory retirement (2026-09-29)
+
+The custom account target acquisition is removed after the preparation from
+#37097 (`405c21452010c37e4ce2facd51c3f1b231646e7d`). Exact custom-account deletion
+no longer calls the advisory interface; shared account selection and lifecycle
+paths now take it only for builtin targets. Existing definition protection,
+ordered account row writes, account uniqueness, selection foreign keys and
+whole-transaction rollback recovery continue to arbitrate custom writes.
+
+Read-only deployment checks on 2026-09-29 found all production API aliases
+(`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`, `vm0-api-prod.vm6.ai`) at READY
+Vercel deployment `dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ`, commit
+`020a4d8c4b1d8392a8cdda39b8206d9f643ca555`. Both public build-info endpoints
+returned that commit and version 1.695.0. This version contains #37097; the
+01:12:01 UTC promotion preceded inspection by more than the configured
+300-second API invocation bound. The existing mandatory rollback floor
+`45b537a596a153a91b76c3bc7223187840f52775` also contains #37097.
+
+Recheck supported serving and rollback writers before deployment if that state
+changes. A pre-#37097 custom-account writer cannot coexist with this retirement.
+No App/Runner contract, persisted field or additional deployment floor changes.
+The remaining builtin target lock and transaction-passing account helpers are
+separate Release 1 work, not exceptions to the confirmed final architecture.
+
+## Canonical Chat application sessions
+
+Migration `1295_chat_thread_canonical_session` adds a unique index on
+`chat_threads.agent_session_id`. A thread may have no session before its first
+admitted run, and PostgreSQL continues to allow multiple null bindings. An
+application session may be the current binding of at most one thread. Historical
+sessions no longer referenced by a thread and threadless sessions remain intact;
+no historical run, conversation, checkpoint, or session ID is rewritten.
+
+Before production migration, audit duplicate non-null bindings with:
+
+```sql
+SELECT agent_session_id, count(*)
+FROM chat_threads
+WHERE agent_session_id IS NOT NULL
+GROUP BY agent_session_id
+HAVING count(*) > 1;
+```
+
+The migration rejects duplicates instead of assigning a different owner or
+silently detaching history. Any existing duplicates require an explicit repair
+based on their ownership and run provenance before rollout. The migration is
+non-transactional and builds the index with `CREATE UNIQUE INDEX CONCURRENTLY`,
+so chat thread writes are not blocked while it waits for older transactions.
+A duplicate fails the build and leaves an INVALID index, which the migration
+drops (`DROP INDEX CONCURRENTLY IF EXISTS`) before its next attempt; a failed
+build does not authorize production data changes.
+
+New admission preserves the thread's valid application session ID when its
+agent, runtime, or model family changes. It resets the native conversation
+checkpoint within that same session and replays visible prior turns when native
+history cannot be resumed. The same pending transaction updates session identity
+and storage, binds the run and consumed input, and creates the runner job; its
+last statement claims the unique active-run slot. A stale session snapshot or
+active-run uniqueness conflict rolls back the launch and fails the background
+pick without automatic preparation retries.
+
+Stable identity applies to an existing session owned by the thread's user and
+organization. The existing recovery behavior for a missing, deleted, or
+foreign-owned session binding is retained: admission refuses to resume that
+session, creates a new authorized application session, and repairs the thread's
+current binding in the pending transaction. It does not reuse the foreign ID or
+delete either session's history. The one-to-one guarantee covers valid current
+bindings; it does not claim that an invalid historical binding preserves its ID
+or that a thread has never referenced another detached session.
+
+An outgoing API remains compatible with the added unique index, but it can
+still replace a thread's application session during native-history rotation.
+Stable application identity therefore requires all admission writers to run the
+new implementation. Rolling back the API can restore rotation without corrupting
+retained history or invalidating the index. Native Runner checkpoint and claim
+protocols keep their existing shapes, so a running older Runner can finish the
+run it already owns. This change does not restore the removed thread/session
+foreign keys.

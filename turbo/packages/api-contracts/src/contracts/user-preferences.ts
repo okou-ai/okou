@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
-import { voiceInputModelIdSchema } from "./voice-input-models";
 
 const c = initContract();
 
@@ -64,7 +63,10 @@ export const userPreferencesResponseSchema = z.object({
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
   captureNetworkBodiesRemaining: z.number().int().min(0),
-  voiceInputModel: z.string().nullable(),
+  // False until this member's memory storage has a HEAD. The Web App then
+  // calls the idempotent initialize route before starting runs; run creation
+  // fails for a member without memory.
+  memoryInitialized: z.boolean(),
 });
 
 export type UserPreferencesResponse = z.infer<
@@ -90,7 +92,6 @@ export const updateUserPreferencesRequestSchema = z
     theme: themePreferenceSchema.optional(),
     colorTheme: colorThemeSchema.optional(),
     captureNetworkBodiesRemaining: z.number().int().min(0).optional(),
-    voiceInputModel: voiceInputModelIdSchema.nullable().optional(),
   })
   .refine(
     (data) => {
@@ -102,8 +103,7 @@ export const updateUserPreferencesRequestSchema = z
         data.cloudBrowserEnabledByDefault !== undefined ||
         data.theme !== undefined ||
         data.colorTheme !== undefined ||
-        data.captureNetworkBodiesRemaining !== undefined ||
-        data.voiceInputModel !== undefined
+        data.captureNetworkBodiesRemaining !== undefined
       );
     },
     {
@@ -128,7 +128,7 @@ export const userPreferencesContract = c.router({
     headers: authHeadersSchema,
     body: z.object({
       timezone: z.string().min(1).optional(),
-      locale: userLocaleSchema.optional(),
+      locale: userLocaleSchema,
     }),
     responses: {
       200: userPreferencesResponseSchema,
@@ -136,7 +136,8 @@ export const userPreferencesContract = c.router({
       401: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Initialize missing timezone and locale and enroll Morning Brief",
+    summary:
+      "Initialize missing timezone, locale and member memory and enroll Morning Brief",
   },
   get: {
     method: "GET",
@@ -164,6 +165,7 @@ export const userPreferencesContract = c.router({
       200: userPreferencesResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
+      409: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Update user preferences",

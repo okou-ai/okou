@@ -12,7 +12,6 @@ import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-con
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
@@ -21,6 +20,7 @@ import { and, eq, lt, ne, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
+import { runThreadSshAccess } from "./run-thread-remote-access.service";
 
 type SshResolveInput = RunnerSshResolveRequest & {
   readonly runId: string;
@@ -77,14 +77,6 @@ function currentConnectionQuery(
       ),
     )
     .innerJoin(
-      agentSshAccess,
-      and(
-        eq(agentSshAccess.agentId, agents.id),
-        eq(agentSshAccess.orgId, agentRuns.orgId),
-        eq(agentSshAccess.userId, agentRuns.userId),
-      ),
-    )
-    .innerJoin(
       sshConnections,
       and(
         eq(sshConnections.id, input.connectionId),
@@ -123,11 +115,12 @@ function currentConnectionQuery(
           agentRuns.runnerHeartbeatGeneration,
           input.runnerIdentity.heartbeatGeneration,
         ),
+        runThreadSshAccess(),
       ),
     );
   return lockAuthority
     ? query.for("share", {
-        of: [agentRuns, agentSessions, agents, agentSshAccess, sshCredentials],
+        of: [agentRuns, agentSessions, agents, sshCredentials],
       })
     : query;
 }

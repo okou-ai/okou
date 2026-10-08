@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -62,7 +62,10 @@ async function createEntitledAgent(
   displayName: string,
 ): Promise<string> {
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",
@@ -88,29 +91,27 @@ async function createCancelledThread(args: {
   readonly agentId: string;
   readonly prompt: string;
 }): Promise<SeededThread> {
-  const sent = await chat.requestSendEvent(
-    args.actor,
-    { agentId: args.agentId, prompt: args.prompt },
-    [201],
-  );
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected the entitled Chat send to create a Run");
-  }
-  await api.requestCancelRun(args.actor, sent.body.runId, [200]);
+  const sent = await chat.sendAndLaunch(args.actor, {
+    agentId: args.agentId,
+    prompt: args.prompt,
+    model: "claude-fable-5-1",
+  });
+  await api.requestCancelRun(args.actor, sent.runId, [200]);
   await flushWaitUntilForTest();
 
   let finished: ReturnType<typeof terminalEvent>;
-  await expect
-    .poll(async () => {
-      const page = await chat.listThreadEvents(args.actor, sent.body.threadId);
-      finished = terminalEvent(page.events, sent.body.runId ?? "");
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
+      const page = await chat.listThreadEvents(args.actor, sent.threadId);
+      finished = terminalEvent(page.events, sent.runId);
       return finished?.createdAt ?? null;
-    })
-    .not.toBeNull();
+    })(),
+  ).resolves.not.toBeNull();
   if (!finished) {
     throw new Error("Expected the cancelled Run to append a terminal event");
   }
-  return { threadId: sent.body.threadId, unreadAt: finished.createdAt };
+  return { threadId: sent.threadId, unreadAt: finished.createdAt };
 }
 
 function okouToken(args: {
@@ -241,8 +242,83 @@ describe("GET /api/indicators", () => {
     });
   });
 
+  it("reports read-cursor changes through indicators while mark responses carry no unread snapshot", async () => {
+    prepareChatRuntime();
+    const actor = bdd.user();
+    const agentId = await createEntitledAgent(actor, "Read cursor agent");
+    const toggled = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Toggled read cursor thread",
+    });
+    const untouched = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Untouched unread thread",
+    });
+
+    await expect(
+      chat.markThreadRead(actor, toggled.threadId),
+    ).resolves.toStrictEqual({ lastReadAt: expect.any(String) });
+    await expect(chat.listThreadUnreads(actor, agentId)).resolves.toStrictEqual(
+      [untouched],
+    );
+
+    await expect(
+      chat.markThreadUnread(actor, toggled.threadId),
+    ).resolves.toStrictEqual({ lastReadAt: null });
+    const unreads = await chat.listThreadUnreads(actor, agentId);
+    expect(unreads).toHaveLength(2);
+    expect(unreads).toStrictEqual(expect.arrayContaining([toggled, untouched]));
+  });
+
+  it("reports a finished thread with a new active Run as active instead of unread", async () => {
+    prepareChatRuntime();
+    const actor = bdd.user();
+    const agentId = await createEntitledAgent(actor, "Rerun indicator agent");
+    const rerun = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Rerun indicator thread",
+    });
+    const unread = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Still unread indicator thread",
+    });
+    await chat.sendAndLaunch(actor, {
+      agentId,
+      threadId: rerun.threadId,
+      prompt: "Follow-up active Run",
+    });
+    await seedMembership(actor);
+
+    const indicators = await accept(
+      client().indicators({
+        headers: {
+          authorization: `Bearer ${okouToken({
+            actor,
+            capabilities: ["chat-thread:read"],
+          })}`,
+        },
+      }),
+      [200],
+    );
+    expect(indicators.body).toStrictEqual({
+      agents: { [agentId]: "unread" },
+      threads: {
+        [rerun.threadId]: "active",
+        [unread.threadId]: "unread",
+      },
+      unreadAt: { [unread.threadId]: unread.unreadAt },
+    });
+  });
+
   it("limits active threads after filtering out inaccessible Agents", async () => {
     prepareChatRuntime();
+    // Every send must start a Run (runs, not waiting inputs, feed the active
+    // indicator), so lift the organization concurrency limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
     const actor = bdd.user();
     const peer = bdd.user({ orgId: orgIdOf(actor) });
     const visibleAgentId = await createEntitledAgent(
@@ -253,27 +329,16 @@ describe("GET /api/indicators", () => {
       displayName: "Hidden active indicator agent",
       visibility: "public",
     });
-    const visible = await chat.requestSendEvent(
-      actor,
-      { agentId: visibleAgentId, prompt: "Visible active indicator" },
-      [201],
-    );
-    if (visible.status !== 201 || visible.body.runId === null) {
-      throw new Error("Expected a visible active Run");
-    }
+    const visible = await chat.sendAndLaunch(actor, {
+      agentId: visibleAgentId,
+      prompt: "Visible active indicator",
+    });
 
     for (let index = 0; index < 50; index += 1) {
-      const hidden = await chat.requestSendEvent(
-        actor,
-        {
-          agentId: hiddenAgent.agentId,
-          prompt: `Later hidden active indicator ${index}`,
-        },
-        [201],
-      );
-      if (hidden.status !== 201 || hidden.body.runId === null) {
-        throw new Error("Expected a hidden active Run");
-      }
+      await chat.sendAndLaunch(actor, {
+        agentId: hiddenAgent.agentId,
+        prompt: `Later hidden active indicator ${index}`,
+      });
     }
     await bdd.updateAgent(peer, hiddenAgent.agentId, {
       visibility: "private",
@@ -293,7 +358,7 @@ describe("GET /api/indicators", () => {
     );
     expect(indicators.body).toStrictEqual({
       agents: { [visibleAgentId]: "active" },
-      threads: { [visible.body.threadId]: "active" },
+      threads: { [visible.threadId]: "active" },
       unreadAt: {},
     });
   }, 180_000);

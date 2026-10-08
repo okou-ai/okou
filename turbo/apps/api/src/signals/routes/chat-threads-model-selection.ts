@@ -4,10 +4,9 @@ import { chatThreadModelSelectionContract } from "@okouai/api-contracts/contract
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { notFound } from "../../lib/error";
-import { updateChatThreadMetadata } from "../services/chat-thread-metadata-update.service";
+import { updateChatThreadMetadata$ } from "../services/chat-thread-metadata-update.service";
 import type { RouteEntry } from "../route-entry";
 
 const modelSelectionBody$ = bodyResultOf(
@@ -27,8 +26,8 @@ const updateModelSelectionInner$ = command(
     const preserveTier =
       body.data.codexServiceTier === undefined &&
       body.data.reasoningEffort !== undefined;
-    const result = await updateChatThreadMetadata(
-      set(writeDb$),
+    const result = await set(
+      updateChatThreadMetadata$,
       {
         principal: auth,
         threadId: params.id,

@@ -13,12 +13,16 @@ import {
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
+import {
+  isRetiredGenerationTemplate,
+  type LiveGenerationTemplate,
+} from "../../lib/generation-template-prompt";
 
 interface UserMessageProjection {
   readonly agentPrompt: string;
   readonly displayText: string;
-  readonly primaryTemplate: GenerationTemplateRequest | undefined;
-  readonly templates: readonly GenerationTemplateRequest[];
+  readonly primaryTemplate: LiveGenerationTemplate | undefined;
+  readonly templates: readonly LiveGenerationTemplate[];
   readonly hasTextContent: boolean;
 }
 
@@ -40,7 +44,7 @@ function userMessageFileParts(
 
 type UserMessageNonContentPart = Extract<
   UserMessageInputPart,
-  { readonly type: "source" | "automation" | "goal" }
+  { readonly type: "source" | "automation" }
 >;
 
 export interface ChatAgentRunSourceAnnotation {
@@ -105,11 +109,7 @@ export function withAgentRunSourceAnnotation(
   source: ChatAgentRunSourceAnnotation,
 ): UserMessageDocument {
   const contentParts = document.parts.filter((part) => {
-    return (
-      part.type !== "source" &&
-      part.type !== "automation" &&
-      part.type !== "goal"
-    );
+    return part.type !== "source" && part.type !== "automation";
   });
   return {
     version: 1,
@@ -375,8 +375,8 @@ export function projectUserMessage(
   let inlinePrompt = "";
   let inlineDisplayText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
-  let primaryTemplate: GenerationTemplateRequest | undefined;
-  const templates: GenerationTemplateRequest[] = [];
+  let primaryTemplate: LiveGenerationTemplate | undefined;
+  const templates: LiveGenerationTemplate[] = [];
   let hasTextContent = false;
   const agentRunSourceTitle = agentRunSourceAnnotation(document)?.titleSnapshot;
 
@@ -384,6 +384,11 @@ export function projectUserMessage(
     readonly titleSnapshot: string;
     readonly template: GenerationTemplateRequest;
   }): string => {
+    // Retired selections in stored messages are ignored: no marker, no
+    // guidance, and no usage identity.
+    if (isRetiredGenerationTemplate(part.template)) {
+      return "";
+    }
     templates.push(part.template);
     primaryTemplate ??= part.template;
     return inlineGenerationTemplatePrompt(part, templates.length);
@@ -412,7 +417,12 @@ export function projectUserMessage(
     feedbackParts = [];
   };
 
+  // A dropped retired template leaves the spaces that surrounded it; the next
+  // text part skips its leading whitespace so the prompt reads naturally.
+  let droppedTemplate = false;
   for (const part of document.parts) {
+    const followsDroppedTemplate = droppedTemplate;
+    droppedTemplate = false;
     if (part.type === "additional_info") {
       additionalInfo.push(part.text);
       continue;
@@ -425,7 +435,10 @@ export function projectUserMessage(
     }
     flushFeedback();
     if (part.type === "text") {
-      inlinePrompt += part.text;
+      inlinePrompt +=
+        followsDroppedTemplate && inlinePrompt.endsWith(" ")
+          ? part.text.replace(/^ +/u, "")
+          : part.text;
       inlineDisplayText += part.text;
       hasTextContent ||= part.text.trim().length > 0;
       continue;
@@ -455,12 +468,13 @@ export function projectUserMessage(
     if (
       part.type === "source" ||
       part.type === "automation" ||
-      part.type === "goal" ||
       part.type === "model"
     ) {
       continue;
     }
-    inlinePrompt += registerInlineTemplate(part);
+    const marker = registerInlineTemplate(part);
+    droppedTemplate = marker === "";
+    inlinePrompt += marker;
     inlineDisplayText += `[Template: ${part.titleSnapshot}]`;
   }
   flushFeedback();

@@ -13,11 +13,11 @@ SET LOCAL timezone = 'UTC';
 SET LOCAL search_path = pg_catalog, public;
 
 WITH deployments AS MATERIALIZED (
-  SELECT 'public' AS namespace, id, site_id, org_id, user_id, public_brand,
+  SELECT 'public' AS namespace, id, site_id, org_id, user_id, link_layout_segment,
     status, (manifest->>'deploymentVersion')::integer AS deployment_version, manifest -> 'immutableContent' = 'true'::jsonb AS immutable
   FROM public.hosted_deployments
   UNION ALL
-  SELECT 'private', id, site_id, org_id, user_id, public_brand,
+  SELECT 'private', id, site_id, org_id, user_id, link_layout_segment,
     status, (manifest->>'deploymentVersion')::integer AS deployment_version, manifest -> 'immutableContent' = 'true'::jsonb
   FROM public.private_hosted_deployments
 ), site_populations AS MATERIALIZED (
@@ -65,14 +65,14 @@ WITH deployments AS MATERIALIZED (
     count(*) FILTER (WHERE s.deleted_at IS NOT NULL) AS deployments_on_deleted_sites,
     count(*) FILTER (WHERE s.id IS NOT NULL AND d.org_id IS DISTINCT FROM s.org_id) AS org_mismatches,
     count(*) FILTER (WHERE s.id IS NOT NULL AND d.user_id IS DISTINCT FROM s.user_id) AS user_mismatches,
-    count(*) FILTER (WHERE s.id IS NOT NULL AND d.public_brand IS DISTINCT FROM s.public_brand) AS brand_mismatches
+    count(*) FILTER (WHERE s.id IS NOT NULL AND d.link_layout_segment IS DISTINCT FROM s.link_layout_segment) AS brand_mismatches
   FROM deployments d LEFT JOIN public.hosted_sites s ON s.id = d.site_id
 ), pointers AS MATERIALIZED (
   SELECT s.id, s.active_deployment_id,
     count(d.id) AS matches,
     bool_or(d.site_id IS DISTINCT FROM s.id) AS different_site,
     bool_or(d.org_id IS DISTINCT FROM s.org_id OR d.user_id IS DISTINCT FROM s.user_id) AS different_owner,
-    bool_or(d.public_brand IS DISTINCT FROM s.public_brand) AS different_brand,
+    bool_or(d.link_layout_segment IS DISTINCT FROM s.link_layout_segment) AS different_brand,
     bool_or(d.status <> 'ready') AS not_ready,
     bool_or(d.namespace = 'private') AS private_target
   FROM public.hosted_sites s LEFT JOIN deployments d ON d.id = s.active_deployment_id
@@ -93,7 +93,7 @@ WITH deployments AS MATERIALIZED (
     count(*) FILTER (WHERE s.deleted_at IS NOT NULL) AS deleted_site_targets,
     count(*) FILTER (WHERE s.id IS NOT NULL AND a.org_id IS DISTINCT FROM s.org_id) AS org_mismatches,
     count(*) FILTER (WHERE s.id IS NOT NULL AND a.user_id IS DISTINCT FROM s.user_id) AS user_mismatches,
-    count(*) FILTER (WHERE s.id IS NOT NULL AND a.public_brand IS DISTINCT FROM s.public_brand) AS brand_mismatches
+    count(*) FILTER (WHERE s.id IS NOT NULL AND a.link_layout_segment IS DISTINCT FROM s.link_layout_segment) AS brand_mismatches
   FROM public.artifact_shares a LEFT JOIN public.hosted_sites s ON s.id = a.target_id
   WHERE a.target_kind = 'html'
 ), uploaded_references AS MATERIALIZED (

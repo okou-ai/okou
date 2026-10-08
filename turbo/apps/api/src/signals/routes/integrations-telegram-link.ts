@@ -1,19 +1,13 @@
 import { command } from "ccstate";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import {
-  PUBLIC_BRAND_PRESENTATION,
-  PUBLIC_BRAND,
-} from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserAgentPreferences } from "@okouai/db/schema/telegram-user-agent-preference";
-import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
 import type { z } from "zod";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -32,13 +26,9 @@ import { tapError } from "../utils";
 import {
   formatTelegramUserDisplayName,
   linkOfficialTelegramUser$,
-  linkTelegramUser$,
-  telegramInstallationForLink,
-  type TelegramInstallationForLink,
   verifyConnectSignature,
   verifyTelegramLogin,
   type LinkOfficialTelegramUserResult,
-  type LinkTelegramUserResult,
 } from "../services/telegram-link.service";
 import type { AuthContext } from "../../types/auth";
 import type { RouteEntry } from "../route-entry";
@@ -47,15 +37,7 @@ const log = logger("api:telegram:link");
 
 type TelegramLinkBody = z.infer<typeof integrationsTelegramContract.link.body>;
 type OrganizationAuth = AuthContext & { readonly orgId: string };
-type AddressableTelegramInstallation = Omit<
-  TelegramInstallationForLink,
-  "botUsername"
-> & { readonly botUsername: string };
 type ErrorStatus = 400 | 403 | 404 | 409;
-type LinkTelegramUserConflictReason = Extract<
-  LinkTelegramUserResult,
-  { readonly ok: false }
->["reason"];
 type LinkOfficialTelegramUserConflictReason = Extract<
   LinkOfficialTelegramUserResult,
   { readonly ok: false }
@@ -68,14 +50,6 @@ function errorResult(status: ErrorStatus, message: string, code: string) {
       error: { message, code },
     },
   };
-}
-
-function orgMismatchResponse() {
-  return errorResult(
-    403,
-    "This Telegram bot belongs to a different organization. Switch to the bot's organization to connect.",
-    "FORBIDDEN",
-  );
 }
 
 function missingAuthMethodResponse() {
@@ -106,33 +80,19 @@ function missingOfficialAgentResponse() {
   );
 }
 
-function missingBotUsernameResponse(official: boolean) {
+function missingBotUsernameResponse() {
   return errorResult(
-    official ? 404 : 409,
-    official
-      ? "Official Telegram bot username is not configured"
-      : "Telegram bot username is unavailable. Reinstall the bot to refresh its Telegram metadata.",
-    official ? "NOT_FOUND" : "CONFLICT",
+    404,
+    "Official Telegram bot username is not configured",
+    "NOT_FOUND",
   );
-}
-
-function linkConflictResponse(reason: LinkTelegramUserConflictReason) {
-  const brandName = PUBLIC_BRAND_PRESENTATION.brandName;
-  const message =
-    reason === "telegram-user-linked"
-      ? `This Telegram account is already connected to another ${brandName} account for this bot. Disconnect it before connecting a different account.`
-      : reason === "user-linked"
-        ? `Your ${brandName} account is already connected to another Telegram account for this bot. Disconnect it before connecting a different Telegram account.`
-        : "This Telegram account link already exists. Disconnect it first and try again.";
-
-  return errorResult(409, message, "CONFLICT");
 }
 
 function officialLinkConflictResponse(
   reason: LinkOfficialTelegramUserConflictReason,
   botUsername: string,
 ) {
-  const brandName = PUBLIC_BRAND_PRESENTATION.brandName;
+  const brandName = BRAND_PRESENTATION.brandName;
   const botLabel = `official Telegram bot @${botUsername}`;
   const message =
     reason === "telegram-user-linked"
@@ -176,11 +136,8 @@ async function deliverConnectSuccessMessage(args: {
 function sendConnectSuccessMessage(args: {
   readonly botToken: string;
   readonly telegramUserId: string;
-  readonly official: boolean;
 }): void {
-  const text = args.official
-    ? `✅ Account linked.\nSend me a message to start chatting with ${PUBLIC_BRAND_PRESENTATION.assistantName}.`
-    : "✅ Account linked.\nSend me a message to start chatting with your agent.";
+  const text = `✅ Account linked.\nSend me a message to start chatting with ${BRAND_PRESENTATION.assistantName}.`;
 
   waitUntil(
     tapError(
@@ -219,33 +176,6 @@ async function resolveOfficialConnectComposeId(
   db: Db,
   auth: OrganizationAuth,
 ): Promise<string | null> {
-  const [preference] = await db
-    .select({
-      selectedAgentId: telegramUserAgentPreferences.selectedAgentId,
-    })
-    .from(telegramUserAgentPreferences)
-    .where(
-      and(
-        eq(telegramUserAgentPreferences.userId, auth.userId),
-        eq(telegramUserAgentPreferences.orgId, auth.orgId),
-      ),
-    )
-    .limit(1);
-
-  const preferredComposeId = preference?.selectedAgentId ?? null;
-  if (preferredComposeId) {
-    const [compose] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(eq(agents.id, preferredComposeId), eq(agents.orgId, auth.orgId)),
-      )
-      .limit(1);
-    if (compose) {
-      return compose.id;
-    }
-  }
-
   const [metadata] = await db
     .select({ defaultAgentId: orgMetadata.defaultAgentId })
     .from(orgMetadata)
@@ -290,30 +220,7 @@ const unlinkInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return { status: 204 as const, body: undefined };
   }
 
-  const orgInstallations = writeDb
-    .select({ telegramBotId: telegramInstallations.telegramBotId })
-    .from(telegramInstallations)
-    .where(eq(telegramInstallations.orgId, auth.orgId));
-
-  const deleted = await writeDb
-    .delete(telegramUserLinks)
-    .where(
-      and(
-        eq(telegramUserLinks.userId, auth.userId),
-        inArray(telegramUserLinks.installationId, orgInstallations),
-        botId ? eq(telegramUserLinks.installationId, botId) : undefined,
-      ),
-    )
-    .returning({ id: telegramUserLinks.id });
-  signal.throwIfAborted();
-
-  if (deleted.length === 0) {
-    return noLinkedTelegramAccountResponse();
-  }
-
-  await publishTelegramUserChanged(auth.userId);
-  signal.throwIfAborted();
-  return { status: 204 as const, body: undefined };
+  return noLinkedTelegramAccountResponse();
 });
 
 const linkOfficialInner$ = command(
@@ -322,7 +229,6 @@ const linkOfficialInner$ = command(
     args: { readonly auth: OrganizationAuth; readonly body: TelegramLinkBody },
     signal: AbortSignal,
   ) => {
-    const publicBrand = PUBLIC_BRAND;
     const config = getOfficialTelegramBotConfig();
     if (!config.botToken) {
       return errorResult(
@@ -332,7 +238,7 @@ const linkOfficialInner$ = command(
       );
     }
     if (!config.botUsername) {
-      return missingBotUsernameResponse(true);
+      return missingBotUsernameResponse();
     }
 
     const telegramAuth = args.body.telegramAuth;
@@ -357,7 +263,6 @@ const linkOfficialInner$ = command(
           telegramDisplayName: formatTelegramUserDisplayName(telegramAuth),
           userId: args.auth.userId,
           orgId: args.auth.orgId,
-          publicBrand,
         },
         signal,
       );
@@ -400,7 +305,6 @@ const linkOfficialInner$ = command(
           telegramDisplayName: connectSignature.telegramDisplayName,
           userId: args.auth.userId,
           orgId: args.auth.orgId,
-          publicBrand,
         },
         signal,
       );
@@ -413,164 +317,11 @@ const linkOfficialInner$ = command(
       sendConnectSuccessMessage({
         botToken: config.botToken,
         telegramUserId: connectSignature.telegramUserId,
-        official: true,
       });
 
       return linkSuccessResponse(
         config.botUsername,
         connectSignature.telegramUserId,
-      );
-    }
-
-    return missingAuthMethodResponse();
-  },
-);
-
-const linkCustomWithTelegramAuth$ = command(
-  async (
-    { set },
-    args: {
-      readonly auth: OrganizationAuth;
-      readonly body: TelegramLinkBody;
-      readonly installation: AddressableTelegramInstallation;
-    },
-    signal: AbortSignal,
-  ) => {
-    const telegramAuth = args.body.telegramAuth;
-    if (!telegramAuth) {
-      return missingAuthMethodResponse();
-    }
-
-    if (!verifyTelegramLogin(telegramAuth, args.installation.botToken)) {
-      return invalidTelegramAuthResponse();
-    }
-
-    const telegramUserId = String(telegramAuth.id);
-    const result = await set(
-      linkTelegramUser$,
-      {
-        installationId: args.installation.telegramBotId,
-        telegramUserId,
-        telegramUsername: telegramAuth.username,
-        telegramDisplayName: formatTelegramUserDisplayName(telegramAuth),
-        userId: args.auth.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if (!result.ok) {
-      return linkConflictResponse(result.reason);
-    }
-
-    return linkSuccessResponse(args.installation.botUsername, telegramUserId);
-  },
-);
-
-const linkCustomWithConnectSignature$ = command(
-  async (
-    { set },
-    args: {
-      readonly auth: OrganizationAuth;
-      readonly body: TelegramLinkBody;
-      readonly installation: AddressableTelegramInstallation;
-    },
-    signal: AbortSignal,
-  ) => {
-    const connectSignature = args.body.connectSignature;
-    if (!connectSignature) {
-      return missingAuthMethodResponse();
-    }
-
-    if (
-      !verifyConnectSignature({
-        installationId: args.installation.telegramBotId,
-        telegramUserId: connectSignature.telegramUserId,
-        timestamp: connectSignature.timestamp,
-        signature: connectSignature.signature,
-        botToken: args.installation.botToken,
-        telegramUsername: connectSignature.telegramUsername,
-        telegramDisplayName: connectSignature.telegramDisplayName,
-      })
-    ) {
-      return invalidConnectSignatureResponse();
-    }
-    const result = await set(
-      linkTelegramUser$,
-      {
-        installationId: args.installation.telegramBotId,
-        telegramUserId: connectSignature.telegramUserId,
-        telegramUsername: connectSignature.telegramUsername,
-        telegramDisplayName: connectSignature.telegramDisplayName,
-        userId: args.auth.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if (!result.ok) {
-      return linkConflictResponse(result.reason);
-    }
-
-    sendConnectSuccessMessage({
-      botToken: args.installation.botToken,
-      telegramUserId: connectSignature.telegramUserId,
-      official: false,
-    });
-
-    return linkSuccessResponse(
-      args.installation.botUsername,
-      connectSignature.telegramUserId,
-    );
-  },
-);
-
-const linkCustomInner$ = command(
-  async (
-    { get, set },
-    args: { readonly auth: OrganizationAuth; readonly body: TelegramLinkBody },
-    signal: AbortSignal,
-  ) => {
-    const installation = await get(
-      telegramInstallationForLink({ botId: args.body.telegramBotId }),
-    );
-    signal.throwIfAborted();
-
-    if (!installation) {
-      return errorResult(404, "Installation not found", "NOT_FOUND");
-    }
-    if (installation.orgId !== args.auth.orgId) {
-      return orgMismatchResponse();
-    }
-    if (!installation.botUsername) {
-      return missingBotUsernameResponse(false);
-    }
-    const addressableInstallation: AddressableTelegramInstallation = {
-      ...installation,
-      botUsername: installation.botUsername,
-    };
-
-    if (args.body.telegramAuth) {
-      return set(
-        linkCustomWithTelegramAuth$,
-        {
-          auth: args.auth,
-          body: args.body,
-          installation: addressableInstallation,
-        },
-        signal,
-      );
-    }
-
-    if (args.body.connectSignature) {
-      return set(
-        linkCustomWithConnectSignature$,
-        {
-          auth: args.auth,
-          body: args.body,
-          installation: addressableInstallation,
-        },
-        signal,
       );
     }
 
@@ -587,10 +338,10 @@ const linkInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
-  const linkCommand = isOfficialTelegramBotId(body.data.telegramBotId)
-    ? linkOfficialInner$
-    : linkCustomInner$;
-  return set(linkCommand, { auth, body: body.data }, signal);
+  if (!isOfficialTelegramBotId(body.data.telegramBotId)) {
+    return errorResult(404, "Telegram bot not found", "NOT_FOUND");
+  }
+  return set(linkOfficialInner$, { auth, body: body.data }, signal);
 });
 
 export const integrationsTelegramLinkRoutes: readonly RouteEntry[] = [

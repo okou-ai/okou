@@ -3,6 +3,7 @@ import {
   BROWSER_USER_ACTION_MAX_FIELDS,
   BROWSER_USER_ACTION_MAX_KEY_LENGTH,
   BROWSER_USER_ACTION_MAX_LABEL_LENGTH,
+  BROWSER_USER_ACTION_MAX_RADIO_MEMBERS,
   BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH,
   type BrowserUserActionFieldKind,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
@@ -24,8 +25,9 @@ export interface BrowserUserActionInputField {
   readonly fieldKind: BrowserUserActionFieldKind;
   readonly required: boolean;
   readonly backendNodeId: number;
+  readonly radioMemberNodeIds?: readonly number[];
   readonly fingerprint: {
-    readonly tagName: "INPUT" | "TEXTAREA";
+    readonly tagName: "INPUT" | "TEXTAREA" | "SELECT";
     readonly inputType: string;
   };
 }
@@ -38,19 +40,12 @@ export interface BrowserUserActionInputTarget {
   readonly fields: readonly BrowserUserActionInputField[];
 }
 
-export type BrowserUserActionPayload =
-  | {
-      readonly version: 1;
-      readonly kind: "input";
-      readonly callbackIds: BrowserUserActionCallbackIds;
-      readonly target: BrowserUserActionInputTarget;
-    }
-  | {
-      readonly version: 1;
-      readonly kind: "direct_interaction";
-      readonly callbackIds: BrowserUserActionCallbackIds;
-      readonly reason: string;
-    };
+export interface BrowserUserActionPayload {
+  readonly version: 1;
+  readonly kind: "input";
+  readonly callbackIds: BrowserUserActionCallbackIds;
+  readonly target: BrowserUserActionInputTarget;
+}
 
 export function browserUserActionFieldSupportsTarget(
   fieldKind: BrowserUserActionFieldKind,
@@ -58,6 +53,12 @@ export function browserUserActionFieldSupportsTarget(
 ): boolean {
   if (fingerprint.tagName === "TEXTAREA") {
     return fieldKind === "text" && fingerprint.inputType === "textarea";
+  }
+  if (fingerprint.tagName === "SELECT") {
+    return (
+      fieldKind === "select" &&
+      ["select-one", "select-multiple"].includes(fingerprint.inputType)
+    );
   }
   switch (fieldKind) {
     case "text":
@@ -70,6 +71,24 @@ export function browserUserActionFieldSupportsTarget(
       return fingerprint.inputType === "password";
     case "one_time_code":
       return ["text", "tel", "number"].includes(fingerprint.inputType);
+    case "number":
+      return fingerprint.inputType === "number";
+    case "range":
+      return fingerprint.inputType === "range";
+    case "color":
+      return fingerprint.inputType === "color";
+    case "date_time":
+      return ["date", "time", "datetime-local", "month", "week"].includes(
+        fingerprint.inputType,
+      );
+    case "checkbox":
+      return fingerprint.inputType === "checkbox";
+    case "radio":
+      return fingerprint.inputType === "radio";
+    case "file":
+      return fingerprint.inputType === "file";
+    case "select":
+      return false;
   }
 }
 
@@ -140,9 +159,46 @@ function decodeCallbackIds(
   return success && cancellation ? { success, cancellation } : null;
 }
 
+function decodeFieldFingerprint(
+  value: unknown,
+): BrowserUserActionInputField["fingerprint"] | null {
+  const fingerprint = objectValue(value);
+  if (
+    !fingerprint ||
+    !hasOnlyKeys(fingerprint, ["tagName", "inputType"]) ||
+    (fingerprint.tagName !== "INPUT" &&
+      fingerprint.tagName !== "TEXTAREA" &&
+      fingerprint.tagName !== "SELECT") ||
+    !boundedString(fingerprint.inputType, 0, 64)
+  ) {
+    return null;
+  }
+  return {
+    tagName: fingerprint.tagName,
+    inputType: fingerprint.inputType,
+  };
+}
+
+function validRadioMemberIds(field: Record<string, unknown>): boolean {
+  const ids = field.radioMemberNodeIds;
+  if (field.fieldKind !== "radio") {
+    return ids === undefined;
+  }
+  return (
+    Array.isArray(ids) &&
+    ids.length >= 1 &&
+    ids.length <= BROWSER_USER_ACTION_MAX_RADIO_MEMBERS &&
+    ids.includes(field.backendNodeId) &&
+    new Set(ids).size === ids.length &&
+    ids.every((id: unknown) => {
+      return Number.isSafeInteger(id) && Number(id) > 0;
+    })
+  );
+}
+
 function decodeField(value: unknown): BrowserUserActionInputField | null {
   const field = objectValue(value);
-  const fingerprint = objectValue(field?.fingerprint);
+  const safeFingerprint = decodeFieldFingerprint(field?.fingerprint);
   if (
     !field ||
     !hasOnlyKeys(field, [
@@ -153,6 +209,7 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
       "required",
       "backendNodeId",
       "fingerprint",
+      "radioMemberNodeIds",
     ]) ||
     !boundedString(field.key, 1, BROWSER_USER_ACTION_MAX_KEY_LENGTH) ||
     !boundedString(field.label, 1, BROWSER_USER_ACTION_MAX_LABEL_LENGTH) ||
@@ -162,26 +219,29 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
         0,
         BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH,
       )) ||
-    !["text", "username", "password", "one_time_code"].includes(
-      String(field.fieldKind),
-    ) ||
+    ![
+      "text",
+      "username",
+      "password",
+      "one_time_code",
+      "number",
+      "range",
+      "color",
+      "date_time",
+      "select",
+      "checkbox",
+      "radio",
+      "file",
+    ].includes(String(field.fieldKind)) ||
     typeof field.required !== "boolean" ||
     !Number.isSafeInteger(field.backendNodeId) ||
     Number(field.backendNodeId) <= 0 ||
-    !fingerprint ||
-    !hasOnlyKeys(fingerprint, ["tagName", "inputType"]) ||
-    (fingerprint.tagName !== "INPUT" && fingerprint.tagName !== "TEXTAREA") ||
-    !boundedString(fingerprint.inputType, 0, 64)
+    !safeFingerprint ||
+    !validRadioMemberIds(field)
   ) {
     return null;
   }
   const fieldKind = field.fieldKind as BrowserUserActionFieldKind;
-  const tagName: "INPUT" | "TEXTAREA" =
-    fingerprint.tagName === "INPUT" ? "INPUT" : "TEXTAREA";
-  const safeFingerprint: BrowserUserActionInputField["fingerprint"] = {
-    tagName,
-    inputType: fingerprint.inputType,
-  };
   if (!browserUserActionFieldSupportsTarget(fieldKind, safeFingerprint)) {
     return null;
   }
@@ -194,6 +254,9 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
     fieldKind,
     required: field.required,
     backendNodeId: Number(field.backendNodeId),
+    ...(fieldKind === "radio"
+      ? { radioMemberNodeIds: field.radioMemberNodeIds as number[] }
+      : {}),
     fingerprint: safeFingerprint,
   };
 }
@@ -292,18 +355,6 @@ export function parseBrowserUserActionPayload(
   const callbackIds = decodeCallbackIds(payload.callbackIds);
   if (!callbackIds) {
     throw new Error("Invalid Browser user-action callback identities");
-  }
-  if (
-    payload.kind === "direct_interaction" &&
-    hasOnlyKeys(payload, ["version", "kind", "callbackIds", "reason"]) &&
-    boundedString(payload.reason, 1, BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
-  ) {
-    return {
-      version: 1,
-      kind: payload.kind,
-      callbackIds,
-      reason: payload.reason,
-    };
   }
   if (
     payload.kind === "input" &&

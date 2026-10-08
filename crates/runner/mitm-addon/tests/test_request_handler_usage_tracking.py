@@ -3,6 +3,7 @@
 import asyncio
 import threading
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Never
 from unittest.mock import AsyncMock, patch
@@ -28,12 +29,44 @@ _X_FIREWALL_NAME = "x"
 _X_TRACKING_PATH = "/2/users/by"
 _DEFAULT_RUN_ID = "run-conn-1"
 _DEFAULT_SANDBOX_MARKER = "tok-conn"
-_MODEL_PROVIDER_FIREWALL_NAME = "model-provider:anthropic-api-key"
 _MODEL_PROVIDER_RUN_ID = "run-model-1"
 _MODEL_PROVIDER_SANDBOX_MARKER = "tok-model"
-_MODEL_PROVIDER_PATH = "/v1/messages"
 _AUTH_URL_REWRITE_REQUEST_BODY = b'{"ok":true}'
 _FORWARD_START_TIMEOUT_SECONDS = 2.0
+
+
+@dataclass(frozen=True)
+class _ModelProviderRoute:
+    firewall_name: str
+    host: str
+    base: str
+    path: str
+    rule: str
+    permission: str
+
+
+# The managed Built-in route is the only platform-billable model provider.
+_BILLABLE_MODEL_PROVIDER = _ModelProviderRoute(
+    firewall_name="model-provider:openrouter-codex",
+    host="openrouter.ai",
+    base="https://openrouter.ai/api/v1",
+    path="/api/v1/responses",
+    rule="POST /responses",
+    permission="responses",
+)
+# A personal subscription route is never platform-billable.
+_SUBSCRIPTION_MODEL_PROVIDER = _ModelProviderRoute(
+    firewall_name="model-provider:claude-code-oauth-token",
+    host="api.anthropic.com",
+    base="https://api.anthropic.com",
+    path="/v1/messages",
+    rule="POST /v1/messages",
+    permission="messages",
+)
+
+
+def _model_provider_route(*, billable: bool) -> _ModelProviderRoute:
+    return _BILLABLE_MODEL_PROVIDER if billable else _SUBSCRIPTION_MODEL_PROVIDER
 
 
 class _UnexpectedAuthHeaders(dict[str, str]):
@@ -164,6 +197,7 @@ def _write_model_provider_tracking_registry(
     run_id: str = _DEFAULT_RUN_ID,
     sandbox_marker: str = _DEFAULT_SANDBOX_MARKER,
 ) -> Path:
+    route = _model_provider_route(billable=billable)
     registry_root = registry_dir or tmp_path
     registry_root.mkdir(parents=True, exist_ok=True)
     return _write_registry(
@@ -172,19 +206,19 @@ def _write_model_provider_tracking_registry(
             registry_root,
             run_id=run_id,
             sandbox_marker=sandbox_marker,
-            firewall_name=_MODEL_PROVIDER_FIREWALL_NAME,
+            firewall_name=route.firewall_name,
             api_entry={
-                "base": "https://api.anthropic.com",
-                "auth": {"headers": {"x-api-key": "test-key"}},
-                "permissions": [{"name": "messages", "rules": [f"POST {_MODEL_PROVIDER_PATH}"]}],
+                "base": route.base,
+                "auth": {"headers": {"authorization": "Bearer test-key"}},
+                "permissions": [{"name": route.permission, "rules": [route.rule]}],
             },
             network_policy={
-                "allow": ["messages"],
+                "allow": [route.permission],
                 "deny": [],
                 "ask": [],
                 "unknownPolicy": "deny",
             },
-            billable_firewalls=[_MODEL_PROVIDER_FIREWALL_NAME] if billable else None,
+            billable_firewalls=[route.firewall_name] if billable else None,
             sandbox_fields=sandbox_fields,
         ),
     )
@@ -200,12 +234,13 @@ def _x_tracking_flow(real_flow):
     )
 
 
-def _model_provider_tracking_flow(real_flow):
+def _model_provider_tracking_flow(real_flow, *, billable: bool = True):
+    route = _model_provider_route(billable=billable)
     return real_flow(
         with_response=False,
         client_ip="10.200.0.5",
-        host="api.anthropic.com",
-        path=_MODEL_PROVIDER_PATH,
+        host=route.host,
+        path=route.path,
         method="POST",
     )
 
@@ -463,7 +498,7 @@ async def test_untracked_terminal_hook_does_not_decrement_other_usage_flow(
         registry_dir=tmp_path / "non-billable-registry",
     )
     tracked_flow = _model_provider_tracking_flow(real_flow)
-    untracked_flow = _model_provider_tracking_flow(real_flow)
+    untracked_flow = _model_provider_tracking_flow(real_flow, billable=False)
 
     with (
         mitm_ctx(registry_path=str(billable_reg_path), api_url="https://api.okou.ai"),
@@ -628,7 +663,7 @@ async def test_non_billable_model_provider_is_not_tracked_before_responseheaders
         sandbox_marker=_MODEL_PROVIDER_SANDBOX_MARKER,
         sandbox_fields={"modelUsageProvider": "claude-sonnet-4-6"},
     )
-    flow = _model_provider_tracking_flow(real_flow)
+    flow = _model_provider_tracking_flow(real_flow, billable=False)
 
     with (
         mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
@@ -636,7 +671,7 @@ async def test_non_billable_model_provider_is_not_tracked_before_responseheaders
     ):
         await mitm_addon.request(flow)
 
-    assert flow.metadata[metadata_keys.FIREWALL_NAME] == _MODEL_PROVIDER_FIREWALL_NAME
+    assert flow.metadata[metadata_keys.FIREWALL_NAME] == _SUBSCRIPTION_MODEL_PROVIDER.firewall_name
     assert flow.metadata[metadata_keys.CLI_AGENT_TYPE] == "claude-code"
     assert flow.metadata[metadata_keys.FIREWALL_BILLABLE] is False
     assert_pending(
@@ -659,6 +694,7 @@ async def test_billable_model_provider_records_model_usage_provider(
         sandbox_fields={
             "cliAgentType": "codex",
             "modelUsageProvider": "claude-opus-4-6",
+            "modelUsageLongContextMinTotalInputTokens": 200_001,
         },
     )
     flow = _model_provider_tracking_flow(real_flow)
@@ -669,10 +705,11 @@ async def test_billable_model_provider_records_model_usage_provider(
     ):
         await mitm_addon.request(flow)
 
-    assert flow.metadata[metadata_keys.FIREWALL_NAME] == _MODEL_PROVIDER_FIREWALL_NAME
+    assert flow.metadata[metadata_keys.FIREWALL_NAME] == _BILLABLE_MODEL_PROVIDER.firewall_name
     assert flow.metadata[metadata_keys.CLI_AGENT_TYPE] == "codex"
     assert flow.metadata[metadata_keys.FIREWALL_BILLABLE] is True
     assert flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] == "claude-opus-4-6"
+    assert flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] == 200_001
     assert_pending(
         usage_control_root,
         flows=1,

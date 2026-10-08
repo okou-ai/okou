@@ -2,6 +2,7 @@ import type {
   GetStartedClaim,
   GetStartedQuestKey,
 } from "@okouai/api-contracts/contracts/get-started";
+import type { AgentPhoneLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -31,8 +32,6 @@ import {
   DropdownMenuTrigger,
   Input,
 } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -40,7 +39,6 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import {
   checkInGetStarted$,
-  isCheckinMilestone,
   getStartedQuests$,
   getStartedSummary$,
   setCheckinClaimedOpen$,
@@ -58,10 +56,16 @@ import {
   type GetStartedQuest,
   type GetStartedSummary,
 } from "../../signals/okou-page/get-started.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { SlackMark } from "./components/slack-mark.tsx";
+import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
+import {
+  agentPhoneLinkStatus$,
+  createAgentPhoneLinkCode$,
+  setAgentPhoneConnectDialogOpen$,
+} from "../../signals/okou-page/agentphone.ts";
+import { AgentPhoneConnectDialog } from "./agentphone-connect-dialog.tsx";
 import {
   GetStartedCheckinDialog,
   GetStartedQuestIntroDialog,
@@ -117,6 +121,14 @@ function XMark() {
 const QUEST_ICONS = Object.freeze<Record<GetStartedQuestKey, ReactNode>>({
   connector: <Link2 className="text-muted-foreground" />,
   slack: <SlackMark size={16} />,
+  // The same iMessage mark the phone card on Integrations carries.
+  imessage: (
+    <img
+      src={settingsIconAssetUrl("imessage")}
+      alt=""
+      className="size-4 shrink-0"
+    />
+  ),
   workflow: <Route className="text-muted-foreground" />,
   invite: <UserPlus className="text-muted-foreground" />,
   share: <XMark />,
@@ -163,6 +175,21 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
       unit: null,
       action: t(($) => {
         return $.chat.agentPage.getStarted.slack.action;
+      }),
+    },
+    imessage: {
+      name: t(($) => {
+        return $.chat.agentPage.getStarted.imessage.name;
+      }),
+      description: t(
+        ($) => {
+          return $.chat.agentPage.getStarted.imessage.description;
+        },
+        { assistantName },
+      ),
+      unit: null,
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.imessage.action;
       }),
     },
     workflow: {
@@ -290,7 +317,7 @@ const QUEST_ROW_CLASS =
  * The outcomes a reviewer can record, in the reader's words.
  *
  * `get-started-review.service.ts` writes a fixed set of reason codes; these are
- * the two a reader can act on. Anything else falls back to the plain "not
+ * the ones a reader can act on. Anything else falls back to the plain "not
  * eligible", so a new code added on the server degrades rather than throws.
  */
 function useRejectionCopy(): Record<string, string | undefined> {
@@ -305,6 +332,18 @@ function useRejectionCopy(): Record<string, string | undefined> {
     ),
     already_redeemed: t(($) => {
       return $.chat.agentPage.getStarted.rejected.alreadyRedeemed;
+    }),
+    author_already_rewarded: t(($) => {
+      return $.chat.agentPage.getStarted.rejected.authorAlreadyRewarded;
+    }),
+    post_by_official_account: t(
+      ($) => {
+        return $.chat.agentPage.getStarted.rejected.officialAccount;
+      },
+      { assistantName },
+    ),
+    post_author_unavailable: t(($) => {
+      return $.chat.agentPage.getStarted.rejected.authorUnavailable;
     }),
   };
 }
@@ -362,14 +401,6 @@ function useQuestState(
           { amount: formatLocalizedNumber(quest.pendingCount) },
         )}`
       : counts;
-  }
-  if (quest.key === "connector" && quest.claimedCount > 0) {
-    return t(
-      ($) => {
-        return $.chat.agentPage.getStarted.addedState;
-      },
-      { amount: formatLocalizedNumber(quest.claimedCount) },
-    );
   }
   return null;
 }
@@ -487,7 +518,6 @@ function QuestRow({
     <DropdownMenuItem
       className={QUEST_ROW_CLASS}
       onClick={onSelect}
-      closeOnClick={quest.key !== "checkin"}
       disabled={pending}
       aria-busy={pending}
       data-testid={testId}
@@ -526,20 +556,7 @@ function ShareStep({
   );
 }
 
-/** X's own compose screen, opened with the suggestion already in it. */
-function composeUrl(text: string): string {
-  return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
-}
-
-/**
- * The step, as two things to do in the order they happen.
- *
- * It used to be a single URL field: the product asked for a link and left the
- * four steps before it -- think of something to say, post it, copy the link,
- * come back -- entirely to the reader. The first step now carries a sentence
- * they can send as it is and a button that opens X with it already typed, so
- * the only work left is the part the product genuinely cannot do.
- */
+/** Keep the two-step X quest, but let the user write their own post on X. */
 function ShareComposeBody({
   reward,
   onClose,
@@ -555,9 +572,9 @@ function ShareComposeBody({
   const pageSignal = useGet(pageSignal$);
   const submission = useLoadable(shareSubmission$);
   const submitting = submission.state === "loading";
-  const suggestion = t(
+  const writingPrompt = t(
     ($) => {
-      return $.chat.agentPage.getStarted.shareDialog.draft;
+      return $.chat.agentPage.getStarted.shareDialog.writingPrompt;
     },
     { assistantName },
   );
@@ -587,8 +604,8 @@ function ShareComposeBody({
         })}
       >
         <div className="flex flex-col items-start gap-3 rounded-xl border border-surface-border bg-card px-4 py-3.5">
-          <p className="text-[15px] leading-relaxed text-foreground">
-            {suggestion}
+          <p className="text-[15px] leading-relaxed text-muted-foreground">
+            {writingPrompt}
           </p>
           <Button
             type="button"
@@ -597,7 +614,7 @@ function ShareComposeBody({
             onClick={() => {
               // A named target rather than `_blank`, so pressing it twice
               // reuses the compose tab instead of stacking drafts.
-              window.open(composeUrl(suggestion), "okou-share-post");
+              window.open("https://x.com/intent/post", "okou-share-post");
             }}
           >
             <XMark />
@@ -806,16 +823,14 @@ function ShareOnXDialog() {
  * confirm, so a quest has one destination whether or not it is introduced.
  */
 function useQuestHandoffs(
-  checkIn: (signal: AbortSignal) => Promise<number>,
-  checkinReward: number,
+  checkIn: (signal: AbortSignal) => Promise<void>,
+  connectPhone: () => void,
 ): Record<GetStartedQuestKey, () => void> {
-  const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
   const navigate = useSet(detachedNavigateTo$);
   const setShareDialogOpen = useSet(setShareDialogOpen$);
   const setCheckinClaimedOpen = useSet(setCheckinClaimedOpen$);
-  const introEnabled = useQuestIntroEnabled();
   return {
     connector: () => {
       navigate(ROUTES.connectors);
@@ -823,6 +838,7 @@ function useQuestHandoffs(
     slack: () => {
       navigate(ROUTES.works);
     },
+    imessage: connectPhone,
     workflow: () => {
       navigate(ROUTES.workflows);
     },
@@ -835,33 +851,8 @@ function useQuestHandoffs(
     checkin: () => {
       detach(
         (async () => {
-          const streak = await checkIn(pageSignal);
-          if (!introEnabled) {
-            return;
-          }
-          // The first day and every full week earn the screen; the days in
-          // between earn a line. Both name the streak, which is the part that
-          // brings someone back tomorrow.
-          if (isCheckinMilestone(streak)) {
-            setCheckinClaimedOpen(true);
-            return;
-          }
-          toast.success(
-            t(
-              ($) => {
-                return $.chat.agentPage.getStarted.streak;
-              },
-              { amount: formatLocalizedNumber(streak) },
-            ),
-            {
-              description: t(
-                ($) => {
-                  return $.chat.agentPage.getStarted.intro.checkin.amount;
-                },
-                { amount: formatLocalizedNumber(checkinReward) },
-              ),
-            },
-          );
+          await checkIn(pageSignal);
+          setCheckinClaimedOpen(true);
         })(),
         Reason.DomCallback,
       );
@@ -869,30 +860,24 @@ function useQuestHandoffs(
   };
 }
 
-function useQuestIntroEnabled(): boolean {
-  return useGet(featureSwitch$)[FeatureSwitchKey.GetStartedQuestIntro] === true;
-}
-
 /**
  * What a row does when it is selected.
  *
- * With the intro switch on, a quest that has something to explain opens its
- * dialog first and the dialog performs the handoff; every other quest keeps
- * going straight to its destination.
+ * A quest that has something to explain opens its dialog first and the
+ * dialog performs the handoff; every other quest keeps going straight to its
+ * destination.
  */
 function useQuestActions(
   handoffs: Record<GetStartedQuestKey, () => void>,
 ): Record<GetStartedQuestKey, () => void> {
   const setQuestIntroKey = useSet(setQuestIntroKey$);
-  const introEnabled = useQuestIntroEnabled();
   const actions: Partial<Record<GetStartedQuestKey, () => void>> = {};
   for (const key of Object.keys(handoffs) as GetStartedQuestKey[]) {
-    actions[key] =
-      introEnabled && questHasIntro(key)
-        ? () => {
-            setQuestIntroKey(key);
-          }
-        : handoffs[key];
+    actions[key] = questHasIntro(key)
+      ? () => {
+          setQuestIntroKey(key);
+        }
+      : handoffs[key];
   }
   return actions as Record<GetStartedQuestKey, () => void>;
 }
@@ -946,9 +931,12 @@ function GetStartedPanel({
   const { t } = useTranslation();
   const copy = useQuestCopy();
   const actions = useQuestActions(handoffs);
-  const introEnabled = useQuestIntroEnabled();
   const opensModal = (quest: GetStartedQuest): boolean => {
-    return quest.key === "share" || (introEnabled && questHasIntro(quest.key));
+    return (
+      quest.key === "share" ||
+      quest.key === "imessage" ||
+      questHasIntro(quest.key)
+    );
   };
   // The check-in leads whatever its state, because it is asked again tomorrow:
   // a daily row that changes place with the day would have to be found again
@@ -975,30 +963,23 @@ function GetStartedPanel({
       : null;
   };
 
-  // 420px with a 16px outer radius and an 8px tray. The totals are the panel
-  // talking about the whole list rather than about any one quest, so they take
-  // a header line on the tray and leave every row on one grid: one tile
-  // column, one title column, one 76px trailing slot, one content edge.
+  // 420px with a 16px outer radius and an 8px tray. The total is the panel
+  // talking about the whole list rather than about any one quest, so it takes
+  // a header line on the tray and leaves every row on one grid: one tile
+  // column, one title column, one 76px trailing slot, one content edge. Only
+  // what is still claimable is stated: an earned total summed every reward the
+  // user ever claimed, across workspaces and past its expiry, so it never
+  // matched the balance.
   return (
     <DropdownMenuContent align="end" className="w-[420px] rounded-[16px] p-2">
-      <div className="flex items-baseline justify-between gap-3 px-3 pb-2 pt-1.5">
-        <p className="min-w-0 truncate text-[13px] font-semibold tabular-nums">
-          {t(
-            ($) => {
-              return $.chat.agentPage.getStarted.toGo;
-            },
-            { amount: formatLocalizedNumber(summary.remainingCredits) },
-          )}
-        </p>
-        <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {t(
-            ($) => {
-              return $.chat.agentPage.getStarted.earned;
-            },
-            { amount: formatLocalizedNumber(summary.earnedCredits) },
-          )}
-        </p>
-      </div>
+      <p className="min-w-0 truncate px-3 pb-2 pt-1.5 text-[13px] font-semibold tabular-nums">
+        {t(
+          ($) => {
+            return $.chat.agentPage.getStarted.toGo;
+          },
+          { amount: formatLocalizedNumber(summary.remainingCredits) },
+        )}
+      </p>
       <div>
         {orderedQuests.map((quest) => {
           return (
@@ -1034,16 +1015,18 @@ export function GetStartedEntry() {
   // The dialogs outlive the dropdown that opened them, so the handoffs they
   // run are built here rather than inside the panel's own tree.
   const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
-  // Read before the loading guard below, because the handoffs are hooks and
-  // cannot be built conditionally. Zero until the quests land, which is also
-  // when the entry renders nothing at all.
-  const checkinReward =
-    questsLoadable.state === "hasData"
-      ? (questsLoadable.data.find((quest) => {
-          return quest.key === "checkin";
-        })?.rewardAmount ?? 0)
-      : 0;
-  const handoffs = useQuestHandoffs(checkIn, checkinReward);
+  const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
+    createAgentPhoneLinkCode$,
+  );
+  const pageSignal = useGet(pageSignal$);
+  const setConnectOpen = useSet(setAgentPhoneConnectDialogOpen$);
+  const requestConnectionCode = () => {
+    detach(createConnectionCode(pageSignal), Reason.DomCallback);
+  };
+  const handoffs = useQuestHandoffs(checkIn, () => {
+    requestConnectionCode();
+    setConnectOpen(true);
+  });
 
   if (
     questsLoadable.state !== "hasData" ||
@@ -1057,6 +1040,9 @@ export function GetStartedEntry() {
   }
   const checkinQuest = questsLoadable.data.find((quest) => {
     return quest.key === "checkin";
+  });
+  const imessageQuest = questsLoadable.data.find((quest) => {
+    return quest.key === "imessage";
   });
 
   return (
@@ -1110,6 +1096,43 @@ export function GetStartedEntry() {
           streak={summary.checkinStreak}
         />
       )}
+      {/* The link is only read where the quest is offered. */}
+      {imessageQuest && (
+        <ImessageQuestDialog
+          connectionCode={
+            connectionCodeLoadable.state === "hasData"
+              ? connectionCodeLoadable.data
+              : null
+          }
+          connectionCodeFailed={connectionCodeLoadable.state === "hasError"}
+          onRetry={requestConnectionCode}
+        />
+      )}
     </>
+  );
+}
+
+/** The phone connect dialog every other entry point opens, fed the same way. */
+function ImessageQuestDialog({
+  connectionCode,
+  connectionCodeFailed,
+  onRetry,
+}: {
+  readonly connectionCode: AgentPhoneLinkCodeResponse | null;
+  readonly connectionCodeFailed: boolean;
+  readonly onRetry: () => void;
+}) {
+  const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
+  return (
+    <AgentPhoneConnectDialog
+      phoneNumber={
+        statusLoadable.state === "hasData"
+          ? statusLoadable.data.agentPhoneNumber
+          : null
+      }
+      connectionCode={connectionCode}
+      connectionCodeFailed={connectionCodeFailed}
+      onRetry={onRetry}
+    />
   );
 }

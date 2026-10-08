@@ -31,7 +31,7 @@ interface ChatEventSnapshotCompletionCounters {
   readonly duplicateEventReferencesRemapped: number;
 }
 
-export function recordChatEventSnapshotCompleted(
+function recordChatEventSnapshotCompleted(
   counters: ChatEventSnapshotCompletionCounters,
 ): void {
   const traceId = trace.getActiveSpan()?.spanContext().traceId;
@@ -72,7 +72,7 @@ const snapshotChatEventsRoute$ = command(
       return cronUnauthorized();
     }
 
-    const result = await set(snapshotChatEvents$, { kind: "global" }, signal);
+    const result = await set(snapshotChatEvents$, signal);
     signal.throwIfAborted();
     recordChatEventSnapshotCompleted(result);
     return {

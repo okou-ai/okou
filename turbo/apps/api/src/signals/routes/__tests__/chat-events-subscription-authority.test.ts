@@ -1,689 +1,132 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { randomUUID } from "node:crypto";
-import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { HTTPException } from "hono/http-exception";
-import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import { holdThreadSessionConversationClearFixture } from "../../../test-fixtures/chat-events";
-import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
+import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { expectApiError } from "./helpers/api-bdd";
-import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
-  requireOrgId,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
-  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   userMessages,
-  eventBackedContents,
-  PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
-  occurrences,
 } from "./helpers/chat-events-fixture";
-import {
-  piResponsesTextSse,
-  nativeCodexSseResponse,
-  readCodexRequestJson,
-} from "./helpers/pi-responses";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   chat,
-  webhooks,
   chatCallbacks,
-  authDevice,
   authDeviceSupport,
   entitledChatActor,
+  entitledNativeChatActor,
   configureUserOwnedGptPiModel,
-  configureOrganizationGptModel,
   configureSubscriptionPiModel,
   sendChatRun,
+  sendWaitingChatInput,
   claimChatRun,
   waitForThreadMessages,
-  waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
-  requestSendEventRaw,
   requestSendEventWithBearer,
-  cancelBeforeLatePiResult,
   mockPiCheckpointObjectStore,
   completeSandboxFirstPiRun,
-  expectNoPiApiFirstTurnArtifacts,
-  expectPiApiFirstTurnTerminalWithoutOutput,
-  piS3Object,
-  publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
-function jsonHttpException(status: 409 | 422, message: string) {
-  return new HTTPException(status, {
-    res: new Response(JSON.stringify({ error: { message } }), {
-      status,
-      headers: { "content-type": "application/json" },
-    }),
-  });
-}
-
-function observePendingSend<T>(send: Promise<T>) {
-  const result = settleIncludingAbort(send);
-  const phases: Promise<unknown>[] = [];
-
-  async function beforeSettlement(phase: PromiseLike<unknown>) {
-    const work = Promise.resolve(phase);
-    phases.push(work);
-    await Promise.race([
-      work,
-      result.then((settled) => {
-        if (!settled.ok) {
-          throw settled.error;
-        }
-        throw new Error(
-          "Chat send completed before its held subscription preparation phase",
-        );
-      }),
-    ]);
-  }
-
-  async function joinPhases() {
-    await Promise.allSettled(phases);
-  }
-
-  return { result, beforeSettlement, joinPhases };
-}
-
 describe("CHAT-02: run-level model overrides", () => {
   describe("subscription account preparation", () => {
-    async function prepareSubscriptionThread() {
-      const { actor, agentId } = await entitledChatActor();
+    it("rejects a personal account disconnected while its input is queued", async () => {
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const anchor = await sendChatRun(actor, {
+        agentId,
+        prompt: "hold capacity",
+        model: "claude-fable-5-1",
+      });
+      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: `preparation-subscription-${randomUUID()}`,
       });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
-      });
-      const thread = await chat.createThread(actor, { agentId });
-      const preparation = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
-      });
-      return { actor, agentId, captured, thread, preparation };
-    }
-
-    it("overlaps account capture with thread observation and keeps captured identity", async () => {
-      const f = await prepareSubscriptionThread();
-      const send = sendChatRun(f.actor, {
-        agentId: f.agentId,
-        threadId: f.thread.id,
-        model: "gpt-5.6-terra",
-        prompt: "overlap subscription capture with thread preparation",
-      });
-      const observed = observePendingSend(send);
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      expect(
-        f.preparation.hasArrived("post-authorization-context"),
-      ).toBeFalsy();
-      f.preparation.release("subscription-account");
-      await observed.beforeSettlement(
-        f.preparation.arrival("post-authorization-context"),
-      );
-      expect(f.preparation.arrivalCount("subscription-account")).toBe(1);
-      expect(f.preparation.arrivalCount("thread-session")).toBe(1);
-      f.preparation.release("post-authorization-context");
-      f.preparation.release("thread-session");
-      f.preparation.releaseAll();
-
-      const run = await send;
-      await observed.joinPhases();
-      await expect(api.readRun(f.actor, run.runId)).resolves.toMatchObject({
-        source: {
-          providerType: "codex-oauth-token",
-          account: { id: f.captured.accountSourceId },
-        },
-      });
-      await cancelChatRun(f.actor, run.runId);
-    });
-
-    it("rejects an account disconnected after capture before environment preparation", async () => {
-      const f = await prepareSubscriptionThread();
-      const clientEventId = randomUUID();
-      const prompt = "reject a disconnected captured account";
-      const send = requestSendEventRaw(f.actor, {
-        agentId: f.agentId,
-        threadId: f.thread.id,
-        model: "gpt-5.6-terra",
-        prompt,
-        clientEventId,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-        hasTextContent: true,
-      });
-      const observed = observePendingSend(send);
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      f.preparation.release("subscription-account");
-      await observed.beforeSettlement(
-        f.preparation.arrival("post-authorization-context"),
-      );
-      await authDeviceSupport.deletePersonalModelProviderAccount(
-        f.actor,
-        f.captured.accountSourceId,
-      );
-      f.preparation.release("post-authorization-context");
-      f.preparation.release("thread-session");
-      f.preparation.releaseAll();
-
-      await expect(send).resolves.toMatchObject({
-        status: 503,
-        body: { error: { code: "PROVIDER_UNAVAILABLE" } },
-      });
-      await observed.joinPhases();
-      const events = await chat.listThreadEvents(f.actor, f.thread.id);
-      expect(events.events).toStrictEqual([
-        expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
-        }),
-        expect.objectContaining({
-          eventType: "control.revoke",
-          revokesEventId: clientEventId,
-        }),
-      ]);
-    });
-
-    it("captures once while a stale thread snapshot retries with the same account", async () => {
-      const { actor, agentId } = await entitledChatActor();
-      const captured = await configureSubscriptionPiModel(actor, {
-        accountId: `retry-subscription-${randomUUID()}`,
-      });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
-      });
-      mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
-      server.use(
-        http.post("https://chatgpt.com/backend-api/codex/responses", () => {
-          return nativeCodexSseResponse(
-            piResponsesTextSse("subscription retry answer", 1),
-          );
-        }),
-      );
-      const first = await sendChatRun(actor, {
+      mockPiResourceArchiveDownloads();
+      const clientEventId = randomUUID();
+      const waiting = await sendWaitingChatInput(actor, {
         agentId,
-        model: "gpt-5.6-terra",
-        prompt: "establish subscription session before retry",
+        model: "gpt-6-luna",
+        prompt: "reject a disconnected queued account",
+        clientEventId,
       });
-      await waitForRunStatus(actor, first.runId, "completed");
       await flushWaitUntilForTest();
-
-      const conversationClear = await holdThreadSessionConversationClearFixture(
-        {
-          threadId: first.threadId,
-          signal: context.signal,
-        },
-      );
-      onTestFinished(async () => {
-        conversationClear.release();
-        await conversationClear.done;
-      });
-      const preparation = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
-      });
-      const secondPromise = sendChatRun(actor, {
-        agentId,
-        threadId: first.threadId,
-        model: "gpt-5.6-terra",
-        prompt: "retry subscription preparation after snapshot change",
-      });
-
-      await Promise.all([
-        preparation.arrival("subscription-account"),
-        preparation.arrival("thread-session"),
-      ]);
-      preparation.release("subscription-account");
-      await preparation.arrival("post-authorization-context");
-      for (const stage of [
-        "post-authorization-context",
-        "thread-session",
-        "connector-contexts",
-        "model-provider",
-        "user-timezone",
-        "media-models",
-        "official-workflow",
-      ] as const) {
-        preparation.release(stage);
-      }
-      await expect
-        .poll(conversationClear.blockedWaiterCount)
-        .toBeGreaterThanOrEqual(1);
-
-      conversationClear.release();
-      await conversationClear.done;
-      const second = await secondPromise;
-      expect(preparation.arrivalCount("subscription-account")).toBe(1);
-      expect(preparation.arrivalCount("thread-session")).toBe(2);
-      await expect(api.readRun(actor, second.runId)).resolves.toMatchObject({
-        source: {
-          providerType: "codex-oauth-token",
-          account: { id: captured.accountSourceId },
-        },
-      });
-      preparation.releaseAll();
-      await waitForRunStatus(actor, second.runId, "completed");
-    }, 90_000);
-
-    it("keeps an unavailable capture ahead of a speculative thread failure", async () => {
-      const f = await prepareSubscriptionThread();
-      const clientEventId = randomUUID();
-      const prompt = "prefer unavailable capture over thread failure";
-      const send = requestSendEventRaw(f.actor, {
-        agentId: f.agentId,
-        threadId: f.thread.id,
-        model: "gpt-5.6-terra",
-        prompt,
-        clientEventId,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-        hasTextContent: true,
-      });
-      const observed = observePendingSend(send);
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
       await authDeviceSupport.deletePersonalModelProviderAccount(
-        f.actor,
-        f.captured.accountSourceId,
-      );
-      f.preparation.reject(
-        "thread-session",
-        jsonHttpException(422, "session preparation failed"),
-      );
-      await observed.beforeSettlement(
-        f.preparation.departure("thread-session"),
-      );
-      f.preparation.release("subscription-account");
-
-      await expect(send).resolves.toStrictEqual({
-        status: 409,
-        body: {
-          error: {
-            code: "CONFLICT",
-            message:
-              "The selected subscription account is unavailable. Reconnect it before starting another run.",
-          },
-        },
-      });
-      await observed.joinPhases();
-      expect(
-        f.preparation.hasArrived("post-authorization-context"),
-      ).toBeFalsy();
-      f.preparation.releaseAll();
-      const events = await chat.listThreadEvents(f.actor, f.thread.id);
-      expect(events.events).toStrictEqual([
-        expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
-        }),
-        expect.objectContaining({
-          eventType: "control.revoke",
-          revokesEventId: clientEventId,
-        }),
-      ]);
-    });
-
-    it("keeps post-authorization failure ahead of thread failure after capture", async () => {
-      const f = await prepareSubscriptionThread();
-      const clientEventId = randomUUID();
-      const prompt = "preserve subscription preparation error order";
-      const send = requestSendEventRaw(f.actor, {
-        agentId: f.agentId,
-        threadId: f.thread.id,
-        model: "gpt-5.6-terra",
-        prompt,
-        clientEventId,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-        hasTextContent: true,
-      });
-      const observed = observePendingSend(send);
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      f.preparation.release("subscription-account");
-      await f.preparation.arrival("post-authorization-context");
-      f.preparation.reject(
-        "thread-session",
-        jsonHttpException(422, "session preparation failed"),
-      );
-      await observed.beforeSettlement(
-        f.preparation.departure("thread-session"),
-      );
-      f.preparation.reject(
-        "post-authorization-context",
-        jsonHttpException(409, "authorization preparation failed"),
-      );
-
-      await expect(send).resolves.toStrictEqual({
-        status: 409,
-        body: { error: { message: "authorization preparation failed" } },
-      });
-      await observed.joinPhases();
-      f.preparation.releaseAll();
-      const events = await chat.listThreadEvents(f.actor, f.thread.id);
-      expect(events.events).toStrictEqual([
-        expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
-        }),
-      ]);
-    });
-
-    it("settles capture and thread branches before surfacing cancellation", async () => {
-      const { actor, agentId } = await entitledChatActor();
-      await configureSubscriptionPiModel(actor, {
-        accountId: `cancelled-subscription-${randomUUID()}`,
-      });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
-      });
-      const thread = await chat.createThread(actor, { agentId });
-      const controller = new AbortController();
-      const requestSignal = AbortSignal.any([
-        controller.signal,
-        context.signal,
-      ]);
-      const preparation = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: requestSignal,
-        gateSignal: context.signal,
-      });
-      const clientEventId = randomUUID();
-      const prompt = "cancel held subscription preparation";
-      const send = requestSendEventRaw(
         actor,
-        {
-          agentId,
-          threadId: thread.id,
-          model: "gpt-5.6-terra",
-          prompt,
-          clientEventId,
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: prompt }],
-          },
-          hasTextContent: true,
+        captured.accountSourceId,
+      );
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+      const page = await waitForThreadMessages(
+        actor,
+        waiting.threadId,
+        (items) => {
+          return items.some((event) => {
+            return event.eventType === "input.rejected";
+          });
         },
-        requestSignal,
       );
-      const observed = observePendingSend(send);
-
-      await Promise.all([
-        preparation.arrival("subscription-account"),
-        preparation.arrival("thread-session"),
-      ]);
-      controller.abort(
-        new DOMException("cancelled by subscription route test", "AbortError"),
-      );
-      preparation.release("thread-session");
-      await observed.beforeSettlement(preparation.departure("thread-session"));
-      preparation.release("subscription-account");
-
-      const response = await send;
-      expect(response.status).toBe(500);
-      await observed.joinPhases();
-      await preparation.departure("subscription-account");
-      expect(preparation.hasArrived("post-authorization-context")).toBeFalsy();
-      preparation.releaseAll();
-      const events = await chat.listThreadEvents(actor, thread.id);
-      expect(events.events).toStrictEqual([
+      // The public queue reaches the existing unavailable-subscription
+      // conflict, before any captured account can authorize launch.
+      expect(page.events).toContainEqual(
         expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
+          eventType: "input.rejected",
+          revokesEventId: clientEventId,
+          error: "conflict",
         }),
-      ]);
+      );
+      expect(page.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "output.error",
+          error: "conflict",
+          content:
+            "The selected subscription account is unavailable. Reconnect it before starting another run.",
+        }),
+      );
+      expect(
+        page.events.filter((event) => {
+          return event.runId !== undefined;
+        }),
+      ).toStrictEqual([]);
     });
   });
 
   describe("final subscription authority", () => {
-    function observeProviderRequests() {
-      const requests: {
-        body: unknown;
-        authorization: string | null;
-        accountId: string | null;
-      }[] = [];
-      const alternateRequests: string[] = [];
-      server.use(
-        http.post(
-          "https://chatgpt.com/backend-api/codex/responses",
-          async ({ request }) => {
-            requests.push({
-              body: await readCodexRequestJson(request),
-              authorization: request.headers.get("authorization"),
-              accountId: request.headers.get("chatgpt-account-id"),
-            });
-            return nativeCodexSseResponse(
-              piResponsesTextSse(
-                "captured subscription answer",
-                requests.length,
-              ),
-            );
-          },
-        ),
-        http.post(
-          /^https:\/\/(api\.openai\.com|openrouter\.ai|api\.anthropic\.com)\//,
-          ({ request }) => {
-            alternateRequests.push(request.url);
-            return HttpResponse.json(
-              { error: "unexpected alternate provider" },
-              { status: 500 },
-            );
-          },
-        ),
-      );
-      return { requests, alternateRequests };
-    }
-
-    async function prepareHeldSubscription(accountsEnabled = true) {
+    async function claimPreparedSubscription() {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const identity = `held-subscription-${randomUUID()}`;
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: identity,
         accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
       });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
-      });
-      await configureOrganizationGptModel(actor);
-      const instructions = await publishPendingPiInstructions(actor, agentId);
-      const thread = await chat.createThread(actor, { agentId });
-      const sdk = await context.mocks.piSdk.controlInitialization(
-        { sessionId: thread.id, instructions, holdInitialization: true },
-        context.signal,
-      );
+      await api.updateUserModelPreference(actor, null);
       mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
-      const observed = observeProviderRequests();
+      mockPiCheckpointObjectStore();
       const run = await sendChatRun(actor, {
         agentId,
-        threadId: thread.id,
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         prompt: "preserve final subscription authority",
         runOptions: { codexServiceTier: "fast" },
       });
-      await sdk.entered;
-      onTestFinished(async () => {
-        sdk.release();
-        await flushWaitUntilForTest();
-      });
-      expect(observed.requests).toHaveLength(0);
-      return {
-        actor,
-        agentId,
-        runnerGroup,
-        identity,
-        captured,
-        sdk,
-        objects,
-        run,
-        ...observed,
-      };
+      const claimed = await claimChatRun(runnerGroup, run.runId);
+      return { actor, captured, run, ...claimed };
     }
-
-    it.each([
-      { change: "ordinary disconnect", accountsEnabled: true },
-      { change: "singleton disconnect", accountsEnabled: false },
-      { change: "different-identity reconnect", accountsEnabled: true },
-    ] as const)(
-      "keeps admitted A through $change with accounts UI $accountsEnabled",
-      async ({ change, accountsEnabled }) => {
-        const f = await prepareHeldSubscription(accountsEnabled);
-        let replacement:
-          | ReturnType<typeof mockCodexDeviceAuthProvider>
-          | undefined;
-        const replacementIdentity = `replacement-${randomUUID()}`;
-        if (change === "different-identity reconnect") {
-          replacement = mockCodexDeviceAuthProvider({
-            tokenScope: "personal",
-            accountId: replacementIdentity,
-            accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
-          });
-          const started = await authDevice.requestCodexStart(
-            f.actor,
-            "personal",
-            [200],
-            {
-              mode: "reconnect",
-              modelProviderId: f.captured.accountSourceId,
-            },
-          );
-          if (started.status !== 200) {
-            throw new Error("Expected replacement authorization to start");
-          }
-          const completed = await authDevice.requestCodexComplete(
-            f.actor,
-            started.body.sessionToken,
-            [200],
-          );
-          if (
-            !("status" in completed.body) ||
-            completed.body.status !== "complete"
-          ) {
-            throw new Error("Expected replacement authorization to complete");
-          }
-          expect(completed.body.provider.id).not.toBe(
-            f.captured.accountSourceId,
-          );
-          const listed = await authDeviceSupport.listPersonalModelProviders(
-            f.actor,
-            [200],
-          );
-          expect(listed.body).toMatchObject({
-            modelProviders: [
-              expect.objectContaining({
-                id: completed.body.provider.id,
-                isActive: true,
-              }),
-            ],
-          });
-          expect(JSON.stringify(listed.body)).not.toContain(
-            f.captured.accountSourceId,
-          );
-        } else if (accountsEnabled) {
-          await authDeviceSupport.deletePersonalModelProviderAccount(
-            f.actor,
-            f.captured.accountSourceId,
-          );
-        } else {
-          await authDeviceSupport.deletePersonalModelProvider(
-            f.actor,
-            "codex-oauth-token",
-            [204],
-          );
-        }
-        if (!replacement) {
-          expect(
-            (await authDeviceSupport.listPersonalModelProviders(f.actor, [200]))
-              .body,
-          ).toMatchObject({ modelProviders: [] });
-        }
-        f.sdk.release();
-        await f.sdk.disposed;
-        await flushWaitUntilForTest();
-        await waitForRunStatus(f.actor, f.run.runId, "completed");
-        expect(f.sdk.disposeCount()).toBe(1);
-        expect(f.requests).toHaveLength(1);
-        expect(f.requests[0]).toMatchObject({
-          authorization: `Bearer ${f.captured.oauth.oauthTokenResponses[0]?.access_token}`,
-          accountId: f.identity,
-          body: {
-            model: "gpt-5.6-terra",
-            service_tier: "priority",
-            stream: true,
-            store: false,
-          },
-        });
-        expect(
-          eventBackedContents(
-            (await chat.listThreadEvents(f.actor, f.run.threadId)).events,
-            f.run.runId,
-          ),
-        ).toContainEqual(
-          expect.objectContaining({ content: "captured subscription answer" }),
-        );
-        await expectNoBuiltInModelUsage(f.run.runId);
-        if (replacement) {
-          const later = await sendChatRun(f.actor, {
-            agentId: f.agentId,
-            model: "gpt-5.6-terra",
-            prompt: "select replacement B in a new run",
-          });
-          expect(later.threadId).not.toBe(f.run.threadId);
-          await waitForRunStatus(f.actor, later.runId, "completed");
-          await flushWaitUntilForTest();
-          expect(f.requests).toHaveLength(2);
-          expect(f.requests[1]).toMatchObject({
-            authorization: `Bearer ${replacement.oauthTokenResponses[0]?.access_token}`,
-            accountId: replacementIdentity,
-            body: { model: "gpt-5.6-terra", stream: true, store: false },
-          });
-          expect(replacement.oauthToken).toHaveLength(1);
-          await expectNoBuiltInModelUsage(later.runId);
-        }
-        expect(f.captured.oauth.oauthToken).toHaveLength(1);
-        expect(f.alternateRequests).toHaveLength(0);
-      },
-      30_000,
-    );
 
     it.each(["connected invalid_grant", "retained terminal refresh"] as const)(
       "rejects %s acquired after preparation without refreshing again",
       async (failure) => {
-        const f = await prepareHeldSubscription();
-        const { claim, sandboxHeaders } = await claimChatRun(
-          f.runnerGroup,
-          f.run.runId,
-        );
+        const f = await claimPreparedSubscription();
         if (failure === "retained terminal refresh") {
           await authDeviceSupport.deletePersonalModelProviderAccount(
             f.actor,
@@ -702,16 +145,16 @@ describe("CHAT-02: run-level model overrides", () => {
               );
         });
         const rejected = await firewall.requestFirewallAuth(
-          sandboxHeaders,
+          f.sandboxHeaders,
           {
-            encryptedSecrets: z.string().parse(claim.encryptedSecrets),
+            encryptedSecrets: z.string().parse(f.claim.encryptedSecrets),
             authHeaders: {
               Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
               "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
             },
-            secretConnectorMap: claim.secretConnectorMap ?? undefined,
+            secretConnectorMap: f.claim.secretConnectorMap ?? undefined,
             secretConnectorMetadataMap:
-              claim.secretConnectorMetadataMap ?? undefined,
+              f.claim.secretConnectorMetadataMap ?? undefined,
             forceRefresh: true,
           },
           [502],
@@ -720,100 +163,9 @@ describe("CHAT-02: run-level model overrides", () => {
           error: { failureReason: "reconnect_required" },
         });
         expect(refreshAttempts).toBe(1);
-        expect(f.requests).toHaveLength(0);
-        f.sdk.release();
-        await waitForRunStatus(f.actor, f.run.runId, "failed");
-        await f.sdk.disposed;
-        await flushWaitUntilForTest();
-        expect(f.sdk.disposeCount()).toBe(1);
-        expect(f.requests).toHaveLength(0);
-        expect(f.alternateRequests).toHaveLength(0);
-        expect(refreshAttempts).toBe(1);
         expect(f.captured.oauth.oauthToken).toHaveLength(1);
-        expectNoPiApiFirstTurnArtifacts(f.run.runId, f.objects);
-        await expectNoBuiltInModelUsage(f.run.runId);
-        const events = (await chat.listThreadEvents(f.actor, f.run.threadId))
-          .events;
-        expect(events).toContainEqual(
-          expect.objectContaining({
-            eventType: "run.failed",
-            runId: f.run.runId,
-            failureReason: "reconnect_required",
-          }),
-        );
-        expect(eventBackedContents(events, f.run.runId)).toStrictEqual([]);
-        await expect(api.readRun(f.actor, f.run.runId)).resolves.toMatchObject({
-          status: "failed",
-          error: expect.stringContaining("[PI_API_MODEL_CREDENTIAL_INVALID]"),
-        });
-      },
-      30_000,
-    );
-
-    it.each(["cancellation", "membership revocation"] as const)(
-      "honors %s before releasing a retained subscription session",
-      async (revocation) => {
-        const f = await prepareHeldSubscription();
-        await authDeviceSupport.deletePersonalModelProviderAccount(
-          f.actor,
-          f.captured.accountSourceId,
-        );
-        if (revocation === "cancellation") {
-          await cancelChatRun(f.actor, f.run.runId);
-        } else {
-          webhooks.configureClerkWebhookSecret();
-          webhooks.verifyNextClerkWebhook({
-            type: "organizationMembership.deleted",
-            data: {
-              id: `membership-${randomUUID()}`,
-              organization_id: f.actor.orgId,
-              user_id: f.actor.userId,
-            },
-          });
-          await webhooks.requestClerkWebhook("{}", {}, [200]);
-          // The webhook acknowledges before its owned cleanup finishes. Wait
-          // for the external revocation outcome before releasing the SDK.
-          await expect
-            .poll(async () => {
-              const result = await api.requestReadRun(
-                f.actor,
-                f.run.runId,
-                [200, 401, 403, 404],
-              );
-              return result.status === 200
-                ? result.body.status === "cancelled"
-                : true;
-            })
-            .toBe(true);
-        }
-        f.sdk.release();
-        await f.sdk.disposed;
-        await flushWaitUntilForTest();
-        expect(f.sdk.disposeCount()).toBe(1);
-        expect(f.requests).toHaveLength(0);
-        expect(f.alternateRequests).toHaveLength(0);
-        expect(f.captured.oauth.oauthToken).toHaveLength(1);
-        expectNoPiApiFirstTurnArtifacts(f.run.runId, f.objects);
-        await expectNoBuiltInModelUsage(f.run.runId);
-        if (revocation === "cancellation") {
-          await expectPiApiFirstTurnTerminalWithoutOutput(
-            f.actor,
-            f.run,
-            "cancelled",
-          );
-        } else {
-          // A revoked actor may lose read access too; only a successful read
-          // can expose the canonical terminal state. Never infer a fixed denial.
-          const result = await api.requestReadRun(
-            f.actor,
-            f.run.runId,
-            [200, 401, 403, 404],
-          );
-          if (result.status === 200) {
-            expect(result.body).toMatchObject({ status: "cancelled" });
-            expect(result.body.result).toBeFalsy();
-          }
-        }
+        await expectThreadModelCredits(context, f.actor, f.run.threadId, 0);
+        await cancelChatRun(f.actor, f.run.runId, f.sandboxHeaders);
       },
       30_000,
     );
@@ -828,276 +180,129 @@ describe("CHAT-02: run-level model overrides", () => {
       accountId: "prepared-subscription-account",
       accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
     });
-    const instructions = await publishPendingPiInstructions(actor, agentId);
-    const thread = await chat.createThread(actor, { agentId });
-    const sdk = await context.mocks.piSdk.controlInitialization(
-      { sessionId: thread.id, instructions, holdInitialization: true },
-      context.signal,
-    );
     mockPiResourceArchiveDownloads();
-    const objects = mockPiCheckpointObjectStore();
-    const requests: string[] = [];
-    server.use(
-      http.post(
-        "https://chatgpt.com/backend-api/codex/responses",
-        ({ request }) => {
-          requests.push(request.url);
-          return nativeCodexSseResponse(
-            piResponsesTextSse("unexpected revoked account", 1),
-          );
-        },
-      ),
-    );
+    mockPiCheckpointObjectStore();
     const run = await sendChatRun(actor, {
       agentId,
-      threadId: thread.id,
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       prompt: "retain subscription revocation at execution",
       runOptions: { codexServiceTier: "fast" },
     });
-    // Credentials have been materialized before this real SDK boundary.
-    await sdk.entered;
-    expect(requests).toHaveLength(0);
-    {
-      const { claim, sandboxHeaders } = await claimChatRun(
-        runnerGroup,
-        run.runId,
-      );
-      const firewall = createFirewallApi(context);
-      firewall.mockCodexTokenRefresh(() => {
-        return HttpResponse.json(
-          {
-            error: {
-              code: "refresh_token_invalidated",
-              message: "revoked account",
-            },
-          },
-          { status: 401 },
-        );
-      });
-      const rejected = await firewall.requestFirewallAuth(
-        sandboxHeaders,
-        {
-          encryptedSecrets: z.string().parse(claim.encryptedSecrets),
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-            "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
-          },
-          secretConnectorMap: claim.secretConnectorMap ?? undefined,
-          secretConnectorMetadataMap:
-            claim.secretConnectorMetadataMap ?? undefined,
-          forceRefresh: true,
-        },
-        [502],
-      );
-      expect(rejected.body).toMatchObject({
-        error: { failureReason: "reconnect_required" },
-      });
-    }
-    sdk.release();
-    await waitForRunStatus(actor, run.runId, "failed");
-    await flushWaitUntilForTest();
-    expect(requests).toHaveLength(0);
-    expect(sdk.disposeCount()).toBe(1);
-    expectNoPiApiFirstTurnArtifacts(run.runId, objects);
-    await expectNoBuiltInModelUsage(run.runId);
-    expect(
-      (await chat.listThreadEvents(actor, thread.id)).events,
-    ).toContainEqual(
-      expect.objectContaining({
-        eventType: "run.failed",
-        runId: run.runId,
-        failureReason: "reconnect_required",
-      }),
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
     );
+    const firewall = createFirewallApi(context);
+    firewall.mockCodexTokenRefresh(() => {
+      return HttpResponse.json(
+        {
+          error: {
+            code: "refresh_token_invalidated",
+            message: "revoked account",
+          },
+        },
+        { status: 401 },
+      );
+    });
+    const rejected = await firewall.requestFirewallAuth(
+      sandboxHeaders,
+      {
+        encryptedSecrets: z.string().parse(claim.encryptedSecrets),
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+          "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+        },
+        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          claim.secretConnectorMetadataMap ?? undefined,
+        forceRefresh: true,
+      },
+      [502],
+    );
+    expect(rejected.body).toMatchObject({
+      error: { failureReason: "reconnect_required" },
+    });
+    await expectThreadModelCredits(context, actor, run.threadId, 0);
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 30_000);
 
-  it("refreshes the captured subscription Fast account while another account becomes active", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    await publishPendingPiInstructions(actor, agentId);
-    const other = await configureSubscriptionPiModel(actor, {
-      accountId: "other-active-account",
-    });
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const refreshToken = "rt_captured_subscription_fast_account";
-    const captured = await configureSubscriptionPiModel(actor, {
-      accountId: "captured-subscription-account",
-      refreshToken,
-      accessTokenExpiresAt: Math.floor(now() / 1000) - 60,
-      refreshedAccessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
-    });
-    await authDeviceSupport.activatePersonalModelProviderAccount(
-      actor,
-      captured.accountSourceId,
-    );
-    server.use(
-      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, async ({ request }) => {
-        if (!entered.settled()) {
-          entered.resolve(undefined);
-        }
-        await release.promise;
-        const objectKey = new URL(request.url).searchParams.get("object");
-        if (!objectKey) {
-          throw new Error("Expected Pi resource archive identity");
-        }
-        return new HttpResponse(piS3Object(objectKey), {
-          headers: { "content-type": "application/gzip" },
-        });
-      }),
-    );
-    mockPiCheckpointObjectStore();
-    const requests: {
-      body: unknown;
-      authorization: string | null;
-      accountId: string | null;
-    }[] = [];
-    server.use(
-      http.post(
-        "https://chatgpt.com/backend-api/codex/responses",
-        async ({ request }) => {
-          requests.push({
-            body: await readCodexRequestJson(request),
-            authorization: request.headers.get("authorization"),
-            accountId: request.headers.get("chatgpt-account-id"),
-          });
-          return nativeCodexSseResponse(
-            piResponsesTextSse("captured subscription answer", 1),
-          );
-        },
-      ),
-    );
-    const run = await sendChatRun(actor, {
-      agentId,
-      model: "gpt-5.6-terra",
-      prompt: "retain captured subscription Fast credentials",
-      runOptions: { codexServiceTier: "fast" },
-    });
-    await entered.promise;
-    expect(requests).toHaveLength(0);
-    // Credential refresh overlaps the blocked resource read. Wait for that
-    // actual HTTP request before changing the active account selection.
-    await expect
-      .poll(() => {
-        return captured.oauth.oauthToken.length;
-      })
-      .toBe(2);
-    await authDeviceSupport.activatePersonalModelProviderAccount(
-      actor,
-      other.accountSourceId,
-    );
-    release.resolve(undefined);
-    await waitForRunStatus(actor, run.runId, "completed");
-    await flushWaitUntilForTest();
-    expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({
-      authorization: `Bearer ${captured.oauth.oauthTokenResponses[1]?.access_token}`,
-      accountId: "captured-subscription-account",
-      body: {
-        model: "gpt-5.6-terra",
-        service_tier: "priority",
-        stream: true,
-        store: false,
-      },
-    });
-    expect(requests[0]?.body).not.toHaveProperty("previous_response_id");
-    expect(captured.oauth.oauthToken).toHaveLength(2);
-    expect(captured.oauth.oauthToken[1]?.get("refresh_token")).toBe(
-      refreshToken,
-    );
-    expect(other.oauth.oauthToken).toHaveLength(1);
-    await expectNoBuiltInModelUsage(run.runId);
-  }, 90_000);
+  const representativeModels = {
+    "codex-oauth-token": "gpt-6-luna",
+  } as const;
 
-  it.each(USER_OWNED_GPT_FAST_BDD_ROUTES)(
+  it.each(
+    USER_OWNED_GPT_FAST_BDD_ROUTES.filter((route) => {
+      return route.selectedModel === representativeModels[route.type];
+    }),
+  )(
     "reuses one $name Pi session across standard, Fast, and standard requests",
     async (route) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const { secret, accountId } = await configureUserOwnedGptPiModel(
-        actor,
-        route,
-      );
+      const { secret } = await configureUserOwnedGptPiModel(actor, route);
       const pricing = await createGptUsagePricingResolution();
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
-      const requests: {
-        body: unknown;
-        authorization: string | null;
-        accountId: string | null;
-      }[] = [];
-      server.use(
-        http.post(route.endpoint, async ({ request }) => {
-          requests.push({
-            body: await readCodexRequestJson(request),
-            authorization: request.headers.get("authorization"),
-            accountId: request.headers.get("chatgpt-account-id"),
-          });
-          return nativeCodexSseResponse(
-            piResponsesTextSse(
-              `Terra answer ${requests.length}`,
-              requests.length,
-            ),
-          );
-        }),
-      );
 
       const first = await sendChatRun(actor, {
         agentId,
         model: route.selectedModel,
-        prompt: "Terra standard start",
+        prompt: "Luna standard start",
       });
-      await waitForRunStatus(actor, first.runId, "completed");
-      await flushWaitUntilForTest();
-      const firstSession = await readThreadSessionConversation(
+      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      expect(firstClaim.claim.resumeSession).toBeNull();
+      expect(firstClaim.claim.piSessionId).toBe(first.threadId);
+      expect(firstClaim.claim.piModelConfig).toMatchObject({
+        model: route.runtimeModel,
+      });
+      expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
+      await completeSandboxFirstPiRun({
+        actor,
+        answer: "Luna standard sandbox answer",
+        checkpointObjects: objects,
+        claim: firstClaim,
+        prompt: "Luna standard start",
+        run: first,
+        responsesModel: { provider: "openai", model: route.selectedModel },
+        usagePricingResolution: pricing,
+      });
+      const firstSession = await readCompletedRunSessionId(
         context,
-        first.threadId,
+        actor,
+        first.runId,
       );
       const fast = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
         model: route.selectedModel,
-        prompt: "Terra Fast continuation",
+        prompt: "Luna Fast continuation",
         runOptions: { codexServiceTier: "fast" },
       });
       await flushWaitUntilForTest();
-      const fastManifestBytes = objects.get(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fast.runId}/manifest.json`,
-      );
-      if (!fastManifestBytes) {
-        throw new Error("Expected Fast resume handoff manifest");
-      }
-      expect(
-        piApiFirstTurnManifestSchema.parse(
-          JSON.parse(fastManifestBytes.toString("utf8")),
-        ),
-      ).toMatchObject({
-        schemaVersion: 4,
-        mode: "sandbox-first",
-        baseSession: {
-          sessionId: first.threadId,
-          sha256: expect.any(String),
+      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
+      expect(fastClaim.claim.resumeSession).toMatchObject({
+        sessionId: first.threadId,
+        historyRef: {
+          kind: "blob",
+          hash: expect.stringMatching(/^[a-f0-9]{64}$/u),
         },
       });
-      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
       expect(fastClaim.claim.piModelConfig).toMatchObject({
         model: route.runtimeModel,
         serviceTier: route.type === "codex-oauth-token" ? "fast" : "priority",
       });
       await completeSandboxFirstPiRun({
         actor,
-        answer: "Terra Fast sandbox answer",
+        answer: "Luna Fast sandbox answer",
         checkpointObjects: objects,
         claim: fastClaim,
-        prompt: "Terra Fast continuation",
+        prompt: "Luna Fast continuation",
         run: fast,
         responsesModel: { provider: "openai", model: route.selectedModel },
         usagePricingResolution: pricing,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-      });
+        readCompletedRunSessionId(context, actor, fast.runId),
+      ).resolves.toBe(firstSession);
       await chat.updateThreadModelSelection(
         actor,
         first.threadId,
@@ -1108,7 +313,7 @@ describe("CHAT-02: run-level model overrides", () => {
         agentId,
         threadId: first.threadId,
         model: route.selectedModel,
-        prompt: "Terra standard return",
+        prompt: "Luna standard return",
       });
       await flushWaitUntilForTest();
       const standardClaim = await claimChatRun(runnerGroup, standard.runId);
@@ -1120,40 +325,18 @@ describe("CHAT-02: run-level model overrides", () => {
       );
       await completeSandboxFirstPiRun({
         actor,
-        answer: "Terra standard sandbox answer",
+        answer: "Luna standard sandbox answer",
         checkpointObjects: objects,
         claim: standardClaim,
-        prompt: "Terra standard return",
+        prompt: "Luna standard return",
         run: standard,
         responsesModel: { provider: "openai", model: route.selectedModel },
         usagePricingResolution: pricing,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-        conversation_run_id: standard.runId,
-      });
+        readCompletedRunSessionId(context, actor, standard.runId),
+      ).resolves.toBe(firstSession);
 
-      expect(requests).toHaveLength(1);
-      expect(
-        z
-          .object({ service_tier: z.literal("priority").optional() })
-          .parse(requests[0]?.body).service_tier,
-      ).toBeUndefined();
-      for (const request of requests) {
-        expect(request).toMatchObject({
-          authorization: `Bearer ${secret}`,
-          accountId,
-          body: {
-            model: route.runtimeModel,
-            stream: true,
-            store: false,
-            reasoning: { effort: "max" },
-          },
-        });
-        expect(request.body).not.toHaveProperty("previous_response_id");
-      }
       const histories = [...objects.entries()].filter(([key]) => {
         return key.endsWith(".blob");
       });
@@ -1166,7 +349,7 @@ describe("CHAT-02: run-level model overrides", () => {
         expect(value.toString("utf8")).not.toContain(secret);
       }
       for (const run of [first, fast, standard]) {
-        await expectNoBuiltInModelUsage(run.runId);
+        await expectThreadModelCredits(context, actor, run.threadId, 0);
       }
     },
     90_000,
@@ -1174,25 +357,37 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it.each(
     USER_OWNED_GPT_FAST_BDD_ROUTES.flatMap((route) => {
-      return (["web", "agent"] as const).map((origin) => {
-        return {
-          route,
-          name: route.name,
-          origin,
-        };
-      });
+      return (["web", "agent"] as const)
+        .filter((origin) => {
+          return (
+            origin === "web" ||
+            route.selectedModel === representativeModels[route.type]
+          );
+        })
+        .map((origin) => {
+          return {
+            route,
+            name: route.name,
+            origin,
+          };
+        });
     }),
   )(
-    "promotes queued and immediate $name Fast from $origin through API-first",
+    "promotes queued and immediate $name Fast from $origin into the runner claim",
     async ({ route, origin }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await api.ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
       const source = await sendChatRun(actor, {
         agentId,
-        prompt: "source run for Terra handoff",
+        prompt: "source run for Luna handoff",
+        model: "claude-fable-5-1",
       });
       const anchor = await sendChatRun(actor, {
         agentId,
-        prompt: "hold the Terra target thread",
+        prompt: "hold the Luna target thread",
+        model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       const token = api.okouTokenForRunWithCapabilities(actor, source.runId, [
@@ -1201,29 +396,16 @@ describe("CHAT-02: run-level model overrides", () => {
         "chat-event:read",
         "chat-event:write",
       ]);
-      const { secret, accountId } = await configureUserOwnedGptPiModel(
-        actor,
-        route,
-      );
+      await configureUserOwnedGptPiModel(actor, route);
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
-      const requests: unknown[] = [];
-      server.use(
-        http.post(route.endpoint, async ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(`Bearer ${secret}`);
-          expect(request.headers.get("chatgpt-account-id")).toBe(accountId);
-          requests.push(await readCodexRequestJson(request));
-          return nativeCodexSseResponse(
-            piResponsesTextSse("queued Terra answer", requests.length),
-          );
-        }),
-      );
+      const fastTier = route.type === "codex-oauth-token" ? "fast" : "priority";
       const queuedId = randomUUID();
       const body = {
         agentId,
         threadId: anchor.threadId,
         clientEventId: queuedId,
-        prompt: "queued Terra Fast",
+        prompt: "queued Luna Fast",
         model: route.selectedModel,
         runOptions: { codexServiceTier: "fast" as const },
       };
@@ -1235,7 +417,6 @@ describe("CHAT-02: run-level model overrides", () => {
         throw new Error("Expected queued subscription send");
       }
       expect(queued.body.runId).toBeNull();
-      expect(requests).toHaveLength(0);
       chatCallbacks.mockChatOutputEvents([]);
       await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
       await flushWaitUntilForTest();
@@ -1256,28 +437,19 @@ describe("CHAT-02: run-level model overrides", () => {
       if (!promoted?.runId) {
         throw new Error("Expected queued subscription promotion");
       }
-      await waitForRunStatus(actor, promoted.runId, "completed");
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({
+      const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
+      expect(promotedClaim.claim.piModelConfig).toMatchObject({
         model: route.runtimeModel,
-        service_tier: route.wireTier,
-        stream: true,
-        store: false,
+        serviceTier: fastTier,
       });
-      expect(requests[0]).not.toHaveProperty("previous_response_id");
-      expect(occurrences(JSON.stringify(requests[0]), body.prompt)).toBe(1);
-      await expectNoBuiltInModelUsage(promoted.runId);
-      const claim = await api.requestClaimRunnerJob(
-        true,
-        promoted.runId,
-        [404],
-        { capabilities: { piModelConfigGenerations: [1, 2, 3] } },
-      );
-      expectApiError(claim.body);
+      await cancelChatRun(actor, promoted.runId, promotedClaim.sandboxHeaders);
+      await expectThreadModelCredits(context, actor, anchor.threadId, 0);
 
+      const immediateId = randomUUID();
       const immediateBody = {
         agentId,
-        prompt: "immediate Terra Fast",
+        clientEventId: immediateId,
+        prompt: "immediate Luna Fast",
         model: route.selectedModel,
         runOptions: { codexServiceTier: "fast" as const },
       };
@@ -1285,103 +457,42 @@ describe("CHAT-02: run-level model overrides", () => {
         origin === "agent"
           ? await requestSendEventWithBearer(token, immediateBody, [201])
           : await chat.requestSendEvent(actor, immediateBody, [201]);
-      if (immediate.status !== 201 || !immediate.body.runId) {
+      if (immediate.status !== 201) {
+        throw new Error("Expected immediate subscription send");
+      }
+      // The idle new thread's input is picked in the background.
+      const immediateMessages = await waitForThreadMessages(
+        actor,
+        immediate.body.threadId,
+        (events) => {
+          return userMessages(events).some((event) => {
+            return (
+              event.revokesEventId === immediateId && event.runId !== undefined
+            );
+          });
+        },
+      );
+      const immediateRunId = userMessages(immediateMessages.events).find(
+        (event) => {
+          return event.revokesEventId === immediateId;
+        },
+      )?.runId;
+      if (!immediateRunId) {
         throw new Error("Expected immediate subscription run");
       }
-      await flushWaitUntilForTest();
-      await waitForRunStatus(actor, immediate.body.runId, "completed");
-      expect(requests).toHaveLength(2);
-      expect(requests[1]).toMatchObject({ service_tier: route.wireTier });
-      await expectNoBuiltInModelUsage(immediate.body.runId);
-      await cancelChatRun(actor, source.runId);
-    },
-    90_000,
-  );
-
-  it.each(
-    USER_OWNED_GPT_FAST_BDD_ROUTES.flatMap((route) => {
-      return (["in-flight", "late-result"] as const).map((phase) => {
-        return {
-          route,
-          name: route.name,
-          phase,
-        };
+      const immediateClaim = await claimChatRun(runnerGroup, immediateRunId);
+      expect(immediateClaim.claim.piModelConfig).toMatchObject({
+        model: route.runtimeModel,
+        serviceTier: fastTier,
       });
-    }),
-  )(
-    "keeps cancelled $name Fast $phase results unbilled and unreplayed",
-    async ({ route, phase }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const { secret, accountId } = await configureUserOwnedGptPiModel(
+      await cancelChatRun(actor, immediateRunId, immediateClaim.sandboxHeaders);
+      await expectThreadModelCredits(
+        context,
         actor,
-        route,
+        immediate.body.threadId,
+        0,
       );
-      mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      const requests: unknown[] = [];
-      server.use(
-        http.post(route.endpoint, async ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(`Bearer ${secret}`);
-          expect(request.headers.get("chatgpt-account-id")).toBe(accountId);
-          requests.push(await readCodexRequestJson(request));
-          if (!entered.settled()) {
-            entered.resolve(undefined);
-          }
-          await release.promise;
-          return nativeCodexSseResponse(
-            piResponsesTextSse("discarded Terra answer", requests.length),
-          );
-        }),
-      );
-      const run = await sendChatRun(actor, {
-        agentId,
-        model: route.selectedModel,
-        prompt: "cancel Terra Fast ownership",
-        runOptions: { codexServiceTier: "fast" },
-      });
-      await entered.promise;
-      if (phase === "late-result") {
-        await cancelBeforeLatePiResult(actor, run.runId, () => {
-          release.resolve(undefined);
-        });
-      } else {
-        await cancelChatRun(actor, run.runId);
-        release.resolve(undefined);
-      }
-      await flushWaitUntilForTest();
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "cancelled",
-      });
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({
-        service_tier: route.wireTier,
-        stream: true,
-        store: false,
-      });
-      await expectNoBuiltInModelUsage(run.runId);
-      expect(
-        objects.has(
-          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`,
-        ),
-      ).toBeFalsy();
-      expect(
-        objects.has(
-          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
-        ),
-      ).toBeFalsy();
-      expect(
-        eventBackedContents(
-          (await chat.listThreadEvents(actor, run.threadId)).events,
-          run.runId,
-        ),
-      ).toHaveLength(0);
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.requestClaimRunnerJob(true, run.runId, [404], {
-        capabilities: { piModelConfigGenerations: [1, 2, 3] },
-      });
-      expectApiError(claim.body);
+      await cancelChatRun(actor, source.runId);
     },
     90_000,
   );

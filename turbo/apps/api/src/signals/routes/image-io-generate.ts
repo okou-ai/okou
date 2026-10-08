@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
 import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
@@ -29,7 +28,6 @@ import { db$, type ReadonlyDb } from "../external/db";
 import { createBuiltInGenerationRealtimeSubscription } from "../external/realtime";
 import {
   checkImageCredits$,
-  generateBytePlusImage,
   generateOpenAiImage,
   getMissingImagePricing,
   imagePricing$,
@@ -45,7 +43,7 @@ import {
 import {
   builtInGenerationRequestWithInternal,
   completeBuiltInGenerationJob$,
-  createBuiltInGenerationJob$,
+  createImageGenerationJob$,
   failBuiltInGenerationJob$,
   markBuiltInGenerationRunning$,
   mergeBuiltInGenerationJobInternal$,
@@ -57,8 +55,8 @@ import {
   startRunBuiltInAdmission$,
   type RunBuiltInAdmission,
 } from "../services/run-built-in-admission.service";
+import { userModelPreference } from "../services/user-data.service";
 import { resolveProviderReferenceUrls$ } from "../services/provider-reference-url.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const L = logger("ImageGeneration");
 const imageBody$ = bodyResultOf(imageIoGenerateContract.post);
@@ -80,14 +78,17 @@ interface ImageJobArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string | undefined;
-  readonly publicBrand: PublicBrand;
   readonly privateArtifacts: boolean;
   readonly admission: RunBuiltInAdmission | null;
   readonly options: ImageOptions;
   readonly pricing: ImagePricing;
 }
 
-async function loadRunImageModelDefault(
+/**
+ * The image model snapshotted onto the calling run, so every image in a run
+ * uses the model its system prompt announced.
+ */
+async function loadRunImageModel(
   db: ReadonlyDb,
   orgId: string,
   userId: string,
@@ -269,11 +270,10 @@ const executeDirectImageProviderJob$ = command(
   async ({ set }, args: ImageJobArgs, signal: AbortSignal): Promise<void> => {
     await set(markBuiltInGenerationRunning$, args.generationId, signal);
     signal.throwIfAborted();
-    const isOpenAi = args.options.provider === "openai";
-    const apiKey = env(isOpenAi ? "OPENAI_API_KEY" : "BYTEPLUS_API_KEY");
+    const apiKey = env("OPENAI_API_KEY");
     if (!apiKey) {
       const unavailable = serviceUnavailable(
-        `${isOpenAi ? "OpenAI" : "BytePlus"} image generation is not configured`,
+        "OpenAI image generation is not configured",
         "NOT_CONFIGURED",
       );
       await set(
@@ -294,12 +294,7 @@ const executeDirectImageProviderJob$ = command(
     const generation =
       "status" in references
         ? references
-        : await (isOpenAi ? generateOpenAiImage : generateBytePlusImage)(
-            args.options,
-            references,
-            apiKey,
-            signal,
-          );
+        : await generateOpenAiImage(args.options, references, apiKey, signal);
     signal.throwIfAborted();
     if (isErrorResponse(generation)) {
       await set(
@@ -324,14 +319,10 @@ const executeDirectImageProviderJob$ = command(
         runId: args.runId,
         billingRunId: args.runId ?? null,
         billingContext: args.runId ? "run" : "runless",
-        publicBrand: args.publicBrand,
         privateArtifacts: args.privateArtifacts,
         pricing: args.pricing,
         generation,
-        usageIdempotency: {
-          generationId: args.generationId,
-          scope: "image",
-        },
+        generationId: args.generationId,
       },
       signal,
     );
@@ -376,10 +367,7 @@ const runDirectImageProviderJob$ = command(
         generationId: args.generationId,
         error: {
           message: "Image generation failed",
-          code:
-            args.options.provider === "openai"
-              ? "OPENAI_IMAGE_REQUEST_FAILED"
-              : "BYTEPLUS_IMAGE_REQUEST_FAILED",
+          code: "OPENAI_IMAGE_REQUEST_FAILED",
         },
       },
       signal,
@@ -433,16 +421,24 @@ const prepareImageRequest$ = command(
       auth.tokenType === "agent" || auth.tokenType === "sandbox"
         ? auth.runId
         : undefined;
-    const runImageModelDefault = await loadRunImageModelDefault(
+    const runImageModel = await loadRunImageModel(
       db,
       auth.orgId,
       auth.userId,
       runId,
       signal,
     );
-    const options = parseImageOptions(bodyResult.data, {
-      defaultModel: runImageModelDefault ?? DEFAULT_IMAGE_MODEL,
-    });
+    const memberImageModel =
+      runImageModel === null
+        ? (
+            await get(
+              userModelPreference({ orgId: auth.orgId, userId: auth.userId }),
+            )
+          ).selectedImageModel
+        : null;
+    signal.throwIfAborted();
+    const model = runImageModel ?? memberImageModel ?? DEFAULT_IMAGE_MODEL;
+    const options = parseImageOptions(bodyResult.data, { model });
     if ("status" in options) {
       return options;
     }
@@ -466,7 +462,6 @@ const postImageInner$ = command(
       return prepared;
     }
     const { auth, runId, requiredPrivateArtifacts, options } = prepared;
-    const publicBrand = PUBLIC_BRAND;
 
     const hasCredits = await set(
       checkImageCredits$,
@@ -497,12 +492,6 @@ const postImageInner$ = command(
         "NOT_CONFIGURED",
       );
     }
-    if (options.provider === "byteplus" && !env("BYTEPLUS_API_KEY")) {
-      return serviceUnavailable(
-        "BytePlus image generation is not configured",
-        "NOT_CONFIGURED",
-      );
-    }
     if (options.provider === "openai" && !env("OPENAI_API_KEY")) {
       return serviceUnavailable(
         "OpenAI image generation is not configured",
@@ -516,20 +505,15 @@ const postImageInner$ = command(
       generationId,
     );
     signal.throwIfAborted();
-    const admission = await set(
-      startRunBuiltInAdmission$,
-      { runId, kind: "image" },
-      signal,
-    );
+    const admission = await set(startRunBuiltInAdmission$, { runId }, signal);
     if (isRunBuiltInAdmissionError(admission)) {
       return admission;
     }
 
     const { privateArtifacts } = await set(
-      createBuiltInGenerationJob$,
+      createImageGenerationJob$,
       {
         generationId,
-        type: "image",
         orgId: auth.orgId,
         privateArtifacts: requiredPrivateArtifacts,
         userId: auth.userId,
@@ -538,7 +522,6 @@ const postImageInner$ = command(
           imageRequestRecord(options),
           {
             admissionId: admission?.id,
-            publicBrand,
             provider: options.provider,
             providerTask: "image",
           },
@@ -554,7 +537,6 @@ const postImageInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         runId,
-        publicBrand,
         privateArtifacts,
         admission,
         options,

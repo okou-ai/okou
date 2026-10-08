@@ -132,7 +132,7 @@ function useWorkflowActions(signals: ComposerSignals) {
           ($) => {
             return $.chat.taskChips.workflows.contextPrefix;
           },
-          { context: preference },
+          { preference },
         )}`
       : copy[item.id].prompt;
     detach(

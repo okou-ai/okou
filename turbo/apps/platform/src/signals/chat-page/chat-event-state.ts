@@ -1,6 +1,5 @@
 import {
   chatEventCompatibilityRole,
-  foldChatRunStates,
   isChatRunTerminalEventType,
   revokedChatEventIds,
   terminatedChatRunIds,
@@ -10,8 +9,6 @@ import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 
 import {
-  isGoalMarkerEvent,
-  isQueueMarkerEvent,
   isUsageEvent,
   semanticChatEventsFromChatEvents,
   type SemanticChatEventState,
@@ -58,19 +55,20 @@ export function lastAssistantCancelledFromGroups(
   return lastEvent ? isCancelledRunEvent(lastEvent) : false;
 }
 
-export type RunIndicatorState = "pending" | "running" | "queued" | null;
-type ActiveRunIndicatorState = "pending" | "running" | null;
+// "running" means a run is live or a sent prompt is still optimistic; "queued"
+// means the server holds input without a run.
+export type RunIndicatorState = "running" | "queued" | null;
+type ActiveRunIndicatorState = "running" | null;
 
 interface RunIndicatorContext {
   readonly terminatedRunIds: ReadonlySet<string>;
-  readonly queuedRunIds: ReadonlySet<string>;
 }
 
 function runActivityIndicatorState(
   context: RunIndicatorContext,
   runId: string,
 ): ActiveRunIndicatorState | undefined {
-  if (context.terminatedRunIds.has(runId) || context.queuedRunIds.has(runId)) {
+  if (context.terminatedRunIds.has(runId)) {
     return undefined;
   }
   return "running";
@@ -81,9 +79,6 @@ function assistantRunIndicatorState(
   event: ChatEvent,
 ): ActiveRunIndicatorState | undefined {
   const runId = event.runId;
-  if (isQueueMarkerEvent(event)) {
-    return undefined;
-  }
   if (isChatRunTerminalEventType(event.eventType)) {
     return null;
   }
@@ -97,9 +92,6 @@ function nonAssistantRunIndicatorState(
   context: RunIndicatorContext,
   event: ChatEvent,
 ): ActiveRunIndicatorState | undefined {
-  if (event.eventType === "input.prompt" && event.runId === undefined) {
-    return "pending";
-  }
   const { runId } = event;
   return runId === undefined
     ? undefined
@@ -147,8 +139,7 @@ function laterStartedRunIndicatorState(
       runId === undefined ||
       (runStartIndexByRunId.get(runId) ?? -1) <= terminatedRunStartIndex ||
       revokedEventIds.has(event.id) ||
-      isUsageEvent(event) ||
-      isGoalMarkerEvent(event)
+      isUsageEvent(event)
     ) {
       continue;
     }
@@ -172,14 +163,12 @@ function activeRunIndicatorStateFromChatEvents(
     events,
     revokedEventIds,
   );
-  let newerPendingState: "pending" | null = null;
-
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index]!;
     if (revokedEventIds.has(event.id)) {
       continue;
     }
-    if (isUsageEvent(event) || isGoalMarkerEvent(event)) {
+    if (isUsageEvent(event)) {
       continue;
     }
     if (chatEventCompatibilityRole(event.eventType) === "assistant") {
@@ -197,7 +186,7 @@ function activeRunIndicatorStateFromChatEvents(
         }
       }
       if (state === null) {
-        return newerPendingState;
+        return null;
       }
       if (state === "running") {
         return state;
@@ -207,43 +196,51 @@ function activeRunIndicatorStateFromChatEvents(
         (event.eventType === "output.message" ||
           event.eventType === "output.error")
       ) {
-        return newerPendingState;
+        return null;
       }
       continue;
     }
-    const state = nonAssistantRunIndicatorState(context, event);
-    if (state === "running") {
-      return state;
-    }
-    if (state === "pending" && newerPendingState === null) {
-      newerPendingState = state;
+    if (nonAssistantRunIndicatorState(context, event) === "running") {
+      return "running";
     }
   }
-  return newerPendingState;
+  return null;
 }
 
 export function deriveRunIndicatorStateFromChatEvents(
   events: readonly ChatEvent[],
-): RunIndicatorState {
-  const revokedEventIds = revokedChatEventIds(events);
-  const terminatedRunIds = terminatedChatRunIds(events);
-  const queuedRunIds = new Set(
-    [...foldChatRunStates(events)].flatMap(([runId, state]) => {
-      return state === "queued" ? [runId] : [];
-    }),
-  );
-  const activeRunState = activeRunIndicatorStateFromChatEvents(
+): ActiveRunIndicatorState {
+  return activeRunIndicatorStateFromChatEvents(
     events,
-    revokedEventIds,
-    {
-      terminatedRunIds,
-      queuedRunIds,
-    },
+    revokedChatEventIds(events),
+    { terminatedRunIds: terminatedChatRunIds(events) },
   );
-  if (activeRunState === "running") {
-    return activeRunState;
+}
+
+function hasRunlessInput(events: readonly ChatEvent[]): boolean {
+  const revokedEventIds = revokedChatEventIds(events);
+  return events.some((event) => {
+    return (
+      isQueuedChatEvent(event) &&
+      event.runId === undefined &&
+      !revokedEventIds.has(event.id)
+    );
+  });
+}
+
+/**
+ * Run state of the thread as the server has persisted it. Pass only persisted
+ * events: optimistic input has not reached the server queue yet. Input that no
+ * run has consumed while no run is live waits in the server queue.
+ */
+export function deriveServerRunStateFromChatEvents(
+  events: readonly ChatEvent[],
+): RunIndicatorState {
+  const state = deriveRunIndicatorStateFromChatEvents(events);
+  if (state !== null) {
+    return state;
   }
-  return queuedRunIds.size > 0 ? "queued" : activeRunState;
+  return hasRunlessInput(events) ? "queued" : null;
 }
 
 export function liveRunIdsFromChatEvents(
@@ -259,9 +256,7 @@ export function liveRunIdsFromChatEvents(
       runId !== undefined &&
       !revokedEventIds.has(event.id) &&
       !terminatedRunIds.has(runId) &&
-      !isQueueMarkerEvent(event) &&
       !isUsageEvent(event) &&
-      !isGoalMarkerEvent(event) &&
       !seenRunIds.has(runId)
     ) {
       liveRunIds.push(runId);

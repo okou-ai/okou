@@ -1,4 +1,7 @@
-import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  fallbackCategoryLabel,
+  type ConnectorCategoryLabels,
+} from "../../../../signals/okou-page/settings/connector-categories.ts";
 
 import { i18n } from "../../../../i18n/index.ts";
 
@@ -173,18 +176,25 @@ function connectorCategoryTranslation(
   return aiCategoryTranslation(id) ?? businessCategoryTranslation(id);
 }
 
-export function localizeConnectorCategoryMetadata(
-  metadata: PublicConnectorCatalogCategoryMetadata | undefined,
-): PublicConnectorCatalogCategoryMetadata | undefined {
-  if (!metadata) {
-    return undefined;
-  }
-  return {
-    categories: metadata.categories.map((category) => {
-      return { ...category, ...connectorCategoryTranslation(category.id) };
-    }),
-    groups: metadata.groups.map((group) => {
-      return { ...group, ...connectorCategoryTranslation(group.id) };
-    }),
-  };
+// Catalog entries carry only a category id. A known id uses its localized copy
+// and any other id a label derived from it; categories are ordered by label
+// and never grouped.
+export function connectorCategoryLabels(
+  categoryIds: Iterable<string>,
+): ConnectorCategoryLabels {
+  const categories = [...new Set(categoryIds)]
+    .map((id) => {
+      const translation = connectorCategoryTranslation(id);
+      const fallback = fallbackCategoryLabel(id);
+      return {
+        id,
+        label: translation?.label ?? fallback,
+        menuLabel: translation?.menuLabel ?? fallback,
+        groupId: null,
+      };
+    })
+    .sort((left, right) => {
+      return left.label.localeCompare(right.label);
+    });
+  return { categories, groups: [] };
 }

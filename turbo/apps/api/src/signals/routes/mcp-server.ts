@@ -1,8 +1,6 @@
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { command, computed } from "ccstate";
-import { env } from "../../lib/env";
-import { logger } from "../../lib/log";
-import { waitUntil } from "../context/wait-until";
+import { setAuthContext$ } from "../auth/auth-context";
 
 import {
   MCP_DEFAULT_SCOPES,
@@ -10,49 +8,33 @@ import {
   MCP_REQUIRED_SCOPES,
   mcpServerConfig,
 } from "../../lib/mcp-server-config";
-import type { McpPrincipal } from "../../types/mcp";
 import type { ApiOrgRole } from "../../types/auth";
+import type { McpPrincipal } from "../../types/mcp";
 import { request$ } from "../context/hono";
 import { verifyClerkOAuthAccessToken } from "../external/clerk";
-import { writeDb$ } from "../external/db";
 import { serveMcpRequest } from "../external/mcp-server";
 import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
-import {
-  getMcpChatThread,
-  listMcpChatThreads,
-} from "../services/mcp-chat-threads.service";
-import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
-import { getMcpChatStatus } from "../services/mcp-chat-status.service";
-import { searchMcpChatMessages } from "../services/mcp-chat-search.service";
-import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
-import { createMcpChatThread$ } from "../services/mcp-chat-creation.service";
-import { updateMcpChatThread$ } from "../services/mcp-chat-thread-update.service";
-import {
-  listMcpAgents,
-  listMcpModels,
-} from "../services/mcp-chat-discovery.service";
+import { chatIndicators } from "../services/chat-thread.service";
 import {
   cancelMcpRun$,
   revokeQueuedMcpMessage$,
 } from "../services/mcp-chat-cancellation.service";
-import { awaitWithSignal, settle, onRejection } from "../utils";
-
-const L = logger("McpServer");
-
-async function admitMutation<T>(
-  operation: (signal: AbortSignal) => Promise<T>,
-  requestSignal: AbortSignal,
-): Promise<T> {
-  requestSignal.throwIfAborted();
-  // After admission, waitUntil owns this finite operation and its dispatch
-  // effects. Disconnecting stops only the HTTP response wait.
-  const work = onRejection(operation(new AbortController().signal), (error) => {
-    L.error("MCP mutation failed", { error });
-  });
-  waitUntil(work);
-  return await awaitWithSignal(work, requestSignal);
-}
+import {
+  listMcpAgents$,
+  listMcpModels$,
+} from "../services/mcp-chat-discovery.service";
+import { getMcpChatMessages$ } from "../services/mcp-chat-messages.service";
+import { searchMcpChatMessages$ } from "../services/mcp-chat-search.service";
+import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
+import { getMcpRunStatus$ } from "../services/mcp-run-status.service";
+import { getMcpChatInput$ } from "../services/mcp-chat-input.service";
+import { updateMcpChatThread$ } from "../services/mcp-chat-thread-update.service";
+import {
+  getMcpChatThread$,
+  listMcpChatThreads$,
+} from "../services/mcp-chat-threads.service";
+import { awaitWithSignal, settle } from "../utils";
 
 function unavailable() {
   return Response.json(
@@ -155,6 +137,7 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
     return challenge(config.metadataUrl, "invalid_token");
   }
   const orgRole = membership.value.role;
+  set(setAuthContext$, { ...principal, orgRole });
   return set(
     serveAuthorizedMcp$,
     {
@@ -177,70 +160,79 @@ const serveAuthorizedMcp$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const historyRuntime = {
-      db: set(writeDb$),
-      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-    };
     return serveMcpRequest(
       request,
       {
         readScope: MCP_READ_SCOPE,
         scopes: principal.scopes,
         listAgents: (input, readSignal) => {
-          return listMcpAgents(historyRuntime.db, principal, input, readSignal);
+          return set(listMcpAgents$, principal, input, readSignal);
         },
         listModels: (readSignal) => {
-          return listMcpModels(historyRuntime.db, principal, readSignal);
+          return set(listMcpModels$, principal, readSignal);
         },
-        createThread: async (input, operationSignal) => {
-          return await admitMutation((signal) => {
-            return set(createMcpChatThread$, { principal, input }, signal);
-          }, operationSignal);
-        },
-        updateThread: async (input, operationSignal) => {
-          return await admitMutation((signal) => {
-            return set(updateMcpChatThread$, { principal, input }, signal);
-          }, operationSignal);
-        },
-        getStatus: (input, readSignal) => {
-          return get(
-            getMcpChatStatus(historyRuntime, principal, input, readSignal),
+        updateThread: (input, operationSignal) => {
+          return set(
+            updateMcpChatThread$,
+            { principal, input },
+            operationSignal,
           );
         },
-        sendMessage: async (input, operationSignal) => {
-          return await admitMutation((signal) => {
-            return set(sendMcpChatMessage$, { principal, input }, signal);
-          }, operationSignal);
+        getRunStatus: (input, readSignal) => {
+          return set(getMcpRunStatus$, principal, input, readSignal);
         },
-        revokeQueuedMessage: async (input, operationSignal) => {
-          return await admitMutation((signal) => {
-            return set(revokeQueuedMcpMessage$, { principal, input }, signal);
-          }, operationSignal);
+        getInput: (input, readSignal) => {
+          return set(getMcpChatInput$, principal, input, readSignal);
         },
-        cancelRun: async (input, operationSignal) => {
-          return await admitMutation((signal) => {
-            return set(cancelMcpRun$, { principal, input }, signal);
-          }, operationSignal);
+        sendMessage: (input, operationSignal) => {
+          return set(
+            sendMcpChatMessage$,
+            { principal, input },
+            operationSignal,
+          );
+        },
+        revokeQueuedMessage: (input, operationSignal) => {
+          return set(
+            revokeQueuedMcpMessage$,
+            { principal, input },
+            operationSignal,
+          );
+        },
+        cancelRun: (input, operationSignal) => {
+          return set(cancelMcpRun$, { principal, input }, operationSignal);
         },
         searchMessages: async (input, readSignal) => {
-          return await get(
-            searchMcpChatMessages(historyRuntime, principal, input, readSignal),
+          return await set(
+            searchMcpChatMessages$,
+            principal,
+            input,
+            readSignal,
           );
         },
         getMessages: async (input, readSignal) => {
-          return await get(
-            getMcpChatMessages(historyRuntime, principal, input, readSignal),
+          return await set(getMcpChatMessages$, principal, input, readSignal);
+        },
+        getIndicators: async (readSignal) => {
+          const data = await awaitWithSignal(
+            get(
+              chatIndicators({
+                userId: principal.userId,
+                orgId: principal.orgId,
+              }),
+            ),
+            readSignal,
           );
+          return { kind: "ok" as const, data };
         },
         listThreads: async (input, readSignal) => {
           return await awaitWithSignal(
-            listMcpChatThreads(set(writeDb$), principal, input),
+            set(listMcpChatThreads$, principal, input, readSignal),
             readSignal,
           );
         },
         getThread: async (input, readSignal) => {
           return await awaitWithSignal(
-            getMcpChatThread(set(writeDb$), principal, input),
+            set(getMcpChatThread$, principal, input, readSignal),
             readSignal,
           );
         },

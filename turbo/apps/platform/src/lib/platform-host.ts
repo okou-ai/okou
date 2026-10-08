@@ -1,7 +1,6 @@
 import { isOkouProductionHostname } from "@okouai/core/platform-service-origin";
 
 type PlatformEnvironment = "development" | "preview" | "production";
-type PlatformPublicBrand = "okou";
 
 interface PlatformServiceStatusConfig {
   readonly issuesUrl: string;
@@ -14,11 +13,9 @@ interface PlatformServiceStatusConfig {
 // from an `import.meta.env` constant that the build inlines.
 interface PlatformRuntimeConfig {
   readonly environment: PlatformEnvironment;
-  readonly publicBrand: PlatformPublicBrand;
   readonly clerkPublishableKey: string;
   readonly publicArtifactsBaseUrl: "https://cdn.vm0.io" | "https://cdn.vm7.io";
   readonly publicStaticAssetsBaseUrl: string;
-  readonly plausibleScriptUrl: string | null;
   readonly postHogHost: string | null;
   readonly postHogKey: string | null;
   readonly sentryDsn: string | null;
@@ -100,14 +97,11 @@ export function resolvePlatformClientTelemetryConfig(): PlatformClientTelemetryC
 export function resolvePlatformRuntimeConfig(): PlatformRuntimeConfig {
   const clientTelemetryConfig = resolvePlatformClientTelemetryConfig();
   const { environment } = clientTelemetryConfig;
-  // Only okou.ai serves the app, so every page renders the Okou brand.
-  const publicBrand: PlatformPublicBrand = "okou";
   const publicStaticAssetsBaseUrl = "https://static.okou.io";
 
   if (environment === "production") {
     return {
       environment,
-      publicBrand,
       // Both keys are inlined into every artifact and selected by hostname,
       // mirroring the early bootstrap in index.html. Keep the two selections
       // in step; src/__tests__/clerk-entrypoint.test.ts pins them together.
@@ -117,9 +111,6 @@ export function resolvePlatformRuntimeConfig(): PlatformRuntimeConfig {
       ),
       publicArtifactsBaseUrl: "https://cdn.vm0.io",
       publicStaticAssetsBaseUrl,
-      plausibleScriptUrl: optionalBuildValue(
-        import.meta.env.VITE_PLAUSIBLE_SCRIPT_URL_PRODUCTION,
-      ),
       postHogHost: "https://j.okou.io",
       postHogKey: optionalBuildValue(import.meta.env.VITE_POSTHOG_KEY),
       sentryDsn: optionalBuildValue(import.meta.env.VITE_SENTRY_DSN_PROD),
@@ -131,17 +122,12 @@ export function resolvePlatformRuntimeConfig(): PlatformRuntimeConfig {
 
   return {
     environment,
-    publicBrand,
     clerkPublishableKey: requiredBuildValue(
       import.meta.env.VITE_CLERK_PUBLISHABLE_KEY_PREVIEW,
       "VITE_CLERK_PUBLISHABLE_KEY_PREVIEW",
     ),
     publicArtifactsBaseUrl: "https://cdn.vm7.io",
     publicStaticAssetsBaseUrl,
-    plausibleScriptUrl:
-      environment === "preview"
-        ? optionalBuildValue(import.meta.env.VITE_PLAUSIBLE_SCRIPT_URL_PREVIEW)
-        : null,
     postHogHost: null,
     postHogKey: null,
     sentryDsn: null,

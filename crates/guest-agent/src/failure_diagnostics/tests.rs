@@ -339,7 +339,7 @@ fn cli_failure_reason_uses_selected_stderr_over_generic_diagnostic() {
     let system_log_path = tmp.path().join("system.log");
     let _system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
     let stderr_lines = vec![
-        "API Error: 402 Insufficient credits. Add credits or configure your own API key to continue."
+        "API Error: 402 This request requires more credits, or fewer max_tokens. You requested up to 64000 tokens, but can only afford 1600. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account"
             .to_string(),
     ];
     let generic_diagnostic = cli_diagnostic("turn failed", FailureDetailSource::CodexJsonl);
@@ -356,7 +356,7 @@ fn cli_failure_reason_uses_selected_stderr_over_generic_diagnostic() {
     assert_eq!(msg.source, FailureDetailSource::Stderr);
     assert_eq!(
         diagnostic.failure_reason,
-        Some(FailureReason::InsufficientCredits)
+        Some(FailureReason::ProviderInsufficientCredits)
     );
     assert_eq!(
         diagnostic.failure_detail_source,
@@ -412,16 +412,6 @@ fn cli_failure_message_marks_exit_code_fallback_source() {
 
     assert_eq!(msg.source, FailureDetailSource::FallbackExitCode);
     assert_eq!(msg.message, "Agent exited with code 7");
-}
-
-#[test]
-fn cli_failure_reason_classifies_insufficient_credits() {
-    let reason = classify_cli_failure_reason(
-        AgentFramework::ClaudeCode,
-        "API Error: 402 Insufficient credits. Add credits or configure your own API key to continue.",
-    );
-
-    assert_eq!(reason, Some(FailureReason::InsufficientCredits));
 }
 
 #[test]
@@ -542,8 +532,8 @@ fn provider_billing_envelopes_require_terminal_api_error_evidence() {
 }
 
 #[test]
-fn cli_failure_reason_classifies_deepseek_insufficient_credits_envelope() {
-    let message = r#"unexpected status 402 Payment Required: {"error": "insufficient_credits", "message": "Insufficient credits. Add credits or configure your own API key to continue.", "permission": "model-provider:deepseek", "base": "https://api.deepseek.com/responses"}, url: https://api.deepseek.com/responses"#;
+fn cli_failure_reason_classifies_firewall_insufficient_credits_envelope() {
+    let message = r#"unexpected status 402 Payment Required: {"error": "insufficient_credits", "message": "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.", "permission": "model-provider:openrouter-codex", "base": "https://openrouter.ai/api/v1"}, url: https://openrouter.ai/api/v1/responses"#;
     let failure_message = selected_failure_message(message, FailureDetailSource::CodexJsonl, None);
     let diagnostic = FailureDiagnostic::new(
         FailureClass::CliNonzero,

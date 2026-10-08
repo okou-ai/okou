@@ -229,6 +229,25 @@ export default [
   },
   ...config,
   {
+    files: [
+      "src/signals/services/pick-chat-run.service.ts",
+      "src/signals/services/thread-claim-run.service.ts",
+    ],
+    plugins: { api: apiLintPlugin },
+    rules: {
+      // These two factories declare one owned graph. Keep the 128-line limit
+      // on every operational callback and ordinary function, while checking
+      // that the exempted owner itself contains only graph declarations.
+      "api/max-signal-owner-lines": [
+        "error",
+        {
+          max: 128,
+          owners: ["createPickObjects", "createThreadClaimRunObjects"],
+        },
+      ],
+    },
+  },
+  {
     files: ["src/**/*.ts"],
     plugins: {
       api: apiLintPlugin,
@@ -249,6 +268,47 @@ export default [
       "api/signal-check-await": "error",
       "ccstate/no-accessor-escape": "error",
       "ccstate/no-command-in-command": "error",
+      "api/no-new-advisory-lock": "error",
+    },
+  },
+  {
+    files: ["scripts/**/*.ts"],
+    plugins: { api: apiLintPlugin },
+    rules: { "api/no-new-advisory-lock": "error" },
+  },
+  {
+    files: ["src/**/*.ts", "scripts/**/*.ts"],
+    ignores: [
+      "**/__tests__/**",
+      "**/test-fixtures/**",
+      "**/*.test.ts",
+      "**/*.spec.ts",
+      "**/test-*.ts",
+      "scripts/chat-event-context/acceptance.ts",
+      "scripts/chat-event-auxiliary/acceptance.ts",
+    ],
+    rules: { "api/no-database-trigger": "error" },
+  },
+  {
+    files: ["src/**/*.ts"],
+    ignores: [
+      // A request owns one Store, including its background commands.
+      "src/signals/context/route.ts",
+      "src/**/__tests__/**",
+      "src/**/__benches__/**",
+      "src/**/test/**",
+      "src/**/tests/**",
+      "src/**/mocks/**",
+      "src/**/test-fixtures/**",
+      "src/**/*.test.ts",
+      "src/**/*.spec.ts",
+      "src/**/*.bench.ts",
+      "src/**/test-context.ts",
+      "src/signals/routes/test-*.ts",
+      "src/scripts/**",
+    ],
+    rules: {
+      "ccstate/no-create-store": "error",
     },
   },
   {
@@ -266,6 +326,17 @@ export default [
     ],
     rules: {
       "api/no-direct-agent-run-terminal-update": "error",
+    },
+  },
+  {
+    files: ["src/signals/auth/temporary-auth-diagnostics.ts"],
+    rules: {
+      // #36177 diagnostics stop on 2026-10-29. Axiom drops debug; an expected
+      // 401 must not create warning noise. Remove with the temporary emitter.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["temporary auth failure"] },
+      ],
     },
   },
   {
@@ -451,31 +522,6 @@ export default [
     },
   },
   {
-    files: ["src/signals/services/pi-api-first-turn.service.ts"],
-    rules: {
-      // Recovery, discarded late results and attempt timeouts are the only
-      // evidence that an API-owned first turn kept single execution and
-      // truthful usage after handing off, and they must survive Axiom's info
-      // default. They stay non-error because a successful recovery is not a
-      // failure; ordinary API completion keeps using debug.
-      "api/no-logger-info": [
-        "error",
-        { allowedMessages: ["Pi API first-turn outcome"] },
-      ],
-    },
-  },
-  {
-    files: ["src/signals/services/pi-api-first-turn-failure-log.service.ts"],
-    rules: {
-      // Classified provider outcomes mirror Runner's bounded execution
-      // diagnostic at INFO; unclassified structural failures remain ERROR.
-      "api/no-logger-info": [
-        "error",
-        { allowedMessages: ["Pi API first-turn execution failed"] },
-      ],
-    },
-  },
-  {
     files: ["src/signals/services/cron-snapshot-chat-events.service.ts"],
     rules: {
       // An expected per-head deadline is bounded backpressure, not a warning,
@@ -565,6 +611,13 @@ export default [
       "api/no-package-variable": "error",
     },
   },
+  {
+    files: ["src/**/*.ts", "vitest.config.ts"],
+    plugins: { api: apiLintPlugin },
+    rules: {
+      "api/no-test-database-binding": "error",
+    },
+  },
   // Gateway boundary. Tests are exempt: they type-check in their own smaller
   // program, so an SDK import there does not land in the core program.
   {
@@ -576,7 +629,12 @@ export default [
   },
   {
     files: ["src/**/*.ts"],
-    ignores: ["src/lib/env.ts", "src/lib/time.ts", "src/__tests__/env-stub.ts"],
+    ignores: [
+      "src/lib/env.ts",
+      "src/lib/time.ts",
+      "src/__tests__/env-stub.ts",
+      "src/__tests__/global-setup-env.ts",
+    ],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -596,7 +654,7 @@ export default [
       "src/**/*.test.ts",
       ...promiseChainAllowlist,
     ],
-    ignores: ["src/__tests__/env-stub.ts"],
+    ignores: ["src/__tests__/env-stub.ts", "src/__tests__/global-setup-env.ts"],
     rules: {
       "no-restricted-syntax": ["error", ...restrictedSyntax],
     },
@@ -651,94 +709,25 @@ export default [
     },
   },
   {
-    files: ["src/**/*.ts"],
-    ignores: [
-      "src/**/__tests__/**/*.ts",
-      "src/**/*.test.ts",
-      "src/test-fixtures/thread-bound-run-admission.ts",
-      "src/signals/routes/test-run-fixture.ts",
-    ],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: ["**/agent-runs-create.service"],
-              importNames: ["createTestFixtureAgentRun$"],
-              message:
-                "Production run sources must use createQueueFirstAgentRun$ so every run is bound to a chat thread.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
     // Keep finite persisted/state-machine contract matrices as narrow
     // exceptions. Route tests cover constructible behavior, while these exact
     // transition inputs are not available through production APIs. Being an
     // exception to the service-directory ban is not an exception to the
     // diagnostics gate, so these files carry those selectors too.
     files: [
-      // B1 deliberately has no production deletion/selector endpoint. This
-      // exact codec suite verifies its minimum-data KMS envelope boundary.
-      "src/signals/services/__tests__/account-erasure-selector.test.ts",
-      // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
-      // sessions exercise first closure, lease recovery, and selector retirement.
-      "src/signals/services/__tests__/account-erasure.service.test.ts",
-      // D2's ownership coverage guard reads a schema and returns a verdict. Its
-      // negative cases describe schemas this repository does not have — a new
-      // uncovered table, an account identity appearing on an account-free one —
-      // so no endpoint, and no database, can construct the states that prove
-      // the guard fails closed.
-      "src/signals/services/__tests__/account-erasure-ownership-inventory.test.ts",
-      // The relational sweep plan is derived from `pg_class`, `pg_constraint`
-      // and `pg_attribute`. No production endpoint exposes the catalogue, and
-      // a schema fixture would defeat the point of a layer that exists because
-      // TypeScript exports are not the database.
-      "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",
-      // The hosted-site object sink proves bytes do not outlive the catalog row
-      // that named them, so its central case deletes the deployment row before
-      // any object is touched. No endpoint can construct a captured locator
-      // whose row is already gone, and object absence is read back from the
-      // provider rather than from a response this API serves.
-      "src/signals/services/__tests__/account-erasure-hosted-site-collector.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // B2b1 races the dormant real projector with actual compute writers;
-      // no HTTP route owns closure or can observe PostgreSQL lock ordering.
-      "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
-      // Authentication necessarily observes an already-aborted HTTP request
-      // before command creation. This one direct production-command case is the
-      // only seam that mutation-tests its pre-BEGIN guard; route coverage owns
-      // the public request, durable outcome and healthy retry.
-      "src/signals/services/__tests__/computer-use-command-create-cancellation.service.test.ts",
-      // Pi resource snapshots are a byte-identical discovery contract shared
-      // with the sandbox runtime; route output cannot expose its full virtual
-      // filesystem, ignore-rule, and precedence matrix.
-      "src/signals/services/__tests__/pi-resource-snapshot.service.test.ts",
-      // The API-owned first-turn projection has no endpoint that returns its
-      // private execution context. Route tests cover the queued launch config;
-      // this focused check preserves the digest across the projection itself.
-      "src/signals/services/__tests__/pi-api-first-turn-config.test.ts",
-      // Stable-context projection bytes are shared with persisted artifacts,
-      // while PostgreSQL generation/CAS and lease races have no production
-      // endpoint that can construct or observe their exact transition matrix.
-      // Run creation and cron routes retain the externally visible coverage.
-      "src/signals/services/__tests__/pi-stable-context.service.test.ts",
-      "src/signals/services/__tests__/pi-stable-context-generation.service.test.ts",
       // The production cron exposes aggregate Phase 2 outcomes, but no API
       // constructs or inspects exact job and Storage state matrices. These
       // focused tests pin the finite job, usage, worker composition, generic
       // Storage publication guard, notification, and concurrency contracts.
       "src/signals/services/__tests__/pi-memory-phase2-job.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-usage.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
-      // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
-      "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
+      // The post-commit presigned URL cache write is log-only. Every value an
+      // endpoint can produce fits the cache columns, so only the command's
+      // data parameter can carry a row PostgreSQL rejects.
+      "src/signals/services/__tests__/execution-storage.service.test.ts",
       // The Morning Brief source budget is a deployed 20-second constant, not
       // a request input, and shortening it through the preview endpoint would
       // ship a debug parameter. This suite drives the route's own admission
@@ -775,13 +764,9 @@ export default [
       // D explicitly requires immutable billing/compaction snapshot infrastructure.
       "src/signals/services/__tests__/pi-memory-stage1-usage.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // HTTP callers cannot select hard/preserve transaction inputs, legacy
-      // NULL recovery, partial claims, rollback or a closed DB pool. Route
-      // suites separately cover all externally constructible stop writers.
-      "src/signals/services/__tests__/run-cancellation-state.service.test.ts",
       // #34693 and #34711 need the persisted membership fence in both
       // overlapping commit orders, the foreign-key cascades that invalidate a
-      // copy, erasure closure and the refresh outcome, none of which any
+      // copy, account deletion and the refresh outcome, none of which any
       // production endpoint exposes. The Settings routes cover the rest.
       "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
       // #34815 needs both commit orders of a Morning Brief classification and a
@@ -796,7 +781,10 @@ export default [
       // admission once its binding transaction commits, so it cannot be
       // suspended at that boundary; deletion stays the real endpoint and the
       // route suite owns the constructible reuse cases.
-      "src/signals/services/__tests__/workflow-user-automation-thread.service.test.ts",
+      // #36466's old/corrupt cache JSONB and active claim cannot be created by
+      // any product endpoint. The suite seeds only those states directly and
+      // observes recovery through the real GET and scoped cron routes.
+      "src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts",
     ],
     rules: {
       "no-restricted-syntax": [
@@ -847,12 +835,6 @@ export default [
               group: ["**/routes/cli-auth-test"],
               message: productionRouteTestImportMessage,
             },
-            {
-              group: ["**/agent-runs-create.service"],
-              importNames: ["createTestFixtureAgentRun$"],
-              message:
-                "Production run sources must use createQueueFirstAgentRun$ so every run is bound to a chat thread.",
-            },
           ],
         },
       ],
@@ -892,12 +874,6 @@ export default [
               ],
               message: lowerLayerRouteImportMessage,
             },
-            {
-              group: ["**/agent-runs-create.service"],
-              importNames: ["createTestFixtureAgentRun$"],
-              message:
-                "Production run sources must use createQueueFirstAgentRun$ so every run is bound to a chat thread.",
-            },
           ],
         },
       ],
@@ -913,39 +889,21 @@ export default [
       // policy lookup byte-for-byte; individual provider routes cannot cover
       // every lookup-table row without duplicating the contract under test.
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // Pi resource snapshots are a byte-identical discovery contract shared
-      // with the sandbox runtime; route output cannot expose its full virtual
-      // filesystem, ignore-rule, and precedence matrix.
-      "src/signals/services/__tests__/pi-resource-snapshot.service.test.ts",
-      // Stable-context projection bytes are shared with persisted artifacts,
-      // while generation/CAS and lease races have no exact HTTP setup or
-      // observation surface. Route tests retain externally visible behavior.
-      "src/signals/services/__tests__/pi-stable-context.service.test.ts",
-      "src/signals/services/__tests__/pi-stable-context-generation.service.test.ts",
       // The production cron exposes aggregate Phase 2 outcomes, but cannot
       // construct or inspect the exact usage, worker, PostgreSQL concurrency,
       // generic Storage publication guard, notification, and selection state
       // matrices covered by these focused tests.
       "src/signals/services/__tests__/pi-memory-phase2-job.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-usage.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
-      // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
-      "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
+      // The post-commit presigned URL cache write is log-only. Every value an
+      // endpoint can produce fits the cache columns, so only the command's
+      // data parameter can carry a row PostgreSQL rejects.
+      "src/signals/services/__tests__/execution-storage.service.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
-      // No production endpoint can construct B1's dormant jobs or DB races.
-      "src/signals/services/__tests__/account-erasure.service.test.ts",
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // B2b1 races the dormant real projector with actual compute writers;
-      // no HTTP route owns closure or can observe PostgreSQL lock ordering.
-      "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
-      // Authentication necessarily consumes a pre-aborted HTTP signal before
-      // command creation. The route suite retains every public assertion; this
-      // exception only proves the production command opens no transaction.
-      "src/signals/services/__tests__/computer-use-command-create-cancellation.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
@@ -971,11 +929,8 @@ export default [
       // The logger is the subject here, not a diagnostic: this suite covers the
       // app factory's log wiring and flush ownership, which no route exposes.
       "src/__tests__/app-factory.test.ts",
-      // Finite stop-intent transaction/history matrix, outside HTTP inputs;
-      // retains the diagnostics restrictions in the named service block.
-      "src/signals/services/__tests__/run-cancellation-state.service.test.ts",
       // #34693 and #34711's persisted membership fence, foreign-key cascades,
-      // erasure closure and refresh outcome have no HTTP ingress; the Settings
+      // account deletion and refresh outcome have no HTTP ingress; the Settings
       // routes own everything else.
       "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
       // The source budget is a deployed 20-second constant, not a request
@@ -993,7 +948,9 @@ export default [
       // #35016's binding reuse and thread deletion have to arrive in both
       // orders on the same two rows, which needs a suspended PostgreSQL
       // transaction; the reuse route suite owns the constructible cases.
-      "src/signals/services/__tests__/workflow-user-automation-thread.service.test.ts",
+      // #36466's old/corrupt cache JSONB and active claim are not HTTP inputs;
+      // only those states are seeded directly, then the real routes are asserted.
+      "src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts",
     ],
     rules: {
       "no-restricted-imports": [
@@ -1007,7 +964,7 @@ export default [
           ],
           patterns: [
             {
-              group: ["@okouai/db/schema/*"],
+              group: ["@okouai/db/schema/*", "@okouai/db/runtime/*"],
               message: apiTestExternalBehaviorMessage,
             },
             {
@@ -1037,6 +994,7 @@ export default [
       // Bootstrap-only module: it owns the process.env and vi.stubEnv usage
       // that `restrictedSyntax` bans everywhere else.
       "src/__tests__/env-stub.ts",
+      "src/__tests__/global-setup-env.ts",
       // Service-directory tests are answered by their own blocks above: the
       // file is either banned outright or is a named exception that carries
       // these selectors alongside the shared ones.

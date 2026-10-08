@@ -15,6 +15,7 @@ import {
   type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
 import {
+  mockChatThreadSnapshotResponse,
   chatEventRowsResponse,
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
@@ -29,6 +30,7 @@ import {
   mockChatEventRows,
   normalizeMockChatEvents,
 } from "./chat-event-test-helpers.ts";
+import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
 
@@ -70,13 +72,12 @@ function threadSnapshot(
     createdAt: "2026-08-20T11:00:00.000Z",
     updatedAt: "2026-08-20T12:00:00.000Z",
     pinnedAt: null,
+    archived: false,
     renamedAt: null,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
-    selectedImageModel: null,
   };
 }
 
@@ -194,11 +195,14 @@ function mockThreadSnapshot(
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     options.onRequest?.();
     await options.gate;
-    return respond(200, {
-      chatThreads: [...readThreads()],
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [...readThreads()],
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -240,7 +244,7 @@ function mockConversationRows(
 
 async function visibleAppSkeleton(): Promise<HTMLElement> {
   const skeleton = await screen.findByRole("status", { name: "Loading" });
-  expect(skeleton).toHaveAttribute("data-testid", "app-skeleton");
+  expect(skeleton).toBe(bootstrapSkeleton());
   expect(skeleton).not.toHaveAttribute("aria-hidden");
   return skeleton;
 }
@@ -260,10 +264,7 @@ async function visibleChatSkeleton(): Promise<HTMLElement> {
 
 async function expectAppSkeletonDismissed(): Promise<void> {
   await waitFor(() => {
-    expect(screen.getByTestId("app-skeleton")).toHaveAttribute(
-      "aria-hidden",
-      "true",
-    );
+    expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
   });
 }
 

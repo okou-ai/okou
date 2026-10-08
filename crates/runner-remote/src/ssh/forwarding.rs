@@ -27,11 +27,16 @@ const SETUP_TIMEOUT: Duration = Duration::from_secs(60);
 /// pool lease retires the physical connection.
 pub(crate) struct DirectTcpIpStream {
     stream: russh::ChannelStream<client::Msg>,
+    generation: i64,
     monitor_done: CancellationToken,
     lease: Option<pool::Lease>,
 }
 
 impl DirectTcpIpStream {
+    pub(crate) fn generation(&self) -> i64 {
+        self.generation
+    }
+
     fn retire(&mut self) {
         drop(self.lease.take());
     }
@@ -130,11 +135,13 @@ impl Run {
                     &mut attempt,
                 )))
                 .await??;
-            let generation = credential
-                .trust
-                .lock()
-                .map_err(|_| FailureReason::Protocol)?
-                .generation;
+            let (generation, pinned) = {
+                let trust = credential
+                    .trust
+                    .lock()
+                    .map_err(|_| FailureReason::Protocol)?;
+                (trust.generation, trust.pin.is_some())
+            };
             attempt.generation = Some(generation);
             if generation != expected_generation {
                 return Err(FailureReason::ConfigurationChanged);
@@ -147,7 +154,7 @@ impl Run {
                     &self.runtime,
                     pool::Request {
                         connection,
-                        credential,
+                        credential: Arc::clone(&credential),
                         access: access.clone(),
                         operation,
                     },
@@ -155,6 +162,23 @@ impl Run {
                     &mut attempt,
                 )
                 .await?;
+            let actual_generation = {
+                let trust = credential
+                    .trust
+                    .lock()
+                    .map_err(|_| FailureReason::Protocol)?;
+                // First-use host-key pinning advances this SSH generation during
+                // the authenticated connection. Only that attested transition
+                // may replace the VNC resolve snapshot.
+                if trust.generation != expected_generation
+                    && (pinned
+                        || trust.generation != expected_generation + 1
+                        || trust.pin.is_none())
+                {
+                    return Err(FailureReason::ConfigurationChanged);
+                }
+                trust.generation
+            };
             let stream = lease
                 .connected()
                 .open_direct_tcpip(host, port, &scope)
@@ -172,6 +196,7 @@ impl Run {
             });
             Ok(DirectTcpIpStream {
                 stream,
+                generation: actual_generation,
                 monitor_done,
                 lease: Some(lease),
             })

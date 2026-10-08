@@ -204,6 +204,8 @@ pub struct ExecutorConfig {
     pub mitm_jsonl_flush: Option<MitmJsonlFlushHandle>,
     pub connector_runtime_sync: Option<runner_provider::ConnectorRuntimeSyncHandle>,
     pub guest_rpc: Option<crate::guest_rpc::Runtime>,
+    /// Live executor-held Guest assignments, shared with the owning Runner listener.
+    pub guest_duplex: runner_remote::guest_duplex::RunGuestChannels,
     pub session_history_cpu: SessionHistoryCpuPool,
     pub session_history_probe: SessionHistoryProbe,
     pub fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission,
@@ -293,6 +295,9 @@ impl SandboxReuseDisposition {
             Self::Ineligible(SandboxReuseRejection::UnconfirmedTimeout) => "unconfirmed_timeout",
             Self::Ineligible(SandboxReuseRejection::ResourceFailure) => "resource_failure",
             Self::Ineligible(SandboxReuseRejection::ControlPathFailure) => "control_path_failure",
+            Self::Ineligible(SandboxReuseRejection::CodexStateBackfillTimeout) => {
+                "codex_state_backfill_timeout"
+            }
             Self::Ineligible(SandboxReuseRejection::PostJobCleanupFailure) => {
                 "post_job_cleanup_failure"
             }
@@ -329,6 +334,9 @@ impl SandboxReuseDisposition {
             Self::Ineligible(SandboxReuseRejection::ControlPathFailure) => {
                 "runner_terminal_sandbox_reuse_rejected_control_path_failure"
             }
+            Self::Ineligible(SandboxReuseRejection::CodexStateBackfillTimeout) => {
+                "runner_terminal_sandbox_reuse_rejected_codex_state_backfill_timeout"
+            }
             Self::Ineligible(SandboxReuseRejection::PostJobCleanupFailure) => {
                 "runner_terminal_sandbox_reuse_rejected_post_job_cleanup_failure"
             }
@@ -357,15 +365,13 @@ pub enum SandboxReuseRejection {
     UnconfirmedTimeout,
     ResourceFailure,
     ControlPathFailure,
+    CodexStateBackfillTimeout,
     PostJobCleanupFailure,
 }
 
 /// Outcome of a job execution and ownership of any sandbox still alive afterward.
 pub struct ExecuteOutcome {
     pub failure: Option<ExecutionFailure>,
-    /// Backend-accepted active-input deliveries not already confirmed through
-    /// the direct receipt route. Provider completion settles these IDs.
-    pub active_input_delivery_ids: Vec<String>,
     pub sandbox_reuse_disposition: SandboxReuseDisposition,
     /// Sandbox ownership after execution.
     ///
@@ -394,7 +400,6 @@ impl ExecuteOutcome {
     fn preparation_failure(error: impl ToString) -> Self {
         Self {
             failure: Some(ExecutionFailure::from_error(error.to_string())),
-            active_input_delivery_ids: Vec::new(),
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             sandbox: None,
             source_ip: String::new(),
@@ -414,7 +419,6 @@ impl ExecuteOutcome {
     ) -> Self {
         Self {
             failure: Some(failure),
-            active_input_delivery_ids: Vec::new(),
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             sandbox: Some(sandbox),
             source_ip,
@@ -659,7 +663,6 @@ pub async fn execute_job_with_prepared_notifier(
     ) {
         Err(error) => ExecuteOutcome {
             failure: Some(ExecutionFailure::from_error(error)),
-            active_input_delivery_ids: Vec::new(),
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             sandbox: None,
             source_ip: String::new(),
@@ -690,7 +693,6 @@ pub async fn execute_job_with_prepared_notifier(
             Ok(outcome) => outcome,
             Err(e) => ExecuteOutcome {
                 failure: Some(ExecutionFailure::from_error(e.to_string())),
-                active_input_delivery_ids: Vec::new(),
                 sandbox_reuse_disposition: SandboxReuseDisposition::default(),
                 sandbox: None,
                 source_ip: String::new(),

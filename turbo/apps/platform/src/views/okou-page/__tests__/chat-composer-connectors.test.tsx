@@ -6,7 +6,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
-  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -34,7 +33,6 @@ import {
 } from "./chat-message-experience-test-helpers.ts";
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
-const GMAIL_SLUG = "gmail" as ConnectorSlug;
 const AXIOM_SLUG = "axiom" as ConnectorSlug;
 const GOOGLE_ANALYTICS_SLUG = "google-analytics" as ConnectorSlug;
 const PUBLIC_STRIPE_SLUG = "stripe-public" as ConnectorSlug;
@@ -73,6 +71,14 @@ async function openAddConnectors(
   return dialog;
 }
 
+async function openCustomConnectors(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<HTMLElement> {
+  const dialog = await openAddConnectors(user);
+  await user.click(within(dialog).getByRole("radio", { name: "Custom" }));
+  return dialog;
+}
+
 function accessRow(control: HTMLElement): HTMLElement {
   const row = control.closest(".flex.h-10");
   if (!(row instanceof HTMLElement)) {
@@ -105,74 +111,6 @@ function createAuthWindow(): Window {
   });
   return authWindow;
 }
-
-test("Show the filtered connector count in the add dialog", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({
-    catalog: [
-      builtinConnector({
-        slug: GITHUB_SLUG,
-        label: "GitHub",
-        connected: false,
-      }),
-      builtinConnector({
-        slug: GMAIL_SLUG,
-        label: "Gmail",
-        connected: false,
-      }),
-    ],
-    customConnectors: [
-      httpConnector({
-        id: ACME_CONNECTOR_ID,
-        slug: "acme-search",
-        displayName: "Acme Search",
-        connected: false,
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-
-  await loadComposer();
-  await openConnectors(user);
-  const catalog = await openAddConnectors(user);
-  const search = within(catalog).getByPlaceholderText("Find connectors...");
-  await expect(
-    findFastControl("link", "Manage SSH hosts", catalog),
-  ).resolves.toBeVisible();
-  expect(
-    within(catalog).getByRole("heading", {
-      name: "Available connectors to connect (4)",
-    }),
-  ).toBeVisible();
-
-  await fill(search, "Gmail");
-  await waitFor(() => {
-    expect(
-      within(catalog).getByRole("heading", {
-        name: "Available connectors to connect (1)",
-      }),
-    ).toBeVisible();
-  });
-
-  await fill(search, "Clueso");
-  await waitFor(() => {
-    expect(
-      within(catalog).getByRole("heading", {
-        name: "Available connectors to connect (0)",
-      }),
-    ).toBeVisible();
-  });
-
-  await fill(search, "");
-  await waitFor(() => {
-    expect(
-      within(catalog).getByRole("heading", {
-        name: "Available connectors to connect (4)",
-      }),
-    ).toBeVisible();
-  });
-});
 
 test("Configure connector permissions from the composer", async () => {
   const user = userEvent.setup({ delay: null });
@@ -244,7 +182,7 @@ describe("connecting a custom connector for the active agent", () => {
   });
 
   it("connects a custom connector for only the active agent", async () => {
-    let catalog = await openAddConnectors(user);
+    let catalog = await openCustomConnectors(user);
     expect(
       within(catalog).getByText("https://api.example.test/"),
     ).toBeVisible();
@@ -257,7 +195,7 @@ describe("connecting a custom connector for the active agent", () => {
     await user.click(await findFastControl("button", "Cancel"));
 
     await ensureConnectorsOpen(user);
-    catalog = await openAddConnectors(user);
+    catalog = await openCustomConnectors(user);
     await user.click(
       await findFastControl("button", "Connect Acme Search", catalog),
     );
@@ -402,7 +340,7 @@ test("Start connector setup from chat", async () => {
     "Connect Google Analytics",
     catalog,
   );
-  expect(within(catalog).queryByRole("status")).toBeNull();
+  expect(connect).not.toHaveAttribute("aria-busy");
   expect(authWindow.location.href).toBe("about:blank");
   await user.click(connect);
   await waitFor(() => {
@@ -420,9 +358,7 @@ test("Start connector setup from chat", async () => {
   expect(browserOpen.calls).toHaveLength(1);
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   expect(screen.queryByRole("dialog", { name: "Google Analytics" })).toBeNull();
-  expect(within(catalog).getByRole("status")).toHaveTextContent(
-    "Connecting...",
-  );
+  expect(connect).toHaveAttribute("aria-busy", "true");
   expect(connect).toBeDisabled();
   expect(
     within(catalog).getByPlaceholderText("Find connectors..."),
@@ -432,11 +368,13 @@ test("Start connector setup from chat", async () => {
   ).toBeNull();
   authWindow.close();
   await waitFor(() => {
-    expect(within(catalog).queryByRole("status")).toBeNull();
+    expect(
+      queryFastControl("button", "Connect Google Analytics", catalog),
+    ).toBeEnabled();
   });
-  await expect(
-    findFastControl("button", "Connect Google Analytics", catalog),
-  ).resolves.toBeEnabled();
+  expect(
+    queryFastControl("button", "Connect Google Analytics", catalog),
+  ).not.toHaveAttribute("aria-busy");
   expect(
     within(catalog).getByPlaceholderText("Find connectors..."),
   ).toHaveValue("Google Analytics");
@@ -490,9 +428,9 @@ test.each([null, "Close"] as const)(
         "https://accounts.example.test/google-analytics",
       );
     });
-    expect(within(catalog).getByRole("status")).toHaveTextContent(
-      "Connecting...",
-    );
+    expect(
+      queryFastControl("button", "Connect Google Analytics", catalog),
+    ).toHaveAttribute("aria-busy", "true");
     expect(
       within(catalog).getByPlaceholderText("Find connectors..."),
     ).toBeVisible();
@@ -530,7 +468,9 @@ test.each([null, "Close"] as const)(
     authWindow.close();
     await authorizationStarted.promise;
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(screen.queryAllByText("Connecting...")).toHaveLength(1);
+    expect(
+      queryFastControl("button", "Connect Google Analytics", catalog),
+    ).toHaveAttribute("aria-busy", "true");
     authorization.resolve();
     await expect(
       screen.findByText("Google Analytics connected and authorized for Scout"),
@@ -730,7 +670,7 @@ test("Exclude unconnected integration-managed connectors from chat setup", async
 
   await loadComposer();
   await openConnectors(user);
-  const catalog = await openAddConnectors(user);
+  const catalog = await openCustomConnectors(user);
   await expect(
     findFastControl("button", "Connect Acme Search", catalog),
   ).resolves.toBeVisible();

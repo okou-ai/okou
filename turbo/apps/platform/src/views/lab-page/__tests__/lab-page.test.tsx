@@ -1,4 +1,5 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -65,7 +66,7 @@ test("Lab remains available while onboarding is required", async () => {
   );
 });
 
-test("Lab groups every feature by rollout stage with a switch", async () => {
+test("Lab groups active feature switches", async () => {
   await setupPage({
     context,
     path: "/_/lab",
@@ -74,28 +75,32 @@ test("Lab groups every feature by rollout stage with a switch", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
 
-  const released = featureSwitchGroup("Released");
-  const beta = featureSwitchGroup("Beta");
-  const alpha = featureSwitchGroup("Alpha");
-  const internal = featureSwitchGroup("Internal");
-  const featureRows = [released, beta, alpha, internal].flatMap((group) => {
-    return Array.from(group.querySelectorAll("li"));
-  });
-
-  expect(featureRows).toHaveLength(Object.values(FeatureSwitchKey).length);
-  expect(screen.getAllByRole("switch")).toHaveLength(featureRows.length);
+  // Every switch is listed once, in the group named for its rollout stage.
+  const metadata = getFeatureSwitchMetadata();
+  const stageGroups = {
+    released: "Released",
+    beta: "Beta",
+    alpha: "Alpha",
+    internal: "Internal",
+  } as const;
+  const keys = Object.values(FeatureSwitchKey);
+  for (const key of keys) {
+    const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
+    expect(within(group).getByText(key)).toBeInTheDocument();
+  }
+  expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
   expect(
-    within(released).getByText(FeatureSwitchKey.AvatarNeckSweater),
-  ).toBeVisible();
-  expect(within(alpha).getByText(FeatureSwitchKey.Banking)).toBeVisible();
-  expect(
-    within(beta).getByText(FeatureSwitchKey.CustomTemplates),
-  ).toBeVisible();
-  expect(
-    within(alpha).getByText(FeatureSwitchKey.AhrefsConnector),
+    within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
-    within(internal).getByText(FeatureSwitchKey.TestOauthConnector),
+    within(featureSwitchGroup("Beta")).getByText(
+      FeatureSwitchKey.CustomTemplates,
+    ),
+  ).toBeVisible();
+  expect(
+    within(featureSwitchGroup("Internal")).getByText(
+      FeatureSwitchKey.TestOauthConnector,
+    ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
 });

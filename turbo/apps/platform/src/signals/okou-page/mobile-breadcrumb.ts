@@ -172,27 +172,6 @@ export const mobileBreadcrumb$ = computed(
       return await get(activityDetailBreadcrumb$);
     }
 
-    if (
-      route === "connectorSsh" ||
-      route === "connectorVnc" ||
-      route === "connectorCloudflareAccess"
-    ) {
-      return {
-        section: i18n.t(($) => {
-          return $.appShell.sidebar.navigation.connectors;
-        }),
-        sectionPath: ROUTES.connectors,
-        name: i18n.t(($) => {
-          if (route === "connectorVnc") {
-            return $.vnc.label;
-          }
-          return route === "connectorCloudflareAccess"
-            ? $.cloudflareAccess.title
-            : $.ssh.label;
-        }),
-      };
-    }
-
     if (route === "works") {
       const displayName = await get(currentChatAgentDisplayName$);
       return {

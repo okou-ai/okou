@@ -4,7 +4,6 @@ import {
   logsByIdContract,
   logsListContract,
 } from "@okouai/api-contracts/contracts/logs";
-import { queuePositionContract } from "@okouai/api-contracts/contracts/queue-position";
 import {
   runAgentEventsContract,
   runNetworkLogsContract,
@@ -13,27 +12,17 @@ import {
 import { createApp } from "../../../../app-factory";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import {
-  createDirectRunFixture,
-  listAgentRunsFixture,
-  type DirectRunFixtureRequest,
-} from "../../../../test-fixtures/agent-runs";
+import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 import { logsRoutes } from "../../logs";
-import { queuePositionRoutes } from "../../queue-position";
 import { runDetailRoutes } from "../../run-detail";
 
-const TEST_APP_ROUTES = Object.freeze([
-  ...logsRoutes,
-  ...queuePositionRoutes,
-  ...runDetailRoutes,
-]);
+const TEST_APP_ROUTES = Object.freeze([...logsRoutes, ...runDetailRoutes]);
 
 type AuthHeaders = {
   readonly authorization?: string;
 };
-type DirectRunRequest = DirectRunFixtureRequest;
 interface RunsListQuery {
   readonly status?: string;
   readonly agent?: string;
@@ -93,32 +82,6 @@ function authenticate(
 
 export function createRunReadsApi(context: TestContext) {
   return {
-    async requestCreateDirectRun<
-      TStatus extends 201 | 400 | 401 | 403 | 404 | 429,
-    >(
-      actor: ApiTestUser | null,
-      body: DirectRunRequest,
-      statuses: readonly TStatus[],
-    ) {
-      const response = !actor?.orgId
-        ? {
-            status: 401 as const,
-            body: {
-              error: {
-                message: "Not authenticated",
-                code: "UNAUTHORIZED" as const,
-              },
-            },
-          }
-        : await createDirectRunFixture({
-            userId: actor.userId,
-            orgId: actor.orgId,
-            body,
-            signal: context.signal,
-          });
-      return await accept(Promise.resolve(response), statuses);
-    },
-
     async requestListAgentRuns<TStatus extends 200 | 400>(
       actor: ApiTestUser,
       query: RunsListQuery,
@@ -186,22 +149,6 @@ export function createRunReadsApi(context: TestContext) {
           headers: authenticate(context, actor),
           params: { id: runId },
           query,
-        }),
-        statuses,
-      );
-    },
-
-    async requestQueuePosition<TStatus extends 200 | 400 | 401 | 404>(
-      actor: ApiTestUser | null,
-      runId: string,
-      statuses: readonly TStatus[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: queuePositionRoutes })(
-          queuePositionContract,
-        ).getPosition({
-          headers: authenticate(context, actor),
-          query: { runId },
         }),
         statuses,
       );
@@ -278,8 +225,8 @@ export function createRunReadsApi(context: TestContext) {
       );
     },
 
-    // Raw GET for 400s the typed contracts cannot express (queue-position
-    // without runId and network queries rejected by zod before the handler).
+    // Raw GET for 400s the typed contracts cannot express (network queries
+    // rejected by zod before the handler).
     async rawApiRequest(
       actor: ApiTestUser | null,
       path: string,

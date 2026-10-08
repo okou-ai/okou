@@ -1,3 +1,8 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { Buffer } from "node:buffer";
 import { createHmac, createSign, timingSafeEqual } from "node:crypto";
 
@@ -12,7 +17,6 @@ import {
 } from "@okouai/connectors/connector-auth-method";
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
 import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
@@ -29,12 +33,8 @@ import {
 } from "../../lib/connector-oauth-state";
 import { now } from "../../lib/time";
 import { logger } from "../../lib/log";
-import {
-  githubAppUrl,
-  OFFICIAL_GITHUB_PUBLIC_BRAND,
-} from "../../lib/github-official-app";
+import { githubAppUrl } from "../../lib/github-official-app";
 import { encryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 const L = logger("GithubOAuth");
 const INSTALLATION_ID_RE = /^\d+$/;
@@ -67,8 +67,6 @@ interface GithubOAuthState {
   readonly orgId: string | null;
   readonly composeId: string | null;
   readonly sig: string | null;
-  readonly publicBrand: PublicBrand;
-  readonly publicBrandSig: string | null;
   readonly callbackRedirectUri: string | null;
   readonly callbackRedirectUriSig: string | null;
   readonly oauthRequestedScopes: readonly string[] | null;
@@ -288,37 +286,18 @@ async function createGithubOauthStateHmac(
   return Buffer.from(signature).toString("hex");
 }
 
-async function createGithubOauthPublicBrandSignature(args: {
-  readonly userId: string | null;
-  readonly orgId: string | null;
-  readonly composeId: string | null;
-  readonly publicBrand: PublicBrand;
-  readonly secretsEncryptionKey: string;
-}): Promise<string> {
-  const payload = [
-    "github-oauth-public-brand-v1",
-    args.userId ?? "",
-    args.orgId ?? "",
-    args.composeId ?? "",
-    args.publicBrand,
-  ].join(":");
-  return await createGithubOauthStateHmac(payload, args.secretsEncryptionKey);
-}
-
 async function createGithubOauthCallbackRedirectUriSignature(args: {
   readonly userId: string | null;
   readonly orgId: string | null;
   readonly composeId: string | null;
-  readonly publicBrand: PublicBrand;
   readonly callbackRedirectUri: string;
   readonly secretsEncryptionKey: string;
 }): Promise<string> {
   const payload = [
-    "github-oauth-callback-redirect-uri-v1",
+    "github-oauth-callback-redirect-uri-v2",
     args.userId ?? "",
     args.orgId ?? "",
     args.composeId ?? "",
-    args.publicBrand,
     args.callbackRedirectUri,
   ].join(":");
   return await createGithubOauthStateHmac(payload, args.secretsEncryptionKey);
@@ -328,16 +307,14 @@ async function createGithubOauthRequestedScopesSignature(args: {
   readonly userId: string | null;
   readonly orgId: string | null;
   readonly composeId: string | null;
-  readonly publicBrand: PublicBrand;
   readonly oauthRequestedScopes: readonly string[];
   readonly secretsEncryptionKey: string;
 }): Promise<string> {
   const payload = [
-    "github-oauth-requested-scopes-v1",
+    "github-oauth-requested-scopes-v2",
     args.userId ?? "",
     args.orgId ?? "",
     args.composeId ?? "",
-    args.publicBrand,
     JSON.stringify(args.oauthRequestedScopes),
   ].join(":");
   return await createGithubOauthStateHmac(payload, args.secretsEncryptionKey);
@@ -405,7 +382,6 @@ async function buildGithubOauthState(args: {
   readonly userId?: string;
   readonly orgId?: string;
   readonly composeId?: string;
-  readonly publicBrand: PublicBrand;
   readonly callbackRedirectUri: string;
   readonly oauthRequestedScopes?: readonly string[];
   readonly secretsEncryptionKey: string;
@@ -415,8 +391,6 @@ async function buildGithubOauthState(args: {
     orgId?: string;
     composeId?: string;
     sig?: string;
-    publicBrand?: PublicBrand;
-    publicBrandSig?: string;
     callbackRedirectUri?: string;
     callbackRedirectUriSig?: string;
     oauthRequestedScopes?: readonly string[];
@@ -439,21 +413,12 @@ async function buildGithubOauthState(args: {
       secretsEncryptionKey: args.secretsEncryptionKey,
     });
   }
-  state.publicBrand = args.publicBrand;
-  state.publicBrandSig = await createGithubOauthPublicBrandSignature({
-    userId: state.userId ?? null,
-    orgId: state.orgId ?? null,
-    composeId: state.composeId ?? null,
-    publicBrand: args.publicBrand,
-    secretsEncryptionKey: args.secretsEncryptionKey,
-  });
   state.callbackRedirectUri = args.callbackRedirectUri;
   state.callbackRedirectUriSig =
     await createGithubOauthCallbackRedirectUriSignature({
       userId: state.userId ?? null,
       orgId: state.orgId ?? null,
       composeId: state.composeId ?? null,
-      publicBrand: args.publicBrand,
       callbackRedirectUri: args.callbackRedirectUri,
       secretsEncryptionKey: args.secretsEncryptionKey,
     });
@@ -464,7 +429,6 @@ async function buildGithubOauthState(args: {
         userId: state.userId ?? null,
         orgId: state.orgId ?? null,
         composeId: state.composeId ?? null,
-        publicBrand: args.publicBrand,
         oauthRequestedScopes: args.oauthRequestedScopes,
         secretsEncryptionKey: args.secretsEncryptionKey,
       });
@@ -484,7 +448,6 @@ export async function buildGithubAppInstallUrl(args: {
   readonly composeId?: string;
   readonly callbackOrigin: string;
   readonly providerCallbackOrigin: string;
-  readonly publicBrand: PublicBrand;
   readonly oauthRequestedScopes?: readonly string[];
   readonly secretsEncryptionKey: string;
 }): Promise<string> {
@@ -495,7 +458,6 @@ export async function buildGithubAppInstallUrl(args: {
     userId: args.userId,
     orgId: args.orgId,
     composeId: args.composeId,
-    publicBrand: args.publicBrand,
     callbackRedirectUri,
     oauthRequestedScopes: args.oauthRequestedScopes,
     secretsEncryptionKey: args.secretsEncryptionKey,
@@ -614,8 +576,6 @@ export function parseGithubOauthState(
       orgId: null,
       composeId: null,
       sig: null,
-      publicBrand: "vm0",
-      publicBrandSig: null,
       callbackRedirectUri: null,
       callbackRedirectUriSig: null,
       oauthRequestedScopes: null,
@@ -633,26 +593,11 @@ export function parseGithubOauthState(
     readonly orgId?: unknown;
     readonly composeId?: unknown;
     readonly sig?: unknown;
-    readonly publicBrand?: unknown;
-    readonly publicBrandSig?: unknown;
     readonly callbackRedirectUri?: unknown;
     readonly callbackRedirectUriSig?: unknown;
     readonly oauthRequestedScopes?: unknown;
     readonly oauthRequestedScopesSig?: unknown;
   };
-
-  const publicBrand = stateObject.publicBrand;
-  const publicBrandSig = stateObject.publicBrandSig;
-  if (publicBrand === undefined) {
-    if (publicBrandSig !== undefined) {
-      return null;
-    }
-  } else if (
-    (publicBrand !== "vm0" && publicBrand !== "okou") ||
-    typeof publicBrandSig !== "string"
-  ) {
-    return null;
-  }
 
   const callbackRedirectUri = parseGithubOauthCallbackRedirectUriState({
     redirectUri: stateObject.callbackRedirectUri,
@@ -676,8 +621,6 @@ export function parseGithubOauthState(
     composeId:
       typeof stateObject.composeId === "string" ? stateObject.composeId : null,
     sig: typeof stateObject.sig === "string" ? stateObject.sig : null,
-    publicBrand: publicBrand === "okou" ? "okou" : "vm0",
-    publicBrandSig: typeof publicBrandSig === "string" ? publicBrandSig : null,
     callbackRedirectUri: callbackRedirectUri.redirectUri,
     callbackRedirectUriSig: callbackRedirectUri.signature,
     oauthRequestedScopes: oauthRequestedScopes.scopes,
@@ -703,23 +646,6 @@ export async function isGithubOauthStateSignatureValid(args: {
     return false;
   }
 
-  if (args.state.publicBrandSig === null) {
-    if (args.state.publicBrand !== "vm0") {
-      return false;
-    }
-  } else {
-    const expectedPublicBrandSig = await createGithubOauthPublicBrandSignature({
-      userId: args.state.userId,
-      orgId: args.state.orgId,
-      composeId: args.state.composeId,
-      publicBrand: args.state.publicBrand,
-      secretsEncryptionKey: args.secretsEncryptionKey,
-    });
-    if (!signaturesMatch(args.state.publicBrandSig, expectedPublicBrandSig)) {
-      return false;
-    }
-  }
-
   if (args.state.callbackRedirectUri === null) {
     if (args.state.callbackRedirectUriSig !== null) {
       return false;
@@ -730,7 +656,6 @@ export async function isGithubOauthStateSignatureValid(args: {
         userId: args.state.userId,
         orgId: args.state.orgId,
         composeId: args.state.composeId,
-        publicBrand: args.state.publicBrand,
         callbackRedirectUri: args.state.callbackRedirectUri,
         secretsEncryptionKey: args.secretsEncryptionKey,
       });
@@ -752,7 +677,6 @@ export async function isGithubOauthStateSignatureValid(args: {
       userId: args.state.userId,
       orgId: args.state.orgId,
       composeId: args.state.composeId,
-      publicBrand: args.state.publicBrand,
       oauthRequestedScopes: args.state.oauthRequestedScopes,
       secretsEncryptionKey: args.secretsEncryptionKey,
     });
@@ -917,10 +841,22 @@ export async function loadComposeFeatureSwitchContext(
     throw new Error(`Agent compose not found: composeId=${args.composeId}`);
   }
 
-  return await loadUserFeatureSwitchContext(
-    args.db,
+  const featureSwitchContextRows0 = await args.db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(
+      userFeatureSwitchRowCondition(
+        compose.orgId,
+        args.userId ?? compose.userId,
+      ),
+    );
+  return featureSwitchContextFromRows(
     compose.orgId,
     args.userId ?? compose.userId,
+    featureSwitchContextRows0,
   );
 }
 
@@ -1016,7 +952,6 @@ export async function tryLinkGithubFromRemoteInstallations(
     readonly orgId: string | null;
     readonly userId: string;
     readonly composeId: string | null;
-    readonly publicBrand: PublicBrand;
   },
   signal: AbortSignal,
 ): Promise<boolean> {
@@ -1115,13 +1050,10 @@ export async function tryLinkGithubFromRemoteInstallations(
       ),
       status: "active",
       orgId,
-      publicBrand: OFFICIAL_GITHUB_PUBLIC_BRAND,
-      setupPublicBrand: args.publicBrand,
       targetType: ghInstall.account.type,
       targetId: String(ghInstall.account.id),
       targetName: ghInstall.account.login,
       adminGithubUserId,
-      defaultAgentId: args.composeId,
     })
     .returning({ id: githubInstallations.id });
   signal.throwIfAborted();
@@ -1153,10 +1085,7 @@ export async function findGithubInstallationByInstallationId(
     readonly orgId: string | null;
   },
   signal: AbortSignal,
-): Promise<{
-  readonly id: string;
-  readonly setupPublicBrand: PublicBrand;
-} | null> {
+): Promise<{ readonly id: string } | null> {
   const filters = [eq(githubInstallations.installationId, args.installationId)];
   if (args.orgId) {
     filters.push(eq(githubInstallations.orgId, args.orgId));
@@ -1165,7 +1094,6 @@ export async function findGithubInstallationByInstallationId(
   const [existing] = await args.db
     .select({
       id: githubInstallations.id,
-      setupPublicBrand: githubInstallations.setupPublicBrand,
     })
     .from(githubInstallations)
     .where(and(...filters))
@@ -1173,24 +1101,6 @@ export async function findGithubInstallationByInstallationId(
   signal.throwIfAborted();
 
   return existing ?? null;
-}
-
-export async function updateGithubInstallationSetupPublicBrand(
-  args: {
-    readonly db: Db;
-    readonly installRecordId: string;
-    readonly publicBrand: PublicBrand;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await args.db
-    .update(githubInstallations)
-    .set({
-      setupPublicBrand: args.publicBrand,
-      updatedAt: new Date(now()),
-    })
-    .where(eq(githubInstallations.id, args.installRecordId));
-  signal.throwIfAborted();
 }
 
 export async function createOrActivateGithubInstallation(
@@ -1202,7 +1112,6 @@ export async function createOrActivateGithubInstallation(
     readonly encryptedAccessToken: string;
     readonly adminGithubUserId: string | null;
     readonly composeId: string;
-    readonly setupPublicBrand: PublicBrand;
   },
   signal: AbortSignal,
 ): Promise<string> {
@@ -1231,8 +1140,6 @@ export async function createOrActivateGithubInstallation(
         targetType: args.installInfo.targetType,
         targetName: args.installInfo.targetName,
         adminGithubUserId: args.adminGithubUserId,
-        publicBrand: OFFICIAL_GITHUB_PUBLIC_BRAND,
-        setupPublicBrand: args.setupPublicBrand,
         updatedAt: new Date(now()),
       })
       .where(eq(githubInstallations.id, pendingRecord.id));
@@ -1250,13 +1157,10 @@ export async function createOrActivateGithubInstallation(
       encryptedAccessToken: args.encryptedAccessToken,
       status: "active",
       orgId: args.orgId,
-      publicBrand: OFFICIAL_GITHUB_PUBLIC_BRAND,
-      setupPublicBrand: args.setupPublicBrand,
       targetType: args.installInfo.targetType,
       targetId: args.installInfo.targetId,
       targetName: args.installInfo.targetName,
       adminGithubUserId: args.adminGithubUserId,
-      defaultAgentId: args.composeId,
     })
     .returning({ id: githubInstallations.id });
   signal.throwIfAborted();

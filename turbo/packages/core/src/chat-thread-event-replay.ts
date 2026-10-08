@@ -9,9 +9,9 @@ export type ReplayChatThreadEvent = Omit<ChatThreadEvent, "seqId">;
 
 export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
   readonly sortAt: string;
+  readonly archived: boolean;
+  readonly muted: boolean;
   readonly cloudBrowserEnabled: boolean;
-  readonly selectedVideoModel: string | null;
-  readonly selectedImageModel: string | null;
   readonly modelSettings: ModelSettings;
 }
 
@@ -39,9 +39,7 @@ function isDeferrableUpdate(kind: ReplayChatThreadEvent["kind"]): boolean {
   return (
     kind === "model_selection_updated" ||
     kind === "service_tier_updated" ||
-    kind === "computer_use_host_updated" ||
-    kind === "video_model_updated" ||
-    kind === "image_model_updated"
+    kind === "computer_use_host_updated"
   );
 }
 
@@ -61,6 +59,12 @@ function updatedThreadFields(
   }
   if (event.kind === "unpinned") {
     return { pinnedAt: null, pinOrder: null };
+  }
+  if (event.kind === "archived") {
+    return { archived: true };
+  }
+  if (event.kind === "unarchived") {
+    return { archived: false };
   }
   if (event.kind === "model_selection_updated") {
     return {
@@ -84,11 +88,24 @@ function updatedThreadFields(
       cloudBrowserEnabled: event.cloudBrowserEnabled ?? false,
     };
   }
-  if (event.kind === "video_model_updated") {
-    return { selectedVideoModel: event.selectedVideoModel };
+  return null;
+}
+
+function metadataTouchFields(
+  event: ReplayChatThreadEvent,
+  thread: EventDrivenChatThread,
+): Partial<EventDrivenChatThread> | null {
+  if (event.kind !== "sort_touched") {
+    return null;
   }
-  if (event.kind === "image_model_updated") {
-    return { selectedImageModel: event.selectedImageModel ?? null };
+  if (event.muted !== undefined) {
+    return { muted: event.muted };
+  }
+  if (event.pinOrder != null) {
+    return {
+      agentId: event.reassignedAgentId ?? thread.agentId,
+      ...(thread.pinnedAt !== null ? { pinOrder: event.pinOrder } : {}),
+    };
   }
   return null;
 }
@@ -107,14 +124,14 @@ function applyEvent(
       createdAt: event.createdAt,
       updatedAt: event.createdAt,
       pinnedAt: null,
+      archived: false,
+      muted: false,
       renamedAt: null,
       selectedModel: event.selectedModel,
       modelSettings: event.modelSettings ?? {},
       serviceTier: event.serviceTier,
       computerUseHostId: event.computerUseHostId,
       cloudBrowserEnabled: event.cloudBrowserEnabled ?? false,
-      selectedVideoModel: event.selectedVideoModel,
-      selectedImageModel: event.selectedImageModel ?? null,
     });
     const pendingUpdates = pendingThreadUpdates.get(event.chatThreadId) ?? [];
     pendingThreadUpdates.delete(event.chatThreadId);
@@ -140,12 +157,11 @@ function applyEvent(
     return;
   }
 
-  // Additive payload on the existing ordering event keeps older readers able
-  // to parse the stream. Manual moves do not change pin time or activity time.
-  if (event.kind === "sort_touched" && event.pinOrder != null) {
-    if (thread.pinnedAt !== null) {
-      threads.set(event.chatThreadId, { ...thread, pinOrder: event.pinOrder });
-    }
+  // Additive metadata payloads keep old readers able to parse the stream.
+  // Mute and manual pin moves do not change activity or metadata timestamps.
+  const metadataFields = metadataTouchFields(event, thread);
+  if (metadataFields !== null) {
+    threads.set(event.chatThreadId, { ...thread, ...metadataFields });
     return;
   }
 
@@ -153,7 +169,13 @@ function applyEvent(
   if (fields === null) {
     threads.set(event.chatThreadId, {
       ...thread,
-      sortAt: event.createdAt,
+      // Ordinary and optimistic activity touches may have captured an older
+      // agent. Only the canonical reassignment event changes this identity.
+      agentId:
+        event.kind === "sort_touched"
+          ? (event.reassignedAgentId ?? thread.agentId)
+          : thread.agentId,
+      sortAt: event.createdAt > thread.sortAt ? event.createdAt : thread.sortAt,
     });
     return;
   }
@@ -165,10 +187,6 @@ function applyEvent(
   });
 }
 
-/**
- * `selectedImageModel` remains optional during the compatibility window tracked
- * by #27688, so an absent value replays as an unset pin.
- */
 export function replayChatThreadEvents(
   snapshot: readonly ChatThreadSnapshotProjection[],
   events: readonly ReplayChatThreadEvent[],
@@ -177,13 +195,14 @@ export function replayChatThreadEvents(
   for (const thread of snapshot) {
     threads.set(thread.id, {
       ...thread,
+      // Retained shared snapshots can omit mute; absence is the initial state.
+      // Remove only after rewriting those snapshots and requiring the wire field.
+      muted: thread.muted ?? false,
       selectedModel: thread.selectedModel ?? null,
       modelSettings: thread.modelSettings ?? {},
       serviceTier: thread.serviceTier ?? null,
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-      selectedVideoModel: thread.selectedVideoModel,
-      selectedImageModel: thread.selectedImageModel ?? null,
     });
   }
   const pendingThreadUpdates = new Map<string, ReplayChatThreadEvent[]>();

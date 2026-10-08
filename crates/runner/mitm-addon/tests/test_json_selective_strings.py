@@ -386,7 +386,6 @@ def test_accepts_selected_string_at_exact_limit():
 
     assert result.complete is True
     assert result.values == {("model",): "abc"}
-    assert result.selected_string_max_raw_bytes == {("model",): 3}
 
 
 def test_rejects_oversized_selected_string():
@@ -416,7 +415,6 @@ def test_discards_oversized_optional_selected_string_across_chunks():
 
     assert result.complete is True
     assert result.values == {("usage", "output_tokens"): 7}
-    assert result.discarded_scalar_paths == {("type",)}
     assert extractor.observed_scalar_for_diagnostics(("type",)) is None
 
 
@@ -438,8 +436,6 @@ def test_discarded_oversized_selected_string_still_validates_json(payload, error
     assert result.complete is False
     assert result.error == error
     assert result.values == {}
-    assert result.discarded_scalar_paths == set()
-    assert result.selected_string_max_raw_bytes == {}
 
 
 @pytest.mark.parametrize(
@@ -460,37 +456,21 @@ def test_discarded_oversized_duplicate_selected_string_uses_last_value(payload, 
     assert result.complete is True
     expected_values = {} if expected_type is None else {("type",): expected_type}
     assert result.values == expected_values
-    assert result.discarded_scalar_paths == {("type",)}
-    assert result.selected_string_max_raw_bytes == {("type",): 2}
     assert extractor.observed_scalar_for_diagnostics(("type",)) == expected_type
 
 
-def test_reset_clears_discarded_selected_string_paths():
+def test_reset_after_discarded_selected_string_restores_extraction():
     extractor = JsonSelectiveExtractor(
         scalar_fields={("type",): ScalarField("string", max_bytes=3, overflow_policy="discard")}
     )
     extractor.feed(b'{"type":"long"}')
 
-    assert extractor.finish().discarded_scalar_paths == {("type",)}
+    assert extractor.finish().values == {}
 
     extractor.reset()
     extractor.feed(b'{"type":"ok"}')
 
-    reset_result = extractor.finish()
-    assert reset_result.discarded_scalar_paths == set()
-    assert reset_result.selected_string_max_raw_bytes == {("type",): 2}
-
-
-def test_selected_string_max_raw_bytes_includes_escaped_duplicate_occurrences():
-    extractor = JsonSelectiveExtractor(
-        scalar_fields={("type",): ScalarField("string", max_bytes=1024, overflow_policy="discard")}
-    )
-    extractor.feed(b'{"type":"' + rb"\u0061" * 22 + b'","type":"ok"}')
-
-    result = extractor.finish()
-
-    assert result.values == {("type",): "ok"}
-    assert result.selected_string_max_raw_bytes == {("type",): 132}
+    assert extractor.finish().values == {("type",): "ok"}
 
 
 def test_selected_string_limit_counts_escape_bytes():

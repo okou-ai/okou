@@ -1,7 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  linkLayoutSegment,
+  type LinkLayout,
+} from "@okouai/api-contracts/contracts/link-layout";
 import { env } from "../../lib/env";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
 import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { putHostedSitesS3Object } from "../external/s3";
@@ -15,7 +19,8 @@ export const createHostedPreviewGrant$ = command(
     { get },
     args: {
       readonly deploymentId: string;
-      readonly publicBrand: PublicBrand;
+      // The previewed deployment's layout; grants live in its namespace.
+      readonly layout: LinkLayout;
       readonly snapshotId?: string;
       readonly immutableContent?: true;
     },
@@ -29,28 +34,21 @@ export const createHostedPreviewGrant$ = command(
     ) {
       throw new Error("Private hosted preview storage is not configured");
     }
-    const hostDomain =
-      args.publicBrand === "okou"
-        ? env("OKOU_PUBLIC_HOST_DOMAIN")
-        : env("ZERO_HOST_DOMAIN");
-    const scheme =
-      args.publicBrand === "okou"
-        ? env("OKOU_HOST_SCHEME")
-        : env("ZERO_HOST_SCHEME");
+    const segment = linkLayoutSegment(args.layout);
     const token = randomBytes(24).toString("hex");
     const expiresAt = new Date(
       nowDate().getTime() + PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS * 1000,
     ).toISOString();
     const url = new URL(
-      `${scheme}://${args.snapshotId ? "ps" : "pv"}-${token}.${hostDomain}/`,
+      `${hostedLinkOrigin(args.layout, `${args.snapshotId ? "ps" : "pv"}-${token}`)}/`,
     );
     await get(
       putHostedSitesS3Object(
         bucket,
-        `${args.snapshotId ? "shared-previews" : "private-previews"}/${args.publicBrand}/${token}.json`,
+        `${args.snapshotId ? "shared-previews" : "private-previews"}/${segment}/${token}.json`,
         JSON.stringify({
           version: 1,
-          publicBrand: args.publicBrand,
+          publicBrand: segment,
           deploymentId: args.deploymentId,
           ...(args.snapshotId ? { snapshotId: args.snapshotId } : {}),
           ...(args.immutableContent ? { immutableContent: true } : {}),

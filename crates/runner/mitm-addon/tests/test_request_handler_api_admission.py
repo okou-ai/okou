@@ -902,12 +902,14 @@ async def test_platform_mcp_unselected_intent_cannot_obtain_connector_credential
     assert binding.kinds == frozenset(("api_allow",))
 
 
-async def test_platform_mcp_selected_exact_owner_keeps_firewall_denial(
+@pytest.mark.parametrize("intent_state", ["selected", "wrong"])
+async def test_platform_mcp_denial_applies_only_to_selected_exact_owner(
     tmp_path,
     real_flow,
     mitm_ctx,
     fake_firewall_headers,
     headers,
+    intent_state,
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -942,7 +944,10 @@ async def test_platform_mcp_selected_exact_owner_keeps_firewall_denial(
         path="/mcp",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("X-Okou-Connector-Intent", _PLATFORM_MCP_CUSTOM_CONNECTOR_ID),
+            (
+                "X-Okou-Connector-Intent",
+                _PLATFORM_MCP_CUSTOM_CONNECTOR_ID if intent_state == "selected" else "wrong",
+            ),
         ),
     )
 
@@ -954,11 +959,18 @@ async def test_platform_mcp_selected_exact_owner_keeps_firewall_denial(
         await mitm_addon.request(flow)
 
     auth_fetch.assert_not_called()
-    assert flow.response is not None
-    assert flow.response.status_code == 403
-    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
     assert "Authorization" not in flow.request.headers
-    assert upstream_destination_binding.binding_snapshot_for_tests() == {}
+    if intent_state == "selected":
+        assert flow.response is not None
+        assert flow.response.status_code == 403
+        assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
+        assert upstream_destination_binding.binding_snapshot_for_tests() == {}
+    else:
+        assert flow.response is None
+        assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+        assert metadata_keys.FIREWALL_BASE not in flow.metadata
+        binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
+        assert binding.kinds == frozenset(("api_allow",))
 
 
 async def test_platform_mcp_rejects_broad_platform_firewall_base(

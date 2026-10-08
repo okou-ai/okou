@@ -22,6 +22,53 @@ use runner_types::types::ExecutionContext;
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RECORDED_STORAGE_BATCHES: usize = 16;
 
+// Runner-local INFO only. Keep API keys when cache delivery uses file://;
+// this source list does not claim every source was downloaded in this batch.
+fn r2_storage_sources(
+    manifest: Option<&runner_types::storage_manifest::StorageManifest>,
+) -> serde_json::Value {
+    let sources = manifest
+        .into_iter()
+        .flat_map(|manifest| {
+            manifest
+                .storages
+                .iter()
+                .map(|entry| {
+                    (
+                        Some(entry.archive_url.as_str()),
+                        entry.vas_storage_name.as_str(),
+                        entry.vas_version_id.as_str(),
+                        entry.mount_path.as_str(),
+                    )
+                })
+                .chain(
+                    manifest
+                        .artifacts
+                        .iter()
+                        .filter(|entry| entry.empty != Some(true))
+                        .map(|entry| {
+                            (
+                                entry.archive_url.as_deref(),
+                                entry.vas_storage_name.as_str(),
+                                entry.vas_version_id.as_str(),
+                                entry.mount_path.as_str(),
+                            )
+                        }),
+                )
+        })
+        .filter_map(|(url, name, version_id, mount_path)| {
+            let key = runner_storage::r2_download::key_from_url(url?)?;
+            Some(serde_json::json!({
+                "name": name,
+                "version_id": version_id,
+                "mount_path": mount_path,
+                "r2_key": key,
+            }))
+        })
+        .collect();
+    serde_json::Value::Array(sources)
+}
+
 pub(super) fn guest_storage_apply_command() -> String {
     format!("{STORAGE_APPLY_PATH} {STORAGE_MANIFEST_PATH}")
 }
@@ -50,7 +97,8 @@ pub(super) async fn download_storages(
     manifest: &Manifest,
 ) -> RunnerResult<()> {
     let input = StorageInput::Json(manifest_json(manifest)?);
-    apply_storage_input(sandbox, context, &input).await
+    let mut guest_duration_ms = None;
+    apply_storage_input(sandbox, context, &input, &mut guest_duration_ms).await
 }
 
 pub(super) async fn download_storages_with_files(
@@ -79,13 +127,15 @@ pub(super) async fn download_storages_with_files(
     );
     for (index, input) in inputs.iter().enumerate() {
         let started = Instant::now();
-        let result = apply_storage_input(sandbox, context, input).await;
+        let mut guest_duration_ms = None;
+        let result = apply_storage_input(sandbox, context, input, &mut guest_duration_ms).await;
         // Keep telemetry bounded for an unusually large manifest. Always retain
         // the final or failing batch in addition to the first observed batches.
         if index < MAX_RECORDED_STORAGE_BATCHES || index + 1 == batch_count || result.is_err() {
             telemetry.record_storage_apply_batch(
                 started.elapsed(),
                 result.is_ok(),
+                guest_duration_ms,
                 batch_outcome(input, index, batch_count),
                 manifest_size_bucket(input.manifest_bytes()),
             );
@@ -336,6 +386,7 @@ async fn apply_storage_input(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     input: &StorageInput,
+    guest_duration_ms: &mut Option<u32>,
 ) -> RunnerResult<()> {
     let manifest_json = match input {
         StorageInput::Json(bytes) => bytes,
@@ -350,7 +401,12 @@ async fn apply_storage_input(
         "fallback"
     };
 
-    info!(run_id = %context.run_id, transport, "downloading storages");
+    info!(
+        run_id = %context.run_id,
+        transport,
+        r2_storage_sources = %r2_storage_sources(context.storage_manifest.as_ref()),
+        "downloading storages"
+    );
     let result = if use_dedicated {
         sandbox
             .apply_storage_manifest(&StorageManifestRequest {
@@ -395,6 +451,8 @@ async fn apply_storage_input(
             return Err(e.into());
         }
     };
+
+    *guest_duration_ms = result.guest_duration_ms;
 
     if !helper_exec_succeeded(&result) {
         if !use_dedicated {
@@ -452,4 +510,33 @@ async fn remove_fallback_storage_manifest(sandbox: &dyn Sandbox) -> RunnerResult
 
 pub(super) fn format_guest_storage_apply_failure(result: &sandbox::ExecResult) -> String {
     format_helper_exec_failure("storage download", result)
+}
+
+#[cfg(test)]
+mod r2_log_tests {
+    use super::*;
+
+    #[test]
+    fn storage_sources_keep_original_readonly_and_memory_identity_without_urls() {
+        let url = "https://example-bucket.0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/prefix/archive.tar.gz?X-Amz-Signature=signature-secret";
+        let manifest = serde_json::from_value(serde_json::json!({
+            "storageMounts": [
+                { "name": "skill", "storageId": "skill-id", "versionId": "skill-version", "mountPath": "/skills", "archiveUrl": url },
+                { "name": "memory", "storageId": "memory-id", "versionId": "memory-version", "mountPath": "/memory", "archiveUrl": url, "writeback": true },
+                { "name": "empty", "storageId": "empty-id", "versionId": "empty-version", "mountPath": "/empty", "writeback": true, "empty": true },
+                { "name": "local", "storageId": "local-id", "versionId": "local-version", "mountPath": "/local", "archiveUrl": "file:///cache/hash/archive.tar.gz" }
+            ]
+        })).unwrap();
+        let sources = r2_storage_sources(Some(&manifest));
+        assert_eq!(
+            sources,
+            serde_json::json!([
+                { "name": "skill", "version_id": "skill-version", "mount_path": "/skills", "r2_key": "prefix/archive.tar.gz" },
+                { "name": "memory", "version_id": "memory-version", "mount_path": "/memory", "r2_key": "prefix/archive.tar.gz" }
+            ])
+        );
+        assert!(!sources.to_string().contains("X-Amz"));
+        assert!(!sources.to_string().contains("signature-secret"));
+        assert_eq!(r2_storage_sources(None), serde_json::json!([]));
+    }
 }

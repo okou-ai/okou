@@ -1,12 +1,10 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-
 import {
   DecryptCommand,
   GenerateDataKeyCommand,
   KMSClient,
 } from "@aws-sdk/client-kms";
 
-import { singleton } from "./singleton";
+import { singleton, testOverride } from "./singleton";
 
 export interface SecretKmsGenerateDataKeyRequest {
   readonly keyId: string;
@@ -35,10 +33,6 @@ export interface SecretKmsClient {
     request: SecretKmsGenerateDataKeyRequest,
   ): Promise<SecretKmsDataKey>;
   decrypt(request: SecretKmsDecryptRequest): Promise<Uint8Array>;
-}
-
-interface ScopedSecretKmsClient {
-  client: SecretKmsClient;
 }
 
 const secretKmsClient = singleton((): SecretKmsClient => {
@@ -90,29 +84,16 @@ const secretKmsClient = singleton((): SecretKmsClient => {
   };
 });
 
-const scopedSecretKmsClient = singleton(() => {
-  return new AsyncLocalStorage<ScopedSecretKmsClient>();
+const testSecretKmsClient = testOverride<SecretKmsClient | undefined>(() => {
+  return undefined;
 });
 
-function currentScopedSecretKmsClient(): ScopedSecretKmsClient | undefined {
-  return scopedSecretKmsClient.peek()?.getStore();
-}
-
 export function getSecretKmsClient(): SecretKmsClient {
-  return currentScopedSecretKmsClient()?.client ?? secretKmsClient();
+  return testSecretKmsClient.get() ?? secretKmsClient();
 }
 
-export function setSecretKmsClientForTests(client: SecretKmsClient): void {
-  const scoped = currentScopedSecretKmsClient();
-  if (!scoped) {
-    throw new Error("Secret KMS test client requires an active test scope");
-  }
-  scoped.client = client;
-}
-
-export async function withSecretKmsClientForTest<T>(
-  client: SecretKmsClient,
-  work: () => Promise<T>,
-): Promise<T> {
-  return await scopedSecretKmsClient().run({ client }, work);
+export function setSecretKmsClientForTests(
+  client: SecretKmsClient | undefined,
+): void {
+  testSecretKmsClient.set(client);
 }

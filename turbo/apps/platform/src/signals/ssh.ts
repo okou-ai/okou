@@ -11,11 +11,9 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
-import {
-  agentSshAccessContract,
-  sshChangedPayloadSchema,
-} from "@okouai/api-contracts/contracts/ssh-access";
+import { sshChangedPayloadSchema } from "@okouai/api-contracts/contracts/ssh-access";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
+import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -31,12 +29,6 @@ import {
   invalidateCloudflareAccess$,
   retryCloudflareAccess$,
 } from "./cloudflare-access.ts";
-import {
-  agents$,
-  currentAgent$,
-  reloadAgents$,
-  reloadAgentById$,
-} from "./agent.ts";
 import { accept } from "../lib/accept.ts";
 import {
   createDeferredPromise,
@@ -168,7 +160,6 @@ const sshClients$ = computed(async (get) => {
   return {
     identity,
     connections: createClient(sshConnectionsContract, options),
-    access: createClient(agentSshAccessContract, options),
     credentials: createClient(sshCredentialsContract, options),
   };
 });
@@ -265,15 +256,6 @@ const finishSshSave$ = command(
   },
 );
 
-const view$ = state<"hosts" | "credentials">("hosts");
-export const sshView$ = computed((get) => {
-  return get(view$);
-});
-export const changeSshView$ = command(({ set }, value: string) => {
-  if (value === "hosts" || value === "credentials") {
-    set(view$, value);
-  }
-});
 const transportEditor$ = state<{ mode: string; configId: string | null }>({
   mode: "direct",
   configId: null,
@@ -399,13 +381,6 @@ export const sshSummary$ = computed(async (get) => {
   );
   return result.status === 200 ? result.body : null;
 });
-export const sshSingleConnectionName$ = computed(async (get) => {
-  if ((await get(sshSummary$))?.configuredCount !== 1) {
-    return null;
-  }
-  const connections = await get(sshConnections$);
-  return connections?.length === 1 ? connections[0]?.displayName : null;
-});
 export const closeSshDialog$ = command(({ set }) => {
   set(abandonSshSave$);
   set(cancelSshPrivateKeyFile$);
@@ -431,11 +406,9 @@ export const sshObservationsSnapshot$ = computed(async (get) => {
 });
 export const refreshSsh$ = command(({ set }) => {
   set(abandonSshSave$);
-  set(view$, "hosts");
   set(cancelSshPrivateKeyFile$);
   set(dialog$, null);
   set(conflict$, null);
-  set(closeSshAccessManagement$);
   set(invalidateSsh$);
   set(invalidateCloudflareAccess$);
 });
@@ -445,6 +418,7 @@ export const invalidateSsh$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateRemoteAccess$);
 });
 
 // Defaults belong to an untouched dialog, not to the reactive list. A failed
@@ -505,9 +479,6 @@ const initializeSshSelections$ = command(
   },
 );
 export const retrySsh$ = command(async ({ set }, signal: AbortSignal) => {
-  // Grant views also depend on shared Agent data that may have failed to load.
-  set(reloadAgents$);
-  set(reloadAgentById$);
   set(retryCloudflareAccess$, signal);
   set(invalidateSsh$);
   await set(initializeSshSelections$, signal);
@@ -551,6 +522,15 @@ export const openSshDialog$ = command(
     connection: SshConnectionResponse | null,
     signal: AbortSignal,
   ) => {
+    // The setup sibling owns Tailscale forms. Never treat a retained binding as Direct/Cloudflare.
+    if (
+      kind === "edit" &&
+      connection &&
+      "transport" in connection &&
+      connection.transport.type === "tailscale"
+    ) {
+      return;
+    }
     const identity = await get(sshIdentity$);
     signal.throwIfAborted();
     if (!identity) {
@@ -567,11 +547,13 @@ export const openSshDialog$ = command(
     set(transportEditor$, {
       mode:
         connection && "transport" in connection
-          ? "cloudflare_access"
+          ? connection.transport.type
           : "direct",
       configId:
         connection && "transport" in connection
-          ? connection.transport.configId
+          ? "configId" in connection.transport
+            ? connection.transport.configId
+            : ""
           : null,
     });
     set(dialog$, {
@@ -660,7 +642,11 @@ export const acceptSshConflictReview$ = command(
       reviewed.identity !== current.identity ||
       reviewed.kind !== current.kind ||
       reviewed.credential?.id !== current.credential?.id ||
-      reviewed.connection?.id !== current.connection?.id
+      reviewed.connection?.id !== current.connection?.id ||
+      (current.kind === "edit" &&
+        reviewed.connection !== null &&
+        "transport" in reviewed.connection &&
+        reviewed.connection.transport.type === "tailscale")
     ) {
       return;
     }
@@ -930,146 +916,5 @@ export const saveSsh$ = command(
     }
     set(conflict$, conflicted);
     set(invalidateAfterSshSave$, dialog.kind);
-  },
-);
-
-export const currentAgentSshAccess$ = computed(async (get) => {
-  get(reload$);
-  const identity = await get(sshIdentity$);
-  if (!identity) {
-    return null;
-  }
-  const [agent, summary] = await Promise.all([
-    get(currentAgent$),
-    get(sshSummary$),
-  ]);
-  if (!agent || !summary || summary.configuredCount === 0) {
-    return null;
-  }
-  const result = await accept(
-    (await get(sshClients$)).access.get({
-      params: { agentId: agent.agentId },
-    }),
-    [200, 404],
-    undefined,
-    { showErrorToast: false },
-  );
-  return result.status === 200
-    ? { identity, agentId: agent.agentId, ...result.body }
-    : null;
-});
-
-export function sshAccessForAgent(agentId: string) {
-  return computed(async (get) => {
-    const [identity, summary] = await Promise.all([
-      get(sshIdentity$),
-      get(sshSummary$),
-    ]);
-    if (!identity || !summary || summary.configuredCount === 0) {
-      return null;
-    }
-    const result = await accept(
-      (await get(sshClients$)).access.get({ params: { agentId } }),
-      [200, 404],
-      undefined,
-      { showErrorToast: false },
-    );
-    return result.status === 200 ? { identity, agentId, ...result.body } : null;
-  });
-}
-export const updateAgentSshAccess$ = command(
-  async (
-    { get, set },
-    agentId: string,
-    enabled: boolean,
-    signal: AbortSignal,
-  ) => {
-    const clients = await get(sshClients$);
-    signal.throwIfAborted();
-    const [summary, visibleAgents] = await Promise.all([
-      get(sshSummary$),
-      get(agents$),
-    ]);
-    signal.throwIfAborted();
-    if (
-      !summary ||
-      summary.configuredCount === 0 ||
-      !visibleAgents.some((agent) => {
-        return agent.agentId === agentId;
-      })
-    ) {
-      return;
-    }
-    await accept(
-      clients.access.update({
-        params: { agentId },
-        body: { enabled },
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-    );
-    signal.throwIfAborted();
-    if (clients.identity !== (await get(sshIdentity$))) {
-      return;
-    }
-    signal.throwIfAborted();
-    set(invalidateSsh$);
-  },
-);
-
-export const sshAgentAccessRows$ = computed(async (get) => {
-  const summary = await get(sshSummary$);
-  if (!summary) {
-    return null;
-  }
-  if (summary.configuredCount === 0) {
-    return [];
-  }
-  const [visibleAgents, clients] = await Promise.all([
-    get(agents$),
-    get(sshClients$),
-  ]);
-  const rows = await Promise.all(
-    visibleAgents.map(async (agent) => {
-      const result = await accept(
-        clients.access.get({ params: { agentId: agent.agentId } }),
-        [200, 404],
-        undefined,
-        { showErrorToast: false },
-      );
-      return result.status === 200
-        ? { agent, enabled: result.body.enabled }
-        : null;
-    }),
-  );
-  return rows.filter((row) => {
-    return row !== null;
-  });
-});
-
-const accessManagementIdentity$ = state<string | null>(null);
-const accessSearch$ = state("");
-export const sshAccessSearch$ = computed((get) => {
-  return get(accessSearch$);
-});
-export const searchSshAccess$ = command(({ set }, value: string) => {
-  return set(accessSearch$, value);
-});
-export const sshAccessManagementOpen$ = computed(async (get) => {
-  const identity = get(accessManagementIdentity$);
-  return identity !== null && identity === (await get(sshIdentity$));
-});
-export const closeSshAccessManagement$ = command(({ set }) => {
-  set(accessManagementIdentity$, null);
-  set(accessSearch$, "");
-});
-export const openSshAccessManagement$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const identity = await get(sshIdentity$);
-    signal.throwIfAborted();
-    set(accessManagementIdentity$, identity);
-    set(accessSearch$, "");
-    set(invalidateSsh$);
   },
 );

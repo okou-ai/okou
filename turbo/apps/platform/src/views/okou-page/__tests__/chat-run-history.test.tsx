@@ -1,7 +1,8 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { now } from "../../../lib/time.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
@@ -19,7 +20,6 @@ import {
   queryWorkHistoryToggles,
   readyChat,
   RUN_PATH,
-  thinkingEvent,
   usageEvent,
 } from "./chat-run-test-fixtures.ts";
 
@@ -194,11 +194,11 @@ test("Summarize completed work by conversation phase", async () => {
   await setupCompletedConversationPhases();
   expect(
     assistantGroupFor(screen.getByText("Phase one outline")),
-  ).toHaveTextContent("Worked for 1m");
+  ).toHaveTextContent("Worked for 1 min");
   expect(
     assistantGroupFor(screen.getByText("Phase one final plan")),
-  ).toHaveTextContent("Worked for 1m");
-  expect(screen.getByText("Worked for 2m")).toBeVisible();
+  ).toHaveTextContent("Worked for 1 min");
+  expect(screen.getByText("Worked for 2 min")).toBeVisible();
   expect(screen.getByText("Phase one outline")).toBeVisible();
   expect(screen.getByText("Phase one final plan")).toBeVisible();
   expect(screen.getByText("Phase two final plan")).toBeVisible();
@@ -293,6 +293,90 @@ test.each([
   },
 );
 
+test.each([
+  {
+    active: false,
+    durationMs: 30_000,
+    expected: "Worked for 30 sec",
+  },
+  {
+    active: false,
+    durationMs: 60_000,
+    expected: "Worked for 1 min",
+  },
+  {
+    active: false,
+    durationMs: 60 * 60_000,
+    expected: "Worked for 1 hr",
+  },
+  {
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Worked for 1 hr 29 min",
+  },
+  {
+    active: true,
+    durationMs: 89 * 60_000,
+    expected: "Working for 1 hr 29 min",
+  },
+])(
+  "Render the $expected work duration",
+  async ({ active, durationMs, expected }) => {
+    // ElapsedTime uses Date.now directly for active runs; allow time to advance
+    // naturally while keeping the completed-run timestamps deterministic.
+    const startedAt = active
+      ? now() - durationMs
+      : new Date(createdAt(0)).getTime();
+    installRunChat({
+      activeRunIds: active ? [RUN_A] : [],
+      chatEvents: [
+        promptEvent({
+          id: "localized-work-user",
+          runId: RUN_A,
+          seqId: 1,
+          text: "Prepare the report",
+          createdAt: new Date(startedAt).toISOString(),
+        }),
+        assistantEvent({
+          id: "localized-work-first",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Collected data",
+          createdAt: new Date(startedAt + 5000).toISOString(),
+        }),
+        assistantEvent({
+          id: "localized-work-second",
+          runId: RUN_A,
+          seqId: 3,
+          text: "Prepared report",
+          createdAt: new Date(startedAt + 10_000).toISOString(),
+        }),
+        ...(active
+          ? []
+          : [
+              completedEvent({
+                id: "localized-work-complete",
+                runId: RUN_A,
+                seqId: 4,
+                createdAt: new Date(startedAt + durationMs).toISOString(),
+              }),
+            ]),
+      ],
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+    await screen.findByText("Prepared report");
+    await waitFor(() => {
+      expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
+        expected,
+      );
+    });
+    expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
+      "1 step",
+    );
+  },
+);
+
 test("Do not create history before the first output.message", async () => {
   installRunChat({
     activeRunIds: [RUN_A],
@@ -303,12 +387,6 @@ test("Do not create history before the first output.message", async () => {
         seqId: 1,
         text: "Inspect the release",
         createdAt: createdAt(0),
-      }),
-      thinkingEvent({
-        id: "status-only-thinking",
-        runId: RUN_A,
-        seqId: 2,
-        text: "Reading release evidence",
       }),
     ],
   });

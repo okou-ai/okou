@@ -6,10 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 
 const MODEL = {
-  provider: "openai" as const,
-  baseUrl: "https://api.openai.com/v1",
+  provider: "openrouter" as const,
+  baseUrl: "https://openrouter.ai/api/v1",
   apiKey: "test-key",
-  model: "gpt-5.6-terra",
+  model: "openai/gpt-6-luna",
   dialect: "openai-responses" as const,
   transport: "sse" as const,
 };

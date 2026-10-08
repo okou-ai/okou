@@ -33,7 +33,7 @@ ORG-01/02/03, TEAM, and AGENT-02 integration chains:
   `generateOkouToken` grants that capability unconditionally.
 */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
 const DEFAULT_AGENT_AVATAR_URL =
   "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
@@ -1182,16 +1182,15 @@ describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(admin);
-    await runs.ensureOrgModelProvider(admin);
+    await runs.ensurePersonalSubscriptionModel(admin);
     const agent = await api.createAgent(admin, {
       displayName: "BDD Org Token Agent",
       visibility: "private",
     });
 
-    const created = await runs.createRun(admin, {
+    const created = await runs.createThreadRun(admin, {
       agentId: agent.agentId,
       prompt: "exercise org reads with the run Okou token",
-      modelProvider: "anthropic-api-key",
     });
     await runs.heartbeatRunner(runnerGroup);
     const poll = await runs.pollRunner(runnerGroup);

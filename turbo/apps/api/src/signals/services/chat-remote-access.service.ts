@@ -2,20 +2,27 @@ import type {
   RemoteAccessProtocol,
   RemoteHostDefault,
   ThreadRemoteHostAccess,
+  InitialRemoteAccessOverride,
 } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
 import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { logger } from "../../lib/log";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
-import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
-import { enterVncWrite } from "./vnc-owner-lifecycle.service";
+import { command } from "ccstate";
+import { db$, writeDb$ } from "../external/db";
+import { settle } from "../utils";
+import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
+import { publishSshRunnerInvalidation$ } from "./ssh-runtime-wakeup.service";
+
+const L = logger("ChatRemoteAccess");
 
 interface Owner {
   readonly orgId: string;
@@ -34,19 +41,99 @@ interface ThreadHostOwner extends ThreadOwner {
   readonly connectionId: string;
 }
 
-async function admitRemoteAccessWrite(
-  tx: Tx,
+/** Pure ownership predicate, evaluated by the creation owner's SELECT. */
+export function initialRemoteAccessOwnershipPredicate(
   owner: Owner,
-  protocol: RemoteAccessProtocol,
-): Promise<boolean> {
-  if (protocol === "vnc" && !(await enterVncWrite(tx, owner))) {
-    return false;
-  }
-  return await admitPiStableContextSubjects(tx, [
-    { subjectKind: "organization", subjectId: owner.orgId },
-    { subjectKind: "user", subjectId: owner.userId },
-  ]);
+  overrides: readonly InitialRemoteAccessOverride[],
+) {
+  const sshIds = overrides
+    .filter((item) => {
+      return item.protocol === "ssh";
+    })
+    .map((item) => {
+      return item.connectionId;
+    });
+  const vncIds = overrides
+    .filter((item) => {
+      return item.protocol === "vnc";
+    })
+    .map((item) => {
+      return item.connectionId;
+    });
+  const builder = new QueryBuilder();
+  const ssh = builder
+    .select({ count: count() })
+    .from(sshConnections)
+    .where(
+      and(
+        inArray(sshConnections.id, sshIds),
+        eq(sshConnections.orgId, owner.orgId),
+        eq(sshConnections.userId, owner.userId),
+      ),
+    );
+  const vnc = builder
+    .select({ count: count() })
+    .from(vncConnections)
+    .where(
+      and(
+        inArray(vncConnections.id, vncIds),
+        eq(vncConnections.orgId, owner.orgId),
+        eq(vncConnections.userId, owner.userId),
+      ),
+    );
+  return sql`(${ssh}) = ${sshIds.length} AND (${vnc}) = ${vncIds.length}`;
 }
+
+/** Plain INSERT values; no handles, execution or escaping closures. */
+export function initialRemoteAccessValues(
+  chatThreadId: string,
+  overrides: readonly InitialRemoteAccessOverride[],
+) {
+  const values = (protocol: RemoteAccessProtocol) => {
+    return overrides
+      .filter((item) => {
+        return item.protocol === protocol;
+      })
+      .map((item) => {
+        return {
+          chatThreadId,
+          connectionId: item.connectionId,
+          enabled: item.enabled,
+        };
+      });
+  };
+  return { ssh: values("ssh"), vnc: values("vnc") };
+}
+
+const notifyRemoteAccessChange$ = command(
+  async (
+    { set },
+    owner: HostOwner,
+    protocol: RemoteAccessProtocol,
+    chatThreadId?: string,
+  ): Promise<void> => {
+    const [client, runner] = await Promise.all([
+      settle(publishSshClientInvalidation(owner)),
+      settle(
+        set(publishSshRunnerInvalidation$, {
+          orgId: owner.orgId,
+          userId: owner.userId,
+          ...(chatThreadId === undefined ? {} : { chatThreadId }),
+          connectionId: protocol === "ssh" ? owner.connectionId : null,
+        }),
+      ),
+    ]);
+    if (!client.ok || !runner.ok) {
+      L.warn("Failed to invalidate remote access clients", {
+        protocol,
+        connectionId: owner.connectionId,
+        chatThreadId,
+        clientError: client.ok ? undefined : client.error,
+        runnerError: runner.ok ? undefined : runner.error,
+      });
+    }
+  },
+);
 
 function toHostDefault(row: {
   id: string;
@@ -76,79 +163,81 @@ function toThreadAccess(
   };
 }
 
-async function ownedThreadExists(
-  db: ReadonlyDb | Tx,
-  owner: ThreadOwner,
-): Promise<boolean> {
-  const [thread] = await db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .innerJoin(
-      agents,
-      and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, owner.orgId)),
-    )
-    .where(
-      and(
-        eq(chatThreads.id, owner.chatThreadId),
-        eq(chatThreads.userId, owner.userId),
-      ),
-    )
-    .limit(1);
-  return thread !== undefined;
-}
-
-export async function listRemoteHostDefaults(
-  db: ReadonlyDb,
-  owner: Owner,
-  includeVnc: boolean,
-): Promise<{ ssh: RemoteHostDefault[]; vnc: RemoteHostDefault[] }> {
-  const [ssh, vnc] = await Promise.all([
-    db
-      .select({
-        id: sshConnections.id,
-        displayName: sshConnections.displayName,
-        defaultEnabledForChats: sshConnections.defaultEnabledForChats,
-      })
-      .from(sshConnections)
+const ownedThreadExists$ = command(
+  async ({ get }, owner: ThreadOwner): Promise<boolean> => {
+    const db = get(db$);
+    const [thread] = await db
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, owner.orgId)),
+      )
       .where(
         and(
-          eq(sshConnections.orgId, owner.orgId),
-          eq(sshConnections.userId, owner.userId),
+          eq(chatThreads.id, owner.chatThreadId),
+          eq(chatThreads.userId, owner.userId),
         ),
       )
-      .orderBy(asc(sshConnections.createdAt), asc(sshConnections.id)),
-    includeVnc
-      ? db
-          .select({
-            id: vncConnections.id,
-            displayName: vncConnections.displayName,
-            defaultEnabledForChats: vncConnections.defaultEnabledForChats,
-          })
-          .from(vncConnections)
-          .where(
-            and(
-              eq(vncConnections.orgId, owner.orgId),
-              eq(vncConnections.userId, owner.userId),
-            ),
-          )
-          .orderBy(asc(vncConnections.createdAt), asc(vncConnections.id))
-      : Promise.resolve([]),
-  ]);
-  return { ssh: ssh.map(toHostDefault), vnc: vnc.map(toHostDefault) };
-}
+      .limit(1);
+    return thread !== undefined;
+  },
+);
 
-export async function updateRemoteHostDefault(
-  db: Db,
-  owner: HostOwner,
-  protocol: RemoteAccessProtocol,
-  enabled: boolean,
-): Promise<RemoteHostDefault | null> {
-  return await db.transaction(async (tx) => {
-    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
-      return null;
-    }
+export const listRemoteHostDefaults$ = command(
+  async (
+    { get },
+    owner: Owner,
+    includeVnc: boolean,
+  ): Promise<{ ssh: RemoteHostDefault[]; vnc: RemoteHostDefault[] }> => {
+    const db = get(db$);
+    const [ssh, vnc] = await Promise.all([
+      db
+        .select({
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+          defaultEnabledForChats: sshConnections.defaultEnabledForChats,
+        })
+        .from(sshConnections)
+        .where(
+          and(
+            eq(sshConnections.orgId, owner.orgId),
+            eq(sshConnections.userId, owner.userId),
+          ),
+        )
+        .orderBy(asc(sshConnections.createdAt), asc(sshConnections.id)),
+      includeVnc
+        ? db
+            .select({
+              id: vncConnections.id,
+              displayName: vncConnections.displayName,
+              defaultEnabledForChats: vncConnections.defaultEnabledForChats,
+            })
+            .from(vncConnections)
+            .where(
+              and(
+                eq(vncConnections.orgId, owner.orgId),
+                eq(vncConnections.userId, owner.userId),
+              ),
+            )
+            .orderBy(asc(vncConnections.createdAt), asc(vncConnections.id))
+        : Promise.resolve([]),
+    ]);
+    return { ssh: ssh.map(toHostDefault), vnc: vnc.map(toHostDefault) };
+  },
+);
+
+export const updateRemoteHostDefault$ = command(
+  async (
+    { set },
+    owner: HostOwner,
+    protocol: RemoteAccessProtocol,
+    enabled: boolean,
+  ): Promise<RemoteHostDefault | null> => {
+    const db = set(writeDb$);
+    let result: RemoteHostDefault | null;
     if (protocol === "ssh") {
-      const [row] = await tx
+      const [row] = await db
         .update(sshConnections)
         .set({ defaultEnabledForChats: enabled, updatedAt: nowDate() })
         .where(
@@ -163,213 +252,217 @@ export async function updateRemoteHostDefault(
           displayName: sshConnections.displayName,
           defaultEnabledForChats: sshConnections.defaultEnabledForChats,
         });
-      return row ? toHostDefault(row) : null;
+      result = row ? toHostDefault(row) : null;
+    } else {
+      const [row] = await db
+        .update(vncConnections)
+        .set({ defaultEnabledForChats: enabled, updatedAt: nowDate() })
+        .where(
+          and(
+            eq(vncConnections.id, owner.connectionId),
+            eq(vncConnections.orgId, owner.orgId),
+            eq(vncConnections.userId, owner.userId),
+          ),
+        )
+        .returning({
+          id: vncConnections.id,
+          displayName: vncConnections.displayName,
+          defaultEnabledForChats: vncConnections.defaultEnabledForChats,
+        });
+      result = row ? toHostDefault(row) : null;
     }
-    const [row] = await tx
-      .update(vncConnections)
-      .set({ defaultEnabledForChats: enabled, updatedAt: nowDate() })
-      .where(
-        and(
-          eq(vncConnections.id, owner.connectionId),
-          eq(vncConnections.orgId, owner.orgId),
-          eq(vncConnections.userId, owner.userId),
-        ),
-      )
-      .returning({
-        id: vncConnections.id,
-        displayName: vncConnections.displayName,
-        defaultEnabledForChats: vncConnections.defaultEnabledForChats,
-      });
-    return row ? toHostDefault(row) : null;
-  });
-}
+    if (result) {
+      await set(notifyRemoteAccessChange$, owner, protocol);
+    }
+    return result;
+  },
+);
 
-export async function listThreadRemoteAccess(
-  db: ReadonlyDb,
-  owner: ThreadOwner,
-  includeVnc: boolean,
-): Promise<{
-  ssh: ThreadRemoteHostAccess[];
-  vnc: ThreadRemoteHostAccess[];
-} | null> {
-  if (!(await ownedThreadExists(db, owner))) {
-    return null;
-  }
-  const [ssh, vnc] = await Promise.all([
-    db
-      .select({
-        id: sshConnections.id,
-        displayName: sshConnections.displayName,
-        defaultEnabledForChats: sshConnections.defaultEnabledForChats,
-        overrideEnabled: chatThreadSshAccessOverrides.enabled,
-      })
-      .from(sshConnections)
-      .leftJoin(
-        chatThreadSshAccessOverrides,
-        and(
-          eq(chatThreadSshAccessOverrides.connectionId, sshConnections.id),
-          eq(chatThreadSshAccessOverrides.chatThreadId, owner.chatThreadId),
-        ),
-      )
-      .where(
-        and(
-          eq(sshConnections.orgId, owner.orgId),
-          eq(sshConnections.userId, owner.userId),
-        ),
-      )
-      .orderBy(asc(sshConnections.createdAt), asc(sshConnections.id)),
-    includeVnc
-      ? db
-          .select({
-            id: vncConnections.id,
-            displayName: vncConnections.displayName,
-            defaultEnabledForChats: vncConnections.defaultEnabledForChats,
-            overrideEnabled: chatThreadVncAccessOverrides.enabled,
-          })
-          .from(vncConnections)
-          .leftJoin(
-            chatThreadVncAccessOverrides,
-            and(
-              eq(chatThreadVncAccessOverrides.connectionId, vncConnections.id),
-              eq(chatThreadVncAccessOverrides.chatThreadId, owner.chatThreadId),
-            ),
-          )
-          .where(
-            and(
-              eq(vncConnections.orgId, owner.orgId),
-              eq(vncConnections.userId, owner.userId),
-            ),
-          )
-          .orderBy(asc(vncConnections.createdAt), asc(vncConnections.id))
-      : Promise.resolve([]),
-  ]);
-  return {
-    ssh: ssh.map((row) => {
-      return toThreadAccess(row, row.overrideEnabled);
-    }),
-    vnc: vnc.map((row) => {
-      return toThreadAccess(row, row.overrideEnabled);
-    }),
-  };
-}
-
-/** Explicit choices are retained even when they equal today's host default. */
-export async function setThreadRemoteAccessOverride(
-  db: Db,
-  owner: ThreadHostOwner,
-  protocol: RemoteAccessProtocol,
-  enabled: boolean,
-): Promise<ThreadRemoteHostAccess | null> {
-  return await db.transaction(async (tx) => {
-    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
+export const listThreadRemoteAccess$ = command(
+  async (
+    { get, set },
+    owner: ThreadOwner,
+    includeVnc: boolean,
+  ): Promise<{
+    ssh: ThreadRemoteHostAccess[];
+    vnc: ThreadRemoteHostAccess[];
+  } | null> => {
+    const db = get(db$);
+    if (!(await set(ownedThreadExists$, owner))) {
       return null;
     }
-    if (!(await ownedThreadExists(tx, owner))) {
-      return null;
-    }
-    if (protocol === "ssh") {
-      const [host] = await tx
+    const [ssh, vnc] = await Promise.all([
+      db
         .select({
           id: sshConnections.id,
           displayName: sshConnections.displayName,
           defaultEnabledForChats: sshConnections.defaultEnabledForChats,
+          overrideEnabled: chatThreadSshAccessOverrides.enabled,
         })
         .from(sshConnections)
+        .leftJoin(
+          chatThreadSshAccessOverrides,
+          and(
+            eq(chatThreadSshAccessOverrides.connectionId, sshConnections.id),
+            eq(chatThreadSshAccessOverrides.chatThreadId, owner.chatThreadId),
+          ),
+        )
         .where(
           and(
-            eq(sshConnections.id, owner.connectionId),
             eq(sshConnections.orgId, owner.orgId),
             eq(sshConnections.userId, owner.userId),
           ),
         )
-        .limit(1);
-      if (!host) {
-        return null;
-      }
-      await tx
-        .insert(chatThreadSshAccessOverrides)
-        .values({
-          chatThreadId: owner.chatThreadId,
-          connectionId: owner.connectionId,
-          enabled,
-        })
-        .onConflictDoUpdate({
-          target: [
-            chatThreadSshAccessOverrides.chatThreadId,
-            chatThreadSshAccessOverrides.connectionId,
-          ],
-          set: { enabled },
-        });
-      return toThreadAccess(host, enabled);
-    }
-    const [host] = await tx
+        .orderBy(asc(sshConnections.createdAt), asc(sshConnections.id)),
+      includeVnc
+        ? db
+            .select({
+              id: vncConnections.id,
+              displayName: vncConnections.displayName,
+              defaultEnabledForChats: vncConnections.defaultEnabledForChats,
+              overrideEnabled: chatThreadVncAccessOverrides.enabled,
+            })
+            .from(vncConnections)
+            .leftJoin(
+              chatThreadVncAccessOverrides,
+              and(
+                eq(
+                  chatThreadVncAccessOverrides.connectionId,
+                  vncConnections.id,
+                ),
+                eq(
+                  chatThreadVncAccessOverrides.chatThreadId,
+                  owner.chatThreadId,
+                ),
+              ),
+            )
+            .where(
+              and(
+                eq(vncConnections.orgId, owner.orgId),
+                eq(vncConnections.userId, owner.userId),
+              ),
+            )
+            .orderBy(asc(vncConnections.createdAt), asc(vncConnections.id))
+        : Promise.resolve([]),
+    ]);
+    return {
+      ssh: ssh.map((row) => {
+        return toThreadAccess(row, row.overrideEnabled);
+      }),
+      vnc: vnc.map((row) => {
+        return toThreadAccess(row, row.overrideEnabled);
+      }),
+    };
+  },
+);
+
+const findOwnedRemoteHost$ = command(
+  async ({ get }, owner: HostOwner, protocol: RemoteAccessProtocol) => {
+    const db = get(db$);
+    const table = protocol === "ssh" ? sshConnections : vncConnections;
+    const [host] = await db
       .select({
-        id: vncConnections.id,
-        displayName: vncConnections.displayName,
-        defaultEnabledForChats: vncConnections.defaultEnabledForChats,
+        id: table.id,
+        displayName: table.displayName,
+        defaultEnabledForChats: table.defaultEnabledForChats,
       })
-      .from(vncConnections)
+      .from(table)
       .where(
         and(
-          eq(vncConnections.id, owner.connectionId),
-          eq(vncConnections.orgId, owner.orgId),
-          eq(vncConnections.userId, owner.userId),
+          eq(table.id, owner.connectionId),
+          eq(table.orgId, owner.orgId),
+          eq(table.userId, owner.userId),
         ),
       )
       .limit(1);
+    return host;
+  },
+);
+
+/** Explicit choices are retained even when they equal today's host default. */
+export const setThreadRemoteAccessOverride$ = command(
+  async (
+    { set },
+    owner: ThreadHostOwner,
+    protocol: RemoteAccessProtocol,
+    enabled: boolean,
+    signal: AbortSignal,
+  ): Promise<ThreadRemoteHostAccess | null> => {
+    const db = set(writeDb$);
+    const threadExists = await set(ownedThreadExists$, owner);
+    signal.throwIfAborted();
+    if (!threadExists) {
+      return null;
+    }
+    const host = await set(findOwnedRemoteHost$, owner, protocol);
+    signal.throwIfAborted();
     if (!host) {
       return null;
     }
-    await tx
-      .insert(chatThreadVncAccessOverrides)
-      .values({
-        chatThreadId: owner.chatThreadId,
-        connectionId: owner.connectionId,
-        enabled,
-      })
-      .onConflictDoUpdate({
-        target: [
-          chatThreadVncAccessOverrides.chatThreadId,
-          chatThreadVncAccessOverrides.connectionId,
-        ],
-        set: { enabled },
-      });
-    return toThreadAccess(host, enabled);
-  });
-}
+    const values = {
+      chatThreadId: owner.chatThreadId,
+      connectionId: owner.connectionId,
+      enabled,
+    };
+    // The thread and host foreign keys reject an override whose parent was
+    // deleted after the reads above; that lost race is the same "not found".
+    const written = await settle<unknown>(
+      protocol === "ssh"
+        ? db
+            .insert(chatThreadSshAccessOverrides)
+            .values(values)
+            .onConflictDoUpdate({
+              target: [
+                chatThreadSshAccessOverrides.chatThreadId,
+                chatThreadSshAccessOverrides.connectionId,
+              ],
+              set: { enabled },
+            })
+        : db
+            .insert(chatThreadVncAccessOverrides)
+            .values(values)
+            .onConflictDoUpdate({
+              target: [
+                chatThreadVncAccessOverrides.chatThreadId,
+                chatThreadVncAccessOverrides.connectionId,
+              ],
+              set: { enabled },
+            }),
+      signal,
+    );
+    if (!written.ok) {
+      if (isForeignKeyViolation(written.error)) {
+        return null;
+      }
+      throw written.error;
+    }
+    const result = toThreadAccess(host, enabled);
+    await set(notifyRemoteAccessChange$, owner, protocol, owner.chatThreadId);
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
-export async function clearThreadRemoteAccessOverride(
-  db: Db,
-  owner: ThreadHostOwner,
-  protocol: RemoteAccessProtocol,
-): Promise<ThreadRemoteHostAccess | null> {
-  return await db.transaction(async (tx) => {
-    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
+export const clearThreadRemoteAccessOverride$ = command(
+  async (
+    { set },
+    owner: ThreadHostOwner,
+    protocol: RemoteAccessProtocol,
+    signal: AbortSignal,
+  ): Promise<ThreadRemoteHostAccess | null> => {
+    const db = set(writeDb$);
+    const threadExists = await set(ownedThreadExists$, owner);
+    signal.throwIfAborted();
+    if (!threadExists) {
       return null;
     }
-    if (!(await ownedThreadExists(tx, owner))) {
+    const host = await set(findOwnedRemoteHost$, owner, protocol);
+    signal.throwIfAborted();
+    if (!host) {
       return null;
     }
     if (protocol === "ssh") {
-      const [host] = await tx
-        .select({
-          id: sshConnections.id,
-          displayName: sshConnections.displayName,
-          defaultEnabledForChats: sshConnections.defaultEnabledForChats,
-        })
-        .from(sshConnections)
-        .where(
-          and(
-            eq(sshConnections.id, owner.connectionId),
-            eq(sshConnections.orgId, owner.orgId),
-            eq(sshConnections.userId, owner.userId),
-          ),
-        )
-        .limit(1);
-      if (!host) {
-        return null;
-      }
-      await tx
+      await db
         .delete(chatThreadSshAccessOverrides)
         .where(
           and(
@@ -377,34 +470,19 @@ export async function clearThreadRemoteAccessOverride(
             eq(chatThreadSshAccessOverrides.connectionId, owner.connectionId),
           ),
         );
-      return toThreadAccess(host, null);
+    } else {
+      await db
+        .delete(chatThreadVncAccessOverrides)
+        .where(
+          and(
+            eq(chatThreadVncAccessOverrides.chatThreadId, owner.chatThreadId),
+            eq(chatThreadVncAccessOverrides.connectionId, owner.connectionId),
+          ),
+        );
     }
-    const [host] = await tx
-      .select({
-        id: vncConnections.id,
-        displayName: vncConnections.displayName,
-        defaultEnabledForChats: vncConnections.defaultEnabledForChats,
-      })
-      .from(vncConnections)
-      .where(
-        and(
-          eq(vncConnections.id, owner.connectionId),
-          eq(vncConnections.orgId, owner.orgId),
-          eq(vncConnections.userId, owner.userId),
-        ),
-      )
-      .limit(1);
-    if (!host) {
-      return null;
-    }
-    await tx
-      .delete(chatThreadVncAccessOverrides)
-      .where(
-        and(
-          eq(chatThreadVncAccessOverrides.chatThreadId, owner.chatThreadId),
-          eq(chatThreadVncAccessOverrides.connectionId, owner.connectionId),
-        ),
-      );
+    signal.throwIfAborted();
+    await set(notifyRemoteAccessChange$, owner, protocol, owner.chatThreadId);
+    signal.throwIfAborted();
     return toThreadAccess(host, null);
-  });
-}
+  },
+);

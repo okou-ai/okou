@@ -138,7 +138,7 @@ Response streaming
 - ``STREAM_BUFFER``: capped ``bytearray`` written by ``responseheaders()`` via
   response streaming setup only when body capture or bounded terminal
   inspection needs raw response bytes. Read by body capture, model JSON usage
-  and failure inspection, and connector fallback parsing. Removed by stream
+  inspection, and connector fallback parsing. Removed by stream
   cleanup after terminal hooks.
 - ``STREAM_BUFFER_STATE``: ``dict`` containing ``truncated``. Written only
   with ``STREAM_BUFFER`` and read for capture truncation, model JSON terminal
@@ -184,8 +184,13 @@ Model-provider usage
   history; otherwise positive usage uses a conservative tier. Written by
   model-provider billing and cleared at the WebSocket terminal lifecycle
   boundary.
-- ``MODEL_USAGE_PROVIDER``: optional ``str`` canonical model id from registry sandbox
-  info. Read by model-provider reported-model selection.
+- ``MODEL_USAGE_PROVIDER``: optional ``str`` usage provider (the Built-in route's
+  ``usage_pricing`` provider, which may be an alias of the actual model) from
+  registry sandbox info. Read by model-provider reported-model selection.
+- ``MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS``: optional ``int`` from
+  registry sandbox info. The API-resolved total-input threshold for the
+  long-context billing tier of ``MODEL_USAGE_PROVIDER``. When absent (older
+  API), billing falls back to the generated map keyed by provider.
 Connector usage and parser state
 --------------------------------
 - ``X_NDJSON_STATE``: ``dict`` owned by the X connector NDJSON parser. Written
@@ -248,6 +253,9 @@ MODEL_PROVIDER_USAGE: Final = "model_provider_usage"
 MODEL_PROVIDER_USAGE_SOURCES: Final = "model_provider_usage_sources"
 MODEL_PROVIDER_USAGE_TIERS: Final = "model_provider_usage_tiers"
 MODEL_USAGE_PROVIDER: Final = "model_usage_provider"
+MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Final = (
+    "model_usage_long_context_min_total_input_tokens"
+)
 X_RESOURCE_STREAM_REPORTED: Final = "x_resource_stream_reported"
 X_RESOURCE_REPORTED: Final = "x_resource_reported"
 RESPONSE_STREAM_STATE: Final = "response_stream_state"

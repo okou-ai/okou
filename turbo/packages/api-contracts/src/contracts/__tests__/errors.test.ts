@@ -7,6 +7,7 @@ import {
   CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
   CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
+  formatReplacementSubscriptionRequiredMessage,
   formatRunErrorForExternalSurface,
   getCodexChatGptAccountUnsupportedModel,
   INSUFFICIENT_CREDITS_ASK_ADMIN_MESSAGE,
@@ -23,10 +24,7 @@ describe("formatRunErrorForExternalSurface", () => {
   ] as const)(
     "renders actionable %s copy without exposing provider diagnostics",
     (failureReason, expected) => {
-      for (const message of [
-        "[PI_API_MODEL_FAILED] Pi API first-turn model request failed",
-        "private upstream diagnostic",
-      ]) {
+      for (const message of ["private upstream diagnostic"]) {
         expect(
           formatRunErrorForExternalSurface({
             code: "UNKNOWN",
@@ -37,7 +35,7 @@ describe("formatRunErrorForExternalSurface", () => {
       }
     },
   );
-  it.each(["anthropic-api-key", "built-in"] as const)(
+  it.each(["claude-code-oauth-token", "built-in"] as const)(
     "keeps platform credit rejection actionable when the run uses %s",
     (modelProviderType) => {
       expect(
@@ -53,8 +51,8 @@ describe("formatRunErrorForExternalSurface", () => {
 
   it.each([
     [
-      "anthropic-api-key",
-      "Your connected model provider account has insufficient balance.",
+      "claude-code-oauth-token",
+      "Your connected subscription account has insufficient balance.",
     ],
     ["built-in", "The current model is unavailable."],
     [null, "The current model is unavailable."],
@@ -93,7 +91,7 @@ describe("formatRunErrorForExternalSurface", () => {
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
         message,
-        modelProviderType: "anthropic-api-key",
+        modelProviderType: "claude-code-oauth-token",
         framework: "claude-code",
       }),
     ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
@@ -106,7 +104,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: "Credit balance is too low",
         failureReason: "future_reason",
         framework: "claude-code",
-        modelProviderType: "anthropic-api-key",
+        modelProviderType: "claude-code-oauth-token",
       }),
     ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
   });
@@ -114,9 +112,9 @@ describe("formatRunErrorForExternalSurface", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "NO_MODEL_PROVIDER",
-        message: "No model provider configured",
+        message: "No model provider is available for this run",
       }),
-    ).toBe("No model provider configured");
+    ).toBe("No model provider is available for this run");
   });
 
   it("preserves non-guidance allowlisted run errors", () => {
@@ -142,6 +140,21 @@ describe("formatRunErrorForExternalSurface", () => {
     expect(isActionableRunError(error)).toBe(true);
     expect(isGenericRunErrorForDisplay(error)).toBe(false);
   });
+
+  it.each(["Codex", "Claude"] as const)(
+    "keeps the %s replacement subscription message actionable",
+    (subscriptionLabel) => {
+      const message = formatReplacementSubscriptionRequiredMessage({
+        replacedModelLabel: "GPT 5.6 Terra",
+        successorLabel: "GPT 6 Luna",
+        subscriptionLabel,
+      });
+      expect(message).toBe(
+        `GPT 5.6 Terra was replaced by GPT 6 Luna, which requires a ${subscriptionLabel} subscription. Select Auto or connect your ${subscriptionLabel} subscription.`,
+      );
+      expect(isActionableRunError(message)).toBe(true);
+    },
+  );
 
   it("uses the structured timeout reason instead of untrusted error text", () => {
     expect(
@@ -399,27 +412,30 @@ describe("formatRunErrorForExternalSurface", () => {
     expect(isGenericRunErrorForDisplay(modelCapacity)).toBe(false);
   });
 
-  it("shows friendly Claude overload guidance with the selected model label", () => {
-    const rawRunError =
-      "API Error: 529 Overloaded. This is a server-side issue, usually temporary - try again in a moment. If it persists, check https://status.claude.com.";
-
+  it("shows friendly Claude overload guidance with the provided model label", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
-        message: rawRunError,
-        selectedModel: "claude-sonnet-4-6",
+        message:
+          "API Error: 529 Overloaded. This is a server-side issue, usually temporary - try again in a moment. If it persists, check https://status.claude.com.",
+        selectedModelLabel: "Claude Sonnet 5.5",
       }),
     ).toBe(
-      "Claude Sonnet 4.6 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+      "Claude Sonnet 5.5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
     );
+  });
+
+  it("shows the provided model label for structured Claude overload failures", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
-        message: rawRunError,
-        selectedModel: "anthropic/claude-sonnet-5",
+        message: "private upstream diagnostic",
+        failureReason: "provider_overloaded",
+        framework: "claude-code",
+        selectedModelLabel: "Claude Fable 5.1",
       }),
     ).toBe(
-      "Claude Sonnet 5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+      "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
     );
   });
 
@@ -441,10 +457,10 @@ describe("formatRunErrorForExternalSurface", () => {
         code: "UNKNOWN",
         message:
           "API Error: Repeated 529 Overloaded errors. The API is at capacity - this is usually temporary.",
-        selectedModel: "claude-opus-4-8",
+        selectedModelLabel: "Claude Opus 5.5",
       }),
     ).toBe(
-      "Claude Opus 4.8 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+      "Claude Opus 5.5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
     );
   });
 
@@ -460,7 +476,7 @@ describe("formatRunErrorForExternalSurface", () => {
         formatRunErrorForExternalSurface({
           code: "UNKNOWN",
           message: rawRunError,
-          selectedModel: "claude-sonnet-4-6",
+          selectedModelLabel: "Claude Sonnet 5.5",
         }),
       ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
     }
@@ -537,49 +553,11 @@ describe("formatRunErrorForExternalSurface", () => {
           "Failed to authenticate. API Error: 401 Invalid authentication credentials",
         claudeCodeCredentialRecovery: {
           modelProviderType: "claude-code-oauth-token",
-          modelProviderCredentialScope: "member",
-          canManageOrgModelProviders: false,
           modelProvidersUrl: "https://app.example.test/?settings=model",
         },
       }),
     ).toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.example.test/?settings=model",
-    );
-  });
-
-  it("shows Anthropic API key update guidance for org admins on Claude Code upstream 401s", () => {
-    expect(
-      formatRunErrorForExternalSurface({
-        code: "UNKNOWN",
-        message:
-          "Failed to authenticate. API Error: 401 Invalid authentication credentials",
-        claudeCodeCredentialRecovery: {
-          modelProviderType: "anthropic-api-key",
-          modelProviderCredentialScope: "org",
-          canManageOrgModelProviders: true,
-          modelProvidersUrl: "https://app.example.test/?settings=model",
-        },
-      }),
-    ).toBe(
-      "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.\n\nOpen Model Providers: https://app.example.test/?settings=model",
-    );
-  });
-
-  it("asks non-admins to contact an admin on Claude Code Anthropic API key upstream 401s", () => {
-    expect(
-      formatRunErrorForExternalSurface({
-        code: "UNKNOWN",
-        message:
-          "Failed to authenticate. API Error: 401 Invalid authentication credentials",
-        claudeCodeCredentialRecovery: {
-          modelProviderType: "anthropic-api-key",
-          modelProviderCredentialScope: "org",
-          canManageOrgModelProviders: false,
-          modelProvidersUrl: "https://app.example.test/?settings=model",
-        },
-      }),
-    ).toBe(
-      "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.\n\nShare with an admin: https://app.example.test/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.example.test/?settings=model",
     );
   });
 
@@ -590,9 +568,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message:
           "Failed to authenticate. API Error: 401 Invalid authentication credentials",
         claudeCodeCredentialRecovery: {
-          modelProviderType: "openai-api-key",
-          modelProviderCredentialScope: "org",
-          canManageOrgModelProviders: true,
+          modelProviderType: "codex-oauth-token",
           modelProvidersUrl: "https://app.example.test/?settings=model",
         },
       }),
@@ -603,7 +579,7 @@ describe("formatRunErrorForExternalSurface", () => {
     const rawRunError =
       "API Error: 400 We've updated our Consumer Terms and Privacy Policy. You'll need to accept them in claude.ai with the email in /status to continue.";
     const expectedMessage =
-      "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.";
+      "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.";
 
     expect(
       formatRunErrorForExternalSurface({
@@ -617,7 +593,7 @@ describe("formatRunErrorForExternalSurface", () => {
     expect(isGenericRunErrorForDisplay(expectedMessage)).toBe(false);
   });
 
-  it("appends Model Providers to Claude Consumer Terms guidance", () => {
+  it("appends the model settings link to Claude Consumer Terms guidance", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
@@ -625,13 +601,11 @@ describe("formatRunErrorForExternalSurface", () => {
           "api error: 400 PLEASE ACCEPT the updated PRIVACY POLICY and CONSUMER TERMS at CLAUDE.AI before continuing.",
         claudeCodeCredentialRecovery: {
           modelProviderType: "claude-code-oauth-token",
-          modelProviderCredentialScope: "member",
-          canManageOrgModelProviders: false,
           modelProvidersUrl: "https://app.example.test/?settings=model",
         },
       }),
     ).toBe(
-      "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.\n\nOpen Model Providers: https://app.example.test/?settings=model",
+      "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.\n\nOpen model settings: https://app.example.test/?settings=model",
     );
   });
 
@@ -685,7 +659,7 @@ describe("formatRunErrorForExternalSurface", () => {
     const rawRunError =
       'unexpected status 502 Bad Gateway: {"error":"TOKEN_REFRESH_FAILED","message":"Access token expired and refresh failed for: codex-oauth-token. The connector may need to be reconnected.","permission":"model-provider:codex-oauth-token","base":"https://chatgpt.com/backend-api/codex","connectors":["codex-oauth-token"],"failureReason":"reconnect_required"}, url: https://chatgpt.com/backend-api/codex/responses';
     const expectedMessage =
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.";
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.";
 
     expect(
       formatRunErrorForExternalSurface({
@@ -709,7 +683,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: rawRunError,
       }),
     ).toBe(
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     );
     expect(isActionableRunError(rawRunError)).toBe(true);
     expect(isGenericRunErrorForDisplay(rawRunError)).toBe(false);
@@ -725,7 +699,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: rawRunError,
       }),
     ).toBe(
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     );
     expect(isActionableRunError(rawRunError)).toBe(true);
     expect(isGenericRunErrorForDisplay(rawRunError)).toBe(false);
@@ -741,7 +715,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: rawRunError,
       }),
     ).toBe(
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     );
     expect(isActionableRunError(rawRunError)).toBe(true);
     expect(isGenericRunErrorForDisplay(rawRunError)).toBe(false);
@@ -757,7 +731,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: rawRunError,
       }),
     ).toBe(
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     );
     expect(isActionableRunError(rawRunError)).toBe(true);
     expect(isGenericRunErrorForDisplay(rawRunError)).toBe(false);

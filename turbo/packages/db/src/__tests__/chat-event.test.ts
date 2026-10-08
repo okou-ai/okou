@@ -1,4 +1,4 @@
-import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
+import { getTableConfig, PgDialect, PgTable } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import { schema } from "../index";
@@ -21,10 +21,39 @@ describe("chatAgentRunContext schema", () => {
         ["id", true],
         ["source_chat_thread_id", true],
         ["source_agent_id", true],
+        ["source_user_id", true],
+        ["source_org_id", true],
         ["created_at", true],
       ]),
     );
     expect(config.foreignKeys).toHaveLength(0);
+  });
+
+  it("indexes copied ownership for cleanup", () => {
+    const config = getTableConfig(chatAgentRunContext);
+
+    expect(chatAgentRunContext.sourceUserId.hasDefault).toBe(false);
+    expect(chatAgentRunContext.sourceOrgId.hasDefault).toBe(false);
+    expect(
+      config.indexes.map((index) => {
+        return {
+          name: index.config.name,
+          unique: index.config.unique,
+          columns: index.config.columns,
+        };
+      }),
+    ).toEqual([
+      {
+        name: "chat_agent_run_context_source_user_idx",
+        unique: false,
+        columns: [expect.objectContaining({ name: "source_user_id" })],
+      },
+      {
+        name: "chat_agent_run_context_source_org_idx",
+        unique: false,
+        columns: [expect.objectContaining({ name: "source_org_id" })],
+      },
+    ]);
   });
 });
 
@@ -44,6 +73,7 @@ describe("chatEvents schema", () => {
       "revokes_event_id",
       "event_type",
       "payload",
+      "model_selection",
       "failure_reason",
       "required_official_workflow_ids",
       "context_type",
@@ -68,30 +98,28 @@ describe("chatEvents schema", () => {
     ).toStrictEqual([
       "chat_events_control_interrupt_run_id_unique",
       "chat_events_input_automation_context_idx",
-      "chat_events_pending_queue_idx",
       "chat_events_revokes_event_id_not_null_unique",
       "chat_events_run_event_seq_unique",
       "chat_events_run_terminal_unique",
+      "chat_events_thread_runless_input_seq_idx",
       "chat_events_thread_seq_unique",
       "idx_chat_events_created_at_id",
-      "idx_chat_events_run_id",
       "idx_chat_events_thread_created",
       "idx_chat_events_thread_run_terminal_created",
     ]);
     const checkNames = config.checks.map((check) => {
       return check.name;
     });
-    expect(checkNames).toEqual(
-      expect.arrayContaining([
-        "chat_events_input_user_message_payload_check",
-        "chat_events_input_payload_content_check",
-        "chat_events_failure_reason_event_type_check",
-        "chat_events_official_workflow_queue_claim_check",
-        "chat_events_goal_open_payload_check",
-        "chat_events_goal_close_payload_check",
-        "chat_events_goal_marker_payload_check",
-      ]),
-    );
+    expect([...checkNames].sort()).toStrictEqual([
+      "chat_events_context_pair_check",
+      "chat_events_context_type_check",
+      "chat_events_event_type_check",
+      "chat_events_failure_reason_event_type_check",
+      "chat_events_input_context_type_check",
+      "chat_events_input_payload_content_check",
+      "chat_events_input_user_message_payload_check",
+      "chat_events_official_workflow_queue_claim_check",
+    ]);
     const officialWorkflowQueueClaimCheck = config.checks.find((check) => {
       return check.name === "chat_events_official_workflow_queue_claim_check";
     });
@@ -125,14 +153,6 @@ describe("chatEvents schema", () => {
     expect(failureReasonEventTypeSql).toContain(
       '"chat_events"."event_type" = \'run.failed\'',
     );
-    expect(checkNames).not.toEqual(
-      expect.arrayContaining([
-        "chat_events_input_user_message_check",
-        "chat_events_input_content_check",
-        "chat_events_goal_open_content_check",
-        "chat_events_goal_close_content_check",
-      ]),
-    );
   });
 
   it("keeps run references after runs are deleted", () => {
@@ -157,6 +177,28 @@ describe("chatEvents schema", () => {
       },
     ]);
   });
+
+  it("keeps integration constraints off canonical events", () => {
+    // Integrations reference canonical events by (context_type, context_id)
+    // or a plain ID. Only core Chat tables may constrain or index chat_events.
+    const referencingTables = Object.values(schema)
+      .filter((table) => {
+        return table instanceof PgTable;
+      })
+      .flatMap((table) => {
+        const config = getTableConfig(table);
+        return config.foreignKeys
+          .filter((foreignKey) => {
+            return foreignKey.reference().foreignTable === chatEvents;
+          })
+          .map(() => {
+            return config.name;
+          });
+      });
+
+    expect(referencingTables).toStrictEqual([]);
+    expect(getTableConfig(chatEvents).uniqueConstraints).toStrictEqual([]);
+  });
 });
 
 describe("chatEventSnapshots schema", () => {
@@ -165,7 +207,7 @@ describe("chatEventSnapshots schema", () => {
 
     expect(chatEventSnapshots.terminalEventId.notNull).toBe(false);
     expect(chatEventSnapshots.terminalSeqId.notNull).toBe(false);
-    expect(chatEventSnapshots.archiveSchemaVersion.default).toBe(7);
+    expect(chatEventSnapshots.archiveSchemaVersion.default).toBe(8);
     expect(
       config.indexes.map((index) => {
         return { name: index.config.name, unique: index.config.unique };

@@ -34,6 +34,13 @@ pub enum StatusPersistenceError {
         #[source]
         source: LifecycleError,
     },
+    /// The deadline elapsed without confirming publication of this snapshot.
+    ///
+    /// The write may not have started, may still finish after this error, or
+    /// may be superseded by a newer coalesced snapshot. A started write is not
+    /// cancelled by the timeout. Use
+    /// [`StatusTracker::retry_unpublished_snapshot`] to request publication of
+    /// the tracker's current state rather than assuming the file is unchanged.
     #[error("runner status persistence for {path} timed out after {timeout:?}")]
     Timeout { path: PathBuf, timeout: Duration },
 }
@@ -341,6 +348,11 @@ fn serialize_iso<S: serde::Serializer>(dt: &DateTime<Utc>, s: S) -> Result<S::Ok
 /// Thread-safe status tracker that persists state to a JSON file atomically.
 ///
 /// Share via `Arc<StatusTracker>` — immutable fields live outside the mutex.
+/// When a mutator changes state, it updates in-memory state before attempting
+/// publication. A [`StatusPersistenceError::Timeout`] does not roll back
+/// that state or prove that the file is unchanged: an in-flight write may
+/// publish later. Call [`Self::retry_unpublished_snapshot`] to request
+/// publication of the current state when the outcome is uncertain.
 pub struct StatusTracker {
     started_at: DateTime<Utc>,
     max_concurrent: usize,
@@ -615,8 +627,13 @@ impl StatusTracker {
         Ok(true)
     }
 
-    /// Publish the current whole status when requested state is newer than the
-    /// latest successful publication.
+    /// Request publication of the current whole status when requested state is
+    /// newer than the latest successful publication.
+    ///
+    /// This retries the current in-memory snapshot, not necessarily the
+    /// snapshot from an earlier timed-out call. It does not cancel a prior
+    /// in-flight write, and this attempt can also return
+    /// [`StatusPersistenceError::Timeout`] with an uncertain publication outcome.
     pub async fn retry_unpublished_snapshot(&self) -> StatusResult<()> {
         let snapshot = {
             let mut state = self.state.lock().await;

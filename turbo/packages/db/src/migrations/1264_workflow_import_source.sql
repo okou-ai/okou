@@ -1,0 +1,1 @@
+ALTER TABLE "workflows" ADD COLUMN "import_source" varchar(32);

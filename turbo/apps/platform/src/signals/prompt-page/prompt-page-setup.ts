@@ -1,9 +1,8 @@
 import { command } from "ccstate";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import { modelCatalog$ } from "../external/model-catalog.ts";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { findVideoTemplateItem } from "@okouai/core/video-template-items";
 import { findWebsiteTemplateItem } from "@okouai/core/website-template-items";
 import { i18n } from "../../i18n/index.ts";
 import { sendNewThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
@@ -11,7 +10,6 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
-import { showAppSkeleton$ } from "../app-skeleton.ts";
 import { redirectToConfiguredOnboarding$ } from "../okou-page/onboard-guard.ts";
 import {
   resetChatPageModelSelection$,
@@ -52,22 +50,6 @@ function websiteGenerationTemplateFromId(
   };
 }
 
-function videoGenerationTemplateFromId(
-  id: string,
-): ResolvedGenerationTemplate | undefined {
-  const videoTemplate = findVideoTemplateItem(id);
-  if (!videoTemplate) {
-    return undefined;
-  }
-  return {
-    titleSnapshot: videoTemplate.title,
-    template: {
-      type: "video",
-      selection: { stylePresetId: videoTemplate.id },
-    },
-  };
-}
-
 function presentationGenerationTemplateFromId(
   id: string,
 ): ResolvedGenerationTemplate | undefined {
@@ -90,8 +72,7 @@ function presentationGenerationTemplateFromId(
       type: "presentation",
       selection: {
         templateId: presentationTemplate.templateId,
-        colorSystemId:
-          presentationTemplate.colorSystemId ?? "color-system:warm-sand",
+        colorSystemId: presentationTemplate.colorSystemId,
         previewUrl: presentationTemplate.embedUrl,
       },
     },
@@ -127,7 +108,6 @@ function illustrationGenerationTemplateFromId(
 
 const generationTemplateParsers = [
   websiteGenerationTemplateFromId,
-  videoGenerationTemplateFromId,
   presentationGenerationTemplateFromId,
   illustrationGenerationTemplateFromId,
 ] as const;
@@ -163,16 +143,22 @@ export const setupPromptPage$ = command(
         return $.chat.promptDocumentTitle;
       }),
     );
-    set(showAppSkeleton$);
 
     const params = get(searchParams$);
     const prompt = params.get("prompt")?.trim();
     const requestedModel = params.get("model")?.trim();
-    const template = params.get("template");
+    const template = params.get("template")?.trim() ?? null;
     const resolvedGenerationTemplate =
       generationTemplateFromSearchParam(template);
-    if (!prompt) {
-      set(detachedNavigateTo$, "/", { replace: true });
+    // A link naming a template the App no longer offers (for example a retired
+    // video style) keeps its brief as an editable draft instead of running it.
+    const unresolvedTemplate =
+      Boolean(template) && resolvedGenerationTemplate === undefined;
+    if (!prompt || unresolvedTemplate) {
+      set(detachedNavigateTo$, "/", {
+        replace: true,
+        searchParams: new URLSearchParams(prompt ? { prompt } : {}),
+      });
       return;
     }
 
@@ -183,8 +169,13 @@ export const setupPromptPage$ = command(
       return;
     }
 
-    if (isSupportedRunModel(requestedModel)) {
-      set(setChatPageModelSelection$, { selectedModel: requestedModel });
+    const catalog = await get(modelCatalog$);
+    signal.throwIfAborted();
+    const resolvedRequestedModel = catalog.resolve(requestedModel);
+    if (resolvedRequestedModel) {
+      set(setChatPageModelSelection$, {
+        selectedModel: resolvedRequestedModel,
+      });
     } else {
       set(resetChatPageModelSelection$);
     }

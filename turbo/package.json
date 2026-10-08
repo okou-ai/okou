@@ -3,10 +3,7 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --filter=!@okouai/desktop",
-    "desktop:dev": "OKOU_DESKTOP_PLATFORM_URL=https://app.vm7.ai:8443 pnpm -F @okouai/desktop dev:packaged",
-    "desktop:dev:forge": "OKOU_DESKTOP_PLATFORM_URL=https://app.vm7.ai:8443 pnpm -F @okouai/desktop dev",
-    "desktop:make": "pnpm -F @okouai/desktop make",
+    "dev": "turbo run dev",
     "lint": "turbo run lint --concurrency=1",
     "lint:style": "node --test scripts/style-policy.test.mjs && node scripts/style-policy.mjs && eslint --config eslint.style.config.mjs --no-inline-config --max-warnings 0 'apps/platform/src/**/*.{css,ts,tsx}' 'packages/ui/src/**/*.{css,ts,tsx}' || { echo 'Style lint failed. Read docs/styles.md for the style guide before fixing these errors. Use Tailwind utilities and registered tokens; do not expand the allowlist for business styling.' >&2; exit 1; }",
     "format": "prettier --write --ignore-unknown .",
@@ -32,8 +29,8 @@
     "@commitlint/cli": "^20.5.0",
     "@eslint/css": "^2.0.0",
     "@eslint/css-tree": "^4.1.0",
-    "@vitest/coverage-v8": "^5.0.0",
-    "@vitest/ui": "^5.0.0",
+    "@vitest/coverage-v8": "^5.0.1",
+    "@vitest/ui": "^5.0.1",
     "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.4",
     "eslint-plugin-better-tailwindcss": "^4.7.0",
@@ -42,10 +39,10 @@
     "tailwind-csstree": "^0.4.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "turbo": "^2.10.12",
+    "turbo": "^2.11.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-eslint": "^8.69.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   },
   "packageManager": "pnpm@10.33.4",
   "engines": {

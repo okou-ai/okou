@@ -38,9 +38,9 @@ export const hostedSites = pgTable(
           sql`${table.chatThreadId} IS NULL AND ${table.requestedSlug} IS NOT NULL`,
         ),
       uniqueIndex("idx_hosted_sites_public_slug").on(table.publicSlug),
-      unique("idx_hosted_sites_id_public_brand").on(
+      unique("idx_hosted_sites_id_link_layout_segment").on(
         table.id,
-        table.publicBrand,
+        table.linkLayoutSegment,
       ),
     ];
   },
@@ -61,9 +61,9 @@ export const hostedDeployments = pgTable(
       index("idx_hosted_deployments_org").on(table.orgId),
       index("idx_hosted_deployments_status").on(table.status),
       foreignKey({
-        name: "fk_hosted_deployments_site_public_brand",
-        columns: [table.siteId, table.publicBrand],
-        foreignColumns: [hostedSites.id, hostedSites.publicBrand],
+        name: "fk_hosted_deployments_site_link_layout_segment",
+        columns: [table.siteId, table.linkLayoutSegment],
+        foreignColumns: [hostedSites.id, hostedSites.linkLayoutSegment],
       }).onDelete("cascade"),
     ];
   },
@@ -85,9 +85,9 @@ export const privateHostedDeployments = pgTable(
       index("idx_private_hosted_deployments_org").on(table.orgId),
       index("idx_private_hosted_deployments_status").on(table.status),
       foreignKey({
-        name: "fk_private_hosted_deployments_site_public_brand",
-        columns: [table.siteId, table.publicBrand],
-        foreignColumns: [hostedSites.id, hostedSites.publicBrand],
+        name: "fk_private_hosted_deployments_site_link_layout_segment",
+        columns: [table.siteId, table.linkLayoutSegment],
+        foreignColumns: [hostedSites.id, hostedSites.linkLayoutSegment],
       }).onDelete("cascade"),
     ];
   },

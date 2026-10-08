@@ -34,10 +34,6 @@
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/cron/execute-morning-briefs",
-      "schedule": "* * * * *"
-    },
-    {
       "path": "/api/cron/refresh-home-task-recommendations",
       "schedule": "* * * * *"
     },
@@ -59,7 +55,7 @@
     },
     {
       "path": "/api/cron/compact-chat-thread-snapshots",
-      "schedule": "0 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/reconcile-artifact-catalog",
@@ -87,7 +83,7 @@
     },
     {
       "path": "/api/cron/sync-connector-catalog",
-      "schedule": "* * * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/sync-official-workflow-catalog",

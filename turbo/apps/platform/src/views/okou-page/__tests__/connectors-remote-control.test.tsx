@@ -76,10 +76,7 @@ test("Remote control lists each connection and filters credentials by type", asy
   await setupPage({
     context,
     path: "/connectors?scope=remote-control",
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorDirectory]: true,
-      [FeatureSwitchKey.VncAccess]: true,
-    },
+    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
   await screen.findByRole("heading", { name: "Deployment" });
   expect(screen.getByRole("heading", { name: "Analytics" })).toBeVisible();

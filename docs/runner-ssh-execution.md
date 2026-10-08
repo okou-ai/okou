@@ -3,12 +3,10 @@
 #32387 implements the Runner-owned execution slice of #32013 (under #31932).
 The [CLI and owner/Agent UI](ssh-access.md) were delivered by #32014 / PR #32722.
 SSH is generally available; local/PAT Runners remain unsupported.
-Current [API authority](runner-ssh-authority.md), including the current Agent
-grant, is required on a cache miss and for first-use pinning.
+Current [API authority](runner-ssh-authority.md), including the current chat
+host permission, is required on a cache miss and for first-use pinning.
 Successful authority snapshots follow the Run-scoped lifetime below. Run source,
-chat channel, workflows and trigger metadata add no eligibility gate. Retained
-historical Goal provenance follows the same source-independent rule; the retired
-Goal lifecycle cannot create or resume work.
+chat channel, workflows and trigger metadata add no eligibility gate.
 
 ## One-shot request and outcomes
 
@@ -499,8 +497,8 @@ API mutations publish `ssh-authority-invalidated` on the existing Runner-group
 Ably channel, with `{runId, connectionId}`; a null connection ID evicts all entries
 for that Run. Notices contain no credentials and cannot grant access or establish
 trust. Connection edits/rotation, deletion and explicit host-key reset notify
-active owner Runs after commit. Agent grant changes publish Run-wide invalidation
-for the affected user's Agent Runs, including after revocation removes the grant.
+active owner Runs after commit. Chat host default and override changes notify
+the affected Runs after commit.
 First-use pin/match records the confirmed identity locally only after the
 authorized N+1 response.
 

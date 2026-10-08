@@ -1,17 +1,12 @@
-import {
-  modelMenuOption,
-  findModelMenuOption,
-} from "./chat-model-menu-test-helpers.ts";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type {
+  AvailableRunModel,
   ModelProviderResponse,
-  OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   personalModelProviderAccountsByIdContract,
   personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -20,6 +15,13 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import {
+  closeModelPanel,
+  findModelOption,
+  modelOption,
+  openModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
 import {
   context,
   findButton,
@@ -27,40 +29,29 @@ import {
   NEW_CHAT_PATH,
 } from "./chat-run-test-fixtures.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
-
-const POLICY_ID = "e7000000-0000-4000-a000-000000000001";
 const MODEL = "gpt-5.6-sol";
 
-function modelPolicy(personal: boolean, restricted = false): OrgModelPolicy {
+function runModelFixture(
+  personal: boolean,
+  restricted = false,
+): AvailableRunModel {
   return {
-    id: POLICY_ID,
     model: MODEL,
     modelLabel: "GPT 5.6 Sol",
-    isDefault: true,
-    defaultProviderType: "built-in",
-    runtimeProviderType: "openai-api-key",
-    credentialScope: "org",
     modelProviderId: null,
-    modelProviderSurfaceId: null,
-    routeStatus: "valid",
-    routeStatusReason: null,
-    memberEffective: personal
-      ? {
-          providerType: "codex-oauth-token",
-          runtimeProviderType: "codex-oauth-token",
-          credentialScope: "member",
-          availability: restricted ? "plan_restricted" : "available",
-          accountSelection: "capture_required",
-        }
-      : {
-          providerType: "built-in",
-          runtimeProviderType: "openai-api-key",
-          credentialScope: "org",
-          availability: restricted ? "plan_restricted" : "available",
-          accountSelection: "not_applicable",
-        },
-    createdAt: "2026-09-15T00:00:00.000Z",
-    updatedAt: "2026-09-15T00:00:00.000Z",
+    memberEffective: {
+      providerType: "codex-oauth-token",
+      runtimeProviderType: "codex-oauth-token",
+      credentialScope: "member",
+      availability: restricted ? "reconnect_required" : "available",
+      accountSelection: "capture_required",
+    },
+    subscriptionOptions: {
+      efforts: personal
+        ? ["low", "high", "max"]
+        : ["low", "medium", "high", "xhigh", "max"],
+      serviceTier: "priority",
+    },
   };
 }
 
@@ -74,23 +65,15 @@ async function openChat(
     context,
     path: NEW_CHAT_PATH,
     sharedWorkerTestTransport: transport,
-    featureSwitches: {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      [FeatureSwitchKey.ChatPreference]: true,
-    },
   });
-  await expect(findButton("GPT 5.6 Sol")).resolves.toBeInTheDocument();
+  await expect(
+    composerModelTrigger("GPT 5.6 Sol"),
+  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
         "user:test-user-123",
-        "modelPoliciesChanged",
-      ),
-    ).toBeTruthy();
-    expect(
-      context.mocks.ably.hasSubscriptionOnChannel(
-        "org:org_default",
-        "modelPoliciesChanged",
+        "runModelsChanged",
       ),
     ).toBeTruthy();
   });
@@ -98,115 +81,21 @@ async function openChat(
 
 async function personalOption(): Promise<HTMLElement> {
   return await waitFor(() => {
-    const option = modelMenuOption(/GPT 5\.6 Sol/u);
-    expect(within(option).getByText("BYOK")).toBeInTheDocument();
+    const option = modelOption(/GPT 5\.6 Sol/u);
+    expect(option).not.toBeDisabled();
     return option;
   });
 }
 
-function notice(scope: "user" | "org"): void {
+function notice(): void {
   act(() => {
     context.mocks.ably.triggerOnChannel(
-      scope === "user" ? "user:test-user-123" : "org:org_default",
-      "modelPoliciesChanged",
+      "user:test-user-123",
+      "runModelsChanged",
       null,
     );
   });
 }
-
-test.each([
-  {
-    notice: "personal policy" as const,
-    initialPersonal: false,
-    initialRestricted: false,
-    nextPersonal: true,
-    nextRestricted: false,
-  },
-  {
-    notice: "organization policy" as const,
-    initialPersonal: true,
-    initialRestricted: false,
-    nextPersonal: false,
-    nextRestricted: false,
-  },
-  {
-    notice: "reconnect" as const,
-    initialPersonal: false,
-    initialRestricted: false,
-    nextPersonal: true,
-    nextRestricted: false,
-  },
-  {
-    notice: "billing restriction" as const,
-    initialPersonal: true,
-    initialRestricted: false,
-    nextPersonal: true,
-    nextRestricted: true,
-  },
-  {
-    notice: "billing recovery" as const,
-    initialPersonal: true,
-    initialRestricted: true,
-    nextPersonal: true,
-    nextRestricted: false,
-  },
-])(
-  "Refresh member source after a $notice notice",
-  async ({
-    notice: refreshNotice,
-    initialPersonal,
-    initialRestricted,
-    nextPersonal,
-    nextRestricted,
-  }) => {
-    let personal = initialPersonal;
-    let restricted = initialRestricted;
-    installRunChat({ selectedModel: MODEL });
-    context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
-      return respond(200, {
-        revision: "revision-1",
-        writePreconditionRequired: false,
-        modelsAvailableToAdd: [],
-        policies: [modelPolicy(personal, restricted)],
-        workspaceDefaultModel: MODEL,
-        workspaceDefaultPolicyId: POLICY_ID,
-      });
-    });
-    // Reconnect callbacks belong to the real MessagePort protocol; the direct
-    // page transport intentionally forwards named events only.
-    await openChat("message-port");
-    click(await findButton("GPT 5.6 Sol"));
-    const initial = await findModelMenuOption(/GPT 5\.6 Sol/u);
-    expect(within(initial).queryByText("BYOK") !== null).toBe(initialPersonal);
-    expect(within(initial).queryByText("Pro") !== null).toBe(initialRestricted);
-
-    personal = nextPersonal;
-    restricted = nextRestricted;
-    if (refreshNotice === "personal policy") {
-      notice("user");
-    } else if (refreshNotice === "organization policy") {
-      notice("org");
-    } else if (refreshNotice === "reconnect") {
-      act(() => {
-        context.mocks.ably.triggerSharedWorkerConnectionState("suspended", {
-          code: 80_003,
-          message: "Network unavailable",
-        });
-        context.mocks.ably.triggerSharedWorkerConnectionState("connected");
-      });
-    } else {
-      act(() => {
-        context.mocks.ably.trigger("billing:changed");
-      });
-    }
-
-    await waitFor(() => {
-      const option = modelMenuOption(/GPT 5\.6 Sol/u);
-      expect(within(option).queryByText("BYOK") !== null).toBe(nextPersonal);
-      expect(within(option).queryByText("Pro") !== null).toBe(nextRestricted);
-    });
-  },
-);
 
 async function setupHeldProjectionRefresh() {
   let failRefresh = false;
@@ -214,7 +103,7 @@ async function setupHeldProjectionRefresh() {
   const release = context.mocks.deferred<void>();
   installRunChat({ selectedModel: MODEL });
   context.mocks.api(
-    modelPoliciesMainContract.list,
+    runModelsMainContract.list,
     async ({ respond, withSignal }) => {
       if (failRefresh) {
         started.resolve();
@@ -227,34 +116,29 @@ async function setupHeldProjectionRefresh() {
         });
       }
       return respond(200, {
-        revision: "revision-1",
-        writePreconditionRequired: false,
-        modelsAvailableToAdd: [],
-        policies: [modelPolicy(true)],
-        workspaceDefaultModel: MODEL,
-        workspaceDefaultPolicyId: POLICY_ID,
+        models: [runModelFixture(false)],
       });
     },
   );
   await openChat();
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fillComposer(composer, "Keep this unsent draft");
-  click(await findButton("Effort, Max"));
-  const slider = await screen.findByRole("slider", { name: "Effort" });
+  const panel = await openModelPanel("GPT 5.6 Sol, Max");
+  const slider = within(panel).getByRole("slider", { name: "Effort" });
   slider.focus();
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Home}");
-  await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
-  click(screen.getByRole("switch", { name: "Fast" }));
-  await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  click(await findButton("GPT 5.6 Sol Fast"));
+  await expect(findButton("GPT 5.6 Sol, Low")).resolves.toBeInTheDocument();
+  click(within(panel).getByRole("switch", { name: "Fast mode" }));
+  await expect(
+    findButton("GPT 5.6 Sol, Low, Fast"),
+  ).resolves.toBeInTheDocument();
   await personalOption();
 
   failRefresh = true;
-  notice("user");
+  notice();
   await started.promise;
-  return { composer, release, user };
+  return { composer, release };
 }
 
 async function finishFailedProjectionRefresh(release: {
@@ -282,20 +166,26 @@ test("Keep the draft through a held and failed projection refresh", async () => 
 
 test("Keep effort through a held and failed projection refresh", async () => {
   const { release } = await setupHeldProjectionRefresh();
-  await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
+  await expect(
+    composerModelTrigger("GPT 5.6 Sol, Low"),
+  ).resolves.toBeInTheDocument();
   await finishFailedProjectionRefresh(release);
-  await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
+  await expect(
+    composerModelTrigger("GPT 5.6 Sol, Low"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Keep Fast through a failed projection refresh", async () => {
-  const { release, user } = await setupHeldProjectionRefresh();
+  const { release } = await setupHeldProjectionRefresh();
   await finishFailedProjectionRefresh(release);
-  await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  click(await findButton("Effort, Low"));
   await expect(
-    screen.findByRole("switch", { name: "Fast" }),
-  ).resolves.toBeChecked();
+    findButton("GPT 5.6 Sol, Low, Fast"),
+  ).resolves.toBeInTheDocument();
+  await closeModelPanel();
+  const panel = await openModelPanel("GPT 5.6 Sol, Low, Fast");
+  expect(
+    within(panel).getByRole("switch", { name: "Fast mode" }),
+  ).toBeChecked();
 });
 
 test("A local active-account change refreshes the member projection", async () => {
@@ -308,11 +198,6 @@ test("A local active-account change refreshes the member projection", async () =
       type: "codex-oauth-token",
       framework: "codex",
       isActive: active,
-      isDefault: false,
-      selectedModel: null,
-      secretName: null,
-      authMethod: "auth_json",
-      secretNames: ["CODEX_AUTH_JSON"],
       accountEmail: `${id.endsWith("3") ? "first" : "second"}@example.com`,
       needsReconnect: false,
       lastRefreshErrorCode: null,
@@ -322,14 +207,9 @@ test("A local active-account change refreshes the member projection", async () =
   };
   const firstId = "e7000000-0000-4000-a000-000000000003";
   const secondId = "e7000000-0000-4000-a000-000000000004";
-  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
     return respond(200, {
-      revision: "revision-1",
-      writePreconditionRequired: false,
-      modelsAvailableToAdd: [],
-      policies: [modelPolicy(personal)],
-      workspaceDefaultModel: MODEL,
-      workspaceDefaultPolicyId: POLICY_ID,
+      models: [runModelFixture(personal)],
     });
   });
   context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
@@ -349,11 +229,10 @@ test("A local active-account change refreshes the member projection", async () =
     },
   );
   await openChat();
-  click(await findButton("GPT 5.6 Sol"));
-  const initial = await findModelMenuOption(/GPT 5\.6 Sol/u);
-  expect(within(initial).queryByText("BYOK")).not.toBeInTheDocument();
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Escape}");
+  const initialPanel = await openModelPanel("GPT 5.6 Sol");
+  const initial = await findModelOption(/GPT 5\.6 Sol/u, initialPanel);
+  expect(initial).not.toBeDisabled();
+  await closeModelPanel();
   const rail = screen.queryByTestId("labeled-nav-rail");
   const trigger = rail
     ? within(rail).getByLabelText("Test User")
@@ -364,9 +243,11 @@ test("A local active-account change refreshes the member projection", async () =
   click(within(menu).getByText("Settings"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   click(await findButton("Models"));
-  await expect(
-    screen.findByRole("heading", { name: "Models" }),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.getByRole("heading", { name: "Use more models" }),
+    ).toBeInTheDocument();
+  });
   const row = await screen.findByTestId(`oauth-account-${secondId}`);
   const activate = queryAllByRoleFast("button", row).find((button) => {
     return button.getAttribute("aria-label")?.startsWith("Use:");
@@ -386,6 +267,13 @@ test("A local active-account change refreshes the member projection", async () =
       screen.queryByRole("dialog", { name: "Settings" }),
     ).not.toBeInTheDocument();
   });
-  click(await findButton("GPT 5.6 Sol"));
+  const panel = await openModelPanel("GPT 5.6 Sol");
   await personalOption();
+  const slider = within(panel).getByRole("slider", { name: "Effort" });
+  slider.focus();
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Home}{ArrowRight}");
+  await waitFor(() => {
+    expect(slider).toHaveAttribute("aria-valuetext", "High");
+  });
 });

@@ -48,8 +48,6 @@ import {
   activeUsagePackBillingContext,
   loadUsagePackCatalog,
   startUsagePackPurchase$,
-  usagePackPurchaseSerializationSchemaAvailable,
-  usagePackSubscriptionSchemaAvailable,
   type UsagePackCheckoutAllocation,
 } from "../services/usage-pack-subscription.service";
 import { parseBillingPaymentMethodPreviewToken } from "../services/billing-purchase-preview-token.service";
@@ -60,25 +58,25 @@ import {
 } from "../services/billing-payment-method.service";
 import {
   confirmUsagePackAllocationChange,
+  prepareUsagePackChangeConfirmation$,
+  repairUsagePackConfigurationBeforeConfirmation$,
   getUsagePackManagement,
-  previewUsagePackAllocationChange,
-  usagePackAllocationChangeSchemaAvailable,
+  previewUsagePackAllocationChange$,
 } from "../services/usage-pack-allocation-change.service";
 import {
-  confirmUsagePackSubscriptionChange,
-  previewUsagePackSubscriptionChange,
-  usagePackMemberAdditionSchemaAvailable,
-  usagePackSubscriptionChangeSchemaAvailable,
+  confirmUsagePackSubscriptionChange$,
+  previewUsagePackSubscriptionChange$,
+  type UsagePackSubscriptionChangePreviewResult,
+  type UsagePackSubscriptionChangeConfirmResult,
 } from "../services/usage-pack-plan-change.service";
 import {
-  confirmUsagePackSubscriptionMigration,
-  confirmUsagePackSubscriptionMigrationRevision,
-  getUsagePackMigrationState,
-  previewUsagePackSubscriptionMigration,
-  previewUsagePackSubscriptionMigrationRevision,
+  confirmUsagePackSubscriptionMigration$,
+  confirmUsagePackSubscriptionMigrationRevision$,
+  getUsagePackMigrationState$,
+  previewUsagePackSubscriptionMigration$,
+  previewUsagePackSubscriptionMigrationRevision$,
   type UsagePackMigrationOwner,
 } from "../services/usage-pack-subscription-migration.service";
-import { usagePackInvitationPurchaseSchemaAvailable } from "../services/usage-pack-invitation-purchase.service";
 import {
   loadBillingOrganizationDirectory,
   loadBillingOrganizationMemberships,
@@ -100,12 +98,6 @@ const adminRequired = Object.freeze({
 const USAGE_PACK_PLAN_ENDING_MESSAGE =
   "Your Plan is scheduled to end before this usage pack change can take effect. Restore your Plan first, then try again.";
 
-type UsagePackSubscriptionChangePreviewResult = Awaited<
-  ReturnType<typeof previewUsagePackSubscriptionChange>
->;
-type UsagePackSubscriptionChangeConfirmResult = Awaited<
-  ReturnType<typeof confirmUsagePackSubscriptionChange>
->;
 type UsagePackSubscriptionChangeResult =
   | UsagePackSubscriptionChangePreviewResult
   | UsagePackSubscriptionChangeConfirmResult;
@@ -177,19 +169,15 @@ async function validateUsagePackSubscriptionMembers(
     readonly orgId: string;
     readonly memberUsagePacks: readonly MemberUsagePack[];
     readonly allocatedMemberIds: readonly string[];
-    readonly memberAdditionSchemaAvailable: boolean;
   },
   signal: AbortSignal,
-): Promise<"valid" | "member_additions_unavailable" | "members_changed"> {
+): Promise<"valid" | "members_changed"> {
   const allocatedMemberIds = new Set(args.allocatedMemberIds);
   const addsMember = args.memberUsagePacks.some((selection) => {
     return !allocatedMemberIds.has(selection.memberId);
   });
   if (!addsMember) {
     return "valid";
-  }
-  if (!args.memberAdditionSchemaAvailable) {
-    return "member_additions_unavailable";
   }
   const memberships = await loadBillingOrganizationMemberships(
     args.clerk,
@@ -594,16 +582,7 @@ const checkoutConfirm$ = command(async ({ set }, signal: AbortSignal) => {
 });
 
 const confirmUsagePackPurchaseForOrg$ = command(
-  async (
-    { get, set },
-    orgId: string,
-    previewToken: string,
-    signal: AbortSignal,
-  ) => {
-    const db = get(db$);
-    if (!(await usagePackPurchaseSerializationSchemaAvailable(db))) {
-      return providerUnavailable("Usage pack billing is not ready");
-    }
+  async ({ set }, orgId: string, previewToken: string, signal: AbortSignal) => {
     signal.throwIfAborted();
     const result = await set(
       confirmUsagePackPurchase$,
@@ -665,9 +644,6 @@ const usagePackCheckoutAuthed$ = command(
     }
 
     const db = get(db$);
-    if (!(await usagePackPurchaseSerializationSchemaAvailable(db))) {
-      return providerUnavailable("Usage pack billing is not ready");
-    }
     signal.throwIfAborted();
 
     const previewEnabled = body.supportsInAppPreview === true;
@@ -742,6 +718,11 @@ const usagePackCheckoutAuthed$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (result.status === "conflict") {
+      return conflict(
+        "Another usage pack purchase changed concurrently; refresh billing and try again",
+      );
+    }
     return {
       status: 200 as const,
       body: result.status === "preview" ? result.preview : { url: result.url },
@@ -845,21 +826,7 @@ const usagePackManagementGetAuthed$ = command(
       return access.response;
     }
     const db = get(db$);
-    const [subscriptionSchema, changeSchema, memberAdditionSchema] =
-      await Promise.all([
-        usagePackSubscriptionSchemaAvailable(db),
-        usagePackAllocationChangeSchemaAvailable(db),
-        usagePackMemberAdditionSchemaAvailable(db),
-      ]);
-    signal.throwIfAborted();
-    if (!subscriptionSchema || !changeSchema) {
-      return providerUnavailable("Usage pack billing is not ready");
-    }
-    const management = await getUsagePackManagement(
-      db,
-      access.auth.orgId,
-      memberAdditionSchema,
-    );
+    const management = await getUsagePackManagement(db, access.auth.orgId);
     signal.throwIfAborted();
     if (!management) {
       return notFound("Usage pack subscription not found");
@@ -890,16 +857,8 @@ const usagePackChangePreviewAuthed$ = command(
       );
     }
     const db = set(writeDb$);
-    const [subscriptionSchema, changeSchema] = await Promise.all([
-      usagePackSubscriptionSchemaAvailable(db),
-      usagePackAllocationChangeSchemaAvailable(db),
-    ]);
-    signal.throwIfAborted();
-    if (!subscriptionSchema || !changeSchema) {
-      return providerUnavailable("Usage pack billing is not ready");
-    }
-    const result = await previewUsagePackAllocationChange(
-      db,
+    const result = await set(
+      previewUsagePackAllocationChange$,
       {
         orgId: access.auth.orgId,
         userId: bodyResult.data.memberId,
@@ -975,14 +934,6 @@ const usagePackChangeConfirmAuthed$ = command(
       pathParamsOf(billingUsagePackManagementContract.confirmChange),
     );
     const db = set(writeDb$);
-    const [subscriptionSchema, changeSchema] = await Promise.all([
-      usagePackSubscriptionSchemaAvailable(db),
-      usagePackAllocationChangeSchemaAvailable(db),
-    ]);
-    signal.throwIfAborted();
-    if (!subscriptionSchema || !changeSchema) {
-      return providerUnavailable("Usage pack billing is not ready");
-    }
     let paymentMethod: BillingPurchasePaymentMethod | undefined;
     if (bodyResult.data.paymentMethodPreviewToken) {
       const preview = parseBillingPaymentMethodPreviewToken(
@@ -1025,12 +976,23 @@ const usagePackChangeConfirmAuthed$ = command(
         paymentMethod = revalidated;
       }
     }
+    await set(
+      repairUsagePackConfigurationBeforeConfirmation$,
+      { orgId: access.auth.orgId, changeId },
+      signal,
+    );
+    const prepared = await set(
+      prepareUsagePackChangeConfirmation$,
+      { orgId: access.auth.orgId, changeId },
+      signal,
+    );
     const result = await confirmUsagePackAllocationChange(
       db,
       {
         orgId: access.auth.orgId,
         changeId,
         paymentMethod,
+        prepared,
       },
       signal,
     );
@@ -1050,28 +1012,18 @@ const usagePackChangeConfirmAuthed$ = command(
   },
 );
 
-async function usagePackMigrationSchemasAvailable(
-  db: Parameters<typeof usagePackSubscriptionSchemaAvailable>[0],
-): Promise<boolean> {
-  const [subscriptionSchema, invitationSchema] = await Promise.all([
-    usagePackSubscriptionSchemaAvailable(db),
-    usagePackInvitationPurchaseSchemaAvailable(db),
-  ]);
-  return subscriptionSchema && invitationSchema;
-}
-
 const usagePackMigrationGetAuthed$ = command(
   async ({ set }, signal: AbortSignal) => {
     const access = await set(usagePackManagementAccess$, signal);
     if (!access.allowed) {
       return access.response;
     }
-    const db = set(writeDb$);
-    if (!(await usagePackMigrationSchemasAvailable(db))) {
-      return providerUnavailable("Usage pack migration is not ready");
-    }
     signal.throwIfAborted();
-    const result = await getUsagePackMigrationState(db, access.auth.orgId);
+    const result = await set(
+      getUsagePackMigrationState$,
+      access.auth.orgId,
+      signal,
+    );
     signal.throwIfAborted();
     if (result.status === "not_found") {
       return notFound("Legacy subscription migration is not available");
@@ -1099,10 +1051,6 @@ const usagePackMigrationPreviewAuthed$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const db = set(writeDb$);
-    if (!(await usagePackMigrationSchemasAvailable(db))) {
-      return providerUnavailable("Usage pack migration is not ready");
-    }
     const clerk = get(clerk$);
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
@@ -1111,8 +1059,8 @@ const usagePackMigrationPreviewAuthed$ = command(
       readSignal,
     );
     signal.throwIfAborted();
-    const result = await previewUsagePackSubscriptionMigration(
-      db,
+    const result = await set(
+      previewUsagePackSubscriptionMigration$,
       {
         orgId: access.auth.orgId,
         targetTier: bodyResult.data.targetTier,
@@ -1156,10 +1104,6 @@ const usagePackMigrationConfirmAuthed$ = command(
     const { migrationId } = get(
       pathParamsOf(billingUsagePackMigrationContract.confirm),
     );
-    const db = set(writeDb$);
-    if (!(await usagePackMigrationSchemasAvailable(db))) {
-      return providerUnavailable("Usage pack migration is not ready");
-    }
     const clerk = get(clerk$);
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
@@ -1175,8 +1119,8 @@ const usagePackMigrationConfirmAuthed$ = command(
     ).map((owner) => {
       return "userId" in owner ? owner.userId : owner.invitationId;
     });
-    const result = await confirmUsagePackSubscriptionMigration(
-      db,
+    const result = await set(
+      confirmUsagePackSubscriptionMigration$,
       {
         orgId: access.auth.orgId,
         migrationId,
@@ -1218,10 +1162,6 @@ const usagePackMigrationRevisionPreviewAuthed$ = command(
     const { migrationId } = get(
       pathParamsOf(billingUsagePackMigrationContract.previewRevision),
     );
-    const db = set(writeDb$);
-    if (!(await usagePackMigrationSchemasAvailable(db))) {
-      return providerUnavailable("Usage pack migration is not ready");
-    }
     const clerk = get(clerk$);
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
@@ -1230,8 +1170,8 @@ const usagePackMigrationRevisionPreviewAuthed$ = command(
       readSignal,
     );
     signal.throwIfAborted();
-    const result = await previewUsagePackSubscriptionMigrationRevision(
-      db,
+    const result = await set(
+      previewUsagePackSubscriptionMigrationRevision$,
       {
         orgId: access.auth.orgId,
         migrationId,
@@ -1279,10 +1219,6 @@ const usagePackMigrationRevisionConfirmAuthed$ = command(
     const { migrationId } = get(
       pathParamsOf(billingUsagePackMigrationContract.confirmRevision),
     );
-    const db = set(writeDb$);
-    if (!(await usagePackMigrationSchemasAvailable(db))) {
-      return providerUnavailable("Usage pack migration is not ready");
-    }
     const clerk = get(clerk$);
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
@@ -1291,8 +1227,8 @@ const usagePackMigrationRevisionConfirmAuthed$ = command(
       readSignal,
     );
     signal.throwIfAborted();
-    const result = await confirmUsagePackSubscriptionMigrationRevision(
-      db,
+    const result = await set(
+      confirmUsagePackSubscriptionMigrationRevision$,
       {
         orgId: access.auth.orgId,
         migrationId,
@@ -1401,21 +1337,6 @@ const usagePackSubscriptionChangePreviewAuthed$ = command(
       );
     }
     const db = set(writeDb$);
-    const [
-      subscriptionSchema,
-      changeSchema,
-      subscriptionChangeSchema,
-      memberAdditionSchema,
-    ] = await Promise.all([
-      usagePackSubscriptionSchemaAvailable(db),
-      usagePackAllocationChangeSchemaAvailable(db),
-      usagePackSubscriptionChangeSchemaAvailable(db),
-      usagePackMemberAdditionSchemaAvailable(db),
-    ]);
-    signal.throwIfAborted();
-    if (!subscriptionSchema || !changeSchema || !subscriptionChangeSchema) {
-      return providerUnavailable("Usage pack billing is not ready");
-    }
     const management = await getUsagePackManagement(db, access.auth.orgId);
     signal.throwIfAborted();
     if (!management) {
@@ -1430,21 +1351,17 @@ const usagePackSubscriptionChangePreviewAuthed$ = command(
         allocatedMemberIds: management.allocations.map((allocation) => {
           return allocation.memberId;
         }),
-        memberAdditionSchemaAvailable: memberAdditionSchema,
       },
       readSignal,
     );
     signal.throwIfAborted();
-    if (memberValidation === "member_additions_unavailable") {
-      return providerUnavailable("Usage pack member additions are not ready");
-    }
     if (memberValidation === "members_changed") {
       return badRequestMessage(
         "Organization members changed; refresh billing and try again",
       );
     }
-    const result = await previewUsagePackSubscriptionChange(
-      db,
+    const result = await set(
+      previewUsagePackSubscriptionChange$,
       {
         orgId: access.auth.orgId,
         targetTier: bodyResult.data.targetTier,
@@ -1507,16 +1424,6 @@ const usagePackSubscriptionChangeConfirmAuthed$ = command(
       return bodyResult.response;
     }
     const db = set(writeDb$);
-    const [subscriptionSchema, changeSchema, subscriptionChangeSchema] =
-      await Promise.all([
-        usagePackSubscriptionSchemaAvailable(db),
-        usagePackAllocationChangeSchemaAvailable(db),
-        usagePackSubscriptionChangeSchemaAvailable(db),
-      ]);
-    signal.throwIfAborted();
-    if (!subscriptionSchema || !changeSchema || !subscriptionChangeSchema) {
-      return providerUnavailable("Usage pack billing is not ready");
-    }
     let paymentMethod: BillingPurchasePaymentMethod | undefined;
     if (bodyResult.data.paymentMethodPreviewToken) {
       const preview = parseBillingPaymentMethodPreviewToken(
@@ -1559,8 +1466,8 @@ const usagePackSubscriptionChangeConfirmAuthed$ = command(
         paymentMethod = revalidated;
       }
     }
-    const result = await confirmUsagePackSubscriptionChange(
-      db,
+    const result = await set(
+      confirmUsagePackSubscriptionChange$,
       {
         orgId: access.auth.orgId,
         changeId: bodyResult.data.changeId,

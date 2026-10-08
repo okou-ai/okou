@@ -1,13 +1,10 @@
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import {
   morningBriefPreference$,
   updateMorningBriefPreference$,
@@ -19,25 +16,6 @@ const morningBriefPreferenceReadAuth = {
   missingOrganizationStatus: 401,
   requiredCapability: "agent:read",
 } as const;
-
-function forbidden(message: string) {
-  return {
-    status: 403 as const,
-    body: { error: { message, code: "FORBIDDEN" as const } },
-  };
-}
-
-const morningBriefEnabled$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const overrides = await get(
-    userFeatureSwitchOverrides(auth.orgId, auth.userId),
-  );
-  return isFeatureEnabled(FeatureSwitchKey.MorningBrief, {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    overrides,
-  });
-});
 
 const morningBriefPreferenceWriteAuth = {
   requireOrganization: true,
@@ -62,9 +40,6 @@ function failureResponse(failure: MorningBriefPreferenceFailure) {
 const getMorningBriefPreferenceInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    if (!(await get(morningBriefEnabled$))) {
-      return forbidden("Morning Brief is not enabled");
-    }
     signal.throwIfAborted();
     const result = await set(
       morningBriefPreference$,
@@ -85,9 +60,6 @@ const updateBody$ = bodyResultOf(morningBriefPreferenceContract.update);
 const updateMorningBriefPreferenceInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    if (!(await get(morningBriefEnabled$))) {
-      return forbidden("Morning Brief is not enabled");
-    }
     signal.throwIfAborted();
     const body = await get(updateBody$);
     signal.throwIfAborted();

@@ -275,7 +275,7 @@ const connectManualGrantBuiltinConnectorInner$ = command(
       return notFound(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver([params.connectorSlug]));
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug: params.connectorSlug,
@@ -359,7 +359,7 @@ const connectNoAuthBuiltinConnectorInner$ = command(
       return notFound(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver([params.connectorSlug]));
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug: params.connectorSlug,
@@ -444,7 +444,7 @@ const startBuiltinConnectorOauthInner$ = command(
       return badRequestMessage(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver([connectorSlug]));
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug,
@@ -575,7 +575,7 @@ const startBuiltinConnectorOpenIdInner$ = command(
       return badRequestMessage(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver([connectorSlug]));
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug,

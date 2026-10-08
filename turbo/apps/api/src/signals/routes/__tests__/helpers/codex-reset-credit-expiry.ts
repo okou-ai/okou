@@ -7,7 +7,6 @@ import {
   personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -18,7 +17,6 @@ import { meModelProvidersUpsertRoutes } from "../../me-model-providers-upsert";
 import { meModelProvidersResetSubscriptionRoutes } from "../../me-model-providers-reset-subscription";
 import { meModelProviderAccountRoutes } from "../../me-model-provider-accounts";
 import { createRouteMocks } from "./route-test";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 
 export const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const routes = Object.freeze([
@@ -93,7 +91,7 @@ export function createCodexExpiryFixture(context: TestContext) {
   const mocks = createRouteMocks(context);
   return async function fixture(
     options: {
-      accounts?: boolean;
+      accountRoute?: boolean;
       auth?: ReturnType<typeof credentials>;
       orgId?: string;
       userId?: string;
@@ -108,10 +106,6 @@ export function createCodexExpiryFixture(context: TestContext) {
       return mocks.clerk.session(owner.userId, owner.orgId);
     };
     session();
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]:
-        options.accounts ?? false,
-    });
     const client = (signal?: AbortSignal) => {
       return setupApp({ context, routes, signal, rethrowErrors: true })(
         personalModelProvidersMainContract,
@@ -146,7 +140,7 @@ export function createCodexExpiryFixture(context: TestContext) {
       consume: async () => {
         session();
         const idempotencyKey = randomUUID();
-        if (options.accounts) {
+        if (options.accountRoute) {
           return await setupApp({
             context,
             routes: meModelProviderAccountRoutes,

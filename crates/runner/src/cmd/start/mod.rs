@@ -5,19 +5,16 @@
 //! `run()`, the main reactor for discovery, heartbeats, job execution,
 //! idle-pool maintenance, mitmproxy restart, and teardown.
 //!
-//! The sibling modules keep focused responsibilities out of this orchestration
-//! file:
+//! The sibling modules and domain owners keep focused responsibilities out of
+//! this orchestration file:
 //! - `factory_lifecycle`: sandbox factory creation and shutdown.
-//! - `idle_lifecycle`: idle-pool lifecycle, status updates, and destroy helpers.
-//! - `identity`: persistent runner id storage.
+//! - `runner-supervisor`: idle-pool, heartbeat, claimed activation ownership, completion settlement, and orphan-recovery policy.
+//! - `runner-host::runner_process_identity`: persistent runner identity storage.
 //! - `job_discovery`: discovery branch handling and idle-reuse admission.
-//! - `job_lifecycle`: cleanup, budget, and completion ownership state.
 //! - `job_spawn`: claimed job task spawning, completion, and panic cleanup.
 //! - `job_terminal_log`: terminal outcome tracing and diagnostic projection.
-//! - `mitm_restart`: mitmproxy crash restart and backoff.
-//! - `orphan_reap`: orphan active-run reconciliation.
-//! - `ownership`: active/idle/orphan ownership transition ordering.
-//! - `sandbox_finalization`: post-executor sandbox park/destroy finalization.
+//! - `runner-network::proxy::MitmRecovery`: mitmproxy crash restart and backoff.
+//! - `runner-supervisor::sandbox_finalization`: post-executor park/handoff/destroy policy.
 //! - `signals`: lifecycle signal registration, task ownership, and dispatch.
 //!
 //! Important invariants:
@@ -76,7 +73,6 @@ use crate::pre_spawn_admission::PreSpawnAdmission;
 use crate::prefetch;
 use crate::proxy;
 use crate::resource_budget::ResourceBudget;
-use crate::retry::{RetryState, sleep_until_retry};
 use crate::status::{StatusTracker, remove_stale_status_file};
 use crate::workspace_image_cache::{
     WorkspaceCacheChange, WorkspaceCacheWatcher, WorkspaceImageCache,
@@ -84,51 +80,42 @@ use crate::workspace_image_cache::{
 use runner_host::host;
 use runner_host::lock;
 use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
-use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_host::runner_process_identity::{RunnerProcessIdentity, load_runner_process_identity};
+#[cfg(test)]
+use runner_provider::JobCandidate;
 use runner_provider::{
     ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths, ConnectorRuntimeSyncHandle,
-    JobCandidate, JobProvider, LocalProvider, RunnerPreferenceRemovalReason,
+    JobProvider, LocalProvider,
 };
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 
-mod active_runs;
-mod blank_pool;
 mod factory_lifecycle;
 mod finalizing_claim;
 mod heartbeat;
-mod identity;
-mod idle_lifecycle;
 mod job_discovery;
-mod job_lifecycle;
 mod job_spawn;
 mod job_terminal_log;
-mod mitm_restart;
-mod orphan_reap;
-mod ownership;
 mod prune_idle;
-mod sandbox_finalization;
 mod signals;
 
-use active_runs::ActiveRuns;
-use blank_pool::BlankPoolReplenisher;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
-use heartbeat::{
-    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
-    HeartbeatSnapshotMetadata, WorkspaceCacheStateSnapshot, collect_heartbeat_state,
-    refresh_initial_workspace_cache_snapshot,
-};
-use identity::load_runner_process_identity;
-use idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
+use heartbeat::heartbeat_profiles;
 use job_discovery::{DiscoveredJob, DiscoveredJobContext, handle_discovered_job};
 use job_spawn::{SpawnContext, handle_job_result};
-use mitm_restart::{
-    MITM_BACKOFF_INITIAL, MITM_BACKOFF_MAX, MITM_MAX_CONSECUTIVE_FAILURES, MitmRestartHandle,
-    finish_mitm_restart_before_shutdown, handle_mitm_restart_result, maybe_spawn_mitm_restart,
-    recv_mitm_restart, stop_mitm_retries,
+use runner_lifecycle::active_runs::ActiveRuns;
+use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
+use runner_network::proxy::MitmRecovery;
+use runner_supervisor::blank_pool::{BlankPoolReplenisher, BlankProfile};
+use runner_supervisor::heartbeat::{
+    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
+    HeartbeatSnapshotMetadata, WssIngressServiceProbe, collect_heartbeat_state,
+    refresh_initial_workspace_cache_snapshot,
 };
-use orphan_reap::{
-    OrphanReapMode, OrphanReapProcessDiscovery, OrphanedActiveRuns, reap_orphaned_active_runs,
-};
+use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
+#[cfg(test)]
+use runner_supervisor::orphan_reap::OrphanReapProcessDiscovery;
+use runner_supervisor::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
+use runner_supervisor::pre_claim_admission::PendingFinalizingCandidate;
 use signals::{
     EarlySignals, SignalController, SignalHandlerTask, handle_stopping_signal, recv_handler_task,
 };
@@ -140,37 +127,6 @@ const WORKSPACE_CACHE_GC_PERIOD: Duration = Duration::from_secs(60);
 const WORKSPACE_CACHE_RECONCILIATION_PERIOD: Duration = Duration::from_secs(60);
 /// Staggers the first state inventory from the first routine cache GC.
 const WORKSPACE_CACHE_RECONCILIATION_INITIAL_DELAY: Duration = Duration::from_secs(30);
-
-fn candidate_for_admission(
-    candidate: JobCandidate,
-    pending_candidate: &mut Option<JobCandidate>,
-) -> JobCandidate {
-    if let Some(pending) =
-        pending_candidate.take_if(|pending| pending.run_id() == candidate.run_id())
-    {
-        info!(
-            run_id = %candidate.run_id(),
-            "duplicate finalizing candidate rechecks retained admission state"
-        );
-        pending
-    } else {
-        candidate
-    }
-}
-
-fn retain_finalizing_candidate(
-    pending_candidate: &mut Option<JobCandidate>,
-    candidate: JobCandidate,
-) {
-    if pending_candidate.is_none() {
-        *pending_candidate = Some(candidate);
-    } else {
-        info!(
-            run_id = %candidate.run_id(),
-            "finalizing candidate not retained because the pending slot is occupied"
-        );
-    }
-}
 
 async fn sleep_until_optional_instant(deadline: Option<Instant>) {
     match deadline {
@@ -532,7 +488,7 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
                     "failed to persist stopped status after live runner publication failure"
                 );
             }
-            Err(e)
+            Err(e.into())
         }
     }
 }
@@ -844,7 +800,6 @@ async fn run_start_with_home(
             client_session_id: runner_client_session_id,
             client_version: env!("CARGO_PKG_VERSION"),
             system_ca_bundle: deps::SYSTEM_CA_BUNDLE,
-            runner_token: local_group_dir.is_none().then(|| server.token.clone()),
         },
         crate::ADDON_FILES,
     )
@@ -1004,6 +959,7 @@ async fn run_start_with_home(
         mitm_jsonl_flush: Some(mitm.jsonl_flush_handle()),
         connector_runtime_sync,
         guest_rpc,
+        guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
         session_history_cpu: SessionHistoryCpuPool::for_host_cpus(host_cpus),
         session_history_probe: SessionHistoryProbe::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
@@ -1076,6 +1032,11 @@ async fn run_start_with_home(
             cancel_tokens,
             cancel,
         },
+        wss_ingress_service_probe: if args.local {
+            Arc::new(|| Box::pin(async { false }))
+        } else {
+            Arc::new(|| Box::pin(runner_host::wss_ingress_service_status::is_active()))
+        },
         proxy: ProxyState {
             mitm,
             mitm_crash_rx,
@@ -1092,6 +1053,7 @@ async fn run_start_with_home(
             signal_source: SignalSource::Real(signals),
         },
         orphan_reap: OrphanReapState {
+            #[cfg(test)]
             process_discovery: None,
         },
         #[cfg(test)]
@@ -1155,6 +1117,7 @@ struct RunConfig {
     capacity: CapacityPolicy,
     shared: RunnerSharedState,
     provider: ProviderState,
+    wss_ingress_service_probe: WssIngressServiceProbe,
     proxy: ProxyState,
     exec_config: Arc<ExecutorConfig>,
     shutdown: ShutdownHandles,
@@ -1228,7 +1191,31 @@ struct SignalState {
 struct OrphanReapState {
     /// Deterministic process snapshot for orphan-reaper tests. Production leaves
     /// this unset and scans `/proc`.
+    #[cfg(test)]
     process_discovery: Option<OrphanReapProcessDiscovery>,
+}
+
+impl OrphanReapState {
+    async fn reap(
+        &self,
+        orphans: &OrphanedActiveRuns,
+        idle_pool: &SharedIdlePool,
+        status: &StatusTracker,
+        mode: OrphanReapMode,
+    ) {
+        #[cfg(test)]
+        runner_supervisor::orphan_reap::reap_orphaned_active_runs_with_discovery(
+            orphans,
+            idle_pool,
+            status,
+            mode,
+            self.process_discovery.as_ref(),
+        )
+        .await;
+        #[cfg(not(test))]
+        runner_supervisor::orphan_reap::reap_orphaned_active_runs(orphans, idle_pool, status, mode)
+            .await;
+    }
 }
 
 #[cfg(test)]
@@ -1688,6 +1675,34 @@ fn maybe_panic_outer_job(
     }
 }
 
+#[cfg(test)]
+fn finalization_test_hooks(
+    configured: Option<OuterJobPanicPoint>,
+    observer: StartLoopTestObserver,
+) -> runner_supervisor::sandbox_finalization::FinalizationTestHooks {
+    use runner_supervisor::sandbox_finalization::{FinalizationTestEvent, FinalizationTestHooks};
+
+    FinalizationTestHooks {
+        on_event: Some(Arc::new(move |event| match event {
+            FinalizationTestEvent::BeforeIdlePoolOwnershipTransfer { run_id } => {
+                observer.notify_before_idle_pool_ownership_transfer(run_id);
+            }
+            FinalizationTestEvent::SandboxParkedForReuse { run_id, reuse_key } => {
+                observer.notify_sandbox_parked_for_reuse(run_id, reuse_key);
+            }
+            FinalizationTestEvent::HandoffOwned { run_id } => {
+                maybe_panic_outer_job(configured, OuterJobPanicPoint::HandoffOwned, run_id);
+            }
+            FinalizationTestEvent::IdlePoolOwned { run_id } => {
+                maybe_panic_outer_job(configured, OuterJobPanicPoint::IdlePoolOwned, run_id);
+            }
+            FinalizationTestEvent::DestroyCompleted { run_id } => {
+                maybe_panic_outer_job(configured, OuterJobPanicPoint::DestroyCompleted, run_id);
+            }
+        })),
+    }
+}
+
 #[derive(Clone, Copy)]
 enum RequiredNetworkLogComponent {
     Kmsg,
@@ -1775,6 +1790,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         capacity,
         shared,
         provider: provider_state,
+        wss_ingress_service_probe,
         proxy,
         exec_config,
         shutdown,
@@ -1983,11 +1999,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     // -----------------------------------------------------------------------
     // Mitmproxy crash-restart state
     // -----------------------------------------------------------------------
-    let mut mitm_retry: RetryState<MitmRestartHandle> = RetryState::new(
-        MITM_BACKOFF_INITIAL,
-        MITM_BACKOFF_MAX,
-        Some(MITM_MAX_CONSECUTIVE_FAILURES),
-    );
+    let mut mitm_recovery = MitmRecovery::new();
 
     // -----------------------------------------------------------------------
     // Heartbeat interval — same first-tick delay as above. Integration tests
@@ -2034,21 +2046,23 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     if let Some(gate) = &test_hooks.before_initial_workspace_cache_scan {
         gate.enter_and_wait().await;
     }
+    let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
     let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
         idle_pool: &shared.idle_pool,
         runner_identity: runner.identity,
         group: &runner.group,
-        profiles: &runner.profiles,
+        profiles: &projected_heartbeat_profiles,
         budget: &capacity.budget,
         provider: Arc::clone(&provider_state.provider),
         workspace_cache: exec_config.workspace_cache.clone(),
         active_runs: &active_runs,
         workspace_cache_snapshot: workspace_cache_snapshot.clone(),
+        wss_ingress_service_probe,
     });
     let initial_workspace_cache = refresh_initial_workspace_cache_snapshot(
         &workspace_cache_snapshot,
         exec_config.workspace_cache.as_ref(),
-        &runner.profiles,
+        &projected_heartbeat_profiles,
     )
     .await;
     #[cfg(test)]
@@ -2107,8 +2121,22 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let mut discover_fut = Box::pin(provider_state.provider.discover());
 
     let mut current_mode = startup_mode;
+    let blank_profiles = runner
+        .profiles
+        .iter()
+        .map(|(name, profile)| {
+            (
+                name.clone(),
+                BlankProfile {
+                    vcpu: profile.vcpu,
+                    memory_mb: profile.memory_mb,
+                    workspace_disk_mb: profile.workspace_disk_mb,
+                },
+            )
+        })
+        .collect();
     let mut blank_pool = BlankPoolReplenisher::new(
-        &runner.profiles,
+        &blank_profiles,
         &factories,
         &capacity.budget,
         capacity.max_idle,
@@ -2157,7 +2185,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let mut workspace_cache_gc_handle = None;
     let mut status_retry_handle = None;
     let mut draining_idle_pool_drained = false;
-    let mut pending_finalizing_candidate = None;
+    let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
     let mut terminal_error = None;
     loop {
         let mode = *mode_rx.borrow_and_update();
@@ -2178,7 +2206,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             }
         }
         if mode != RunnerMode::Running {
-            pending_finalizing_candidate = None;
+            pending_finalizing_candidate.clear();
         }
         blank_pool.cancel_if_inactive(mode);
         match mode {
@@ -2208,7 +2236,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         // Live observability: fire an immediate "stopping"
                         // heartbeat before teardown removes the runner.
                         if let Err(error) = heartbeat.flush(RunnerMode::Stopping).await {
-                            terminal_error = Some(error);
+                            terminal_error = Some(error.into());
                             break;
                         }
                     }
@@ -2232,7 +2260,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             .await;
 
         // Spawn background restart task when timer fires
-        maybe_spawn_mitm_restart(&mut mitm, &mut mitm_crash_rx, &mut mitm_retry);
+        mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
 
         let can_discover = if matches!(mode, RunnerMode::Running) {
             // A selected finalizing successor can claim against an exact
@@ -2249,11 +2277,9 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         if matches!(mode, RunnerMode::Running) && !can_discover {
             test_hooks.test_observer.notify_budget_exhausted_reactor();
         }
+        let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
-        let pending_finalizing_deadline = pending_finalizing_candidate
-            .as_ref()
-            .and_then(JobCandidate::runner_preference)
-            .map(runner_provider::ActiveRunnerPreference::deadline);
+        let pending_finalizing_deadline = pending_finalizing_candidate.deadline();
         tokio::select! {
             connection = prune_listener.accept() => {
                 match connection {
@@ -2300,10 +2326,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                 let Some(candidate) = discovered else { break };
                 // Future completed — create a new one for the next discovery.
                 discover_fut = Box::pin(provider_state.provider.discover());
-                let candidate = candidate_for_admission(
-                    candidate,
-                    &mut pending_finalizing_candidate,
-                );
+                let candidate = pending_finalizing_candidate.for_admission(candidate);
                 let result = handle_discovered_job(
                     DiscoveredJob { candidate },
                     DiscoveredJobContext {
@@ -2322,10 +2345,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                 let mut needs_reuse_state_refresh =
                     result.needs_reuse_state_refresh;
                 if let Some(candidate) = result.pending_candidate {
-                    retain_finalizing_candidate(
-                        &mut pending_finalizing_candidate,
-                        candidate,
-                    );
+                    pending_finalizing_candidate.retain(candidate);
                 }
                 let mut drained_ready_candidates = 0;
                 while drained_ready_candidates < READY_DIRECT_CANDIDATE_DRAIN_LIMIT {
@@ -2344,10 +2364,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         break;
                     };
                     drained_ready_candidates += 1;
-                    let candidate = candidate_for_admission(
-                        candidate,
-                        &mut pending_finalizing_candidate,
-                    );
+                    let candidate = pending_finalizing_candidate.for_admission(candidate);
                     let result = handle_discovered_job(
                         DiscoveredJob { candidate },
                         DiscoveredJobContext {
@@ -2365,10 +2382,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                     ).await;
                     needs_reuse_state_refresh |= result.needs_reuse_state_refresh;
                     if let Some(candidate) = result.pending_candidate {
-                        retain_finalizing_candidate(
-                            &mut pending_finalizing_candidate,
-                            candidate,
-                        );
+                        pending_finalizing_candidate.retain(candidate);
                     }
                 }
                 let live_mode = *mode_rx.borrow();
@@ -2394,7 +2408,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         &provider_state.cancel_tokens,
                         &lifecycle,
                     ).await;
-                    terminal_error = Some(error);
+                    terminal_error = Some(error.into());
                     break;
                 }
             }
@@ -2513,12 +2527,11 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             result = jobs.join_next(), if !jobs.is_empty() => {
                 handle_job_result(result).await;
                 if !orphaned_active_runs.is_empty() {
-                    reap_orphaned_active_runs(
+                    orphan_reap.reap(
                         &orphaned_active_runs,
                         &shared.idle_pool,
                         &shared.status,
                         OrphanReapMode::Immediate,
-                        orphan_reap.process_discovery.as_ref(),
                     ).await;
                 }
             }
@@ -2529,12 +2542,11 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             }
             // Reconcile active runs left visible after an outer job-task panic.
             _ = orphan_reap_tick.tick(), if !orphaned_active_runs.is_empty() => {
-                reap_orphaned_active_runs(
+                orphan_reap.reap(
                     &orphaned_active_runs,
                     &shared.idle_pool,
                     &shared.status,
                     OrphanReapMode::ConfirmAbsent,
-                    orphan_reap.process_discovery.as_ref(),
                 ).await;
             }
             // Mitmproxy crash detection
@@ -2546,23 +2558,20 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                     component = "runner",
                     "mitmproxy exited unexpectedly, scheduling restart"
                 );
-                mitm_retry.schedule();
+                mitm_recovery.on_crash();
             }
             // Mitmproxy restart result (background task)
-            result = recv_mitm_restart(&mut mitm_retry.handle) => {
-                match result {
-                    Ok(result) => handle_mitm_restart_result(result, &mut mitm, &mut mitm_retry),
-                    Err(error) => {
-                        stop_mitm_retries(&mut mitm_crash_rx, &mut mitm_retry);
-                        handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                            &provider_state.cancel_tokens, &lifecycle).await;
-                        terminal_error = Some(error);
-                    }
+            result = mitm_recovery.wait(&mut mitm) => {
+                if let Err(error) = result {
+                    mitm_recovery.stop_retries(&mut mitm_crash_rx);
+                    handle_stopping_signal("mitm-recovery", &provider_state.cancel,
+                        &provider_state.cancel_tokens, &lifecycle).await;
+                    terminal_error = Some(error.into());
                 }
             }
             // A late crash can arm a timer during recovery. Keep that request,
             // but do not spin on an expired timer while its owner is in flight.
-            () = sleep_until_retry(&mitm_retry.restart_at), if mitm_retry.handle.is_none() => {}
+            () = sleep_until_optional_instant(mitm_retry_deadline) => {}
             // Heartbeat: report runner state to the server
             _ = heartbeat_tick.tick() => {
                 let live_mode = *mode_rx.borrow();
@@ -2578,11 +2587,9 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             _ = sleep_until_optional_instant(pending_finalizing_deadline),
                 if pending_finalizing_candidate.is_some() && mode == RunnerMode::Running =>
             {
-                let Some(candidate) = pending_finalizing_candidate.take() else {
+                let Some(candidate) = pending_finalizing_candidate.take_expired() else {
                     continue;
                 };
-                let candidate = candidate
-                    .without_runner_preference(RunnerPreferenceRemovalReason::Expired);
                 let result = handle_discovered_job(
                     DiscoveredJob { candidate },
                     DiscoveredJobContext {
@@ -2599,10 +2606,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                     },
                 ).await;
                 if let Some(candidate) = result.pending_candidate {
-                    retain_finalizing_candidate(
-                        &mut pending_finalizing_candidate,
-                        candidate,
-                    );
+                    pending_finalizing_candidate.retain(candidate);
                 }
                 if result.needs_reuse_state_refresh {
                     heartbeat.request(*mode_rx.borrow())?;
@@ -2631,10 +2635,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         },
                     ).await;
                     if let Some(candidate) = result.pending_candidate {
-                        retain_finalizing_candidate(
-                            &mut pending_finalizing_candidate,
-                            candidate,
-                        );
+                        pending_finalizing_candidate.retain(candidate);
                     }
                 }
                 let source = match live_mode {
@@ -2682,7 +2683,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let phase = teardown.phase_start("heartbeat_drain");
     if let Err(error) = heartbeat.drain().await {
         error!(%error, "failed to drain heartbeat task");
-        terminal_error.get_or_insert(error);
+        terminal_error.get_or_insert(error.into());
     }
     let final_heartbeat_sequence = heartbeat.into_next_snapshot_sequence();
     teardown.phase_complete("heartbeat_drain", phase);
@@ -2736,7 +2737,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                 group: &runner.group,
                 sequence: final_heartbeat_sequence,
             },
-            &runner.profiles,
+            &projected_heartbeat_profiles,
             &capacity.budget,
             &pool,
             RunnerMode::Stopping,
@@ -2755,18 +2756,18 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     if remaining > 0 {
         info!(remaining, "waiting for running jobs to finish");
         while !jobs.is_empty() {
-            maybe_spawn_mitm_restart(&mut mitm, &mut mitm_crash_rx, &mut mitm_retry);
+            mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
+            let mitm_retry_deadline = mitm_recovery.retry_deadline();
 
             tokio::select! {
                 result = jobs.join_next() => {
                     handle_job_result(result).await;
                     if !orphaned_active_runs.is_empty() {
-                        reap_orphaned_active_runs(
+                        orphan_reap.reap(
                             &orphaned_active_runs,
                             &shared.idle_pool,
                             &shared.status,
                             OrphanReapMode::Immediate,
-                            orphan_reap.process_discovery.as_ref(),
                         ).await;
                     }
                 }
@@ -2783,34 +2784,31 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         component = "runner",
                         "mitmproxy exited unexpectedly, scheduling restart"
                     );
-                    mitm_retry.schedule();
+                    mitm_recovery.on_crash();
                 }
-                result = recv_mitm_restart(&mut mitm_retry.handle) => {
-                    match result {
-                        Ok(result) => handle_mitm_restart_result(result, &mut mitm, &mut mitm_retry),
-                        Err(error) => {
-                            stop_mitm_retries(&mut mitm_crash_rx, &mut mitm_retry);
-                            handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                                &provider_state.cancel_tokens, &lifecycle).await;
-                            terminal_error.get_or_insert(error);
-                        }
+                result = mitm_recovery.wait(&mut mitm) => {
+                    if let Err(error) = result {
+                        mitm_recovery.stop_retries(&mut mitm_crash_rx);
+                        handle_stopping_signal("mitm-recovery", &provider_state.cancel,
+                            &provider_state.cancel_tokens, &lifecycle).await;
+                        terminal_error.get_or_insert(error.into());
                     }
                 }
-                () = sleep_until_retry(&mitm_retry.restart_at), if mitm_retry.handle.is_none() => {}
+                () = sleep_until_optional_instant(mitm_retry_deadline) => {}
             }
         }
     }
     teardown.phase_complete("running_jobs_drain", phase);
     if !orphaned_active_runs.is_empty() {
         let phase = teardown.phase_start("orphan_reap_shutdown_final");
-        reap_orphaned_active_runs(
-            &orphaned_active_runs,
-            &shared.idle_pool,
-            &shared.status,
-            OrphanReapMode::ShutdownFinal,
-            orphan_reap.process_discovery.as_ref(),
-        )
-        .await;
+        orphan_reap
+            .reap(
+                &orphaned_active_runs,
+                &shared.idle_pool,
+                &shared.status,
+                OrphanReapMode::ShutdownFinal,
+            )
+            .await;
         teardown.phase_complete("orphan_reap_shutdown_final", phase);
     }
     // Wait for any in-flight destroy tasks (from capacity or profile-mismatch
@@ -2832,9 +2830,9 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     exec_config.decoded_cache.shutdown().await;
     teardown.phase_complete("background_fill_shutdown", phase);
     let phase = teardown.phase_start("finish_mitm_restart");
-    if let Err(error) = finish_mitm_restart_before_shutdown(&mut mitm, &mut mitm_retry).await {
+    if let Err(error) = mitm_recovery.finish_before_shutdown(&mut mitm).await {
         error!(%error, "failed to finish mitmproxy recovery");
-        terminal_error.get_or_insert(error);
+        terminal_error.get_or_insert(error.into());
     }
     teardown.phase_complete("finish_mitm_restart", phase);
     if let Some(handler_task) = signal_handler_task.take() {

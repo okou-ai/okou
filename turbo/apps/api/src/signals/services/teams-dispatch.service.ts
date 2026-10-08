@@ -1,38 +1,30 @@
-import { createHash, randomBytes } from "node:crypto";
-
-import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
-import { v5 as uuidv5 } from "uuid";
-import {
-  getBuiltInVisibleModels,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
-import type {
-  ChatTeamsMessageFile,
-  ChatTeamsMessageFiles,
-} from "@okouai/db/jsonb-contracts/chat-teams-context";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
-import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { teamsUserAgentPreferences } from "@okouai/db/schema/teams-user-agent-preference";
-import { agents } from "@okouai/db/schema/agent";
 import type {
   TeamsInboundActivity,
   TeamsInboundAttachment,
 } from "@okouai/api-contracts/contracts/teams-bot";
-import { and, desc, eq, isNull, notExists, or } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import type {
+  ChatTeamsMessageFile,
+  ChatTeamsMessageFiles,
+} from "@okouai/db/jsonb-contracts/chat-teams-context";
+import { agents } from "@okouai/db/schema/agent";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
+import { command } from "ccstate";
+import { and, eq, or } from "drizzle-orm";
 import { convert } from "html-to-text";
-
+import { createHash, randomBytes } from "node:crypto";
+import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
-import { inferMimetype } from "../../lib/mimetype";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
+import { inferMimetype } from "../../lib/mimetype";
+import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
+import { nowDate } from "../../lib/time";
+import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -43,8 +35,9 @@ import {
   fetchTeamsChannelMessageReplies,
   fetchTeamsChannelMessages,
   fetchTeamsFile,
-  fetchTeamsUsers,
   fetchTeamsPersonalChatMessages,
+  fetchTeamsUsers,
+  sendTeamsMessageReply,
   sendTeamsReaction,
   sendTeamsTypingActivity,
   type TeamsAdaptiveCard,
@@ -52,63 +45,65 @@ import {
   type TeamsGraphMessage,
   type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
-import { bestEffort, safeJsonParse } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
-import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
+import { bestEffort, safeJsonParse, settle } from "../utils";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
-import { ensureTeamsChatThreadRoute } from "./teams-chat-ingress.service";
-import { integrationDmSessionKey } from "../../lib/integration-dm-session";
-import { formatTeamsFileForContext } from "./teams-prompt";
 import { InputFileImportError } from "./canonical-asset.service";
-import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
+import {
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput$,
+  pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import {
+  integrationModelOptionValue,
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
 import {
   integrationInputMessageFiles,
   materializeIntegrationInputAssets$,
   readyIntegrationInputAsset,
-  type IntegrationInputFile,
   type IntegrationInputAsset,
+  type IntegrationInputFile,
 } from "./integration-input-assets.service";
-import type { TeamsFileTokenPayload } from "./teams-file-token";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 import {
-  updateUserModelPreference$,
-  userModelPreference,
-} from "./user-data.service";
+  ensureTeamsChatThreadRoute$,
+  findTeamsRoutedChatThreadId$,
+} from "./teams-chat-ingress.service";
 import {
   buildTeamsConnectUrlForActivity,
   disconnectTeamsConnection$,
   publishTeamsChanged$,
 } from "./teams-connect.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
-import { insertChatEvent } from "./chat-event.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
-import {
-  chatEventTypeIn,
-  chatInputPromptDispatchCondition,
-} from "./chat-event-type.service";
-
+import type { TeamsFileTokenPayload } from "./teams-file-token";
+import { formatTeamsFileForContext } from "./teams-prompt";
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT =
-  "`help`, `connect`, `disconnect`, `switch`, `model`";
-const TEAMS_AGENT_PICKER_MAX_OPTIONS = 100;
+  "`help`, `connect`, `disconnect`, `model`";
 const TEAMS_MODEL_PICKER_MAX_OPTIONS = 100;
 const TEAMS_CARD_ACTION_KEY = "okouTeamsAction";
 const TEAMS_AGENT_PICKER_ACTION = "switch_agent";
 const TEAMS_MODEL_PICKER_ACTION = "switch_model";
-const TEAMS_AGENT_PICKER_INPUT_ID = "selectedAgentId";
 const TEAMS_MODEL_PICKER_INPUT_ID = "selectedModel";
-const TEAMS_AGENT_PICKER_ORG_DEFAULT_VALUE = "__org_default__";
+// The submit activity replies to the card, so the card carries the route key
+// of the conversation where `/model` was sent.
+const TEAMS_MODEL_PICKER_CONVERSATION_KEY = "routeConversationId";
+const TEAMS_MODEL_PICKER_THREAD_KEY = "routeThreadId";
+const TEAMS_MODEL_PICKER_CHAT_THREAD_KEY = "chatThreadId";
 const TEAMS_THINKING_REACTION_TYPE = "1f4ad_thoughtballoon";
 const TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE =
   "application/vnd.microsoft.teams.file.download.info";
 const TEAMS_REFERENCE_ATTACHMENT_CONTENT_TYPE = "reference";
 const TEAMS_CHAT_MESSAGE_ID_NAMESPACE = "b60a5846-d85f-4db8-b9aa-d7d803efbb57";
-const teamsQueueEventRevoker = alias(chatEvents, "teams_queue_event_revoker");
 
 type TeamsBotCommand = "help" | "connect" | "disconnect" | "switch" | "model";
 type TeamsCardAction = "switch_agent" | "switch_model";
@@ -123,7 +118,7 @@ function teamsIdentity(installation: TeamsInstallation | null | undefined): {
   readonly brandName: "Okou";
   readonly botName: string;
 } {
-  const presentation = PUBLIC_BRAND_PRESENTATION;
+  const presentation = BRAND_PRESENTATION;
   return {
     ...presentation,
     botName: teamsBotDisplayName(installation?.botName),
@@ -159,14 +154,9 @@ interface TeamsAgent {
   readonly displayName: string | null;
 }
 
-interface TeamsAgentPickerOption {
-  readonly composeId: string;
-  readonly name: string;
-  readonly displayName: string | null;
-}
-
 interface TeamsModelPickerOption {
-  readonly model: SupportedRunModel;
+  /** Null is Auto. */
+  readonly model: string | null;
   readonly label: string;
   readonly isDefault: boolean;
 }
@@ -208,10 +198,7 @@ type TeamsMessageDispatchResult =
       readonly connectUrl?: string;
       readonly card?: TeamsAdaptiveCard;
     }
-  | {
-      readonly kind: "accepted" | "queued";
-      readonly runId?: string;
-    };
+  | { readonly kind: "accepted" };
 
 function isTeamsBotCommand(value: string): value is TeamsBotCommand {
   return (
@@ -248,15 +235,11 @@ function choiceLabel(value: string): string {
   return value.slice(0, 80);
 }
 
-function agentLabel(agent: TeamsAgent | TeamsAgentPickerOption): string {
-  return agent.displayName ?? agent.name;
-}
-
 function modelLabel(option: TeamsModelPickerOption): string {
   if (!option.isDefault) {
     return choiceLabel(option.label);
   }
-  const suffix = " (workspace default)";
+  const suffix = " (default)";
   if (option.label.length + suffix.length <= 80) {
     return `${option.label}${suffix}`;
   }
@@ -339,6 +322,14 @@ function notInstalledNotice(
   };
 }
 
+function orgDefaultAgentNotice(): TeamsMessageDispatchResult {
+  return {
+    kind: "notice",
+    replyText:
+      "Teams always uses your workspace's default agent. Agent switching is not available.",
+  };
+}
+
 function disconnectedNotice(): TeamsMessageDispatchResult {
   return {
     kind: "notice",
@@ -347,36 +338,24 @@ function disconnectedNotice(): TeamsMessageDispatchResult {
   };
 }
 
-function buildTeamsAgentPickerCard(args: {
-  readonly options: readonly TeamsAgentPickerOption[];
-  readonly currentSelectedId: string | null;
-  readonly includeOrgDefault: boolean;
-  readonly orgDefaultName: string | null;
+function buildTeamsModelPickerCard(args: {
+  readonly options: readonly TeamsModelPickerOption[];
+  /** Null is Auto. */
+  readonly currentSelectedModel: string | null;
+  readonly routeConversationId: string;
+  readonly routeThreadId: string;
+  readonly chatThreadId: string;
 }): TeamsAdaptiveCard {
-  const orgDefaultLabel = args.orgDefaultName
-    ? `Use org default (${args.orgDefaultName})`
-    : "Use org default";
-  const choices = [
-    ...(args.includeOrgDefault
-      ? [
-          {
-            title: choiceLabel(orgDefaultLabel),
-            value: TEAMS_AGENT_PICKER_ORG_DEFAULT_VALUE,
-          },
-        ]
-      : []),
-    ...args.options.map((option) => {
-      return {
-        title: choiceLabel(agentLabel(option)),
-        value: option.composeId,
-      };
-    }),
-  ];
-  const currentChoice = args.currentSelectedId
-    ? choices.find((choice) => {
-        return choice.value === args.currentSelectedId;
-      })
-    : undefined;
+  const choices = args.options.map((option) => {
+    return {
+      title: modelLabel(option),
+      value: integrationModelOptionValue(option.model),
+    };
+  });
+  const currentValue = integrationModelOptionValue(args.currentSelectedModel);
+  const currentChoice = choices.find((choice) => {
+    return choice.value === currentValue;
+  });
   const initialValue = currentChoice?.value ?? choices[0]?.value;
 
   return {
@@ -385,62 +364,7 @@ function buildTeamsAgentPickerCard(args: {
     body: [
       {
         type: "TextBlock",
-        text: "Choose which agent should respond to your mentions and DMs. Only affects your own messages.",
-        wrap: true,
-      },
-      {
-        type: "Input.ChoiceSet",
-        id: TEAMS_AGENT_PICKER_INPUT_ID,
-        label: "Agent",
-        style: "compact",
-        isMultiSelect: false,
-        ...(initialValue ? { value: initialValue } : {}),
-        choices,
-      },
-    ],
-    actions: [
-      {
-        type: "Action.Submit",
-        title: "Switch",
-        data: { [TEAMS_CARD_ACTION_KEY]: TEAMS_AGENT_PICKER_ACTION },
-      },
-    ],
-  };
-}
-
-function buildTeamsModelPickerCard(args: {
-  readonly options: readonly TeamsModelPickerOption[];
-  readonly currentSelectedModel: string | null;
-}): TeamsAdaptiveCard {
-  const choices = args.options.map((option) => {
-    return {
-      title: modelLabel(option),
-      value: option.model,
-    };
-  });
-  const defaultModel = args.options.find((option) => {
-    return option.isDefault;
-  })?.model;
-  const currentChoice = args.currentSelectedModel
-    ? choices.find((choice) => {
-        return choice.value === args.currentSelectedModel;
-      })
-    : undefined;
-  const defaultChoice = defaultModel
-    ? choices.find((choice) => {
-        return choice.value === defaultModel;
-      })
-    : undefined;
-  const initialValue =
-    currentChoice?.value ?? defaultChoice?.value ?? choices[0]?.value;
-
-  return {
-    type: "AdaptiveCard",
-    version: "1.4",
-    body: [
-      {
-        type: "TextBlock",
-        text: "Choose your model. This only affects your own runs.",
+        text: "Choose the model for this conversation.",
         wrap: true,
       },
       {
@@ -457,7 +381,12 @@ function buildTeamsModelPickerCard(args: {
       {
         type: "Action.Submit",
         title: "Switch",
-        data: { [TEAMS_CARD_ACTION_KEY]: TEAMS_MODEL_PICKER_ACTION },
+        data: {
+          [TEAMS_CARD_ACTION_KEY]: TEAMS_MODEL_PICKER_ACTION,
+          [TEAMS_MODEL_PICKER_CONVERSATION_KEY]: args.routeConversationId,
+          [TEAMS_MODEL_PICKER_THREAD_KEY]: args.routeThreadId,
+          [TEAMS_MODEL_PICKER_CHAT_THREAD_KEY]: args.chatThreadId,
+        },
       },
     ],
   };
@@ -783,49 +712,6 @@ async function sendTeamsRunStartIndicator(
   await bestEffort(indicator, signal);
 }
 
-async function getUserAgentPreference(
-  db: Db,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const [preference] = await db
-    .select({ selectedAgentId: teamsUserAgentPreferences.selectedAgentId })
-    .from(teamsUserAgentPreferences)
-    .where(
-      and(
-        eq(teamsUserAgentPreferences.userId, userId),
-        eq(teamsUserAgentPreferences.orgId, orgId),
-      ),
-    )
-    .limit(1);
-  return preference?.selectedAgentId ?? null;
-}
-
-async function setUserAgentPreference(args: {
-  readonly db: Db;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly composeId: string | null;
-}): Promise<void> {
-  await args.db
-    .insert(teamsUserAgentPreferences)
-    .values({
-      userId: args.userId,
-      orgId: args.orgId,
-      selectedAgentId: args.composeId,
-    })
-    .onConflictDoUpdate({
-      target: [
-        teamsUserAgentPreferences.userId,
-        teamsUserAgentPreferences.orgId,
-      ],
-      set: {
-        selectedAgentId: args.composeId,
-        updatedAt: nowDate(),
-      },
-    });
-}
-
 async function getWorkspaceAgent(
   db: Db,
   composeId: string,
@@ -867,56 +753,11 @@ async function getVisibleWorkspaceAgent(args: {
   return agent;
 }
 
-async function getVisibleAgentPickerOptions(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly defaultAgentId: string | null;
-}): Promise<readonly TeamsAgentPickerOption[]> {
-  const rows = await args.db
-    .select({
-      composeId: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, args.orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-      ),
-    )
-    .orderBy(desc(agents.updatedAt));
-
-  return rows
-    .filter((agent) => {
-      return agent.composeId !== args.defaultAgentId;
-    })
-    .slice(0, TEAMS_AGENT_PICKER_MAX_OPTIONS);
-}
-
 async function resolveEffectiveCompose(args: {
   readonly db: Db;
   readonly userId: string;
   readonly orgId: string;
 }): Promise<EffectiveComposeResolution> {
-  const override = await getUserAgentPreference(
-    args.db,
-    args.userId,
-    args.orgId,
-  );
-  if (override) {
-    const agent = await getVisibleWorkspaceAgent({
-      db: args.db,
-      composeId: override,
-      orgId: args.orgId,
-      userId: args.userId,
-    });
-    if (agent) {
-      return { status: "resolved", composeId: override, agent };
-    }
-  }
-
   const defaultAgentId = await resolveDefaultComposeId(args.db, args.orgId);
   if (!defaultAgentId) {
     return { status: "not_configured" };
@@ -947,41 +788,35 @@ async function resolveEffectiveCompose(args: {
 
 const teamsModelPickerState$ = command(
   async (
-    { get, set },
+    { set },
     orgId: string,
     userId: string,
+    currentSelectedModel: string | null,
     signal: AbortSignal,
   ): Promise<{
     readonly enabled: boolean;
     readonly options: readonly TeamsModelPickerOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
-      set(listOrgModelPolicies$, { orgId, userId }, signal),
-      get(userModelPreference({ orgId, userId })),
-    ]);
+    const runModels = await set(
+      listAvailableRunModels$,
+      { orgId, userId },
+      signal,
+    );
     signal.throwIfAborted();
 
     return {
       enabled: true,
-      options: policies.policies
-        .flatMap((policy) => {
-          if (
-            !isSupportedRunModel(policy.model) ||
-            !visibleModels.has(policy.model) ||
-            policy.routeStatus !== "valid"
-          ) {
-            return [];
-          }
+      options: runModels.models
+        .map((runModel) => {
           return {
-            model: policy.model,
-            label: policy.modelLabel,
-            isDefault: policy.isDefault,
+            model: runModel.model,
+            label: runModel.modelLabel,
+            isDefault: runModel.model === null,
           };
         })
         .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),
-      currentSelectedModel: preference.selectedModel,
+      currentSelectedModel,
     };
   },
 );
@@ -1249,16 +1084,13 @@ function isTeamsThreadReply(activity: TeamsMessageActivity): boolean {
 
 function teamsSessionThreadId(args: {
   readonly activity: TeamsMessageActivity;
-  readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly serviceTier: IntegrationModelRoutePin["serviceTier"];
 }): string {
   const { activity } = args;
   if (
     activity.conversationType === "personal" &&
     !isTeamsThreadReply(activity)
   ) {
-    return integrationDmSessionKey(args);
+    return INTEGRATION_DM_SESSION_KEY;
   }
   return activity.threadId;
 }
@@ -1586,7 +1418,6 @@ interface CanonicalTeamsLaunchContext {
   readonly activityId: string | null;
   readonly serviceUrl: string;
   readonly teamsAppId: string | null;
-  readonly publicBrand: PublicBrand;
   readonly senderUserId: string;
   readonly senderDisplayName: string | null;
   readonly senderPrincipalName: string | null;
@@ -1598,7 +1429,6 @@ interface CanonicalTeamsLaunchContext {
 
 function canonicalTeamsLaunchContext(args: {
   readonly activity: TeamsMessageActivity;
-  readonly publicBrand: PublicBrand;
   readonly connectionId: string;
   readonly threadId: string;
   readonly threadContext: string;
@@ -1616,7 +1446,6 @@ function canonicalTeamsLaunchContext(args: {
     activityId: args.activity.activityId,
     serviceUrl: args.activity.serviceUrl,
     teamsAppId: args.activity.teamsAppId,
-    publicBrand: args.publicBrand,
     senderUserId: args.activity.sender.id,
     senderDisplayName: args.activity.sender.name,
     senderPrincipalName: args.activity.sender.userPrincipalName,
@@ -1714,49 +1543,55 @@ function teamsLaunchMessageFiles(
   ];
 }
 
+type PersistedTeamsChatMessage =
+  | {
+      readonly inserted: true;
+      readonly chatThreadId: string;
+      readonly chatEventId: string;
+    }
+  | { readonly inserted: false };
+
 const persistTeamsChatMessage$ = command(
   async (
     { set },
     args: {
       readonly db: Db;
       readonly activity: TeamsMessageActivity;
-      readonly publicBrand: PublicBrand;
       readonly installation: BoundTeamsInstallation;
       readonly connection: TeamsConnection;
       readonly composeId: string;
       readonly promptFiles: readonly TeamsPromptFile[];
       readonly promptContext: TeamsPromptContext;
       readonly apiStartTime: number;
-      readonly modelRoute: IntegrationModelRoutePin | undefined;
     },
     signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly inserted: true;
-        readonly chatThreadId: string;
-        readonly chatEventId: string;
-      }
-    | { readonly inserted: false }
-  > => {
+  ): Promise<PersistedTeamsChatMessage> => {
     const currentTime = new Date(args.apiStartTime);
     const threadId = teamsSessionThreadId({
       activity: args.activity,
-      agentId: args.composeId,
-      selectedModel: args.modelRoute?.selectedModel ?? null,
-      serviceTier: args.modelRoute?.serviceTier ?? null,
     });
-    const route = await ensureTeamsChatThreadRoute(args.db, {
-      isDirectMessage: args.activity.conversationType === "personal",
-      connectionId: args.connection.id,
-      conversationId: args.activity.conversationId,
-      threadId,
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-      agentId: args.composeId,
-      selectedModel: args.modelRoute?.selectedModel ?? null,
-      serviceTier: args.modelRoute?.serviceTier ?? null,
-      currentTime,
-    });
+    const route = await set(
+      ensureTeamsChatThreadRoute$,
+      {
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          {
+            orgId: args.installation.orgId,
+            userId: args.connection.userId,
+            orgPlanCapabilities: undefined,
+          },
+          signal,
+        ),
+        connectionId: args.connection.id,
+        conversationId: args.activity.conversationId,
+        threadId,
+        userId: args.connection.userId,
+        orgId: args.installation.orgId,
+        agentId: args.composeId,
+        currentTime,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const assets = await set(
@@ -1765,7 +1600,6 @@ const persistTeamsChatMessage$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: args.publicBrand,
         files: teamsInputFiles(
           args.activity,
           args.installation,
@@ -1777,7 +1611,6 @@ const persistTeamsChatMessage$ = command(
 
     const launchContext = canonicalTeamsLaunchContext({
       activity: args.activity,
-      publicBrand: args.publicBrand,
       connectionId: args.connection.id,
       threadId,
       threadContext: args.promptContext.text,
@@ -1788,123 +1621,108 @@ const persistTeamsChatMessage$ = command(
       ),
     });
     const chatEventId = teamsChatMessageId(args.activity, args.connection.id);
-    const inserted = await args.db.transaction(async (tx) => {
-      const event = await insertChatEvent(
-        tx,
-        {
-          id: chatEventId,
-          chatThreadId: route.chatThreadId,
-          eventType: "input.prompt",
-          userMessage: createUserMessageDocument({
-            text: [
-              args.activity.text,
-              ...args.promptFiles
-                .filter((file) => {
-                  return !readyIntegrationInputAsset(assets, file.fileId);
-                })
-                .map(formatTeamsFileForContext),
-            ]
-              .filter(Boolean)
-              .join("\n\n"),
-            files: integrationInputMessageFiles(assets),
-            nonContentPart: createChatEventSourcePart({
-              kind: "teams",
-              tenantId: launchContext.tenantId,
-              channelId: launchContext.channelId,
-              activityId: launchContext.activityId,
-              conversationId: launchContext.conversationId,
-              conversationType: launchContext.conversationType,
-              botId: args.installation.botId,
-            }),
-          }),
-          runId: null,
-          teamsContext: launchContext,
-          createdAt: currentTime,
-        },
-        "id",
-      );
-      signal.throwIfAborted();
-      if (!event) {
-        return false;
-      }
-      await touchChatThreadLastMessageAt(
-        tx,
-        route.chatThreadId,
-        currentTime,
-        chatEventId,
-      );
-      return true;
-    });
+    const enqueuedModel = await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: route.chatThreadId,
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+      },
+      signal,
+    );
+    const values = {
+      id: chatEventId,
+      chatThreadId: route.chatThreadId,
+      eventType: "input.prompt",
+      modelSelection: enqueuedModel.modelSelection,
+      userMessage: createUserMessageDocument({
+        text: [
+          args.activity.text,
+          ...args.promptFiles
+            .filter((file) => {
+              return !readyIntegrationInputAsset(assets, file.fileId);
+            })
+            .map(formatTeamsFileForContext),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        files: integrationInputMessageFiles(assets),
+        nonContentPart: createChatEventSourcePart({
+          kind: "teams",
+          tenantId: launchContext.tenantId,
+          channelId: launchContext.channelId,
+          activityId: launchContext.activityId,
+          conversationId: launchContext.conversationId,
+          conversationType: launchContext.conversationType,
+          botId: args.installation.botId,
+        }),
+      }),
+      runId: null,
+      teamsContext: launchContext,
+      createdAt: currentTime,
+    } as const;
+    const eventId = await set(
+      enqueueIntegrationChatInput$,
+      {
+        orgId: args.installation.orgId,
+        input: values,
+        threadModelReplacement: enqueuedModel.threadModelReplacement,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    return inserted
-      ? { inserted: true, chatThreadId: route.chatThreadId, chatEventId }
-      : { inserted: false };
+    if (eventId === null) {
+      return { inserted: false };
+    }
+    return { inserted: true, chatThreadId: route.chatThreadId, chatEventId };
   },
 );
 
-async function teamsMessageDispatchState(
-  db: Db,
-  args: {
-    readonly chatThreadId: string;
-    readonly chatEventId: string;
+/** Reply with the wait notice when the input waits for an org run slot. */
+const replyTeamsChatQueueWait$ = command(
+  async (
+    _,
+    activity: TeamsMessageActivity,
+    reason: ChatQueueWaitReason,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const notice = chatQueueWaitNotice(reason);
+    if (!notice) {
+      return;
+    }
+    const reply = await sendTeamsMessageReply(
+      {
+        serviceUrl: activity.serviceUrl,
+        conversationId: activity.conversationId,
+        activityId: activity.activityId ?? undefined,
+        tenantId: activity.tenantId,
+        text: notice,
+      },
+      signal,
+    );
+    if (reply.kind === "teams-error") {
+      L.warn("Teams wait notice failed", {
+        tenantId: activity.tenantId,
+        conversationId: activity.conversationId,
+        activityId: activity.activityId,
+        status: reply.status,
+        error: reply.error,
+      });
+    }
   },
-): Promise<TeamsMessageDispatchResult> {
-  const [[run], [queued]] = await Promise.all([
-    db
-      .select({ runId: agentRuns.id, status: agentRuns.status })
-      .from(chatEvents)
-      .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
-      .where(
-        chatInputPromptDispatchCondition({
-          eventId: args.chatEventId,
-          chatThreadId: args.chatThreadId,
-        }),
-      )
-      .limit(1),
-    db
-      .select({ id: chatEvents.id })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, args.chatEventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          chatEventTypeIn(["input.prompt"]),
-          isNull(chatEvents.runId),
-          notExists(
-            db
-              .select({ id: teamsQueueEventRevoker.id })
-              .from(teamsQueueEventRevoker)
-              .where(eq(teamsQueueEventRevoker.revokesEventId, chatEvents.id)),
-          ),
-        ),
-      )
-      .limit(1),
-  ]);
-  if (queued || run?.status === "queued") {
-    return {
-      kind: "queued",
-      ...(run ? { runId: run.runId } : {}),
-    };
-  }
-  return {
-    kind: "accepted",
-    ...(run ? { runId: run.runId } : {}),
-  };
-}
+);
 
 const runAgentForTeams$ = command(
   async (
     { set },
     args: {
       readonly activity: TeamsMessageActivity;
-      readonly publicBrand: PublicBrand;
       readonly installation: BoundTeamsInstallation;
       readonly connection: TeamsConnection;
       readonly composeId: string;
       readonly promptFiles: readonly TeamsPromptFile[];
       readonly promptContext: TeamsPromptContext;
       readonly apiStartTime: number;
-      readonly modelRoute: IntegrationModelRoutePin | undefined;
       readonly timing: ApiDispatchTimingCollector;
     },
     signal: AbortSignal,
@@ -1920,14 +1738,12 @@ const runAgentForTeams$ = command(
       {
         db,
         activity: args.activity,
-        publicBrand: args.publicBrand,
         installation: args.installation,
         connection: args.connection,
         composeId: args.composeId,
         promptFiles: args.promptFiles,
         promptContext: args.promptContext,
         apiStartTime: args.apiStartTime,
-        modelRoute: args.modelRoute,
       },
       signal,
     );
@@ -1936,27 +1752,73 @@ const runAgentForTeams$ = command(
       return { kind: "ignored" };
     }
 
-    await publishChatThreadMessageCreatedSafely({
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-      threadId: persisted.chatThreadId,
-    });
-    signal.throwIfAborted();
-    await publishThreadListChangedSafely({
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-    });
-    signal.throwIfAborted();
-    await set(
-      drainChatThreadQueueForThread$,
-      {
-        chatThreadId: persisted.chatThreadId,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-      },
-      signal,
+    waitUntil(
+      (async () => {
+        const picked = await settle(
+          set(
+            pickEnqueuedChatThread$,
+            {
+              orgId: args.installation.orgId,
+              chatThreadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await set(
+          touchNativeChatThread$,
+          {
+            chatThreadId: persisted.chatThreadId,
+            createdAt: new Date(args.apiStartTime),
+            eventId: persisted.chatEventId,
+          },
+          signal,
+        );
+        await publishThreadListChangedSafely({
+          userId: args.connection.userId,
+          orgId: args.installation.orgId,
+        });
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.connection.userId,
+          orgId: args.installation.orgId,
+          threadId: persisted.chatThreadId,
+        });
+        const noticed = await settle(
+          (async () => {
+            const pick = await set(
+              enqueuedChatQueueWaitReason$,
+              {
+                orgId: args.installation.orgId,
+                chatThreadId: persisted.chatThreadId,
+                eventId: persisted.chatEventId,
+              },
+              signal,
+            );
+            await set(
+              replyTeamsChatQueueWait$,
+              args.activity,
+              pick.reason,
+              signal,
+            );
+          })(),
+        );
+        if (!picked.ok && !noticed.ok) {
+          throw new AggregateError(
+            [picked.error, noticed.error],
+            "Enqueued chat thread pick and wait notice failed",
+          );
+        }
+        if (!picked.ok) {
+          throw picked.error;
+        }
+        if (!noticed.ok) {
+          throw noticed.error;
+        }
+      })(),
     );
-    signal.throwIfAborted();
-    return await teamsMessageDispatchState(db, persisted);
+    waitUntil(
+      set(notifyRunningChatRunOfPendingInput$, persisted.chatThreadId, signal),
+    );
+    return { kind: "accepted" };
   },
 );
 
@@ -2047,6 +1909,7 @@ function missingConnectionNotice(args: {
 
 interface ConnectedCommandBeforeComposeArgs {
   readonly db: Db;
+  readonly activity: TeamsMessageActivity;
   readonly command: TeamsBotCommand | null;
   readonly installation: BoundTeamsInstallation;
   readonly connection: TeamsConnection;
@@ -2094,58 +1957,43 @@ const connectedCommandBeforeCompose$ = command(
         return disconnectedNotice();
       }
       case "switch": {
-        const defaultAgentId = await resolveDefaultComposeId(
-          args.db,
-          args.installation.orgId,
-        );
-        signal.throwIfAborted();
-        const options = await getVisibleAgentPickerOptions({
-          db: args.db,
-          orgId: args.installation.orgId,
-          userId: args.connection.userId,
-          defaultAgentId,
-        });
-        signal.throwIfAborted();
-        const visibleDefaultAgent = defaultAgentId
-          ? await getVisibleWorkspaceAgent({
-              db: args.db,
-              composeId: defaultAgentId,
-              orgId: args.installation.orgId,
-              userId: args.connection.userId,
-            })
-          : undefined;
-        signal.throwIfAborted();
-        if (!visibleDefaultAgent && options.length === 0) {
-          return {
-            kind: "notice",
-            replyText: "No agents are available to your Teams account.",
-          };
-        }
-        const currentOverride = await getUserAgentPreference(
-          args.db,
-          args.connection.userId,
-          args.installation.orgId,
-        );
-        signal.throwIfAborted();
-        return {
-          kind: "notice",
-          replyText:
-            "Choose which agent should respond to your Teams messages.",
-          card: buildTeamsAgentPickerCard({
-            options,
-            currentSelectedId: currentOverride,
-            includeOrgDefault: Boolean(visibleDefaultAgent),
-            orgDefaultName: visibleDefaultAgent
-              ? agentLabel(visibleDefaultAgent)
-              : null,
-          }),
-        };
+        return orgDefaultAgentNotice();
       }
       case "model": {
+        const routeThreadId = teamsSessionThreadId({ activity: args.activity });
+        const chatThreadId = await set(
+          findTeamsRoutedChatThreadId$,
+          {
+            connectionId: args.connection.id,
+            conversationId: args.activity.conversationId,
+            threadId: routeThreadId,
+            userId: args.connection.userId,
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+        const currentModel = await set(
+          readIntegrationChatThreadModel$,
+          {
+            orgId: args.installation.orgId,
+            userId: args.connection.userId,
+            chatThreadId,
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+        if (!chatThreadId || currentModel.kind === "no_thread") {
+          return {
+            kind: "notice",
+            replyText:
+              "Start or enter an existing Okou conversation before using /model.",
+          };
+        }
         const picker = await set(
           teamsModelPickerState$,
           args.installation.orgId,
           args.connection.userId,
+          currentModel.selectedModel,
           signal,
         );
         signal.throwIfAborted();
@@ -2163,10 +2011,13 @@ const connectedCommandBeforeCompose$ = command(
         }
         return {
           kind: "notice",
-          replyText: "Choose the model for your Teams agent.",
+          replyText: "Choose the model for this Teams conversation.",
           card: buildTeamsModelPickerCard({
             options: picker.options,
             currentSelectedModel: picker.currentSelectedModel,
+            routeConversationId: args.activity.conversationId,
+            routeThreadId,
+            chatThreadId,
           }),
         };
       }
@@ -2190,75 +2041,7 @@ const connectedTeamsCardAction$ = command(
     signal: AbortSignal,
   ): Promise<TeamsMessageDispatchResult> => {
     if (args.action === "switch_agent") {
-      const selected = stringValue(
-        args.activity.value,
-        TEAMS_AGENT_PICKER_INPUT_ID,
-      );
-      if (!selected) {
-        return {
-          kind: "notice",
-          replyText: "Please choose an agent.",
-        };
-      }
-
-      if (selected === TEAMS_AGENT_PICKER_ORG_DEFAULT_VALUE) {
-        const defaultAgentId = await resolveDefaultComposeId(
-          args.db,
-          args.installation.orgId,
-        );
-        signal.throwIfAborted();
-        const visibleDefaultAgent = defaultAgentId
-          ? await getVisibleWorkspaceAgent({
-              db: args.db,
-              composeId: defaultAgentId,
-              orgId: args.installation.orgId,
-              userId: args.connection.userId,
-            })
-          : undefined;
-        signal.throwIfAborted();
-        if (!visibleDefaultAgent) {
-          return {
-            kind: "notice",
-            replyText: "You don't have access to that agent.",
-          };
-        }
-        await setUserAgentPreference({
-          db: args.db,
-          userId: args.connection.userId,
-          orgId: args.installation.orgId,
-          composeId: null,
-        });
-        signal.throwIfAborted();
-        return {
-          kind: "notice",
-          replyText: `Switched to **${agentLabel(visibleDefaultAgent)}**.`,
-        };
-      }
-
-      const agent = await getVisibleWorkspaceAgent({
-        db: args.db,
-        composeId: selected,
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-      });
-      signal.throwIfAborted();
-      if (!agent || agent.id !== selected) {
-        return {
-          kind: "notice",
-          replyText: "You don't have access to that agent.",
-        };
-      }
-      await setUserAgentPreference({
-        db: args.db,
-        userId: args.connection.userId,
-        orgId: args.installation.orgId,
-        composeId: agent.id,
-      });
-      signal.throwIfAborted();
-      return {
-        kind: "notice",
-        replyText: `Switched to **${agentLabel(agent)}**.`,
-      };
+      return orgDefaultAgentNotice();
     }
 
     const selected = stringValue(
@@ -2271,16 +2054,68 @@ const connectedTeamsCardAction$ = command(
         replyText: "Please choose a model.",
       };
     }
+    const routeConversationId = stringValue(
+      args.activity.value,
+      TEAMS_MODEL_PICKER_CONVERSATION_KEY,
+    );
+    const routeThreadId = stringValue(
+      args.activity.value,
+      TEAMS_MODEL_PICKER_THREAD_KEY,
+    );
+    const expectedChatThreadId = stringValue(
+      args.activity.value,
+      TEAMS_MODEL_PICKER_CHAT_THREAD_KEY,
+    );
+    if (!routeConversationId || !routeThreadId || !expectedChatThreadId) {
+      return {
+        kind: "notice",
+        replyText: "This model picker is out of date. Send `/model` again.",
+      };
+    }
 
+    const chatThreadId = await set(
+      findTeamsRoutedChatThreadId$,
+      {
+        connectionId: args.connection.id,
+        conversationId: routeConversationId,
+        threadId: routeThreadId,
+        userId: args.connection.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!chatThreadId || chatThreadId !== expectedChatThreadId) {
+      return {
+        kind: "notice",
+        replyText: "This model picker is out of date. Send `/model` again.",
+      };
+    }
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+        chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (currentModel.kind === "no_thread") {
+      return {
+        kind: "notice",
+        replyText: "This model picker is out of date. Send `/model` again.",
+      };
+    }
     const picker = await set(
       teamsModelPickerState$,
       args.installation.orgId,
       args.connection.userId,
+      currentModel.selectedModel,
       signal,
     );
     signal.throwIfAborted();
     const option = picker.options.find((candidate) => {
-      return candidate.model === selected;
+      return integrationModelOptionValue(candidate.model) === selected;
     });
     if (!option) {
       return {
@@ -2288,15 +2123,26 @@ const connectedTeamsCardAction$ = command(
         replyText: "You don't have access to that model.",
       };
     }
-    await set(
-      updateUserModelPreference$,
+    signal.throwIfAborted();
+    const threadModel = await set(
+      updateIntegrationChatThreadModel$,
       {
         orgId: args.installation.orgId,
         userId: args.connection.userId,
-        preference: { selectedModel: option.model, serviceTier: null },
+        chatThreadId,
+        model: option.model,
       },
       signal,
     );
+    if (threadModel.kind !== "updated") {
+      return {
+        kind: "notice",
+        replyText:
+          threadModel.kind === "no_thread"
+            ? "This model picker is out of date. Send `/model` again."
+            : "You don't have access to that model.",
+      };
+    }
     signal.throwIfAborted();
     return {
       kind: "notice",
@@ -2312,7 +2158,6 @@ const runResolvedTeamsAgentForActivity$ = command(
       readonly prompt: string;
       readonly promptFiles: readonly TeamsPromptFile[];
       readonly activity: TeamsMessageActivity;
-      readonly publicBrand: PublicBrand;
       readonly installation: BoundTeamsInstallation;
       readonly connection: TeamsConnection;
       readonly effectiveCompose: ResolvedEffectiveCompose;
@@ -2345,19 +2190,13 @@ const runResolvedTeamsAgentForActivity$ = command(
     );
     signal.throwIfAborted();
 
-    const modelRoute = await set(
-      resolveIntegrationModelRouteForUser$,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
+    const promptContext = await loadOptionalChatEnrichment(
+      "teams",
+      () => {
+        return fetchTeamsPromptContext({ activity: args.activity }, signal);
       },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    const promptContext = await fetchTeamsPromptContext(
-      {
-        activity: args.activity,
+      () => {
+        return { text: "", files: [] };
       },
       signal,
     );
@@ -2367,14 +2206,12 @@ const runResolvedTeamsAgentForActivity$ = command(
       runAgentForTeams$,
       {
         activity: { ...args.activity, text: args.prompt },
-        publicBrand: args.publicBrand,
         installation: args.installation,
         connection: args.connection,
         composeId: args.effectiveCompose.composeId,
         promptFiles: args.promptFiles,
         promptContext,
         apiStartTime: args.apiStartTime,
-        modelRoute,
         timing: args.timing,
       },
       signal,
@@ -2395,7 +2232,6 @@ export const dispatchTeamsMessageToAgent$ = command(
     { set },
     args: {
       readonly activity: TeamsInboundActivity;
-      readonly publicBrand: PublicBrand;
       readonly installation?: TeamsInstallation | null;
       readonly apiStartTime: number;
       readonly timing: ApiDispatchTimingCollector;
@@ -2488,6 +2324,7 @@ export const dispatchTeamsMessageToAgent$ = command(
       connectedCommandBeforeCompose$,
       {
         db,
+        activity,
         command,
         installation: boundInstallation,
         connection,
@@ -2516,7 +2353,6 @@ export const dispatchTeamsMessageToAgent$ = command(
         prompt,
         promptFiles,
         activity,
-        publicBrand: args.publicBrand,
         installation: boundInstallation,
         connection,
         effectiveCompose,

@@ -1,5 +1,4 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -15,20 +14,6 @@ const context = testContext();
 
 const CATEGORY = "communication-collaboration";
 const CATEGORY_SIZE = 300;
-
-function categoryMetadata() {
-  return {
-    categories: [
-      {
-        id: CATEGORY,
-        label: "Communication and Collaboration",
-        menuLabel: "Communication",
-        groupId: null,
-      },
-    ],
-    groups: [],
-  };
-}
 
 function bigCategory() {
   return Array.from({ length: CATEGORY_SIZE }, (_, index) => {
@@ -50,13 +35,12 @@ function renderedLabels(): readonly string[] {
 
 async function openCategory(): Promise<void> {
   mockConnectors(context, []);
-  mockPublicConnectorStatus(context, bigCategory(), categoryMetadata(), {
+  mockPublicConnectorStatus(context, bigCategory(), {
     [CATEGORY]: CATEGORY_SIZE,
   });
   await setupPage({
     context,
     path: `/connectors?category=${CATEGORY}`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   await screen.findByTestId("connector-category-grid");
 }

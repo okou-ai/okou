@@ -412,11 +412,11 @@ async def test_worker_start_failures_release_queued_snapshots_and_recover(
     assert all(not thread.is_alive() for executor in executors for thread in executor._threads)
 
 
-@pytest.mark.parametrize("reporter_shutdown_fails", [False, True])
+@pytest.mark.parametrize("upstream_shutdown_fails", [False, True])
 async def test_done_joins_catalog_validation_and_closes_admission(
     real_flow: _FlowFactory,
     mitm_ctx,
-    reporter_shutdown_fails: bool,
+    upstream_shutdown_fails: bool,
 ) -> None:
     executor = _ControlledValidationExecutor(asyncio.get_running_loop())
     tasks: list[asyncio.Task[None]] = []
@@ -438,14 +438,14 @@ async def test_done_joins_catalog_validation_and_closes_admission(
                 assert not task.done()
                 executor.release_workers()
 
-                if reporter_shutdown_fails:
+                if upstream_shutdown_fails:
                     with (
                         patch.object(
-                            mitm_addon.model_provider_failure,
-                            "shutdown",
-                            side_effect=RuntimeError("reporter shutdown failed"),
+                            mitm_addon.auth_base_forwarder,
+                            "shutdown_forward_request_workers",
+                            side_effect=RuntimeError("auth-base shutdown failed"),
                         ),
-                        pytest.raises(RuntimeError, match="reporter shutdown failed"),
+                        pytest.raises(RuntimeError, match="auth-base shutdown failed"),
                     ):
                         mitm_addon.done()
                 else:

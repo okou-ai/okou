@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   sharedThreadArtifactPolicyKey,
@@ -14,16 +14,18 @@ import { settle } from "../utils";
 import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import type { SharedThreadArtifactReference } from "./artifact-reference.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
+import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { createHostedPreviewGrant$ } from "./private-hosted-preview.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
 
 /** Snapshot authority is independent of the original resource's current state. */
-function sharedThreadArtifactSnapshot(
-  reference: SharedThreadArtifactReference,
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+const sharedThreadArtifactSnapshot$ = command(
+  async (
+    { get },
+    reference: SharedThreadArtifactReference,
+    signal: AbortSignal,
+  ) => {
     const stored = await settle(
       get(
         readArtifactSharePolicyObject(
@@ -75,20 +77,25 @@ function sharedThreadArtifactSnapshot(
             env("APP_URL"),
           ).href
         : undefined;
-    return { target, previewImageUrl };
-  });
-}
-
-export function sharedThreadArtifactTarget(
-  reference: SharedThreadArtifactReference,
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
-    const snapshot = await get(sharedThreadArtifactSnapshot(reference, signal));
     signal.throwIfAborted();
+    return { target, previewImageUrl };
+  },
+);
+
+export const sharedThreadArtifactTarget$ = command(
+  async (
+    { set },
+    reference: SharedThreadArtifactReference,
+    signal: AbortSignal,
+  ) => {
+    const snapshot = await set(
+      sharedThreadArtifactSnapshot$,
+      reference,
+      signal,
+    );
     return snapshot?.target ?? null;
-  });
-}
+  },
+);
 
 export const resolveSharedThreadArtifactReference$ = command(
   async (
@@ -96,7 +103,11 @@ export const resolveSharedThreadArtifactReference$ = command(
     reference: SharedThreadArtifactReference,
     signal: AbortSignal,
   ) => {
-    const snapshot = await get(sharedThreadArtifactSnapshot(reference, signal));
+    const snapshot = await set(
+      sharedThreadArtifactSnapshot$,
+      reference,
+      signal,
+    );
     signal.throwIfAborted();
     if (!snapshot) {
       return null;
@@ -146,7 +157,7 @@ export const resolveSharedThreadArtifactReference$ = command(
       createHostedPreviewGrant$,
       {
         deploymentId: target.id,
-        publicBrand: reference.publicBrand,
+        layout: linkLayoutFromSegment(reference.publicBrand),
         snapshotId: target.snapshotId,
       },
       signal,

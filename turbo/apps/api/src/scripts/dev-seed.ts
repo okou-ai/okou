@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { escapeLiteral } from "pg";
-import { getBuiltInModelRouteVendors } from "@okouai/api-contracts/contracts/model-providers";
+import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { MANAGED_SOCIALKIT_BILLING_CATEGORY } from "@okouai/api-contracts/contracts/social";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import {
@@ -22,8 +22,9 @@ import { createStore } from "ccstate";
 import { closeDbPool, db } from "../lib/db";
 import { optionalEnv } from "../lib/env";
 import { nowDate } from "../lib/time";
-import { reconcileConnectorCatalogCompatibility$ } from "../signals/services/connector-catalog-compatibility.service";
+import { immutableCatalogHash$ } from "../signals/services/connector-catalog-immutable.service";
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
+import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connector-catalog.service";
 import { onRejection } from "../signals/utils";
 import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
 
@@ -37,10 +38,7 @@ function writeLine(message: string): void {
  * Pricing convention: 1 USD = 1000 credits.
  * Token prices use integer credits with a per-row token unit size.
  *
- * API keys are read from environment variables per vendor:
- *   DEV_MODEL_{VENDOR_UPPER}_KEY (e.g., DEV_MODEL_ANTHROPIC_KEY, DEV_MODEL_OPENAI_KEY)
- * Anthropic and OpenAI also fall back to their provider env names because
- * CI and local dev already use them for real model smoke tests.
+ * The managed OpenRouter Auto key is read from DEV_MODEL_OPENROUTER_KEY.
  */
 
 /** 1 USD = 1000 credits */
@@ -48,11 +46,6 @@ const USD_TO_CREDITS = 1000;
 
 function usd(amount: number): number {
   return Math.round(amount * USD_TO_CREDITS);
-}
-
-/** Video price with a 25% markup (20% gross margin): provider cost / 0.8. */
-function videoUsd(providerCost: number): number {
-  return Math.round((providerCost * USD_TO_CREDITS) / 0.8);
 }
 
 type UsagePricingRow = readonly [
@@ -148,27 +141,11 @@ const GPT_5_6_SOL_PRICING: readonly UsagePricingRow[] = [
   ["tokens.output", usd(30), 1_000_000],
 ];
 
-const GPT_5_6_TERRA_PRICING: readonly UsagePricingRow[] = [
-  ["tokens.input", usd(2), 1_000_000],
-  ["tokens.cache_read", usd(0.2), 1_000_000],
-  ["tokens.cache_creation", usd(2.5), 1_000_000],
-  ["tokens.output", usd(12), 1_000_000],
-];
-
 const GPT_5_6_LUNA_PRICING: readonly UsagePricingRow[] = [
   ["tokens.input", usd(0.2), 1_000_000],
   ["tokens.cache_read", usd(0.02), 1_000_000],
   ["tokens.cache_creation", usd(0.25), 1_000_000],
   ["tokens.output", usd(1.2), 1_000_000],
-];
-
-// OpenRouter MiMo-V2.5 recognition pricing retrieved 2026-08-05 from:
-// https://openrouter.ai/xiaomi/mimo-v2.5
-const MIMO_V2_5_RECOGNITION_PRICING: readonly UsagePricingRow[] = [
-  ["tokens.input", usd(0.14), 1_000_000],
-  ["tokens.output", usd(0.28), 1_000_000],
-  ["tokens.cache_read", usd(0.0028), 1_000_000],
-  ["tokens.cache_creation", 0, 1_000_000],
 ];
 
 const GPT_5_5_PRICING: readonly UsagePricingRow[] = [
@@ -424,6 +401,13 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["tokens.cache_read", usd(0.3), 1_000_000],
     ["tokens.cache_creation", usd(3.75), 1_000_000],
   ]),
+  // Anthropic Sonnet 5.5 has the same token rates as Sonnet 5 (2026-09-28).
+  ...usageGroup("model", "claude-sonnet-5-5", [
+    ["tokens.input", usd(2), 1_000_000],
+    ["tokens.output", usd(10), 1_000_000],
+    ["tokens.cache_read", usd(0.2), 1_000_000],
+    ["tokens.cache_creation", usd(2.5), 1_000_000],
+  ]),
   ...usageGroup("model", "claude-sonnet-5", [
     ["tokens.input", usd(2), 1_000_000],
     ["tokens.output", usd(10), 1_000_000],
@@ -485,22 +469,53 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     "gpt-6-astra",
     withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5)),
   ),
+  // https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  ...usageGroup(
+    "model",
+    "gpt-6.1-sol",
+    withFastPricing(
+      withLongContextPricing(
+        [
+          ["tokens.input", usd(2), 1_000_000],
+          ["tokens.cache_read", usd(0.1), 1_000_000],
+          ["tokens.cache_creation", usd(2.5), 1_000_000],
+          ["tokens.output", usd(10), 1_000_000],
+        ],
+        2,
+        1.5,
+      ),
+    ),
+  ),
+  // No official rate page is recorded for gpt-6-sol. These rows mirror the
+  // production `usage_pricing` rows (the billing authority; read through
+  // MaskDB on 2026-10-01, last updated 2026-09-22): Standard rates / 0.8 like
+  // gpt-6-luna, with the GPT-6 long-context (x2 input family, x1.5 output)
+  // and fast (x2) rule.
+  ...usageGroup(
+    "model",
+    "gpt-6-sol",
+    withFastPricing(
+      withLongContextPricing(
+        [
+          ["tokens.input", 2500, 1_000_000],
+          ["tokens.cache_read", 250, 1_000_000],
+          ["tokens.cache_creation", 3125, 1_000_000],
+          ["tokens.output", 12_500, 1_000_000],
+        ],
+        2,
+        1.5,
+      ),
+    ),
+  ),
   // https://developers.openai.com/api/docs/models/gpt-6-luna
   ...usageGroup("model", "gpt-6-luna", GPT_6_LUNA_PRICING),
   // OpenAI API pricing retrieved 2026-07-31 from:
   // https://developers.openai.com/api/docs/pricing
   ...usageGroup("model", "gpt-5.6-sol", GPT_5_6_SOL_USAGE_PRICING),
-  ...usageGroup(
-    "model",
-    "gpt-5.6-terra",
-    withFastPricing(withLongContextPricing(GPT_5_6_TERRA_PRICING, 2, 1.5)),
-  ),
   ...usageGroup("model", "gpt-5.6-luna", GPT_5_6_LUNA_USAGE_PRICING),
   // Development pricing is intentionally local seed data. Production pricing
   // is copied from the target database's current GPT rows by migration 1194.
   ...usageGroup("model", "okou-1.0", GPT_5_6_LUNA_USAGE_PRICING),
-  ...usageGroup("model", "okou-1.0-pro", GPT_5_6_SOL_USAGE_PRICING),
-  ...usageGroup("model", "okou-1.0-max", GPT_5_6_SOL_USAGE_PRICING),
   ...usageGroup(
     "model",
     "gpt-5.5",
@@ -520,18 +535,6 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["tokens.output", usd(9), 1_000_000],
   ]),
 
-  // Local development pricing for managed image tasks, billed under
-  // task-scoped kinds at the backing model's token rates.
-  ...usageGroup(
-    "image-recognition",
-    "xiaomi/mimo-v2.5",
-    MIMO_V2_5_RECOGNITION_PRICING,
-  ),
-  ...usageGroup("image-recognition", "google/gemini-3.5-flash", [
-    ["tokens.input", usd(1.5), 1_000_000],
-    ["tokens.cache_read", usd(0.15), 1_000_000],
-    ["tokens.output", usd(9), 1_000_000],
-  ]),
   // X connector — https://docs.x.com/x-api/getting-started/pricing
   ...usageGroup("connector", "x", [
     // Reads — $/resource
@@ -677,16 +680,6 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup("image", "fal-ai/bytedance/seedream/v4/text-to-image", [
     ["output_image", usd(0.03), 1],
   ]),
-  // BytePlus Seedream 5 pricing, retrieved 2026-08-18 from:
-  // https://docs.byteplus.com/en/docs/ModelArk/1544106
-  // The service records the request's actual provider cost in micro-USD;
-  // 1250 credits per USD applies the requested 25% markup once to the total.
-  ...usageGroup("image", "dola-seedream-5-0-pro-260628", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
-  ...usageGroup("image", "seedream-5-0-lite-260128", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
   ...usageGroup("image", "fal-ai/nano-banana-2", [
     ["output_image", usd(0.08), 1],
   ]),
@@ -695,108 +688,23 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup("image", "google/nano-banana-2-lite", [
     ["output_image", usd(0.042), 1],
   ]),
-  // Background removal transform (fal cost is $0).
-  ...usageGroup("image", "fal-ai/birefnet/v2", [["output_image", usd(0), 1]]),
-  // Upscale/HD transform, billed per output megapixel.
-  ...usageGroup("image", "fal-ai/clarity-upscaler", [
-    ["output_megapixel", usd(0.03), 1],
-  ]),
-
-  // Video generation uses a 25% markup (20% gross margin): cost / 0.8.
-  ...usageGroup("video", "dreamina-seedance-2-5-260628", [
-    ["output_video_tokens.480p_720p.no_video", videoUsd(10.7), 1_000_000],
-    ["output_video_tokens.480p_720p.with_video", videoUsd(6.4), 1_000_000],
-    ["output_video_tokens.1080p.no_video", videoUsd(11.7), 1_000_000],
-    ["output_video_tokens.1080p.with_video", videoUsd(7), 1_000_000],
-  ]),
-  ...usageGroup("video", "dreamina-seedance-2-0-260128", [
-    ["output_video_tokens.480p_720p.no_video", videoUsd(7), 1_000_000],
-    ["output_video_tokens.480p_720p.with_video", videoUsd(4.3), 1_000_000],
-    ["output_video_tokens.1080p.no_video", videoUsd(7.7), 1_000_000],
-    ["output_video_tokens.1080p.with_video", videoUsd(4.7), 1_000_000],
-  ]),
-  ...usageGroup("video", "dreamina-seedance-2-0-fast-260128", [
-    ["output_video_tokens.480p_720p.no_video", videoUsd(5.6), 1_000_000],
-    ["output_video_tokens.480p_720p.with_video", videoUsd(3.3), 1_000_000],
-  ]),
-  ...usageGroup("video", "dreamina-seedance-2-0-mini-260615", [
-    ["output_video_tokens.480p_720p.no_video", videoUsd(3.5), 1_000_000],
-    ["output_video_tokens.480p_720p.with_video", videoUsd(2.1), 1_000_000],
-  ]),
-  ...usageGroup("video", "seedance-1-5-pro-251215", [
-    ["output_video_tokens.audio", videoUsd(2.4), 1_000_000],
-    ["output_video_tokens.silent", videoUsd(1.2), 1_000_000],
-  ]),
-  ...usageGroup("video", "MiniMax-H3", [
-    ["output_video_seconds.768p", videoUsd(0.08), 1],
-    ["output_video_seconds.2k", videoUsd(0.13), 1],
-    ["input_video_seconds.768p", videoUsd(0.08), 1],
-    ["input_video_seconds.2k", videoUsd(0.13), 1],
-    ["input_image.additional", videoUsd(0.04), 1],
-  ]),
-  ...usageGroup("video", "fal-ai/veo3.1/fast", [
-    ["output_video_seconds.audio", videoUsd(0.15), 1],
-    ["output_video_seconds.silent", videoUsd(0.1), 1],
-    ["output_video_seconds.audio.4k", videoUsd(0.35), 1],
-    ["output_video_seconds.silent.4k", videoUsd(0.3), 1],
-  ]),
-  ...usageGroup("video", "fal-ai/kling-video/v3/4k/text-to-video", [
-    ["output_video_seconds.audio.4k", videoUsd(0.42), 1],
-    ["output_video_seconds.silent.4k", videoUsd(0.42), 1],
-  ]),
-  // JoggAI Professional API cost: $399 / 800 credits, with one provider
-  // credit consumed per started two minutes of talking-avatar output.
-  // https://www.jogg.ai/api-pricing/
-  ...usageGroup("video", "joggai-talking-avatar", [
-    ["output_video_joggai_credits", videoUsd(399 / 800), 1],
-  ]),
-  // OpenAI GPT-4o mini TTS — https://platform.openai.com/docs/pricing
-  // $0.015/minute raw provider cost = 15 credits/minute.
-  ...usageGroup("audio", "gpt-4o-mini-tts", [
-    ["output_audio_seconds", usd(0.015), 60],
-  ]),
 ];
-
-function getVendorApiKeyEnvVars(vendor: string): string[] {
-  const envVar = `DEV_MODEL_${vendor.toUpperCase()}_KEY`;
-  if (vendor === "anthropic") {
-    return [envVar, "ANTHROPIC_API_KEY"];
-  }
-  if (vendor === "openai") {
-    return [envVar, "OPENAI_API_KEY"];
-  }
-  return [envVar];
-}
 
 type OptionalEnvReader = (name: string) => string | undefined;
 type LineWriter = (message: string) => void;
 
-/**
- * Build built_in_model_keys entries from environment variables.
- * Vendors are derived from all built-in candidates so new providers are
- * automatically picked up.
- */
+/** Build the managed OpenRouter built_in_model_keys row from the environment. */
 export function buildBuiltInModelKeys(
   readEnv: OptionalEnvReader = optionalEnv,
   logLine: LineWriter = writeLine,
 ): (typeof builtInModelKeys.$inferInsert)[] {
-  const keys: (typeof builtInModelKeys.$inferInsert)[] = [];
-  for (const vendor of getBuiltInModelRouteVendors()) {
-    const envVars = getVendorApiKeyEnvVars(vendor);
-    const apiKey = envVars
-      .map((name) => {
-        return readEnv(name);
-      })
-      .find((value): value is string => {
-        return typeof value === "string" && value.length > 0;
-      });
-    if (!apiKey) {
-      logLine(`Skipping ${vendor}: ${envVars.join(" or ")} is not configured`);
-      continue;
-    }
-    keys.push({ vendor, apiKey, label: "dev-seed" });
+  const envVar = "DEV_MODEL_OPENROUTER_KEY";
+  const apiKey = readEnv(envVar);
+  if (!apiKey) {
+    logLine(`Skipping ${AUTO_RUN_KEY_VENDOR}: ${envVar} is not configured`);
+    return [];
   }
-  return keys;
+  return [{ vendor: AUTO_RUN_KEY_VENDOR, apiKey, label: "dev-seed" }];
 }
 
 async function devSeed() {
@@ -891,19 +799,28 @@ async function devSeed() {
     );
   }
 
-  // --- connector catalog (validated R2 snapshot + compatibility state) ---
-  writeLine("Syncing connector catalog");
+  // --- connector catalog (validated R2 publication -> pointer + entries) ---
   const store = createStore();
   const signal = new AbortController().signal;
+  // The flag keeps its historical name because the CI preview workflow passes
+  // it; it initializes the complete official catalog.
+  if (process.argv.includes("--preview-onboarding-catalog")) {
+    const seeded = await store.set(seedPreviewConnectorCatalog$, signal);
+    writeLine(
+      `Seeded ${seeded.connectorSlugs.length} preview connectors from ${seeded.catalogVersion}`,
+    );
+    return;
+  }
+  writeLine("Syncing connector catalog");
   const connectorCatalog = await store.set(syncConnectorCatalog$, signal);
-  await store.set(reconcileConnectorCatalogCompatibility$, signal);
-  if (!connectorCatalog.active) {
+  const catalogHash = await store.set(immutableCatalogHash$, signal);
+  if (catalogHash === null) {
     throw new Error(
-      "Connector catalog seed did not produce an active snapshot",
+      `Connector catalog seed did not publish a catalog (${connectorCatalog.outcome}${connectorCatalog.failureCode === null ? "" : `: ${connectorCatalog.failureCode}`})`,
     );
   }
   writeLine(
-    `Seeded connector catalog ${connectorCatalog.active.catalogVersion} (${connectorCatalog.outcome})`,
+    `Seeded connector catalog ${catalogHash} (${connectorCatalog.outcome})`,
   );
 }
 
@@ -916,6 +833,12 @@ function isMainModule(): boolean {
 }
 
 async function runDevSeed(): Promise<void> {
+  if (
+    process.argv.includes("--preview-onboarding-catalog") &&
+    optionalEnv("ENV") !== "preview"
+  ) {
+    throw new Error("Preview connector catalog seed is restricted to preview");
+  }
   await onRejection(devSeed(), closeDbPool);
   await closeDbPool();
 }

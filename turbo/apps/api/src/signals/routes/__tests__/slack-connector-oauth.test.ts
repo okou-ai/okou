@@ -5,7 +5,6 @@ import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/con
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
-import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { beforeEach, expect, onTestFinished, test } from "vitest";
 
@@ -22,14 +21,9 @@ import { slackOauthRoutes } from "../slack-oauth";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
-import { countSlackOrgConnections$ } from "./helpers/slack-connect";
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { readGetStartedStatus } from "./helpers/get-started";
 
-const context = testContext({ connectorCatalog: true });
-const store = createStore();
+const context = testContext();
 const mocks = createRouteMocks(context);
 const API_ORIGIN = "https://api.okou.ai";
 const headers = { authorization: "Bearer clerk-session" } as const;
@@ -257,7 +251,6 @@ test.each(["primary email", "missing user", "provider failure"])(
   "preserves connected OAuth state with a %s profile lookup",
   async (outcome) => {
     const current = actor();
-    await setGetStartedEnabled(context, current);
     if (outcome === "primary email") {
       context.mocks.clerk.users.getUser.mockResolvedValue({
         id: current.userId,
@@ -302,7 +295,6 @@ test.each(["primary email", "missing user", "provider failure"])(
 
 test("installation grants bot and user scopes and connects the OAuth account", async () => {
   const current = actor();
-  await setGetStartedEnabled(context, current);
   const authorization = await startInstall();
   expect(authorization.origin).toBe("https://slack.com");
   expect(parameter(authorization, "scope").split(",")).toContain(
@@ -680,9 +672,20 @@ test("an explicit Slack account switch replaces the previous identity after OAut
     currentSlackUserId: nextSlackUserId,
     requestedSlackUserId: current.slackUserId,
   });
-  await expect(
-    store.set(countSlackOrgConnections$, current.workspaceId, context.signal),
-  ).resolves.toBe(1);
+  // The replaced account no longer belongs to anyone: another member of the
+  // org may link it.
+  actor({ orgId: current.orgId, workspaceId: current.workspaceId });
+  const freedStatus = await accept(
+    client.getLinkStatus({
+      headers,
+      query: {
+        workspaceId: current.workspaceId,
+        slackUserId: current.slackUserId,
+      },
+    }),
+    [200],
+  );
+  expect(freedStatus.body.linkStatus).toStrictEqual({ kind: "connect" });
 });
 
 test("a Slack connect OAuth callback recovers a failed channel confirmation by DM", async () => {
@@ -716,7 +719,6 @@ test("a Slack connect OAuth callback recovers a failed channel confirmation by D
 
 test("an admin binds an anonymously installed workspace through user OAuth", async () => {
   const current = actor();
-  await setGetStartedEnabled(context, current);
   const anonymous = await accept(
     clients()(slackOauthContract).install({ query: {} }),
     [307],

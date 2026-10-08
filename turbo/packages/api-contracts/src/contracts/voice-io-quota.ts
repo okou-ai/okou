@@ -4,6 +4,15 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
+export const voiceIoQuotaErrorSchema = apiErrorSchema.extend({
+  quota: z
+    .object({
+      count: z.number(),
+      limit: z.number().nullable(),
+    })
+    .optional(),
+});
+
 export const audioInputQuotaResponseSchema = z.object({
   allowed: z.boolean(),
   count: z.number().int().nonnegative(),

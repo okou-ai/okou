@@ -2,10 +2,11 @@ import { command } from "ccstate";
 import { webhookSessionOutputContract } from "@okouai/api-contracts/contracts/webhooks";
 
 import { eventDeliveryUnavailable } from "../../lib/error";
-import { nowDate } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { publishSessionOutputDelta } from "../external/realtime";
+import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { assistantEventIdForRunEvent } from "../services/assistant-event-id";
 import { awaitWithSignal, settleIncludingAbort } from "../utils";
@@ -19,6 +20,7 @@ const sessionOutputBody$ = bodyResultOf(webhookSessionOutputContract.send);
 
 const publishSandboxSessionOutput$ = command(
   async ({ get }, signal: AbortSignal) => {
+    const receivedAt = now();
     const bodyResult = await get(sessionOutputBody$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
@@ -49,6 +51,17 @@ const publishSandboxSessionOutput$ = command(
       ),
     );
     signal.throwIfAborted();
+    if (body.chunkIndex === 0) {
+      // One row per assistant text block; the earliest per run is the run's
+      // first chunk. See docs/chat-first-output-latency.md.
+      recordSandboxOperation({
+        sandboxType: "runner",
+        runId: body.runId,
+        actionType: "session_output_first_chunk_publish",
+        durationMs: now() - receivedAt,
+        success: result.ok,
+      });
+    }
     if (!result.ok) {
       return eventDeliveryUnavailable(
         "Transient session output publication failed",

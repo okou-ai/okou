@@ -1,4 +1,7 @@
-import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadEventsContract,
+  type ChatRecommendedFollowup,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -42,11 +45,6 @@ function variedFollowups() {
       generationType: "image" as const,
     },
     {
-      prompt: "Turn this into a short launch video",
-      kind: "generate" as const,
-      generationType: "video" as const,
-    },
-    {
       prompt: "Build a website for the launch",
       kind: "generate" as const,
       generationType: "website" as const,
@@ -60,7 +58,7 @@ function variedFollowups() {
 }
 
 function completedReply(
-  followups = variedFollowups(),
+  followups: readonly ChatRecommendedFollowup[] = variedFollowups(),
   runId = FOLLOWUP_RUN_ID,
 ): MockChatEventInput[] {
   return [
@@ -330,6 +328,30 @@ test("A recommended follow-up edits the draft without sending it", async () => {
   );
   expect(composer).toHaveFocus();
   expect(onSendRequest).not.toHaveBeenCalled();
+});
+
+test("An older run's video follow-up is not offered", async () => {
+  const talkPrompt = "What risks should we discuss next?";
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: completedReply([
+      {
+        prompt: "Turn this into a short launch video",
+        kind: "generate" as const,
+        generationType: "video" as const,
+      },
+      { prompt: talkPrompt, kind: "talk" as const },
+    ]),
+  });
+
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+
+  const group = await keepGoingGroup();
+  expect(
+    followupButtons(group).map((button) => {
+      return button.title;
+    }),
+  ).toStrictEqual([talkPrompt]);
 });
 
 test("A touch device renders the recommended follow-ups as a quick reply rail", async () => {

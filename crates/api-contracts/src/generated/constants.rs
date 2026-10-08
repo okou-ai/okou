@@ -67,14 +67,6 @@ pub mod model_provider_env {
     /// Fake model-provider environment placeholder marker values.
     /// These values are not secrets and are not usable credentials.
     pub mod placeholders {
-        /// Fake marker bytes for the `ANTHROPIC_API_KEY` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const ANTHROPIC_API_KEY: &str = "sk-ant-api03-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCofAA";
-
-        /// Fake marker bytes for the `ANTHROPIC_AUTH_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const ANTHROPIC_AUTH_TOKEN: &str = "sk-CoffeeSafeLocalCoffeeSafeLocalCo";
-
         /// Fake marker bytes for the `CHATGPT_ACCESS_TOKEN` placeholder.
         /// This value is not a secret and must not be treated as a usable credential.
         pub const CHATGPT_ACCESS_TOKEN: &str =
@@ -138,12 +130,6 @@ pub mod runners {
 
     /// Legacy unversioned Pi model configuration generation.
     pub const PI_MODEL_CONFIG_LEGACY_GENERATION: u32 = 1;
-
-    /// Native Messages and Bedrock reader generation; activation is separate.
-    pub const PI_MODEL_CONFIG_NATIVE_GENERATION: u32 = 4;
-
-    /// Opaque native Pi sandbox marker; never a real signing credential.
-    pub const PI_NATIVE_CREDENTIAL_PLACEHOLDER: &str = "OKOUPINATIVEPLACEHOLDER";
 
     /// Maximum resume session history blob size accepted by the API, runner, and guest verifier.
     /// Rust and TypeScript components use this shared contract value when validating resume history refs, downloads, and idle-reuse verification.

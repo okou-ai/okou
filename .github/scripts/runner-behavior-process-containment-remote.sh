@@ -66,6 +66,27 @@ touch "$marker/sandbox-reuse-marker"
 awk '$2 == "/sys/fs/cgroup" && $3 == "cgroup2" && $4 ~ /(^|,)favordynmods(,|$)/ { found = 1 } END { exit !found }' /proc/mounts \
   || { echo "guest cgroup2 mount is missing favordynmods" >&2; exit 1; }
 
+# Guest tools need real pseudo-terminals even though this shell has pipe-based
+# stdio. Check the mounted filesystem and allocate a PTY as the tool user.
+awk '$2 == "/dev/pts" && $3 == "devpts" { found = 1 } END { exit !found }' /proc/mounts \
+  || { echo "guest /dev/pts is not mounted as devpts" >&2; exit 1; }
+python3 - <<'PY'
+import os
+import pty
+
+if os.geteuid() == 0:
+    raise RuntimeError("PTY check must run as the ordinary guest tool user")
+master, slave = pty.openpty()
+try:
+    if not os.isatty(master) or not os.isatty(slave):
+        raise RuntimeError("allocated PTY endpoints are not terminals")
+    if not os.ttyname(slave).startswith("/dev/pts/"):
+        raise RuntimeError("PTY slave is not under /dev/pts")
+finally:
+    os.close(master)
+    os.close(slave)
+PY
+
 expected_path="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/bin"
 if [ "$PATH" != "$expected_path" ]; then
   echo "Guest Agent CLI child PATH changed: expected=$expected_path actual=$PATH" >&2
@@ -756,22 +777,44 @@ MEMORY_REUSE_RESULT_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$MEMORY_REUS
 MEMORY_REUSE_RUN_ID=$(jq -r '.run_id // empty' <<<"$MEMORY_REUSE_RESULT_JSON")
 [ -n "$MEMORY_REUSE_RUN_ID" ] || fail "memory-pressure reuse result omitted run ID"
 
-echo "--- Pressure: prefer tools during Guest-wide OOM ---"
+echo "--- Pressure: prefer tools during injected Guest-wide OOM ---"
 GLOBAL_MEMORY_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
-GLOBAL_MEMORY_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+if GLOBAL_MEMORY_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --timeout 30 \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \
   --feature-flag sandboxReuse=true \
-  --prompt '@guest-wide-tool-oom') \
-  || fail "Guest-wide tool OOM did not preserve runtime and sibling"
+  --prompt '@guest-wide-tool-oom-injected'); then
+  :
+else
+  printf '%s\n' "$GLOBAL_MEMORY_RESULT" >&2
+  GLOBAL_MEMORY_FAILURE_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$GLOBAL_MEMORY_RESULT")
+  GLOBAL_MEMORY_FAILURE_RUN_ID=$(jq -r '.run_id // empty' <<<"$GLOBAL_MEMORY_FAILURE_JSON")
+  if [ -n "$GLOBAL_MEMORY_FAILURE_RUN_ID" ]; then
+    sudo tail -n 80 "/var/lib/vm0-runner/logs/system-stream-${GLOBAL_MEMORY_FAILURE_RUN_ID}.log" >&2 || true
+  fi
+  fail "Guest-wide tool OOM did not preserve runtime and sibling"
+fi
 printf '%s\n' "$GLOBAL_MEMORY_RESULT"
 GLOBAL_MEMORY_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$GLOBAL_MEMORY_RESULT")
 GLOBAL_MEMORY_RUN_ID=$(jq -r '.run_id // empty' <<<"$GLOBAL_MEMORY_JSON")
 [ -n "$GLOBAL_MEMORY_RUN_ID" ] || fail "Guest-wide OOM result omitted run ID"
 GLOBAL_MEMORY_LOG="/var/lib/vm0-runner/logs/system-stream-${GLOBAL_MEMORY_RUN_ID}.log"
-sudo grep -E -q 'parallel-shell-tool-oom-survived .*guest_wide=true memcg_ooms=0' \
-  "$GLOBAL_MEMORY_LOG" || fail "Guest-wide OOM scope or recovery was not verified"
+if ! sudo grep -E -q 'parallel-shell-tool-oom-survived .*guest_wide=true memcg_ooms=0 trigger=sysrq' \
+  "$GLOBAL_MEMORY_LOG"; then
+  sudo tail -n 80 "$GLOBAL_MEMORY_LOG" >&2 || true
+  fail "Guest-wide OOM scope or recovery was not verified"
+fi
+for _ in $(seq 1 50); do
+  if sudo grep -F -q 'oom_classification=contained_tool_oom' "$GLOBAL_MEMORY_LOG"; then
+    break
+  fi
+  sleep 0.1
+done
+if ! sudo grep -F -q 'oom_classification=contained_tool_oom' "$GLOBAL_MEMORY_LOG"; then
+  sudo tail -n 80 "$GLOBAL_MEMORY_LOG" >&2 || true
+  fail "Guest-wide tool OOM was not classified as contained"
+fi
 GLOBAL_REUSE_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \

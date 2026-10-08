@@ -1,9 +1,8 @@
-import type { ThinkingSummaries } from "./thread-activity-summary.ts";
+import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import type { Root } from "hast";
 import type { Command, Computed } from "ccstate";
 import type {
   ChatRecommendedFollowup,
-  ChatRunVideoOptionsRequest,
   GenerationTemplateRequest,
   ChatThreadArtifactRun,
   ChatThreadDraft,
@@ -33,6 +32,7 @@ import type { ChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import type { ChatThreadPinSignals } from "./chat-thread-pin.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import type { ChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import type { ChatLastReadMarker } from "./chat-last-read-marker.ts";
 import type { RunDetailSignals } from "./run-detail.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
@@ -42,13 +42,17 @@ export interface RecommendedFollowupSource {
   readonly followups: readonly RecommendedFollowup[];
 }
 
-export type ThinkingIndicatorMode =
-  | "waiting"
-  | "waiting-queued"
-  | "running"
-  | "running-queued"
-  | "finished"
-  | null;
+/**
+ * What the status row of the latest assistant turn shows while the thread is
+ * active: waiting in the server queue, or thinking with the run's summaries.
+ */
+export type ThinkingIndicators =
+  | { readonly kind: "queued" }
+  | {
+      readonly kind: "thinking";
+      readonly runId: string | null;
+      readonly messages: readonly ThinkingMessage[];
+    };
 
 export interface EventImageGroupProjection {
   readonly role: ChatEventGroup["role"];
@@ -79,6 +83,7 @@ export interface MessageListSignals {
     Promise<ReadyScrollAfterRenderRequest | null>
   >;
   readonly initialEventsReady$: Computed<boolean>;
+  readonly lastReadMarker$: Computed<ChatLastReadMarker | null>;
   readonly assistantErrorRecovery$: Computed<
     Promise<AssistantErrorRecovery | null>
   >;
@@ -92,7 +97,8 @@ export interface MessageListSignals {
   readonly browserSessionSignals: BrowserSessionSignals;
   readonly subscribeBrowserSessions$: Command<void, [AbortSignal]>;
   readonly hasEvents$: Computed<Promise<boolean>>;
-  readonly thinkingIndicatorMode$: Computed<Promise<ThinkingIndicatorMode>>;
+  readonly thinkingIndicators$: Computed<Promise<ThinkingIndicators | null>>;
+  readonly runFinished$: Computed<Promise<boolean>>;
   readonly recommendedFollowupSource$: Computed<
     Promise<RecommendedFollowupSource | null>
   >;
@@ -117,7 +123,6 @@ export interface SendMessageOptions {
   readonly cloudBrowserEnabled?: boolean;
   readonly generationTemplate?: GenerationTemplateRequest;
   readonly editorDocument?: EditorDocumentSnapshot;
-  readonly videoRunOptions?: ChatRunVideoOptionsRequest;
   readonly forward?: ChatForwardContext;
   readonly onOptimisticSend?: () => void;
 }
@@ -127,7 +132,6 @@ export interface QueueMessageOptions {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly generationTemplate: GenerationTemplateRequest | undefined;
   readonly editorDocument: EditorDocumentSnapshot;
-  readonly videoRunOptions?: ChatRunVideoOptionsRequest;
   readonly forward?: ChatForwardContext;
   readonly onOptimisticSend?: () => void;
 }
@@ -212,14 +216,14 @@ export interface ChatPanelSignals {
   readonly latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>;
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
   readonly initialEventsReady$: Computed<boolean>;
+  readonly lastReadMarker$: Computed<ChatLastReadMarker | null>;
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
   readonly visibleRenderedChatGroupsReady$: Computed<Promise<boolean>>;
   readonly eventImageGroups$: Computed<Promise<EventImageGroupProjection[]>>;
   readonly browserSessionSignals: BrowserSessionSignals;
   readonly hasEvents$: Computed<Promise<boolean>>;
-  readonly thinkingIndicatorMode$: Computed<Promise<ThinkingIndicatorMode>>;
-  readonly thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
-  readonly thinkingRunId$: Computed<string | null>;
+  readonly thinkingIndicators$: Computed<Promise<ThinkingIndicators | null>>;
+  readonly runFinished$: Computed<Promise<boolean>>;
   readonly recommendedFollowupSource$: Computed<
     Promise<RecommendedFollowupSource | null>
   >;

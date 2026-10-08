@@ -1,0 +1,1 @@
+DROP INDEX "idx_background_jobs_completed_clerk_deletion";

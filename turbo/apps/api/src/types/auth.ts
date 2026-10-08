@@ -1,4 +1,5 @@
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
+import type { WorkflowImportSource } from "@okouai/api-contracts/contracts/workflows";
 
 export type ApiOrgRole = "admin" | "member";
 
@@ -117,6 +118,8 @@ export interface SkillImportAuth {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
+  /** The tool the session's prompt was written for, tagged on each import. */
+  readonly provider: WorkflowImportSource;
   /** Session start, used to count the skills this session has created. */
   readonly issuedAtSeconds: number;
 }

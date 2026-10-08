@@ -4,44 +4,31 @@ import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onbo
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { completeOnboarding$ } from "../services/onboarding.service";
-import { bodyResultOf, queryOf } from "../context/request";
+import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 
 const completeBody$ = bodyResultOf(onboardingCompleteContract.complete);
-const completeQuery$ = queryOf(onboardingCompleteContract.complete);
-
-const forbidden = Object.freeze({
-  status: 403 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "Only org admins can complete onboarding",
-      code: "FORBIDDEN",
-    }),
-  }),
-});
 
 const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const body = await get(completeBody$);
   signal.throwIfAborted();
 
-  if (auth.orgRole !== "admin") {
-    return forbidden;
-  }
-
   if (!body.ok) {
     return body.response;
   }
-  const query = get(completeQuery$);
+  // Anyone who is not an admin records only their own completion; the service
+  // keeps it away from the organization-wide state an admin's completion writes.
+  const role = auth.orgRole ?? "member";
 
   return await set(
     completeOnboarding$,
     {
       orgId: auth.orgId,
-      member: { userId: auth.userId, role: auth.orgRole },
+      member: { userId: auth.userId, role },
+      isAdmin: role === "admin",
       timezone: body.data.timezone,
       industry: body.data.industry,
-      modelProvider: query?.modelProvider,
     },
     signal,
   );

@@ -112,7 +112,7 @@ const startBuiltinAutomaticInner$ = command(
     if (!agentTarget.ok) {
       return notFound(agentTarget.message);
     }
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver([params.connectorSlug]));
     signal.throwIfAborted();
     const resolved = resolver.resolveNewActionMethod({
       connectorSlug: params.connectorSlug,

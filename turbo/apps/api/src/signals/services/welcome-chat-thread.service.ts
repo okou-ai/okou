@@ -1,20 +1,16 @@
+import { agents } from "@okouai/db/schema/agent";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
-import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { env } from "../../lib/env";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { welcomeThreadContent } from "../../lib/welcome-thread-content";
-import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { insertChatEvent } from "./chat-event.service";
-import { createChatThreadInTransaction } from "./chat-thread.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
-import { chatThreadModelPinColumns } from "./chat-thread-model.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { createChatThread$ } from "./chat-thread.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
 
 interface WelcomeThreadAction {
@@ -85,9 +81,11 @@ export const createWelcomeChatThread$ = command(
       );
     }
 
-    const pin = await resolveDefaultModelFirstPin(db, args.orgId, args.userId);
-    signal.throwIfAborted();
-    const media = await loadNewChatThreadMediaModels(db, args);
+    const pin = await set(
+      resolveDefaultModelFirstPin$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
     signal.throwIfAborted();
     const preferences = await get(userPreferences(args));
     signal.throwIfAborted();
@@ -96,30 +94,25 @@ export const createWelcomeChatThread$ = command(
       appUrl: env("APP_URL"),
     });
 
-    const result = await db.transaction(async (tx) => {
-      const thread = await createChatThreadInTransaction(tx, {
+    const result = await set(
+      createChatThread$,
+      {
         ...args,
         agentId: agent.id,
         title: content.title,
         eventId: undefined,
-        ...chatThreadModelPinColumns(pin),
+        selectedModel: pin.selectedModel,
         codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
-        ...media,
-      });
-      signal.throwIfAborted();
-      if (thread.kind === "created") {
-        await insertChatEvent(tx, {
-          chatThreadId: thread.id,
-          eventType: "output.message",
-          content: content.content,
-          createdAt: nowDate(),
-        });
-        signal.throwIfAborted();
-      }
-      return thread;
-    });
+        initialAssistantMessage: content.content,
+        replayExisting: false,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    if (result.kind === "invalid_connector_selection") {
+    if (
+      result.kind === "invalid_connector_selection" ||
+      result.kind === "invalid_remote_access_selection"
+    ) {
       return badRequestMessage(result.message);
     }
     // The id already belongs to another thread. Answer exactly like a thread

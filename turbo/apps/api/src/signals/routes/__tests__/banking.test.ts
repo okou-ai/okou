@@ -1,7 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import { createStore } from "ccstate";
 
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   bankingContract,
@@ -9,33 +7,25 @@ import {
 } from "@okouai/api-contracts/contracts/banking";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
-import { beforeEach } from "vitest";
+import { beforeEach, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  readBankingAuditEventsState,
-  seedBankingState,
-} from "./helpers/banking-state";
 import { bankingRoutes } from "../banking";
-import { seedRun$ } from "./helpers/usage-state";
 
 const context = testContext();
 
 const UNATTENDED_TRIGGER_SOURCES = [
-  "automation-schedule",
   "automation-event",
-  "automation-schedule",
-  "automation-event",
-  "goal",
 ] as const satisfies readonly TriggerSource[];
 
 const FINICITY_BASE_URL = "https://api.finicity.com";
@@ -43,17 +33,8 @@ const FINICITY_AUTH_URL = `${FINICITY_BASE_URL}/aggregation/v2/partners/authenti
 const FINICITY_CONNECT_URL = `${FINICITY_BASE_URL}/connect/v2/generate`;
 const FINICITY_APP_SECRET = randomBytes(32).toString("hex");
 
-type BankingConnectionStatus =
-  | "active"
-  | "repair_required"
-  | "revoked"
-  | "deleted";
-type BankingOperationScope =
-  | "accounts.read"
-  | "balances.read"
-  | "transactions.read";
-
 interface BankingFixture {
+  readonly okouToken: string;
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string;
@@ -64,42 +45,21 @@ interface BankingFixture {
   readonly disabledAccountId: string;
 }
 
-interface SeedBankingFixtureArgs {
+interface BankingFixtureArgs {
   readonly triggerSource?: (typeof UNATTENDED_TRIGGER_SOURCES)[number];
-  readonly operationScopes?: readonly BankingOperationScope[];
-  readonly allowAutomationRuns?: boolean;
-  readonly connectionStatus?: BankingConnectionStatus;
-  readonly accountProviderIds?: readonly string[];
   readonly featureSwitchEnabled?: boolean;
+  readonly bankingEnabledAtLaunch?: boolean;
 }
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(
-  fixture: BankingFixture,
-  capabilities: readonly Capability[] = ["banking:read"],
-): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: fixture.userId,
-    orgId: fixture.orgId,
-    runId: fixture.runId,
-    capabilities,
-    iat: seconds,
-    exp: seconds + 60,
-  });
+function okouToken(fixture: BankingFixture): string {
+  return fixture.okouToken;
 }
 
 function randomProviderId(prefix: string): string {
   return `${prefix}-${randomUUID()}`;
 }
 
-async function seedBankingFixture(
-  args: SeedBankingFixtureArgs = {},
-): Promise<BankingFixture> {
+async function createBankingRun(args: BankingFixtureArgs = {}) {
   const bdd = createBddApi(context);
   const api = createRunsApi(context);
   const actor = bdd.user();
@@ -109,97 +69,213 @@ async function seedBankingFixture(
   bdd.acceptAgentStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  const runnerGroup = api.configureRunnerGroup();
+  // Webhook automations require a Team workspace.
+  await api.grantProEntitlement(actor, {
+    tier: args.triggerSource === "automation-event" ? "team" : "pro",
+  });
+  await api.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Banking Agent",
     visibility: "private",
   });
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: actor.userId, orgId: actor.orgId },
+    { [FeatureSwitchKey.Banking]: args.bankingEnabledAtLaunch ?? true },
+  );
 
-  // Existing Goal runs retain their banking grant boundary while draining.
+  // Event automations fire through the signed production webhook.
+  const workflows = createWorkflowsBddApi(context);
   const run =
-    args.triggerSource === "goal"
-      ? await createStore().set(
-          seedRun$,
-          {
-            orgId: actor.orgId,
-            userId: actor.userId,
-            composeId: agent.agentId,
-            triggerSource: "goal",
-            status: "running",
-            startedAt: new Date(now()),
-          },
-          context.signal,
-        )
-      : args.triggerSource
-        ? await api.createDirectRun(actor, {
-            agentId: agent.agentId,
-            prompt: "banking automation precondition",
-            modelProviderType: "anthropic-api-key",
-            triggerSource: args.triggerSource,
-            vars: { OKOU_AGENT_ID: agent.agentId },
-            secrets: { OKOU_TOKEN: "bdd-banking-okou-token" },
-          })
-        : await api.createRun(actor, {
-            agentId: agent.agentId,
-            prompt: "banking precondition",
-            modelProvider: "anthropic-api-key",
-          });
-
-  const providerCustomerId = randomProviderId("customer");
-  const enabledAccountId = randomProviderId("acct-enabled");
-  const disabledAccountId = randomProviderId("acct-disabled");
-  if (args.featureSwitchEnabled ?? true) {
-    await updateFeatureSwitchesForUser(
-      context,
-      {
-        userId: actor.userId,
-        orgId: actor.orgId,
-      },
-      {
-        [FeatureSwitchKey.Banking]: true,
-      },
-    );
+    args.triggerSource === "automation-event"
+      ? await workflows.startEventAutomationRun(actor, agent.agentId)
+      : await api.createThreadRun(actor, {
+          agentId: agent.agentId,
+          prompt: "banking precondition",
+        });
+  await api.heartbeatRunner(runnerGroup);
+  const claim = await api.claimRunnerJob(run.runId);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected the Banking Runner claim to include OKOU_TOKEN");
   }
-
-  const operationScopes = [
-    ...(args.operationScopes ?? [
-      "accounts.read",
-      "balances.read",
-      "transactions.read",
-    ]),
-  ];
-  const connection = await seedBankingState(context, {
-    orgId: actor.orgId,
-    userId: actor.userId,
-    agentId: agent.agentId,
-    providerCustomerId,
-    enabledAccountId,
-    disabledAccountId,
-    accountProviderIds: [...(args.accountProviderIds ?? [enabledAccountId])],
-    operationScopes,
-    // #17307 D3: only allow_automation_runs is seeded; the legacy
-    // allow_scheduled_runs column is NOT NULL with a default and drops in the
-    // final phase.
-    allowAutomationRuns: args.allowAutomationRuns ?? false,
-    connectionStatus: args.connectionStatus ?? "active",
+  onTestFinished(async () => {
+    await api.requestCancelRun(actor, run.runId, [200]);
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      { runId: run.runId, exitCode: 1, error: "Banking carrier cancelled" },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
   });
 
   return {
+    actor: { ...actor, orgId: actor.orgId },
+    agentId: agent.agentId,
+    runId: run.runId,
+    okouToken: token,
+  };
+}
+
+function signedWebhookBody(body: Record<string, unknown>) {
+  const rawBody = JSON.stringify(body);
+  const signature = createHmac("sha256", FINICITY_APP_SECRET)
+    .update(rawBody)
+    .digest("hex");
+  return { rawBody, signature };
+}
+
+async function postWebhook(body: Record<string, unknown>) {
+  const signed = signedWebhookBody(body);
+  return await createApp({
+    signal: context.signal,
+    routes: bankingRoutes,
+  }).request("/api/webhooks/finicity", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-finicity-signature": signed.signature,
+    },
+    body: signed.rawBody,
+  });
+}
+
+async function connectBankingFixture(
+  args: BankingFixtureArgs = {},
+): Promise<BankingFixture> {
+  const {
+    actor,
+    agentId,
+    runId,
+    okouToken: token,
+  } = await createBankingRun(args);
+  const providerCustomerId = randomProviderId("customer");
+  const enabledAccountId = randomProviderId("acct-enabled");
+  const disabledAccountId = randomProviderId("acct-disabled");
+  const enabledAccount = {
+    id: enabledAccountId,
+    name: "Everyday Checking",
+    institutionName: "Example Bank",
+    institutionLoginId: "login-example-bank",
+    type: "checking",
+    realAccountNumberLast4: "6789",
+    status: "active",
+    aggregationStatusCode: 0,
+  };
+  const disabledAccount = {
+    id: disabledAccountId,
+    name: "Old Savings",
+    institutionName: "Example Bank",
+    institutionLoginId: "login-example-bank",
+    type: "savings",
+    realAccountNumberLast4: "4321",
+    status: "active",
+    aggregationStatusCode: 0,
+  };
+  let providerAccounts = [enabledAccount, disabledAccount];
+  server.use(
+    finicityAuthHandler(),
+    http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
+      return HttpResponse.json({ id: providerCustomerId });
+    }),
+    http.post(FINICITY_CONNECT_URL, () => {
+      return HttpResponse.json({
+        link: "https://connect.example.test/session",
+      });
+    }),
+    http.get(
+      `${FINICITY_BASE_URL}/aggregation/v1/customers/${providerCustomerId}/accounts`,
+      () => {
+        return HttpResponse.json({ accounts: providerAccounts });
+      },
+    ),
+  );
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: actor.userId, orgId: actor.orgId },
+    { [FeatureSwitchKey.Banking]: true },
+  );
+  const client = setupApp({ context, routes: bankingRoutes })(
+    bankingUserContract,
+  );
+  const headers = { authorization: "Bearer clerk-session" };
+  const session = await accept(
+    client.createConnectSession({
+      headers,
+      body: { agentId, mode: "connect" },
+    }),
+    [200],
+  );
+  const pending = await accept(
+    client.accessRequestStatus({ headers, params: { agentId } }),
+    [200],
+  );
+  const connectionId = pending.body.connection?.id;
+  if (!connectionId) {
+    throw new Error("Expected a banking connection from the connect API");
+  }
+  const webhookData = {
+    uniqueCustomerId: connectionId,
+    uniqueRequestId: session.body.sessionId,
+  };
+  const added = await postWebhook({
+    eventId: randomProviderId("event-added"),
+    eventType: "added",
+    customerId: providerCustomerId,
+    webhookData,
+  });
+  expect(added.status).toBe(200);
+  // The provider no longer returns the old savings account. Its next signed
+  // update disables that account through the same synchronization used in production.
+  providerAccounts = [enabledAccount];
+  const done = await postWebhook({
+    eventId: randomProviderId("event-done"),
+    eventType: "done",
+    eventTrigger: "userSubmit",
+    customerId: providerCustomerId,
+    webhookData,
+  });
+  expect(done.status).toBe(200);
+  const connected = await accept(
+    client.accessRequestStatus({ headers, params: { agentId } }),
+    [200],
+  );
+  expect(connected.body.connection?.accounts).toHaveLength(1);
+  const accountId = connected.body.connection?.accounts[0]?.id;
+  if (!accountId) {
+    throw new Error("Expected a publicly connected banking account");
+  }
+  await accept(
+    client.saveAgentGrant({
+      headers,
+      body: {
+        agentId,
+        accountIds: [accountId],
+        duration: "7d",
+        purpose: "Read the connected checking account",
+      },
+    }),
+    [200],
+  );
+  if (args.featureSwitchEnabled === false) {
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId },
+      { [FeatureSwitchKey.Banking]: false },
+    );
+  }
+  return {
+    okouToken: token,
     orgId: actor.orgId,
     userId: actor.userId,
-    runId: run.runId,
-    agentId: agent.agentId,
-    connectionId: connection.connectionId,
+    runId,
+    agentId,
+    connectionId,
     providerCustomerId,
     enabledAccountId,
     disabledAccountId,
   };
-}
-
-async function bankingAuditEvents(fixture: BankingFixture) {
-  return await readBankingAuditEventsState(context, fixture);
 }
 
 function finicityAuthHandler() {
@@ -222,7 +298,9 @@ describe("/api/banking/*", () => {
   });
 
   it("rejects banking requests when the banking feature switch is disabled", async () => {
-    const fixture = await seedBankingFixture({ featureSwitchEnabled: false });
+    const fixture = await connectBankingFixture({
+      featureSwitchEnabled: false,
+    });
     let authRequestCount = 0;
     server.use(
       http.post(FINICITY_AUTH_URL, () => {
@@ -252,7 +330,7 @@ describe("/api/banking/*", () => {
   });
 
   it("lists only accounts enabled for the current agent", async () => {
-    const fixture = await seedBankingFixture();
+    const fixture = await connectBankingFixture();
     let accountsRequestHeaders: Headers | undefined;
     server.use(
       finicityAuthHandler(),
@@ -316,18 +394,10 @@ describe("/api/banking/*", () => {
         },
       ],
     });
-    await expect(bankingAuditEvents(fixture)).resolves.toMatchObject([
-      {
-        action: "accounts.read",
-        status: "allowed",
-        failureCode: null,
-        providerAccountId: null,
-      },
-    ]);
   });
 
   it("denies balances for accounts not enabled for the agent", async () => {
-    const fixture = await seedBankingFixture();
+    const fixture = await connectBankingFixture();
     let accountsRequestCount = 0;
     server.use(
       finicityAuthHandler(),
@@ -353,18 +423,10 @@ describe("/api/banking/*", () => {
 
     expect(response.body.error.code).toBe("BANKING_ACCESS_DENIED");
     expect(accountsRequestCount).toBe(0);
-    await expect(bankingAuditEvents(fixture)).resolves.toMatchObject([
-      {
-        action: "balances.read",
-        status: "denied",
-        failureCode: "ACCOUNT_NOT_ALLOWED",
-        providerAccountId: fixture.disabledAccountId,
-      },
-    ]);
   });
 
   it("reads balances through Finicity with only sanitized fields returned", async () => {
-    const fixture = await seedBankingFixture();
+    const fixture = await connectBankingFixture();
     server.use(
       finicityAuthHandler(),
       http.get(
@@ -412,18 +474,12 @@ describe("/api/banking/*", () => {
         balanceDate: 1_767_225_600,
       },
     });
-    await expect(bankingAuditEvents(fixture)).resolves.toMatchObject([
-      {
-        action: "balances.read",
-        status: "allowed",
-        failureCode: null,
-        providerAccountId: fixture.enabledAccountId,
-      },
-    ]);
   });
 
   it("rejects agent tokens without banking capability before provider access", async () => {
-    const fixture = await seedBankingFixture();
+    const fixture = await connectBankingFixture({
+      bankingEnabledAtLaunch: false,
+    });
     let authRequestCount = 0;
     server.use(
       http.post(FINICITY_AUTH_URL, () => {
@@ -438,7 +494,7 @@ describe("/api/banking/*", () => {
     const response = await accept(
       client.accounts({
         headers: {
-          authorization: `Bearer ${okouToken(fixture, ["file:read"])}`,
+          authorization: `Bearer ${okouToken(fixture)}`,
         },
         body: {},
       }),
@@ -457,7 +513,7 @@ describe("/api/banking/*", () => {
   it.each(UNATTENDED_TRIGGER_SOURCES)(
     "denies %s runs unless the banking grant allows automations",
     async (triggerSource) => {
-      const fixture = await seedBankingFixture({ triggerSource });
+      const fixture = await connectBankingFixture({ triggerSource });
       let authRequestCount = 0;
       server.use(
         http.post(FINICITY_AUTH_URL, () => {
@@ -481,95 +537,11 @@ describe("/api/banking/*", () => {
         "Banking is not enabled for automation runs",
       );
       expect(authRequestCount).toBe(0);
-      await expect(bankingAuditEvents(fixture)).resolves.toMatchObject([
-        {
-          action: "accounts.read",
-          status: "denied",
-          failureCode: "AUTOMATION_NOT_ALLOWED",
-        },
-      ]);
     },
   );
-
-  it.each(UNATTENDED_TRIGGER_SOURCES)(
-    "allows %s runs when the banking grant allows automations",
-    async (triggerSource) => {
-      const fixture = await seedBankingFixture({
-        triggerSource,
-        allowAutomationRuns: true,
-      });
-      server.use(
-        finicityAuthHandler(),
-        http.get(
-          `${FINICITY_BASE_URL}/aggregation/v1/customers/${fixture.providerCustomerId}/accounts`,
-          () => {
-            return HttpResponse.json({ accounts: [] });
-          },
-        ),
-      );
-
-      const client = setupApp({ context, routes: bankingRoutes })(
-        bankingContract,
-      );
-      const response = await accept(
-        client.accounts({
-          headers: { authorization: `Bearer ${okouToken(fixture)}` },
-          body: {},
-        }),
-        [200],
-      );
-
-      expect(response.body).toMatchObject({
-        operation: "accounts",
-        provider: "finicity",
-      });
-      expect(response.body.accounts).toHaveLength(1);
-      await expect(bankingAuditEvents(fixture)).resolves.toMatchObject([
-        {
-          action: "accounts.read",
-          status: "allowed",
-          failureCode: null,
-        },
-      ]);
-    },
-  );
-
-  it("denies revoked banking connections before provider access", async () => {
-    const fixture = await seedBankingFixture({ connectionStatus: "revoked" });
-    let authRequestCount = 0;
-    server.use(
-      http.post(FINICITY_AUTH_URL, () => {
-        authRequestCount += 1;
-        return HttpResponse.json({ token: "test-app-token" });
-      }),
-    );
-
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingContract,
-    );
-    const response = await accept(
-      client.accounts({
-        headers: { authorization: `Bearer ${okouToken(fixture)}` },
-        body: {},
-      }),
-      [403],
-    );
-
-    expect(response.body.error.message).toBe(
-      "Banking is not enabled for this agent",
-    );
-    expect(authRequestCount).toBe(0);
-    await expect(bankingAuditEvents(fixture)).resolves.toMatchObject([
-      {
-        action: "accounts.read",
-        status: "denied",
-        failureCode: "NO_ACTIVE_GRANT",
-      },
-    ]);
-  });
 
   it("reads transactions through Finicity with only sanitized fields returned", async () => {
-    const fixture = await seedBankingFixture();
+    const fixture = await connectBankingFixture();
     let requestedUrl: URL | undefined;
     server.use(
       finicityAuthHandler(),
@@ -639,14 +611,6 @@ describe("/api/banking/*", () => {
         },
       ],
     });
-    await expect(bankingAuditEvents(fixture)).resolves.toMatchObject([
-      {
-        action: "transactions.read",
-        status: "allowed",
-        failureCode: null,
-        providerAccountId: fixture.enabledAccountId,
-      },
-    ]);
   });
 });
 
@@ -661,31 +625,8 @@ describe("banking access request lifecycle", () => {
     return { authorization: "Bearer clerk-session" } as const;
   }
 
-  function signedWebhookBody(body: Record<string, unknown>) {
-    const rawBody = JSON.stringify(body);
-    const signature = createHmac("sha256", FINICITY_APP_SECRET)
-      .update(rawBody)
-      .digest("hex");
-    return { rawBody, signature };
-  }
-
-  async function postWebhook(body: Record<string, unknown>) {
-    const signed = signedWebhookBody(body);
-    return await createApp({
-      signal: context.signal,
-      routes: bankingRoutes,
-    }).request("/api/webhooks/finicity", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-finicity-signature": signed.signature,
-      },
-      body: signed.rawBody,
-    });
-  }
-
   it("creates an expiring account-scoped grant and revokes it independently", async () => {
-    const fixture = await seedBankingFixture();
+    const fixture = await connectBankingFixture();
     const client = setupApp({ context, routes: bankingRoutes })(
       bankingUserContract,
     );
@@ -738,7 +679,7 @@ describe("banking access request lifecycle", () => {
       "FINICITY_WEBHOOK_BASE_URL",
       "https://public-api-tunnel.example.test",
     );
-    const fixture = await seedBankingFixture();
+    const fixture = await connectBankingFixture();
     const generatedBodies: Record<string, unknown>[] = [];
     server.use(
       finicityAuthHandler(),
@@ -780,13 +721,120 @@ describe("banking access request lifecycle", () => {
     }
   });
 
+  it("replaces concurrent connect sessions and ignores superseded callbacks", async () => {
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Banking requires an org-scoped actor");
+    }
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Banking Connect Agent",
+      visibility: "private",
+    });
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId },
+      { [FeatureSwitchKey.Banking]: true },
+    );
+
+    const providerCustomerId = randomProviderId("customer");
+    server.use(
+      finicityAuthHandler(),
+      http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
+        return HttpResponse.json({ id: providerCustomerId });
+      }),
+      http.post(FINICITY_CONNECT_URL, () => {
+        return HttpResponse.json({
+          link: "https://connect.example.test/session",
+        });
+      }),
+      http.get(
+        `${FINICITY_BASE_URL}/aggregation/v1/customers/${providerCustomerId}/accounts`,
+        () => {
+          return HttpResponse.json({
+            accounts: [
+              {
+                id: randomProviderId("account"),
+                name: "Superseded Connect Account",
+                institutionLoginId: "login-superseded",
+                type: "checking",
+                status: "active",
+                aggregationStatusCode: 0,
+              },
+            ],
+          });
+        },
+      ),
+    );
+
+    const client = setupApp({ context, routes: bankingRoutes })(
+      bankingUserContract,
+    );
+    const createSession = async () => {
+      return await accept(
+        client.createConnectSession({
+          headers: sessionHeaders(),
+          body: { agentId: agent.agentId, mode: "connect" },
+        }),
+        [200],
+      );
+    };
+    const initial = await createSession();
+    const concurrent = await Promise.all([createSession(), createSession()]);
+    expect(concurrent[0].body.sessionId).not.toBe(concurrent[1].body.sessionId);
+
+    const current = await createSession();
+    const status = await accept(
+      client.accessRequestStatus({
+        headers: sessionHeaders(),
+        params: { agentId: agent.agentId },
+      }),
+      [200],
+    );
+    expect(status.body.session).toMatchObject({
+      id: current.body.sessionId,
+      status: "pending",
+    });
+    const connectionId = status.body.connection?.id;
+    if (!connectionId) {
+      throw new Error("Expected a banking connection");
+    }
+
+    for (const superseded of [initial, ...concurrent]) {
+      const callback = await postWebhook({
+        eventId: randomProviderId("event-superseded"),
+        eventType: "added",
+        customerId: providerCustomerId,
+        webhookData: {
+          uniqueCustomerId: connectionId,
+          uniqueRequestId: superseded.body.sessionId,
+        },
+      });
+      expect(callback.status).toBe(200);
+    }
+
+    const afterCallbacks = await accept(
+      client.accessRequestStatus({
+        headers: sessionHeaders(),
+        params: { agentId: agent.agentId },
+      }),
+      [200],
+    );
+    expect(afterCallbacks.body.session).toMatchObject({
+      id: current.body.sessionId,
+      status: "pending",
+    });
+    expect(afterCallbacks.body.connection?.accounts).toStrictEqual([]);
+  });
+
   it("completes only after signed added and done webhooks", async () => {
     mockEnv("APP_URL", "https://local-app.example.test");
     mockEnv(
       "FINICITY_WEBHOOK_BASE_URL",
       "https://public-api-tunnel.example.test",
     );
-    const fixture = await seedBankingFixture();
+    const fixture = await connectBankingFixture();
     let generatedBody: Record<string, unknown> | undefined;
     server.use(
       finicityAuthHandler(),

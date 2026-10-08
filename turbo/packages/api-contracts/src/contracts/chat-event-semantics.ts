@@ -1,7 +1,5 @@
 import {
   chatEventCompatibilityRole,
-  isBrowserLifecycleEventType,
-  isChatGoalMarkerEventType,
   isChatInputEventType,
 } from "./chat-events";
 import type { ChatEvent as PersistedChatEvent } from "./chat-threads";
@@ -19,41 +17,16 @@ type ChatEvent = (
   readonly optimisticUserMessageAssociation?: "run" | "queue";
 };
 
-type RecallControlEvent = Extract<
-  ChatEvent,
-  { eventType: "control.revoke" | "run.dequeued" }
->;
-
 export function isRecallControlEvent(
   event: ChatEvent,
-): event is RecallControlEvent {
-  return (
-    event.eventType === "control.revoke" || event.eventType === "run.dequeued"
-  );
-}
-
-export function isQueueMarkerEvent(
-  event: ChatEvent,
-): event is Extract<ChatEvent, { eventType: "run.queued" }> {
-  return event.eventType === "run.queued";
-}
-
-export function isGoalMarkerEvent(
-  event: ChatEvent,
-): event is Extract<ChatEvent, { eventType: "goal.open" | "goal.close" }> {
-  return isChatGoalMarkerEventType(event.eventType);
+): event is Extract<ChatEvent, { eventType: "control.revoke" }> {
+  return event.eventType === "control.revoke";
 }
 
 export function isFollowupsEvent(
   event: ChatEvent,
 ): event is Extract<ChatEvent, { eventType: "output.followups" }> {
   return event.eventType === "output.followups";
-}
-
-export function isGoalQueueEvent(
-  event: ChatEvent,
-): event is Extract<ChatEvent, { eventType: "input.goal" }> {
-  return event.eventType === "input.goal";
 }
 
 export function isUsageEvent(
@@ -100,6 +73,8 @@ export interface SemanticChatEventState<TEvent extends ChatEvent = ChatEvent> {
   readonly event: TEvent;
   readonly isQueued: boolean;
   readonly inputCreatedAt?: string;
+  /** The first input a delivery replacement chain started from. */
+  readonly inputOriginId?: string;
 }
 
 export interface SemanticChatEventGroup<
@@ -127,11 +102,7 @@ function isHiddenSemanticChatEvent(
 ): boolean {
   return (
     isRecallControlEvent(event) ||
-    isQueueMarkerEvent(event) ||
-    isGoalQueueEvent(event) ||
     event.eventType === "input.budget" ||
-    isGoalMarkerEvent(event) ||
-    isBrowserLifecycleEventType(event.eventType) ||
     isInterruptedAssistantCancellation(event, context.interruptedRunIds) ||
     (event.eventType === "input.rejected" &&
       event.revokesEventId !== undefined &&
@@ -178,15 +149,21 @@ export function semanticChatEventsFromChatEvents(
     }),
   );
 
-  // Resolve submission times before hiding replaced inputs. Delivery appends a
-  // new event, but does not start another user-facing work interval.
+  // Resolve submission times and origins before hiding replaced inputs.
+  // Delivery appends a new event, but does not start another user-facing work
+  // interval or another user turn.
   const inputCreatedAtById = new Map<string, string>();
+  const inputOriginIdById = new Map<string, string>();
   for (const event of events) {
     if (isChatInputEventType(event.eventType)) {
       const previousCreatedAt = event.revokesEventId
         ? inputCreatedAtById.get(event.revokesEventId)
         : undefined;
+      const previousOriginId = event.revokesEventId
+        ? inputOriginIdById.get(event.revokesEventId)
+        : undefined;
       inputCreatedAtById.set(event.id, previousCreatedAt ?? event.createdAt);
+      inputOriginIdById.set(event.id, previousOriginId ?? event.id);
     }
   }
 
@@ -213,16 +190,19 @@ export function semanticChatEventsFromChatEvents(
       ];
     }
 
-    const isUnassociatedUser =
-      chatEventCompatibilityRole(event.eventType) === "user" &&
-      event.runId === undefined;
-    const optimisticAssociation = event.optimisticUserMessageAssociation;
+    // User prompts always stay in the conversation, even before a run picks
+    // them up. Only automation events without a run wait in the queue bar.
     const isQueued =
-      isUnassociatedUser &&
-      optimisticAssociation !== "run" &&
-      event.eventType === "input.automation";
+      event.eventType === "input.automation" &&
+      event.runId === undefined &&
+      event.optimisticUserMessageAssociation !== "run";
     return [
-      { event, isQueued, inputCreatedAt: inputCreatedAtById.get(event.id) },
+      {
+        event,
+        isQueued,
+        inputCreatedAt: inputCreatedAtById.get(event.id),
+        inputOriginId: inputOriginIdById.get(event.id),
+      },
     ];
   });
 }

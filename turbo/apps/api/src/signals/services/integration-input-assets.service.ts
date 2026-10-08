@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { CanonicalAssetProvenance } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import {
   canonicalInputContentType,
@@ -35,24 +34,36 @@ export const materializeIntegrationInputAssets$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly chatThreadId: string;
-      readonly publicBrand: PublicBrand;
       readonly files: readonly IntegrationInputFile[];
     },
     signal: AbortSignal,
   ): Promise<readonly IntegrationInputAsset[]> => {
     const assets: IntegrationInputAsset[] = [];
     for (const file of args.files) {
-      const { provider, installationId, externalFileId } = file.provenance;
+      const { provider, externalFileId } = file.provenance;
+      const key =
+        file.provenance.provider === "discord"
+          ? JSON.stringify([
+              args.orgId,
+              file.provenance.guildId,
+              file.provenance.channelId,
+              file.provenance.messageId,
+              externalFileId,
+            ])
+          : JSON.stringify([
+              args.orgId,
+              file.provenance.installationId,
+              externalFileId,
+            ]);
       const asset = await set(
         materializeCanonicalInputFile$,
         {
           userId: args.userId,
           orgId: args.orgId,
           chatThreadId: args.chatThreadId,
-          publicBrand: args.publicBrand,
           source: provider,
           scope: `${provider}-input`,
-          key: JSON.stringify([args.orgId, installationId, externalFileId]),
+          key,
           externalId: externalFileId,
           provenance: file.provenance,
           filename: file.filename,

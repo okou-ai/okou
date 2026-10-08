@@ -21,11 +21,11 @@ _SSE_USAGE = b'event: response.completed\ndata: {"response":' + _JSON_USAGE + b"
 
 
 def _make_flow(real_flow, fields: tuple[tuple[bytes, bytes], ...]) -> http.HTTPFlow:
-    flow = real_flow(host="api.openai.com", path="/v1/responses", method="POST")
+    flow = real_flow(host="openrouter.ai", path="/api/v1/responses", method="POST")
     flow.response.headers = http.Headers(fields)
     flow.metadata.update(
         {
-            metadata_keys.FIREWALL_NAME: "model-provider:openai-api-key",
+            metadata_keys.FIREWALL_NAME: "model-provider:openrouter-codex",
             metadata_keys.FIREWALL_BILLABLE: True,
             metadata_keys.CLI_AGENT_TYPE: "codex",
             metadata_keys.MODEL_USAGE_PROVIDER: "gpt-5.5",

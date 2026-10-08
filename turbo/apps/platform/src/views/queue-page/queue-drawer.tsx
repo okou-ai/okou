@@ -55,10 +55,10 @@ interface UpgradePath {
 }
 
 const UPGRADE_PATHS = {
-  free: {
+  "limited-free-1": {
     targetTier: "pro",
     targetLabel: "Pro",
-    concurrentRuns: 2,
+    concurrentRuns: 3,
     monthlyPriceUsd: 20,
   },
   pro: {
@@ -144,9 +144,6 @@ function useUpgradePath(tier: string): UpgradePath | undefined {
       ),
       t(($) => {
         return $.queue.upgrade.features.unlimitedAgents;
-      }),
-      t(($) => {
-        return $.queue.upgrade.features.ownKeys;
       }),
       support,
     ],
@@ -723,23 +720,19 @@ function QueueDrawerContent() {
   const tierLabel =
     concurrency.tier === "limited-free-1"
       ? t(($) => {
-          return $.queue.tiers.limitedFree;
+          return $.queue.tiers.free;
         })
-      : concurrency.tier === "free"
+      : concurrency.tier === "pro"
         ? t(($) => {
-            return $.queue.tiers.free;
+            return $.queue.tiers.pro;
           })
-        : concurrency.tier === "pro"
+        : concurrency.tier === "team"
           ? t(($) => {
-              return $.queue.tiers.pro;
+              return $.queue.tiers.team;
             })
-          : concurrency.tier === "team"
-            ? t(($) => {
-                return $.queue.tiers.team;
-              })
-            : t(($) => {
-                return $.queue.tiers.custom;
-              });
+          : t(($) => {
+              return $.queue.tiers.custom;
+            });
   const canManageBilling =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const visibleUpgrade = canManageBilling ? upgrade : undefined;

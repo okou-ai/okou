@@ -4,6 +4,9 @@ self.addEventListener("install", (_event) => {
 
 // --- Web Push Notifications ---
 
+const NOTIFICATION_ICON_URL =
+  "https://static.okou.io/platform/icons/okou-icon-192-81c6e7aaadac.png";
+
 self.addEventListener("push", (event) => {
   let data = {};
   if (event.data) {
@@ -16,8 +19,10 @@ self.addEventListener("push", (event) => {
 
   const options = {
     body: data.body ?? "",
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
+    // Hard-cached (one-year, immutable) CDN copy of /icons/icon-192.png so a
+    // burst of notifications does not re-fetch the icon from the app origin.
+    icon: NOTIFICATION_ICON_URL,
+    badge: NOTIFICATION_ICON_URL,
     data: { url: data.url },
   };
 

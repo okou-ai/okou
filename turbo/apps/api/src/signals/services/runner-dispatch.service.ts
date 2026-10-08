@@ -40,9 +40,7 @@ interface RunnerJobNotificationTiming {
   readonly preActivation: RunnerJobPreActivationTiming;
   readonly activationScheduledAt: number;
   readonly activationEnteredAt: number;
-  readonly sameThreadMarkersCompletedAt: number;
   readonly databaseReadyAt: number;
-  readonly sameThreadMarkers: "recorded" | "not_applicable";
 }
 
 interface RunnerNotificationAttributionMilestone {
@@ -103,10 +101,6 @@ function runnerNotificationAttributionEvents(
       completedAt: timing.activationEnteredAt,
     },
     {
-      actionType: "runner_notification_queue_to_same_thread_markers_complete",
-      completedAt: timing.sameThreadMarkersCompletedAt,
-    },
-    {
       actionType: "runner_notification_queue_to_database_ready",
       completedAt: timing.databaseReadyAt,
     },
@@ -138,6 +132,10 @@ export async function notifyRunnerJob(
   const notificationEnteredAt = now();
   const currentDate = new Date(notificationEnteredAt);
   let preferenceLookupSucceeded = true;
+  let finalizingPreferenceSource:
+    | "active_producer"
+    | "completion_bridge"
+    | undefined;
   const runnerPreference =
     (await tapError(
       resolveRunnerReusePreference({
@@ -148,6 +146,9 @@ export async function notifyRunnerJob(
         historyGenerationRunId: args.historyGenerationRunId,
         createdAt: args.createdAt,
         currentDate,
+        onFinalizingSource(source) {
+          finalizingPreferenceSource = source;
+        },
       }),
       (error) => {
         preferenceLookupSucceeded = false;
@@ -182,12 +183,14 @@ export async function notifyRunnerJob(
     profile: args.profile,
     notification_target: "broadcast",
     activation_origin: timing.preActivation.activationOrigin,
-    same_thread_markers: timing.sameThreadMarkers,
   };
   const dimensions: Record<string, string> = {
     ...attributionDimensions,
     reuse_key_kind: runnerReuseKeyTelemetryKind(args.reuseKey),
     ...runnerPreferenceTelemetryDimensions(runnerPreference),
+    ...(finalizingPreferenceSource
+      ? { runner_preference_finalizing_source: finalizingPreferenceSource }
+      : {}),
   };
   if (args.historyGenerationRunId) {
     dimensions.history_generation_run_id = args.historyGenerationRunId;

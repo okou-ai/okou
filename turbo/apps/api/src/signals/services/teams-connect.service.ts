@@ -1,22 +1,18 @@
 import { command, computed, type Computed } from "ccstate";
 import { guaranteedConnectorProvidedBindingNames } from "@okouai/api-contracts/contracts/connector-schemas";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { teamsUserAgentPreferences } from "@okouai/db/schema/teams-user-agent-preference";
 import type { TeamsInboundActivity } from "@okouai/api-contracts/contracts/teams-bot";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { internalApiBaseUrl } from "../../lib/internal-api-url";
 import { logger } from "../../lib/log";
-import {
-  OFFICIAL_TEAMS_PUBLIC_BRAND,
-  teamsBotDisplayName,
-} from "../../lib/teams-official-app";
+import { teamsBotDisplayName } from "../../lib/teams-official-app";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
@@ -340,43 +336,6 @@ async function resolveDefaultComposeId(
   return metadata?.defaultAgentId ?? null;
 }
 
-async function getUserAgentPreference(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const [preference] = await db
-    .select({ selectedAgentId: teamsUserAgentPreferences.selectedAgentId })
-    .from(teamsUserAgentPreferences)
-    .where(
-      and(
-        eq(teamsUserAgentPreferences.userId, userId),
-        eq(teamsUserAgentPreferences.orgId, orgId),
-      ),
-    )
-    .limit(1);
-  return preference?.selectedAgentId ?? null;
-}
-
-async function resolveEffectiveComposeId(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const override = await getUserAgentPreference(db, userId, orgId);
-  if (override) {
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, override), eq(agents.orgId, orgId)))
-      .limit(1);
-    if (agent?.id) {
-      return override;
-    }
-  }
-  return resolveDefaultComposeId(db, orgId);
-}
-
 async function getTeamsAgentName(
   db: ReadonlyDb,
   composeId: string,
@@ -502,11 +461,7 @@ async function resolveConnectedStatusFields(args: {
   readonly loadUserVarNames: () => Promise<readonly string[]>;
   readonly loadConnectorBindings: () => Promise<ConnectorProvidedBindings>;
 }): Promise<ConnectedTeamsStatusFields> {
-  const composeId = await resolveEffectiveComposeId(
-    args.db,
-    args.userId,
-    args.orgId,
-  );
+  const composeId = await resolveDefaultComposeId(args.db, args.orgId);
   const environment = await resolveTeamsEnvironment(args);
   return {
     defaultAgentName: composeId
@@ -698,7 +653,6 @@ function installationMetadataPatch(args: {
     ...(nonEmpty(args.botId) ? { botId: args.botId } : {}),
     ...(nonEmpty(args.botName) ? { botName: args.botName } : {}),
     ...(nonEmpty(args.serviceUrl) ? { serviceUrl: args.serviceUrl } : {}),
-    publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
     updatedAt: nowDate(),
   };
 }
@@ -743,7 +697,7 @@ type BindTeamsInstallationResult =
 function buildTeamsWelcomeCard(
   installation: TeamsInstallation,
 ): TeamsAdaptiveCard {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   const mentionName = teamsBotDisplayName(installation.botName);
   return {
     type: "AdaptiveCard",
@@ -847,7 +801,7 @@ async function notifyTeamsConnect(
       serviceUrl: args.serviceUrl,
       conversationId,
       tenantId: args.tenantId,
-      text: `You're connected to ${PUBLIC_BRAND_PRESENTATION.assistantName}!`,
+      text: `You're connected to ${BRAND_PRESENTATION.assistantName}!`,
       card: buildTeamsWelcomeCard(args.installation),
     },
     signal,
@@ -883,7 +837,6 @@ async function bindUnclaimedTeamsInstallation(
     .set({
       orgId: args.connectArgs.orgId,
       installedByUserId: args.connectArgs.userId,
-      publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
       updatedAt: nowDate(),
     })
     .where(
@@ -1000,7 +953,6 @@ export const prepareTeamsInstallation$ = command(
         teamsTenantName: args.tenantName,
         orgId: args.orgId,
         installedByUserId: args.userId,
-        publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
       })
       .onConflictDoUpdate({
         target: teamsOrgInstallations.teamsTenantId,
@@ -1008,7 +960,6 @@ export const prepareTeamsInstallation$ = command(
           orgId: args.orgId,
           teamsTenantName: sql`coalesce(excluded.teams_tenant_name, ${teamsOrgInstallations.teamsTenantName})`,
           installedByUserId: args.userId,
-          publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
           updatedAt: nowDate(),
         },
       })
@@ -1102,10 +1053,7 @@ export const connectTeamsInstallation$ = command(
       {
         db: writeDb,
         connectArgs: args,
-        installation: {
-          ...installation,
-          publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
-        },
+        installation,
         role: args.orgRole,
       },
       signal,
@@ -1188,11 +1136,6 @@ export const uninstallTeamsInstallation$ = command(
     await writeDb
       .delete(teamsOrgConnections)
       .where(eq(teamsOrgConnections.teamsTenantId, installation.teamsTenantId));
-    signal.throwIfAborted();
-
-    await writeDb
-      .delete(teamsUserAgentPreferences)
-      .where(eq(teamsUserAgentPreferences.orgId, args.orgId));
     signal.throwIfAborted();
 
     await writeDb
@@ -1309,13 +1252,6 @@ export const recordTeamsInstallationActivity$ = command(
         .where(eq(teamsOrgConnections.teamsTenantId, activity.tenantId));
       signal.throwIfAborted();
 
-      if (installation.orgId) {
-        await writeDb
-          .delete(teamsUserAgentPreferences)
-          .where(eq(teamsUserAgentPreferences.orgId, installation.orgId));
-        signal.throwIfAborted();
-      }
-
       await writeDb
         .delete(teamsOrgInstallations)
         .where(eq(teamsOrgInstallations.teamsTenantId, activity.tenantId));
@@ -1342,7 +1278,6 @@ export const recordTeamsInstallationActivity$ = command(
         botId: recipient.id,
         botName: recipient.name,
         serviceUrl: activity.serviceUrl,
-        publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
       })
       .onConflictDoUpdate({
         target: teamsOrgInstallations.teamsTenantId,
@@ -1354,7 +1289,6 @@ export const recordTeamsInstallationActivity$ = command(
           botId: sql`coalesce(excluded.bot_id, ${teamsOrgInstallations.botId})`,
           botName: sql`coalesce(excluded.bot_name, ${teamsOrgInstallations.botName})`,
           serviceUrl: sql`coalesce(excluded.service_url, ${teamsOrgInstallations.serviceUrl})`,
-          publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
           updatedAt: nowDate(),
         },
       })

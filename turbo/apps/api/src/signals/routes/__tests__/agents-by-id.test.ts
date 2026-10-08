@@ -7,9 +7,12 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import {
-  countAgentStableContextPublicationsFixture,
-  seedAgentStableContextPublicationFixture,
-} from "../../../test-fixtures/pi-stable-context";
+  countAgentPublicationFencesFixture,
+  countUserPublicationFenceRowsFixture,
+  seedAgentPublicationFenceFixture,
+  seedUserPublicationFenceFixture,
+} from "../../../test-fixtures/storage-publication-fence";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
   createBddApi,
@@ -19,12 +22,14 @@ import {
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { agentsRoutes } from "../agents";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const storages = createStoragesBddApi(context);
+const webhooks = createWebhookCallbackApi(context);
 
 function currentSecond(): number {
   return Math.floor(now() / 1000);
@@ -198,9 +203,6 @@ describe("GET /api/agents/:id", () => {
       description: "Test description",
       sound: "friendly",
       avatarUrl: agent.avatarUrl,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     });
   });
@@ -428,13 +430,13 @@ describe("DELETE /api/agents/:id", () => {
     });
   });
 
-  it("removes abandoned stable-context publications on ordinary deletion", async () => {
+  it("removes abandoned publication fences on ordinary deletion", async () => {
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected org-scoped actor");
     }
     const agent = await createAgent(actor);
-    await seedAgentStableContextPublicationFixture({
+    await seedAgentPublicationFenceFixture({
       orgId: actor.orgId,
       agentId: agent.agentId,
     });
@@ -442,8 +444,51 @@ describe("DELETE /api/agents/:id", () => {
     await bdd.deleteAgent(actor, agent.agentId);
 
     await expect(
-      countAgentStableContextPublicationsFixture(agent.agentId),
+      countAgentPublicationFencesFixture(agent.agentId),
     ).resolves.toBe(0);
+  });
+
+  it("removes the user's publication fences on verified Clerk user deletion", async () => {
+    const actor = bdd.user();
+    const other = bdd.user();
+    if (!actor.orgId || !other.orgId) {
+      throw new Error("Expected org-scoped actors");
+    }
+    const agent = await createAgent(actor);
+    const otherAgent = await createAgent(other);
+    // No public endpoint leaves a reservation pending; seed the fence rows a
+    // private Workflow publication would hold, then delete through Clerk.
+    await seedUserPublicationFenceFixture({
+      orgId: actor.orgId,
+      agentId: agent.agentId,
+      userId: actor.userId,
+    });
+    await seedUserPublicationFenceFixture({
+      orgId: other.orgId,
+      agentId: otherAgent.agentId,
+      userId: other.userId,
+    });
+
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "user.deleted",
+      data: { id: actor.userId },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+
+    await expect(
+      countUserPublicationFenceRowsFixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+      }),
+    ).resolves.toStrictEqual({ generations: 0, tokens: 0 });
+    await expect(
+      countUserPublicationFenceRowsFixture({
+        orgId: other.orgId,
+        userId: other.userId,
+      }),
+    ).resolves.toStrictEqual({ generations: 1, tokens: 1 });
   });
 
   it("sweeps the agent instructions volume after deleting the agent", async () => {
@@ -569,18 +614,18 @@ describe("DELETE /api/agents/:id", () => {
     api.acceptTelemetryIngest();
     api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor);
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "keep this run pending",
-      modelProvider: "anthropic-api-key",
     });
     const response = await bdd.requestDeleteAgent(actor, agent.agentId, [409]);
 
-    expect(response.body).toStrictEqual({
+    // Lifecycle ownership can already be busy after creating the run. Both
+    // that retryable conflict and the active-run guard must preserve the Agent.
+    expect(response.body).toMatchObject({
       error: {
-        message: "Cannot delete agent: agent is currently running",
         code: "CONFLICT",
       },
     });

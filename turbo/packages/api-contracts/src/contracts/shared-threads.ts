@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import { apiErrorSchema, type ApiErrorResponse } from "./errors";
 import { authHeadersSchema, initContract } from "./base";
-import { publicBrandSchema, type PublicBrand } from "./public-brand";
 import type {
   AnyRouteTypeSlots,
   AppRoute,
@@ -26,14 +25,12 @@ export interface SharedMessage {
   readonly content: string;
   readonly attachments?: readonly SharedMessageAttachment[];
   readonly runIndex?: number;
-  readonly runGroupIndex?: number;
 }
 
 export interface SharedThreadResponse {
   readonly id: string;
   readonly title: string;
   readonly messages: readonly SharedMessage[];
-  readonly publicBrand: PublicBrand;
 }
 
 interface SharedThreadIdPathParams {
@@ -63,7 +60,6 @@ interface CreateSharedThreadResponse {
 
 interface SharedThreadMetaResponse {
   readonly title: string;
-  readonly publicBrand: PublicBrand;
 }
 
 interface SharedThreadRequestOptions {
@@ -159,7 +155,6 @@ const sharedMessageZodSchema = z
       )
       .optional(),
     runIndex: z.number().int().nonnegative().optional(),
-    runGroupIndex: z.number().int().nonnegative().optional(),
   })
   .strict();
 export const sharedMessageSchema: ZodLikeSchema<SharedMessage> =
@@ -197,13 +192,11 @@ const sharedThreadResponseSchema: ZodLikeSchema<SharedThreadResponse> =
     id: z.string().uuid(),
     title: z.string(),
     messages: z.array(sharedMessageZodSchema),
-    publicBrand: publicBrandSchema,
   });
 
 const sharedThreadMetaResponseSchema: ZodLikeSchema<SharedThreadMetaResponse> =
   z.object({
     title: z.string(),
-    publicBrand: publicBrandSchema,
   });
 
 const sharedThreadApiErrorSchema: ZodLikeSchema<ApiErrorResponse> =

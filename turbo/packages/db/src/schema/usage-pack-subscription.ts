@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { UsagePackDeferredSchedule } from "../jsonb-contracts/usage-pack-deferred-schedule";
 import {
   bigint,
@@ -284,10 +283,10 @@ export const usagePackSubscriptions = pgTable(
 );
 
 /**
- * One persisted pending count per organization. Explicit API transactions and
- * the retained 0954 trigger share this guard during rollout. Migration 0954 preserves
- * the exact count when legacy writers already left competing snapshots. New
- * writers may claim the organization only after reconciliation reaches zero.
+ * One persisted pending count per organization, maintained by explicit API
+ * transactions. Migration 1132 retired the historical 0954 trigger after its
+ * invariant audit. Grandfathered competing snapshots retain their exact count;
+ * new writers may claim the organization after reconciliation reaches zero.
  */
 export const usagePackPendingSnapshotGuards = pgTable(
   "usage_pack_pending_snapshot_guards",
@@ -483,10 +482,6 @@ export const usagePackInvitationPurchases = pgTable(
       { onDelete: "set null" },
     ),
     orgId: text("org_id").notNull(),
-    publicBrand: text("public_brand")
-      .$type<PublicBrand>()
-      .default("vm0")
-      .notNull(),
     normalizedEmail: text("normalized_email").notNull(),
     role: varchar("role", { length: 20 }).$type<"admin" | "member">().notNull(),
     inviterUserId: text("inviter_user_id").notNull(),

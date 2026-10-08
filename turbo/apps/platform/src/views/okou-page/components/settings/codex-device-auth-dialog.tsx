@@ -1,25 +1,19 @@
+import { buttonVariants } from "@okouai/ui/components/ui/button";
+import { CopyButton } from "@okouai/ui/components/ui/copy-button";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui/components/ui/button";
-import { CopyButton } from "@okouai/ui/components/ui/copy-button";
 
+import { brandName$ } from "../../../../signals/branding.ts";
 import {
-  closeCodexDeviceAuthDialog$,
   closeCodexDeviceAuthDialogPersonal$,
-  codexDeviceAuthDialogState$,
   codexDeviceAuthDialogStatePersonal$,
-  codexDeviceAuthFlowState$,
   codexDeviceAuthFlowStatePersonal$,
-  openCodexDeviceAuthApprovalPage$,
-  openCodexDeviceAuthApprovalPagePersonal$,
-  runCodexDeviceAuth$,
   runCodexDeviceAuthPersonal$,
   type CodexDeviceAuthFlowState,
 } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
-import { brandName$ } from "../../../../signals/branding.ts";
-import { detach, Reason } from "../../../../signals/utils.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { detach, Reason } from "../../../../signals/utils.ts";
 import {
   DeviceAuthDialogShell,
   DeviceAuthLoadingContent,
@@ -35,13 +29,7 @@ interface CodexDeviceAuthScopeBundle {
   dialog: CodexDeviceAuthDialogState;
   flow: CodexDeviceAuthFlowState;
   close: (signal: AbortSignal) => Promise<void>;
-  openApprovalPage: (signal: AbortSignal) => Promise<boolean>;
   run: (signal: AbortSignal) => Promise<boolean>;
-}
-
-export function CodexDeviceAuthDialog() {
-  const bundle = useOrgCodexDeviceAuthBundle();
-  return <CodexDeviceAuthDialogView bundle={bundle} />;
 }
 
 export function PersonalCodexDeviceAuthDialog() {
@@ -49,32 +37,15 @@ export function PersonalCodexDeviceAuthDialog() {
   return <CodexDeviceAuthDialogView bundle={bundle} />;
 }
 
-function useOrgCodexDeviceAuthBundle(): CodexDeviceAuthScopeBundle {
-  const dialog = useGet(codexDeviceAuthDialogState$);
-  const flow = useGet(codexDeviceAuthFlowState$);
-  const close = useSet(closeCodexDeviceAuthDialog$);
-  const openApprovalPage = useSet(openCodexDeviceAuthApprovalPage$);
-  const [, run] = useLoadableSet(runCodexDeviceAuth$);
-  return {
-    dialog,
-    flow,
-    close,
-    openApprovalPage,
-    run,
-  };
-}
-
 function usePersonalCodexDeviceAuthBundle(): CodexDeviceAuthScopeBundle {
   const dialog = useGet(codexDeviceAuthDialogStatePersonal$);
   const flow = useGet(codexDeviceAuthFlowStatePersonal$);
   const close = useSet(closeCodexDeviceAuthDialogPersonal$);
-  const openApprovalPage = useSet(openCodexDeviceAuthApprovalPagePersonal$);
   const [, run] = useLoadableSet(runCodexDeviceAuthPersonal$);
   return {
     dialog,
     flow,
     close,
-    openApprovalPage,
     run,
   };
 }
@@ -86,7 +57,7 @@ function CodexDeviceAuthDialogView({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const { dialog, flow, close, openApprovalPage, run } = bundle;
+  const { dialog, flow, close, run } = bundle;
   const title =
     dialog.mode === "reconnect"
       ? t(($) => {
@@ -109,7 +80,6 @@ function CodexDeviceAuthDialogView({
         onStart={() => {
           detach(run(pageSignal), Reason.DomCallback);
         }}
-        openApprovalPage={openApprovalPage}
       />
     </DeviceAuthDialogShell>
   );
@@ -119,15 +89,12 @@ function CodexDeviceAuthBody({
   flow,
   mode,
   onStart,
-  openApprovalPage,
 }: {
   flow: CodexDeviceAuthFlowState;
   mode: "connect" | "reconnect";
   onStart: () => void;
-  openApprovalPage: (signal: AbortSignal) => Promise<boolean>;
 }) {
   const brandName = useGet(brandName$);
-  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   switch (flow.status) {
     case "idle":
@@ -143,20 +110,6 @@ function CodexDeviceAuthBody({
     }
     case "pending":
     case "polling": {
-      const statusText =
-        !flow.approvalOpened && !flow.codeCopied
-          ? null
-          : flow.codeCopied && !flow.approvalOpened
-            ? t(($) => {
-                return $.settings.models.deviceAuth.codex.codeCopiedRetry;
-              })
-            : !flow.codeCopied
-              ? t(($) => {
-                  return $.settings.models.deviceAuth.codex.approvalOpened;
-                })
-              : t(($) => {
-                  return $.settings.models.deviceAuth.codex.codeCopied;
-                });
       return (
         <div className="space-y-3">
           <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
@@ -196,24 +149,20 @@ function CodexDeviceAuthBody({
               {flow.errorMessage}
             </p>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => {
-              detach(openApprovalPage(pageSignal), Reason.DomCallback);
-            }}
+          <a
+            href={flow.browserUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonVariants({
+              variant: "outline",
+              className: "w-full",
+            })}
             data-testid="codex-device-auth-open"
           >
             {t(($) => {
-              return $.settings.models.deviceAuth.codex.copyAndOpen;
+              return $.settings.models.deviceAuth.codex.openApproval;
             })}
-          </Button>
-          {statusText && (
-            <p className="text-xs text-muted-foreground" role="status">
-              {statusText}
-            </p>
-          )}
+          </a>
         </div>
       );
     }

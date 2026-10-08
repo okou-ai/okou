@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   check,
   integer,
@@ -37,12 +36,6 @@ export const feishuChatIngress = pgTable(
       ),
     eventId: varchar("event_id", { length: 255 }).notNull(),
     payload: text("payload").notNull(),
-    /**
-     * Product brand derived from the Feishu webhook hostname at ingress. Null
-     * is limited to the previous API writer during the additive #28935
-     * rollout; the current webhook writer always sets it.
-     */
-    publicBrand: text("public_brand").$type<PublicBrand>(),
     status: varchar("status", { length: 16 })
       .$type<FeishuChatIngressStatus>()
       .default("pending")

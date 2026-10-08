@@ -27,13 +27,11 @@ from tests.jsonl_log_helpers import (
 )
 from tests.model_provider_flow_helpers import model_usage_source_entries
 from tests.model_provider_response_helpers import (
-    ANTHROPIC_JSON_CASE,
-    MODEL_PROVIDER_JSON_CASES,
+    CLAUDE_CODE_JSON_CASE,
     OPENAI_RESPONSES_CASE,
     expected_event_quantities,
     expected_model_usage,
     model_provider_flow,
-    model_provider_json_case_id,
     run_response,
     standard_success_payload,
 )
@@ -67,7 +65,7 @@ class TestModelProviderJsonStreaming:
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            CLAUDE_CODE_JSON_CASE,
             billable=False,
         )
         flow.response = tutils.tresp(
@@ -102,7 +100,7 @@ class TestModelProviderJsonStreaming:
         secret_authorization = "Bearer diagnostic-authorization-secret"
         secret_prompt = b"diagnostic-prompt-secret"
         raw_url = (
-            f"https://{secret_userinfo}@api.openai.com/"
+            f"https://{secret_userinfo}@openrouter.ai/"
             + "p" * (logging_utils.URL_LOG_MAX_CHARACTERS + 1)
             + f"?token={secret_query}#{secret_fragment}"
         )
@@ -131,7 +129,7 @@ class TestModelProviderJsonStreaming:
         assert source_entry["url_original_char_count"] == len(raw_url)
         assert source_entry["transport"] == "http"
         assert source_entry["buffer_mode"] == "aggregate"
-        assert source_entry["firewall_name"] == "model-provider:openai-api-key"
+        assert source_entry["firewall_name"] == "model-provider:openrouter-codex"
         assert source_entry["reported_model"] == OPENAI_RESPONSES_CASE.model
         assert source_entry["provider_response_id"] == OPENAI_RESPONSES_CASE.message_id
         assert source_entry["usage"] == expected_event_quantities(OPENAI_RESPONSES_CASE)
@@ -164,7 +162,7 @@ class TestModelProviderJsonStreaming:
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            OPENAI_RESPONSES_CASE,
         )
         flow.metadata[metadata_keys.CAPTURE_BODY] = True
         flow.response = tutils.tresp(
@@ -195,7 +193,7 @@ class TestModelProviderJsonStreaming:
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=tmp_path / "proxy.jsonl",
         )
         flow.response = tutils.tresp(
@@ -205,7 +203,7 @@ class TestModelProviderJsonStreaming:
 
         mitm_addon.responseheaders(flow)
         callback = response_stream(flow)
-        callback(b'{"id":"msg_1","model":"claude-sonnet-4-6","content":[{"text":"')
+        callback(b'{"id":"resp_1","model":"gpt-5.5","output":[{"text":"')
         callback(b"x" * (STREAM_BUFFER_LIMIT + 4096))
         callback(b'"}],"usage":{"input_tokens":50,"output_tokens":200}}')
         assert metadata_keys.STREAM_BUFFER not in flow.metadata
@@ -214,32 +212,25 @@ class TestModelProviderJsonStreaming:
         webhook = run_response(flow, self._usage_webhook_api)
 
         extracted = flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]
-        assert extracted["message_id"] == "msg_1"
-        assert extracted["model"] == "claude-sonnet-4-6"
+        assert extracted["message_id"] == "resp_1"
+        assert extracted["model"] == "gpt-5.5"
         assert extracted["tokens.input"] == 50
         assert extracted["tokens.output"] == 200
         events = webhook.usage_events()
         by_category = {event["category"]: event["quantity"] for event in events}
         assert by_category == {"tokens.input": 50, "tokens.output": 200}
 
-    @pytest.mark.parametrize(
-        "provider_case",
-        MODEL_PROVIDER_JSON_CASES,
-        ids=model_provider_json_case_id,
-    )
-    def test_full_pipeline_compressed_model_json_reports_usage(
-        self, tmp_path, real_flow, provider_case
-    ):
+    def test_full_pipeline_compressed_model_json_reports_usage(self, tmp_path, real_flow):
         """responseheaders parser should decompress non-SSE model JSON before extraction."""
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            provider_case,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=tmp_path / "proxy.jsonl",
         )
-        cache_write_tokens = 15 if provider_case.uses_openai_responses else None
+        cache_write_tokens = 15
         payload = standard_success_payload(
-            provider_case,
+            OPENAI_RESPONSES_CASE,
             cache_write_tokens=cache_write_tokens,
         )
         compressed = gzip.compress(payload)
@@ -257,40 +248,33 @@ class TestModelProviderJsonStreaming:
 
         extracted = flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]
         expected_usage = expected_model_usage(
-            provider_case,
+            OPENAI_RESPONSES_CASE,
             cache_write_tokens=cache_write_tokens,
         )
         assert extracted["message_id"] == expected_usage["message_id"]
         assert extracted["model"] == expected_usage["model"]
         assert extracted["tokens.input"] == expected_usage["tokens.input"]
         assert extracted["tokens.output"] == expected_usage["tokens.output"]
-        if provider_case.uses_openai_responses:
-            assert extracted["tokens.cache_read"] == expected_usage["tokens.cache_read"]
-            assert extracted["tokens.cache_creation"] == expected_usage["tokens.cache_creation"]
+        assert extracted["tokens.cache_read"] == expected_usage["tokens.cache_read"]
+        assert extracted["tokens.cache_creation"] == expected_usage["tokens.cache_creation"]
         events = webhook.usage_events()
         by_category = {event["category"]: event["quantity"] for event in events}
         assert len(events) == len(by_category)
         assert by_category == expected_event_quantities(
-            provider_case,
+            OPENAI_RESPONSES_CASE,
             cache_write_tokens=cache_write_tokens,
         )
 
-    @pytest.mark.parametrize(
-        "provider_case",
-        MODEL_PROVIDER_JSON_CASES,
-        ids=model_provider_json_case_id,
-    )
     def test_full_pipeline_out_of_range_model_json_quantity_is_rejected(
         self,
         tmp_path,
         real_flow,
-        provider_case,
     ):
         proxy_log_path = tmp_path / "proxy.jsonl"
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            provider_case,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=proxy_log_path,
         )
         flow.response = tutils.tresp(
@@ -301,7 +285,7 @@ class TestModelProviderJsonStreaming:
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             standard_success_payload(
-                provider_case,
+                OPENAI_RESPONSES_CASE,
                 input_tokens=MAX_USAGE_QUANTITY + 1,
             )
         )
@@ -320,21 +304,15 @@ class TestModelProviderJsonStreaming:
         assert warning["type"] == "usage_event"
         assert warning["error"] == "integer value limit exceeded"
 
-    @pytest.mark.parametrize(
-        "provider_case",
-        MODEL_PROVIDER_JSON_CASES,
-        ids=model_provider_json_case_id,
-    )
     def test_full_pipeline_exact_integer_boundary_is_reported(
         self,
         tmp_path,
         real_flow,
-        provider_case,
     ):
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            provider_case,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=tmp_path / "proxy.jsonl",
         )
         flow.response = tutils.tresp(
@@ -345,7 +323,7 @@ class TestModelProviderJsonStreaming:
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             standard_success_payload(
-                provider_case,
+                OPENAI_RESPONSES_CASE,
                 input_tokens=MAX_USAGE_QUANTITY,
             )
         )
@@ -366,26 +344,21 @@ class TestModelProviderJsonStreaming:
             == MAX_USAGE_QUANTITY
         )
 
-    @pytest.mark.parametrize(
-        "provider_case",
-        MODEL_PROVIDER_JSON_CASES,
-        ids=model_provider_json_case_id,
-    )
     @pytest.mark.parametrize("encoding_case", ["gzip", "deflate"])
     def test_full_pipeline_compressed_model_json_work_limit(
-        self, tmp_path, real_flow, provider_case, encoding_case
+        self, tmp_path, real_flow, encoding_case
     ):
         proxy_log_path = tmp_path / "proxy.jsonl"
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            provider_case,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=proxy_log_path,
         )
         payload = json.dumps(
             {
-                "id": provider_case.message_id,
-                "model": provider_case.model,
+                "id": OPENAI_RESPONSES_CASE.message_id,
+                "model": OPENAI_RESPONSES_CASE.model,
                 "usage": {"input_tokens": 50, "output_tokens": 200},
                 "padding": [0] * 40_000,
             },
@@ -437,11 +410,11 @@ class TestModelProviderJsonStreaming:
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=proxy_log_path,
         )
         payload = (
-            b'{"id":"msg_1","model":"claude-sonnet-4-6","content":[{"text":"'
+            b'{"id":"resp_1","model":"gpt-5.5","output":[{"text":"'
             + b"A" * (STREAM_DECODE_EXPANSION_GRACE + 1024)
             + b'"}],"usage":{"input_tokens":50,"output_tokens":200}}'
         )
@@ -482,10 +455,10 @@ class TestModelProviderJsonStreaming:
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=tmp_path / "proxy.jsonl",
         )
-        payload = standard_success_payload(ANTHROPIC_JSON_CASE)
+        payload = standard_success_payload(OPENAI_RESPONSES_CASE)
         compressed = zstandard.ZstdCompressor().compress(payload)
         flow.response = tutils.tresp(
             status_code=200,
@@ -501,14 +474,14 @@ class TestModelProviderJsonStreaming:
         webhook = run_response(flow, self._usage_webhook_api)
 
         extracted = flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]
-        expected_usage = expected_model_usage(ANTHROPIC_JSON_CASE)
+        expected_usage = expected_model_usage(OPENAI_RESPONSES_CASE)
         assert extracted["message_id"] == expected_usage["message_id"]
         assert extracted["model"] == expected_usage["model"]
         assert extracted["tokens.input"] == expected_usage["tokens.input"]
         assert extracted["tokens.output"] == expected_usage["tokens.output"]
         events = webhook.usage_events()
         by_category = {event["category"]: event["quantity"] for event in events}
-        assert by_category == expected_event_quantities(ANTHROPIC_JSON_CASE)
+        assert by_category == expected_event_quantities(OPENAI_RESPONSES_CASE)
 
     def test_full_pipeline_large_zstd_model_json_does_not_parse_truncated_fallback(
         self,
@@ -519,14 +492,14 @@ class TestModelProviderJsonStreaming:
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=proxy_log_path,
         )
         payload = json.dumps(
             {
-                "id": "msg_zstd_large",
-                "model": "claude-sonnet-4-6",
-                "content": [{"text": _deterministic_low_ratio_text(STREAM_BUFFER_LIMIT * 8)}],
+                "id": "resp_zstd_large",
+                "model": "gpt-5.5",
+                "output": [{"text": _deterministic_low_ratio_text(STREAM_BUFFER_LIMIT * 8)}],
                 "usage": {"input_tokens": 10, "output_tokens": 20},
             }
         ).encode()
@@ -557,23 +530,18 @@ class TestModelProviderJsonStreaming:
         assert usage_warnings[0]["error"] == "incomplete compressed body"
 
     @pytest.mark.parametrize("encoding_case", ["gzip", "deflate"])
-    @pytest.mark.parametrize(
-        "provider_case",
-        MODEL_PROVIDER_JSON_CASES,
-        ids=model_provider_json_case_id,
-    )
     def test_full_pipeline_truncated_compressed_model_json_does_not_report_usage(
-        self, tmp_path, real_flow, encoding_case, provider_case
+        self, tmp_path, real_flow, encoding_case
     ):
         """Incremental JSON usage must reject compressed streams missing a trailer."""
         proxy_log_path = tmp_path / "proxy.jsonl"
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            provider_case,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=proxy_log_path,
         )
-        payload = standard_success_payload(provider_case)
+        payload = standard_success_payload(OPENAI_RESPONSES_CASE)
         if encoding_case == "gzip":
             compressed = gzip.compress(payload)[:-1]
         else:
@@ -609,10 +577,10 @@ class TestModelProviderJsonStreaming:
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=proxy_log_path,
         )
-        payload = standard_success_payload(ANTHROPIC_JSON_CASE)
+        payload = standard_success_payload(OPENAI_RESPONSES_CASE)
         compress = gzip.compress if encoding_case == "gzip" else zlib.compress
         trailing_member = bytearray(compress(b""))
         checksum_offset = -8 if encoding_case == "gzip" else -1
@@ -646,7 +614,7 @@ class TestModelProviderJsonStreaming:
         self, tmp_path, real_flow, encoding_case
     ):
         """Streaming decompression should feed later zlib members into JSON usage parsing."""
-        provider_case = ANTHROPIC_JSON_CASE
+        provider_case = OPENAI_RESPONSES_CASE
         flow = model_provider_flow(
             real_flow,
             tmp_path,
@@ -679,21 +647,14 @@ class TestModelProviderJsonStreaming:
         by_category = {event["category"]: event["quantity"] for event in events}
         assert by_category == expected_event_quantities(provider_case)
 
-    @pytest.mark.parametrize(
-        "provider_case",
-        MODEL_PROVIDER_JSON_CASES,
-        ids=model_provider_json_case_id,
-    )
-    def test_full_pipeline_brotli_model_json_streams_usage(
-        self, tmp_path, real_flow, provider_case
-    ):
+    def test_full_pipeline_brotli_model_json_streams_usage(self, tmp_path, real_flow):
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            provider_case,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=tmp_path / "proxy.jsonl",
         )
-        payload = standard_success_payload(provider_case)
+        payload = standard_success_payload(OPENAI_RESPONSES_CASE)
         compressed = brotli.compress(payload)
         flow.response = tutils.tresp(
             status_code=200,
@@ -710,15 +671,14 @@ class TestModelProviderJsonStreaming:
         webhook = run_response(flow, self._usage_webhook_api)
 
         extracted = flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]
-        expected_usage = expected_model_usage(provider_case)
+        expected_usage = expected_model_usage(OPENAI_RESPONSES_CASE)
         assert extracted["model"] == expected_usage["model"]
         assert extracted["tokens.input"] == expected_usage["tokens.input"]
         assert extracted["tokens.output"] == expected_usage["tokens.output"]
-        if provider_case.uses_openai_responses:
-            assert extracted["tokens.cache_read"] == expected_usage["tokens.cache_read"]
+        assert extracted["tokens.cache_read"] == expected_usage["tokens.cache_read"]
         events = webhook.usage_events()
         by_category = {event["category"]: event["quantity"] for event in events}
-        assert by_category == expected_event_quantities(provider_case)
+        assert by_category == expected_event_quantities(OPENAI_RESPONSES_CASE)
 
     def test_full_pipeline_incomplete_model_json_does_not_report_partial_usage(
         self, tmp_path, real_flow
@@ -727,7 +687,7 @@ class TestModelProviderJsonStreaming:
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=tmp_path / "proxy.jsonl",
         )
         flow.response = tutils.tresp(
@@ -737,8 +697,7 @@ class TestModelProviderJsonStreaming:
 
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
-            b'{"id":"msg_1","model":"claude-sonnet-4-6",'
-            b'"usage":{"input_tokens":50,"output_tokens":200}'
+            b'{"id":"resp_1","model":"gpt-5.5","usage":{"input_tokens":50,"output_tokens":200}'
         )
 
         webhook = run_response(flow, self._usage_webhook_api)
@@ -760,15 +719,15 @@ class TestModelProviderJsonStreaming:
         """A bad Content-Encoding must not parse raw stream_buffer and bill usage."""
         raw_json = json.dumps(
             {
-                "id": "msg_1",
-                "model": "claude-sonnet-4-6",
+                "id": "resp_1",
+                "model": "gpt-5.5",
                 "usage": {"input_tokens": 50, "output_tokens": 200},
             }
         ).encode()
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=tmp_path / "proxy.jsonl",
         )
         flow.response = tutils.tresp(
@@ -789,15 +748,15 @@ class TestModelProviderJsonStreaming:
         """usage fields inside array elements must not be treated as usage object fields."""
         body = json.dumps(
             {
-                "id": "msg_1",
-                "model": "claude-sonnet-4-6",
+                "id": "resp_1",
+                "model": "gpt-5.5",
                 "usage": [{"input_tokens": 50, "output_tokens": 200}],
             }
         ).encode()
         flow = model_provider_flow(
             real_flow,
             tmp_path,
-            ANTHROPIC_JSON_CASE,
+            OPENAI_RESPONSES_CASE,
             proxy_log_path=tmp_path / "proxy.jsonl",
         )
         flow.response = tutils.tresp(

@@ -6,9 +6,7 @@ interface OrgTierLimits {
   readonly canBuyConcurrency: boolean;
   readonly canBuyCredits: boolean;
   readonly autoRechargeAllowed: boolean;
-  readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-  readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
   readonly audioDailyRateLimit: number;
@@ -21,29 +19,13 @@ interface OrgTierLimits {
 export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
   Record<OrgTier, OrgTierLimits>
 > = {
-  free: {
-    planRank: 0,
-    baseConcurrencyLimit: 2,
-    canBuyConcurrency: false,
-    canBuyCredits: true,
-    autoRechargeAllowed: false,
-    supportByok: true,
-    restrictedBuiltInModels: false,
-    videoGenerationAllowed: true,
-    workflowWebhookAutomationAllowed: false,
-    audioLifetimeLimit: 10,
-    audioDailyRateLimit: 10,
-    audioDailyDurationSeconds: 10 * 60,
-  },
   "limited-free-1": {
     planRank: 0,
     baseConcurrencyLimit: 2,
     canBuyConcurrency: false,
     canBuyCredits: false,
     autoRechargeAllowed: false,
-    supportByok: true,
     restrictedBuiltInModels: true,
-    videoGenerationAllowed: false,
     workflowWebhookAutomationAllowed: false,
     audioLifetimeLimit: 10,
     audioDailyRateLimit: 10,
@@ -55,9 +37,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     canBuyConcurrency: false,
     canBuyCredits: true,
     autoRechargeAllowed: true,
-    supportByok: true,
     restrictedBuiltInModels: false,
-    videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: false,
     audioLifetimeLimit: null,
     audioDailyRateLimit: 300,
@@ -69,9 +49,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     canBuyConcurrency: true,
     canBuyCredits: true,
     autoRechargeAllowed: true,
-    supportByok: true,
     restrictedBuiltInModels: false,
-    videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: true,
     audioLifetimeLimit: null,
     audioDailyRateLimit: 500,
@@ -83,9 +61,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     canBuyConcurrency: true,
     canBuyCredits: true,
     autoRechargeAllowed: true,
-    supportByok: true,
     restrictedBuiltInModels: false,
-    videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: true,
     audioLifetimeLimit: null,
     audioDailyRateLimit: 500,

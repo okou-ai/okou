@@ -4,26 +4,28 @@ import {
   chatThreadDraftContract,
   chatThreadDraftSchema,
   chatThreadComputerUseHostContract,
-  chatThreadImageModelContract,
   chatThreadModelSelectionContract,
-  chatThreadVideoModelContract,
   type PersistedAttachment,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ImageModel } from "@okouai/core/image-model-catalog";
-import type { VideoModel } from "@okouai/core/video-model-catalog";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
-import { threadCodexServiceTierFromSelection } from "./model-selection-request.ts";
+import {
+  apiServiceTierFromSelection,
+  threadCodexServiceTierFromSelection,
+} from "./model-selection-request.ts";
 import {
   setAblyInvalidationLoop$,
   setAblyLoop$,
   type RealtimeInvalidationCommands,
 } from "../realtime.ts";
 import { createDeferredPromise } from "../utils.ts";
-import { reloadSidebarDraftThreads$ } from "./sidebar-draft-threads.ts";
+import {
+  reloadSidebarDraftThreads$,
+  sidebarDraftThreadIds$,
+} from "./sidebar-draft-threads.ts";
 import {
   chatThreadMetaMap$,
   optimisticChatThreadCreateUnsettled,
@@ -63,16 +65,6 @@ interface PatchComputerUseHostArgs {
   readonly cloudBrowserEnabled: boolean;
 }
 
-interface PatchVideoModelArgs {
-  readonly threadId: string;
-  readonly videoModel: VideoModel | null;
-}
-
-interface PatchImageModelArgs {
-  readonly threadId: string;
-  readonly imageModel: ImageModel | null;
-}
-
 interface SubscribeRealtimeArgs {
   readonly threadId: string;
   readonly invalidations: ChatThreadRealtimeInvalidations;
@@ -89,7 +81,8 @@ function changedModelSettingsPatch(args: {
     !args.threadMeta ||
     !selection ||
     args.threadMeta.selectedModel !== selectedModel ||
-    selectedModel === undefined
+    selectedModel === undefined ||
+    selectedModel === null
   ) {
     return undefined;
   }
@@ -134,7 +127,13 @@ export const patchChatThreadDraft$ = command(
       [200, 204],
     );
     signal.throwIfAborted();
-    set(reloadSidebarDraftThreads$);
+    // Most saves only change the text of a draft that is already listed.
+    // Refetch the sidebar draft ids only when this save adds or removes one.
+    const listed = await get(sidebarDraftThreadIds$);
+    signal.throwIfAborted();
+    if (listed.has(threadId) !== (userMessage !== null)) {
+      set(reloadSidebarDraftThreads$);
+    }
   },
 );
 
@@ -170,8 +169,7 @@ export const patchChatThreadModelSelection$ = command(
         kind: "service_tier_updated",
         chatThreadId: threadId,
         agentId: threadMeta.agentId,
-        serviceTier:
-          modelSelection?.codexServiceTier === "fast" ? "priority" : null,
+        serviceTier: apiServiceTierFromSelection(modelSelection),
         createdAt,
       });
     }
@@ -221,64 +219,6 @@ export const patchChatThreadComputerUseHost$ = command(
       client.update({
         params: { id: threadId },
         body: { computerUseHostId, cloudBrowserEnabled, eventId },
-        fetchOptions: { signal },
-      }),
-      [204],
-    );
-  },
-);
-
-export const patchChatThreadVideoModel$ = command(
-  async (
-    { get, set },
-    { threadId, videoModel }: PatchVideoModelArgs,
-    signal: AbortSignal,
-  ) => {
-    const eventId = crypto.randomUUID();
-    const threadMeta = get(chatThreadMetaMap$).get(threadId);
-    if (threadMeta) {
-      set(registerOptimisticChatThreadEvent$, {
-        id: eventId,
-        kind: "video_model_updated",
-        chatThreadId: threadId,
-        agentId: threadMeta.agentId,
-        selectedVideoModel: videoModel,
-      });
-    }
-    const client = get(apiClient$)(chatThreadVideoModelContract);
-    await accept(
-      client.update({
-        params: { id: threadId },
-        body: { model: videoModel, eventId },
-        fetchOptions: { signal },
-      }),
-      [204],
-    );
-  },
-);
-
-export const patchChatThreadImageModel$ = command(
-  async (
-    { get, set },
-    { threadId, imageModel }: PatchImageModelArgs,
-    signal: AbortSignal,
-  ) => {
-    const eventId = crypto.randomUUID();
-    const threadMeta = get(chatThreadMetaMap$).get(threadId);
-    if (threadMeta) {
-      set(registerOptimisticChatThreadEvent$, {
-        id: eventId,
-        kind: "image_model_updated",
-        chatThreadId: threadId,
-        agentId: threadMeta.agentId,
-        selectedImageModel: imageModel,
-      });
-    }
-    const client = get(apiClient$)(chatThreadImageModelContract);
-    await accept(
-      client.update({
-        params: { id: threadId },
-        body: { model: imageModel, eventId },
         fetchOptions: { signal },
       }),
       [204],
@@ -371,9 +311,9 @@ export function createCancellationRecoverySignals(threadId: string) {
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
 
-  const cancellationRecoveryPending$ = computed(async (get) => {
+  const detail$ = computed(async (get) => {
     if (get(optimisticCreateUnsettled$)) {
-      return false;
+      return null;
     }
     get(threadDetailReloadCounter$);
     const client = get(apiClient$)(chatThreadByIdContract);
@@ -381,10 +321,10 @@ export function createCancellationRecoverySignals(threadId: string) {
       client.get({ params: { id: threadId } }),
       [200, 404],
     );
-    if (result.status === 404) {
-      return false;
-    }
-    return result.body.cancellationRecoveryPending;
+    return result.status === 404 ? null : result.body;
+  });
+  const cancellationRecoveryPending$ = computed(async (get) => {
+    return (await get(detail$))?.cancellationRecoveryPending ?? false;
   });
 
   const reload$ = command(({ set }) => {
@@ -393,7 +333,7 @@ export function createCancellationRecoverySignals(threadId: string) {
     });
   });
 
-  return { pending$: cancellationRecoveryPending$, reload$ };
+  return { detail$, pending$: cancellationRecoveryPending$, reload$ };
 }
 
 export function createRemoteChatThreadDraft(threadId: string) {
@@ -406,11 +346,8 @@ export function createRemoteChatThreadDraft(threadId: string) {
     const client = get(apiClient$)(chatThreadDraftContract);
     const result = await accept(
       client.get({ params: { id: threadId } }),
-      [200, 404],
+      [200],
     );
-    if (result.status === 404) {
-      return null;
-    }
     return chatThreadDraftSchema.parse(result.body);
   });
 }

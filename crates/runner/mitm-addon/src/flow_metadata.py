@@ -97,6 +97,22 @@ def model_usage_provider(meta: Mapping[str, object]) -> str:
     return _metadata_str(meta, metadata_keys.MODEL_USAGE_PROVIDER)
 
 
+def model_usage_long_context_min_total_input_tokens(
+    meta: Mapping[str, object],
+) -> int | None:
+    """Return the API-captured long-context threshold of the run's route.
+
+    A positive integer is the threshold and ``0`` is the API's explicit
+    single-tier marker (the route has no long-context pricing). ``None`` means
+    the registry entry carries no usable value (an API that predates catalog
+    thresholds); only then may callers fall back to the generated map.
+    """
+    value = meta.get(metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
 def start_request_timing(meta: MutableMapping[str, object]) -> None:
     if metadata_keys.HTTP_REQUEST_START_MONOTONIC not in meta:
         meta[metadata_keys.HTTP_REQUEST_START_MONOTONIC] = time.monotonic()

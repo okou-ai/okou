@@ -29,7 +29,6 @@ function sanitizePostHogCaptureResult(
       $process_person_profile: false,
       distinct_id: APP_FIRST_SKELETON_PAINT_DISTINCT_ID,
       paint_metric: "first-contentful-paint",
-      public_brand: RUNTIME_CONFIG.publicBrand,
       token: POSTHOG_KEY ?? "",
     };
     for (const name of [
@@ -86,7 +85,7 @@ export function initPostHog(): void {
             "/:id",
           );
         }
-        return { ...properties, public_brand: RUNTIME_CONFIG.publicBrand };
+        return properties;
       },
     });
   });
@@ -219,66 +218,6 @@ export function captureOnboardingEvent(
     posthog.capture(`Onboarding: ${name}`, properties);
   });
 }
-
-// ── Navigation timing (ccstate-based) ──────────────────────────────
-//
-// Timing marks are ccstate signals so they compose naturally with the
-// existing signal graph. A new startChatNavigationTiming$ call
-// overwrites the previous timing — no AbortController or timeout needed.
-
-const navigationEnterTime$ = state<number | null>(null);
-const navigationPushStateTime$ = state<number | null>(null);
-const navigationSetupTime$ = state<number | null>(null);
-
-export const startChatNavigationTiming$ = command(({ set }) => {
-  runPostHog(() => {
-    set(navigationEnterTime$, performance.now());
-    set(navigationPushStateTime$, null);
-    set(navigationSetupTime$, null);
-  });
-});
-
-export const markNavigationPushState$ = command(({ get, set }) => {
-  if (get(navigationEnterTime$) === null) {
-    return;
-  }
-  runPostHog(() => {
-    set(navigationPushStateTime$, performance.now());
-  });
-});
-
-export const markRouteSetupBegin$ = command(({ get, set }) => {
-  if (get(navigationEnterTime$) === null) {
-    return;
-  }
-  runPostHog(() => {
-    set(navigationSetupTime$, performance.now());
-  });
-});
-
-export const captureNavigationTiming$ = command(({ get, set }) => {
-  const enterTime = get(navigationEnterTime$);
-  if (enterTime === null) {
-    return;
-  }
-  runPostHog(() => {
-    const now = performance.now();
-    const pushStateTime = get(navigationPushStateTime$);
-    const setupTime = get(navigationSetupTime$);
-    posthog.capture("chat_navigation_timing", {
-      total_ms: Math.round(now - enterTime),
-      push_state_ms:
-        pushStateTime !== null
-          ? Math.round(pushStateTime - enterTime)
-          : undefined,
-      setup_begin_ms:
-        setupTime !== null ? Math.round(setupTime - enterTime) : undefined,
-    });
-    set(navigationEnterTime$, null);
-    set(navigationPushStateTime$, null);
-    set(navigationSetupTime$, null);
-  });
-});
 
 export function capturePageView(): void {
   runPostHog(() => {

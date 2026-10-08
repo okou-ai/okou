@@ -14,11 +14,6 @@ export const page$ = computed((get) => {
   return get(internalPage$);
 });
 
-// Detach the committed page before route-derived state moves to a new location.
-export const clearPage$ = command(({ set }) => {
-  set(internalPage$, undefined);
-});
-
 export const updatePage$ = command(
   ({ set }, page: ReactNode, layout: PageLayout = "none") => {
     set(internalLayout$, layout);

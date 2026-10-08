@@ -19,14 +19,11 @@ from typing import NamedTuple
 from mitmproxy import http
 from wsproto.utilities import generate_accept_token
 
-import anthropic_accounting
 import body_decoding
-import claude_output_timing
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_header_syntax
 import http_response_classification
-import model_provider_failure
 import model_websocket_usage
 import run_usage
 import runtime_url_parsing
@@ -52,33 +49,15 @@ _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
 _ANTHROPIC_MESSAGES_SSE_PROTOCOL = "anthropic_messages_sse"
 _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL = "openai_chat_completions_sse"
 _OPENAI_RESPONSES_SSE_PROTOCOL = "openai_responses_sse"
-_ANTHROPIC_USAGE_EVENTS = frozenset(("message_start", "message_delta"))
-_ANTHROPIC_MESSAGE_STOP_EVENT = "message_stop"
 _MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
 
 _ResponseChunkParser = Callable[[bytes], None]
 _SseUsageParseErrorLogger = Callable[[str, str], None]
-_AnthropicLifecycleObserver = Callable[[str, str | None], None]
-
-
-def _anthropic_incomplete_accounting_status(
-    usage_dict: dict,
-    accounting_events: set[str],
-) -> anthropic_accounting.AnthropicAccountingStatus:
-    has_recoverable_usage = bool(accounting_events & _ANTHROPIC_USAGE_EVENTS) and (
-        usage.has_positive_model_provider_usage(usage_dict)
-    )
-    if not has_recoverable_usage:
-        return "no_recoverable_usage"
-    if _ANTHROPIC_MESSAGE_STOP_EVENT in accounting_events:
-        return "recovered_terminal"
-    return "recovered_partial"
 
 
 class _ResponseStreamSetup(NamedTuple):
     parser: _ResponseChunkParser | None
     needs_buffered_fallback: bool
-    finish_stream: Callable[[], object] | None = None
     reject_uninspectable: bool = False
 
 
@@ -157,22 +136,6 @@ def _make_model_sse_parse_error_logger(
     return log_parse_error
 
 
-def _anthropic_lifecycle_observer(
-    flow: http.HTTPFlow,
-) -> _AnthropicLifecycleObserver | None:
-    if flow_metadata.cli_agent_type(flow.metadata) != "claude-code":
-        return None
-
-    def observe(event_type: str, content_block_type: str | None) -> None:
-        claude_output_timing.observe_lifecycle_event(
-            flow,
-            event_type,
-            content_block_type,
-        )
-
-    return observe
-
-
 def _log_response_encoding_fail_closed(
     flow: http.HTTPFlow,
     response: http.Response,
@@ -197,7 +160,6 @@ def _log_response_encoding_fail_closed(
 
 def _configure_response_inspection_stream(
     flow: http.HTTPFlow,
-    failure_observer: model_provider_failure.HttpResponseFailureObserver | None,
     *,
     websocket_header_work_limit: int,
 ) -> _ResponseStreamSetup:
@@ -207,21 +169,15 @@ def _configure_response_inspection_stream(
     if response is None:
         return _ResponseStreamSetup(None, False)
 
-    # Billing admission and failure policy remain separate from model usage
-    # observation. Connector extraction remains gated by the billing flag.
+    # Billing admission remains separate from model usage observation.
+    # Connector extraction remains gated by the billing flag.
     is_billable_flow = flow_metadata.is_firewall_billable(flow.metadata)
     is_billable_model_provider = usage.is_model_provider_usage_billable(flow)
     extract_model_usage = flow_metadata.firewall_name(flow.metadata).startswith("model-provider:")
-    model_protocol = (
-        model_usage_protocol(flow) if extract_model_usage or failure_observer is not None else None
-    )
-    if (
-        extract_model_usage
-        and model_protocol == "openai_responses"
-        and is_confirmed_websocket_upgrade_response(
-            flow,
-            websocket_header_work_limit=websocket_header_work_limit,
-        )
+    model_protocol = model_usage_protocol(flow) if extract_model_usage else None
+    if model_protocol == "openai_responses" and is_confirmed_websocket_upgrade_response(
+        flow,
+        websocket_header_work_limit=websocket_header_work_limit,
     ):
         model_websocket_usage.activate(flow)
         return _ResponseStreamSetup(None, False)
@@ -229,8 +185,6 @@ def _configure_response_inspection_stream(
         return _ResponseStreamSetup(None, False)
     if model_protocol is not None:
         if http_response_classification.has_event_stream_media_type(response):
-            lifecycle_observer: _AnthropicLifecycleObserver | None = None
-            anthropic_accounting_events: set[str] = set()
             openai_recoverable_usage: dict = {}
             observed_terminal = False
 
@@ -259,11 +213,7 @@ def _configure_response_inspection_stream(
                 parser_fn, usage_dict = usage.create_openai_responses_sse_usage_extractor(
                     on_parse_error=log_parse_error,
                     on_observation=observe_usage,
-                    on_terminal_usage=(
-                        record_openai_terminal_usage if extract_model_usage else None
-                    ),
-                    include_usage=extract_model_usage,
-                    failure_observer=failure_observer,
+                    on_terminal_usage=record_openai_terminal_usage,
                 )
             elif model_protocol == "openai_chat_completions":
                 usage_protocol = _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL
@@ -275,8 +225,6 @@ def _configure_response_inspection_stream(
                     on_parse_error=log_parse_error,
                     on_usage=observe_usage,
                     on_done=observe_done,
-                    include_usage=extract_model_usage,
-                    failure_observer=failure_observer,
                 )
             else:
                 usage_protocol = _ANTHROPIC_MESSAGES_SSE_PROTOCOL
@@ -284,29 +232,17 @@ def _configure_response_inspection_stream(
                     flow,
                     usage_protocol=usage_protocol,
                 )
-                lifecycle_observer = (
-                    _anthropic_lifecycle_observer(flow) if is_billable_model_provider else None
-                )
 
                 def observe_anthropic_event(event: str) -> None:
-                    anthropic_accounting_events.add(event)
                     observe_usage(usage_dict, event == "message_stop")
 
                 parser_fn, usage_dict = usage.create_anthropic_messages_sse_usage_extractor(
                     on_parse_error=log_parse_error,
-                    on_lifecycle_event=lifecycle_observer,
-                    on_accounting_event=(observe_anthropic_event if extract_model_usage else None),
-                    include_usage=extract_model_usage,
-                    failure_observer=failure_observer,
+                    on_accounting_event=observe_anthropic_event,
                 )
             decode_session = _make_response_decode_session(parser_fn, response.headers)
             if decode_session is None:
                 run_usage.mark(flow, "parse_error")
-                if failure_observer is not None:
-                    model_provider_failure.register_response_finish(
-                        flow,
-                        failure_observer.finish,
-                    )
                 return _ResponseStreamSetup(
                     None,
                     False,
@@ -319,67 +255,34 @@ def _configure_response_inspection_stream(
 
             finished = False
 
-            def finish_sse_response() -> object:
+            def finish_sse_response() -> None:
                 nonlocal finished
                 if not finished:
                     decode_error = decode_session.finish_error()
                     if decode_error is None:
                         parser_fn.finish()
                         run_usage.observe(flow, usage_dict)
-                    elif extract_model_usage:
+                    else:
                         run_usage.observe(flow, usage_dict)
                         log_parse_error("compressed_body", decode_error)
+                        usage_dict.clear()
                         if (
-                            usage_protocol == _ANTHROPIC_MESSAGES_SSE_PROTOCOL
-                            and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
-                        ):
-                            accounting_status = _anthropic_incomplete_accounting_status(
-                                usage_dict,
-                                anthropic_accounting_events,
-                            )
-                            if is_billable_model_provider:
-                                anthropic_accounting.report_incomplete(
-                                    flow,
-                                    accounting_status,
-                                )
-                        elif (
                             usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL
                             and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
                         ):
-                            usage_dict.clear()
                             usage.merge_openai_responses_usage_result(
                                 usage_dict,
                                 openai_recoverable_usage,
                             )
-                        else:
-                            usage_dict.clear()
-                    if lifecycle_observer is not None:
-                        claude_output_timing.retry_pending(flow)
                     if not observed_terminal:
                         run_usage.mark(flow, "interrupted")
                     finished = True
-                return failure_observer.finish() if failure_observer is not None else None
 
-            def finish_sse_stream() -> object:
-                finish_sse_response()
-                return failure_observer.settle() if failure_observer is not None else None
+            flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = usage_dict
+            flow.metadata[_MODEL_SSE_USAGE_FINISH] = finish_sse_response
+            return _ResponseStreamSetup(decode_session.feed, False)
 
-            if extract_model_usage:
-                flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = usage_dict
-                flow.metadata[_MODEL_SSE_USAGE_FINISH] = finish_sse_response
-            if failure_observer is not None:
-                model_provider_failure.register_response_finish(flow, finish_sse_response)
-            return _ResponseStreamSetup(
-                decode_session.feed,
-                False,
-                finish_sse_stream if failure_observer is not None else None,
-            )
-
-        extractor = usage.create_model_json_response_inspector(
-            model_protocol,
-            include_usage=extract_model_usage,
-            include_failure=failure_observer is not None,
-        )
+        extractor = usage.create_model_json_response_inspector(model_protocol)
         decode_session = _make_response_decode_session(
             extractor.feed,
             response.headers,
@@ -389,23 +292,12 @@ def _configure_response_inspection_stream(
         if decode_session is None:
             needs_buffered_fallback = body_decoding.can_decode_json_usage_body(
                 response.headers
-            ) and (
-                failure_observer is not None
-                or (
-                    extract_model_usage
-                    and uses_model_json_fallback(
-                        flow,
-                        websocket_header_work_limit=websocket_header_work_limit,
-                    )
-                )
+            ) and uses_model_json_fallback(
+                flow,
+                websocket_header_work_limit=websocket_header_work_limit,
             )
             if not needs_buffered_fallback:
                 run_usage.mark(flow, "parse_error")
-                if failure_observer is not None:
-                    model_provider_failure.register_response_finish(
-                        flow,
-                        failure_observer.finish,
-                    )
                 return _ResponseStreamSetup(
                     None,
                     False,
@@ -420,7 +312,7 @@ def _configure_response_inspection_stream(
         decode_error: str | None = None
         finished = False
 
-        def finish_json_response() -> object:
+        def finish_json_response() -> None:
             nonlocal decode_error, finished, inspection
             if not finished:
                 if decode_session is not None:
@@ -444,12 +336,9 @@ def _configure_response_inspection_stream(
                     run_usage.observe(flow, inspection.usage)
                     if inspection.usage_error is not None:
                         run_usage.mark(flow, "parse_error")
-                    if failure_observer is not None:
-                        failure_observer.observe_json(inspection.failure)
                 if decode_error is not None:
                     run_usage.mark(flow, "parse_error")
                 finished = True
-            return failure_observer.finish() if failure_observer is not None else None
 
         def finish_json_usage() -> tuple[dict | None, str | None]:
             finish_json_response()
@@ -459,18 +348,10 @@ def _configure_response_inspection_stream(
                 return None, None
             return inspection.usage, inspection.usage_error
 
-        def finish_json_stream() -> object:
-            finish_json_response()
-            return failure_observer.settle() if failure_observer is not None else None
-
-        if extract_model_usage:
-            flow.metadata[_MODEL_JSON_USAGE_FINISH] = finish_json_usage
-        if failure_observer is not None:
-            model_provider_failure.register_response_finish(flow, finish_json_response)
+        flow.metadata[_MODEL_JSON_USAGE_FINISH] = finish_json_usage
         return _ResponseStreamSetup(
             decode_session.feed if decode_session is not None else None,
             needs_buffered_fallback,
-            finish_json_stream if failure_observer is not None else None,
         )
 
     if not is_billable_flow:
@@ -590,7 +471,6 @@ def _discard_uninspectable_response_body(_chunk: bytes) -> bytes:
 
 
 def _reject_uninspectable_response(flow: http.HTTPFlow) -> None:
-    model_provider_failure.release_flow(flow)
     flow.response = http.Response.make(
         _HTTP_STATUS_BAD_GATEWAY,
         b"",
@@ -614,10 +494,8 @@ def configure_response_stream(
         return
 
     metrics = {"total_bytes": 0}
-    failure_observer = model_provider_failure.configure_response_observer(flow)
     setup = _configure_response_inspection_stream(
         flow,
-        failure_observer,
         websocket_header_work_limit=websocket_header_work_limit,
     )
     if setup.reject_uninspectable:
@@ -627,7 +505,6 @@ def configure_response_stream(
 
     response_parser = setup.parser
     needs_buffered_fallback = setup.needs_buffered_fallback
-    finish_stream = setup.finish_stream
     retain_body = flow_metadata.should_capture_body(flow.metadata) or needs_buffered_fallback
     buf = bytearray() if retain_body else None
     buffer_state = {"truncated": False} if retain_body else None
@@ -644,8 +521,6 @@ def configure_response_stream(
         if response_parser is not None:
             response_parser(chunk)
             run_usage.observe(flow, flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE))
-        if not chunk and finish_stream is not None:
-            finish_stream()
         return chunk
 
     flow.response.stream = stream_and_observe

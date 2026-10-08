@@ -89,7 +89,7 @@ export const morningBriefScheduleClaims = pgTable(
     claimSequence: integer("claim_sequence").notNull(),
     /**
      * Exact original queue event and Run. These are deliberately not foreign
-     * keys: chat events and Runs have their own retention and erasure
+     * keys: chat events and Runs have their own retention and deletion
      * lifecycles, and losing one must not erase the record that this
      * occurrence was already journaled and settled.
      */
@@ -130,7 +130,7 @@ export const morningBriefScheduleClaims = pgTable(
         table.orgId,
         table.ownerUserId,
       ),
-      // User erasure is global across organizations, so it cannot rely on the
+      // User deletion is global across organizations, so it cannot rely on the
       // org-leading membership index above (production remains PostgreSQL 17).
       index("idx_morning_brief_schedule_claims_owner_user").on(
         table.ownerUserId,

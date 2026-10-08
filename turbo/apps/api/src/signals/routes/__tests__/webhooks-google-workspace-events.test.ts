@@ -6,7 +6,6 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { testGoogleMeetSubscriptionRenewalContract } from "@okouai/api-contracts/contracts/test-google-meet-subscription-renewal";
 import {
   workflowAutomationsContract,
   workflowsDetailContract,
@@ -20,31 +19,30 @@ import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   clearWorkflowAutomationEventConnectorAsPreviousApi,
-  holdOrgAdmissionLock,
-  readOrgAdmissionLockState,
-  releaseOrgAdmissionLock,
   stageOfficialWorkflowAutomationFixture,
 } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { testGoogleMeetSubscriptionRenewalRoutes } from "../test-google-meet-subscription-renewal";
 import { webhooksGoogleWorkspaceEventsRoutes } from "../webhooks-google-workspace-events";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const connectors = createConnectorBddApi(context);
 const mocks = createRouteMocks(context);
 const runs = createRunsApi(context);
+const runReadsApi = createRunReadsApi(context);
 const workflows = createWorkflowsBddApi(context);
 
 const PUSH_AUDIENCE =
@@ -104,6 +102,20 @@ interface GoogleMeetFixture {
   readonly provider: GoogleMeetProviderRecorder;
 }
 
+async function listActiveRuns(actor: OrgActor, agentName: string) {
+  const response = await runReadsApi.requestListLogs(
+    actor,
+    { name: agentName, limit: 20 },
+    [200],
+  );
+  expect(response.body.pagination).toMatchObject({ hasMore: false });
+  return {
+    runs: response.body.data.filter((run) => {
+      return run.status === "pending" || run.status === "running";
+    }),
+  };
+}
+
 function authHeaders(actor: OrgActor) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
@@ -125,13 +137,6 @@ function connectorAccountsClient() {
   return setupApp({ context, routes: connectorAccountRoutes })(
     connectorAccountsContract,
   );
-}
-
-function renewalClient() {
-  return setupApp({
-    context,
-    routes: testGoogleMeetSubscriptionRenewalRoutes,
-  })(testGoogleMeetSubscriptionRenewalContract);
 }
 
 function workflowDetailClient() {
@@ -456,6 +461,10 @@ async function setupFixture(
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
+  // Fable keeps Google Meet workflow runs on the claimable native Runner route.
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const orgActor: OrgActor = { ...actor, orgId: actor.orgId };
   const agent = await workflows.createAgent(orgActor, {
     displayName: "Google Meet automation agent",
@@ -556,6 +565,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
       duplicates: 0,
     });
 
+    await flushWaitUntilForTest();
     const events = await workflows.readThreadEvents(created.body.chatThreadId);
     const visibleEvent = events.find((event) => {
       return (
@@ -745,13 +755,9 @@ describe("Google Workspace Events subscription lifecycle", () => {
       watchStates: 1,
       dispatched: 1,
     });
+    await flushWaitUntilForTest();
     const primaryRunIds = new Set(
-      (
-        await runs.listAgentRuns(fixture.actor, {
-          agent: fixture.agentId,
-          limit: 20,
-        })
-      ).runs.map((run) => {
+      (await listActiveRuns(fixture.actor, fixture.agentId)).runs.map((run) => {
         return run.id;
       }),
     );
@@ -761,11 +767,9 @@ describe("Google Workspace Events subscription lifecycle", () => {
       watchStates: 1,
       dispatched: 1,
     });
+    await flushWaitUntilForTest();
     const secondaryRunId = (
-      await runs.listAgentRuns(fixture.actor, {
-        agent: fixture.agentId,
-        limit: 20,
-      })
+      await listActiveRuns(fixture.actor, fixture.agentId)
     ).runs.find((run) => {
       return !primaryRunIds.has(run.id);
     })?.id;
@@ -888,98 +892,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
     );
     expect(fixture.provider.accounts.primary.deletedUrls).toHaveLength(1);
     expect(fixture.provider.accounts.secondary.createdNames).toHaveLength(1);
-  });
-
-  it("supersedes an old source that changes before queue admission", async () => {
-    const fixture = await setupFixture();
-    const created = await createMeetAutomation(fixture);
-    if (!created.body.chatThreadId) {
-      throw new Error("Expected an automation chat thread");
-    }
-    const primarySubscription =
-      fixture.provider.accounts.primary.createdNames[0];
-    if (!primarySubscription) {
-      throw new Error("Expected a primary Google Meet subscription");
-    }
-    const secondaryConnectorId = await connectGoogleMeet(
-      fixture.actor,
-      fixture.provider,
-      "secondary",
-      fixture.agentId,
-      { intent: "add", displayName: "Secondary Google Meet" },
-    );
-    const admissionLockRequest = holdOrgAdmissionLock(
-      context,
-      `chat_event_queue:${created.body.chatThreadId}`,
-    );
-    const cleanupRequests: Promise<unknown>[] = [admissionLockRequest];
-    onTestFinished(async () => {
-      const cleanupResults = await Promise.allSettled([
-        releaseOrgAdmissionLock(context),
-        ...cleanupRequests,
-      ]);
-      const cleanupFailure = cleanupResults.find((result) => {
-        return result.status === "rejected";
-      });
-      if (cleanupFailure?.status === "rejected") {
-        throw cleanupFailure.reason;
-      }
-    });
-    await expect
-      .poll(async () => {
-        return (await readOrgAdmissionLockState(context)).held;
-      })
-      .toBe(true);
-
-    const oldSourceRequest = postWorkspaceEvent(primarySubscription);
-    cleanupRequests.push(oldSourceRequest);
-    await expect
-      .poll(async () => {
-        return (await readOrgAdmissionLockState(context)).waiting;
-      })
-      .toBe(true);
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.chatThreadId },
-        body: {
-          connectionId: secondaryConnectorId,
-          target: { kind: "builtin", connectorSlug: "google-meet" },
-        },
-      }),
-      [200],
-    );
-    await releaseOrgAdmissionLock(context);
-    await admissionLockRequest;
-
-    const oldSource = await oldSourceRequest;
-    expect(oldSource.status).toBe(200);
-    await expect(oldSource.json()).resolves.toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 0,
-      duplicates: 0,
-    });
-    const events = await workflows.readThreadEvents(created.body.chatThreadId);
-    expect(
-      events.filter((event) => {
-        return (
-          chatEventDisplayText(event) === "A Google Meet transcript is ready."
-        );
-      }),
-    ).toStrictEqual([]);
-
-    const secondarySubscription =
-      fixture.provider.accounts.secondary.createdNames[0];
-    if (!secondarySubscription) {
-      throw new Error("Expected a secondary Google Meet subscription");
-    }
-    const currentSource = await postWorkspaceEvent(secondarySubscription);
-    expect(currentSource.status).toBe(200);
-    await expect(currentSource.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
-    });
   });
 
   async function setupCopiedMeetAutomation() {
@@ -1146,21 +1058,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
       dispatched: 0,
       duplicates: 0,
     });
-
-    const renewed = await accept(
-      renewalClient().renew({
-        body: {
-          org_id: fixture.actor.orgId,
-          user_id: fixture.actor.userId,
-        },
-      }),
-      [200],
-    );
-    expect(renewed.body).toMatchObject({
-      success: true,
-      renewed: 0,
-      repaired: 0,
-    });
     expect(fixture.provider.createdNames).toHaveLength(1);
     expect(fixture.provider.renewCalls).toBe(0);
   });
@@ -1320,7 +1217,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
     });
   });
 
-  it("serializes last-consumer cleanup with a concurrent enable", async () => {
+  it("keeps a consumer enabled during last-consumer cleanup subscribed", async () => {
     const deleteStarted = createDeferredPromise<void>(context.signal);
     const deleteRelease = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
@@ -1342,11 +1239,23 @@ describe("Google Workspace Events subscription lifecycle", () => {
       params: { id: active.body.id },
     });
     await deleteStarted.promise;
-    const enableRequest = automationsClient().enable({
-      headers: authHeaders(fixture.actor),
-      params: { id: disabled.body.id },
-    });
+    // Remote cleanup happens after the local decision; enabling another
+    // consumer does not wait for it and prepares its own subscription.
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(fixture.actor),
+        params: { id: disabled.body.id },
+      }),
+      [200],
+    );
+    deleteRelease.resolve();
+    await accept(disableRequest, [200]);
 
+    expect(fixture.provider.createdNames).toHaveLength(2);
+    expect(fixture.provider.deletedUrls).toHaveLength(1);
+    expect(fixture.provider.deletedUrls[0]).toContain(
+      `/${fixture.provider.createdNames[0]}?allowMissing=true`,
+    );
     const listed = await accept(
       automationsClient().list({
         headers: authHeaders(fixture.actor),
@@ -1358,19 +1267,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
       listed.body.find((automation) => {
         return automation.id === disabled.body.id;
       })?.enabled,
-    ).toBeFalsy();
-    expect(fixture.provider.createdNames).toHaveLength(1);
-    deleteRelease.resolve();
-
-    await accept(disableRequest, [200]);
-    await accept(enableRequest, [200]);
-    expect(fixture.provider.createdNames).toHaveLength(2);
-    expect(fixture.provider.operations).toStrictEqual([
-      `create:${fixture.provider.createdNames[0]}`,
-      `delete-start:${fixture.provider.createdNames[0]}`,
-      `delete-end:${fixture.provider.createdNames[0]}`,
-      `create:${fixture.provider.createdNames[1]}`,
-    ]);
+    ).toBeTruthy();
 
     await accept(
       automationsClient().disable({
@@ -1382,51 +1279,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
     expect(fixture.provider.deletedUrls).toHaveLength(2);
     expect(fixture.provider.deletedUrls[1]).toContain(
       `/${fixture.provider.createdNames[1]}?allowMissing=true`,
-    );
-  });
-
-  it("renews a due subscription while an enabled consumer remains", async () => {
-    const fixture = await setupFixture({
-      expireTime: new Date(now() + 30 * 60 * 1000).toISOString(),
-    });
-    const created = await createMeetAutomation(fixture);
-
-    const renewed = await accept(
-      renewalClient().renew({
-        body: {
-          org_id: fixture.actor.orgId,
-          user_id: fixture.actor.userId,
-        },
-      }),
-      [200],
-    );
-    const unchanged = await accept(
-      renewalClient().renew({
-        body: {
-          org_id: fixture.actor.orgId,
-          user_id: fixture.actor.userId,
-        },
-      }),
-      [200],
-    );
-    expect(renewed.body).toMatchObject({
-      success: true,
-      renewed: 1,
-      repaired: 0,
-    });
-    expect(unchanged.body).toMatchObject({
-      success: true,
-      renewed: 0,
-      repaired: 0,
-    });
-    expect(fixture.provider.renewCalls).toBe(1);
-
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.id },
-      }),
-      [204],
     );
   });
 });

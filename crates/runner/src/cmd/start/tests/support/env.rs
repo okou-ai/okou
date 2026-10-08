@@ -251,6 +251,7 @@ fn build_mock_run_config_with_runtime(
             cancel_tokens: cancel_tokens.clone(),
             cancel: cancel.clone(),
         },
+        wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         proxy: ProxyState {
             mitm,
             mitm_crash_rx,
@@ -273,6 +274,7 @@ fn build_mock_run_config_with_runtime(
             mitm_jsonl_flush: None,
             connector_runtime_sync: None,
             guest_rpc: None,
+            guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
             session_history_cpu: executor::SessionHistoryCpuPool::with_capacity(1),
             session_history_probe: executor::SessionHistoryProbe::default(),
             fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),

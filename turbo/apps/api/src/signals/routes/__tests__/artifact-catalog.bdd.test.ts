@@ -12,7 +12,6 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
-import { testArtifactCatalogReconcileRoutes } from "../test-artifact-catalog-reconcile";
 import { sharedThreadRoutes } from "../shared-threads";
 import {
   createBddApi,
@@ -25,7 +24,6 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { seedPendingArtifactCatalogFile } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -70,7 +68,11 @@ async function catalogActor(
   const runnerGroup = api.configureRunnerGroup();
   if (options.bootstrapOrg !== false) {
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    // Catalog fixtures complete claimed native Runner runs, so the owner
+    // selects Fable, whose personal subscription route never uses Pi.
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
   }
   if (!actor.orgId) {
     throw new Error("Expected artifact catalog test actor to have an org");
@@ -90,11 +92,8 @@ async function sendChatRun(
     readonly threadId?: string;
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
-  const sent = await chat.requestSendEvent(actor, body, [201]);
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected chat send to create a run");
-  }
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
+  const sent = await chat.sendAndLaunch(actor, body);
+  return { runId: sent.runId, threadId: sent.threadId };
 }
 
 async function claimChatRun(
@@ -313,25 +312,6 @@ async function uploadFile(args: {
   return { fileId, url: completed.body.url, threadId: run.threadId };
 }
 
-async function seedPendingCatalogFile(args: {
-  readonly owner: CatalogActor;
-  readonly filename: string;
-  readonly url: string;
-}): Promise<string> {
-  if (!args.owner.actor.orgId) {
-    throw new Error("Expected artifact catalog actor to have an org");
-  }
-
-  // The guarded test route keeps the explicit file + queue transaction but
-  // skips immediate sync to exercise the public catalog's recovery behavior.
-  return await seedPendingArtifactCatalogFile(context, {
-    userId: args.owner.actor.userId,
-    orgId: args.owner.actor.orgId,
-    filename: args.filename,
-    url: args.url,
-  });
-}
-
 async function publishHostedSite(args: {
   readonly owner: CatalogActor;
   readonly site: string;
@@ -455,6 +435,54 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
+  it("keeps completed file lists and catalog filters scoped to their owning thread", async () => {
+    const owner = await catalogActor("File association owner");
+    const outsider = await catalogActor("File association outsider");
+    const first = await uploadFile({
+      owner,
+      prompt: "Publish the first report",
+      filename: "first-thread-report.txt",
+      contentType: "text/plain",
+    });
+    const second = await uploadFile({
+      owner,
+      prompt: "Publish the second report",
+      filename: "second-thread-report.txt",
+      contentType: "text/plain",
+    });
+
+    const files = await chat.listThreadArtifacts(owner.actor, first.threadId);
+    expect(
+      files.runs.flatMap((run) => {
+        return run.files.map((file) => {
+          return file.filename;
+        });
+      }),
+    ).toStrictEqual(["first-thread-report.txt"]);
+    const firstCatalog = await chat.listArtifactCatalog(owner.actor, {
+      chatThreadId: first.threadId,
+    });
+    expect(firstCatalog.artifacts).toStrictEqual([
+      expect.objectContaining({ title: "first-thread-report.txt" }),
+    ]);
+    const secondCatalog = await chat.listArtifactCatalog(owner.actor, {
+      chatThreadId: second.threadId,
+    });
+    expect(secondCatalog.artifacts).toStrictEqual([
+      expect.objectContaining({ title: "second-thread-report.txt" }),
+    ]);
+    const outsiderFiles = await chat.requestListThreadArtifacts(
+      outsider.actor,
+      first.threadId,
+      [404],
+    );
+    expectApiError(outsiderFiles.body);
+    const outsiderCatalog = await chat.listArtifactCatalog(outsider.actor, {
+      chatThreadId: first.threadId,
+    });
+    expect(outsiderCatalog.artifacts).toStrictEqual([]);
+  });
+
   it("catalogues an artifact upload but never a chat attachment", async () => {
     const owner = await catalogActor("Artifact catalog attachment owner");
     await createBillingMediaApi(context).updateFeatureSwitches(owner.actor, {
@@ -558,21 +586,18 @@ describe("GET /api/artifacts/catalog", () => {
 
   it("lists the source URL for a video without a poster", async () => {
     const owner = await catalogActor("Artifact catalog video source owner");
-    const run = await api.createDirectRun(owner.actor, {
+    const run = await sendChatRun(owner.actor, {
       agentId: owner.agentId,
-      prompt: "upload a video",
-      modelProviderType: "anthropic-api-key",
-      triggerSource: "automation-schedule",
-      vars: { OKOU_AGENT_ID: owner.agentId },
-      secrets: { OKOU_TOKEN: "bdd-artifact-video-source-token" },
+      prompt: "Upload an artifact through the Runner protocol",
     });
+    const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
     const fileId = randomUUID();
     stageUploadObject(
       `artifacts/${owner.actor.userId}/${fileId}/source-fallback.webm`,
       1024,
     );
     const completed = await chat.completeUploadWithBearer(
-      `Bearer ${scopedOkouToken(owner, run.runId, ["file:write"])}`,
+      `Bearer ${okouTokenFromClaim(claim)}`,
       { id: fileId, contentType: "video/webm" },
       [200],
     );
@@ -592,97 +617,83 @@ describe("GET /api/artifacts/catalog", () => {
     ]);
   }, 180_000);
 
-  it("reconciles a pending file when immediate catalog sync is deferred", async () => {
-    const owner = await catalogActor("Artifact catalog promotion owner");
-    const url = `https://files.okou.test/${randomUUID()}/legacy-output.zip`;
-    const fileId = await seedPendingCatalogFile({
-      owner,
-      filename: "legacy-output.zip",
-      url,
-    });
-
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-    expect(catalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "file",
-        title: "legacy-output.zip",
-      }),
-    ]);
-
-    const artifactId = catalog.artifacts[0]?.id;
-    if (!artifactId) {
-      throw new Error("Expected the reconciled artifact to be listed");
-    }
-    const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
-    if (detail.kind !== "file") {
-      throw new Error("Expected the reconciled artifact to be a file");
-    }
-    expect(detail.file).toMatchObject({ id: fileId, url });
-  }, 180_000);
-
-  it("bounds list repair and recovers the remaining backlog through the scoped worker", async () => {
-    const owner = await catalogActor("Artifact catalog backlog owner");
-    const fileIds: string[] = [];
-    for (let index = 0; index < 21; index += 1) {
-      fileIds.push(
-        await seedPendingCatalogFile({
-          owner,
-          filename: `backlog-${index}.zip`,
-          url: `https://files.okou.test/${randomUUID()}/backlog-${index}.zip`,
-        }),
-      );
-    }
-
-    const firstPage = await chat.listArtifactCatalog(owner.actor);
-    expect(firstPage.artifacts).toHaveLength(20);
-
-    // The test-only route leaves durable pending rows; this worker call limits
-    // production recovery to IDs owned by this case instead of a global scan.
-    const recovery = await createAppWithRoutes({
-      signal: context.signal,
-      routes: testArtifactCatalogReconcileRoutes,
-    }).request("/api/test/artifact-catalog/reconcile", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ fileIds }),
-    });
-    expect(recovery.status).toBe(200);
-    await expect(recovery.json()).resolves.toStrictEqual({
-      processed: 1,
-      failed: 0,
-    });
-
-    const recovered = await chat.listArtifactCatalog(owner.actor);
-    expect(recovered.artifacts).toHaveLength(21);
-    expect(
-      new Set(
-        recovered.artifacts.map((artifact) => {
-          return artifact.title;
-        }),
-      ).size,
-    ).toBe(21);
-  }, 180_000);
-
-  it("removes catalog rows when deleting the backing agent", async () => {
+  it("keeps owned files and catalog identity after deleting the backing agent", async () => {
     const owner = await catalogActor("Artifact catalog deletion owner");
-    await uploadFile({
+    const uploaded = await uploadFile({
       owner,
-      prompt: "upload a disposable report",
-      filename: "disposable-report.txt",
+      prompt: "upload an independently owned report",
+      filename: "retained-report.txt",
       contentType: "text/plain",
     });
-    expect(
-      (await chat.listArtifactCatalog(owner.actor)).artifacts,
-    ).toHaveLength(1);
+    const catalog = await chat.listArtifactCatalog(owner.actor);
+    expect(catalog.artifacts).toHaveLength(1);
+    const artifactId = catalog.artifacts[0]?.id;
+    if (!artifactId) {
+      throw new Error("Expected the report artifact");
+    }
+    const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
 
     await flushWaitUntilForTest();
     await bdd.deleteAgent(owner.actor, owner.agentId);
 
-    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual({
-      artifacts: [],
-      nextCursor: null,
-    });
+    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
+      catalog,
+    );
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, artifactId),
+    ).resolves.toStrictEqual(detail);
+    const file = await chat.resolveWebFileUrl(owner.actor, uploaded.fileId);
+    expect(file.publicUrl).toBe(uploaded.url);
+    await chat.requestWebFileUrl(bdd.user(), uploaded.fileId, [404]);
   }, 180_000);
+
+  it.each(["user", "organization"] as const)(
+    "erases independently retained files by %s ownership after Run deletion",
+    async (kind) => {
+      const owner = await catalogActor("Independent artifact erasure owner");
+      const outsider = await catalogActor(
+        "Independent artifact erasure outsider",
+      );
+      const uploaded = await uploadFile({
+        owner,
+        prompt: "publish a report before account erasure",
+        filename: "account-report.txt",
+        contentType: "text/plain",
+      });
+      const unrelated = await uploadFile({
+        owner: outsider,
+        prompt: "publish an unrelated report",
+        filename: "unrelated-report.txt",
+        contentType: "text/plain",
+      });
+      await bdd.deleteAgent(owner.actor, owner.agentId);
+      const catalog = await chat.listArtifactCatalog(owner.actor);
+      const artifactId = catalog.artifacts[0]?.id;
+      if (!artifactId) {
+        throw new Error("Expected a retained artifact after Agent deletion");
+      }
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: kind === "user" ? "user.deleted" : "organization.deleted",
+        data: { id: kind === "user" ? owner.actor.userId : owner.actor.orgId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+      await chat.requestWebFileUrl(owner.actor, uploaded.fileId, [404]);
+      await chat.requestArtifactCatalogEntry(owner.actor, artifactId, [404]);
+      const unrelatedFile = await chat.resolveWebFileUrl(
+        outsider.actor,
+        unrelated.fileId,
+      );
+      expect(unrelatedFile.publicUrl).toBe(unrelated.url);
+      expect(
+        (await chat.listArtifactCatalog(outsider.actor)).artifacts,
+      ).toContainEqual(
+        expect.objectContaining({ title: "unrelated-report.txt" }),
+      );
+    },
+    180_000,
+  );
 
   it("keeps one catalog entry for a redeployed hosted site", async () => {
     const owner = await catalogActor(
@@ -976,23 +987,20 @@ describe("GET /api/artifacts/catalog", () => {
     expect(new Set(collected).size).toBe(created.length);
   }, 180_000);
 
-  it("keeps a workflow run artifact under the owning Okou user", async () => {
+  it("keeps a Runner-uploaded artifact under the owning Okou user", async () => {
     const owner = await catalogActor("Artifact catalog workflow owner");
-    const run = await api.createDirectRun(owner.actor, {
+    const run = await sendChatRun(owner.actor, {
       agentId: owner.agentId,
-      prompt: "create a workflow artifact",
-      modelProviderType: "anthropic-api-key",
-      triggerSource: "automation-schedule",
-      vars: { OKOU_AGENT_ID: owner.agentId },
-      secrets: { OKOU_TOKEN: "bdd-artifact-catalog-token" },
+      prompt: "Upload an artifact through the Runner protocol",
     });
+    const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
     const fileId = randomUUID();
     stageUploadObject(
       `artifacts/${owner.actor.userId}/${fileId}/workflow-output.txt`,
       128,
     );
     await chat.completeUploadWithBearer(
-      `Bearer ${scopedOkouToken(owner, run.runId, ["file:write"])}`,
+      `Bearer ${okouTokenFromClaim(claim)}`,
       { id: fileId, contentType: "text/plain" },
       [200],
     );
@@ -1071,16 +1079,17 @@ describe("shared thread routes", () => {
     await completeChatRunWithMessage(owner, run.runId, assistantText);
 
     let events: readonly SharedThreadEventRef[] | undefined;
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         events = await listSharedThreadEventRefs(owner.actor, run.threadId);
         return events.some((event) => {
           return (
             event.eventType === "run.completed" && event.runId === run.runId
           );
         });
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
     if (!events) {
       throw new Error("Expected completed shared-thread fixture events");
     }
@@ -1117,7 +1126,7 @@ describe("shared thread routes", () => {
 
     mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
     const titlePrompts: string[] = [];
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("for this shared conversation")) {
         titlePrompts.push(body.messages[1]?.content ?? "");
@@ -1158,7 +1167,6 @@ describe("shared thread routes", () => {
     expect(publicSnapshot.body).toStrictEqual({
       id: first.id,
       title: "Private launch plan",
-      publicBrand: "okou",
       messages: [
         {
           messageIndex: 0,
@@ -1178,14 +1186,13 @@ describe("shared thread routes", () => {
     const metadata = await readSharedThreadMeta(first.id);
     expect(metadata.body).toStrictEqual({
       title: "Private launch plan",
-      publicBrand: "okou",
     });
     expect(metadata.headers.get("cache-control")).toBe(
       "public, max-age=31536000, s-maxage=31536000, immutable",
     );
 
     const secondSnapshot = await readSharedThreadSnapshot(second.id);
-    expect(secondSnapshot.body).toMatchObject({ publicBrand: "okou" });
+    expect(secondSnapshot.body).toMatchObject({ id: second.id });
 
     const catalog = await chat.listArtifactCatalog(owner.actor, {
       kind: "shared-thread",
@@ -1265,7 +1272,7 @@ describe("shared thread routes", () => {
     if (!promptEvent) {
       throw new Error("Expected an associated prompt event");
     }
-    chatCallbacks.mockOpenRouterCompletions(() => {
+    chatCallbacks.mockVertexCompletions(() => {
       return "Private launch plan";
     });
 

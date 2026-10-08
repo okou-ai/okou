@@ -1,18 +1,19 @@
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { agents } from "@okouai/db/schema/agent";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 import { and, eq } from "drizzle-orm";
 
-import type { Db } from "../external/db";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
-import {
-  loadNewChatThreadMediaModels,
-  type NewChatThreadMediaModels,
-} from "./chat-thread-media-model.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
-import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { writeDb$ } from "../external/db";
+import { command } from "ccstate";
+import { randomUUID } from "node:crypto";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import type { Tx } from "../../lib/db-types";
+import {
+  integrationChatThreadInsertFromRouteSql,
+  integrationChatThreadValues,
+  integrationThreadCreatedEventSql,
+  type IntegrationChatThreadCreation,
+} from "./integration-chat-thread-publication";
 
 interface TeamsChatThreadRouteKey {
   readonly connectionId: string;
@@ -26,288 +27,151 @@ interface TeamsChatThreadRouteBinding extends TeamsChatThreadRouteKey {
   readonly chatThreadId: string;
 }
 
-interface LoadedTeamsChatThreadRoute extends TeamsChatThreadRouteBinding {
-  readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly codexServiceTier: "fast" | null;
-  readonly computerUseHostId: string | null;
-}
-
-type TeamsChatThreadTransaction = Tx;
-
 function routeWhere(key: TeamsChatThreadRouteKey) {
   return and(
     eq(teamsChatThreadRoutes.connectionId, key.connectionId),
-    eq(teamsChatThreadRoutes.conversationId, key.conversationId),
+    key.threadId === INTEGRATION_DM_SESSION_KEY
+      ? undefined
+      : eq(teamsChatThreadRoutes.conversationId, key.conversationId),
     eq(teamsChatThreadRoutes.threadId, key.threadId),
     eq(teamsChatThreadRoutes.userId, key.userId),
   );
 }
 
-async function loadRoute(
-  db: Pick<Db, "select">,
+/** Read the chat thread a Teams conversation already routes to. */
+export const findTeamsRoutedChatThreadId$ = command(
+  async (
+    { set },
+    key: TeamsChatThreadRouteKey,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> => {
+    const db = set(writeDb$);
+    const [route] = await db
+      .select({ chatThreadId: teamsChatThreadRoutes.chatThreadId })
+      .from(teamsChatThreadRoutes)
+      .where(routeWhere(key))
+      .limit(1);
+    signal?.throwIfAborted();
+    return route?.chatThreadId;
+  },
+);
+
+const ROUTE_COLUMNS = {
+  id: teamsChatThreadRoutes.id,
+  connectionId: teamsChatThreadRoutes.connectionId,
+  conversationId: teamsChatThreadRoutes.conversationId,
+  threadId: teamsChatThreadRoutes.threadId,
+  userId: teamsChatThreadRoutes.userId,
+  chatThreadId: teamsChatThreadRoutes.chatThreadId,
+} as const;
+
+async function loadTeamsChatThreadRoute(
+  tx: Tx,
   key: TeamsChatThreadRouteKey,
-): Promise<LoadedTeamsChatThreadRoute | undefined> {
-  const [route] = await db
-    .select({
-      id: teamsChatThreadRoutes.id,
-      connectionId: teamsChatThreadRoutes.connectionId,
-      conversationId: teamsChatThreadRoutes.conversationId,
-      threadId: teamsChatThreadRoutes.threadId,
-      userId: teamsChatThreadRoutes.userId,
-      chatThreadId: teamsChatThreadRoutes.chatThreadId,
-      agentId: agents.id,
-      selectedModel: chatThreads.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
-      computerUseHostId: chatThreads.computerUseHostId,
-    })
+): Promise<TeamsChatThreadRouteBinding | undefined> {
+  const [route] = await tx
+    .select(ROUTE_COLUMNS)
     .from(teamsChatThreadRoutes)
     .innerJoin(
       chatThreads,
       eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
     )
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(routeWhere(key))
-    .limit(1)
-    .for("update");
+    .limit(1);
   return route;
 }
 
-interface CreatedTeamsChatThread {
-  readonly id: string;
-  readonly createdAt: Date;
-  readonly mediaModels: NewChatThreadMediaModels;
-  readonly modelSettings: ModelSettings;
-}
-
-async function createCanonicalTeamsChatThread(
-  tx: TeamsChatThreadTransaction,
-  args: TeamsChatThreadRouteKey & {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
-    readonly currentTime: Date;
-  },
-  computerUseHostId: string | null = null,
-): Promise<CreatedTeamsChatThread> {
-  const mediaModels = await loadNewChatThreadMediaModels(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  const modelSettings = await loadNewChatThreadModelSettings(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  const [thread] = await tx
-    .insert(chatThreads)
-    .values({
-      userId: args.userId,
-      agentId: args.agentId,
-      computerUseHostId,
-      cloudBrowserEnabled: false,
-      selectedModel: args.selectedModel,
-      modelSettings,
-      codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
-      title: null,
-      lastReadAt: args.currentTime,
-      lastMessageAt: args.currentTime,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-      selectedVideoModel: mediaModels.selectedVideoModel,
-      selectedImageModel: mediaModels.selectedImageModel,
-    })
-    .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
-  if (!thread) {
-    throw new Error("Failed to create canonical Teams chat thread");
-  }
-  return { ...thread, mediaModels, modelSettings };
-}
-
-async function appendCanonicalTeamsChatThreadCreatedEvent(
-  tx: TeamsChatThreadTransaction,
-  args: TeamsChatThreadRouteKey & {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
-  },
-  thread: CreatedTeamsChatThread,
-  computerUseHostId: string | null | undefined,
-): Promise<void> {
-  await appendChatThreadEvent(tx, {
-    kind: "created",
-    userId: args.userId,
-    orgId: args.orgId,
-    chatThreadId: thread.id,
-    agentId: args.agentId,
-    title: null,
-    selectedModel: args.selectedModel,
-    modelSettings: thread.modelSettings,
-    serviceTier: args.serviceTier,
-    computerUseHostId,
-    ...thread.mediaModels,
-    createdAt: thread.createdAt,
-  });
-}
-
-async function reconcileExistingRoute(
-  tx: TeamsChatThreadTransaction,
-  args: TeamsChatThreadRouteKey & {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
-    readonly currentTime: Date;
-  },
-  existing: LoadedTeamsChatThreadRoute,
+/** A DM route follows the latest destination through one conditional update. */
+async function adoptTeamsChatThreadRoute(
+  tx: Tx,
+  existing: TeamsChatThreadRouteBinding,
+  key: TeamsChatThreadRouteKey,
 ): Promise<TeamsChatThreadRouteBinding> {
-  if (existing.agentId !== args.agentId) {
-    const thread = await createCanonicalTeamsChatThread(
-      tx,
-      args,
-      existing.computerUseHostId,
-    );
-    const [route] = await tx
-      .update(teamsChatThreadRoutes)
-      .set({ chatThreadId: thread.id })
-      .where(
-        and(
-          eq(teamsChatThreadRoutes.id, existing.id),
-          eq(teamsChatThreadRoutes.chatThreadId, existing.chatThreadId),
-        ),
-      )
-      .returning({
-        id: teamsChatThreadRoutes.id,
-        connectionId: teamsChatThreadRoutes.connectionId,
-        conversationId: teamsChatThreadRoutes.conversationId,
-        threadId: teamsChatThreadRoutes.threadId,
-        userId: teamsChatThreadRoutes.userId,
-        chatThreadId: teamsChatThreadRoutes.chatThreadId,
-      });
-    if (!route) {
-      throw new Error("Failed to rebind Teams chat thread route");
-    }
-    await appendCanonicalTeamsChatThreadCreatedEvent(
-      tx,
-      args,
-      thread,
-      existing.computerUseHostId,
-    );
-    return route;
+  if (
+    key.threadId !== INTEGRATION_DM_SESSION_KEY ||
+    existing.conversationId === key.conversationId
+  ) {
+    return existing;
   }
-
-  const selectedModelChanged = existing.selectedModel !== args.selectedModel;
-  const codexServiceTier = args.serviceTier === "priority" ? "fast" : null;
-  const serviceTierChanged = existing.codexServiceTier !== codexServiceTier;
-  if (selectedModelChanged || serviceTierChanged) {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        ...(selectedModelChanged
-          ? {
-              modelProviderId: null,
-              modelProviderType: null,
-              modelProviderCredentialScope: null,
-              selectedModel: args.selectedModel,
-            }
-          : {}),
-        codexServiceTier,
-        updatedAt: args.currentTime,
-      })
-      .where(eq(chatThreads.id, existing.chatThreadId))
-      .returning({ id: chatThreads.id });
-    if (!thread) {
-      throw new Error("Failed to update canonical Teams chat thread model");
-    }
-    if (selectedModelChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "model_selection_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        selectedModel: args.selectedModel,
-        createdAt: args.currentTime,
-      });
-    }
-    if (serviceTierChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "service_tier_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        serviceTier: args.serviceTier,
-        createdAt: args.currentTime,
-      });
-    }
+  const [updated] = await tx
+    .update(teamsChatThreadRoutes)
+    .set({ conversationId: key.conversationId })
+    .where(and(eq(teamsChatThreadRoutes.id, existing.id), routeWhere(key)))
+    .returning({ conversationId: teamsChatThreadRoutes.conversationId });
+  if (!updated) {
+    throw new Error("Failed to update Teams DM route destination");
   }
-  return existing;
+  return { ...existing, ...updated };
 }
 
-export async function ensureTeamsChatThreadRoute(
-  db: Db,
-  args: TeamsChatThreadRouteKey & {
-    readonly isDirectMessage: boolean;
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
-    readonly currentTime: Date;
-  },
-): Promise<TeamsChatThreadRouteBinding> {
-  return await db.transaction(async (tx) => {
-    const existing = await loadRoute(tx, args);
-    if (existing) {
-      return args.isDirectMessage
-        ? existing
-        : await reconcileExistingRoute(tx, args, existing);
-    }
-
-    const thread = await createCanonicalTeamsChatThread(tx, args);
-
-    const [route] = await tx
-      .insert(teamsChatThreadRoutes)
-      .values({
-        connectionId: args.connectionId,
-        conversationId: args.conversationId,
-        threadId: args.threadId,
-        userId: args.userId,
-        chatThreadId: thread.id,
-        createdAt: args.currentTime,
-      })
-      .onConflictDoNothing({
-        target: [
-          teamsChatThreadRoutes.connectionId,
-          teamsChatThreadRoutes.conversationId,
-          teamsChatThreadRoutes.threadId,
-          teamsChatThreadRoutes.userId,
-        ],
-      })
-      .returning({
-        id: teamsChatThreadRoutes.id,
-        connectionId: teamsChatThreadRoutes.connectionId,
-        conversationId: teamsChatThreadRoutes.conversationId,
-        threadId: teamsChatThreadRoutes.threadId,
-        userId: teamsChatThreadRoutes.userId,
-        chatThreadId: teamsChatThreadRoutes.chatThreadId,
-      });
-
-    if (!route) {
-      await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-      const conflicted = await loadRoute(tx, args);
-      if (!conflicted) {
+/**
+ * The unique route and its new thread/event commit in this command alone.
+ * One `INSERT … ON CONFLICT DO NOTHING` decides a concurrent create; the loser
+ * reads the committed winner once. The thread row is inserted by the same
+ * statement only when the route insert wins.
+ */
+export const ensureTeamsChatThreadRoute$ = command(
+  async (
+    { set },
+    args: TeamsChatThreadRouteKey & IntegrationChatThreadCreation,
+    signal: AbortSignal,
+  ): Promise<TeamsChatThreadRouteBinding> => {
+    const defaults = await set(
+      loadNewChatThreadDefaults$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
+    const candidateId = randomUUID();
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      const existing = await loadTeamsChatThreadRoute(tx, args);
+      if (existing) {
+        return await adoptTeamsChatThreadRoute(tx, existing, args);
+      }
+      const thread = integrationChatThreadValues(args, candidateId, defaults);
+      const insertedRoute = tx.$with("inserted_teams_route").as(
+        tx
+          .insert(teamsChatThreadRoutes)
+          .values({
+            connectionId: args.connectionId,
+            conversationId: args.conversationId,
+            threadId: args.threadId,
+            userId: args.userId,
+            chatThreadId: thread.id,
+            createdAt: args.currentTime,
+          })
+          .onConflictDoNothing({
+            target: [
+              teamsChatThreadRoutes.connectionId,
+              teamsChatThreadRoutes.conversationId,
+              teamsChatThreadRoutes.threadId,
+              teamsChatThreadRoutes.userId,
+            ],
+          })
+          .returning(ROUTE_COLUMNS),
+      );
+      const insertedThread = tx
+        .$with("inserted_teams_thread", {})
+        .as(integrationChatThreadInsertFromRouteSql(thread, insertedRoute));
+      const [route] = await tx
+        .with(insertedRoute, insertedThread)
+        .select()
+        .from(insertedRoute);
+      if (route) {
+        await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
+        signal.throwIfAborted();
+        return route;
+      }
+      // ON CONFLICT waited for the winner's commit; read it once.
+      const winner = await loadTeamsChatThreadRoute(tx, args);
+      if (!winner) {
         throw new Error(
           "Failed to resolve Teams chat thread route after conflict",
         );
       }
-      return args.isDirectMessage
-        ? conflicted
-        : await reconcileExistingRoute(tx, args, conflicted);
-    }
-
-    await appendCanonicalTeamsChatThreadCreatedEvent(tx, args, thread, null);
-    return route;
-  });
-}
+      return await adoptTeamsChatThreadRoute(tx, winner, args);
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);

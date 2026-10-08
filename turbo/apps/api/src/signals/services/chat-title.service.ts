@@ -1,4 +1,3 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
 import {
   chatEventCompatibilityRole,
@@ -9,72 +8,58 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   and,
   desc,
   eq,
-  exists,
-  inArray,
   isNotNull,
   isNull,
   not,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { stripMarkdown } from "../../lib/strip-markdown";
-import { waitUntil } from "../context/wait-until";
+import { command } from "ccstate";
+import { gcpLlmConfiguration } from "../external/gcp-llm-auth";
 import {
-  AUXILIARY_TEXT_MAX_TOKENS,
-  FAST_PATH_MODEL,
-  generateTextWithUsage,
-  isLlmConfigured,
-  openRouterTokenCounts,
-} from "../external/openrouter";
+  VERTEX_TEXT_MODEL,
+  VERTEX_FOLLOWUP_MODEL,
+  type VertexModel,
+} from "../external/vertex-models";
+import {
+  VERTEX_AUXILIARY_MAX_TOKENS,
+  generateVertexTextWithUsage,
+} from "../external/vertex-text";
 import { publishThreadListChanged } from "../external/realtime";
-import type { Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { safeJsonParse, settle, tapError } from "../utils";
+import { safeJsonParse, tapError } from "../utils";
 import {
   generateAuxiliary,
   type RecordAuxiliaryGenerationDetail,
 } from "./auxiliary-generation.service";
 import { chatEventTextCondition } from "./chat-event-type.service";
-import { visibleChatEventCondition } from "./chat-event-shared.service";
+import { visibleChatEventPredicate } from "./chat-event-shared.service";
 import {
   RECOMMENDED_FOLLOWUP_LIMIT,
   normalizeRecommendedFollowups,
 } from "./chat-recommended-followups.service";
-import {
-  ChatThreadContentOwnershipChangedError,
-  withChatThreadContentAdmission,
-  withChatThreadContentWrite,
-  type ChatThreadContentIdentity,
-} from "./chat-thread-content-erasure-admission.service";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { queuedUserMessageExists } from "./chat-queued-event.service";
+import { unfinishedActiveChatRunExists } from "./chat-run-state-read.service";
 import {
   projectUserMessage,
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
 import {
-  canonicalChatEventVisibleContent,
+  canonicalChatEventContent,
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
 
 const log = logger("api:chat-title");
-/**
- * The eager title runs as `waitUntil` background work whose HTTP response has
- * already been delivered, so the request's own signal is not a lifetime for it:
- * passing that signal would cancel a legitimate late completion the moment the
- * client disconnects. Each fenced transaction instead carries its own real
- * deadline, sized as an outer bound on the admission helper's own budget — at
- * most three attempts, each statement capped at its `5s` statement timeout and
- * each lock wait at its `1s` lock timeout. It is a bound on this background
- * work, not a cancellation channel, and it never fences the provider itself.
- */
-const TITLE_FENCE_DEADLINE_MS = 30_000;
-const TITLE_MODEL = "google/gemini-3.1-flash-lite";
+const TITLE_MODEL = VERTEX_TEXT_MODEL;
 const TITLE_CONTEXT_CHAR_CAP = 150;
 const TITLE_PRIOR_MESSAGE_CAP = 10;
 const FOLLOWUP_CONTEXT_CHAR_CAP = 700;
@@ -126,10 +111,9 @@ const RECOMMENDED_FOLLOWUP_SYSTEM_PROMPT = [
   '- Use kind "generate" only when the suggestion naturally asks for one of the supported built-in generation outputs.',
   "- Supported generation types are:",
   "  - image: create or edit images and visual assets.",
-  "  - video: create short generated videos.",
   "  - presentation: create slide decks or presentation documents.",
   "  - website: create hosted websites or web pages.",
-  '- For kind "generate", include generationType as one of: image, video, presentation, website.',
+  '- For kind "generate", include generationType as one of: image, presentation, website.',
   "- Never add a generation suggestion merely for variety.",
   "",
   "Output rules:",
@@ -164,27 +148,10 @@ interface ChatCompletionContextRow {
   readonly userMessage: ChatEventUserMessage | null;
 }
 
-type SelectDb = Pick<Db, "select">;
-
-function completedConversationContextMessageCondition(db: SelectDb) {
+function completedConversationContextMessageCondition() {
   return and(
-    not(queuedUserMessageExists(db)),
-    not(
-      and(
-        isNotNull(chatEvents.runId),
-        exists(
-          db
-            .select({ one: agentRuns.id })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.id, chatEvents.runId),
-                inArray(agentRuns.status, ["queued", "pending", "running"]),
-              ),
-            ),
-        ),
-      ) as SQL,
-    ),
+    not(queuedUserMessageExists()),
+    not(unfinishedActiveChatRunExists({ runId: chatEvents.runId })),
   ) as SQL;
 }
 
@@ -208,9 +175,9 @@ function chatCompletionContextMessage(
 }
 
 async function generateFastPathText(
-  model: typeof TITLE_MODEL | typeof FAST_PATH_MODEL,
+  model: VertexModel,
   messages: readonly ChatMessageForGeneration[],
-  maxTokens = AUXILIARY_TEXT_MAX_TOKENS,
+  maxTokens = VERTEX_AUXILIARY_MAX_TOKENS,
   options?: {
     readonly stripMarkdown?: boolean;
     readonly acceptTruncatedText?: boolean;
@@ -218,12 +185,11 @@ async function generateFastPathText(
   },
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const generation = await generateTextWithUsage(
+  const generation = await generateVertexTextWithUsage(
     model,
     messages,
     maxTokens,
     {
-      reasoning: { effort: model === TITLE_MODEL ? "minimal" : "low" },
       temperature: 0.3,
       ...(options?.acceptTruncatedText === true
         ? { acceptTruncatedText: true }
@@ -236,7 +202,7 @@ async function generateFastPathText(
   }
   options?.record?.({
     truncated: generation.truncated === true,
-    tokens: openRouterTokenCounts(generation.usage),
+    tokens: generation.tokens,
   });
   return options?.stripMarkdown === false
     ? generation.text
@@ -246,6 +212,7 @@ async function generateFastPathText(
 function generateChatTitle(
   input: ChatTitleInput,
   record: RecordAuxiliaryGenerationDetail,
+  signal: AbortSignal,
 ): Promise<string | null> {
   const sections: string[] = [];
 
@@ -280,8 +247,9 @@ function generateChatTitle(
         content: sections.join("\n\n"),
       },
     ],
-    AUXILIARY_TEXT_MAX_TOKENS,
+    VERTEX_AUXILIARY_MAX_TOKENS,
     { record },
+    signal,
   );
 }
 
@@ -315,7 +283,7 @@ export async function generateSharedThreadTitle(
               content: conversation,
             },
           ],
-          AUXILIARY_TEXT_MAX_TOKENS,
+          VERTEX_AUXILIARY_MAX_TOKENS,
           { record },
           signal,
         );
@@ -330,334 +298,165 @@ export async function generateSharedThreadTitle(
   return title || "Shared conversation";
 }
 
-async function getLatestTitleContextMessages(
-  db: SelectDb,
-  threadId: string,
-): Promise<ChatCompletionContextMessage[]> {
-  const rows = await db
-    .select({
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventVisibleContent(),
-      userMessage: canonicalChatEventUserMessage(),
-      createdAt: chatEvents.createdAt,
-      sequenceNumber: chatEvents.runEventSequenceNumber,
-    })
-    .from(chatEvents)
-    .leftJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, threadId),
-        chatEventTextCondition(),
-        visibleChatEventCondition(db),
-        completedConversationContextMessageCondition(db),
-      ),
-    )
-    .orderBy(desc(chatEvents.seqId))
-    .limit(TITLE_PRIOR_MESSAGE_CAP);
+const loadTitleContext$ = command(
+  async (
+    { get },
+    threadId: string,
+    signal: AbortSignal,
+  ): Promise<ChatCompletionContextMessage[]> => {
+    const rows = await get(db$)
+      .select({
+        eventType: chatEvents.eventType,
+        content: canonicalChatEventContent(),
+        userMessage: canonicalChatEventUserMessage(),
+        createdAt: chatEvents.createdAt,
+        sequenceNumber: chatEvents.runEventSequenceNumber,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, threadId),
+          chatEventTextCondition(),
+          visibleChatEventPredicate(),
+          completedConversationContextMessageCondition(),
+        ),
+      )
+      .orderBy(desc(chatEvents.seqId))
+      .limit(TITLE_PRIOR_MESSAGE_CAP);
 
-  return rows.reverse().flatMap((row) => {
-    return chatCompletionContextMessage(row);
-  });
-}
+    signal.throwIfAborted();
+    return rows.reverse().flatMap((row) => {
+      return chatCompletionContextMessage(row);
+    });
+  },
+);
 
-/**
- * The content-free canonical identity this one title operation is bound to,
- * frozen before any prior-round content is read and before the provider request
- * is sent. It exists because the generated title is prepared for the account
- * that owned the thread at initiation: reading ownership again only after the
- * provider answers would re-attribute that prepared content to whoever survives
- * the change. The pin is transient and never reaches a provider prompt, a
- * public contract, telemetry or a persisted copy.
- */
-interface ChatTitleOwnershipPin {
-  readonly chatThreadId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly agentOwner: string;
-  readonly orgId: string;
-}
-
-/**
- * The generated-title writer requires a resolved Agent, unlike the legal
- * null-Agent draft thread. `agents.org_id` and `agents.owner` are `NOT NULL`,
- * so a resolved Agent always carries both; they are nullable here only because
- * the identity resolution left-joins a nullable parent reference. A thread
- * whose Agent does not resolve therefore has no complete pin and no generated
- * title, which is the existing `agent_id IS NOT NULL` omission.
- */
-function chatTitleOwnershipPin(
-  identity: ChatThreadContentIdentity,
-): ChatTitleOwnershipPin | null {
-  if (
-    identity.agentId === null ||
-    identity.agentOwner === null ||
-    identity.orgId === null
-  ) {
-    return null;
-  }
-  return {
-    chatThreadId: identity.chatThreadId,
-    userId: identity.userId,
-    agentId: identity.agentId,
-    agentOwner: identity.agentOwner,
-    orgId: identity.orgId,
-  };
-}
-
-/**
- * Compares the whole frozen pin, not just user and organization. An Agent owner
- * transfer inside the same organization moves `agentOwner` alone, so a check
- * that stopped at user and organization would hand a title generated for the
- * previous owner to the survivor.
- */
-function matchesChatTitleOwnershipPin(
-  identity: ChatThreadContentIdentity,
-  pin: ChatTitleOwnershipPin,
-): boolean {
-  return (
-    identity.chatThreadId === pin.chatThreadId &&
-    identity.userId === pin.userId &&
-    identity.agentId === pin.agentId &&
-    identity.agentOwner === pin.agentOwner &&
-    identity.orgId === pin.orgId
-  );
-}
-
-/**
- * An optional generation whose canonical parents kept moving is a discarded
- * result for this workflow, exactly like a closed subject or a deleted thread:
- * the send that started it already succeeded and no title is owed. Every other
- * failure — a lock wait, a statement timeout, a rolled back transaction — stays
- * a failure and reaches the workflow's existing handler.
- */
-async function discardOnOwnershipChange<T>(
-  work: Promise<T>,
-): Promise<T | null> {
-  const result = await settle(work);
-  if (result.ok) {
-    return result.value;
-  }
-  if (result.error instanceof ChatThreadContentOwnershipChangedError) {
-    return null;
-  }
-  throw result.error;
-}
-
-interface ChatTitleGenerationCapture {
-  readonly pin: ChatTitleOwnershipPin;
-  readonly priorRounds: readonly ChatCompletionContextMessage[];
-}
-
-/**
- * The local initiation boundary. One bounded admitted transaction resolves the
- * real persisted parents, compares the scheduling caller's user and
- * organization against them, admits the subjects they represent through B1 and
- * only then reads this thread's title eligibility and its bounded prior-round
- * context. A subject already known closed therefore never starts another title
- * generation, and the content-free identity is fixed before any account content
- * is read. The transaction commits before the provider await below: no database
- * transaction is ever held across that request.
- *
- * It takes no business lock, because this workflow is scheduled from inside the
- * request that holds the chat queue's own `FOR UPDATE` on this thread. A gate
- * that took `chat_threads` KEY SHARE would contend with that request and delay
- * every eager title behind a bounded lock wait, which is long enough for the
- * next scheduler to observe the thread still untitled and start a second,
- * wasted generation.
- *
- * So this gate carries no authority and the pin it returns is a candidate, not
- * a permission: ownership can move the moment it commits. Every guarantee is
- * re-established at completion, where the whole pin is compared again under
- * retained locks. This is a local initiation boundary only — not
- * external-provider fencing, and no proof of provider-side deletion.
- */
-async function captureChatThreadTitleGeneration(args: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly includePriorRounds: boolean;
-}): Promise<ChatTitleGenerationCapture | null> {
-  const captured = await discardOnOwnershipChange(
-    withChatThreadContentAdmission(
-      args.db,
-      {
-        chatThreadId: args.threadId,
-        authorize: (identity) => {
-          return (
-            identity.userId === args.userId &&
-            identity.orgId === args.orgId &&
-            identity.agentId !== null
-          );
-        },
-      },
-      async (tx, identity) => {
-        const pin = chatTitleOwnershipPin(identity);
-        if (pin === null || !(await shouldGenerateChatThreadTitle(tx, pin))) {
-          return null;
-        }
-        return {
-          pin,
-          priorRounds: args.includePriorRounds
-            ? await getLatestTitleContextMessages(tx, pin.chatThreadId)
-            : [],
-        };
-      },
-      AbortSignal.timeout(TITLE_FENCE_DEADLINE_MS),
-    ),
-  );
-  return captured?.outcome === "written" ? captured.value : null;
-}
-
-/**
- * The late persistence transaction. It starts fresh: a new bounded
- * `READ COMMITTED` transaction resolves the current canonical identity,
- * rejects anything that no longer equals the original pin, admits the subjects
- * that matching identity represents, takes the Agent and thread identity locks
- * and revalidates under them — all before the title `UPDATE`, the durable
- * sidebar sequence and the `renamed` event, which stay in that one transaction.
- *
- * `authorize` compares the entire frozen pin, so a retry can only ever re-admit
- * the identity this title was generated for. A canonical parent that moved is
- * simply no longer authorized on the next attempt and the title is discarded;
- * the pin itself never rebinds to the survivor.
- */
-async function persistGeneratedChatThreadTitle(
-  db: Db,
-  pin: ChatTitleOwnershipPin,
-  title: string,
-): Promise<void> {
-  const persisted = await discardOnOwnershipChange(
-    withChatThreadContentWrite(
-      db,
-      {
-        chatThreadId: pin.chatThreadId,
-        authorize: (identity) => {
-          return matchesChatTitleOwnershipPin(identity, pin);
-        },
-      },
-      async (tx) => {
-        const [thread] = await tx
-          .update(chatThreads)
-          .set({ title, updatedAt: nowDate() })
-          .where(
-            and(
-              eq(chatThreads.id, pin.chatThreadId),
-              isNull(chatThreads.title),
-              isNull(chatThreads.renamedAt),
-              isNotNull(chatThreads.agentId),
-            ),
-          )
-          .returning({
-            id: chatThreads.id,
-            agentId: chatThreads.agentId,
-          });
-        if (!thread?.agentId) {
-          return false;
-        }
-        // The sidebar labels come from the admitted identity: `authorize`
-        // proved the resolved parents equal this pin field by field and the
-        // helper revalidated that same identity under the retained locks, so
-        // the pin is the admitted identity rather than a stale caller label.
-        await appendChatThreadEvent(tx, {
-          kind: "renamed",
-          userId: pin.userId,
-          orgId: pin.orgId,
-          chatThreadId: thread.id,
-          agentId: thread.agentId,
-          title,
-        });
-        return true;
-      },
-      AbortSignal.timeout(TITLE_FENCE_DEADLINE_MS),
-    ),
-  );
-
-  // Only a committed title invalidates a sidebar, and only for the identity
-  // that was admitted for it. A closed, missing, moved or no-longer-eligible
-  // thread publishes nothing.
-  if (persisted?.outcome === "written" && persisted.value) {
-    await publishThreadListChanged({ userId: pin.userId, orgId: pin.orgId });
-  }
-}
-
-async function shouldGenerateChatThreadTitle(
-  db: SelectDb,
-  pin: ChatTitleOwnershipPin,
-): Promise<boolean> {
-  const [thread] = await db
-    .select({ title: chatThreads.title, renamedAt: chatThreads.renamedAt })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, pin.chatThreadId))
-    .limit(1);
-
-  return Boolean(thread && thread.title === null && thread.renamedAt === null);
-}
-
-async function generateAndPersistChatThreadTitle(args: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly prompt: string;
-  readonly includePriorRounds: boolean;
-}): Promise<void> {
-  await tapError(
-    (async () => {
-      const captured = await captureChatThreadTitleGeneration(args);
-      if (!captured) {
-        return;
-      }
-
-      const { pin, priorRounds } = captured;
-      const title = await generateAuxiliary({
-        feature: "chat_title",
-        generate: (record) => {
-          return generateChatTitle(
-            {
-              currentUserMessage: args.prompt,
-              priorRounds: priorRounds.length > 0 ? priorRounds : undefined,
-            },
-            record,
-          );
-        },
-        usable: (value) => {
-          return Boolean(value);
-        },
-        diagnosticContext: { threadId: args.threadId },
-      });
-      if (title) {
-        await persistGeneratedChatThreadTitle(args.db, pin, title);
-      }
-    })(),
-    (err) => {
-      log.warn("Chat title persistence failed", {
-        threadId: args.threadId,
-        err,
-      });
+const persistChatThreadTitle$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly title: string;
     },
-  );
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { threadId, userId, orgId, title } = args;
+    const db = set(writeDb$);
+    const update = db
+      .update(chatThreads)
+      .set({ title, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, userId),
+          isNull(chatThreads.title),
+          isNull(chatThreads.renamedAt),
+          isNotNull(chatThreads.agentId),
+        ),
+      )
+      .returning({ agentId: chatThreads.agentId });
+    // Reserve a list sequence only if this statement won the conditional title
+    // write. A member rename or concurrent generator leaves no extra event.
+    const { rowCount } = await db.execute(
+      chatThreadEventInsertSql(
+        { kind: "renamed", userId, orgId, chatThreadId: threadId, title },
+        {
+          cte: sql`updated AS (${update.getSQL()})`,
+          gate: sql`EXISTS (SELECT 1 FROM updated)`,
+          agentId: sql`(SELECT agent_id FROM updated)`,
+        },
+      ),
+    );
 
-/**
- * Fire-and-forget eager title generation, shared by the inline web send route
- * and the queue drain. Every chat-thread-bound run passes through one of the
- * two, so the trigger source no longer decides whether a thread is titled
- * before its run finishes.
- */
-export function scheduleChatThreadTitleGeneration(args: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly prompt: string;
-  readonly includePriorRounds: boolean;
-}): void {
-  if (!isLlmConfigured() || args.prompt.trim().length === 0) {
-    return;
-  }
-  waitUntil(generateAndPersistChatThreadTitle(args));
-}
+    signal.throwIfAborted();
+    if (rowCount === 0) {
+      return;
+    }
+
+    await publishThreadListChanged({ userId, orgId });
+    signal.throwIfAborted();
+  },
+);
+
+const shouldGenerateChatThreadTitle$ = command(
+  async ({ get }, threadId: string, signal: AbortSignal): Promise<boolean> => {
+    const [thread] = await get(db$)
+      .select({ title: chatThreads.title, renamedAt: chatThreads.renamedAt })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, threadId))
+      .limit(1);
+
+    signal.throwIfAborted();
+    return Boolean(
+      thread && thread.title === null && thread.renamedAt === null,
+    );
+  },
+);
+
+/** The ingress owns background scheduling; this action owns title persistence. */
+export const generateAndPersistChatThreadTitle$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly prompt: string;
+      readonly includePriorRounds: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!gcpLlmConfiguration() || args.prompt.trim().length === 0) {
+      return;
+    }
+    await tapError(
+      (async () => {
+        if (
+          !(await set(shouldGenerateChatThreadTitle$, args.threadId, signal))
+        ) {
+          return;
+        }
+
+        const priorRounds = args.includePriorRounds
+          ? await set(loadTitleContext$, args.threadId, signal)
+          : [];
+        const title = await generateAuxiliary(
+          {
+            feature: "chat_title",
+            generate: (record) => {
+              return generateChatTitle(
+                {
+                  currentUserMessage: args.prompt,
+                  priorRounds: priorRounds.length > 0 ? priorRounds : undefined,
+                },
+                record,
+                signal,
+              );
+            },
+            usable: (value) => {
+              return Boolean(value);
+            },
+            diagnosticContext: { threadId: args.threadId },
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+        if (title) {
+          await set(persistChatThreadTitle$, { ...args, title }, signal);
+        }
+      })(),
+      (err) => {
+        log.warn("Chat title persistence failed", {
+          threadId: args.threadId,
+          err,
+        });
+      },
+    );
+    signal.throwIfAborted();
+  },
+);
 
 export async function generateChatNotificationSummary(
   args: {
@@ -683,7 +482,7 @@ export async function generateChatNotificationSummary(
           // A shortened notification sentence still tells the user their task
           // finished; the alternative is a notification with no summary at all.
           return generateFastPathText(
-            FAST_PATH_MODEL,
+            VERTEX_TEXT_MODEL,
             [
               {
                 role: "system",
@@ -695,7 +494,7 @@ export async function generateChatNotificationSummary(
                 content: `User request:\n${args.prompt.slice(0, TITLE_CONTEXT_CHAR_CAP)}\n\nAssistant reply:\n${args.resultText.slice(0, TITLE_CONTEXT_CHAR_CAP)}`,
               },
             ],
-            AUXILIARY_TEXT_MAX_TOKENS,
+            VERTEX_AUXILIARY_MAX_TOKENS,
             { acceptTruncatedText: true, record },
             signal,
           );
@@ -716,34 +515,41 @@ function parseRecommendedFollowups(text: string): ChatRecommendedFollowup[] {
   return normalizeRecommendedFollowups(safeJsonParse(unfenced));
 }
 
-async function getLatestFollowupContextMessages(
-  db: SelectDb,
-  threadId: string,
-): Promise<ChatCompletionContextMessage[]> {
-  const rows = await db
-    .select({
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventVisibleContent(),
-      userMessage: canonicalChatEventUserMessage(),
-      createdAt: chatEvents.createdAt,
-      sequenceNumber: chatEvents.runEventSequenceNumber,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, threadId),
-        chatEventTextCondition(),
-        visibleChatEventCondition(db),
-        completedConversationContextMessageCondition(db),
-      ),
-    )
-    .orderBy(desc(chatEvents.seqId))
-    .limit(FOLLOWUP_CONTEXT_MESSAGE_CAP);
+export const loadChatThreadRecommendedFollowupContext$ = command(
+  async (
+    { get },
+    args: {
+      readonly threadId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ChatCompletionContextMessage[]> => {
+    const { threadId } = args;
+    const rows = await get(db$)
+      .select({
+        eventType: chatEvents.eventType,
+        content: canonicalChatEventContent(),
+        userMessage: canonicalChatEventUserMessage(),
+        createdAt: chatEvents.createdAt,
+        sequenceNumber: chatEvents.runEventSequenceNumber,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, threadId),
+          chatEventTextCondition(),
+          visibleChatEventPredicate(),
+          completedConversationContextMessageCondition(),
+        ),
+      )
+      .orderBy(desc(chatEvents.seqId))
+      .limit(FOLLOWUP_CONTEXT_MESSAGE_CAP);
 
-  return rows.reverse().flatMap((row) => {
-    return chatCompletionContextMessage(row);
-  });
-}
+    signal.throwIfAborted();
+    return rows.reverse().flatMap((row) => {
+      return chatCompletionContextMessage(row);
+    });
+  },
+);
 
 async function generateRecommendedFollowups(
   messages: readonly ChatCompletionContextMessage[],
@@ -759,7 +565,7 @@ async function generateRecommendedFollowups(
   // The output must parse as JSON, so a truncated array is unusable by
   // construction and stays rejected.
   const text = await generateFastPathText(
-    FAST_PATH_MODEL,
+    VERTEX_FOLLOWUP_MODEL,
     [
       {
         role: "system",
@@ -770,19 +576,12 @@ async function generateRecommendedFollowups(
         content: `Recent conversation:\n${context}`,
       },
     ],
-    AUXILIARY_TEXT_MAX_TOKENS,
+    VERTEX_AUXILIARY_MAX_TOKENS,
     { stripMarkdown: false, record },
     signal,
   );
 
   return text === null ? [] : parseRecommendedFollowups(text);
-}
-
-export async function loadChatThreadRecommendedFollowupContext(args: {
-  readonly db: SelectDb;
-  readonly threadId: string;
-}): Promise<ChatCompletionContextMessage[]> {
-  return await getLatestFollowupContextMessages(args.db, args.threadId);
 }
 
 export async function generateChatThreadRecommendedFollowupsFromContext(

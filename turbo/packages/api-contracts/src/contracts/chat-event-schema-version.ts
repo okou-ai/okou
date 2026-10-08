@@ -3,9 +3,7 @@
  * this one schema version. Snapshot storage records the version it contains;
  * live PostgreSQL rows are always represented in the API's current version.
  */
-export const CURRENT_CHAT_EVENT_SCHEMA_VERSION = 7 as const;
-
-export const CHAT_EVENT_SCHEMA_VERSION_HEADER = "X-Chat-Event-Schema-Version";
+export const CURRENT_CHAT_EVENT_SCHEMA_VERSION = 8 as const;
 
 export type ChatEventCursor =
   | { readonly lastEventId: null; readonly lastSeqId: 0 }

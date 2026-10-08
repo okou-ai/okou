@@ -45,9 +45,9 @@ describe("okou teams message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--conversation-id",
+      "--to",
       "19:thread@thread.tacv2",
-      "--activity-id",
+      "--reply-to",
       "root-activity",
       "--text",
       "hello Teams",
@@ -59,8 +59,37 @@ describe("okou teams message send command", () => {
       text: "hello Teams",
     });
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("Message sent");
-    expect(logCalls).toContain("activity_id: teams-activity-1");
+    expect(logCalls).toContain("Message sent (id: teams-activity-1)");
+    expect(logCalls).toContain("chat: 19:thread@thread.tacv2");
+  });
+
+  it("prints the message envelope with --json", async () => {
+    server.use(
+      http.post(TEAMS_MESSAGE_URL, () => {
+        return HttpResponse.json({
+          ok: true,
+          activityId: "teams-activity-1",
+          conversationId: "a:dm-conversation",
+        });
+      }),
+    );
+
+    await sendCommand.parseAsync([
+      "node",
+      "cli",
+      "--to",
+      "me",
+      "--text",
+      "hello",
+      "--json",
+    ]);
+
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(stdout)).toStrictEqual({
+      integration: "teams",
+      chatId: "a:dm-conversation",
+      messages: [{ id: "teams-activity-1", url: null }],
+    });
   });
 
   it("sends a DM with an Adaptive Card", async () => {
@@ -80,11 +109,11 @@ describe("okou teams message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--user",
+      "--to",
       "me",
       "--text",
       "Pick a workflow",
-      "--card",
+      "--rich",
       '{"type":"AdaptiveCard","version":"1.4","body":[{"type":"TextBlock","text":"Pick a workflow","wrap":true}]}',
     ]);
 
@@ -105,7 +134,7 @@ describe("okou teams message send command", () => {
     });
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
     expect(logCalls).toContain("Message sent");
-    expect(logCalls).toContain("activity_id: teams-dm-activity-1");
+    expect(logCalls).toContain("Message sent (id: teams-dm-activity-1)");
   });
 
   it("errors when message text is missing", async () => {
@@ -113,14 +142,14 @@ describe("okou teams message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--conversation-id",
+        "--to",
         "19:thread@thread.tacv2",
       ]);
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
       expect.stringContaining(
-        "Either --text, --card, or piped stdin must be provided",
+        "Either --text, --rich, or piped stdin must be provided",
       ),
     );
   });
@@ -131,9 +160,26 @@ describe("okou teams message send command", () => {
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "Either --conversation-id or --user must be provided",
-      ),
+      expect.stringContaining("Missing --to"),
+    );
+  });
+
+  it("errors when replying in a DM", async () => {
+    await expect(async () => {
+      await sendCommand.parseAsync([
+        "node",
+        "cli",
+        "--to",
+        "29:user-id",
+        "--reply-to",
+        "teams-activity-1",
+        "--text",
+        "hello",
+      ]);
+    }).rejects.toThrow("process.exit called");
+
+    expect(mockConsoleError).toHaveBeenCalledWith(
+      expect.stringContaining("--reply-to requires a conversation --to target"),
     );
   });
 });

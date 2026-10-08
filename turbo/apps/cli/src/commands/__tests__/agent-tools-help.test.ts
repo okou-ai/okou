@@ -190,8 +190,8 @@ describe("agent-facing operational CLI help", () => {
     expect(create).toContain("first message must be self-contained");
 
     const send = await helpFor(chatCommand, ["send"]);
-    expect(send).toContain("does not wait for completion");
-    expect(send).toContain("independent lifetime");
+    expect(send).toContain("without waiting for a run to start or finish");
+    expect(send).toContain("appear later in the thread as a rejected message");
 
     const messages = await helpFor(chatCommand, ["messages"]);
     expect(messages).toContain("point-in-time read/sync");
@@ -226,7 +226,9 @@ describe("agent-facing operational CLI help", () => {
       "use --provider <name> directly when the type supports it",
     );
     expect(generate).not.toContain("list every available provider");
-    expect(generate).toContain("avatar-video uses --script or --audio-url");
+    expect(generate).toContain(
+      "Music, text, code, and document use connectors",
+    );
     expect(generate).toContain(
       "wait for it to finish and use the returned artifact",
     );

@@ -220,16 +220,8 @@ async fn unchanged_artifact_checkpoint_records_content_hash_timing()
     let checkpoint =
         guest_agent::checkpoint::prepare_checkpoint_for_runtime(&runtime, &session_metadata)
             .await?;
-    guest_agent::complete::report_checkpoint_for_run(
-        &runtime,
-        0,
-        None,
-        None,
-        None,
-        &[],
-        checkpoint,
-    )
-    .await?;
+    guest_agent::complete::report_checkpoint_for_run(&runtime, 0, None, None, None, checkpoint)
+        .await?;
 
     history_prepare.assert_calls_async(1).await;
     storage_prepare.assert_calls_async(0).await;

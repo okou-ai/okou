@@ -10,7 +10,6 @@ let mockUserModelPreference: UserModelPreferenceResponse = {
   selectedModel: null,
   serviceTier: null,
   modelSettings: {},
-  selectedVideoModel: null,
   selectedImageModel: null,
   updatedAt: null,
 };
@@ -20,7 +19,6 @@ export function resetMockUserModelPreference(): void {
     selectedModel: null,
     serviceTier: null,
     modelSettings: {},
-    selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: null,
   };
@@ -47,11 +45,6 @@ export const apiUserModelPreferenceHandlers = [
               mockUserModelPreference.modelSettings,
               body.modelSettingsPatch,
             ),
-      // Omitted by an older bundle: keep the stored default rather than clear it.
-      selectedVideoModel:
-        "selectedVideoModel" in body
-          ? (body.selectedVideoModel ?? null)
-          : mockUserModelPreference.selectedVideoModel,
       selectedImageModel:
         "selectedImageModel" in body
           ? (body.selectedImageModel ?? null)

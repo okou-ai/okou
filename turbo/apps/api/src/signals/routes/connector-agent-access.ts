@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
@@ -14,23 +14,29 @@ import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
 
-async function availableBuiltinSlugs(
+/** Loads only the catalog entries for the rows' builtin connectors. */
+function availableBuiltinSlugs(
   rows: readonly { connectorSlug: string }[],
-  resolve: (slug: string) => Promise<boolean>,
-  signal: AbortSignal,
-): Promise<Set<string>> {
-  const available = new Set<string>();
-  for (const slug of new Set(
-    rows.map((row) => {
-      return row.connectorSlug;
-    }),
-  )) {
-    if (await resolve(slug)) {
-      available.add(slug);
+): Computed<Promise<Set<string>>> {
+  return computed(async (get) => {
+    if (rows.length === 0) {
+      return new Set<string>();
     }
-    signal.throwIfAborted();
-  }
-  return available;
+    const connectorSlugs = [
+      ...new Set(
+        rows.map((row) => {
+          return connectorSlugSchema.parse(row.connectorSlug);
+        }),
+      ),
+    ];
+    const resolver = await get(connectorActionResolver(connectorSlugs));
+    return new Set(
+      connectorSlugs.filter((connectorSlug) => {
+        return resolver.resolveSlug({ connectorSlug, requireExecutable: true })
+          .ok;
+      }),
+    );
+  });
 }
 
 function toBuiltinAccessRow(row: { connectorSlug: string; agentId: string }) {
@@ -134,22 +140,8 @@ const getConnectorAgentAccess$ = command(
     ]);
     signal.throwIfAborted();
 
-    const resolver =
-      builtinRows.length > 0 ? await get(connectorActionResolver()) : null;
+    const availableSlugs = await get(availableBuiltinSlugs(builtinRows));
     signal.throwIfAborted();
-    const availableSlugs = resolver
-      ? await availableBuiltinSlugs(
-          builtinRows,
-          async (slug) => {
-            const resolved = await resolver.resolveSlug({
-              connectorSlug: connectorSlugSchema.parse(slug),
-              requireExecutable: true,
-            });
-            return resolved.ok;
-          },
-          signal,
-        )
-      : new Set<string>();
 
     return {
       status: 200 as const,

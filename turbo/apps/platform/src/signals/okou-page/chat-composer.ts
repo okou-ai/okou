@@ -1,14 +1,9 @@
 import { command, computed, state, type Command } from "ccstate";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cloudBrowserEnabledByDefault$ } from "../cloud-browser-preference.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
-import { createAvatarTemplatePickerSignals } from "./avatar-template-picker.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
-import { createModelPickerMenuSignals } from "./model-picker-menu.ts";
-import type { VideoRunOptionsPatch } from "./video-run-options.ts";
 
 // ---------------------------------------------------------------------------
 // Composer UI state — search, dialogs, loading indicators
@@ -44,9 +39,7 @@ export const newThreadCloudBrowserEnabled$ = computed(
     if (selection !== null) {
       return selection.kind === "cloudBrowser";
     }
-    const preferenceEnabled =
-      get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false;
-    return preferenceEnabled ? get(cloudBrowserEnabledByDefault$) : true;
+    return get(cloudBrowserEnabledByDefault$);
   },
 );
 
@@ -61,11 +54,9 @@ export const newThreadComputerAccess$ = computed(
     if (selection !== null) {
       return selection;
     }
-    const cloudBrowserEnabled = get(newThreadCloudBrowserEnabled$);
-    if (typeof cloudBrowserEnabled === "boolean") {
-      return cloudBrowserEnabled ? { kind: "cloudBrowser" } : { kind: "none" };
-    }
-    return computerAccessFromSavedCloudBrowserDefault(cloudBrowserEnabled);
+    return computerAccessFromSavedCloudBrowserDefault(
+      get(cloudBrowserEnabledByDefault$),
+    );
   },
 );
 
@@ -105,105 +96,19 @@ export type OpenTemplatePickerDialogCommand = Command<
   [OpenTemplatePickerDialogOptions]
 >;
 
-type MediaModelCategory = "image" | "video";
-
-/**
- * Tracks whether the composer is wide enough for the desktop popover layout.
- * Both layouts show the same picker; the flag only decides whether the popover
- * is modal, since a phone-sized popup covers the page behind it anyway.
- */
-function createDesktopModelPickerLayoutSignals() {
-  const internalDesktopModelPickerLayout$ = state(false);
-  const desktopModelPickerLayout$ = computed((get) => {
-    return get(internalDesktopModelPickerLayout$);
-  });
-  const desktopModelPickerLifecycleRef$ = onRef(
-    command(({ set }, _element: HTMLElement, signal: AbortSignal) => {
-      const mediaQuery = window.matchMedia("(min-width: 640px)");
-      const syncLayout = () => {
-        set(internalDesktopModelPickerLayout$, mediaQuery.matches);
-      };
-      mediaQuery.addEventListener("change", syncLayout);
-      signal.addEventListener("abort", () => {
-        mediaQuery.removeEventListener("change", syncLayout);
-      });
-      syncLayout();
-    }),
-  );
-  return { desktopModelPickerLayout$, desktopModelPickerLifecycleRef$ };
-}
-
 function createBasicComposerUiSignals() {
-  const { desktopModelPickerLayout$, desktopModelPickerLifecycleRef$ } =
-    createDesktopModelPickerLayoutSignals();
   const internalModelPickerOpen$ = state(false);
-  const menu = createModelPickerMenuSignals();
-  // Every viewport drives this from the same category strip. Null means the
-  // chat models. It survives close the way the old composer track kept its
-  // expanded category -- the video options chip and the temporary-model notice
-  // both read it to tell which model the composer is pointed at.
-  const internalMediaModelCategory$ = state<MediaModelCategory | null>(null);
   const modelPickerOpen$ = computed((get) => {
     return get(internalModelPickerOpen$);
   });
   const setModelPickerOpen$ = command(({ set }, open: boolean) => {
     set(internalModelPickerOpen$, open);
-    if (!open) {
-      set(menu.reset$);
-    }
   });
-  const mediaModelCategory$ = computed((get) => {
-    return get(internalMediaModelCategory$);
-  });
-  const setMediaModelCategory$ = command(
-    ({ set }, category: MediaModelCategory | null) => {
-      set(internalMediaModelCategory$, category);
-    },
-  );
   return {
     model: {
-      menu,
       modelPickerOpen$,
       setModelPickerOpen$,
-      mediaModelCategory$,
-      setMediaModelCategory$,
-      desktopModelPickerLayout$,
-      desktopModelPickerLifecycleRef$,
     },
-  };
-}
-
-/**
- * Parameters for the next video this composer generates. Run-scoped by design:
- * they travel with the message and are never written anywhere, so they start
- * over with the composer rather than following the thread.
- */
-function createVideoRunOptionsUiSignals() {
-  // Keep the summary compact until the user opens the settings panel.
-  const internalVideoOptionsOpen$ = state(false);
-  const internalVideoRunOptions$ = state<VideoRunOptionsPatch>({});
-  const videoOptionsOpen$ = computed((get) => {
-    return get(internalVideoOptionsOpen$);
-  });
-  const setVideoOptionsOpen$ = command(({ set }, open: boolean) => {
-    set(internalVideoOptionsOpen$, open);
-  });
-  const videoRunOptions$ = computed((get) => {
-    return get(internalVideoRunOptions$);
-  });
-  const setVideoRunOptions$ = command(({ set }, next: VideoRunOptionsPatch) => {
-    set(internalVideoRunOptions$, next);
-  });
-  const resetVideoRunOptions$ = command(({ set }) => {
-    set(internalVideoOptionsOpen$, false);
-    set(internalVideoRunOptions$, {});
-  });
-  return {
-    videoOptionsOpen$,
-    setVideoOptionsOpen$,
-    videoRunOptions$,
-    setVideoRunOptions$,
-    resetVideoRunOptions$,
   };
 }
 
@@ -289,7 +194,6 @@ function createTemplatePickerDialogSignals() {
 }
 
 function createTemplatePickerListSignals() {
-  const avatarTemplates = createAvatarTemplatePickerSignals();
   // Null until an entry point names a category, so the picker can open on the
   // one the member's own switches lead the nav with.
   const internalTemplatePickerCategory$ = state<string | null>(null);
@@ -362,7 +266,6 @@ function createTemplatePickerListSignals() {
       restoreTemplatePickerPresentationScrollRef$,
       illustrationVariantIndex$,
       setIllustrationVariantIndex$,
-      ...avatarTemplates,
     },
   };
 }
@@ -468,7 +371,6 @@ export function createComposerUiSignals() {
 
   return {
     model: basic.model,
-    videoOptions: createVideoRunOptionsUiSignals(),
     openTemplatePickerDialog$: createOpenTemplatePickerDialogCommand(
       dialog,
       list,

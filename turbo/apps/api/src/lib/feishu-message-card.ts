@@ -2,7 +2,7 @@ import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import type { FeishuOutboundMessage } from "../signals/external/feishu-client";
 
@@ -55,7 +55,7 @@ export function buildFeishuLoginMessage(args: {
   readonly connectUrl: string;
 }): FeishuOutboundMessage {
   const platformName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return cardMessage({
     title: "Connect your account",
     template: "blue",
@@ -82,7 +82,7 @@ export function buildFeishuWelcomeMessage(args: {
   readonly botName: string | null;
 }): FeishuOutboundMessage {
   const platformName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   // Provider bot metadata is unavailable until Feishu discovery succeeds, so
   // keep the fallback provider-neutral while botName is nullable.
   const botName = args.botName ?? `your ${platformName} bot`;
@@ -104,7 +104,7 @@ export function buildFeishuWelcomeMessage(args: {
       {
         tag: "markdown",
         content:
-          "Send me a direct message or mention me in a group chat to get started.\n\nCommands: `/help`, `/connect`, `/disconnect`, `/switch`, `/model`.",
+          "Send me a direct message or mention me in a group chat to get started.\n\nCommands: `/help`, `/connect`, `/disconnect`, `/model`.",
       },
     ],
   });
@@ -115,7 +115,7 @@ export function buildFeishuHelpMessage(args: {
   readonly botName: string | null;
 }): FeishuOutboundMessage {
   const platformName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   // Keep this fallback provider-neutral while Feishu bot metadata is nullable.
   const botName = args.botName ?? `${platformName} bot`;
   return {
@@ -127,7 +127,6 @@ export function buildFeishuHelpMessage(args: {
         "/help — Show this help",
         `/connect — Connect your ${brandName} account`,
         `/disconnect — Disconnect your ${brandName} account`,
-        "/switch — Choose which agent responds",
         "/model — Choose your model",
         "",
         "Send a task in a direct message, or mention the bot with a task in a group chat.",
@@ -157,28 +156,19 @@ export function buildFeishuNoticeMessage(args: {
 
 export function buildFeishuAgentResponseMessage(args: {
   readonly text: string;
-  readonly auditUrl?: string;
   readonly footerText?: string;
 }): FeishuOutboundMessage {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
-  const footerElements: Readonly<Record<string, unknown>>[] =
-    args.auditUrl || args.footerText
-      ? [
-          { tag: "hr" },
-          {
-            tag: "markdown",
-            content: [
-              args.auditUrl ? `[Audit](${args.auditUrl})` : undefined,
-              args.footerText ? `*${args.footerText}*` : undefined,
-            ]
-              .filter((part): part is string => {
-                return Boolean(part);
-              })
-              .join(" · "),
-            text_size: "notation",
-          },
-        ]
-      : [];
+  const { assistantName } = BRAND_PRESENTATION;
+  const footerElements: Readonly<Record<string, unknown>>[] = args.footerText
+    ? [
+        { tag: "hr" },
+        {
+          tag: "markdown",
+          content: `*${args.footerText}*`,
+          text_size: "notation",
+        },
+      ]
+    : [];
   return cardMessage({
     title: assistantName,
     template: "blue",

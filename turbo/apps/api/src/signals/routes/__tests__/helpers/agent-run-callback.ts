@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { z } from "zod";
 
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { testTelegramStateRoutes } from "../../test-telegram-state";
@@ -15,39 +14,6 @@ interface SeedAgentRunCallbackOptions {
   readonly persistSecret?: boolean;
   readonly status?: "pending" | "delivered" | "failed";
 }
-
-const agentRunCallbackSnapshotSchema = z.object({
-  id: z.string(),
-  internalKind: z.string().nullable(),
-  hasEncryptedSecret: z.boolean(),
-  payload: z.unknown(),
-  status: z.enum(["pending", "delivered", "failed"]),
-  attempts: z.number(),
-  lastError: z.string().nullable(),
-});
-
-const agentRunStateResponseSchema = z.object({
-  agent_run: z
-    .object({
-      triggerSource: z.string().nullable(),
-    })
-    .nullable(),
-  callbacks: z.array(agentRunCallbackSnapshotSchema),
-});
-
-type AgentRunCallbackSnapshot = z.infer<typeof agentRunCallbackSnapshotSchema>;
-type AgentRunStateSnapshot = z.infer<typeof agentRunStateResponseSchema>;
-
-interface ReadAgentRunCallbacksBaseOptions {
-  readonly orgId: string;
-  readonly userId: string;
-}
-
-type ReadAgentRunCallbacksOptions = ReadAgentRunCallbacksBaseOptions &
-  (
-    | { readonly runId: string; readonly prompt?: never }
-    | { readonly prompt: string; readonly runId?: never }
-  );
 
 function requestTelegramState(
   signal: AbortSignal,
@@ -107,46 +73,5 @@ export const seedAgentRunCallback$ = command(
       throw new Error("seedAgentRunCallback$: response missing callback_id");
     }
     return { callbackId };
-  },
-);
-
-export const readAgentRunState$ = command(
-  async (
-    _,
-    options: ReadAgentRunCallbacksOptions,
-    signal: AbortSignal,
-  ): Promise<AgentRunStateSnapshot> => {
-    const response = await requestTelegramState(
-      signal,
-      TELEGRAM_STATE_ACTION_ROUTE,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "get-post-run-state",
-          org_id: options.orgId,
-          user_id: options.userId,
-          ...("runId" in options ? { run_id: options.runId } : {}),
-          ...("prompt" in options ? { prompt: options.prompt } : {}),
-        }),
-      },
-    );
-    signal.throwIfAborted();
-    expectOk(response, "readAgentRunState$");
-    signal.throwIfAborted();
-    const body = await readJson<unknown>(response);
-    signal.throwIfAborted();
-    return agentRunStateResponseSchema.parse(body);
-  },
-);
-
-export const readAgentRunCallbacks$ = command(
-  async (
-    { set },
-    options: ReadAgentRunCallbacksOptions,
-    signal: AbortSignal,
-  ): Promise<readonly AgentRunCallbackSnapshot[]> => {
-    const state = await set(readAgentRunState$, options, signal);
-    return state.callbacks;
   },
 );

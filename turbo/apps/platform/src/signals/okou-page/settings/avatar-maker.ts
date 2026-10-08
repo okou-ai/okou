@@ -9,7 +9,6 @@ import {
   type AvatarSvgConfig,
 } from "../../../views/okou-page/avatar-svg-utils.ts";
 import { resolveAvatarSvgConfig } from "../../../views/okou-page/avatar-utils.ts";
-import { avatarNeckSweaterEnabled$ } from "../../external/feature-switch.ts";
 import { resetSignal } from "../../utils.ts";
 
 export type Step =
@@ -20,12 +19,13 @@ export type Step =
   | "hairColor"
   | "sweater";
 
-const AVATAR_MAKER_STEPS: readonly Step[] = [
+export const AVATAR_MAKER_STEPS: readonly Step[] = [
   "face",
   "hair",
   "expression",
   "skin",
   "hairColor",
+  "sweater",
 ];
 
 const internalOpen$ = state(false);
@@ -54,14 +54,8 @@ export const avatarMakerEditing$ = computed((get) => {
   return get(internalEditing$);
 });
 
-export const avatarMakerSteps$ = computed((get): readonly Step[] => {
-  return get(avatarNeckSweaterEnabled$)
-    ? [...AVATAR_MAKER_STEPS, "sweater"]
-    : AVATAR_MAKER_STEPS;
-});
-
 export const avatarMakerStepIdx$ = computed((get) => {
-  return get(avatarMakerSteps$).indexOf(get(internalStep$));
+  return AVATAR_MAKER_STEPS.indexOf(get(internalStep$));
 });
 
 const internalPreviewRevision$ = state(0);
@@ -136,7 +130,7 @@ export const selectAvatarOption$ = command(
 );
 
 export const goBackStep$ = command(({ get, set }) => {
-  const steps = get(avatarMakerSteps$);
+  const steps = AVATAR_MAKER_STEPS;
   const idx = get(avatarMakerStepIdx$);
   if (idx > 0) {
     set(internalStep$, steps[idx - 1]!);
@@ -144,7 +138,7 @@ export const goBackStep$ = command(({ get, set }) => {
 });
 
 export const goForwardStep$ = command(({ get, set }) => {
-  const steps = get(avatarMakerSteps$);
+  const steps = AVATAR_MAKER_STEPS;
   const idx = get(avatarMakerStepIdx$);
   if (idx + 1 < steps.length) {
     set(internalStep$, steps[idx + 1]!);

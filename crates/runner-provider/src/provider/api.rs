@@ -12,15 +12,12 @@ use api_contracts::generated::{
     constants::runners::{
         BUILTIN_FIREWALL_CATALOG_MAX_BYTES, CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
         PI_MODEL_CONFIG_CURRENT_GENERATION, PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-        PI_MODEL_CONFIG_LEGACY_GENERATION, PI_MODEL_CONFIG_NATIVE_GENERATION,
-        RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
+        PI_MODEL_CONFIG_LEGACY_GENERATION, RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
     },
     decode_paths, routes,
-    types::runners::runs::active_inputs::{
-        receipt::Response as ActiveInputReceiptResponse,
-        reserve::Response as ActiveInputReserveResponse,
-    },
+    types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
 };
+use bytes::Bytes;
 use reqwest::{Response, StatusCode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -38,9 +35,9 @@ use super::builtin_firewall_catalog::{
 };
 use super::connector_runtime_sync::ConnectorRuntimeSyncHandle;
 use super::{
-    ApiClaimTiming, ClaimedJob, CompletionAuth, CompletionAuthError, CompletionReportTiming,
-    JobCandidate, JobDiscoverySource, JobProvider, RunnerPreference, RunnerPreferenceClaimState,
-    parse_runner_preference,
+    ApiClaimTiming, ClaimResponseAttribution, ClaimedJob, CompletionAuth, CompletionAuthError,
+    CompletionReportTiming, JobCandidate, JobDiscoverySource, JobProvider, RunnerPreference,
+    RunnerPreferenceClaimState, parse_runner_preference,
 };
 use crate::active_input::{ActiveInputNotifications, ActiveInputSource};
 use crate::duration::duration_ms;
@@ -104,7 +101,7 @@ impl<'a> From<&'a InstalledOkouCli> for ClaimInstalledVersions<'a> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunnerClaimCapabilities {
-    pi_model_config_generations: [u32; 4],
+    pi_model_config_generations: [u32; 3],
 }
 
 #[derive(Serialize)]
@@ -184,7 +181,9 @@ struct SuccessfulClaimResponse {
     context: ExecutionContext,
     request_to_response_headers_elapsed: Duration,
     response_body_read_elapsed: Duration,
+    response_first_body_chunk_wait_elapsed: Duration,
     response_decode_elapsed: Duration,
+    response_attribution: ClaimResponseAttribution,
 }
 
 #[derive(Clone, Copy)]
@@ -861,27 +860,19 @@ impl JobProvider for ApiProvider {
                 context: ctx,
                 request_to_response_headers_elapsed,
                 response_body_read_elapsed,
+                response_first_body_chunk_wait_elapsed,
                 response_decode_elapsed,
+                response_attribution,
             })) => {
                 let api_claim_timing = ApiClaimTiming::new(
                     claim_request_elapsed,
                     request_to_response_headers_elapsed,
                     response_body_read_elapsed,
+                    response_first_body_chunk_wait_elapsed,
                     response_decode_elapsed,
+                    response_attribution,
                 );
-                let deferred_active_input = ctx
-                    .pi_launch_config
-                    .as_ref()
-                    .and_then(|config| config.get("apiFirstTurn"))
-                    .is_some_and(|slot| {
-                        slot.get("schemaVersion")
-                            .and_then(serde_json::Value::as_u64)
-                            == Some(2)
-                            && slot.get("activeInput").and_then(serde_json::Value::as_bool)
-                                == Some(true)
-                    });
-                let active_input_source = (supports_thread_active_input(ctx.reuse_key.as_deref())
-                    || deferred_active_input)
+                let active_input_source = supports_thread_active_input(ctx.reuse_key.as_deref())
                     .then(|| {
                         ActiveInputSource::api(
                             self.api.clone(),
@@ -995,7 +986,7 @@ impl JobProvider for ApiProvider {
             }
         };
 
-        const MAX_ATTEMPTS: usize = 2;
+        const MAX_ATTEMPTS: usize = 3;
         const RETRY_DELAY: Duration = Duration::from_secs(2);
 
         for attempt in 1..=MAX_ATTEMPTS {
@@ -1416,62 +1407,31 @@ pub struct ApiClient {
     token: String,
 }
 
-#[derive(Serialize)]
-struct EmptyRequest {}
-
 impl ApiClient {
     pub fn new(http: HttpClient, token: String) -> Self {
         Self { http, token }
     }
 
-    pub(crate) async fn reserve_active_inputs(
+    pub(crate) async fn next_steerable_input(
         &self,
         run_id: RunId,
         sandbox_token: &str,
-    ) -> ProviderResult<ActiveInputReserveResponse> {
+    ) -> ProviderResult<NextSteerableInputResponse> {
         let run_id = run_id.to_string();
         let resp = send_api(
-            self.http
-                .request_resolved_route(
-                    routes::runners::runs::by_run_id::active_inputs::reserve::route(
-                        routes::runners::runs::by_run_id::active_inputs::reserve::Params {
-                            run_id: run_id.as_str(),
-                        },
-                    ),
-                    sandbox_token,
-                )
-                .json(&EmptyRequest {}),
-            "reserve active inputs",
+            self.http.request_resolved_route(
+                routes::runners::runs::by_run_id::steerable_inputs::next::route(
+                    routes::runners::runs::by_run_id::steerable_inputs::next::Params {
+                        run_id: run_id.as_str(),
+                    },
+                ),
+                sandbox_token,
+            ),
+            "read next steerable input",
         )
         .await?;
-        let resp = check_api_status(resp, "reserve active inputs").await?;
-        decode_api_json(resp, "reserve active inputs").await
-    }
-
-    pub(crate) async fn record_active_input_delivery(
-        &self,
-        run_id: RunId,
-        sandbox_token: &str,
-        delivery_id: &str,
-    ) -> ProviderResult<ActiveInputReceiptResponse> {
-        let run_id = run_id.to_string();
-        let resp = send_api(
-            self.http
-                .request_resolved_route(
-                    routes::runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::route(
-                        routes::runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::Params {
-                            run_id: run_id.as_str(),
-                            delivery_id,
-                        },
-                    ),
-                    sandbox_token,
-                )
-                .json(&EmptyRequest {}),
-            "record active input delivery",
-        )
-        .await?;
-        let resp = check_api_status(resp, "record active input delivery").await?;
-        decode_api_json(resp, "record active input delivery").await
+        let resp = check_api_status(resp, "read next steerable input").await?;
+        decode_api_json(resp, "read next steerable input").await
     }
 
     /// Poll for a pending job. The response contains `job: None` when no work is available.
@@ -1494,8 +1454,6 @@ impl ApiClient {
         let resp = send_api(
             self.http
                 .request_route(routes::runners::poll::POLL, &self.token)
-                .native_gpt_6_reader()
-                .native_claude_opus_5_5_reader()
                 .json(&body),
             "poll",
         )
@@ -1551,10 +1509,7 @@ impl ApiClient {
             ),
             &self.token,
         );
-        let request = request
-            .native_gpt_6_reader()
-            .native_claude_opus_5_5_reader()
-            .json(&body);
+        let request = request.json(&body);
         let request_to_response_headers_started_at = Instant::now();
         let resp = send_api(request, "claim").await?;
         let request_to_response_headers_elapsed = request_to_response_headers_started_at.elapsed();
@@ -1564,21 +1519,25 @@ impl ApiClient {
         }
 
         let resp = check_api_status(resp, "claim").await?;
-        let response_body_read_started_at = Instant::now();
-        let body = resp
-            .bytes()
-            .await
-            .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?;
-        let response_body_read_elapsed = response_body_read_started_at.elapsed();
+        let content_encoding = resp
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .cloned();
+        let (body, response_first_body_chunk_wait_elapsed, response_body_read_elapsed) =
+            read_claim_response_body(resp, || {}).await?;
         let response_decode_started_at = Instant::now();
         let context = decode_api_json_bytes(&body).map_err(ClaimApiError::ResponseDecode)?;
         let response_decode_elapsed = response_decode_started_at.elapsed();
+        let response_attribution =
+            ClaimResponseAttribution::from_body_and_encoding(body.len(), content_encoding.as_ref());
 
         Ok(Some(SuccessfulClaimResponse {
             context,
             request_to_response_headers_elapsed,
             response_body_read_elapsed,
+            response_first_body_chunk_wait_elapsed,
             response_decode_elapsed,
+            response_attribution,
         }))
     }
 
@@ -1764,6 +1723,52 @@ impl ApiClient {
     }
 }
 
+// The callback is a no-op in production and lets raw-HTTP tests acknowledge the
+// actual first application-visible chunk before releasing the response tail.
+async fn read_claim_response_body(
+    mut resp: Response,
+    first_chunk_observed: impl FnOnce(),
+) -> Result<(Bytes, Duration, Duration), ClaimApiError> {
+    let response_body_read_started_at = Instant::now();
+    // This is not a physical wire-byte or server-flush boundary.
+    let first_chunk = loop {
+        match resp
+            .chunk()
+            .await
+            .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?
+        {
+            Some(chunk) if !chunk.is_empty() => break chunk,
+            Some(_) => continue,
+            None => break Bytes::new(),
+        }
+    };
+    let response_first_body_chunk_wait_elapsed = response_body_read_started_at.elapsed();
+    if !first_chunk.is_empty() {
+        first_chunk_observed();
+    }
+    let remaining = resp
+        .bytes()
+        .await
+        .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?;
+    // The common one-chunk case stays zero-copy; a split needs one concatenation.
+    let body = if first_chunk.is_empty() {
+        remaining
+    } else if remaining.is_empty() {
+        first_chunk
+    } else {
+        let mut combined = Vec::with_capacity(first_chunk.len() + remaining.len());
+        combined.extend_from_slice(&first_chunk);
+        combined.extend_from_slice(&remaining);
+        Bytes::from(combined)
+    };
+    let response_body_read_elapsed = response_body_read_started_at.elapsed();
+    Ok((
+        body,
+        response_first_body_chunk_wait_elapsed,
+        response_body_read_elapsed,
+    ))
+}
+
 fn claim_request_body<'a>(
     candidate: &JobCandidate,
     runner_identity: &'a RunnerProcessIdentity,
@@ -1805,7 +1810,6 @@ fn claim_request_body<'a>(
                 PI_MODEL_CONFIG_LEGACY_GENERATION,
                 PI_MODEL_CONFIG_CURRENT_GENERATION,
                 PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-                PI_MODEL_CONFIG_NATIVE_GENERATION,
             ],
         },
         telemetry: ClaimRequestTelemetry {
@@ -1891,14 +1895,9 @@ trait ApiDecodePath: DeserializeOwned {
     const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema;
 }
 
-impl ApiDecodePath for ActiveInputReserveResponse {
+impl ApiDecodePath for NextSteerableInputResponse {
     const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::runs::by_run_id::active_inputs::reserve::RESPONSE;
-}
-
-impl ApiDecodePath for ActiveInputReceiptResponse {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::RESPONSE;
+        &decode_paths::runners::runs::by_run_id::steerable_inputs::next::RESPONSE;
 }
 
 impl ApiDecodePath for PollResponse {
@@ -2081,8 +2080,9 @@ mod tests {
     use super::*;
     use httpmock::{HttpMockRequest, HttpMockResponse, Method::POST, MockServer};
     use serde_json::Value;
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+    use tokio::sync::oneshot;
     use tracing::{Level, instrument::WithSubscriber};
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
@@ -2133,7 +2133,7 @@ mod tests {
     #[test]
     fn active_input_source_requires_a_thread_run() {
         assert!(supports_thread_active_input(Some("thread:chat-id")));
-        assert!(!supports_thread_active_input(Some("goal:goal-id")));
+        assert!(!supports_thread_active_input(Some("resource:resource-id")));
         assert!(!supports_thread_active_input(None));
     }
 
@@ -2535,6 +2535,46 @@ mod tests {
         (output, captured.entries())
     }
 
+    async fn assert_completion_retry_delay<F>(
+        mut completion: std::pin::Pin<&mut F>,
+        captured: &CapturedEvents,
+        server: &mut RawHttpTestServer,
+        attempt: usize,
+    ) where
+        F: std::future::Future<Output = ()>,
+    {
+        // Observe the failed response and register the retry timer before checking its delay.
+        std::future::poll_fn(|cx| {
+            assert!(
+                completion.as_mut().poll(cx).is_pending(),
+                "completion returned before retry {attempt}"
+            );
+            if captured.entries().iter().any(|event| {
+                event.fields.get("attempt") == Some(&attempt.to_string())
+                    && event
+                        .fields
+                        .get("message")
+                        .is_some_and(|message| message == "completion report failed, retrying")
+            }) {
+                std::task::Poll::Ready(())
+            } else {
+                std::task::Poll::Pending
+            }
+        })
+        .await;
+
+        let before_retry = tokio::time::Instant::now() + Duration::from_millis(1999);
+        let early_request = tokio::select! {
+            () = completion.as_mut() => panic!("completion returned before retry {attempt}"),
+            request = server.next_request_before(before_retry, "completion before retry delay") => request,
+        };
+        assert!(
+            matches!(&early_request, Err(error) if error.starts_with("timed out waiting for")),
+            "retry {attempt} was sent before two seconds: {early_request:?}"
+        );
+        tokio::time::advance(Duration::from_millis(1)).await;
+    }
+
     fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
         events
             .iter()
@@ -2584,6 +2624,8 @@ mod tests {
                     workspace_affinity_version: runner_types::types::WORKSPACE_AFFINITY_VERSION,
                 }],
             }],
+            active_reuse_producers: vec![],
+            wss_ingress_service_active: false,
             mode: "running".to_string(),
         }
     }
@@ -2785,7 +2827,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: Vec::new(),
         }
     }
 
@@ -3475,7 +3516,7 @@ mod tests {
         assert!(!body.to_string().contains("path"));
         assert_eq!(
             body["capabilities"]["piModelConfigGenerations"],
-            serde_json::json!([1, 2, 3, 4])
+            serde_json::json!([1, 2, 3])
         );
 
         let runner_identity = test_runner_identity();
@@ -4388,9 +4429,6 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path(routes::runners::poll::POLL.path)
-                    .header("X-Native-Gpt-6-Sol", "1")
-                    .header("X-Native-Gpt-6-Luna", "1")
-                    .header("X-Native-Claude-Opus-5-5", "1")
                     .json_body(serde_json::json!({
                         "runnerId": "550e8400-e29b-41d4-a716-446655440000",
                         "group": "default",
@@ -4937,6 +4975,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn api_client_claim_truncated_body_remains_a_read_failure() {
+        let run_id = RunId::from(uuid::Uuid::nil());
+        let response =
+            b"HTTP/1.1 200 OK\r\nContent-Length: 128\r\nConnection: close\r\n\r\n{\"runId\":"
+                .to_vec();
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(response)]).await;
+        let api = api_client_for_url(server.url());
+        let error = api
+            .claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ClaimApiError::ResponseRead(_)));
+        assert!(
+            server
+                .next_request("truncated claim response")
+                .await
+                .contains(&format!("/api/runners/jobs/{run_id}/claim"))
+        );
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn api_client_claim_empty_body_remains_a_decode_failure() {
+        let run_id = RunId::from(uuid::Uuid::nil());
+        let mut server =
+            RawHttpTestServer::spawn(vec![RawHttpAction::Respond(http_response("200 OK", b""))])
+                .await;
+        let api = api_client_for_url(server.url());
+        let error = api
+            .claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ClaimApiError::ResponseDecode(_)));
+        server.next_request("empty claim response").await;
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
     async fn api_client_claim_decode_error_includes_json_path_without_body_values() {
         let server = MockServer::start_async().await;
         let run_id = RunId::from(uuid::Uuid::nil());
@@ -5291,41 +5373,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn api_client_claim_decode_path_redacts_codex_header_keys() {
-        let server = MockServer::start_async().await;
-        let run_id = RunId::from(uuid::Uuid::nil());
-        let error = claim_decode_error(
-            &server,
-            run_id,
-            serde_json::json!({
-                "runId": run_id,
-                "prompt": "hello",
-                "sandboxToken": "claim-sandbox-token",
-                "cliAgentType": "claude_code",
-                "platformEnvironment": {},
-                "connectorRuntimeTargets": [],
-                "codexRuntimeConfig": {
-                    "providerId": "provider",
-                    "name": "provider",
-                    "baseUrl": "https://api.example.com",
-                    "envKey": "OPENAI_API_KEY",
-                    "httpHeaders": {"secret-header-name": 123},
-                    "wireApi": "responses",
-                    "supportsWebsockets": false
-                }
-            }),
-        )
-        .await;
-
-        assert!(
-            error.contains("failed at codexRuntimeConfig.httpHeaders.<map-key>"),
-            "unexpected Codex header decode error: {error}"
-        );
-        assert!(!error.contains("secret-header-name"));
-        assert!(!error.contains("claim-sandbox-token"));
-    }
-
-    #[tokio::test]
     async fn api_client_poll_decode_path_uses_poll_response_schema() {
         let server = MockServer::start_async().await;
         let mock = server
@@ -5483,7 +5530,6 @@ mod tests {
                     sandbox_id: None,
                     sandbox_reuse_result: None,
                     workspace_reuse_result: None,
-                    active_input_delivery_ids: Vec::new(),
                 },
             )
             .await
@@ -5528,7 +5574,6 @@ mod tests {
                 sandbox_id: None,
                 sandbox_reuse_result: Some(SandboxReuseResult::NoReuseKey),
                 workspace_reuse_result: Some(WorkspaceReuseResult::NoReuseKey),
-                active_input_delivery_ids: Vec::new(),
             },
         )
         .await
@@ -5544,11 +5589,7 @@ mod tests {
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let claim_mock = server
             .mock_async(|when, then| {
-                when.method(POST)
-                    .path(claim_path.as_str())
-                    .header("X-Native-Gpt-6-Sol", "1")
-                    .header("X-Native-Gpt-6-Luna", "1")
-                    .header("X-Native-Claude-Opus-5-5", "1");
+                when.method(POST).path(claim_path.as_str());
                 then.status(200)
                     .header("content-type", "application/json")
                     .body(RUNNER_CLAIM_RESPONSE_FIXTURE);
@@ -5570,11 +5611,28 @@ mod tests {
         let claim_timing = claimed
             .api_claim_timing()
             .expect("successful API claim should retain timing");
+        assert_eq!(
+            claim_timing
+                .response_first_body_chunk_wait_elapsed()
+                .as_millis()
+                + claim_timing
+                    .response_body_after_first_chunk_elapsed()
+                    .as_millis(),
+            claim_timing.response_body_read_elapsed().as_millis()
+        );
         assert!(
             claim_timing.request_elapsed()
                 >= claim_timing.request_to_response_headers_elapsed()
                     + claim_timing.response_body_read_elapsed()
                     + claim_timing.response_decode_elapsed()
+        );
+        assert_eq!(
+            claim_timing.response_attribution().body_size_bucket(),
+            "lt_4_kib"
+        );
+        assert_eq!(
+            claim_timing.response_attribution().content_encoding(),
+            "absent"
         );
         let context = claimed.context();
 
@@ -5603,6 +5661,14 @@ mod tests {
             "fixture-agent-id"
         );
         assert_eq!(
+            context.model_usage_provider.as_deref(),
+            Some("fixture-model")
+        );
+        assert_eq!(
+            context.model_usage_long_context_min_total_input_tokens,
+            Some(272_001)
+        );
+        assert_eq!(
             context.secret_values.as_deref(),
             Some(["fixture-secret-value-not-real".to_string()].as_slice())
         );
@@ -5628,6 +5694,205 @@ mod tests {
             "fixture_provider"
         );
         claim_mock.assert_calls_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn api_client_claim_buckets_large_received_body_with_observed_identity_encoding() {
+        let server = MockServer::start_async().await;
+        let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+        let claim_path = format!("/api/runners/jobs/{run_id}/claim");
+        let mut response: serde_json::Value =
+            serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        response["prompt"] = serde_json::Value::String("界".repeat(50_000));
+        let serialized = serde_json::to_string(&response).unwrap();
+        assert!((64 * 1024..256 * 1024).contains(&serialized.len()));
+        let claim_mock = server
+            .mock_async(|when, then| {
+                when.method(POST).path(claim_path.as_str());
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .header("content-encoding", "identity")
+                    .body(serialized);
+            })
+            .await;
+        let api = api_client_for_server(&server);
+
+        let claimed = api
+            .claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+            .unwrap()
+            .expect("large synthetic claim response should decode");
+        assert!(
+            claimed.response_first_body_chunk_wait_elapsed <= claimed.response_body_read_elapsed
+        );
+        let attribution = claimed.response_attribution;
+        assert_eq!(attribution.body_size_bucket(), "64_256_kib");
+        assert_eq!(attribution.content_encoding(), "identity");
+        claim_mock.assert_calls_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn api_client_claim_attributes_first_and_remaining_body_chunks() {
+        let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+        let mut context: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        context["prompt"] = Value::String("synthetic chunked prompt".repeat(5000));
+        let body = serde_json::to_vec(&context).unwrap();
+        let first_len = 128;
+        assert!((64 * 1024..256 * 1024).contains(&body.len()));
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (headers_sent_tx, headers_sent_rx) = oneshot::channel();
+        let (release_first_tx, release_first_rx) = oneshot::channel();
+        let (first_sent_tx, first_sent_rx) = oneshot::channel();
+        let (release_tail_tx, release_tail_rx) = oneshot::channel();
+        let server_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await.unwrap();
+            assert!(request.contains(&format!("/api/runners/jobs/{run_id}/claim")));
+            socket.write_all(headers.as_bytes()).await.unwrap();
+            headers_sent_tx.send(()).unwrap();
+            release_first_rx.await.unwrap();
+            socket.write_all(&body[..first_len]).await.unwrap();
+            first_sent_tx.send(()).unwrap();
+            release_tail_rx.await.unwrap();
+            socket.write_all(&body[first_len..]).await.unwrap();
+        });
+        let api = api_client_for_url(url);
+        let claim_task = tokio::spawn(async move {
+            api.claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+        });
+        headers_sent_rx.await.unwrap();
+        assert!(
+            !claim_task.is_finished(),
+            "the claim must wait for body bytes"
+        );
+        release_first_tx.send(()).unwrap();
+        first_sent_rx.await.unwrap();
+        assert!(
+            !claim_task.is_finished(),
+            "the claim must wait for the rest of the body"
+        );
+        release_tail_tx.send(()).unwrap();
+        let claimed = claim_task.await.unwrap().unwrap().unwrap();
+        assert_eq!(
+            claimed.context.prompt,
+            "synthetic chunked prompt".repeat(5000)
+        );
+        assert_eq!(
+            claimed.response_attribution.body_size_bucket(),
+            "64_256_kib"
+        );
+        assert!(
+            claimed.response_first_body_chunk_wait_elapsed < claimed.response_body_read_elapsed
+        );
+        join_raw_http_task(server_task, "split claim response server").await;
+    }
+
+    #[tokio::test]
+    async fn claim_body_reader_observes_first_chunk_before_collecting_tail() {
+        let body = b"synthetic first chunk and delayed tail";
+        let first_len = 16;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (headers_sent_tx, headers_sent_rx) = oneshot::channel();
+        let (release_first_tx, release_first_rx) = oneshot::channel();
+        let (release_tail_tx, release_tail_rx) = oneshot::channel();
+        let server_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            read_http_request(&mut socket).await.unwrap();
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            headers_sent_tx.send(()).unwrap();
+            release_first_rx.await.unwrap();
+            socket.write_all(&body[..first_len]).await.unwrap();
+            release_tail_rx.await.unwrap();
+            socket.write_all(&body[first_len..]).await.unwrap();
+        });
+        let resp = reqwest::Client::new().get(url).send().await.unwrap();
+        headers_sent_rx.await.unwrap();
+        let (first_observed_tx, first_observed_rx) = oneshot::channel();
+        let read_task = tokio::spawn(async move {
+            read_claim_response_body(resp, move || {
+                first_observed_tx.send(()).unwrap();
+            })
+            .await
+        });
+        assert!(
+            !read_task.is_finished(),
+            "the reader must wait for the first chunk"
+        );
+        release_first_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), first_observed_rx)
+            .await
+            .expect("first chunk observation should not stall")
+            .unwrap();
+        assert!(
+            !read_task.is_finished(),
+            "the reader must still wait for the tail after observing the first chunk"
+        );
+        release_tail_tx.send(()).unwrap();
+        let (collected, first_wait, total_read) = read_task.await.unwrap().unwrap();
+        assert_eq!(collected.as_ref(), body);
+        assert!(first_wait < total_read);
+        join_raw_http_task(server_task, "first chunk and tail server").await;
+    }
+
+    #[tokio::test]
+    async fn api_client_claim_cancellation_drops_incomplete_body_read() {
+        let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (first_sent_tx, first_sent_rx) = oneshot::channel();
+        let server_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            read_http_request(&mut socket).await.unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n{\"runId\":")
+                .await
+                .unwrap();
+            first_sent_tx.send(()).unwrap();
+            let mut byte = [0];
+            let read = tokio::time::timeout(Duration::from_secs(5), socket.read(&mut byte))
+                .await
+                .expect("cancelled claim should close the incomplete response");
+            match read {
+                Ok(0) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+                other => panic!("cancelled claim should disconnect, got {other:?}"),
+            }
+        });
+        let api = api_client_for_url(url);
+        let claim_task = tokio::spawn(async move {
+            api.claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+        });
+        first_sent_rx.await.unwrap();
+        assert!(!claim_task.is_finished());
+        claim_task.abort();
+        assert!(claim_task.await.unwrap_err().is_cancelled());
+        join_raw_http_task(server_task, "cancelled claim response server").await;
     }
 
     #[tokio::test]
@@ -5773,7 +6038,7 @@ mod tests {
                                         "heartbeatGeneration": TEST_HEARTBEAT_GENERATION,
                                     },
                                     "runnerHostname": "prod-1.aws.vm3.ai",
-                                    "capabilities": { "piModelConfigGenerations": [1, 2, 3, 4] },
+                                    "capabilities": { "piModelConfigGenerations": [1, 2, 3] },
                                     "telemetry": {},
                                 })
                     });
@@ -6393,7 +6658,7 @@ mod tests {
         let event = captured_event(&events, "failed to report completion");
         assert_eq!(event.level, Level::ERROR);
         assert_eq!(event_field(event, "attempt"), "1");
-        assert_eq!(event_field(event, "max_attempts"), "2");
+        assert_eq!(event_field(event, "max_attempts"), "3");
         assert_eq!(event_field(event, "will_retry"), "false");
         assert_eq!(event_field(event, "status"), "400");
         assert_eq!(event_field(event, "failure_kind"), "http_status");
@@ -6408,102 +6673,67 @@ mod tests {
             StatusCode::TOO_MANY_REQUESTS,
             StatusCode::INTERNAL_SERVER_ERROR,
         ] {
-            let mut server = complete_sequence_server(vec![status.as_u16(), 200]).await;
-            let api_url = server.url();
-            let run_id = RunId::from(uuid::Uuid::nil());
-            let provider = api_provider_for_test(
-                api_url,
-                CancellationToken::new(),
-                Arc::new(PollWakeups::new(false)),
-            );
-            let complete_task = tokio::spawn(async move {
-                provider
+            for success_attempt in 2..=3 {
+                let mut statuses = vec![status.as_u16(); success_attempt - 1];
+                statuses.push(200);
+                let mut server = complete_sequence_server(statuses).await;
+                let run_id = RunId::from(uuid::Uuid::nil());
+                let expected_body = serde_json::to_string(&complete_request(run_id)).unwrap();
+                let provider = api_provider_for_test(
+                    server.url(),
+                    CancellationToken::new(),
+                    Arc::new(PollWakeups::new(false)),
+                );
+                let captured = CapturedEvents::default();
+                let subscriber = tracing_subscriber::registry().with(captured.clone());
+                let completion = provider
                     .complete(
                         complete_request(run_id),
                         CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
                     )
-                    .await;
-            });
+                    .with_subscriber(subscriber);
+                tokio::pin!(completion);
 
-            let first_request = server
-                .next_request("first transient completion request")
-                .await;
-            assert_complete_authorization(&first_request, "sandbox-token");
-            tokio::task::yield_now().await;
-            assert!(
-                server.try_next_request().is_err(),
-                "status {status} should wait before the retry"
-            );
-            tokio::time::advance(Duration::from_secs(2)).await;
-            let second_request = server
-                .next_request("retried transient completion request")
-                .await;
-            assert_complete_authorization(&second_request, "sandbox-token");
+                for attempt in 1..=success_attempt {
+                    let request = tokio::select! {
+                        () = &mut completion => panic!("completion returned before attempt {attempt}"),
+                        request = server.next_request("transient completion request") => request,
+                    };
+                    assert_complete_authorization(&request, "sandbox-token");
+                    assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
+                    if attempt < success_attempt {
+                        assert_completion_retry_delay(
+                            completion.as_mut(),
+                            &captured,
+                            &mut server,
+                            attempt,
+                        )
+                        .await;
+                    }
+                }
 
-            complete_task.await.unwrap();
-            server.assert_finished().await;
+                completion.await;
+                server.assert_finished().await;
+            }
         }
     }
 
     #[tokio::test(start_paused = true)]
     async fn api_provider_complete_retries_transport_failure() {
-        let mut server = RawHttpTestServer::spawn(vec![
-            RawHttpAction::Disconnect,
-            RawHttpAction::Respond(status_response(200)),
-        ])
-        .await;
-        let api_url = server.url();
-        let run_id = RunId::from(uuid::Uuid::nil());
-        let provider = api_provider_for_test(
-            api_url,
-            CancellationToken::new(),
-            Arc::new(PollWakeups::new(false)),
-        );
-        let complete_task = tokio::spawn(async move {
-            provider
-                .complete(
-                    complete_request(run_id),
-                    CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
-                )
-                .await;
-        });
-
-        let first_request = server.next_request("first completion request").await;
-        assert_complete_authorization(&first_request, "sandbox-token");
-        tokio::task::yield_now().await;
-        assert!(
-            server.try_next_request().is_err(),
-            "transport failure should wait before the retry"
-        );
-        tokio::time::advance(Duration::from_secs(2)).await;
-        let second_request = server.next_request("retried completion request").await;
-        assert_complete_authorization(&second_request, "sandbox-token");
-
-        complete_task.await.unwrap();
-        server.assert_finished().await;
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn api_provider_complete_timeout_retry_is_info_and_exhaustion_is_error() {
-        for repeated_timeout in [false, true] {
-            let (first_release, first_response) = tokio::sync::oneshot::channel();
-            let (second_release, second_response) = tokio::sync::oneshot::channel();
-            let mut server = RawHttpTestServer::spawn(vec![
-                RawHttpAction::WaitThenRespond {
-                    release: first_response,
-                    response: Vec::new(),
-                },
-                RawHttpAction::WaitThenRespond {
-                    release: second_response,
-                    response: if repeated_timeout {
-                        Vec::new()
+        for reset_connection in [false, true] {
+            let mut actions: Vec<_> = (0..2)
+                .map(|_| {
+                    if reset_connection {
+                        RawHttpAction::ResetConnection
                     } else {
-                        status_response(200)
-                    },
-                },
-            ])
-            .await;
+                        RawHttpAction::Disconnect
+                    }
+                })
+                .collect();
+            actions.push(RawHttpAction::Respond(status_response(200)));
+            let mut server = RawHttpTestServer::spawn(actions).await;
             let run_id = RunId::from(uuid::Uuid::nil());
+            let expected_body = serde_json::to_string(&complete_request(run_id)).unwrap();
             let provider = api_provider_for_test(
                 server.url(),
                 CancellationToken::new(),
@@ -6519,46 +6749,103 @@ mod tests {
                 .with_subscriber(subscriber);
             tokio::pin!(completion);
 
-            let first_request = tokio::select! {
-                () = &mut completion => panic!("completion returned before the first request"),
-                request = server.next_request("completion request to time out") => request,
-            };
-            assert_complete_authorization(&first_request, "sandbox-token");
-            // Expire the real HTTP client's deadline after the server receives the request.
-            tokio::time::advance(Duration::from_secs(10) + Duration::from_millis(1)).await;
-            std::future::poll_fn(|cx| {
-                assert!(completion.as_mut().poll(cx).is_pending());
-                if captured.entries().iter().any(|event| {
-                    event
-                        .fields
-                        .get("message")
-                        .is_some_and(|message| message == "completion report failed, retrying")
-                }) {
-                    std::task::Poll::Ready(())
-                } else {
-                    std::task::Poll::Pending
+            for attempt in 1..=3 {
+                let request = tokio::select! {
+                    () = &mut completion => panic!("completion returned before attempt {attempt}"),
+                    request = server.next_request("completion transport request") => request,
+                };
+                assert_complete_authorization(&request, "sandbox-token");
+                assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
+                if attempt < 3 {
+                    assert_completion_retry_delay(
+                        completion.as_mut(),
+                        &captured,
+                        &mut server,
+                        attempt,
+                    )
+                    .await;
                 }
-            })
-            .await;
-            // Close the timed-out connection without sending a response.
-            first_release.send(()).unwrap();
-            tokio::time::advance(Duration::from_secs(2)).await;
-            let second_request = tokio::select! {
-                () = &mut completion => panic!("completion returned before the retry request"),
-                request = server.next_request("retried completion request") => request,
-            };
-            assert_complete_authorization(&second_request, "sandbox-token");
-            assert_eq!(
-                first_request.split_once("\r\n\r\n").unwrap().1,
-                second_request.split_once("\r\n\r\n").unwrap().1,
+            }
+
+            completion.await;
+            server.assert_finished().await;
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn api_provider_complete_timeout_retry_is_info_and_exhaustion_is_error() {
+        for repeated_timeout in [false, true] {
+            let attempt_count = if repeated_timeout { 3 } else { 2 };
+            let mut releases = Vec::new();
+            let mut actions = Vec::new();
+            for attempt in 1..=attempt_count {
+                let (release, response) = tokio::sync::oneshot::channel();
+                releases.push(release);
+                actions.push(RawHttpAction::WaitThenRespond {
+                    release: response,
+                    response: if !repeated_timeout && attempt == attempt_count {
+                        status_response(200)
+                    } else {
+                        Vec::new()
+                    },
+                });
+            }
+            let mut server = RawHttpTestServer::spawn(actions).await;
+            let run_id = RunId::from(uuid::Uuid::nil());
+            let expected_body = serde_json::to_string(&complete_request(run_id)).unwrap();
+            let provider = api_provider_for_test(
+                server.url(),
+                CancellationToken::new(),
+                Arc::new(PollWakeups::new(false)),
             );
-            if repeated_timeout {
+            let captured = CapturedEvents::default();
+            let subscriber = tracing_subscriber::registry().with(captured.clone());
+            let completion = provider
+                .complete(
+                    complete_request(run_id),
+                    CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
+                )
+                .with_subscriber(subscriber);
+            tokio::pin!(completion);
+
+            for (index, release) in releases.into_iter().enumerate() {
+                let attempt = index + 1;
+                let request = tokio::select! {
+                    () = &mut completion => panic!("completion returned before attempt {attempt}"),
+                    request = server.next_request("completion timeout request") => request,
+                };
+                assert_complete_authorization(&request, "sandbox-token");
+                assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
+                if !repeated_timeout && attempt == attempt_count {
+                    release.send(()).unwrap();
+                    completion.as_mut().await;
+                    break;
+                }
+                // Expire the real HTTP client's deadline after receiving the request.
                 tokio::time::advance(Duration::from_secs(10) + Duration::from_millis(1)).await;
-                completion.await;
-                second_release.send(()).unwrap();
-            } else {
-                second_release.send(()).unwrap();
-                completion.await;
+                if attempt == attempt_count {
+                    completion.as_mut().await;
+                    release.send(()).unwrap();
+                    break;
+                }
+                std::future::poll_fn(|cx| {
+                    assert!(completion.as_mut().poll(cx).is_pending());
+                    if captured.entries().iter().any(|event| {
+                        event.fields.get("attempt") == Some(&attempt.to_string())
+                            && event.fields.get("message").is_some_and(|message| {
+                                message == "completion report failed, retrying"
+                            })
+                    }) {
+                        std::task::Poll::Ready(())
+                    } else {
+                        std::task::Poll::Pending
+                    }
+                })
+                .await;
+                // Close the timed-out connection without sending a response.
+                release.send(()).unwrap();
+                assert!(server.try_next_request().is_err());
+                tokio::time::advance(Duration::from_secs(2)).await;
             }
             server.assert_finished().await;
 
@@ -6566,6 +6853,7 @@ mod tests {
             let retry_event = captured_event(&events, "completion report failed, retrying");
             assert_eq!(retry_event.level, Level::INFO);
             assert_eq!(event_field(retry_event, "attempt"), "1");
+            assert_eq!(event_field(retry_event, "max_attempts"), "3");
             assert_eq!(event_field(retry_event, "will_retry"), "true");
             assert_eq!(event_field(retry_event, "failure_kind"), "timeout");
             let terminal_events: Vec<_> = events
@@ -6577,7 +6865,7 @@ mod tests {
                 let final_event =
                     captured_event(&events, "failed to report completion after retry");
                 assert_eq!(final_event.level, Level::ERROR);
-                assert_eq!(event_field(final_event, "attempt"), "2");
+                assert_eq!(event_field(final_event, "attempt"), "3");
                 assert_eq!(event_field(final_event, "will_retry"), "false");
                 assert_eq!(event_field(final_event, "failure_kind"), "timeout");
             } else {
@@ -6613,12 +6901,17 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn api_provider_complete_stops_after_two_transient_failures() {
-        let mut server = complete_sequence_server(vec![500, 500]).await;
-        let api_url = server.url();
+    async fn api_provider_complete_stops_after_three_transient_failures() {
+        let mut server = complete_sequence_server(vec![500; 3]).await;
         let run_id = RunId::from(uuid::Uuid::nil());
+        let request = CompleteRequest {
+            exit_code: 1,
+            error: Some("boom".to_string()),
+            ..complete_request(run_id)
+        };
+        let expected_body = serde_json::to_string(&request).unwrap();
         let provider = api_provider_for_test(
-            api_url,
+            server.url(),
             CancellationToken::new(),
             Arc::new(PollWakeups::new(false)),
         );
@@ -6627,49 +6920,48 @@ mod tests {
         let subscriber = tracing_subscriber::registry().with(captured.clone());
         let completion = provider
             .complete(
-                CompleteRequest {
-                    exit_code: 1,
-                    error: Some("boom".to_string()),
-                    ..complete_request(run_id)
-                },
+                request,
                 CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
             )
             .with_subscriber(subscriber);
         tokio::pin!(completion);
 
-        let first_request = tokio::select! {
-            () = &mut completion => panic!("completion should wait before the retry"),
-            request = server.next_request("first failed completion request") => request,
-        };
-        assert_complete_authorization(&first_request, "sandbox-token");
-        // Establish the retry timer before advancing paused time.
-        std::future::poll_fn(|cx| {
-            assert!(
-                completion.as_mut().poll(cx).is_pending(),
-                "completion should wait before the retry"
-            );
-            if captured.entries().iter().any(|event| {
-                event
-                    .fields
-                    .get("message")
-                    .is_some_and(|message| message == "completion report failed, retrying")
-            }) {
-                std::task::Poll::Ready(())
-            } else {
-                std::task::Poll::Pending
+        for attempt in 1..=3 {
+            let request = tokio::select! {
+                () = &mut completion => panic!("completion returned before attempt {attempt}"),
+                request = server.next_request("failed completion request") => request,
+            };
+            assert_complete_authorization(&request, "sandbox-token");
+            assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
+            if attempt == 3 {
+                completion.as_mut().await;
+                break;
             }
-        })
-        .await;
-        assert!(
-            server.try_next_request().is_err(),
-            "completion should wait before the retry"
-        );
-        tokio::time::advance(Duration::from_secs(2)).await;
-        let ((), second_request) = tokio::join!(
-            &mut completion,
-            server.next_request("second failed completion request")
-        );
-        assert_complete_authorization(&second_request, "sandbox-token");
+            // Establish each retry timer before advancing paused time.
+            std::future::poll_fn(|cx| {
+                assert!(
+                    completion.as_mut().poll(cx).is_pending(),
+                    "completion should wait before retry {attempt}"
+                );
+                if captured.entries().iter().any(|event| {
+                    event.fields.get("attempt") == Some(&attempt.to_string())
+                        && event
+                            .fields
+                            .get("message")
+                            .is_some_and(|message| message == "completion report failed, retrying")
+                }) {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            })
+            .await;
+            assert!(
+                server.try_next_request().is_err(),
+                "completion should wait before retry {attempt}"
+            );
+            tokio::time::advance(Duration::from_secs(2)).await;
+        }
         server.assert_finished().await;
 
         let events = captured.entries();
@@ -6679,19 +6971,20 @@ mod tests {
                 .iter()
                 .filter(|event| event.fields.get("run_id") == Some(&run_id))
                 .count(),
-            2,
-            "two failed requests should produce two provider events: {events:#?}"
+            3,
+            "three failed requests should produce three provider events: {events:#?}"
         );
         let retry_event = captured_event(&events, "completion report failed, retrying");
         assert_eq!(retry_event.level, Level::WARN);
         assert_eq!(event_field(retry_event, "attempt"), "1");
+        assert_eq!(event_field(retry_event, "max_attempts"), "3");
         assert_eq!(event_field(retry_event, "will_retry"), "true");
         assert_eq!(event_field(retry_event, "status"), "500");
         assert_eq!(event_field(retry_event, "failure_kind"), "http_status");
 
         let final_event = captured_event(&events, "failed to report completion after retry");
         assert_eq!(final_event.level, Level::ERROR);
-        assert_eq!(event_field(final_event, "attempt"), "2");
+        assert_eq!(event_field(final_event, "attempt"), "3");
         assert_eq!(event_field(final_event, "will_retry"), "false");
         assert_eq!(event_field(final_event, "status"), "500");
         assert_eq!(event_field(final_event, "failure_kind"), "http_status");

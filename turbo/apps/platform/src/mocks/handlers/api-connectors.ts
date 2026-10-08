@@ -42,10 +42,8 @@ import { connectorOverviewContract } from "@okouai/api-contracts/contracts/conne
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { mockApi } from "../msw-contract.ts";
 import {
-  testConnectorCatalogCategoryMetadata,
   testConnectorCatalogDefinitions,
   testConnectorPermissionDetails,
   type TestConnectorCatalogDefinition,
@@ -438,7 +436,6 @@ export const apiConnectorsHandlers = [
         return {
           slug: connector.slug,
           label: connector.label,
-          description: connector.description,
           icon: connector.icon,
           hasPermissions: connector.permissionSummary.hasPermissions,
         };
@@ -478,9 +475,6 @@ export const apiConnectorsHandlers = [
   mockApi(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [] });
   }),
-  mockApi(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: false });
-  }),
   mockApi(sshConnectionsContract.observations, ({ respond }) => {
     return respond(200, { observations: [] });
   }),
@@ -493,10 +487,7 @@ export const apiConnectorsHandlers = [
 
   mockApi(connectorCatalogContract.status, ({ respond }) => {
     const connectors = mockConnectorCatalogStatus();
-    return respond(200, {
-      connectors,
-      categoryMetadata: testConnectorCatalogCategoryMetadata,
-    });
+    return respond(200, { connectors });
   }),
 
   mockApi(connectorCatalogContract.oneClick, ({ respond }) => {
@@ -539,7 +530,6 @@ export const apiConnectorsHandlers = [
       : allConnectors.slice(0, 100);
     return respond(200, {
       connectors,
-      categoryMetadata: testConnectorCatalogCategoryMetadata,
       totalConnectorCount: allConnectors.length,
     });
   }),
@@ -548,51 +538,6 @@ export const apiConnectorsHandlers = [
     return respond(200, { connectors: [] });
   }),
 
-  mockApi(connectorCatalogContract.diagnostics, ({ respond }) => {
-    return respond(200, {
-      schemaVersion: 4,
-      state: "stale",
-      active: {
-        catalogVersion: "2026-07-25.1",
-        catalogDigest: `sha256:${"a".repeat(64)}`,
-        activatedAt: "2026-07-25T01:00:00.000Z",
-      },
-      lastAttempt: {
-        at: "2026-07-25T02:00:00.000Z",
-        outcome: "rejected",
-        failureCode: "invalid-artifact",
-        reusedCachedRejection: true,
-      },
-      lastSuccessAt: "2026-07-25T02:00:00.000Z",
-      rejectedCandidate: {
-        catalogVersion: "2026-07-25.2",
-        catalogDigest: `sha256:${"c".repeat(64)}`,
-        failureCode: "invalid-artifact",
-        backendVersion: "1.319.0",
-      },
-      filtering: {
-        capabilityDigest: `sha256:${"b".repeat(64)}`,
-        evaluatedAt: "2026-07-25T01:00:00.000Z",
-        stale: false,
-        filteredAuthMethods: [
-          {
-            connectorSlug: "github",
-            authMethodId: "oauth",
-            reasons: ["missing-revoke-provider"],
-          },
-        ],
-      },
-      credentialStorage: {
-        missingConnectorVersions: 1,
-        unownedConnectorSecrets: 2,
-        unownedConnectorVariables: 3,
-        unresolvedBridgeCredentials: 5,
-      },
-    });
-  }),
-
-  // Keep this parameterized route after the static /diagnostics route so the
-  // mock server does not interpret "diagnostics" as a connector slug.
   mockApi(connectorCatalogContract.get, ({ params, respond }) => {
     const connector = mockConnectorCatalogStatus().find((candidate) => {
       return candidate.slug === params.connectorSlug;

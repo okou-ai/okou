@@ -137,30 +137,17 @@ interface AvatarContentBounds {
 function composerContentBounds(
   config: AvatarSvgConfig,
   headOffsetY: number,
-  neckSweater: boolean,
 ): AvatarContentBounds {
   const hairTop =
     AVATAR_HAIR_TOP_Y[config.hair][config.face === "square" ? 1 : 0];
-  const hairBottom =
-    config.hair === "low-pigtails"
-      ? config.face === "square"
-        ? 370
-        : 348
-      : config.hair === "geometric-long" || config.hair === "long-center-part"
-        ? 316
-        : AVATAR_FACE_CHIN_Y[config.face];
   return {
     // Not clamped to the canvas. A face whose chin sits below the baseline
     // moves up, and tall hair then reaches past the top of its own canvas; the
     // framing rule has to see that overhang to fit and center the artwork
     // rather than let the box crop it.
     top: hairTop + headOffsetY,
-    // No offset here. Without the collar there is nothing for a chin to meet,
-    // so the head is never moved and this bound is only ever asked for at the
-    // drawn position.
-    bottom: neckSweater
-      ? 380
-      : Math.min(380, Math.max(AVATAR_FACE_CHIN_Y[config.face], hairBottom)),
+    // The sweater runs to the bottom edge of the canvas.
+    bottom: 380,
   };
 }
 
@@ -210,7 +197,7 @@ function contentScale({ top, bottom }: AvatarContentBounds): number {
   return Math.sqrt(AVATAR_CONTENT_TARGET_FILL / ((bottom - top) / 380));
 }
 
-/** Where the artwork sits in its box, once the two switches have been read. */
+/** Where the artwork sits in its box. */
 interface AvatarPlacement {
   /** Percentage translation applied before the scale. */
   readonly contentOffsetY: number;
@@ -273,14 +260,13 @@ export function avatarSvgContentTransform(
 }
 
 /**
- * `neckSweater` is the `avatarNeckSweater` switch. With it off the result is
- * byte-for-byte the four head layers where they were drawn, because the neck
- * and the chin baseline are one change: a moved head with no collar under it is
- * just a misplaced version of the avatar already saved.
+ * Every composer avatar wears the shared neck and sweater, with the head moved
+ * so each chin meets the same collar.
  *
- * `framing` is the `avatarFraming` switch. With it off `contentScale` stays at
- * the scale each family already shipped with, so only the callers that ask for
- * centering get it.
+ * `framing` centers the visible artwork and moves it halfway to a shared fill
+ * (see `contentScale`). Only the pinned rows turn it off, to keep every collar
+ * on the shared chin baseline; there `contentScale` stays at the scale each
+ * family already shipped with.
  *
  * `bottomAnchored` replaces the centering with `bottomAnchoredOffsetY`. Only
  * the chat home greeting asks for it, because it is the only avatar with
@@ -292,11 +278,9 @@ export function avatarSvgContentTransform(
 export function avatarSvgComposition(
   config: ResolvedAvatarSvgConfig,
   {
-    neckSweater,
     framing,
     bottomAnchored = false,
   }: {
-    readonly neckSweater: boolean;
     readonly framing: boolean;
     readonly bottomAnchored?: boolean;
   },
@@ -342,22 +326,13 @@ export function avatarSvgComposition(
       contentScale: scale,
     };
   };
-  if (!neckSweater) {
-    return {
-      behind: [],
-      head,
-      front: [],
-      headOffsetY: 0,
-      ...placement(composerContentBounds(config, 0, false)),
-    };
-  }
   const headOffsetY = AVATAR_CHIN_BASELINE_Y - AVATAR_FACE_CHIN_Y[config.face];
   return {
     behind: [avatarComposerAssetUrl(`neck/${config.skin}.svg`)],
     head,
     front: [avatarComposerAssetUrl(`sweater/${config.sweater}.svg`)],
     headOffsetY: (headOffsetY / 380) * 100,
-    ...placement(composerContentBounds(config, headOffsetY, true)),
+    ...placement(composerContentBounds(config, headOffsetY)),
   };
 }
 

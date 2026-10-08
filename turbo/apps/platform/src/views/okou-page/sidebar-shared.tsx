@@ -43,7 +43,7 @@ export function useChatThreadsTitleLabels() {
 export function ChatThreadStateText({
   state,
 }: {
-  readonly state: "running" | "unread" | "draft" | "pinned" | null;
+  readonly state: "running" | "muted" | "unread" | "draft" | "pinned" | null;
 }) {
   const { t } = useTranslation();
   if (state === null) {
@@ -52,6 +52,9 @@ export function ChatThreadStateText({
   const labels = {
     running: t(($) => {
       return $.activity.statuses.running;
+    }),
+    muted: t(($) => {
+      return $.chat.sidebar.muted;
     }),
     unread: t(($) => {
       return $.chat.sidebar.unread;

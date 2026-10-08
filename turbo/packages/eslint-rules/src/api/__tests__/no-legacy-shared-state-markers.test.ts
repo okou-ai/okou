@@ -33,7 +33,6 @@ ruleTester.run("no-legacy-shared-state-markers", noLegacySharedStateMarkers, {
     {
       name: "scoped process override remains valid",
       code: `
-        await withSecretKmsClientForTest(client, async () => decrypt());
         const cache = teamsBotAuthCacheForSignal(context.signal);
       `,
     },

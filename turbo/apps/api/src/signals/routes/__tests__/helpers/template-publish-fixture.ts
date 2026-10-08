@@ -95,7 +95,7 @@ export function installS3Fixture(context: TestContext) {
       metadata: Readonly<Record<string, string>>;
     }
   >();
-  const signedObjects = new Map<string, string>();
+  const signedObjects = new Map<string, { bucket: string; key: string }>();
   let signature = 0;
 
   function readMetadata(input: Record<string, unknown>) {
@@ -175,7 +175,10 @@ export function installS3Fixture(context: TestContext) {
       // Signed URLs are opaque, so remember which object each one was minted
       // for: a caller handed the wrong object's URL is otherwise indist-
       // inguishable from one handed the right object's.
-      signedObjects.set(url, key);
+      signedObjects.set(url, {
+        bucket: typeof input.Bucket === "string" ? input.Bucket : "",
+        key,
+      });
       if (command instanceof PutObjectCommand) {
         signedPuts.set(url, {
           bucket: typeof input.Bucket === "string" ? input.Bucket : "",
@@ -206,7 +209,18 @@ export function installS3Fixture(context: TestContext) {
     },
     /** The object a signed URL was minted for. */
     signedKey(url: string): string | undefined {
-      return signedObjects.get(url);
+      return signedObjects.get(url)?.key;
+    },
+    /** Read the external object addressed by a URL actually issued to a caller. */
+    readSignedObject(url: string): Buffer {
+      const target = signedObjects.get(url);
+      const object = target
+        ? objects.get(objectId(target.bucket, target.key))
+        : undefined;
+      if (!object) {
+        throw new Error(`Missing presigned object: ${url}`);
+      }
+      return Buffer.from(object.body);
     },
   };
 }

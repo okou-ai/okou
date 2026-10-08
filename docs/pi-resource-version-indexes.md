@@ -12,6 +12,17 @@ Storage and connector catalog commits enqueue durable work in their publication
 transaction. Known-empty initial versions publish an empty projection directly.
 An asynchronous publication can still be pending when its first run starts.
 
+Repeated indexed server-side volume preparation first validates the registered
+version and the current-extractor ready projection's schema, hash and Storage
+identity. A ready hit skips canonical archive construction/decode and carries a
+reused receipt, so HEAD publication does not rewrite the same index. Registered
+misses (including pending/running/unindexable or other extractor generations)
+still use the canonical encoder/decoder and synchronous completion without
+re-uploading the registered objects. Integrity errors are not misses. Logical
+identity is independent of the source gzip-size hint. Captured-read source guards
+and worker lease ownership are unchanged. See
+[Storage publication](storage-version-publication.md#reuse-indexed-server-side-volumes).
+
 The indexed files retain archive entry order and path presence. Only context and
 ignore text and skill frontmatter are stored; other bodies stay in Storage.
 Ignored invalid UTF-8/frontmatter is recorded without failing publication.
@@ -61,6 +72,11 @@ while a supported API uses it; a future extractor generation must explicitly
 plan backfill and retirement of older generations.
 
 ## Acceptance
+
+The `pi_resource_snapshot_prepare` operation below came from the retired Pi
+resource snapshot preparation, which the API no longer runs (see
+[deployment compatibility](deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07)).
+The paragraph is kept as the historical acceptance record.
 
 Production `pi_resource_snapshot_prepare` operations in the existing sandbox
 operation dataset report full-cache lookup, index lookup, archive download/decode,

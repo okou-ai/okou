@@ -7,7 +7,7 @@ type UserMessageSourcePart = Extract<
 
 type ChatEventSourceContext =
   | {
-      readonly kind: "slack";
+      readonly kind: "slack" | "discord";
       readonly messagePermalink: string | null;
     }
   | {
@@ -29,13 +29,6 @@ type ChatEventSourceContext =
       readonly messageId: string | null;
       readonly isDm: boolean | null;
       readonly botUsername: string | null;
-    }
-  | {
-      readonly kind: "github";
-      readonly repo: string | null;
-      readonly subjectNumber: number | null;
-      readonly subjectKind: "issue" | "pull_request" | null;
-      readonly triggerCommentId: string | null;
     }
   | {
       readonly kind: "agentphone";
@@ -107,45 +100,11 @@ function agentphoneChatUrl(
     : undefined;
 }
 
-function githubSubjectUrl(
-  context: Extract<ChatEventSourceContext, { readonly kind: "github" }>,
-): string | undefined {
-  if (
-    context.repo === null ||
-    context.subjectNumber === null ||
-    context.subjectKind === null
-  ) {
-    return undefined;
-  }
-  const [owner, repo, ...extraParts] = context.repo.split("/");
-  if (
-    !owner ||
-    !repo ||
-    extraParts.length > 0 ||
-    !Number.isInteger(context.subjectNumber) ||
-    context.subjectNumber <= 0
-  ) {
-    return undefined;
-  }
-  const commentId = context.triggerCommentId;
-  if (commentId !== null && !/^[1-9]\d*$/u.test(commentId)) {
-    return undefined;
-  }
-  const subjectPath =
-    context.subjectKind === "pull_request" ? "pull" : "issues";
-  const subjectUrl = `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(
-    repo,
-  )}/${subjectPath}/${context.subjectNumber}`;
-  return commentId === null
-    ? subjectUrl
-    : `${subjectUrl}#issuecomment-${commentId}`;
-}
-
 export function createChatEventSourcePart(
   context: ChatEventSourceContext,
 ): UserMessageSourcePart {
   let href: string | undefined;
-  if (context.kind === "slack") {
+  if (context.kind === "slack" || context.kind === "discord") {
     href = storedHref(context.messagePermalink);
   } else if (context.kind === "feishu" || context.kind === "lark") {
     href = storedHref(context.chatOpenUrl);
@@ -153,8 +112,6 @@ export function createChatEventSourcePart(
     href = teamsSourceUrl(context);
   } else if (context.kind === "telegram") {
     href = telegramSourceUrl(context);
-  } else if (context.kind === "github") {
-    href = githubSubjectUrl(context);
   } else if (context.kind === "agentphone") {
     href = agentphoneChatUrl(context);
   }

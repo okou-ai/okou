@@ -13,10 +13,8 @@ import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
+import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { now } from "../../../lib/time";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { deleteAgentRunFixture } from "../../../test-fixtures/chat-events";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -28,17 +26,21 @@ import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 const runsApi = createRunsApi(context);
+const eventsFixture = createChatEventsFixture(context);
 
 type ChatObjectStore = ReturnType<typeof chatCallbacks.acceptChatObjectStorage>;
 
 interface RunUploadFixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
+  readonly agentId: string;
   readonly runId: string;
   readonly bearer: string;
   readonly objectStore: ChatObjectStore;
@@ -98,7 +100,7 @@ async function createRunUploadFixture(
 
   const runnerGroup = runsApi.configureRunnerGroup();
   await runsApi.grantProEntitlement(actor);
-  await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.heartbeatRunner(runnerGroup);
   const agent = await bdd.createAgent(actor, {
     displayName: `BDD upload completion ${randomUUID().slice(0, 8)}`,
@@ -107,23 +109,15 @@ async function createRunUploadFixture(
 
   let runId: string;
   if (options.chatThread) {
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "produce a thread-linked uploaded artifact",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected chat send to create a thread-linked run");
-    }
-    runId = sent.body.runId;
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "produce a thread-linked uploaded artifact",
+    });
+    runId = sent.runId;
   } else {
-    const run = await runsApi.createRun(actor, {
+    const run = await runsApi.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "produce an uploaded artifact",
-      modelProvider: "anthropic-api-key",
     });
     runId = run.runId;
   }
@@ -132,6 +126,7 @@ async function createRunUploadFixture(
 
   return {
     actor: orgActor,
+    agentId: agent.agentId,
     runId,
     bearer: `Bearer ${okouToken({
       userId: actor.userId,
@@ -274,6 +269,73 @@ describe("POST /api/uploads/complete", () => {
     );
   });
 
+  it("publishes completed-run uploads to their owning thread and retains files after thread deletion", async () => {
+    const { actor, agentId, runnerGroup } =
+      await eventsFixture.entitledNativeChatActor();
+    const orgId = requireOrgId(actor);
+    const run = await eventsFixture.sendChatRun(actor, {
+      agentId,
+      prompt: "Produce an artifact that finishes uploading after execution.",
+    });
+    const claimed = await eventsFixture.claimChatRun(runnerGroup, run.runId);
+    await eventsFixture.completeChatRunOk(run.runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+
+    const objectStore = eventsFixture.chatCallbacks.acceptChatObjectStorage();
+    const uploadFixture = { actor: { ...actor, orgId }, objectStore };
+    const bearer = `Bearer ${okouToken({
+      userId: actor.userId,
+      orgId,
+      runId: run.runId,
+      capabilities: ["file:write"],
+    })}`;
+    const fileId = randomUUID();
+    addUploadObject(uploadFixture, fileId, "completed-run.pdf");
+    context.mocks.ably.publish.mockClear();
+
+    const completedUpload = await chat.completeUploadWithBearer(
+      bearer,
+      { id: fileId },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(completedUpload.body).toMatchObject({
+      id: fileId,
+      filename: "completed-run.pdf",
+    });
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      `chatThreadArtifactsChanged:${run.threadId}`,
+      null,
+    );
+
+    await chat.deleteThread(actor, run.threadId);
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    const detachedFileId = randomUUID();
+    addUploadObject(uploadFixture, detachedFileId, "deleted-thread.pdf");
+    const detachedUpload = await chat.completeUploadWithBearer(
+      bearer,
+      { id: detachedFileId },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(detachedUpload.body).toMatchObject({
+      id: detachedFileId,
+      filename: "deleted-thread.pdf",
+    });
+    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+      `chatThreadArtifactsChanged:${run.threadId}`,
+      null,
+    );
+    const catalog = await chat.listArtifactCatalog(actor, { kind: "file" });
+    expect(catalog.artifacts).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: "completed-run.pdf" }),
+        expect.objectContaining({ title: "deleted-thread.pdf" }),
+      ]),
+    );
+  });
+
   it("completes an ordinary session upload without a run artifact association", async () => {
     const actor = bdd.user();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
@@ -294,33 +356,29 @@ describe("POST /api/uploads/complete", () => {
     });
   });
 
-  it("keeps legacy v2 objects without brand metadata on the VM0 CDN", async () => {
+  it("keeps legacy v2 objects without a layout marker on the legacy CDN", async () => {
     const fixture = await createRunUploadFixture();
-    const prepared = await chat.prepareUpload(fixture.actor, {
-      filename: "财务 报告.pdf",
-      contentType: "application/pdf",
-      size: 17,
-    });
-    const key = `artifacts${new URL(prepared.url).pathname}`;
+    const fileId = randomUUID();
+    const key = buildArtifactKeyV2(fileId, "财务 报告.pdf");
     fixture.objectStore.addObject({
       bucket: "test-user-artifacts",
       key,
       size: 17,
       contentType: "application/pdf",
       metadata: {
-        "artifact-id": prepared.id,
+        "artifact-id": fileId,
         filename: encodeURIComponent("财务 报告.pdf"),
         "user-id": encodeURIComponent(fixture.actor.userId),
       },
     });
     const response = await chat.completeUploadWithBearer(
       fixture.bearer,
-      { id: prepared.id },
+      { id: fileId },
       [200],
     );
 
     expect(response.body).toMatchObject({
-      id: prepared.id,
+      id: fileId,
       filename: "财务 报告.pdf",
       contentType: "application/pdf",
       size: 17,
@@ -332,7 +390,7 @@ describe("POST /api/uploads/complete", () => {
     expect(response.body.url).toMatch(/^https:\/\/cdn\.vm7\.io\//u);
   });
 
-  it("resolves the CDN from immutable object brand metadata", async () => {
+  it("resolves the CDN from the immutable object layout marker", async () => {
     const fixture = await createRunUploadFixture();
     const prepared = await chat.prepareUpload(fixture.actor, {
       filename: "okou-report.pdf",
@@ -410,7 +468,7 @@ describe("POST /api/uploads/complete", () => {
     });
   });
 
-  it("rejects corrupt persisted artifact brand metadata", async () => {
+  it("rejects a corrupt persisted artifact layout marker", async () => {
     const fixture = await createRunUploadFixture();
     const prepared = await chat.prepareUpload(fixture.actor, {
       filename: "corrupt-brand.pdf",
@@ -506,7 +564,10 @@ describe("POST /api/uploads/complete", () => {
     const fixture = await createRunUploadFixture();
     const fileId = randomUUID();
     addUploadObject(fixture, fileId, "late.txt", 11);
-    await deleteAgentRunFixture({ runId: fixture.runId });
+    await runsApi.requestCancelRun(fixture.actor, fixture.runId, [200]);
+    await flushWaitUntilForTest();
+    // Agent deletion also removes its threads; owner, bearer and pending upload remain.
+    await bdd.deleteAgent(fixture.actor, fixture.agentId);
 
     const response = await chat.completeUploadWithBearer(
       fixture.bearer,
@@ -538,26 +599,20 @@ describe("POST /api/uploads/complete", () => {
 
   it("rejects suspended orgs before completing the upload", async () => {
     const actor = bdd.user();
-    const completed = await bdd.completeOnboarding(actor);
-    expect(completed.status).toBe(200);
-    await seedOrgMetadata({
-      orgId: requireOrgId(actor),
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: requireOrgId(actor),
-      status: "suspended",
-    });
+    const fixture = createPublicUnfundedProFixture(context, actor);
+    await fixture.run(async () => {
+      await fixture.initialize();
+      await fixture.suspend();
 
-    const response = await chat.requestCompleteUpload(
-      actor,
-      { id: randomUUID() },
-      [402],
-    );
+      const response = await chat.requestCompleteUpload(
+        actor,
+        { id: randomUUID() },
+        [402],
+      );
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    });
   });
 
   it("returns 401 when the request is unauthenticated", async () => {

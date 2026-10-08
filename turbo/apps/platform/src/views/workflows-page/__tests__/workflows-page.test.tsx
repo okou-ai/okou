@@ -628,6 +628,7 @@ function salesResearch(): WorkflowDetailResponse {
     ownerUserId: CURRENT_USER_ID,
     canManage: true,
     canPublish: false,
+    importSource: null,
     createdByUserId: CURRENT_USER_ID,
     updatedByUserId: UPDATED_USER_ID,
     createdAt: "2026-06-17T13:52:00.000Z",
@@ -726,6 +727,7 @@ function officialSalesResearch(
     visibility: "private",
     canManage: false,
     canPublish: false,
+    importSource: null,
     instruction: "Use the accepted Official instructions.",
     files: [{ path: "references/playbook.md", size: 17 }],
     fileContents: [
@@ -788,6 +790,7 @@ function opsPlaybook(): WorkflowDetailResponse {
     ownerUserId: CURRENT_USER_ID,
     canManage: true,
     canPublish: true,
+    importSource: null,
     createdByUserId: CURRENT_USER_ID,
     updatedByUserId: CURRENT_USER_ID,
     createdAt: "2026-06-15T12:00:00.000Z",
@@ -813,6 +816,7 @@ function launchChecklistWorkflow(): WorkflowDetailResponse {
     ownerUserId: CURRENT_USER_ID,
     canManage: true,
     canPublish: true,
+    importSource: null,
     createdByUserId: CURRENT_USER_ID,
     updatedByUserId: CURRENT_USER_ID,
     createdAt: "2026-06-18T12:00:00.000Z",
@@ -838,6 +842,7 @@ function otherAgentWorkflow(): WorkflowDetailResponse {
     ownerUserId: CURRENT_USER_ID,
     canManage: true,
     canPublish: false,
+    importSource: null,
     createdByUserId: CURRENT_USER_ID,
     updatedByUserId: CURRENT_USER_ID,
     createdAt: "2026-06-16T12:00:00.000Z",
@@ -858,9 +863,6 @@ function agent(id: string, displayName: string): AgentResponse {
     description: "Finds and summarizes information",
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
   };
 }
@@ -880,6 +882,7 @@ function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
     canManage: workflow.canManage,
     canPublish: workflow.canPublish,
     official: workflow.official,
+    importSource: workflow.importSource,
   };
 }
 
@@ -899,9 +902,6 @@ function mockAgentPageApis(): void {
       displayName,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     });
   });
@@ -1649,7 +1649,6 @@ test("Hide Official Workflow discovery when it is unavailable", async () => {
     context,
     path: "/workflows",
     featureSwitches: {
-      [FeatureSwitchKey.MorningBrief]: true,
       [FeatureSwitchKey.OfficialWorkflows]: false,
     },
   });
@@ -1663,8 +1662,6 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
     return respond(200, {
       enabled: true,
       status: "enabled",
-      nextRunAt: null,
-      timezone: "UTC",
       unavailableReason: null,
     });
   });
@@ -1672,7 +1669,6 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
   await setupWorkflowDetailPage(
     `/workflows/${MORNING_BRIEF_WORKFLOW_ID}/automations`,
     {
-      [FeatureSwitchKey.MorningBrief]: true,
       [FeatureSwitchKey.OfficialWorkflows]: false,
     },
   );
@@ -1687,13 +1683,12 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
   expect(screen.queryByText("Instructions")).not.toBeInTheDocument();
 });
 
-test("Show Official Workflow discovery without requiring Morning Brief", async () => {
+test("Show Official Workflow discovery when it is available", async () => {
   mockWorkflowApis([officialSalesResearch()]);
   await setupPage({
     context,
     path: "/workflows",
     featureSwitches: {
-      [FeatureSwitchKey.MorningBrief]: false,
       [FeatureSwitchKey.OfficialWorkflows]: true,
     },
   });
@@ -2099,6 +2094,7 @@ test("Block workflow publishing without permission on the owning agent", async (
     ...opsPlaybook(),
     canManage: true,
     canPublish: false,
+    importSource: null,
   };
   mockWorkflowApis([workflow]);
 

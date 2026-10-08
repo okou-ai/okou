@@ -3,13 +3,12 @@ import { Toolbar } from "@base-ui/react/toolbar";
 import { useGet, type LoadableState } from "ccstate-react";
 import { connectorConnectionPending$ } from "../../../../signals/connector-connection-progress.ts";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, CircleCheck, Loader2, Plus } from "lucide-react";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { ChevronRight, Loader2, Plus } from "lucide-react";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorAccountBriefSummary } from "@okouai/api-contracts/contracts/connector-overview";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../../../signals/connector-domain.ts";
-import { Button, surfaceVariants, cn } from "@okouai/ui";
+import { surfaceVariants, cn } from "@okouai/ui";
 import { builtinConnectorCurrentConnectionStatus } from "../../../../signals/okou-page/settings/connectors.ts";
 import { ConnectorPermissionRow } from "./connector-permission-row.tsx";
 import {
@@ -23,13 +22,6 @@ import {
 } from "./launch-connector-connect.ts";
 import { useConnectorAccountLabel } from "./use-connector-account-label.ts";
 import { MercuryDisclosure } from "./mercury-disclosure.tsx";
-
-type CatalogConnectorCardProps = {
-  readonly variant: "catalog";
-  readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly busy: boolean;
-  readonly connect: ConnectorConnectHandlers;
-};
 
 export type ConnectorAccountSummaryStatus = "loading" | "unavailable" | "ready";
 export type ConnectorAccountDisplaySummary =
@@ -59,18 +51,6 @@ type AccountsConnectorCardProps = {
   readonly onManage: () => void;
 };
 
-type OnboardingConnectorCardProps = {
-  readonly variant: "onboarding";
-  readonly connectorSlug: ConnectorSlug;
-  readonly connector: PlatformConnectorCatalogStatusItem | undefined;
-  readonly connected: boolean;
-  readonly busy: boolean;
-  readonly loading: boolean;
-  readonly layout: "workflow" | "prompt";
-  readonly required: boolean;
-  readonly connect: ConnectorConnectHandlers | undefined;
-};
-
 type ActionConnectorCardProps = {
   readonly variant: "action";
   readonly icon: ReactNode;
@@ -88,7 +68,6 @@ type ActionConnectorCardProps = {
 export interface PermissionConnectorCardItem {
   readonly icon: PublicConnectorCatalogIcon;
   readonly label: string;
-  readonly description: string;
   readonly externalUsername: string | null;
 }
 
@@ -117,10 +96,8 @@ type DirectoryConnectorCardProps = {
 };
 
 type ConnectorCardProps =
-  | CatalogConnectorCardProps
   | DirectoryConnectorCardProps
   | AccountsConnectorCardProps
-  | OnboardingConnectorCardProps
   | ActionConnectorCardProps
   | PermissionConnectorCardProps;
 
@@ -133,70 +110,6 @@ function runConnect(
     return;
   }
   launchConnectorConnect({ connector, ...connect });
-}
-
-function CatalogConnectorCard({
-  connector,
-  busy,
-  connect,
-}: CatalogConnectorCardProps) {
-  const { t } = useTranslation();
-  const handleConnect = () => {
-    runConnect(connector, connect, busy);
-  };
-
-  return (
-    <button
-      type="button"
-      disabled={busy}
-      aria-label={t(
-        ($) => {
-          return $.connectors.card.connectAria;
-        },
-        { connector: connector.label },
-      )}
-      data-slot="connector-card"
-      className={cn(
-        surfaceVariants({ interactive: !busy }),
-        "overflow-hidden text-left",
-        busy && "cursor-default",
-      )}
-      onClick={handleConnect}
-    >
-      <span className="flex items-center gap-2.5 px-5 pb-1 pt-4">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-          <ConnectorIcon icon={connector.icon} size={20} />
-        </span>
-        <span
-          data-testid="connector-card-label"
-          className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
-        >
-          {connector.label}
-        </span>
-        <span
-          className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-            !busy && "border border-border/60",
-          )}
-          aria-hidden="true"
-        >
-          {busy ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <Plus size={14} />
-          )}
-        </span>
-      </span>
-      <span className="block px-5 pb-4 pt-1">
-        <span
-          data-testid="connector-help-text"
-          className="line-clamp-2 text-xs text-muted-foreground"
-        >
-          {connector.description}
-        </span>
-      </span>
-    </button>
-  );
 }
 
 /**
@@ -598,101 +511,6 @@ function AccountsConnectorCard({
   );
 }
 
-function onboardingHelpText(
-  helpText: string | undefined,
-  fallback: string,
-): string {
-  return (helpText ?? fallback)
-    .replace(/^Connect your \w+ account to /u, "")
-    .replace(/^Connect your Google account to /u, "")
-    .replace(/^Connect /u, "");
-}
-
-function OnboardingConnectorCard({
-  connectorSlug,
-  connector,
-  connected,
-  busy,
-  loading,
-  layout,
-  required,
-  connect,
-}: OnboardingConnectorCardProps) {
-  const { t } = useTranslation();
-  const label = connector?.label ?? connectorSlug;
-  return (
-    <div
-      data-slot="connector-card"
-      className={cn(
-        "flex min-w-0 items-center gap-3",
-        layout === "workflow"
-          ? "border-b border-border/40 py-[18px] last:border-b-0"
-          : "rounded-xl border border-border px-4 py-3.5 sm:px-5 sm:py-4",
-      )}
-    >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
-        <ConnectorIcon icon={connector?.icon} size={22} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p
-          data-testid="connector-card-label"
-          className="truncate text-sm font-medium"
-        >
-          {label}
-        </p>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          {layout === "workflow" ? (
-            <span className="text-muted-foreground/70">
-              {required
-                ? t(($) => {
-                    return $.connectors.card.required;
-                  })
-                : t(($) => {
-                    return $.connectors.card.optional;
-                  })}{" "}
-              ·{" "}
-            </span>
-          ) : null}
-          {onboardingHelpText(
-            connector?.description,
-            t(($) => {
-              return $.connectors.card.connectToContinue;
-            }),
-          )}
-        </p>
-      </div>
-      {connected ? (
-        <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-brand-text">
-          <CircleCheck size={16} aria-hidden="true" />
-          {t(($) => {
-            return $.connectors.card.connected;
-          })}
-        </span>
-      ) : (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-9 shrink-0 rounded-[10px] px-4 text-sm"
-          disabled={loading || !connector || !connect || busy}
-          onClick={() => {
-            if (connector && connect) {
-              runConnect(connector, connect, busy);
-            }
-          }}
-        >
-          {busy ? (
-            <Loader2 className="animate-spin" aria-hidden="true" />
-          ) : null}
-          {t(($) => {
-            return $.connectors.actions.connect;
-          })}
-        </Button>
-      )}
-    </div>
-  );
-}
-
 function ActionConnectorCard({
   icon,
   label,
@@ -760,15 +578,6 @@ function ActionConnectorCard({
   );
 }
 
-function permissionDescription(description: string): string {
-  return description
-    .replace(/^Connect your \w+ account to /iu, "")
-    .replace(/^access /iu, "")
-    .replace(/^./u, (character) => {
-      return character.toUpperCase();
-    });
-}
-
 function PermissionConnectorCard({
   connector,
   enabled,
@@ -792,11 +601,6 @@ function PermissionConnectorCard({
           </span>
         ) : undefined
       }
-      description={
-        connector.description
-          ? permissionDescription(connector.description)
-          : undefined
-      }
       enabled={enabled}
       loading={loading}
       showManage={showManage}
@@ -808,17 +612,11 @@ function PermissionConnectorCard({
 }
 
 export function ConnectorCard(props: ConnectorCardProps) {
-  if (props.variant === "catalog") {
-    return <CatalogConnectorCard {...props} />;
-  }
   if (props.variant === "directory") {
     return <DirectoryConnectorCard {...props} />;
   }
   if (props.variant === "accounts") {
     return <AccountsConnectorCard {...props} />;
-  }
-  if (props.variant === "onboarding") {
-    return <OnboardingConnectorCard {...props} />;
   }
   if (props.variant === "action") {
     return <ActionConnectorCard {...props} />;
