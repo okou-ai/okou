@@ -1519,6 +1519,16 @@ function menuItemByText(text: RoleTextMatch): HTMLElement {
   return item;
 }
 
+function workflowFileItemByText(text: RoleTextMatch): HTMLElement {
+  const item = queryAllByRoleFast("menuitemradio").find((candidate) => {
+    return matchesText(candidate, text);
+  });
+  if (!item) {
+    throw new Error(`${matchLabel(text)} workflow file item not found`);
+  }
+  return item;
+}
+
 // The "Add automation" automation picker is a dialog split into category tabs on
 // the left and automation cards on the right; a card only mounts once its category
 // is active. Select the category, then the card (matched by its leading title,
@@ -4336,6 +4346,79 @@ test("Warn when a workflow slash command resolves to another workflow", async ()
   expect(screen.getByText("Private Sales Research")).toBeInTheDocument();
 });
 
+test.each(["Enter", "Space"])(
+  "Select workflow files with accessible current state using %s",
+  async (activation) => {
+    const user = userEvent.setup();
+    mockWorkflowApis([salesResearch()]);
+
+    await setupWorkflowDetailPage(
+      `${workflowDetailPath("instructions")}?file=config%2Fsettings.json`,
+    );
+    await expect(
+      screen.findByDisplayValue('{ "risk": "low", "tone": "direct" }'),
+    ).resolves.toBeInTheDocument();
+
+    const picker = screen.getByLabelText("Workflow files");
+    expect(picker).toHaveTextContent("config/settings.json");
+    click(picker);
+    expect(workflowFileItemByText(/config\/settings\.json/)).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    const instructions = workflowFileItemByText("instructions");
+    expect(instructions).toHaveAttribute("aria-checked", "false");
+    expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+
+    await user.keyboard("{Home}");
+    expect(instructions).toHaveFocus();
+    expect(search()).toBe("?file=config%2Fsettings.json");
+    await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+    await expect(
+      screen.findByText("Gather CRM context before outreach."),
+    ).resolves.toBeInTheDocument();
+    expect(search()).toBe("");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(picker).toHaveFocus();
+    });
+
+    click(picker);
+    expect(workflowFileItemByText("instructions")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    click(workflowFileItemByText(/examples\/prompt\.md/));
+    await expect(
+      screen.findByText("Ask for market segment and urgency."),
+    ).resolves.toBeInTheDocument();
+    expect(search()).toBe("?file=examples%2Fprompt.md");
+    expect(picker).toHaveTextContent("examples/prompt.md");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+
+    click(picker);
+    expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(workflowFileItemByText("instructions")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(picker).toHaveFocus();
+    });
+    expect(search()).toBe("?file=examples%2Fprompt.md");
+  },
+);
+
 test("Delete a supplementary workflow file", async () => {
   const updateBodies: WorkflowUpdateRequest[] = [];
   mockWorkflowApis([salesResearch()], (body) => {
@@ -4350,7 +4433,7 @@ test("Delete a supplementary workflow file", async () => {
     ).toBeInTheDocument();
   });
   click(screen.getByLabelText("Workflow files"));
-  click(menuItemByText(/config\/settings\.json/));
+  click(workflowFileItemByText(/config\/settings\.json/));
   click(screen.getByLabelText("Workflow files"));
   click(screen.getByLabelText("Delete config/settings.json"));
 

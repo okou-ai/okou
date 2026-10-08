@@ -78,6 +78,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
   Input,
   Select,
@@ -2718,25 +2720,26 @@ function WorkflowFileNavigationItems({
   readonly onSelectFile: (filePath: string | null) => void;
 }) {
   return (
-    <>
-      <DropdownMenuItem
-        className={cn(!selectedFilePath ? "bg-muted" : "")}
-        onClick={() => {
-          onSelectFile(null);
-        }}
+    <DropdownMenuRadioGroup
+      value={selectedFilePath}
+      onValueChange={onSelectFile}
+    >
+      <DropdownMenuRadioItem
+        value={null}
+        closeOnClick
+        className="data-checked:bg-muted"
       >
         {i18n.t(($) => {
           return $.workflows.detail.files.instructions;
         })}
-      </DropdownMenuItem>
+      </DropdownMenuRadioItem>
       {files.map((file) => {
         return (
-          <DropdownMenuItem
+          <DropdownMenuRadioItem
             key={file.path}
-            className={cn(selectedFilePath === file.path ? "bg-muted" : "")}
-            onClick={() => {
-              onSelectFile(file.path);
-            }}
+            value={file.path}
+            closeOnClick
+            className="data-checked:bg-muted"
           >
             <span className="min-w-0 truncate">{file.path}</span>
             <span className="ml-auto shrink-0 text-xs text-muted-foreground">
@@ -2747,10 +2750,10 @@ function WorkflowFileNavigationItems({
                 { size: file.size },
               )}
             </span>
-          </DropdownMenuItem>
+          </DropdownMenuRadioItem>
         );
       })}
-    </>
+    </DropdownMenuRadioGroup>
   );
 }
 
