@@ -27,7 +27,8 @@ import {
   type PiMemoryStage1ProviderResult,
 } from "@okouai/pi-agent-runtime/api";
 import {
-  resolvePiMemoryStage1Credential,
+  resolvePiMemoryStage1Credential$,
+  validatePiMemoryStage1Credential$,
   PiMemoryStage1CredentialError,
   PiMemoryStage1CredentialRefreshError,
   type PiMemoryStage1CredentialResult,
@@ -786,9 +787,9 @@ const prepareSourceWork$ = command(
   ): Promise<RoutedWork> => {
     const history = await set(loadAndProjectHistory$, { work }, signal);
     signal.throwIfAborted();
-    const credential = await resolvePiMemoryStage1Credential(
+    const credential = await set(
+      resolvePiMemoryStage1Credential$,
       await set(loadModelCatalog$, signal),
-      set(writeDb$),
       {
         sourceRunId: work.selection.sourceRunId,
         orgId: work.orgId,
@@ -917,7 +918,11 @@ const checkPreparedStage1Request$ = command(
       },
       signal,
     );
-    await prepared.credential.validate(signal);
+    await set(
+      validatePiMemoryStage1Credential$,
+      prepared.credential.proof,
+      signal,
+    );
     await validatePreparedWork(db, prepared.work, signal);
   },
 );

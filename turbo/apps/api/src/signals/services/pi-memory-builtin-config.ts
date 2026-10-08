@@ -88,6 +88,24 @@ export async function resolvePiMemoryBuiltinRoute(
   return { ...PI_MEMORY_BUILTIN_BINDING, modelKeyId: key.id };
 }
 
+/** Fixed read owner for the internal route, without foreground default selection. */
+export const resolvePiMemoryBuiltinRoute$ = command(
+  async (
+    { get },
+    signal: AbortSignal,
+  ): Promise<BuiltInModelRuntimeRoute | null> => {
+    const [key] = await get(db$)
+      .select({ id: builtInModelKeys.id, apiKey: builtInModelKeys.apiKey })
+      .from(builtInModelKeys)
+      .where(eq(builtInModelKeys.vendor, "openrouter"))
+      .limit(1);
+    signal.throwIfAborted();
+    return key?.apiKey.trim()
+      ? { ...PI_MEMORY_BUILTIN_BINDING, modelKeyId: key.id }
+      : null;
+  },
+);
+
 export function preparePiMemoryBuiltinEnvironment(
   source: ModelSourceSnapshot,
   route: BuiltInModelRuntimeRoute | undefined,
