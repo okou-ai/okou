@@ -19,7 +19,9 @@ export async function prepareUsageCashInTransaction(
   charges: ReadonlyMap<string, number>,
   at: Date,
 ) {
-  await lockUsagePackWallet(tx, orgId);
+  if (!(await lockUsagePackWallet(tx, orgId))) {
+    throw new Error("Usage settlement organization wallet is missing");
+  }
   const users = [...charges]
     .filter(([, amount]) => {
       return amount > 0;

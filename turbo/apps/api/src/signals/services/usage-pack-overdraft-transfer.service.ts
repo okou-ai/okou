@@ -16,9 +16,7 @@ export async function lockUsagePackWallet(
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, orgId))
     .for("update");
-  if (!wallet) {
-    throw new Error("Usage settlement organization wallet is missing");
-  }
+  return wallet !== undefined;
 }
 
 /**
@@ -31,7 +29,7 @@ export async function transferUsagePackOverdraftsInTransaction(
   owner: { readonly orgId: string; readonly userId?: string },
   at = nowDate(),
 ) {
-  await lockUsagePackWallet(tx, owner.orgId);
+  const hasWallet = await lockUsagePackWallet(tx, owner.orgId);
   const grants = await tx
     .select()
     .from(usagePackCreditGrants)
@@ -48,6 +46,9 @@ export async function transferUsagePackOverdraftsInTransaction(
     .for("update");
   if (grants.length === 0) {
     return;
+  }
+  if (!hasWallet) {
+    throw new Error("Usage pack overdraft has no organization wallet");
   }
   await expireOrgCreditsInTransaction(tx, owner.orgId, at);
   const amount = grants.reduce((total, grant) => {
