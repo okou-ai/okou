@@ -16,6 +16,8 @@ import {
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission$ } from "./run-admission.service";
+import type { CreditBillingMode } from "@okouai/db/schema/credit-billing-mode";
+import { getMemberCreditBillingMode } from "./usage-credit-mode.service";
 import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
   PiMemoryStage1ProviderError,
@@ -887,7 +889,10 @@ async function recordObservedUsage(
   prepared: RoutedWork,
   observedResult: PiMemoryStage1ProviderResult,
   requestId: string,
-  pricingResolution: UsagePricingResolution,
+  billingContext: {
+    readonly pricingResolution: UsagePricingResolution;
+    readonly creditBillingMode: CreditBillingMode | null;
+  },
 ) {
   const usageArgs = {
     memoryStorageId: prepared.work.memoryStorageId,
@@ -895,6 +900,7 @@ async function recordObservedUsage(
     sourceHistoryHash: prepared.work.sourceHistoryHash,
     model: prepared.credential.selectedModel,
     billing: prepared.credential.billing,
+    creditBillingMode: billingContext.creditBillingMode,
     longContextMinTotalInputTokens:
       prepared.credential.longContextMinTotalInputTokens,
     responseSourceId: observedResult.responseId ?? `request:${requestId}`,
@@ -907,7 +913,7 @@ async function recordObservedUsage(
     db,
     usageArgs,
     recordedUsage.ok ? recordedUsage.value : null,
-    pricingResolution,
+    billingContext.pricingResolution,
   );
   return recordedUsage;
 }
@@ -938,6 +944,11 @@ const checkPreparedStage1Request$ = command(
       throw new RetryableWorkError("source_admission_denied");
     }
     const db = set(writeDb$);
+    const creditBillingMode = await getMemberCreditBillingMode(
+      db,
+      prepared.credential.billing,
+    );
+    signal.throwIfAborted();
     await checkPiMemoryQuota(
       db,
       {
@@ -949,6 +960,7 @@ const checkPreparedStage1Request$ = command(
     );
     await prepared.credential.validate(signal);
     await validatePreparedWork(db, prepared.work, signal);
+    return creditBillingMode;
   },
 );
 
@@ -962,6 +974,7 @@ const processPreparedWork$ = command(
     const startedAt = performance.now();
     const requestId = randomUUID();
     let requestPrepared = false;
+    let creditBillingMode: CreditBillingMode | null = null;
     // Return the complete irreversible-result reconciliation. The batch owner
     // joins every provider branch before propagating cancellation, so one
     // aborted request cannot abandon a sibling's observed usage receipt.
@@ -973,7 +986,7 @@ const processPreparedWork$ = command(
             evidence: args.prepared.evidence,
             requestId,
             beforeRequest: async (requestSignal) => {
-              await set(
+              creditBillingMode = await set(
                 checkPreparedStage1Request$,
                 catalogSnapshot,
                 args.prepared,
@@ -987,6 +1000,7 @@ const processPreparedWork$ = command(
       ),
       requestId,
       requestPrepared,
+      creditBillingMode,
       startedAt,
     });
   },
@@ -1008,6 +1022,7 @@ const settlePreparedWork$ = command(
       readonly provider: Stage1ProviderOutcome;
       readonly requestId: string;
       readonly requestPrepared: boolean;
+      readonly creditBillingMode: CreditBillingMode | null;
       readonly startedAt: number;
     },
   ): Promise<WorkOutcome> => {
@@ -1024,7 +1039,10 @@ const settlePreparedWork$ = command(
         args.prepared,
         observedResult,
         requestId,
-        args.pricingResolution,
+        {
+          pricingResolution: args.pricingResolution,
+          creditBillingMode: observation.creditBillingMode,
+        },
       );
       if (!recordedUsage.ok) {
         return await failWork(

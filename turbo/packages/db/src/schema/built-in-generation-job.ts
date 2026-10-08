@@ -1,4 +1,5 @@
 import {
+  check,
   index,
   jsonb,
   pgTable,
@@ -8,6 +9,8 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { agentRuns } from "./agent-run";
+import { sql } from "drizzle-orm";
+import type { CreditBillingMode } from "./credit-billing-mode";
 import type {
   BuiltInGenerationError,
   BuiltInGenerationRequest,
@@ -54,6 +57,7 @@ export const builtInGenerationJobs = pgTable(
     // Preserve the original association across a late provider callback. This
     // metadata follows the job's normal deletion lifecycle, not billing retention.
     billingRunId: uuid("billing_run_id"),
+    creditBillingMode: text("credit_billing_mode").$type<CreditBillingMode>(),
     billingContext: text("billing_context").notNull().default("legacy_unknown"),
     request: jsonb("request").$type<BuiltInGenerationRequest>().notNull(),
     result: jsonb("result").$type<BuiltInGenerationResult>(),
@@ -65,6 +69,10 @@ export const builtInGenerationJobs = pgTable(
   },
   (table) => {
     return [
+      check(
+        "built_in_generation_jobs_credit_billing_mode_check",
+        sql`${table.creditBillingMode} IN ('org', 'member_pack')`,
+      ),
       index("idx_built_in_generation_jobs_user_created").on(
         table.userId,
         table.createdAt.desc(),

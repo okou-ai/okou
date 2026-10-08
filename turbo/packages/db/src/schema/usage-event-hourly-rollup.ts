@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { agentRuns } from "./agent-run";
+import type { CreditBillingMode } from "./credit-billing-mode";
 import { orgUsageAllowanceWindows } from "./org-usage-allowance";
 
 /**
@@ -37,6 +38,7 @@ export const usageEventHourlyRollup = pgTable(
     // Original identity survives run_id SET NULL. Missing historical context is
     // explicit; this is not an authorization reference or a pricing input yet.
     billingRunId: uuid("billing_run_id"),
+    creditBillingMode: text("credit_billing_mode").$type<CreditBillingMode>(),
     billingAnchorAt: timestamp("billing_anchor_at"),
     billingContext: text("billing_context").notNull().default("legacy_unknown"),
     kind: varchar("kind", { length: 30 }).notNull(),
@@ -50,6 +52,10 @@ export const usageEventHourlyRollup = pgTable(
   },
   (table) => {
     return [
+      check(
+        "usage_event_hourly_rollup_credit_billing_mode_check",
+        sql`${table.creditBillingMode} IN ('org', 'member_pack')`,
+      ),
       index("idx_usage_event_hourly_rollup_billing_run").on(table.billingRunId),
       check(
         "usage_event_hourly_rollup_billing_context_check",

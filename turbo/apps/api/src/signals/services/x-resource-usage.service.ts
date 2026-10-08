@@ -65,6 +65,7 @@ export const ingestXResourceUsage$ = command(
                 runId: billingRunAttribution.runId,
                 orgId: billingRunAttribution.orgId,
                 userId: billingRunAttribution.userId,
+                creditBillingMode: billingRunAttribution.creditBillingMode,
                 startedAt:
                   sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
                     pgTextDecoder,

@@ -1,3 +1,4 @@
+import type { CreditBillingMode } from "@okouai/db/schema/credit-billing-mode";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { and, eq, sql } from "drizzle-orm";
@@ -15,9 +16,11 @@ export interface BillingRun {
   readonly startedAt: string;
   readonly triggerSource: string | null;
   readonly threadId: string | null;
+  readonly creditBillingMode?: CreditBillingMode | null;
 }
 
 export interface BillingAttribution {
+  readonly creditBillingMode: CreditBillingMode | null;
   readonly runId: string;
   readonly orgId: string;
   readonly userId: string;
@@ -40,6 +43,7 @@ export function managedBillingRunQuery(runId: string | undefined) {
         .as("started_at"),
       triggerSource: agentRuns.triggerSource,
       threadId: agentRuns.chatThreadId,
+      creditBillingMode: agentRuns.creditBillingMode,
     })
     .from(agentRuns)
     .where(runId ? eq(agentRuns.id, runId) : sql`false`)
@@ -53,6 +57,7 @@ export function managedAttributionQuery(runId: string | undefined) {
       runId: billingRunAttribution.runId,
       orgId: billingRunAttribution.orgId,
       userId: billingRunAttribution.userId,
+      creditBillingMode: billingRunAttribution.creditBillingMode,
       // The original timestamp must not lose sub-millisecond precision.
       startedAt: sql`${billingRunAttribution.runStartedAt}::text`
         .mapWith(pgTextDecoder)
@@ -112,6 +117,7 @@ export function billingRunAttributionWrite(run: BillingRun) {
       userId: run.userId,
       runStartedAt: startedAt,
       source,
+      creditBillingMode: run.creditBillingMode ?? null,
       threadId: run.threadId,
       threadContext: run.threadId === null ? "threadless" : "thread",
     },
@@ -169,6 +175,9 @@ export function attributedUsageIdentity(
     // Run. Retain a live FK only for the same billed owner, as before capture.
     runId: ownedRun?.id ?? null,
     billingRunId: args.actor.runId ?? null,
+    creditBillingMode: attribution
+      ? attribution.creditBillingMode
+      : (ownedRun?.creditBillingMode ?? null),
     billingContext: attribution
       ? "run"
       : args.actor.runId
@@ -191,5 +200,9 @@ export function attributedManagedValues(
   return {
     ...managedValues(args, run),
     ...attributedUsageIdentity(args, run, attribution),
+    // Explicit job/request admission wins; NULL must not be reclassified.
+    ...(args.creditBillingMode !== undefined
+      ? { creditBillingMode: args.creditBillingMode }
+      : {}),
   };
 }

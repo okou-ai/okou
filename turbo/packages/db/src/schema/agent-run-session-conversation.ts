@@ -32,6 +32,10 @@ export const agentRuns = pgTable(
   },
   (table) => {
     return [
+      check(
+        "agent_runs_credit_billing_mode_check",
+        sql`${table.creditBillingMode} IN ('org', 'member_pack')`,
+      ),
       // Composite index for user listing with time-based sorting
       index("idx_agent_runs_user_created").on(
         table.userId,

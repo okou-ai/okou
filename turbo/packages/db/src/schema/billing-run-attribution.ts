@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { CreditBillingMode } from "./credit-billing-mode";
 import {
   bigint,
   boolean,
@@ -22,6 +23,8 @@ export const billingRunAttribution = pgTable(
     userId: text("user_id").notNull(),
     runStartedAt: timestamp("run_started_at").notNull(),
     source: text("source").notNull(),
+    // Retain admission ownership independently of deletable Run content.
+    creditBillingMode: text("credit_billing_mode").$type<CreditBillingMode>(),
     // Grouping identity only. Deliberately not an FK and never a title, prompt
     // or other thread content: billing readers resolve the live chat_threads row
     // for anything displayable, so erasing a thread removes it from the bill
@@ -36,6 +39,10 @@ export const billingRunAttribution = pgTable(
   },
   (table) => {
     return [
+      check(
+        "billing_run_attribution_credit_billing_mode_check",
+        sql`${table.creditBillingMode} IN ('org', 'member_pack')`,
+      ),
       index("idx_billing_run_attribution_owner").on(
         table.orgId,
         table.userId,

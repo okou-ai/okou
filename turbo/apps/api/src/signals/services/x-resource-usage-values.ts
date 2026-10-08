@@ -98,6 +98,7 @@ export function xUsageRunQuery(owner: Owner) {
       userId: agentRuns.userId,
       createdAt: agentRuns.createdAt,
       completedAt: agentRuns.completedAt,
+      creditBillingMode: agentRuns.creditBillingMode,
       startedAt: sql`${agentRuns.createdAt}::text`
         .mapWith(pgTextDecoder)
         .as("started_at"),

@@ -102,7 +102,7 @@ function eligibleRawPredicate(cutoff: string): SQL {
 
 function billingGrainColumns(alias: string): SQL {
   const source = sql.identifier(alias);
-  return sql`${source}.billing_run_id, ${source}.billing_anchor_at, ${source}.billing_context`;
+  return sql`${source}.billing_run_id, ${source}.billing_anchor_at, ${source}.billing_context, ${source}.credit_billing_mode`;
 }
 
 function physicalGrainColumns(alias: string): SQL {
@@ -131,6 +131,7 @@ function physicalGrainOrder(alias: string): SQL {
     ${source}.billing_run_id ASC NULLS FIRST,
     ${source}.billing_anchor_at ASC NULLS FIRST,
     ${source}.billing_context ASC,
+    ${source}.credit_billing_mode ASC NULLS FIRST,
     ${source}.kind ASC,
     ${source}.provider ASC,
     ${source}.category ASC,
@@ -242,6 +243,7 @@ function candidateCtes(args: {
           WHEN event.billing_context IN ('runless', 'pi_memory_stage1') THEN event.billing_context
           ELSE 'legacy_unknown'
         END AS billing_context,
+        event.credit_billing_mode,
         event.kind,
         event.provider,
         event.category,
@@ -360,6 +362,7 @@ function mutationCtes(): SQL {
         billing_run_id,
         billing_anchor_at,
         billing_context,
+        credit_billing_mode,
         kind,
         provider,
         category,
@@ -383,6 +386,7 @@ function mutationCtes(): SQL {
         billing_run_id,
         billing_anchor_at,
         billing_context,
+        credit_billing_mode,
         kind,
         provider,
         category,

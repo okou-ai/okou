@@ -122,6 +122,8 @@ import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
+import type { CreditBillingMode } from "@okouai/db/schema/credit-billing-mode";
+import { getMemberCreditBillingMode } from "./usage-credit-mode.service";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import {
   loadOrgPlanCapabilities,
@@ -269,6 +271,7 @@ function maintenanceCallbackPayload(
 }
 
 interface MaintenanceAdmission {
+  readonly creditBillingMode: CreditBillingMode;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly credential: PiMaintenanceCredential;
   readonly catalog: ModelCatalog;
@@ -328,6 +331,8 @@ const admitMaintenance$ = command(
     if (admission) {
       throw new PiMaintenanceDispositionError("source_admission_denied");
     }
+    const creditBillingMode = await getMemberCreditBillingMode(db, job);
+    signal.throwIfAborted();
     await checkPiMemoryQuota(
       db,
       {
@@ -351,6 +356,7 @@ const admitMaintenance$ = command(
       throw new PiMaintenanceDispositionError("model_route_unavailable");
     }
     return {
+      creditBillingMode,
       featureSwitchContext,
       credential,
       catalog,
@@ -587,12 +593,14 @@ function maintenanceRunRecord(args: {
   readonly modelProvider: ResolvedModelProviderEnvironment;
   readonly credential: PiMaintenanceCredential;
   readonly storedImageModel: string | null | undefined;
+  readonly creditBillingMode: CreditBillingMode;
 }): MaintenanceRunRecord {
   const selectedImageModel = isImageModelId(args.storedImageModel)
     ? args.storedImageModel
     : DEFAULT_IMAGE_MODEL;
   return {
     runId: args.runId,
+    creditBillingMode: args.creditBillingMode,
     sessionId: randomUUID(),
     orgId: args.job.orgId,
     userId: args.job.userId,
@@ -1047,6 +1055,7 @@ const launchMaintenanceRun$ = command(
       selectionDigest,
       modelProvider,
       credential: admitted.credential,
+      creditBillingMode: admitted.creditBillingMode,
       storedImageModel: member.preferences?.selectedImageModel,
     });
     // Launch preparation and the built-in allowance refresh read run
@@ -1323,6 +1332,7 @@ function buildMaintenanceExecutionContext(
 
 /** The maintenance run's identity, prompt and recorded launch facts. */
 interface MaintenanceRunRecord {
+  readonly creditBillingMode: CreditBillingMode;
   readonly runId: string;
   readonly sessionId: string;
   readonly orgId: string;
@@ -1384,6 +1394,7 @@ function maintenanceRunValues(args: {
     orgId: record.orgId,
     status: args.status,
     creditAdmitted: args.creditAdmitted,
+    creditBillingMode: record.creditBillingMode,
     prompt: record.prompt,
     appendSystemPrompt: record.appendSystemPrompt,
     vars: null,
@@ -1435,6 +1446,7 @@ async function insertMaintenanceRunRows(
     startedAt: args.createdAt.toISOString(),
     triggerSource: "agent",
     threadId: null,
+    creditBillingMode: record.creditBillingMode,
   });
   const [attribution] = await tx
     .insert(billingRunAttribution)

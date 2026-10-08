@@ -71,6 +71,7 @@ function socialUsageArgs(
     return undefined;
   }
   return {
+    creditBillingMode: job.creditBillingMode,
     actor: {
       orgId: job.orgId,
       userId: job.userId,

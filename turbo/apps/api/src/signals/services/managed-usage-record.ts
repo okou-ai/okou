@@ -1,3 +1,4 @@
+import type { CreditBillingMode } from "@okouai/db/schema/credit-billing-mode";
 import { randomUUID } from "node:crypto";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { eq } from "drizzle-orm";
@@ -23,6 +24,7 @@ export interface ManagedUsagePricingSnapshot {
 
 export interface ManagedUsageRecordArgs {
   readonly actor: ManagedUsageActor;
+  readonly creditBillingMode?: CreditBillingMode | null;
   readonly resource: ManagedUsageResource;
   readonly label: string;
   readonly idempotencyKey?: string;
@@ -85,6 +87,7 @@ export function managedValues(
   return {
     runId: run?.id ?? null,
     billingRunId: args.actor.runId,
+    creditBillingMode: args.creditBillingMode ?? null,
     billingContext: args.actor.runId ? "missing_run" : "runless",
     idempotencyKey: args.idempotencyKey ?? randomUUID(),
     orgId: args.actor.orgId,

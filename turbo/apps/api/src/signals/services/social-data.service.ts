@@ -35,6 +35,7 @@ import { writeDb$, type Db } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
 import { checkManagedCreditsSnapshotInDb } from "./managed-usage.service";
+import { getAdmittedCreditBillingMode } from "./usage-credit-mode.service";
 import {
   inspectSocialDataProviderPlan,
   readSocialDataProviderRun,
@@ -375,16 +376,24 @@ async function admitJob(
   if (rejected) {
     return rejected;
   }
+  const billingRunId =
+    args.auth.tokenType === "agent" || args.auth.tokenType === "sandbox"
+      ? args.auth.runId
+      : undefined;
+  const creditBillingMode = await getAdmittedCreditBillingMode(tx, {
+    orgId: args.auth.orgId,
+    userId: args.auth.userId,
+    runId: billingRunId,
+  });
+  signal.throwIfAborted();
   const [job] = await tx
     .insert(socialDataJobs)
     .values({
       orgId: args.auth.orgId,
       userId: args.auth.userId,
       requestId: args.body.requestId,
-      billingRunId:
-        args.auth.tokenType === "agent" || args.auth.tokenType === "sandbox"
-          ? args.auth.runId
-          : null,
+      billingRunId: billingRunId ?? null,
+      creditBillingMode,
       platform: request.platform,
       operation: request.operation,
       request: args.body,

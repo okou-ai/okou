@@ -40,6 +40,12 @@ export const usagePackCreditGrants = pgTable(
       uniqueIndex("uq_usage_pack_credit_grants_idempotency").on(
         table.idempotencyKey,
       ),
+      // Admission also reads zero/negative grants, outside the spendable index.
+      index("idx_usage_pack_credit_grants_member_mode").on(
+        table.orgId,
+        table.userId,
+        table.expiresAt,
+      ),
       index("idx_usage_pack_credit_grants_member_spendable")
         .on(
           table.orgId,

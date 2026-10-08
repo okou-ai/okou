@@ -599,6 +599,7 @@ const handleFalImageCompletion$ = command(
       {
         billingRunId: args.job.billingRunId,
         billingContext: args.job.billingContext,
+        creditBillingMode: args.job.creditBillingMode,
         orgId: args.job.orgId,
         userId: args.job.userId,
         runId: args.job.runId ?? undefined,

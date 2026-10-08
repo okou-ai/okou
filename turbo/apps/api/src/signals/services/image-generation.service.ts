@@ -1,3 +1,8 @@
+import type { CreditBillingMode } from "@okouai/db/schema/credit-billing-mode";
+import {
+  captureManagedCreditBillingMode$,
+  admittedManagedCreditBillingMode$,
+} from "./managed-usage-credit-mode";
 import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { Buffer } from "node:buffer";
 
@@ -1278,7 +1283,11 @@ export const checkImageCredits$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    return await set(checkBillableOperationCredits$, args, signal);
+    const admitted = await set(checkBillableOperationCredits$, args, signal);
+    if (admitted) {
+      await set(captureManagedCreditBillingMode$, args, signal);
+    }
+    return admitted;
   },
 );
 
@@ -2119,20 +2128,23 @@ function generatedImageMetadata(
   };
 }
 
+interface RecordGeneratedImageArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runId: string | undefined;
+  readonly billingRunId: string | null;
+  readonly billingContext: string;
+  readonly creditBillingMode?: CreditBillingMode | null;
+  readonly privateArtifacts: boolean;
+  readonly pricing: ImagePricing;
+  readonly generation: ParsedImageGeneration;
+  readonly generationId: string;
+}
+
 export const recordGeneratedImage$ = command(
   async (
     { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runId: string | undefined;
-      readonly billingRunId: string | null;
-      readonly billingContext: string;
-      readonly privateArtifacts: boolean;
-      readonly pricing: ImagePricing;
-      readonly generation: ParsedImageGeneration;
-      readonly generationId: string;
-    },
+    params: RecordGeneratedImageArgs,
     signal: AbortSignal,
   ): Promise<RecordedImage> => {
     const artifact = await set(
@@ -2182,6 +2194,12 @@ export const recordGeneratedImage$ = command(
         runId: params.runId,
         billingRunId: params.billingRunId,
         billingContext: params.billingContext,
+        creditBillingMode:
+          params.creditBillingMode !== undefined
+            ? params.creditBillingMode
+            : params.billingRunId
+              ? undefined
+              : set(admittedManagedCreditBillingMode$, params),
         events: usageRows.map((row) => {
           return {
             idempotencyKey: builtInGenerationUsageIdempotencyKey({

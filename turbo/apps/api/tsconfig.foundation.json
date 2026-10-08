@@ -50,6 +50,8 @@
     "src/signals/services/hosted-site-scope.service.ts",
     "src/signals/services/internal-run-callback.ts",
     "src/signals/services/managed-usage-attribution.ts",
+    "src/signals/services/managed-usage-credit-mode.ts",
+    "src/signals/services/usage-credit-mode.service.ts",
     "src/signals/services/managed-usage-publication.ts",
     "src/signals/services/managed-usage-record.ts",
     "src/signals/services/model-provider-device-session-publication.ts",

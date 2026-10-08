@@ -1,3 +1,4 @@
+import type { CreditBillingMode } from "@okouai/db/schema/credit-billing-mode";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -21,6 +22,7 @@ interface ProviderUsageBatch {
   readonly runId: string | undefined;
   readonly billingRunId?: string | null;
   readonly billingContext: string;
+  readonly creditBillingMode?: CreditBillingMode | null;
   readonly events: readonly {
     readonly idempotencyKey: string;
     readonly kind: string;
@@ -83,6 +85,7 @@ export const recordRunnerUsageBatch$ = command(
             triggerSource: agentRuns.triggerSource,
             threadId: agentRuns.chatThreadId,
             modelProvider: agentRuns.modelProvider,
+            creditBillingMode: agentRuns.creditBillingMode,
           })
           .from(agentRuns)
           .where(
@@ -112,6 +115,7 @@ export const recordRunnerUsageBatch$ = command(
               runId: billingRunAttribution.runId,
               orgId: billingRunAttribution.orgId,
               userId: billingRunAttribution.userId,
+              creditBillingMode: billingRunAttribution.creditBillingMode,
               startedAt:
                 sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
                   pgTextDecoder,
@@ -200,6 +204,7 @@ export const recordProviderUsageBatch$ = command(
             runId: billingRunAttribution.runId,
             orgId: billingRunAttribution.orgId,
             userId: billingRunAttribution.userId,
+            creditBillingMode: billingRunAttribution.creditBillingMode,
             startedAt: sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
               pgTextDecoder,
             ),
@@ -210,7 +215,12 @@ export const recordProviderUsageBatch$ = command(
           );
         }
       }
-      const identity = attributedUsageIdentity({ actor }, run, attribution);
+      const identity = {
+        ...attributedUsageIdentity({ actor }, run, attribution),
+        ...(args.creditBillingMode !== undefined
+          ? { creditBillingMode: args.creditBillingMode }
+          : {}),
+      };
       const inserted = await tx
         .insert(usageEvent)
         .values(

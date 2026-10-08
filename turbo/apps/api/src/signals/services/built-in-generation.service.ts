@@ -10,6 +10,8 @@ import type { BuiltInGenerationResponse } from "@okouai/api-contracts/contracts/
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import type { CreditBillingMode } from "@okouai/db/schema/credit-billing-mode";
+import { admittedManagedCreditBillingMode$ } from "./managed-usage-credit-mode";
 import { publishBuiltInGenerationChanged } from "../external/realtime";
 import {
   privateArtifactCreationEnabled,
@@ -52,6 +54,7 @@ interface BuiltInGenerationRequestInternal {
 }
 
 export interface BuiltInGenerationWebhookJob {
+  readonly creditBillingMode: CreditBillingMode | null;
   readonly id: string;
   readonly type: BuiltInGenerationType;
   readonly status: BuiltInGenerationStatus;
@@ -309,6 +312,7 @@ export const createImageGenerationJob$ = command(
         runId: args.runId ?? null,
         billingRunId: args.runId ?? null,
         billingContext: args.runId === undefined ? "runless" : "run",
+        creditBillingMode: set(admittedManagedCreditBillingMode$, args),
         request: builtInGenerationRequestWithInternal(args.request, {
           ...readBuiltInGenerationRequestInternal(args.request),
           privateArtifacts,
@@ -494,6 +498,7 @@ export const getBuiltInGenerationWebhookJob$ = command(
         runId: builtInGenerationJobs.runId,
         billingRunId: builtInGenerationJobs.billingRunId,
         billingContext: builtInGenerationJobs.billingContext,
+        creditBillingMode: builtInGenerationJobs.creditBillingMode,
         request: builtInGenerationJobs.request,
       })
       .from(builtInGenerationJobs)

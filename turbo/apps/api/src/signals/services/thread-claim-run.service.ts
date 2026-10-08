@@ -593,6 +593,8 @@ import {
 import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
+import type { CreditBillingMode } from "@okouai/db/schema/credit-billing-mode";
+import { getMemberCreditBillingMode } from "./usage-credit-mode.service";
 import {
   isPersonalSubscriptionProviderType,
   type MemberModelAccountSnapshot,
@@ -8485,7 +8487,22 @@ export function createThreadClaimRunObjects(
     },
   );
 
-  const checkAdmission$ = runAdmissionCheckCheckAdmission$;
+  const admittedCreditBillingMode$ = state<CreditBillingMode | null>(null);
+  const checkAdmission$ = command(
+    async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
+      const rejected = await set(
+        runAdmissionCheckCheckAdmission$,
+        input,
+        signal,
+      );
+      if (!rejected && get(admittedCreditBillingMode$) === null) {
+        const mode = await getMemberCreditBillingMode(set(writeDb$), input);
+        signal.throwIfAborted();
+        set(admittedCreditBillingMode$, mode);
+      }
+      return rejected;
+    },
+  );
   const directSendInsufficientCreditsMessage$ = computed(async (get) => {
     const capabilities = await get(context.plan$);
     const appUrl = env("APP_URL");
@@ -9735,6 +9752,13 @@ export function createThreadClaimRunObjects(
     },
   );
 
+  const readAdmittedCreditBillingMode$ = command(({ get }) => {
+    const mode = get(admittedCreditBillingMode$);
+    if (mode === null) {
+      throw new Error("Run launch has no captured credit admission");
+    }
+    return mode;
+  });
   const createRun$ = command(
     async (
       { set },
@@ -9776,8 +9800,10 @@ export function createThreadClaimRunObjects(
           ? { triggerSource: input.context.body.triggerSource }
           : {}),
       });
+      const creditBillingMode = set(readAdmittedCreditBillingMode$);
       const preparedCommit: PreparedCommitPreparedLaunchArgs = {
         ...commit,
+        creditBillingMode,
         persistence: context.persistence,
         allowanceRefresh: context.allowanceRefresh,
         planCapabilities: context.planCapabilities,
@@ -12227,6 +12253,7 @@ interface PreparedAtomicLaunchPersistence {
 }
 
 export interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
+  readonly creditBillingMode: CreditBillingMode;
   readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly planCapabilities: OrgPlanCapabilities | null;
   readonly featureSwitchContext: FeatureSwitchContext;
@@ -12361,6 +12388,7 @@ function buildAtomicLaunchCteContext(
           {
             ...launchRunValues(rowsArgs, createdAt, metadata),
             creditAdmitted,
+            creditBillingMode: args.commit.creditBillingMode,
             modelProviderAccountIdentity: args.validatedAccountIdentity,
             sessionId: insertedSession
               ? returnedCteId(insertedSession)
@@ -12403,6 +12431,7 @@ function buildAtomicLaunchCteContext(
   return {
     rowsArgs,
     createdAt,
+    creditBillingMode: args.commit.creditBillingMode,
     ctes,
     insertedRun,
     updatedThread,
@@ -18434,6 +18463,7 @@ function pendingAtomicLaunchPlan(
     orgId: context.rowsArgs.orgId,
     userId: context.rowsArgs.userId,
     startedAt: context.createdAt.toISOString(),
+    creditBillingMode: context.creditBillingMode,
     triggerSource: args.commit.persistence.rows.metadata.triggerSource,
     threadId: args.commit.persistence.rows.metadata.chatThreadId,
   });

@@ -1,3 +1,4 @@
+import type { CreditBillingMode } from "@okouai/db/schema/credit-billing-mode";
 import type { PiMemoryStage1Billing } from "./pi-memory-stage1-credential.service";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import type {
@@ -29,6 +30,7 @@ export interface RecordPiMemoryStage1UsageArgs {
   readonly sourceHistoryHash: string;
   readonly model: PiMemoryStage1Model;
   readonly billing: PiMemoryStage1Billing;
+  readonly creditBillingMode?: CreditBillingMode | null;
   /**
    * The credential's captured catalog long-context threshold (null: single
    * tier).
@@ -114,6 +116,7 @@ export async function recordPiMemoryStage1Usage(
       return {
         runId: null,
         billingRunId: null,
+        creditBillingMode: args.creditBillingMode ?? null,
         createdAt: sql`now()`,
         billingAnchorAt: sql`now()`,
         billingContext: "pi_memory_stage1",

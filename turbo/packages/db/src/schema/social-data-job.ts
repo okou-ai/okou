@@ -8,6 +8,7 @@ import type {
   SocialDataJobResult,
 } from "@okouai/db/jsonb-contracts/social-data-job";
 import { sql } from "drizzle-orm";
+import type { CreditBillingMode } from "./credit-billing-mode";
 import {
   bigint,
   check,
@@ -38,6 +39,7 @@ export const socialDataJobs = pgTable(
     userId: text("user_id").notNull(),
     requestId: uuid("request_id").notNull(),
     billingRunId: uuid("billing_run_id"),
+    creditBillingMode: text("credit_billing_mode").$type<CreditBillingMode>(),
     platform: varchar("platform", { length: 16 })
       .$type<SocialDataPlatform>()
       .notNull(),
@@ -76,6 +78,10 @@ export const socialDataJobs = pgTable(
   },
   (table) => {
     return [
+      check(
+        "social_data_jobs_credit_billing_mode_check",
+        sql`${table.creditBillingMode} IN ('org', 'member_pack')`,
+      ),
       uniqueIndex("uq_social_data_jobs_request").on(
         table.orgId,
         table.userId,

@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { agentRuns } from "./agent-run";
+import type { CreditBillingMode } from "./credit-billing-mode";
 
 /**
  * Per-event usage record for billable resources.
@@ -73,6 +74,7 @@ export const usageEvent = pgTable(
     // Original identity survives run_id SET NULL. Missing historical context is
     // explicit; this is not an authorization reference or a pricing input yet.
     billingRunId: uuid("billing_run_id"),
+    creditBillingMode: text("credit_billing_mode").$type<CreditBillingMode>(),
     billingAnchorAt: timestamp("billing_anchor_at"),
     billingContext: text("billing_context").notNull().default("legacy_unknown"),
     kind: varchar("kind", { length: 30 }).notNull(),
@@ -90,6 +92,10 @@ export const usageEvent = pgTable(
   },
   (table) => {
     return [
+      check(
+        "usage_event_credit_billing_mode_check",
+        sql`${table.creditBillingMode} IN ('org', 'member_pack')`,
+      ),
       check(
         "usage_event_pricing_snapshot_check",
         sql`(

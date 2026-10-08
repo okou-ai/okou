@@ -1,4 +1,5 @@
 import { v5 as uuidv5 } from "uuid";
+import { admittedManagedCreditBillingMode$ } from "./managed-usage-credit-mode";
 
 import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
@@ -1075,6 +1076,12 @@ export const createSocialKitDownload$ = command(
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         runId: runId(args.auth),
+        billingRunId: runId(args.auth) ?? null,
+        creditBillingMode: set(admittedManagedCreditBillingMode$, {
+          orgId: args.auth.orgId,
+          userId: args.auth.userId,
+          runId: runId(args.auth),
+        }),
         request: { ...args.body, privateArtifacts },
       })
       .onConflictDoNothing()
@@ -1303,10 +1310,13 @@ const settleSocialKitDownloadUsage$ = command(
     return await set(
       recordManagedUsage$,
       {
+        creditBillingMode: args.job.creditBillingMode,
         actor: {
           orgId: args.job.orgId,
           userId: args.job.userId,
-          ...(args.job.runId ? { runId: args.job.runId } : {}),
+          ...((args.job.billingRunId ?? args.job.runId)
+            ? { runId: args.job.billingRunId ?? args.job.runId ?? undefined }
+            : {}),
         },
         resource: {
           kind: "social",

@@ -20,6 +20,7 @@ export function capturedManagedAttribution(
     orgId: run.orgId,
     userId: run.userId,
     startedAt: run.startedAt,
+    creditBillingMode: run.creditBillingMode ?? null,
   };
 }
 
@@ -34,11 +35,12 @@ export function managedUsagePublicationSql(
     WITH inserted AS (
       INSERT INTO ${usageEvent} (
         run_id, billing_run_id, billing_context, billing_anchor_at, created_at,
+        credit_billing_mode,
         idempotency_key, org_id, user_id, kind, provider, category, quantity,
         pricing_unit_price, pricing_unit_size, pricing_credits_limit
       ) VALUES (
         ${values.runId}, ${values.billingRunId}, ${values.billingContext},
-        ${values.billingAnchorAt}, ${values.createdAt},
+        ${values.billingAnchorAt}, ${values.createdAt}, ${values.creditBillingMode},
         ${values.idempotencyKey}, ${values.orgId}, ${values.userId},
         ${values.kind}, ${values.provider}, ${values.category},
         ${values.quantity}, ${values.pricingUnitPrice ?? null},

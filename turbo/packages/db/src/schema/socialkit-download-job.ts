@@ -6,6 +6,7 @@ import type {
 } from "@okouai/db/jsonb-contracts/socialkit-download-job";
 import {
   bigint,
+  check,
   index,
   integer,
   jsonb,
@@ -19,6 +20,7 @@ import {
 import { sql } from "drizzle-orm";
 
 import { agentRuns } from "./agent-run";
+import type { CreditBillingMode } from "./credit-billing-mode";
 
 export const SOCIALKIT_DOWNLOAD_STATUSES = [
   "submitting",
@@ -48,6 +50,8 @@ export const socialKitDownloadJobs = pgTable(
       },
       { onDelete: "set null" },
     ),
+    billingRunId: uuid("billing_run_id"),
+    creditBillingMode: text("credit_billing_mode").$type<CreditBillingMode>(),
     request: jsonb("request")
       .$type<SocialKitDownloadRequestSnapshot>()
       .notNull(),
@@ -65,6 +69,10 @@ export const socialKitDownloadJobs = pgTable(
   },
   (table) => {
     return [
+      check(
+        "socialkit_download_jobs_credit_billing_mode_check",
+        sql`${table.creditBillingMode} IN ('org', 'member_pack')`,
+      ),
       uniqueIndex("uq_socialkit_download_jobs_provider_job").on(
         table.providerJobId,
       ),

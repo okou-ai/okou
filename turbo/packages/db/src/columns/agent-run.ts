@@ -1,3 +1,4 @@
+import type { CreditBillingMode } from "../schema/credit-billing-mode";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -82,6 +83,8 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     orgId: text("org_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     creditAdmitted: boolean("credit_admitted").notNull().default(false),
+    // Immutable successful-admission classification; NULL is legacy, not org.
+    creditBillingMode: text("credit_billing_mode").$type<CreditBillingMode>(),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
     // Immutable winning official claim attribution. ID/generation is the

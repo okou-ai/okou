@@ -1,3 +1,7 @@
+import {
+  captureManagedCreditBillingMode$,
+  admittedManagedCreditBillingMode$,
+} from "./managed-usage-credit-mode";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
@@ -378,19 +382,25 @@ export const checkManagedCredits$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!balance || "status" in balance) {
+    if (balance && "status" in balance) {
       return balance;
     }
-    const allowance = await set(
-      resolveUsageAllowanceAvailability$,
-      args.orgId,
-      signal,
-    );
-    signal.throwIfAborted();
-    return balance.spendableCredits + BigInt(allowance?.remainingUnits ?? 0) >=
-      balance.requiredCredits
-      ? null
-      : insufficientCredits();
+    if (balance) {
+      const allowance = await set(
+        resolveUsageAllowanceAvailability$,
+        args.orgId,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (
+        balance.spendableCredits + BigInt(allowance?.remainingUnits ?? 0) <
+        balance.requiredCredits
+      ) {
+        return insufficientCredits();
+      }
+    }
+    await set(captureManagedCreditBillingMode$, args, signal);
+    return null;
   },
 );
 
@@ -429,6 +439,14 @@ export const recordManagedUsage$ = command(
     const identity = {
       ...args,
       idempotencyKey: args.idempotencyKey ?? randomUUID(),
+      // Only the earlier request admission or explicit background job may
+      // supply runless mode. Never consult current packs after provider work.
+      creditBillingMode:
+        args.creditBillingMode !== undefined
+          ? args.creditBillingMode
+          : args.actor.runId
+            ? undefined
+            : set(admittedManagedCreditBillingMode$, args.actor),
     };
     await db.transaction(async (tx) => {
       const [run] = args.actor.runId
@@ -447,6 +465,7 @@ export const recordManagedUsage$ = command(
             runId: billingRunAttribution.runId,
             orgId: billingRunAttribution.orgId,
             userId: billingRunAttribution.userId,
+            creditBillingMode: billingRunAttribution.creditBillingMode,
             startedAt: sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
               pgTextDecoder,
             ),
