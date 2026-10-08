@@ -633,13 +633,10 @@ describe("Pi memory Phase 2 consolidation engine", () => {
   it.each([
     { model: "openai/gpt-6-luna", effort: "medium" },
     { model: "gpt-6-luna", effort: "medium" },
-    { model: "deepseek/deepseek-v4.1-flash", effort: "high" },
   ] as const)(
     "keeps captured $model maintenance effort at $effort",
     async (route) => {
       const { model, effort } = route;
-      // Historical DeepSeek V4.1 Flash snapshots map `medium` to nothing and
-      // retain that model's documented default during consolidation.
       const provider = await startProvider([
         {
           type: "tool",

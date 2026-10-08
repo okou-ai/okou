@@ -13,10 +13,10 @@ import {
   listChatThreadConnectorSelections,
   updateChatThreadConnectorSelection$,
 } from "../services/chat-thread-connector-selection.service";
-import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
-import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
-import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
-import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-event.service";
+import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-watch.service";
+import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-watch.service";
+import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-watch.service";
+import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-watch.service";
 import type { RouteEntry } from "../route-entry";
 
 const getSelectionsInner$ = computed(async (get): Promise<unknown> => {

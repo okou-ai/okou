@@ -11,10 +11,6 @@ import { deleteS3Objects } from "../external/s3";
 const SCREENSHOT_RETENTION_DAYS = 30;
 const SCREENSHOT_CLEANUP_BATCH_SIZE = 500;
 
-export interface ComputerUseScreenshotCleanupOptions {
-  readonly commandIds?: readonly string[];
-}
-
 /**
  * Delete computer-use screenshots older than the retention window from object
  * storage and rewrite the result pointer to `{ type: "expired" }`. Also sheds
@@ -23,11 +19,7 @@ export interface ComputerUseScreenshotCleanupOptions {
  * avoid long locks.
  */
 export const cleanupComputerUseScreenshots$ = command(
-  async (
-    { get, set },
-    options: ComputerUseScreenshotCleanupOptions,
-    signal: AbortSignal,
-  ): Promise<number> => {
+  async ({ get, set }, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
     const cutoff = nowDate();
     cutoff.setDate(cutoff.getDate() - SCREENSHOT_RETENTION_DAYS);
@@ -55,9 +47,6 @@ export const cleanupComputerUseScreenshots$ = command(
                 sql`'string'`,
               ),
             ),
-            options.commandIds
-              ? inArray(computerUseCommands.id, options.commandIds)
-              : undefined,
           ),
         )
         .limit(SCREENSHOT_CLEANUP_BATCH_SIZE);

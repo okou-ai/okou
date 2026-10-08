@@ -1,4 +1,4 @@
-//! Integration coverage for Cargo-session-scoped guest mock reuse.
+//! Integration coverage for test-runner-session-scoped guest mock reuse.
 
 mod common;
 
@@ -88,15 +88,24 @@ fn mock_build_session_revalidates_dependency_inputs() -> Result<(), Box<dyn std:
     let target_profile_dir = workspace.join("target/debug");
     fs::create_dir(workspace.join("target"))?;
 
-    let mock = build_mock(workspace, &target_profile_dir, Some("session-one"))?;
+    #[cfg(target_os = "linux")]
+    let session = common::test_runner_build_session_id()
+        .ok_or_else(|| io::Error::other("expected a verified Cargo or nextest parent"))?;
+    #[cfg(not(target_os = "linux"))]
+    let session = String::from("session-one");
+    let mock = build_mock(workspace, &target_profile_dir, Some(&session))?;
     assert_eq!(run_mock(&mock)?, "one");
     let session_marker = workspace.join("target/.vm0-mock-package-debug.build-session");
-    assert_eq!(fs::read_to_string(&session_marker)?, "session-one");
+    assert_eq!(fs::read_to_string(&session_marker)?, session);
 
     // Hide the manifest so any unexpected second Cargo invocation fails.
     let hidden_workspace_manifest = workspace.join("Cargo.toml.hidden");
     fs::rename(&workspace_manifest, &hidden_workspace_manifest)?;
-    let reuse_result = build_mock(workspace, &target_profile_dir, Some("session-one"));
+    #[cfg(target_os = "linux")]
+    let reuse_session = common::test_runner_build_session_id();
+    #[cfg(not(target_os = "linux"))]
+    let reuse_session = Some(session);
+    let reuse_result = build_mock(workspace, &target_profile_dir, reuse_session.as_deref());
     fs::rename(&hidden_workspace_manifest, &workspace_manifest)?;
     let reused = reuse_result?;
     assert_eq!(reused, mock);

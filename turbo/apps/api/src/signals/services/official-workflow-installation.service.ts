@@ -31,7 +31,7 @@ import { z } from "zod";
 
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
 import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
 import { deleteWorkflow$ } from "./workflow-delete.service";
@@ -659,22 +659,27 @@ function isFailure(
   return "kind" in value;
 }
 
-export async function loadOfficialWorkflowUserTimezone(
-  db: ReadonlyDb,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<string | null> {
-  const [row] = await db
-    .select({ timezone: orgMembersMetadata.timezone })
-    .from(orgMembersMetadata)
-    .where(
-      and(
-        eq(orgMembersMetadata.orgId, args.orgId),
-        eq(orgMembersMetadata.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return row?.timezone ?? null;
-}
+export const loadOfficialWorkflowUserTimezone$ = command(
+  async (
+    { get },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({ timezone: orgMembersMetadata.timezone })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, args.orgId),
+          eq(orgMembersMetadata.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return row?.timezone ?? null;
+  },
+);
 
 const recoverOrRejectExistingInstallation$ = command(
   async (

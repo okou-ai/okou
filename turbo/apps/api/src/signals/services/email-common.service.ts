@@ -20,9 +20,9 @@ import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
-import type { ClerkClient } from "../external/clerk";
+import { clerk$, type ClerkClient } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
@@ -933,52 +933,59 @@ export function verifyResendWebhook(
   return JSON.parse(payload);
 }
 
-export async function getUserEmail(
-  db: Db,
-  clerk: ClerkClient,
-  userId: string,
-): Promise<string | null> {
-  const [cached] = await db
-    .select()
-    .from(userCache)
-    .where(eq(userCache.userId, userId))
-    .limit(1);
-  if (cached && now() - cached.cachedAt.getTime() < USER_CACHE_TTL_MS) {
-    return cached.email;
-  }
+export const getUserEmail$ = command(
+  async (
+    { get, set },
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = get(db$);
+    const [cached] = await db
+      .select()
+      .from(userCache)
+      .where(eq(userCache.userId, userId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (cached && now() - cached.cachedAt.getTime() < USER_CACHE_TTL_MS) {
+      return cached.email;
+    }
 
-  const user = await findClerkUser(clerk, userId);
-  if (!user) {
-    return null;
-  }
-  const email =
-    user?.emailAddresses.find((entry) => {
-      return entry.id === user.primaryEmailAddressId;
-    })?.emailAddress ?? user?.emailAddresses[0]?.emailAddress;
-  if (!email) {
-    return null;
-  }
+    const user = await findClerkUser(get(clerk$), userId, signal);
+    signal.throwIfAborted();
+    if (!user) {
+      return null;
+    }
+    const email =
+      user?.emailAddresses.find((entry) => {
+        return entry.id === user.primaryEmailAddressId;
+      })?.emailAddress ?? user?.emailAddresses[0]?.emailAddress;
+    if (!email) {
+      return null;
+    }
 
-  await db
-    .insert(userCache)
-    .values({
-      userId,
-      email,
-      name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
-      imageUrl: user.imageUrl ?? null,
-      cachedAt: nowDate(),
-    })
-    .onConflictDoUpdate({
-      target: userCache.userId,
-      set: {
+    await set(writeDb$)
+      .insert(userCache)
+      .values({
+        userId,
         email,
         name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
         imageUrl: user.imageUrl ?? null,
         cachedAt: nowDate(),
-      },
-    });
-  return email;
-}
+      })
+      .onConflictDoUpdate({
+        target: userCache.userId,
+        set: {
+          email,
+          name:
+            [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+          imageUrl: user.imageUrl ?? null,
+          cachedAt: nowDate(),
+        },
+      });
+    signal.throwIfAborted();
+    return email;
+  },
+);
 
 export async function getUserIdByEmail(
   db: Db,

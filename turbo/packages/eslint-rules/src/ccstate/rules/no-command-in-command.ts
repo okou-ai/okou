@@ -14,8 +14,7 @@ import {
 import { createRule } from "../utils.ts";
 
 type CallbackNode =
-  | TSESTree.ArrowFunctionExpression
-  | TSESTree.FunctionExpression;
+  TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression;
 
 interface ImportReference {
   importedName: string;

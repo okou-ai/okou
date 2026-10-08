@@ -1,4 +1,3 @@
-import type { WebhookReceivedEventConfig } from "@okouai/api-contracts/contracts/workflows";
 import {
   workflowAutomations,
   workflowUserAutomationThreads,
@@ -9,22 +8,18 @@ import {
 import { command } from "ccstate";
 import { and, eq, gte } from "drizzle-orm";
 import { Buffer } from "node:buffer";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { verifyCallbackRequest } from "../../lib/event-consumer/verify-signature";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { webUrl } from "../../lib/web-url";
-import { db$, writeDb$, type Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import {
-  decryptPersistentSecretValue,
-  encryptPersistentSecretValue,
-} from "./crypto.utils";
+import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
@@ -34,179 +29,20 @@ import type {
 } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
+import {
+  type WebhookAutomationRow,
+  hashWorkflowWebhookToken,
+} from "./workflow-webhook-automation-config.service";
 
 export const WORKFLOW_WEBHOOK_BODY_LIMIT_BYTES = 1_000_000;
+
 const WORKFLOW_WEBHOOK_BODY_PREVIEW_CHARS = 16_000;
+
 const WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE = 10;
-
-type WebhookAutomationRow = typeof workflowWebhookAutomations.$inferSelect;
-
-export function defaultWebhookReceivedEventConfig(): WebhookReceivedEventConfig {
-  return {
-    provider: "webhook",
-    event: "received",
-    auth: { mode: "hmac-sha256" },
-  };
-}
-
-export function mintWorkflowWebhookToken(): string {
-  return `whk_${randomBytes(32).toString("base64url")}`;
-}
-
-export function mintWorkflowWebhookSecret(): string {
-  return randomBytes(32).toString("hex");
-}
-
-export function hashWorkflowWebhookToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
 
 function sha256Hex(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
-
-function workflowWebhookUrlForToken(token: string): string {
-  const baseUrl = webUrl();
-  return `${baseUrl}/api/webhooks/workflow-automations/${encodeURIComponent(
-    token,
-  )}`;
-}
-
-export async function encryptWorkflowWebhookToken(
-  token: string,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<string> {
-  return await encryptPersistentSecretValue(token, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-}
-
-export async function encryptWorkflowWebhookSecret(
-  secret: string,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<string> {
-  return await encryptPersistentSecretValue(secret, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-}
-
-async function decryptWorkflowWebhookToken(
-  encryptedToken: string,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<string> {
-  return await decryptPersistentSecretValue(encryptedToken, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-}
-
-async function decryptWorkflowWebhookSecret(
-  encryptedSecret: string,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<string> {
-  return await decryptPersistentSecretValue(encryptedSecret, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-}
-
-export function workflowWebhookSummaryFields(
-  webhook: WebhookAutomationRow,
-  args: { readonly webhookToken?: string; readonly webhookSecret?: string },
-) {
-  return {
-    ...(args.webhookToken
-      ? {
-          webhookUrl: workflowWebhookUrlForToken(args.webhookToken),
-        }
-      : {}),
-    secretLastFour: webhook.secretLastFour,
-    disabledReason: webhook.disabledReason,
-    lastReceivedAt: webhook.lastReceivedAt
-      ? webhook.lastReceivedAt.toISOString()
-      : null,
-    ...(args.webhookSecret ? { webhookSecret: args.webhookSecret } : {}),
-  };
-}
-
-export const buildWorkflowWebhookSummaryFields$ = command(
-  async (
-    { get },
-    args: { readonly automation: AutomationRow } & (
-      | {
-          readonly webhookToken: string;
-          readonly webhookSecret: string;
-        }
-      | {
-          readonly webhookToken?: undefined;
-          readonly webhookSecret?: undefined;
-        }
-    ),
-    signal: AbortSignal,
-  ): Promise<{
-    readonly webhookUrl?: string;
-    readonly secretLastFour: string;
-    readonly disabledReason: "paid_plan_required" | null;
-    readonly lastReceivedAt: string | null;
-    readonly webhookSecret?: string;
-  }> => {
-    const db = get(db$);
-    const [webhook] = await db
-      .select()
-      .from(workflowWebhookAutomations)
-      .where(eq(workflowWebhookAutomations.automationId, args.automation.id))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!webhook) {
-      throw new Error(
-        `Workflow webhook automation config missing: ${args.automation.id}`,
-      );
-    }
-
-    return workflowWebhookSummaryFields(webhook, args);
-  },
-);
-
-export const revealWorkflowWebhookSecretFields$ = command(
-  async (
-    { get },
-    args: {
-      readonly automation: AutomationRow;
-    },
-    signal: AbortSignal,
-  ): Promise<{
-    readonly webhookUrl: string;
-    readonly webhookSecret: string;
-  }> => {
-    const db = get(db$);
-    const [webhook] = await db
-      .select()
-      .from(workflowWebhookAutomations)
-      .where(eq(workflowWebhookAutomations.automationId, args.automation.id))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!webhook) {
-      throw new Error(
-        `Workflow webhook automation config missing: ${args.automation.id}`,
-      );
-    }
-    const context = {
-      orgId: args.automation.orgId,
-      userId: args.automation.ownerUserId,
-    };
-    const [token, secret] = await Promise.all([
-      decryptWorkflowWebhookToken(webhook.encryptedToken, context),
-      decryptWorkflowWebhookSecret(webhook.encryptedSecret, context),
-    ]);
-    signal.throwIfAborted();
-    return {
-      webhookUrl: workflowWebhookUrlForToken(token),
-      webhookSecret: secret,
-    };
-  },
-);
 
 interface WorkflowWebhookAutomationDispatchRow {
   readonly automation: AutomationRow;

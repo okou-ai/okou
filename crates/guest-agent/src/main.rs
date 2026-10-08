@@ -1,13 +1,13 @@
 //! Guest agent — orchestrates CLI execution, heartbeat, telemetry, and
-//! checkpoint creation inside a Firecracker VM.
+//! native history and file-output finalization inside a Firecracker VM.
 
-use guest_agent::checkpoint;
 use guest_agent::cli;
 use guest_agent::complete;
 use guest_agent::control;
 use guest_agent::env;
 use guest_agent::error::AgentError;
 use guest_agent::failure_diagnostics;
+use guest_agent::finalization;
 use guest_agent::heartbeat;
 use guest_agent::http::HttpClient;
 use guest_agent::masker;
@@ -365,7 +365,7 @@ async fn run(runtime: GuestRuntime) -> i32 {
 
     // Execute main logic (init + CLI + checkpoint/recovery + /complete).
     // On the success path, `execute` overlaps the pre-checkpoint telemetry
-    // flush with checkpoint creation. The EOF-consuming final flush runs below,
+    // flush with output finalization. The EOF-consuming final flush runs below,
     // after background producers stop, so `/complete` logs still upload without
     // racing metrics or heartbeat writes.
     let exit_code = execute(
@@ -413,7 +413,7 @@ struct ExecutionControls {
 
 /// Main execution logic: working dir, CLI, checkpoint/recovery, and `/complete`.
 /// The success path overlaps the pre-checkpoint telemetry flush with
-/// checkpoint creation. Final telemetry is owned by [`run`] after producer
+/// output finalization. Final telemetry is owned by [`run`] after producer
 /// shutdown.
 async fn execute(
     masker: &masker::SecretMasker,
@@ -856,7 +856,7 @@ async fn complete_execution(
             let session_metadata = state.session_metadata.ok_or_else(|| {
                 AgentError::Checkpoint("No valid CLI session ID was captured".to_string())
             })?;
-            checkpoint::prepare_checkpoint_for_runtime(runtime, session_metadata).await
+            finalization::prepare_finalization_for_runtime(runtime, session_metadata).await
         };
         let (cp_result, _) = tokio::join!(checkpoint, telemetry.flush(UploadMode::Live),);
         match cp_result {
@@ -866,7 +866,7 @@ async fn complete_execution(
                 // the `complete` module docs for the runner's idempotent fallback
                 // and provider-specific finalization ordering.
                 log_info!(LOG_TAG, "▷ Cleanup");
-                let result = complete::report_checkpoint_for_run(
+                let result = complete::report_finalization_for_run(
                     runtime,
                     0,
                     None,
@@ -916,7 +916,7 @@ async fn complete_execution(
 
                 // Failure path: don't call /complete from guest. The runner's
                 // provider.complete() fallback posts exitCode=1, triggering
-                // the route's "checkpoint not found → failed" branch.
+                // the route's "missing completion outputs → failed" branch.
                 log_info!(LOG_TAG, "▷ Cleanup");
             }
         }
@@ -933,11 +933,14 @@ async fn complete_execution(
         if http.has_api() {
             if let Some(session_metadata) = state.session_metadata {
                 log_info!(LOG_TAG, "Attempting best-effort recovery checkpoint");
-                match checkpoint::prepare_recovery_checkpoint_for_runtime(runtime, session_metadata)
-                    .await
+                match finalization::prepare_recovery_finalization_for_runtime(
+                    runtime,
+                    session_metadata,
+                )
+                .await
                 {
                     Ok(checkpoint) => {
-                        match complete::report_checkpoint_for_run(
+                        match complete::report_finalization_for_run(
                             runtime,
                             exit_code,
                             state
@@ -1865,7 +1868,7 @@ mod tests {
             when.method(POST)
                 .path("/api/webhooks/agent/complete")
                 .json_body_includes(
-                    r#"{"exitCode":0,"checkpoint":{"cliAgentSessionId":"combined-failure-session"}}"#,
+                    r#"{"exitCode":0,"completion":{"cliAgentSessionId":"combined-failure-session"}}"#,
                 );
             then.status(500);
         });
@@ -1931,14 +1934,14 @@ mod tests {
 
         let prepare_mock = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/checkpoints/prepare-history");
+                .path("/api/webhooks/agent/session-history/prepare");
             then.status(500);
         });
         let complete_mock = server.mock(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/complete")
                 .json_body_includes(
-                    r#"{"exitCode":0,"checkpoint":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+                    r#"{"exitCode":0,"completion":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
                 );
             then.status(200)
                 .header("Content-Type", "application/json")
@@ -2024,7 +2027,7 @@ mod tests {
 
         let prepare_mock = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/checkpoints/prepare-history")
+                .path("/api/webhooks/agent/session-history/prepare")
                 .json_body_includes(r#"{"runId":"main-recovery-checkpoint"}"#);
             then.status(200)
                 .header("Content-Type", "application/json")
@@ -2047,7 +2050,7 @@ mod tests {
                         "exitCode": failure_exit_code,
                         "failureReason": failure_reason.as_str(),
                         "error": failure_message,
-                        "checkpoint": {
+                        "completion": {
                             "cliAgentSessionId": "recovery-session-from-main"
                         }
                     })

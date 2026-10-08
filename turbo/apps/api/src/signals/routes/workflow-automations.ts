@@ -31,10 +31,10 @@ import {
   listWorkspaceWorkflowAutomations$,
   loadWorkflowAutomations$,
   revealWorkflowWebhookSecret$,
-  runOwnedWorkflowAutomationNow$,
   updateWorkflowAutomation$,
   type AutomationResult,
 } from "../services/workflow-automation.service";
+import { runOwnedWorkflowAutomationNow$ } from "../services/workflow-automation-manual-run.service";
 import type { RouteEntry, SignalRouteHandler } from "../route-entry";
 
 const workflowAutomationReadAuth = {

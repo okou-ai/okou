@@ -132,12 +132,7 @@ type TextPreviewLoadState = {
 };
 
 type DocumentAttachmentPreviewKind =
-  | "markdown"
-  | "text"
-  | "json"
-  | "csv"
-  | "html"
-  | "pdf";
+  "markdown" | "text" | "json" | "csv" | "html" | "pdf";
 
 function contentTypeForDocumentAttachmentPreviewKind(
   kind: DocumentAttachmentPreviewKind,

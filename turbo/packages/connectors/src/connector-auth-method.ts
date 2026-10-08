@@ -239,10 +239,7 @@ export interface ConnectorGrantOutputMetadata {
 export type ConnectorAuthMethodGrantMetadata =
   | {
       readonly kind:
-        | "auth-code"
-        | "openid-auth"
-        | "external-code"
-        | "device-auth";
+        "auth-code" | "openid-auth" | "external-code" | "device-auth";
       readonly outputs: Readonly<Record<string, ConnectorGrantOutputMetadata>>;
     }
   | {
@@ -804,12 +801,10 @@ export type DynamicPublicConnectorAuthClient = {
 };
 
 export type StaticConnectorAuthClient =
-  | StaticConfidentialConnectorAuthClient
-  | StaticPublicConnectorAuthClient;
+  StaticConfidentialConnectorAuthClient | StaticPublicConnectorAuthClient;
 
 export type ConnectorAuthClient =
-  | StaticConnectorAuthClient
-  | DynamicPublicConnectorAuthClient;
+  StaticConnectorAuthClient | DynamicPublicConnectorAuthClient;
 
 export type ConnectorAuthClientIdentity =
   | StaticConfidentialConnectorAuthClientIdentity

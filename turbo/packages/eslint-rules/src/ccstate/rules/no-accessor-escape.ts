@@ -12,8 +12,7 @@ import { createRule } from "../utils.ts";
 type MessageIds = "accessorEscape";
 
 type CallbackNode =
-  | TSESTree.ArrowFunctionExpression
-  | TSESTree.FunctionExpression;
+  TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression;
 
 type FunctionNode = CallbackNode | TSESTree.FunctionDeclaration;
 

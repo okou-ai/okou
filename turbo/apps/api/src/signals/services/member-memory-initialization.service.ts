@@ -82,6 +82,7 @@ export const initializeMemberMemory$ = command(
       const projection = piResourceProjectionValues(
         { schemaVersion: 1, files: [] },
         0,
+        nowDate(),
       );
       await tx
         .insert(piResourceVersionIndexes)

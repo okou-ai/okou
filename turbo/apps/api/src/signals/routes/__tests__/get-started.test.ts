@@ -1,7 +1,5 @@
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
-import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
-import { testUsageSettlementRoutes } from "../test-usage-settlement";
 import { randomUUID } from "node:crypto";
 import {
   GET_STARTED_REWARDS_CHANGED_EVENT,
@@ -763,31 +761,10 @@ test("invalid URLs and missing cron authorization are rejected", async () => {
   );
 });
 
-test("a personal bonus is spendable without a purchased Usage Pack and disappears exactly at expiry", async () => {
+test("a personal check-in bonus is visible without a purchased Usage Pack and disappears exactly at expiry", async () => {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   signedInSession(userId, orgId, "org:member");
-  const settlement = setupApp({ context, routes: testUsageSettlementRoutes })(
-    testUsageSettlementContract,
-  );
-  await accept(
-    settlement.setup({ body: { org_id: orgId, credits: 0 } }),
-    [200],
-  );
-  const admission = () => {
-    return Promise.all(
-      (["run", "managed-media"] as const).map(async (kind) => {
-        return (
-          await accept(
-            settlement.admission({
-              body: { org_id: orgId, user_id: userId, kind },
-            }),
-            [200],
-          )
-        ).body.allowed;
-      }),
-    );
-  };
   mockNow(new Date("2026-09-15T06:30:00.500Z"));
   await accept(client().checkin({ headers }), [200]);
   const credits = () => {
@@ -804,7 +781,6 @@ test("a personal bonus is spendable without a purchased Usage Pack and disappear
     bonusCredits: 100,
     totalCredits: 100,
   });
-  await expect(admission()).resolves.toStrictEqual([true, true]);
   mockNow(new Date("2026-09-22T06:30:00.499Z"));
   expect((await credits()).body.bonusCredits).toBe(100);
   mockNow(new Date("2026-09-22T06:30:00.500Z"));
@@ -813,7 +789,6 @@ test("a personal bonus is spendable without a purchased Usage Pack and disappear
     totalCredits: 0,
     creditGrants: [],
   });
-  await expect(admission()).resolves.toStrictEqual([false, false]);
   expect(
     (await status()).quests.find((q) => {
       return q.key === "checkin";

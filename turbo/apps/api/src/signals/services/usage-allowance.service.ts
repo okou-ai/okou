@@ -5,7 +5,7 @@ import {
   usageAllowanceAllocations,
 } from "@okouai/db/schema/org-usage-allowance";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import {
   and,
   eq,
@@ -208,7 +208,7 @@ function pendingAllowanceRefreshQuery(
 /** Stripe preparation owns no financial row, advisory lock, or SQL transaction. */
 export const prepareUsageAllowanceRefresh$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly requirePendingUsage?: boolean;
@@ -216,7 +216,7 @@ export const prepareUsageAllowanceRefresh$ = command(
     },
     signal?: AbortSignal,
   ) => {
-    const database = set(writeDb$);
+    const database = get(db$);
     if (args.requirePendingUsage) {
       const [pending] = await database
         .select()
@@ -235,14 +235,6 @@ export const prepareUsageAllowanceRefresh$ = command(
     return prepared;
   },
 );
-
-/** One claim prepares Stripe state once, outside all SQL transactions. */
-export function createUsageAllowanceRefreshObject(orgId: string) {
-  return computed(async (get) => {
-    const [row] = await get(db$).select().from(allowanceRefreshQuery(orgId));
-    return await prepareAllowanceRefresh(row);
-  });
-}
 
 /** Refresh admission availability without reserving credit or opening a transaction. */
 function allowanceAdmissionRefreshPlan(
@@ -408,6 +400,4 @@ export const refreshUsageAllowanceAvailability$ = command(
 );
 
 export type UsageAllowanceAvailabilitySnapshot =
-  | UsageAllowanceAvailability
-  | "allowance_refresh_required"
-  | null;
+  UsageAllowanceAvailability | "allowance_refresh_required" | null;

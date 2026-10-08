@@ -9,7 +9,6 @@ import {
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
-  runnersModelProviderFailuresContract,
   runnersPollContract,
   runnersSteerContract,
   runnerVersionSchema,
@@ -110,7 +109,7 @@ import { decryptPersistentSecretsMap } from "../services/crypto.utils";
 import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import {
-  resolveRunnerReusePreference,
+  resolveRunnerReusePreference$,
   runnerPreferenceTelemetryDimensions,
   runnerPreferenceTelemetryResolution,
   runnerReuseKeyTelemetryKind,
@@ -663,21 +662,17 @@ function recordPollTimingMetrics(args: {
   ]);
 }
 
-function runnerPollPriorityOrder(
-  db: Pick<Db, "select">,
-  args: {
-    readonly runnerId: string | undefined;
-    readonly runnerGroup: string;
-    readonly currentDate: Date;
-  },
-): SQL[] {
+function runnerPollPriorityOrder(args: {
+  readonly runnerId: string | undefined;
+  readonly runnerGroup: string;
+  readonly currentDate: Date;
+}): SQL[] {
   if (!args.runnerId) {
     return [];
   }
   return [
     desc(
       runnerReusePreferencePollPriority({
-        db,
         runnerId: args.runnerId,
         runnerGroup: args.runnerGroup,
         currentDate: args.currentDate,
@@ -686,59 +681,69 @@ function runnerPollPriorityOrder(
   ];
 }
 
-async function resolvePollRunnerReusePreference(
-  db: Pick<Db, "select">,
-  args: {
-    readonly runId: string;
-    readonly runnerGroup: string;
-    readonly profile: string;
-    readonly reuseKey: string | null;
-    readonly historyGenerationRunId: string | undefined;
-    readonly createdAt: Date;
-    readonly currentDate: Date;
-  },
-) {
-  const resolution = await tapError(
-    resolveRunnerReusePreference({ db, ...args }),
-    (error) => {
-      L.warn("Failed to resolve runner reuse preference for poll response", {
-        runId: args.runId,
-        runnerGroup: args.runnerGroup,
-        profile: args.profile,
-        error,
-      });
+const resolvePollRunnerReusePreference$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly runnerGroup: string;
+      readonly profile: string;
+      readonly reuseKey: string | null;
+      readonly historyGenerationRunId: string | undefined;
+      readonly createdAt: Date;
+      readonly currentDate: Date;
     },
-  );
-  return resolution ?? runnerReusePreferenceLookupError();
-}
+  ) => {
+    const resolution = await tapError(
+      set(resolveRunnerReusePreference$, args),
+      (error) => {
+        L.warn("Failed to resolve runner reuse preference for poll response", {
+          runId: args.runId,
+          runnerGroup: args.runnerGroup,
+          profile: args.profile,
+          error,
+        });
+      },
+    );
+    return resolution?.preference ?? runnerReusePreferenceLookupError();
+  },
+);
 
-async function findPendingRunnerJob(
-  db: Pick<Db, "select">,
-  conditions: readonly SQL[],
-  priorityOrder: readonly SQL[],
-) {
-  const [pendingJob] = await db
-    .select({
-      runId: runnerJobQueue.runId,
-      prompt: agentRuns.prompt,
-      appendSystemPrompt: agentRuns.appendSystemPrompt,
-      vars: agentRuns.vars,
-      profile: runnerJobQueue.profile,
-      cliAgentSessionId: runnerJobQueue.cliAgentSessionId,
-      reuseKey: runnerJobQueue.reuseKey,
-      historyGenerationRunId:
-        sql`${runnerJobQueue.executionContext}->'resumeSession'->>'historyGenerationRunId'`.mapWith(
-          nullableDriverValueDecoder(pgTextDecoder),
-        ),
-      createdAt: runnerJobQueue.createdAt,
-    })
-    .from(runnerJobQueue)
-    .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .where(and(...conditions))
-    .orderBy(...priorityOrder, runnerJobQueue.createdAt, runnerJobQueue.runId)
-    .limit(1);
-  return pendingJob;
-}
+const findPendingRunnerJob$ = command(
+  async (
+    { get },
+    args: {
+      readonly conditions: readonly SQL[];
+      readonly priorityOrder: readonly SQL[];
+    },
+  ) => {
+    const [pendingJob] = await get(db$)
+      .select({
+        runId: runnerJobQueue.runId,
+        prompt: agentRuns.prompt,
+        appendSystemPrompt: agentRuns.appendSystemPrompt,
+        vars: agentRuns.vars,
+        profile: runnerJobQueue.profile,
+        cliAgentSessionId: runnerJobQueue.cliAgentSessionId,
+        reuseKey: runnerJobQueue.reuseKey,
+        historyGenerationRunId:
+          sql`${runnerJobQueue.executionContext}->'resumeSession'->>'historyGenerationRunId'`.mapWith(
+            nullableDriverValueDecoder(pgTextDecoder),
+          ),
+        createdAt: runnerJobQueue.createdAt,
+      })
+      .from(runnerJobQueue)
+      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
+      .where(and(...args.conditions))
+      .orderBy(
+        ...args.priorityOrder,
+        runnerJobQueue.createdAt,
+        runnerJobQueue.runId,
+      )
+      .limit(1);
+    return pendingJob;
+  },
+);
 
 const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const pollRequestStartedAtMs = now();
@@ -776,26 +781,25 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (excludedRunIds && excludedRunIds.length > 0) {
     whereConditions.push(notInArray(runnerJobQueue.runId, excludedRunIds));
   }
-  const db = set(writeDb$);
+  set(writeDb$);
   const pendingJobLookupStartedAtMs = now();
   const currentDate = nowDate();
-  const reusePreferencePriorityOrder = runnerPollPriorityOrder(db, {
+  const reusePreferencePriorityOrder = runnerPollPriorityOrder({
     runnerId: body.data.runnerId,
     runnerGroup: group,
     currentDate,
   });
-  const pendingJob = await findPendingRunnerJob(
-    db,
-    whereConditions,
-    reusePreferencePriorityOrder,
-  );
+  const pendingJob = await set(findPendingRunnerJob$, {
+    conditions: whereConditions,
+    priorityOrder: reusePreferencePriorityOrder,
+  });
   signal.throwIfAborted();
   const pendingJobLookupFinishedAtMs = now();
 
   if (!pendingJob) {
     return { status: 200 as const, body: { job: null } };
   }
-  const runnerPreference = await resolvePollRunnerReusePreference(db, {
+  const runnerPreference = await set(resolvePollRunnerReusePreference$, {
     runId: pendingJob.runId,
     runnerGroup: group,
     profile: pendingJob.profile,
@@ -2036,8 +2040,7 @@ function scheduleClaimSucceededSideEffects(args: {
   readonly pollHttpRequestMs: number | undefined;
   readonly pollReason: string | undefined;
   readonly preferenceResolution:
-    | RunnerPreferenceTelemetryResolution
-    | undefined;
+    RunnerPreferenceTelemetryResolution | undefined;
   readonly preferenceClaimState: RunnerPreferenceTelemetryState | undefined;
   readonly preferenceTargetedSelf: boolean | undefined;
   readonly historyGenerationRunId: string | undefined;
@@ -2072,8 +2075,7 @@ interface ClaimTimingMetricArgs {
   readonly pollHttpRequestMs: number | undefined;
   readonly pollReason: string | undefined;
   readonly preferenceResolution:
-    | RunnerPreferenceTelemetryResolution
-    | undefined;
+    RunnerPreferenceTelemetryResolution | undefined;
   readonly preferenceClaimState: RunnerPreferenceTelemetryState | undefined;
   readonly preferenceTargetedSelf: boolean | undefined;
   readonly historyGenerationRunId: string | undefined;
@@ -2623,19 +2625,6 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 });
 
-// Built-in model cooldown is retired. Runners released before its removal still
-// report model provider failures; authenticate and ignore them until they drain.
-const modelProviderFailureInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = await set(runnerAuth$, get(authorization$), signal);
-    signal.throwIfAborted();
-    if (!auth) {
-      return unauthorizedAuthenticationRequired;
-    }
-    return { status: 200 as const, body: { outcome: "ignored" as const } };
-  },
-);
-
 const runnerRealtimeTokenBody$ = bodyResultOf(
   runnerRealtimeTokenContract.create,
 );
@@ -2884,10 +2873,6 @@ export const runnersRoutes: readonly RouteEntry[] = [
     route: runnersJobClaimContract.claim,
     handler: claimInner$,
     observeJsonResponse: observeClaimJsonResponse,
-  },
-  {
-    route: runnersModelProviderFailuresContract.report,
-    handler: modelProviderFailureInner$,
   },
   {
     route: runnersSteerContract.next,

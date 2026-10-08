@@ -1916,8 +1916,29 @@
     {
       "idx": 1351,
       "version": "7",
-      "when": 1791473052355,
-      "tag": "1351_expand_runtime_billing_identity",
+      "when": 1791473200258,
+      "tag": "1351_drop_connector_catalog_payload",
+      "breakpoints": true
+    },
+    {
+      "idx": 1352,
+      "version": "7",
+      "when": 1791475819219,
+      "tag": "1352_detach_memory_history_from_run_checkpoints",
+      "breakpoints": true
+    },
+    {
+      "idx": 1353,
+      "version": "7",
+      "when": 1791477992014,
+      "tag": "1353_retire_deepseek_memory_route",
+      "breakpoints": true
+    },
+    {
+      "idx": 1354,
+      "version": "7",
+      "when": 1791502522067,
+      "tag": "1354_expand_runtime_billing_identity",
       "breakpoints": true
     }
   ]

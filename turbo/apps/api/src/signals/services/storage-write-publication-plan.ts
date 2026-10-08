@@ -29,7 +29,6 @@ import {
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import { badRequestMessage, notFound } from "../../lib/error";
-import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { memorySummaryProjectionValues } from "./memory-summary-projection.service";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
@@ -71,14 +70,24 @@ export interface MaintenancePublicationInput {
   readonly attestation?: PiMemoryPhase2CheckpointAttestation;
 }
 
-// A plan never receives a database or transaction. Each yield is one bound SQL
-// statement; its owner supplies only the raw rows from that statement. Separate
-// yields preserve fresh READ COMMITTED snapshots after conflict/lock waits.
+// A plan never receives a database, transaction or clock. Its owner supplies
+// each statement's rows and captures Date values at the requested steps.
+// Separate SQL yields preserve fresh READ COMMITTED snapshots after lock waits.
 interface StorageSqlStatement {
   readonly sql: SQL;
   readonly rowSchema: z.ZodType | null;
 }
-type StorageSqlPlan<T> = Generator<StorageSqlStatement, T, readonly unknown[]>;
+type StorageSqlPlan<T> = Generator<
+  StorageSqlStatement | { readonly kind: "timestamp-read" },
+  T,
+  readonly unknown[]
+>;
+function* publicationTimestampPlan(): StorageSqlPlan<Date> {
+  const [timestamp] = z
+    .tuple([z.date()])
+    .parse(yield { kind: "timestamp-read" });
+  return timestamp;
+}
 function readStatement(query: SQL, rowSchema: z.ZodType): StorageSqlStatement {
   return { sql: query, rowSchema };
 }
@@ -247,11 +256,14 @@ function runSnapshotSql(auth: SandboxAuth) {
     .for("update")
     .getSQL();
 }
-function maintenanceJobLockSql(binding: MaintenanceReceiptBinding) {
+function maintenanceJobLockSql(
+  binding: MaintenanceReceiptBinding,
+  currentTime: Date,
+) {
   return new QueryBuilder()
     .select({ id: sql`${piMemoryPhase2Jobs.memoryStorageId}`.as("id") })
     .from(piMemoryPhase2Jobs)
-    .where(storageMaintenanceJobCondition(binding, nowDate()))
+    .where(storageMaintenanceJobCondition(binding, currentTime))
     .limit(1)
     .for("update", { of: piMemoryPhase2Jobs })
     .getSQL();
@@ -315,7 +327,10 @@ function* admitMaintenanceCommit(
   const [active] =
     binding && !receipt
       ? idRows.parse(
-          yield readStatement(maintenanceJobLockSql(binding), idRows.element),
+          yield readStatement(
+            maintenanceJobLockSql(binding, yield* publicationTimestampPlan()),
+            idRows.element,
+          ),
         )
       : [];
   if (binding && !receipt && !active) {
@@ -425,7 +440,7 @@ function* publishStorageCommit(
     assertVersionConflict(conflict, input, verification);
   }
   if (storage.headVersionId !== input.versionId) {
-    const changedAt = nowDate();
+    const changedAt = yield* publicationTimestampPlan();
     const [published] = idRows.parse(
       yield readStatement(
         updatedStorageSql(
@@ -525,7 +540,7 @@ function* settleStorageCheckpoint(
     payload,
     binding.runId,
     versionId,
-    nowDate(),
+    yield* publicationTimestampPlan(),
   );
   const [settled] = idRows.parse(
     yield readStatement(
@@ -572,7 +587,7 @@ function* enqueueStorageIndex(versionId: string): StorageSqlPlan<void> {
   if (!inserted) {
     const repair = piResourceIndexRepairValues(
       value.sourceArchiveSize,
-      nowDate(),
+      yield* publicationTimestampPlan(),
     );
     yield writeStatement(
       updatedStorageSql(

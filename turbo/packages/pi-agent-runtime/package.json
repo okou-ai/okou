@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.46.26",
+  "version": "1.46.27",
   "private": true,
   "type": "module",
   "exports": {
@@ -44,6 +44,6 @@
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   }
 }

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { cronComputerUseScreenshotCleanupContract } from "@okouai/api-contracts/contracts/cron";
 import {
   computerUseAuthorizationRequestsContract,
   computerUseAuditEventsContract,
@@ -30,7 +29,6 @@ import { setupApp } from "../../../../__tests__/test-helpers";
 import { signSandboxJwtForTests } from "../../../auth/tokens";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
-import { cronComputerUseScreenshotCleanupRoutesForTest } from "../../cron-computer-use-screenshot-cleanup";
 import { computerUseRoutes } from "../../computer-use";
 import { computerUseAuthorizationRoutes } from "../../computer-use-authorization";
 
@@ -110,7 +108,6 @@ export interface ComputerUseS3ReadBarrier {
 export interface ComputerUseS3Fake {
   readonly puts: readonly RecordedComputerUseS3Put[];
   readonly gets: readonly RecordedComputerUseS3Get[];
-  readonly deletedKeys: readonly string[];
   readonly holdNextGetObject: () => ComputerUseS3ReadBarrier;
   readonly holdNextBody: () => ComputerUseS3ReadBarrier;
   readonly failNextGetObject: (error: unknown) => void;
@@ -392,18 +389,11 @@ export function createComputerUseBddApi(context: TestContext) {
     );
   }
 
-  function cleanupCronClient(commandIds: readonly string[]) {
-    return setupApp({
-      context,
-      routes: cronComputerUseScreenshotCleanupRoutesForTest(commandIds),
-    })(cronComputerUseScreenshotCleanupContract);
-  }
-
   return {
     /**
-     * Stateful in-memory S3 fake for the screenshot offload, proxy, and
-     * retention flows. PutObject stores bytes and records the put, GetObject
-     * streams stored bytes back, DeleteObjects records and removes keys.
+     * Stateful in-memory S3 fake for screenshot offload and proxy flows.
+     * PutObject stores bytes and records the put, GetObject streams stored
+     * bytes back, and DeleteObjects removes keys.
      * Installed on the vi mock, so the global afterEach mockReset uninstalls
      * it; install inside the test that needs it.
      */
@@ -414,7 +404,6 @@ export function createComputerUseBddApi(context: TestContext) {
       >();
       const puts: RecordedComputerUseS3Put[] = [];
       const gets: RecordedComputerUseS3Get[] = [];
-      const deletedKeys: string[] = [];
       let heldGetObject: PendingComputerUseS3ReadBarrier | undefined;
       let heldBody: PendingComputerUseS3ReadBarrier | undefined;
       let getObjectFailure: unknown | undefined;
@@ -493,7 +482,6 @@ export function createComputerUseBddApi(context: TestContext) {
           }
           if (name === "DeleteObjectsCommand") {
             for (const deletedKey of deleteObjectKeys(input)) {
-              deletedKeys.push(deletedKey);
               store.delete(`${bucket}/${deletedKey}`);
             }
             return {};
@@ -505,7 +493,6 @@ export function createComputerUseBddApi(context: TestContext) {
       return {
         puts,
         gets,
-        deletedKeys,
         holdNextGetObject: () => {
           return reserveBarrier("GetObject");
         },
@@ -979,25 +966,6 @@ export function createComputerUseBddApi(context: TestContext) {
           body: { computerUseHostId },
         }),
         statuses,
-      );
-    },
-
-    async runComputerUseScreenshotCleanupCron(
-      auth: "valid" | "invalid" | "missing",
-      commandIds: readonly string[],
-    ) {
-      const headers =
-        auth === "missing"
-          ? {}
-          : {
-              authorization:
-                auth === "valid"
-                  ? "Bearer test-cron-secret"
-                  : "Bearer wrong-secret",
-            };
-      return await accept(
-        cleanupCronClient(commandIds).cleanup({ headers }),
-        [200, 401],
       );
     },
   };

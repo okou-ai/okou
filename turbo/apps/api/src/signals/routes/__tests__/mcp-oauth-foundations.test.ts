@@ -4,10 +4,6 @@ import { randomUUID } from "node:crypto";
 import { CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES } from "@okouai/api-contracts/contracts/custom-connectors";
 import { mcpOAuthContract } from "@okouai/api-contracts/contracts/mcp-oauth";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
-import {
-  testMcpOAuthFetchContract,
-  type TestMcpOAuthFetchRequest,
-} from "@okouai/api-contracts/contracts/test-mcp-oauth-fetch";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -18,7 +14,6 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpOAuthClientMetadataRoutes } from "../mcp-oauth-client-metadata";
 import { runnersRoutes } from "../runners";
-import { testMcpOAuthFetchRoutes } from "../test-mcp-oauth-fetch";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -38,22 +33,8 @@ function metadataClient(baseUrl = "http://api.test") {
   })(mcpOAuthContract);
 }
 
-function probeClient() {
-  return setupApp({ context, routes: testMcpOAuthFetchRoutes })(
-    testMcpOAuthFetchContract,
-  );
-}
-
 function allowPublicHost(hostname: string, address = "8.8.8.8"): void {
   context.mocks.dns.lookupOverrides.set(hostname, [{ address, family: 4 }]);
-}
-
-async function requestProbeSuccess(body: TestMcpOAuthFetchRequest) {
-  return await accept(probeClient().request({ body }), [200]);
-}
-
-async function requestProbeFailure(body: TestMcpOAuthFetchRequest) {
-  return await accept(probeClient().request({ body }), [502]);
 }
 
 describe("MCP OAuth foundations", () => {
@@ -186,71 +167,6 @@ describe("MCP OAuth foundations", () => {
     expect(response.body.redirect_uris).toStrictEqual([
       "https://app.okou.ai/connectors/custom/callback",
       "https://api.okou.ai/api/connectors/automatic/callback",
-    ]);
-  });
-
-  it("supports OAuth metadata and SDK request body shapes with DNS pinning", async () => {
-    allowPublicHost("oauth.example.com");
-    server.use(
-      http.get("https://oauth.example.com/metadata", ({ request }) => {
-        return HttpResponse.json({ method: request.method });
-      }),
-      http.head("https://oauth.example.com/metadata", () => {
-        return new HttpResponse(null, {
-          status: 200,
-          headers: { "x-oauth-metadata": "present" },
-        });
-      }),
-      http.post("https://oauth.example.com/token", async ({ request }) => {
-        return HttpResponse.json({
-          contentType: request.headers.get("content-type"),
-          body: await request.text(),
-        });
-      }),
-    );
-
-    const metadata = await requestProbeSuccess({
-      url: "https://oauth.example.com/metadata",
-      method: "GET",
-    });
-    const head = await requestProbeSuccess({
-      url: "https://oauth.example.com/metadata",
-      method: "HEAD",
-    });
-    const form = await requestProbeSuccess({
-      url: "https://oauth.example.com/token",
-      method: "POST",
-      bodyKind: "form",
-      body: "grant_type=authorization_code&code=code_test",
-    });
-    const json = await requestProbeSuccess({
-      url: "https://oauth.example.com/token",
-      method: "POST",
-      bodyKind: "json",
-      body: '{"redirect_uris":["https://app.okou.ai/callback"]}',
-    });
-
-    expect(metadata).toMatchObject({ status: 200 });
-    expect(metadata.body).toMatchObject({ status: 200 });
-    expect(JSON.parse(metadata.body.body)).toStrictEqual({ method: "GET" });
-    expect(head.body).toMatchObject({
-      status: 200,
-      body: "",
-      headers: expect.objectContaining({ "x-oauth-metadata": "present" }),
-    });
-    expect(JSON.parse(form.body.body)).toStrictEqual({
-      contentType: "application/x-www-form-urlencoded;charset=UTF-8",
-      body: "grant_type=authorization_code&code=code_test",
-    });
-    expect(JSON.parse(json.body.body)).toStrictEqual({
-      contentType: "application/json",
-      body: '{"redirect_uris":["https://app.okou.ai/callback"]}',
-    });
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.8.8",
-      "8.8.8.8",
-      "8.8.8.8",
-      "8.8.8.8",
     ]);
   });
 
@@ -757,28 +673,5 @@ describe("MCP OAuth foundations", () => {
       "8.8.8.8",
     ]);
     expect(oauth.provider.tokenBodies).toStrictEqual([]);
-  });
-
-  it("honors caller cancellation and the transport deadline", async () => {
-    allowPublicHost("oauth.example.com");
-
-    const cancelled = await requestProbeFailure({
-      url: "https://oauth.example.com/metadata",
-      method: "GET",
-      cancel: true,
-    });
-
-    expect(cancelled.status).toBe(502);
-
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 10_000 ? AbortSignal.abort() : undefined;
-    });
-    const timedOut = await requestProbeFailure({
-      url: "https://oauth.example.com/metadata",
-      method: "GET",
-    });
-
-    expect(timedOut.status).toBe(502);
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([]);
   });
 });

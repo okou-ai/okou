@@ -302,7 +302,7 @@ export function canonicalVolumeStorageValues(args: {
 /** DB-only container reservation; callers own any required publication locks. */
 const resolveCanonicalVolumeStorage$ = command(
   async (
-    { set },
+    { get, set },
     args: { readonly orgId: string; readonly storageName: string },
     signal: AbortSignal,
   ): Promise<ServerSideVolumeStorage> => {
@@ -318,7 +318,7 @@ const resolveCanonicalVolumeStorage$ = command(
       .onConflictDoNothing();
     signal.throwIfAborted();
 
-    const [storage] = await db
+    const [storage] = await get(db$)
       .select({ id: storages.id, s3Prefix: storages.s3Prefix })
       .from(storages)
       .where(

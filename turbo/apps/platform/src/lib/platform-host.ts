@@ -138,14 +138,12 @@ export function resolvePlatformRuntimeConfig(): PlatformRuntimeConfig {
 }
 
 export function resolvePublicArtifactsBaseUrl():
-  | "https://cdn.vm0.io"
-  | "https://cdn.vm7.io" {
+  "https://cdn.vm0.io" | "https://cdn.vm7.io" {
   return resolvePlatformRuntimeConfig().publicArtifactsBaseUrl;
 }
 
 export function resolveArtifactImageTransformOrigin():
-  | "https://a.okou.io"
-  | "https://cdn.vm7.io" {
+  "https://a.okou.io" | "https://cdn.vm7.io" {
   return resolvePlatformEnvironment() === "production"
     ? "https://a.okou.io"
     : "https://cdn.vm7.io";
@@ -156,9 +154,7 @@ export function resolveOfficeDocumentViewerBaseUrl(): string {
 }
 
 export function resolveHostedSiteDomains(): readonly (
-  | "sites.vm0.io"
-  | "okou.app"
-  | "sites.vm7.io"
+  "sites.vm0.io" | "okou.app" | "sites.vm7.io"
 )[] {
   return resolvePlatformEnvironment() === "production"
     ? PRODUCTION_HOSTED_SITE_DOMAINS

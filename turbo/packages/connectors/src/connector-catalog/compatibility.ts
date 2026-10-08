@@ -216,8 +216,7 @@ function evaluateMethod(args: {
   readonly unsupportedProtocol: boolean;
   readonly method: ConnectorCatalogAuthMethod;
   readonly registration:
-    | ConnectorAuthProviderRegistrationCapability
-    | undefined;
+    ConnectorAuthProviderRegistrationCapability | undefined;
   readonly configuredNames: ReadonlySet<string>;
 }): ConnectorCatalogCompatibilityReason[] {
   const reasons = new Set<ConnectorCatalogCompatibilityReason>();

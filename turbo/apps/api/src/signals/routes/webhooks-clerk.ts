@@ -255,8 +255,7 @@ const enqueueUsagePackInvitationAcceptance$ = command(
   (
     { set },
     eventType:
-      | "organizationInvitation.accepted"
-      | "organizationMembership.created",
+      "organizationInvitation.accepted" | "organizationMembership.created",
     identity: UsagePackInvitationAcceptanceIdentity,
     signal: AbortSignal,
   ): void => {

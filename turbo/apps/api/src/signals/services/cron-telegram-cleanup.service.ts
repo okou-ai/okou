@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { telegramMessages } from "@okouai/db/schema/telegram-message";
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { inArray, lt, sql } from "drizzle-orm";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
@@ -8,7 +8,6 @@ import { type Db, writeDb$ } from "../external/db";
 
 const TELEGRAM_MESSAGE_RETENTION_DAYS = 30;
 const TELEGRAM_MESSAGE_DELETE_BATCH_SIZE = 10_000;
-const TEST_TELEGRAM_MESSAGE_DELETE_BATCH_SIZE = 2;
 const telegramMessageCtid = sql`ctid`.mapWith(pgTextDecoder);
 
 function retentionCutoff(): Date {
@@ -22,17 +21,10 @@ function retentionCutoff(): Date {
 async function cleanupTelegramMessages(
   db: Db,
   cutoff: Date,
-  officialOrgId: string | undefined,
   batchSize: number,
   signal: AbortSignal,
 ): Promise<number> {
-  const expiredWhere =
-    officialOrgId === undefined
-      ? lt(telegramMessages.createdAt, cutoff)
-      : and(
-          lt(telegramMessages.createdAt, cutoff),
-          eq(telegramMessages.officialOrgId, officialOrgId),
-        );
+  const expiredWhere = lt(telegramMessages.createdAt, cutoff);
 
   let totalDeleted = 0;
   let batchDeleted: number;
@@ -60,20 +52,7 @@ export const cleanupTelegramMessages$ = command(
     return await cleanupTelegramMessages(
       set(writeDb$),
       retentionCutoff(),
-      undefined,
       TELEGRAM_MESSAGE_DELETE_BATCH_SIZE,
-      signal,
-    );
-  },
-);
-
-export const cleanupTelegramMessagesForTest$ = command(
-  async ({ set }, marker: string, signal: AbortSignal): Promise<number> => {
-    return await cleanupTelegramMessages(
-      set(writeDb$),
-      retentionCutoff(),
-      marker,
-      TEST_TELEGRAM_MESSAGE_DELETE_BATCH_SIZE,
       signal,
     );
   },

@@ -153,8 +153,7 @@ export type { ProviderEnv };
 export { providerEnvFromObject };
 
 export type ConnectorAuthProviderAccessTokenRevokeResult =
-  | { readonly status: "revoked" }
-  | { readonly status: "unsupported" };
+  { readonly status: "revoked" } | { readonly status: "unsupported" };
 
 type RuntimeAuthCodeGrantProvider = {
   readonly kind: "auth-code";

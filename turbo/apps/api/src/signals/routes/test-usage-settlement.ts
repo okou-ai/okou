@@ -1,19 +1,15 @@
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { command } from "ccstate";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { checkBillableOperationCredits$ } from "../services/billable-operation-admission.service";
 import { createUsagePackCreditGrant } from "../services/usage-pack-credit.service";
-import { checkOrgCreditsForRunAdmission$ } from "../services/run-admission.service";
-import { modelCatalog$ } from "../services/model-catalog.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -23,8 +19,6 @@ import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan
 const setupBody$ = bodyResultOf(testUsageSettlementContract.setup);
 const cleanupBody$ = bodyResultOf(testUsageSettlementContract.cleanup);
 const createGrantBody$ = bodyResultOf(testUsageSettlementContract.createGrant);
-const stateBody$ = bodyResultOf(testUsageSettlementContract.state);
-const admissionBody$ = bodyResultOf(testUsageSettlementContract.admission);
 
 const setupUsageSettlement$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -134,93 +128,6 @@ const createUsagePackGrant$ = command(
   },
 );
 
-const readUsageSettlementState$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-    const bodyResult = await get(stateBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-
-    const db = set(writeDb$);
-    const [metadata] = await db
-      .select({ credits: orgMetadata.credits })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, bodyResult.data.org_id))
-      .limit(1);
-    signal.throwIfAborted();
-    const grants = await db
-      .select({
-        id: usagePackCreditGrants.id,
-        userId: usagePackCreditGrants.userId,
-        grantType: usagePackCreditGrants.grantType,
-        idempotencyKey: usagePackCreditGrants.idempotencyKey,
-        originalAmount: usagePackCreditGrants.originalAmount,
-        remainingAmount: usagePackCreditGrants.remainingAmount,
-        expiresAt: usagePackCreditGrants.expiresAt,
-      })
-      .from(usagePackCreditGrants)
-      .where(eq(usagePackCreditGrants.orgId, bodyResult.data.org_id))
-      .orderBy(
-        asc(usagePackCreditGrants.createdAt),
-        asc(usagePackCreditGrants.id),
-      );
-    signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: {
-        org_credits: metadata?.credits ?? 0,
-        grants: grants.map((grant) => {
-          return {
-            id: grant.id,
-            user_id: grant.userId,
-            grant_type: grant.grantType,
-            idempotency_key: grant.idempotencyKey,
-            original_amount: grant.originalAmount,
-            remaining_amount: grant.remainingAmount,
-            expires_at: grant.expiresAt.toISOString(),
-          };
-        }),
-      },
-    };
-  },
-);
-
-const checkUsageSettlementAdmission$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-    const bodyResult = await get(admissionBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-
-    const args = {
-      orgId: bodyResult.data.org_id,
-      userId: bodyResult.data.user_id,
-    };
-    const allowed =
-      bodyResult.data.kind === "run"
-        ? (await set(
-            checkOrgCreditsForRunAdmission$,
-            {
-              catalog: await get(modelCatalog$),
-              ...args,
-              modelProviderType: "built-in",
-            },
-            signal,
-          )) === undefined
-        : await set(checkBillableOperationCredits$, args, signal);
-    signal.throwIfAborted();
-    return { status: 200 as const, body: { allowed } };
-  },
-);
-
 export const testUsageSettlementRoutes: readonly RouteEntry[] = [
   {
     route: testUsageSettlementContract.setup,
@@ -233,13 +140,5 @@ export const testUsageSettlementRoutes: readonly RouteEntry[] = [
   {
     route: testUsageSettlementContract.createGrant,
     handler: createUsagePackGrant$,
-  },
-  {
-    route: testUsageSettlementContract.state,
-    handler: readUsageSettlementState$,
-  },
-  {
-    route: testUsageSettlementContract.admission,
-    handler: checkUsageSettlementAdmission$,
   },
 ];

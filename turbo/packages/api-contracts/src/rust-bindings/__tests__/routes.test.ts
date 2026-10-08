@@ -73,12 +73,6 @@ const expectedBindings = [
   },
   {
     method: "POST",
-    path: "/api/runners/runs/:runId/model-provider-failures",
-    rustModulePath: ["runners", "runs", "by_run_id", "model_provider_failures"],
-    rustConstName: "REPORT",
-  },
-  {
-    method: "POST",
     path: "/api/runners/runs/:runId/connector-runtime/sync",
     rustModulePath: [
       "runners",
@@ -129,6 +123,12 @@ const expectedBindings = [
     method: "POST",
     path: "/api/webhooks/agent/checkpoints/prepare-history",
     rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
+    rustConstName: "PREPARE",
+  },
+  {
+    method: "POST",
+    path: "/api/webhooks/agent/session-history/prepare",
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
     rustConstName: "PREPARE",
   },
   {

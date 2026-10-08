@@ -19,10 +19,10 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
-  downloadS3BufferWithMaxBytes,
+  downloadS3BufferWithMaxBytes$,
   S3ObjectSizeLimitError,
 } from "../external/s3";
-import { safeSync, settle } from "../utils";
+import { safeSync, settle, settleIncludingAbort } from "../utils";
 
 const tracer = trace.getTracer("pi-resource-index");
 const WORK_BATCH_SIZE = 32;
@@ -138,7 +138,7 @@ export function piResourceIndexRepairCondition(
 export function piResourceProjectionValues(
   projection: PiResourceVersionIndex | undefined,
   archiveSize: number,
-  updatedAt = nowDate(),
+  updatedAt: Date,
 ) {
   // Only a materialized archive's actual bytes determine its size limit.
   // archiveSize is the registered source revision, not a byte identity.
@@ -318,13 +318,113 @@ const claimWork$ = command(
   },
 );
 
+interface ResourceIndexWork {
+  readonly versionId: string;
+  readonly archiveSize: number;
+  readonly fileCount: number;
+  readonly s3Key: string;
+  readonly leaseId: string;
+  readonly attemptCount: number;
+}
+type ResourceIndexOutcome = "ready" | "unindexable" | "retry" | "stale";
+const materializeResourceIndexWork$ = command(
+  async (
+    { set },
+    item: ResourceIndexWork,
+    signal: AbortSignal,
+  ): Promise<ResourceIndexOutcome> => {
+    const db = set(writeDb$);
+    const ownership = and(
+      eq(piResourceVersionIndexes.storageVersionId, item.versionId),
+      eq(
+        piResourceVersionIndexes.extractorVersion,
+        PI_RESOURCE_EXTRACTOR_VERSION,
+      ),
+      eq(piResourceVersionIndexes.leaseId, item.leaseId),
+      eq(piResourceVersionIndexes.status, "running"),
+    );
+    let projection: PiResourceVersionIndex | undefined;
+    if (item.archiveSize === 0 && item.fileCount === 0) {
+      projection = { schemaVersion: 1, files: [] };
+    } else {
+      const downloaded = await settle(
+        set(
+          downloadS3BufferWithMaxBytes$,
+          {
+            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+            key: `${item.s3Key}/archive.tar.gz`,
+            maxBytes: RESOURCE_ARCHIVE_MAX_BYTES,
+          },
+          signal,
+        ),
+        signal,
+      );
+      if (
+        !downloaded.ok &&
+        !(downloaded.error instanceof S3ObjectSizeLimitError)
+      ) {
+        const currentTime = nowDate();
+        const updated = await db
+          .update(piResourceVersionIndexes)
+          .set({
+            status: "pending",
+            leaseId: null,
+            leaseExpiresAt: null,
+            availableAt: new Date(
+              currentTime.getTime() +
+                Math.min(
+                  15 * 60_000,
+                  5000 * 2 ** Math.min(item.attemptCount, 8),
+                ),
+            ),
+            updatedAt: currentTime,
+          })
+          .where(ownership)
+          .returning({
+            versionId: piResourceVersionIndexes.storageVersionId,
+          });
+        signal.throwIfAborted();
+        return updated.length ? "retry" : "stale";
+      }
+      if (downloaded.ok) {
+        const parsed = safeSync(() => {
+          return indexPiResourceArchive(downloaded.value);
+        });
+        if ("ok" in parsed) {
+          projection = parsed.ok;
+        }
+      }
+    }
+    const values = piResourceProjectionValues(
+      projection,
+      item.archiveSize,
+      nowDate(),
+    );
+    const updated = await db
+      .update(piResourceVersionIndexes)
+      .set(values)
+      .where(ownership)
+      .returning({ versionId: piResourceVersionIndexes.storageVersionId });
+    signal.throwIfAborted();
+    return updated.length ? values.status : "stale";
+  },
+);
+
+const settleResourceIndexWork$ = command(
+  async ({ set }, item: ResourceIndexWork, signal: AbortSignal) => {
+    // Keep the original rejection as data until the batch closes its span.
+    return await settleIncludingAbort(
+      set(materializeResourceIndexWork$, item, signal),
+    );
+  },
+);
+
 export const executePiResourceIndexWork$ = command(
   async (
-    { get, set },
+    { set },
     versionIds: readonly string[] | undefined,
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
     const work = await set(claimWork$, versionIds, signal);
     let ready = 0;
     let unindexable = 0;
@@ -339,100 +439,43 @@ export const executePiResourceIndexWork$ = command(
           "pi.attempt_count": item.attemptCount,
         },
       });
-      const materialize = async () => {
-        const ownership = and(
-          eq(piResourceVersionIndexes.storageVersionId, item.versionId),
-          eq(
-            piResourceVersionIndexes.extractorVersion,
-            PI_RESOURCE_EXTRACTOR_VERSION,
-          ),
-          eq(piResourceVersionIndexes.leaseId, item.leaseId),
-          eq(piResourceVersionIndexes.status, "running"),
-        );
-        let projection: PiResourceVersionIndex | undefined;
-        if (item.archiveSize === 0 && item.fileCount === 0) {
-          projection = { schemaVersion: 1, files: [] };
-        } else {
-          const downloaded = await settle(
-            get(
-              downloadS3BufferWithMaxBytes(
-                env("R2_USER_STORAGES_BUCKET_NAME"),
-                `${item.s3Key}/archive.tar.gz`,
-                RESOURCE_ARCHIVE_MAX_BYTES,
-                signal,
-              ),
-            ),
-            signal,
-          );
-          if (
-            !downloaded.ok &&
-            !(downloaded.error instanceof S3ObjectSizeLimitError)
-          ) {
-            const currentTime = nowDate();
-            const updated = await db
-              .update(piResourceVersionIndexes)
-              .set({
-                status: "pending",
-                leaseId: null,
-                leaseExpiresAt: null,
-                availableAt: new Date(
-                  currentTime.getTime() +
-                    Math.min(
-                      15 * 60_000,
-                      5000 * 2 ** Math.min(item.attemptCount, 8),
-                    ),
-                ),
-                updatedAt: currentTime,
-              })
-              .where(ownership)
-              .returning({
-                versionId: piResourceVersionIndexes.storageVersionId,
-              });
-            signal.throwIfAborted();
-            span.setAttribute("pi.outcome", updated.length ? "retry" : "stale");
-            if (updated.length) {
-              retried++;
-            } else {
-              stale++;
-            }
-            return;
-          }
-          if (downloaded.ok) {
-            const parsed = safeSync(() => {
-              return indexPiResourceArchive(downloaded.value);
-            });
-            if ("ok" in parsed) {
-              projection = parsed.ok;
-            }
-          }
-        }
-        const values = piResourceProjectionValues(projection, item.archiveSize);
-        const updated = await db
-          .update(piResourceVersionIndexes)
-          .set(values)
-          .where(ownership)
-          .returning({ versionId: piResourceVersionIndexes.storageVersionId });
-        signal.throwIfAborted();
-        if (!updated.length) {
-          span.setAttribute("pi.outcome", "stale");
-          stale++;
+      const outcome = await set(settleResourceIndexWork$, item, signal);
+      const reported = safeSync(() => {
+        if (!outcome.ok) {
           return;
         }
-        if (values.status === "ready") {
-          ready++;
-        } else {
-          unindexable++;
-        }
         span.setAttributes({
-          "pi.outcome": values.status,
-          ...(values.status === "ready"
+          "pi.outcome": outcome.value,
+          ...(outcome.value === "ready"
             ? { "pi.ready_lag_ms": now() - item.createdAt.getTime() }
             : {}),
         });
-      };
-      await materialize().finally(() => {
-        span.end();
+        switch (outcome.value) {
+          case "ready": {
+            ready++;
+            break;
+          }
+          case "unindexable": {
+            unindexable++;
+            break;
+          }
+          case "retry": {
+            retried++;
+            break;
+          }
+          case "stale": {
+            stale++;
+            break;
+          }
+        }
       });
+      span.end();
+      if ("error" in reported) {
+        throw reported.error;
+      }
+      if (!outcome.ok) {
+        throw outcome.error;
+      }
       signal.throwIfAborted();
     }
     return { claimed: work.length, ready, unindexable, retried, stale };

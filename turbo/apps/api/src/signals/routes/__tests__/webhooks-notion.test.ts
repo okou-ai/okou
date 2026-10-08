@@ -1,13 +1,12 @@
 import { createHmac, randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { webhookNotionContract } from "@okouai/api-contracts/contracts/webhooks";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
 import { server } from "../../../mocks/server";
-import { resetNotionWebhookVerification } from "../../../test-fixtures/workflow-notion";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -20,12 +19,8 @@ import { chatThreadRoutes } from "../chat-threads";
 import { webhooksNotionRoutes } from "../webhooks-notion";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 
-const TEST_APP_ROUTES = Object.freeze([
-  ...webhooksNotionRoutes,
-  ...workflowAutomationsRoutes,
-]);
-
 const context = testContext();
+
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -44,8 +39,8 @@ interface WorkflowsFixture {
 
 /**
  * Per-test Notion entity ids. The webhook fans out to every automation in the
- * database watching the same Notion page, so ids must be unique per test to
- * stay isolated on the shared persistent database.
+ * database watching the same Notion page; distinct ids model separate provider
+ * entities, including in the account-only cases using shared PostgreSQL.
  */
 interface NotionEntities {
   readonly parentPageId: string;
@@ -321,30 +316,28 @@ function notionPageEvent(args: {
 async function postNotionWebhook(args: {
   readonly rawBody: string;
   readonly signature?: string;
+  readonly isolatePg?: boolean;
 }): Promise<{ readonly status: number; readonly body: unknown }> {
-  const response = await createApp({
-    signal: context.signal,
-    routes: TEST_APP_ROUTES,
-  }).request("/api/webhooks/notion", {
-    method: "POST",
-    headers: {
+  const app = await setupApp({
+    context,
+    routes: webhooksNotionRoutes,
+    isolatePg: args.isolatePg,
+  });
+  const response = await app(webhookNotionContract).post({
+    extraHeaders: {
       "content-type": "application/json",
       ...(args.signature ? { "X-Notion-Signature": args.signature } : {}),
     },
     body: args.rawBody,
   });
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: response.body };
 }
 
-/**
- * Runs the Notion verification handshake from a clean slate. Verification is
- * a global one-shot, so the pre-verification state is constructed through the
- * narrow fixture before the public handshake request.
- */
+/** Exercise Notion's one-time provider handshake in the case-owned database. */
 async function verifyNotionWebhook(): Promise<void> {
-  await resetNotionWebhookVerification();
   const verification = await postNotionWebhook({
     rawBody: JSON.stringify({ verification_token: NOTION_WEBHOOK_TOKEN }),
+    isolatePg: true,
   });
   expect(verification).toStrictEqual({
     status: 200,
@@ -458,7 +451,9 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("rejects invalid JSON and invalid signatures", async () => {
-    await expect(postNotionWebhook({ rawBody: "{" })).resolves.toStrictEqual({
+    await expect(
+      postNotionWebhook({ rawBody: "{", isolatePg: true }),
+    ).resolves.toStrictEqual({
       status: 400,
       body: { error: "Invalid Notion webhook payload" },
     });
@@ -481,6 +476,7 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("enqueues and debounces page content updated events for a page scope", async () => {
+    await verifyNotionWebhook();
     const scenario = await setupFixture();
     const { workflowId, entities } = scenario;
     await connectNotion(scenario);
@@ -508,8 +504,6 @@ describe("POST /api/webhooks/notion", () => {
     ) {
       throw new Error("Expected a Notion page content updated automation");
     }
-
-    await verifyNotionWebhook();
 
     const contentEvent = notionPageEvent({
       entities,
@@ -577,6 +571,7 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("enqueues page content updated events for a database scope", async () => {
+    await verifyNotionWebhook();
     const scenario = await setupFixture();
     const { workflowId, entities } = scenario;
     await connectNotion(scenario);
@@ -605,8 +600,6 @@ describe("POST /api/webhooks/notion", () => {
       throw new Error("Expected a Notion page content updated automation");
     }
 
-    await verifyNotionWebhook();
-
     const contentEvent = notionPageEvent({
       entities,
       type: "page.content_updated",
@@ -630,6 +623,7 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("suppresses content updated events while child page creation is pending", async () => {
+    await verifyNotionWebhook();
     const scenario = await setupFixture();
     const { workflowId, entities } = scenario;
     await connectNotion(scenario);
@@ -668,8 +662,6 @@ describe("POST /api/webhooks/notion", () => {
       [201],
     );
     expect(childAutomation.body.id).not.toBe(contentAutomation.body.id);
-
-    await verifyNotionWebhook();
 
     const createdEvent = notionPageEvent({
       entities,
@@ -714,6 +706,7 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("suppresses content updated events while database item creation is pending", async () => {
+    await verifyNotionWebhook();
     const scenario = await setupFixture();
     const { workflowId, entities } = scenario;
     await connectNotion(scenario);
@@ -752,8 +745,6 @@ describe("POST /api/webhooks/notion", () => {
       [201],
     );
     expect(databaseAutomation.body.id).not.toBe(contentAutomation.body.id);
-
-    await verifyNotionWebhook();
 
     const createdEvent = notionPageEvent({
       entities,
@@ -1001,6 +992,7 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("verifies, signs, de-duplicates, and refreshes pending child page events", async () => {
+    await verifyNotionWebhook();
     const scenario = await setupFixture();
     const { workflowId, entities } = scenario;
     await connectNotion(scenario);
@@ -1028,8 +1020,6 @@ describe("POST /api/webhooks/notion", () => {
     ) {
       throw new Error("Expected a Notion child page automation");
     }
-
-    await verifyNotionWebhook();
 
     // A replacement verification while a token is active is rejected, so the
     // original token keeps validating signed deliveries below.
@@ -1098,6 +1088,7 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("enqueues and refreshes pending database item events", async () => {
+    await verifyNotionWebhook();
     const scenario = await setupFixture();
     const { workflowId, entities } = scenario;
     await connectNotion(scenario);
@@ -1125,8 +1116,6 @@ describe("POST /api/webhooks/notion", () => {
     ) {
       throw new Error("Expected a Notion database item automation");
     }
-
-    await verifyNotionWebhook();
 
     // Notion also delivers data-source children with a database parent id
     // plus a data_source_id field (no parent type) — both shapes must match
@@ -1178,6 +1167,7 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("inherits explicit Notion account selection in new automations", async () => {
+    await verifyNotionWebhook();
     const {
       entities,
       threadId,
@@ -1185,7 +1175,6 @@ describe("POST /api/webhooks/notion", () => {
       secondAccount,
       expectAutomationConnector,
     } = await setupNotionAccountLifecycle();
-    await verifyNotionWebhook();
     const staleEvent = notionPageEvent({
       entities,
       type: "page.created",

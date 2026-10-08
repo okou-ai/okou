@@ -35,7 +35,7 @@ export function instrumentCommand(prog: Command): void {
     const diagnostic = invocation.getStore();
     if (!diagnostic) return;
     const names: string[] = [];
-    for (let command: Command | null = action; command !== prog; ) {
+    for (let command: Command | null = action; command !== prog;) {
       if (!command?.parent || !command.parent.commands.includes(command)) {
         return;
       }

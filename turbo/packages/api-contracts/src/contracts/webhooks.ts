@@ -10,7 +10,6 @@ import {
   xResourceUsageEventSchema,
 } from "./x-resource-usage";
 import {
-  artifactMissingRootPolicySchema,
   RESUME_SESSION_HISTORY_MAX_BYTES,
   runnerHostnameSchema,
   runnerVersionSchema,
@@ -21,7 +20,11 @@ import {
   secretConnectorMetadataMapSchema,
   workspaceReuseResultSchema,
 } from "./runners";
-import { eventSequenceNumberSchema, networkLogEntrySchema } from "./runs";
+import {
+  eventSequenceNumberSchema,
+  networkLogEntrySchema,
+  runStorageOutputSchema,
+} from "./runs";
 import {
   presignedUploadSchema,
   storageChangesSchema,
@@ -337,14 +340,7 @@ const currentSandboxReuseMissSchema = z.enum([
  * `Record<name, version>` support was removed in #10913 after the DB
  * migration and guest-agent writer flip completed.
  */
-const artifactSnapshotsSchema = z.array(
-  z.object({
-    name: z.string(),
-    version: z.string(),
-    mountPath: z.string(),
-    missingRootPolicy: artifactMissingRootPolicySchema.optional(),
-  }),
-);
+const artifactSnapshotsSchema = z.array(runStorageOutputSchema);
 
 /**
  * Volume versions snapshot schema
@@ -353,20 +349,19 @@ const volumeVersionsSnapshotSchema = z.object({
   versions: z.record(z.string(), z.string()),
 });
 
-const checkpointMetadataShape = {
+const runCompletionMetadataShape = {
   cliAgentType: z.string().min(1, "cliAgentType is required"),
   cliAgentSessionId: z.string().min(1, "cliAgentSessionId is required"),
   cliAgentSessionHistoryHash: sha256HexSchema.optional(),
   cliAgentSessionHistoryDisposition: z
     .enum(["discarded_oversized", "unavailable"])
     .optional(),
-  // Multi-artifact snapshots are folded into canonical checkpoint mounts
-  // and projected back into the legacy response shape.
+  // Versions of the run's authorized writeback mounts after publication.
   artifactSnapshots: artifactSnapshotsSchema.optional(),
   volumeVersionsSnapshot: volumeVersionsSnapshotSchema.optional(),
 } as const;
 
-function requireCheckpointHistory(
+function requireCompletionHistory(
   body: {
     readonly cliAgentSessionHistoryHash?: string;
     readonly cliAgentSessionHistoryDisposition?: string;
@@ -384,18 +379,18 @@ function requireCheckpointHistory(
   }
 }
 
-const webhookCheckpointMetadataSchema = z
-  .object(checkpointMetadataShape)
+export const runCompletionMetadataSchema = z
+  .object(runCompletionMetadataShape)
   .strict()
-  .superRefine(requireCheckpointHistory);
+  .superRefine(requireCompletionHistory);
 
 const webhookCheckpointCreateBodySchema = z
   .object({
     runId: z.string().min(1, "runId is required"),
-    ...checkpointMetadataShape,
+    ...runCompletionMetadataShape,
   })
   .strict()
-  .superRefine(requireCheckpointHistory);
+  .superRefine(requireCompletionHistory);
 
 const webhookCompleteBodySchema = z
   .object({
@@ -410,9 +405,18 @@ const webhookCompleteBodySchema = z
     sandboxId: z.string().max(255).optional(),
     sandboxReuseResult: sandboxReuseResultSchema.optional(),
     workspaceReuseResult: workspaceReuseResultSchema.optional(),
-    checkpoint: webhookCheckpointMetadataSchema.optional(),
+    completion: runCompletionMetadataSchema.optional(),
+    // Adapter for Guest binaries deployed before checkpoint retirement.
+    checkpoint: runCompletionMetadataSchema.optional(),
   })
   .superRefine((body, context) => {
+    if (body.completion !== undefined && body.checkpoint !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["completion"],
+        message: "Only one completion metadata payload is allowed",
+      });
+    }
     const workspaceResult = body.workspaceReuseResult;
     if (workspaceResult === undefined) {
       return;
@@ -699,7 +703,8 @@ export const webhookCompleteContract = c.router({
 });
 
 /**
- * Webhook checkpoints contract for /api/webhooks/agent/checkpoints
+ * Legacy declaration for the retired standalone checkpoint endpoint.
+ * @deprecated No current Guest producer calls this endpoint; remove in release 2 of #38124.
  */
 export const webhookCheckpointsContract = c.router({
   /**
@@ -765,6 +770,14 @@ export const webhookCheckpointsPrepareHistoryContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Get presigned URL for uploading session history to S3",
+  },
+});
+
+/** Native CLI history upload preparation, independent of file publication. */
+export const webhookSessionHistoryPrepareContract = c.router({
+  prepare: {
+    ...webhookCheckpointsPrepareHistoryContract.prepare,
+    path: "/api/webhooks/agent/session-history/prepare",
   },
 });
 

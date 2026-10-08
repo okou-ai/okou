@@ -40,22 +40,49 @@ Responses/Chat Completions firewall, credentials and Runner accounting apply.
 This change does not activate the Chat Completions feature switch or change
 foreground Auto selection.
 
-Old API with the expanded catalog still selects DeepSeek for Built-in memory.
-New API with a compatible existing Runner dispatches the existing Pi launch
+The Luna API with a compatible existing Runner dispatches the existing Pi launch
 shape with Luna and preserves the claim capability gates. Both old and new
-CLI artifacts already resolve personal/OpenRouter Luna and historical DeepSeek.
+supported CLI artifacts resolve personal/OpenRouter Luna.
 API/CLI deployment order does not rewrite captured Runs or queued launch
 contexts. In-flight Stage 1 API invocations keep their resolved request.
 Historical DeepSeek and GPT-5.6 Luna maintenance models remain recognizable to
-cleanup and settlement, and the DeepSeek route and all prices remain intact.
-Rolling back the API restores its previous selection policy. No stored Run,
-candidate, session, checkpoint or usage row is rewritten.
+cleanup and accounting. No stored Run, candidate, session, checkpoint or usage
+row is rewritten.
 
-DeepSeek is never selected by the new memory admission code. Remove its
-retained catalog route/runtime support only after older API writers and all
-captured DeepSeek maintenance Runs have drained, late proxy/callback usage has
-settled, and supported rollback versions no longer select or execute it.
-Historical model recognition and pricing remain required for retained usage.
+## DeepSeek memory execution retirement (2026-10-08)
+
+Migration `1353_retire_deepseek_memory_route` deletes only the
+`deepseek-v4.1-flash` execution routes. The runtime removes its hand-pinned
+model, limit correction and historical consolidation-effort branch. Historical
+model recognition, catalog labels, replacement chains and all prices remain
+required for retained usage.
+
+The Luna API (`1.715.0`, release commit
+`a17b5e424a8944d832875c8097c0a4330d172bc9`) completed
+[production promotion](https://github.com/okou-ai/okou/actions/runs/37794041015/job/113376087119)
+at 2026-10-08 14:56:47 UTC. A read-only production census on 2026-10-08 found
+no nonterminal DeepSeek Runs, no raw DeepSeek usage awaiting settlement, no
+active Stage 1/Phase 2 leases or retries, and no pending Phase 2 callbacks.
+The latest retained DeepSeek Run ended at 2026-10-02 23:01:18.992 UTC, beyond
+the two-hour runtime plus two-minute finalization bound. Terminal failures
+remain historical outcomes, not unfinished attempts. DeepSeek usage is retained
+in hourly rollups, so retirement must not delete its billing identities.
+
+The production rollback resolver explicitly requires Luna routing commit
+`77357abdb29ce96b2caf9ee679299602757844dc` (#38129). The existing connector
+catalog floor already excludes earlier APIs; the explicit memory floor keeps
+that requirement independent of connector cleanup.
+
+- **Luna API after route deletion:** both memory stages resolve their Luna
+  binding; foreground Auto and personal subscription routes are unchanged.
+- **Retirement API before migration:** the extra DeepSeek row grants no new
+  admission; both memory stages already select Luna.
+- **Existing Runner/CLI and rollback:** supported artifacts resolve Luna and
+  retain captured launch/accounting contracts. No captured DeepSeek execution
+  remains, and APIs that could admit it are rejected as rollback targets.
+
+This is retirement readiness evidence, not a receipt for deploying migration 1353. The normal production release applies the migration before promoting the
+retirement API.
 
 ## Maps oversized-response error (issue #36791)
 
@@ -224,7 +251,7 @@ billing identities remain separate. Auto offers neither explicit effort nor
 Fast. Existing selected/runtime/price rows are not backfilled or deleted.
 
 **Additive database and protocol preparation.** Migration
-`1351_expand_runtime_billing_identity` widens the provider fields in
+`1354_expand_runtime_billing_identity` widens the provider fields in
 `usage_event`, `usage_event_hourly_rollup`, `usage_pricing`, and the route's
 `pricing_provider` to text without rewriting identities, rates, or settled
 amounts. The usage webhook now accepts providers through 255 characters,
@@ -388,6 +415,71 @@ and screenshot retention remain intact; this change performs no historical
 command or object-storage deletion. Retired switch overrides already pass through
 the general registry-key filtering.
 
+## Generic Run checkpoint retirement: release 1 (#38124)
+
+Run completion now saves native CLI history in Conversation, writeback outputs
+in `agent_runs.result.storageOutputs`, and the terminal transition together.
+Only writeback names, mount paths, versions and missing-root policies are added
+to the existing result JSON. They provide exact retry evidence for successful,
+failed and cancelled recovery reports, including two mounts with the same name.
+Read-only versions remain owned by immutable Run launch mounts; there is no new
+recovery snapshot or checkpoint entity. Historical result `checkpointId` values
+remain readable and opaque. No historical results or blobs are rewritten.
+
+Pi memory publication remains owned by the generic Storage commit transaction
+and its validated, lease/revision/base/selection-bound publication receipt
+(`pi_memory_phase2_checkpoints`, whose physical name is retained). The observer
+uses that receipt alone, including no-diff publications; a successful CLI exit
+without a receipt cannot advance watermarks. Already settled callbacks are
+idempotent without generic checkpoint ID backfill. Runtime code no longer reads
+or writes `lastMaintenanceCheckpointId` or the generic `checkpoints` table.
+The physical table, ID columns and indexes remain for release 2. Migration
+`1352_detach_memory_history_from_run_checkpoints` removes only the old ID's
+participation in the memory job history CHECK constraint. Existing IDs remain
+untouched; outgoing writers continue to satisfy the relaxed constraint, while
+new failure updates no longer need to clear an obsolete ID. Publication version,
+revision, lease and selection constraints remain enforced. Apply this migration
+before promoting the table-independent API.
+
+### Serving combinations and activation
+
+- **Current old Guest -> new API:** the combined `/complete.checkpoint` payload
+  is normalized into the same Run completion path. The old
+  `/api/webhooks/agent/checkpoints/prepare-history` upload URL remains an adapter.
+  Neither adapter accesses the generic checkpoint table or returns a fake ID.
+- **New Guest -> new API:** native uploads use
+  `/api/webhooks/agent/session-history/prepare`; `/complete.completion` carries
+  native identity and writeback outputs. Both metadata fields together are
+  rejected. Failed/cancelled recovery and metadata-free Runner fallback retain
+  their terminal-state rules; Pi history promotes its Session only on success.
+- **New Guest -> pre-transition API:** unsupported. The new presign URL is absent
+  and the old API cannot commit checkpoint-free output results. Deploy and verify
+  the prepared API on every serving instance before promoting new Guest images.
+- **Pre-transition API -> new persisted results:** unsupported because clean
+  completion still queries the generic table. Exclude those instances from
+  serving and supported rollback before enabling new writes. Rollback must stay
+  at this table-independent API generation or a descendant.
+
+The current Guest has no standalone checkpoint-create caller: finalization sends
+only the combined completion request. Repository callers outside tests do not
+use `/api/webhooks/agent/checkpoints`. Its API handler is retired in this release;
+legacy contract declarations remain for the release 2 protocol cleanup. Verify
+that the deployed producer inventory matches before promotion; any external
+standalone producer must upgrade or drain, not receive a synthetic checkpoint ID.
+Drain pre-transition in-flight completion/recovery reports before API cutover:
+old terminal Runs may have Conversation + checkpoint rows but no Run-owned exact
+output evidence. Metadata-free terminal acknowledgements and historical reads
+remain supported; conflicting or unverifiable included outputs are rejected.
+
+Record serving/rollback inventory and outgoing API drain, then verify completion,
+exact retries, failed/cancelled recovery, next-run native resume, file HEADs and
+memory publication/no-diff/lost-or-repeated acknowledgement with old and new
+Guest producers. A merge or green CI does not establish production acceptance.
+After acceptance, drain old Guest images, uploads and queued callbacks before
+release 2 removes adapters and drops the generic table and obsolete ID columns.
+The outgoing release 1 API is already independent of the dropped table, matching
+the repository's migration-before-API-promotion deployment order.
+
 ## Dynamic Run inputs without Agent execution configuration
 
 The first delivery of [#37970](https://github.com/okou-ai/okou/issues/37970)
@@ -480,6 +572,43 @@ protocol during the upgrade window; new Native against an old API stays offline
 and never acquires a host token. Existing installation and chat host identities
 are preserved. Legacy contraction requires the Desktop version floor and API
 serving/rollback drain. See [the full contract](desktop-session-auth.md).
+
+## Connector catalog payload contraction (not yet production accepted)
+
+Migration `1351_drop_connector_catalog_payload` physically drops only
+`connector_catalog_entries.payload`. The canonical schema and runtime now share
+one payload-free table declaration with the same `(hash, slug)` primary key and
+required projections; the existing runtime export path remains supported.
+No retained generation, projection, pointer, Run/permission capture, preparation
+receipt or skill registration is rewritten or deleted. Publisher hashing and
+permission-summary derivation are unchanged; an existing-hash retry still does
+not update stored summaries.
+
+**Release gate.** Do not merge or release this contraction until a separate
+successful production release contains preparation migration 1348 and its
+payload-independent API, and the outgoing dual-writing API has demonstrably
+exited. Do not ship preparation and DROP in the same production workflow run:
+migrations execute before API promotion, so DROP would break the serving dual
+writer. A merged PR, green CI or a historical payload-only drain confirmation
+is not evidence that this new boundary has passed. The official rollback
+resolver must continue requiring the canonical first-parent main introduction
+commit for preparation migration 1348; do not remove or lower that floor.
+
+Preparation [#38099](https://github.com/okou-ai/okou/pull/38099), merged at
+`9d3a1b406f1f44b224c33046162df01a77e035f8`, shipped independently in API 1.715.0
+(release [#38145](https://github.com/okou-ai/okou/pull/38145)) at
+`a17b5e424a8944d832875c8097c0a4330d172bc9`. The successful
+[production API promotion job](https://github.com/okou-ai/okou/actions/runs/37794041015/job/113376087119)
+completed production migrations before API promotion and finished at
+2026-10-08 14:56:47 UTC. Git ancestry confirms it contains the canonical
+preparation commit. Ethan subsequently confirmed that the old serving API had
+exited and authorized review/merge of the contraction. This is the operator's
+drain confirmation, not an independently measured invocation inventory.
+The separate preparation-release boundary is satisfied; physical contraction
+is not yet production accepted.
+This change does not execute production migrations, approve a release or close
+[#37899](https://github.com/okou-ai/okou/issues/37899); acceptance follows a
+successful contraction production release and verification.
 
 ## Connector catalog payload-independent API (preparatory release)
 
@@ -751,12 +880,12 @@ history value, so nothing is converted or archived.
 Runner: the mitm addon no longer observes or reports model provider failures,
 and the Runner no longer passes `OKOU_MITM_RUNNER_TOKEN` to mitmdump. Runners
 released before this change still `POST
-/api/runners/runs/:runId/model-provider-failures` best-effort. The endpoint and
-its contract stay: it authenticates the caller and returns
-`{ "outcome": "ignored" }` without reading the run or the body, so old Runners
-see the same success shape they already accept. Remove the endpoint, its
-contract and generated Rust bindings once production Runners no longer send
-these reports (no Runner after this change calls it).
+/api/runners/runs/:runId/model-provider-failures` best-effort; the API
+authenticated those reports and returned `{ "outcome": "ignored" }` until they
+drained. The endpoint, its contract, its runtime API schema entry and the
+generated Rust bindings were removed on 2026-10-09 once production Runners
+(0.220.18 and later, inside the rollback floor) had stopped sending reports.
+A Runner older than that now receives `404` for its best-effort report.
 
 App: a stale App build that opens Settings debug as staff receives `404` from
 the removed diagnostics endpoint inside that debug-only block; no user flow
@@ -6570,24 +6699,38 @@ persistence constraints.
 
 ### Version-addressed CLI artifacts in the runner rootfs
 
-Every CLI artifact `manifest.json` records the release versions of what the
-bundle contains: `versions.cli` (`@okouai/cli`), `versions.piAgentRuntime`
-(`@okouai/pi-agent-runtime`), and `versions.piSdk` (the pinned upstream Pi SDK
-plus a digest of the first-party patch set). A release additionally publishes
-the release commit's artifact at `okou-cli/v<versions.cli>/`. That path is
-immutable: the publish step fails the release when the version already exists
-with different bytes, so one CLI version identifies exactly one bundle and the
-semantic version can serve as a compatibility identity.
+Every CLI package carries mandatory `okouBuildIdentity` schema 1 in its packed
+`package.json`: Pi runtime version, Pi SDK version plus the first-party patch-set
+digest, and session-construction digest. The existing package `version` identifies
+`@okouai/cli`. The artifact producer derives `manifest.json` identity from those
+packed bytes, not a later workspace read. Native verification and Runner
+compilation reject missing identity or disagreement with the external identity;
+there is no legacy-package reader or compatibility fallback.
+
+A release additionally publishes the release commit's artifact at
+`okou-cli/v<versions.cli>/`. That path is immutable: the publish step fails the
+release when the version already exists with different bytes. New package bytes
+require a new CLI version through the existing CLI-to-Runner release dependency;
+never overwrite a versioned object or redirect a historical package URL.
 
 A Runner compiled with an embedded CLI bundle installs its verified
 `package.tgz` into the rootfs customize layer at
-`/usr/local/lib/okou-cli/<version>/`. The compiled version, Pi SDK and session
-identity are validated against the explicitly supplied package manifest during
-compilation; only the package bytes are embedded. `runner build` stages those
-bytes alongside the embedded Guest binaries and writes `/usr/local/bin/okou`
-and `/usr/local/lib/okou-cli/installed.json`. The package bytes and installed
-manifest are part of the rootfs hash, and `verify-rootfs.sh` checks the
-installed manifest against the verified identity.
+`/usr/local/lib/okou-cli/<version>/`. A build-only native module inside Runner
+validates the external inputs and generates installed metadata through the
+existing `guest-contracts` schema. Compilation snapshots the exact verified
+package buffer and generated `installed.json` into embedded resources, with SHA
+and version from that same buffer; it does not embed a subsequently reread input
+path. `runner build` only stages those trusted compiled bytes alongside the
+embedded Guest binaries. It does not reparse the archive, compare identity,
+rehash or recheck size, or regenerate installed metadata. The installer writes
+`/usr/local/bin/okou` and `/usr/local/lib/okou-cli/installed.json`. No new CLI
+package crate or runtime decoder is needed. The CLI contributes only its actual
+build-verified package SHA-256 to the local rootfs hash. Installed metadata remains
+determined by that package and the fixed installation recipe; `verify-rootfs.sh`
+and exact cached-sidecar comparison still validate it. Local rootfs cache version
+3 isolates this recipe. Changes to fixed installed schema, serialization or paths
+must rotate that version; shared template and snapshot versions are unchanged.
+This hash change does not remove installed metadata or change guest launch selection.
 
 New Runner binaries no longer accept `--okou-cli-artifact DIR`, and current
 release/preview orchestration does not stage a separate host CLI artifact. A
@@ -9001,11 +9144,12 @@ handoff metadata and observational accounting semantics are unchanged.
 
 ## DeepSeek V4.1 Flash Pi coverage
 
-The [V4.1 Pi catalog and deployment contract](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)
-requires the API's matching commit-addressed CLI for new admission and preserves
-old captured contexts. Existing Responses schemas and Runner claims are unchanged.
-Retain the V4.1 reader and API billing writer in serving/recovery and rollback
-targets while admitted V4.1 Pi work remains.
+The [historical V4.1 Pi catalog](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)
+records the former commit-addressed CLI and captured-context contract. Its
+execution window is closed by the
+[memory retirement gate](#deepseek-memory-execution-retirement-2026-10-08).
+Historical accounting identities remain; Responses schemas and Runner claims
+are unchanged.
 
 ## Durable Run stop intent (#34383)
 

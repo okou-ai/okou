@@ -13,10 +13,7 @@ import {
 import { feishuOrgInstallations } from "./feishu-org-installation";
 
 export type FeishuChatIngressStatus =
-  | "pending"
-  | "processing"
-  | "processed"
-  | "failed";
+  "pending" | "processing" | "processed" | "failed";
 
 /**
  * Durable receipt for a verified Feishu message event. The provider is

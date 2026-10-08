@@ -3,6 +3,7 @@
   "name": "zero-host-worker",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-13",
+  "compatibility_flags": ["enable_request_signal"],
   "images": { "binding": "IMAGES" },
   "media": { "binding": "MEDIA" },
   "routes": [

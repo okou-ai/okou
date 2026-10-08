@@ -25,7 +25,6 @@ import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { setRunModelRuntimeRouteFixture } from "../../../test-fixtures/agent-runs";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -288,8 +287,7 @@ async function readThreadTitleFromEvents(
   }
 
   let latestTitleEvent:
-    | { readonly title: string | null; readonly createdAt: string }
-    | undefined;
+    { readonly title: string | null; readonly createdAt: string } | undefined;
   for (const event of events.body.events) {
     if (
       event.chatThreadId !== threadId ||
@@ -312,12 +310,7 @@ async function waitForRunStatus(
   actor: ApiTestUser,
   runId: string,
   status:
-    | "cancelled"
-    | "completed"
-    | "failed"
-    | "pending"
-    | "queued"
-    | "running",
+    "cancelled" | "completed" | "failed" | "pending" | "queued" | "running",
 ): Promise<void> {
   await flushWaitUntilForTest();
   await expect(
@@ -4030,60 +4023,6 @@ describe("CHAT-02: failed chat callbacks", () => {
 
     const rawRun = await api.readRun(actor, run.runId);
     expect(rawRun.error).toBe(rawOverloadError);
-  }, 90_000);
-
-  it("names a historical run's retired model by its own catalog display name", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const rawOverloadError =
-      "API Error: 529 Overloaded. This is a server-side issue, usually temporary - try again in a moment.";
-
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "trigger overload on a historical retired model",
-      selectedModel: "claude-fable-5-1",
-    });
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    // A run admitted before claude-opus-4-8 was retired keeps that model;
-    // current admission cannot construct it, so rewrite the persisted row.
-    const route = (
-      await createRunReadsApi(context).requestReadLogById(
-        actor,
-        run.runId,
-        [200],
-      )
-    ).body;
-    if (
-      route.modelRuntimeProvider === undefined ||
-      route.modelRuntimeModel === undefined
-    ) {
-      throw new Error(
-        "Expected the owner log to include the Run runtime route",
-      );
-    }
-    await setRunModelRuntimeRouteFixture({
-      runId: run.runId,
-      selectedModel: "claude-opus-4-8",
-      modelRuntimeProvider: route.modelRuntimeProvider,
-      modelRuntimeModel: route.modelRuntimeModel,
-    });
-    await failChatRun(run.runId, sandboxHeaders, rawOverloadError);
-
-    const page = await waitForThreadMessages(
-      actor,
-      run.threadId,
-      (messages) => {
-        return lifecycleMarkers(messages, run.runId, "failed").some(
-          (message) => {
-            return message.error?.includes("is overloaded") ?? false;
-          },
-        );
-      },
-    );
-    const marker = lifecycleMarkers(page.events, run.runId, "failed")[0];
-    expect(marker?.error).toBe(
-      "Claude Opus 4.8 is overloaded. Please wait a few minutes and try again, or switch to another model.",
-    );
   }, 90_000);
 
   it("shows Claude Code credential recovery guidance for upstream auth 401s", async () => {

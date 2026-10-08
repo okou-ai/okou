@@ -162,9 +162,7 @@ type LogoUploadActor = ApiTestUser | BearerActor;
 
 type ClerkLogoOperation = "get" | "upload";
 type ClerkLogoErrorName =
-  | "NotFoundError"
-  | "BadRequestError"
-  | "ForbiddenError";
+  "NotFoundError" | "BadRequestError" | "ForbiddenError";
 
 interface ClerkLogoState {
   readonly imageUrl: string;

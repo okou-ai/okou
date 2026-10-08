@@ -42,8 +42,7 @@ export type AttachmentArtifactMetadata = {
   readonly filename: string;
   readonly googleDriveDisconnected: boolean;
   readonly googleDriveRecovery:
-    | ChatThreadArtifactGoogleDriveRecovery
-    | undefined;
+    ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly googleDriveSynced: boolean;
   readonly onSyncSuccess?: () => void;
   readonly runId: string;
@@ -76,8 +75,7 @@ type AttachmentFileLightboxInput = AttachmentNamedLightboxBase & {
 };
 
 type AttachmentDocumentLightboxInput =
-  | AttachmentTextDocumentLightboxInput
-  | AttachmentFramedDocumentLightboxInput;
+  AttachmentTextDocumentLightboxInput | AttachmentFramedDocumentLightboxInput;
 
 type AttachmentPreviewSource =
   | { readonly url: string; readonly file?: undefined }

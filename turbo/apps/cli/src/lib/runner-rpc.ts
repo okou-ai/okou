@@ -3,10 +3,7 @@ import { spawn } from "node:child_process";
 const STDERR_LIMIT = 24 * 1024;
 
 export type RunnerRpcLocalFailure =
-  | "cancelled"
-  | "timed_out"
-  | "transport"
-  | "protocol";
+  "cancelled" | "timed_out" | "transport" | "protocol";
 
 export interface RunnerRpcResponseReader<T> {
   read(chunk: unknown, json: boolean, signal: AbortSignal): Promise<void>;

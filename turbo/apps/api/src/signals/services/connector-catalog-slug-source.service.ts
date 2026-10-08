@@ -34,7 +34,7 @@ import {
 } from "./connector-catalog-columns";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$, type ReadonlyDb } from "../external/db";
-import { computed } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   catalogIdentityFromCapture,
   type ExternalCatalogIdentity,
@@ -239,8 +239,7 @@ export function connectorRuntimeAuthSelectionFromRows(
       >[0]["mcp"];
       readonly label: string | null;
       readonly firewall:
-        | typeof connectorCatalogEntries.$inferSelect.firewall
-        | null;
+        typeof connectorCatalogEntries.$inferSelect.firewall | null;
     } | null;
   }[],
   requestedConnectorSlugs: readonly string[],
@@ -316,6 +315,30 @@ export async function loadConnectorRuntimeAuthSelection(
     plan.firewallConnectorSlugs,
   );
 }
+
+export const readConnectorRuntimeAuthSelection$ = command(
+  async (
+    { get },
+    args: {
+      readonly connectorSlugs: readonly string[];
+      readonly firewallConnectorSlugs?: readonly ConnectorSlug[];
+    },
+    signal: AbortSignal,
+  ): Promise<ConnectorRuntimeAuthSelection> => {
+    const plan = connectorRuntimeAuthSelectionReadPlan(args);
+    const rows = await get(db$)
+      .select(plan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, plan.join)
+      .where(connectorCatalogCurrentWhere());
+    signal.throwIfAborted();
+    return connectorRuntimeAuthSelectionFromRows(
+      rows,
+      plan.requestedConnectorSlugs,
+      plan.firewallConnectorSlugs,
+    );
+  },
+);
 
 export function createConnectorRuntimeAuthSelection(args: {
   readonly connectorSlugs: readonly string[];

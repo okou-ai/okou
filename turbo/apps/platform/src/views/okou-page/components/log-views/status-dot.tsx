@@ -1,12 +1,7 @@
 import { cn } from "@okouai/ui";
 
 type StatusDotVariant =
-  | "success"
-  | "error"
-  | "pending"
-  | "neutral"
-  | "todo"
-  | "primary";
+  "success" | "error" | "pending" | "neutral" | "todo" | "primary";
 
 interface StatusDotProps {
   variant: StatusDotVariant;

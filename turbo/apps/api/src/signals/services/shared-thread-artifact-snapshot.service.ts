@@ -115,8 +115,7 @@ interface ResourceReference {
 }
 
 type SnapshotSource =
-  | ResourceReference
-  | { readonly kind: "snapshot"; readonly url: string };
+  ResourceReference | { readonly kind: "snapshot"; readonly url: string };
 
 function signedFileReference(url: URL): ResourceReference {
   const [bucket, ...segments] = decodeURIComponent(url.pathname.slice(1)).split(
@@ -528,8 +527,8 @@ export const prepareSharedThreadArtifacts$ = command(
     const messages: SharedMessage[] = [];
     for (const message of args.messages) {
       const attachments:
-        | NonNullable<SharedMessage["attachments"]>[number][]
-        | undefined = message.attachments === undefined ? undefined : [];
+        NonNullable<SharedMessage["attachments"]>[number][] | undefined =
+        message.attachments === undefined ? undefined : [];
       for (const attachment of message.attachments ?? []) {
         attachments?.push({
           ...attachment,

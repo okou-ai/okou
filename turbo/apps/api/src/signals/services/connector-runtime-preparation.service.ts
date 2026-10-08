@@ -267,16 +267,14 @@ type BuiltCustomConnectorRuntimeRow =
         { readonly kind: "custom" }
       >;
       readonly skill:
-        | CustomConnectorRuntimeContext["skills"][number]
-        | undefined;
+        CustomConnectorRuntimeContext["skills"][number] | undefined;
       readonly firewall: ExpandedFirewallConfig;
       readonly permissionPolicy: FirewallPolicy | undefined;
     }
   | {
       readonly registration: undefined;
       readonly skill:
-        | CustomConnectorRuntimeContext["skills"][number]
-        | undefined;
+        CustomConnectorRuntimeContext["skills"][number] | undefined;
       readonly firewall: undefined;
       readonly permissionPolicy: undefined;
     };

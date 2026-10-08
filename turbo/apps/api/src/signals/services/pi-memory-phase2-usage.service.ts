@@ -25,8 +25,8 @@ export const PI_MEMORY_PHASE2_PERSONAL_MODEL = PI_MEMORY_STAGE1_PERSONAL_MODEL;
 export const PI_MEMORY_PHASE2_MODELS = [
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   PI_MEMORY_PHASE2_PERSONAL_MODEL,
-  // Immutable pre-retirement maintenance runs still drain and settle by their
-  // captured model. This identifier is never selected for a new dispatch.
+  // Retained immutable maintenance history keeps its captured model identity
+  // for cleanup and accounting, without granting execution or new dispatch.
   "deepseek-v4.1-flash",
   "gpt-5.6-luna",
 ] as const;

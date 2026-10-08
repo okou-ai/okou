@@ -86,7 +86,7 @@ import {
 import type {
   OfficialWorkflowReconciliationArgs,
   OfficialWorkflowReconciliationResult,
-} from "./official-workflow-reconciliation-dispatch.service";
+} from "./official-workflow-reconciliation.types";
 import {
   buildOfficialAutomationPatch,
   officialAutomationRestorePatch,
@@ -1975,8 +1975,7 @@ interface DormantIdentityReservation {
 }
 function resolveDormantReservationChoice(args: {
   readonly identity:
-    | typeof officialWorkflowAutomationIdentities.$inferSelect
-    | undefined;
+    typeof officialWorkflowAutomationIdentities.$inferSelect | undefined;
   readonly fallbackIntendedEnabled: boolean;
 }): { readonly id: string | null; readonly intendedEnabled: boolean } {
   return {
@@ -2402,8 +2401,7 @@ interface DormantMaterializationOwnershipArgs {
 function dormantMaterializationRows(
   automation: OfficialAutomationRow | undefined,
   identity:
-    | typeof officialWorkflowAutomationIdentities.$inferSelect
-    | undefined,
+    typeof officialWorkflowAutomationIdentities.$inferSelect | undefined,
   args: DormantMaterializationOwnershipArgs,
 ): {
   readonly automation: OfficialAutomationRow;
@@ -2814,8 +2812,7 @@ interface DormantBlueprintReconciliationArgs {
   readonly blueprint: OfficialWorkflowAcceptedBlueprint;
   readonly activeDefinitionOnly: boolean;
   readonly identity:
-    | typeof officialWorkflowAutomationIdentities.$inferSelect
-    | undefined;
+    typeof officialWorkflowAutomationIdentities.$inferSelect | undefined;
   readonly overrides: readonly OfficialWorkflowParameterBinding[];
   readonly userTimezone: string | null;
 }

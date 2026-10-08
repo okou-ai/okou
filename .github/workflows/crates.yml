@@ -465,10 +465,10 @@ jobs:
             fi
           done
 
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+      - name: Install coverage tools
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
-          tool: cargo-llvm-cov@0.9.1
+          tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -482,7 +482,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           cd crates
-          cargo llvm-cov --all-targets --all-features --lcov --output-path lcov.info
+          cargo llvm-cov nextest --all-targets --all-features --test-threads 8 --lcov --output-path lcov.info
 
       - name: Validate coverage report
         run: |

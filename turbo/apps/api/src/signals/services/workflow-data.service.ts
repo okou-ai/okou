@@ -9,7 +9,14 @@ import { and, asc, desc, eq, isNull, or, type SQL } from "drizzle-orm";
 
 import { db$, type ReadonlyDb } from "../external/db";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
-import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
+import {
+  acceptedOfficialWorkflowCatalogReadPlan,
+  acceptedCatalogFromRow,
+} from "./official-workflow-catalog-read.service";
+import {
+  officialWorkflowCatalogState,
+  officialWorkflowCatalogReleases,
+} from "@okouai/db/schema/official-workflow-catalog";
 
 export interface WorkflowMember {
   readonly userId: string;
@@ -388,9 +395,16 @@ export function workflowList(args: {
     const hasOfficialWorkflow = rows.some((row) => {
       return row.workflow.officialDefinitionName !== null;
     });
-    const acceptedCatalog = hasOfficialWorkflow
-      ? await readAcceptedOfficialWorkflowCatalog(db)
-      : null;
+    const catalogPlan = acceptedOfficialWorkflowCatalogReadPlan();
+    const [catalogRow] = hasOfficialWorkflow
+      ? await db
+          .select(catalogPlan.columns)
+          .from(officialWorkflowCatalogState)
+          .innerJoin(officialWorkflowCatalogReleases, catalogPlan.join)
+          .where(catalogPlan.condition)
+          .limit(1)
+      : [];
+    const acceptedCatalog = acceptedCatalogFromRow(catalogRow);
     const officialLifecycleByName = new Map(
       acceptedCatalog?.payload.definitions.map((definition) => {
         return [definition.name, definition.lifecycle] as const;

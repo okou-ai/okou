@@ -2,16 +2,14 @@ import { randomUUID } from "node:crypto";
 
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  testStripeInvoicePaidFixtureContract,
-  type TestStripeInvoicePaidFixtureState,
-} from "@okouai/api-contracts/contracts/test-stripe-invoice-paid-readiness";
+import { webhookStripeAutomationEventsContract } from "@okouai/api-contracts/contracts/webhooks";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -21,7 +19,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
-import { testStripeInvoicePaidReadinessRoutes } from "../test-stripe-invoice-paid-readiness";
+import { webhooksStripeAutomationEventsRoutes } from "../webhooks-stripe-automation-events";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 
 const context = testContext();
@@ -160,22 +158,6 @@ async function connectStripeOAuth(
   await connectors.completeOauthCallback("stripe", { code, state });
   const connector = await connectors.readConnectorBySlug(actor, "stripe");
   return { code, connector, provider };
-}
-
-async function applyCorruptFixture(
-  connectorId: string,
-  state: TestStripeInvoicePaidFixtureState,
-): Promise<void> {
-  const response = await accept(
-    setupApp({
-      context,
-      routes: testStripeInvoicePaidReadinessRoutes,
-    })(testStripeInvoicePaidFixtureContract).apply({
-      body: { connector_id: connectorId, state },
-    }),
-    [200],
-  );
-  expect(response.body).toStrictEqual({ ok: true });
 }
 
 describe("Stripe invoice-paid workflow automation readiness", () => {
@@ -577,26 +559,42 @@ describe("Stripe invoice-paid workflow automation readiness", () => {
       "Stripe invoice-paid event automations cannot be updated",
     );
   });
-
-  it.each([
-    "storage-incompatible",
-    "needs-reconnect",
-    "missing-external-id",
-    "blank-external-id",
-    "missing-livemode",
-    "malformed-livemode",
-  ] as const)("fails closed through create for %s state", async (state) => {
+  it("requires reconnection before creating an automation after Stripe deauthorization", async () => {
     const scenario = await setupScenario();
-    const connected = await connectStripeOAuth(scenario.actor);
-
-    // The public OAuth API constructs the valid baseline. This fixture changes
-    // only a state that no production connector endpoint can create.
-    await applyCorruptFixture(connected.connector.id, state);
+    const accountId = `acct_deauthorized_${randomUUID()}`;
+    await connectStripeOAuth(scenario.actor, { accountId });
+    mockOptionalEnv(
+      "STRIPE_AUTOMATION_WEBHOOK_SECRET",
+      "whsec_stripe_automation_deauthorization",
+    );
+    const event = {
+      id: `evt_${randomUUID()}`,
+      type: "account.application.deauthorized",
+      account: accountId,
+      livemode: true,
+      created: Math.floor(now() / 1000),
+      data: { object: {} },
+    };
+    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    await accept(
+      setupApp({ context, routes: webhooksStripeAutomationEventsRoutes })(
+        webhookStripeAutomationEventsContract,
+      ).post({
+        body: JSON.stringify(event),
+        extraHeaders: { "stripe-signature": "t=1,v1=stripe-deauthorization" },
+      }),
+      [200],
+    );
+    await expect(
+      connectors.readConnectorBySlug(scenario.actor, "stripe"),
+    ).resolves.toMatchObject({
+      connectionStatus: "reconnect-required",
+      reconnectReason: "authorization_expired_or_revoked",
+    });
     const rejected = await accept(
       createStripeAutomationRequest(scenario),
       [400],
     );
-
     expect(rejected.body.error.message).toContain(
       "Reconnect Stripe with OAuth",
     );

@@ -29,28 +29,3 @@ export async function loadRunAutonomyBudget(
     .limit(1);
   return run?.autonomyBudget ?? null;
 }
-
-export async function loadOwnedRunAutonomyBudget(
-  db: ReadonlyDb,
-  args: {
-    readonly runId: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-): Promise<number | null> {
-  const [run] = await db
-    .select({
-      autonomyBudget: agentRuns.autonomyBudget,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.orgId, args.orgId),
-        eq(agentRuns.userId, args.userId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  return run?.autonomyBudget ?? null;
-}

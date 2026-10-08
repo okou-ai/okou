@@ -11,6 +11,7 @@ import {
   isPersonalSubscriptionProviderType,
   personalSubscriptionAccountAccessCondition,
   readPersonalSubscriptionCredentialBundle,
+  readPersonalSubscriptionCredentialBundle$,
 } from "./model-provider-account.service";
 import {
   isFetchNetworkError,
@@ -89,7 +90,7 @@ import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
@@ -333,9 +334,7 @@ type ResolveFirewallAuthResult =
     };
 
 type FirewallAuthTimingActionType =
-  | "firewall_auth_prepare"
-  | "firewall_auth_resolve"
-  | "firewall_auth_admit";
+  "firewall_auth_prepare" | "firewall_auth_resolve" | "firewall_auth_admit";
 const FIREWALL_AUTH_SANDBOX_TYPE = "runner";
 
 interface FirewallAuthTimingRecord {
@@ -713,8 +712,7 @@ interface RefreshExpiredTokensArgs {
   readonly secrets: Record<string, string>;
   readonly secretConnectorMap: Record<string, string>;
   readonly secretConnectorMetadataMap?:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -1711,7 +1709,7 @@ async function loadCurrentSourceStateSnapshot(args: {
 }
 
 function prepareRefreshTokenContext(
-  args: RefreshAccessTokenArgs,
+  args: Omit<RefreshAccessTokenArgs, "db">,
 ): PrepareRefreshTokenContextResult {
   const metadata = resolveRefreshMetadata(args.accessSourceKey, {
     sourceType: args.sourceType,
@@ -1903,7 +1901,10 @@ function refreshSourceStateFromRow(args: {
 }
 
 function shouldUseCurrentAccess(args: {
-  readonly refreshArgs: RefreshAccessTokenArgs;
+  readonly refreshArgs: Pick<
+    RefreshAccessTokenArgs,
+    "forceRefresh" | "connectorSecrets"
+  >;
   readonly context: RefreshTokenContext;
   readonly state: RefreshState;
 }): boolean {
@@ -2723,8 +2724,7 @@ async function refreshAccessTokenForSource(
 function buildMetadataByAccessSource(
   refreshable: Map<string, string>,
   secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined,
+    Record<string, SecretConnectorMetadata> | undefined,
 ): Map<string, SecretConnectorMetadata> {
   const metadataByAccessSource = new Map<string, SecretConnectorMetadata>();
   for (const [key, accessSourceKey] of refreshable) {
@@ -2740,8 +2740,7 @@ function hasForbiddenModelProviderOwner(
   auth: SandboxAuth,
   secretConnectorMap: Record<string, string>,
   secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined,
+    Record<string, SecretConnectorMetadata> | undefined,
   referencedKeys: Set<string>,
 ): boolean {
   for (const key of referencedKeys) {
@@ -2786,8 +2785,7 @@ const emptyRefreshResult = Object.freeze({
 function buildRefreshableMap(
   secretConnectorMap: Record<string, string>,
   secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined,
+    Record<string, SecretConnectorMetadata> | undefined,
   connectorAccessBySlug: ReadonlyMap<string, BuiltinConnectorAccessState>,
   referencedKeys: Set<string>,
 ): Map<string, string> {
@@ -2913,8 +2911,7 @@ function modelProviderAccessSecretName(args: {
 function referencedModelProviderAccessMap(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
 }): Map<string, string> {
   const refreshable = new Map<string, string>();
@@ -2956,8 +2953,7 @@ async function syncStoredConnectorRuntimeSecrets(args: {
   readonly secrets: Record<string, string>;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -3130,7 +3126,7 @@ function modelProviderRuntimeReconnectState(
 }
 
 function resolveModelProviderRuntimeSecretLookup(
-  args: ModelProviderRuntimeSecretForApiArgs,
+  args: Omit<ModelProviderRuntimeSecretForApiArgs, "db">,
 ): ResolvedModelProviderRuntimeSecretLookup | null {
   const metadata = resolveRefreshMetadata(args.providerKey, args.metadata);
   if (metadata.sourceType !== "model-provider") {
@@ -3312,8 +3308,7 @@ async function syncModelProviderRuntimeSecrets(args: {
   readonly secrets: Record<string, string>;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly featureSwitchContext: FeatureSwitchContext;
 }): Promise<void> {
@@ -3329,8 +3324,7 @@ function syncPlatformRuntimeSecrets(args: {
   readonly secrets: Record<string, string>;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -3419,8 +3413,7 @@ function canResolveMissingAccessSecret(args: {
   readonly key: string;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
     BuiltinConnectorAccessState
@@ -3460,8 +3453,7 @@ function canResolveMissingAccessSecret(args: {
 function referencedConnectorSlugs(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
 }): readonly string[] {
   if (!args.secretConnectorMap) {
@@ -3488,8 +3480,7 @@ function referencedConnectorSlugs(args: {
 function hasUnavailableAccessSource(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -3568,8 +3559,7 @@ function connectorAccessCredentialStatus(
 function connectorSlugsWithReconnectRequiredStatus(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -3621,8 +3611,7 @@ function hasMissingUnresolvableSecrets(args: {
   readonly referencedKeys: Set<string>;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
     BuiltinConnectorAccessState
@@ -6053,3 +6042,623 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
           : null,
       };
 }
+
+type PersonalSubscriptionApiLookup = Omit<
+  ModelProviderRuntimeSecretForApiArgs,
+  "db"
+>;
+type PersonalSubscriptionRefreshFacts = Omit<RefreshAccessTokenArgs, "db">;
+interface PersonalSubscriptionWriteOwner {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly sourceId: string;
+  readonly runId?: string;
+}
+
+/** Existing ordinary refresh writes remain separate statements, without a transaction. */
+const persistPersonalSubscriptionSecret$ = command(
+  async (
+    { get, set },
+    args: PersonalSubscriptionWriteOwner & {
+      readonly name: string;
+      readonly encryptedValue: string;
+    },
+  ): Promise<void> => {
+    const [account] = await get(db$)
+      .select({ id: modelProviderAccounts.id })
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.id, args.sourceId),
+          personalSubscriptionAccountAccessCondition(args.runId),
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    if (!account) {
+      return;
+    }
+    await set(writeDb$)
+      .insert(modelProviderAccountSecrets)
+      .values({
+        modelProviderAccountId: args.sourceId,
+        name: args.name,
+        encryptedValue: args.encryptedValue,
+        description: `Personal model provider account secret: ${args.name}`,
+      })
+      .onConflictDoUpdate({
+        target: [
+          modelProviderAccountSecrets.modelProviderAccountId,
+          modelProviderAccountSecrets.name,
+        ],
+        set: { encryptedValue: args.encryptedValue, updatedAt: nowDate() },
+      });
+  },
+);
+
+const markPersonalSubscriptionRefresh$ = command(
+  async (
+    { set },
+    args: PersonalSubscriptionWriteOwner & {
+      readonly health: {
+        readonly tokenExpiresAt?: Date;
+        readonly needsReconnect: boolean;
+        readonly lastRefreshErrorCode: string | null;
+      };
+    },
+  ): Promise<void> => {
+    await set(writeDb$)
+      .update(modelProviderAccounts)
+      .set({
+        ...args.health,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(modelProviderAccounts.id, args.sourceId),
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+        ),
+      );
+  },
+);
+
+/** Finite refresh metadata read; the API owner retains its cancellation boundary. */
+const readPersonalSubscriptionRefreshStateRow$ = command(
+  async (
+    { get },
+    args: PersonalSubscriptionRefreshFacts,
+    context: RefreshTokenContext,
+  ): Promise<RefreshStateRow | null> => {
+    const db = get(db$);
+    if (args.sourceId) {
+      const rows = await db
+        .select({
+          authMethod: sql`NULL`.mapWith(pgNullDecoder),
+          connectorId: sql`NULL`.mapWith(pgNullDecoder),
+          storageVersion: sql`NULL`.mapWith(pgNullDecoder),
+          tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+          needsReconnect: modelProviderAccounts.needsReconnect,
+          lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
+          reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
+        })
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.id, args.sourceId),
+            personalSubscriptionAccountAccessCondition(args.runId),
+            eq(modelProviderAccounts.orgId, args.orgId),
+            eq(modelProviderAccounts.userId, context.secretUserId),
+            eq(
+              modelProviderAccounts.type,
+              requiredModelProviderMetadataKey({
+                providerKey: args.accessSourceKey,
+                metadataKey: args.metadataKey,
+              }),
+            ),
+          ),
+        )
+        .limit(1);
+      return rows[0] ?? null;
+    }
+    return null;
+  },
+);
+
+const readPersonalSubscriptionRefreshSecret$ = command(
+  async (
+    { get },
+    args: {
+      readonly runId?: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly name: string;
+      readonly sourceId?: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+  ): Promise<string | null> => {
+    // Personal subscription credentials live only on their exact account.
+    if (!args.sourceId) {
+      return null;
+    }
+    const [row] = await get(db$)
+      .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
+      .from(modelProviderAccountSecrets)
+      .innerJoin(
+        modelProviderAccounts,
+        eq(
+          modelProviderAccountSecrets.modelProviderAccountId,
+          modelProviderAccounts.id,
+        ),
+      )
+      .where(
+        and(
+          eq(modelProviderAccounts.id, args.sourceId),
+          personalSubscriptionAccountAccessCondition(args.runId),
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+          eq(modelProviderAccountSecrets.name, args.name),
+        ),
+      )
+      .limit(1);
+    return row
+      ? await decryptStoredSecretValue(
+          row.encryptedValue,
+          args.featureSwitchContext,
+        )
+      : null;
+  },
+);
+
+/** Retain the metadata and per-secret statement/KMS ordering of refresh. */
+const loadPersonalSubscriptionRefreshState$ = command(
+  async (
+    { set },
+    facts: PersonalSubscriptionRefreshFacts,
+    context: RefreshTokenContext,
+  ): Promise<RefreshState | null> => {
+    const row = await set(
+      readPersonalSubscriptionRefreshStateRow$,
+      facts,
+      context,
+    );
+    if (!row) {
+      return null;
+    }
+    const owner = {
+      orgId: facts.orgId,
+      userId: context.secretUserId,
+      sourceId: facts.sourceId,
+      runId: facts.runId,
+      featureSwitchContext: facts.featureSwitchContext,
+    };
+    const outputValues: Record<string, string | null> = {};
+    for (const name of requiredRuntimeOutputSecretNames(context)) {
+      outputValues[name] = await set(readPersonalSubscriptionRefreshSecret$, {
+        ...owner,
+        name,
+      });
+    }
+    const inputValues: Record<string, string | null> = {};
+    for (const [name, source] of Object.entries(context.inputSources)) {
+      inputValues[name] =
+        source.kind === "secret"
+          ? await set(readPersonalSubscriptionRefreshSecret$, {
+              ...owner,
+              name: source.name,
+            })
+          : null;
+    }
+    return {
+      authMethod: row.authMethod,
+      connectorId: row.connectorId,
+      storageVersion: row.storageVersion,
+      outputValues,
+      inputValues,
+      tokenExpiresAt: row.tokenExpiresAt,
+      needsReconnect: row.needsReconnect,
+      lastRefreshErrorCode: row.lastRefreshErrorCode,
+      reconnectReason: row.reconnectReason,
+    };
+  },
+);
+
+const persistPersonalSubscriptionRefreshOutputs$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: PersonalSubscriptionWriteOwner;
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly outputs: readonly ValidatedRefreshOutput[];
+      readonly accessSourceKey: string;
+      readonly context: RefreshTokenContext;
+      readonly expiresIn: number | undefined;
+    },
+  ): Promise<RefreshAccessTokenResult> => {
+    const returnedSecretValues: Record<string, string> = {};
+    for (const { target, value } of args.outputs) {
+      if (target.kind !== "secret") {
+        throw new Error(
+          "Model provider refresh cannot write connector variables",
+        );
+      }
+      const encryptedValue = await encryptStoredSecretValue(
+        value,
+        args.featureSwitchContext,
+      );
+      await set(persistPersonalSubscriptionSecret$, {
+        ...args.owner,
+        name: target.name,
+        encryptedValue,
+      });
+      returnedSecretValues[target.name] = value;
+    }
+    await set(markPersonalSubscriptionRefresh$, {
+      ...args.owner,
+      health: {
+        tokenExpiresAt: new Date(
+          nowDate().getTime() +
+            (args.expiresIn ?? DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS) * 1000,
+        ),
+        needsReconnect: false,
+        lastRefreshErrorCode: null,
+      },
+    });
+    L.debug(`${args.accessSourceKey} access token refreshed successfully`);
+    return {
+      ok: true,
+      status: "refreshed",
+      secrets: runtimeSecretsFromRefreshResult({
+        accessSourceKey: args.accessSourceKey,
+        context: args.context,
+        returnedSecretValues,
+      }),
+    };
+  },
+);
+
+/** Once started, finish the existing bounded refresh and its plain writes before caller abort. */
+const refreshPreparedPersonalSubscription$ = command(
+  async (
+    { set },
+    args: {
+      readonly facts: PersonalSubscriptionRefreshFacts;
+      readonly prepared: ModelProviderPreparedRefreshTokenContext;
+      readonly owner: PersonalSubscriptionWriteOwner;
+    },
+  ): Promise<RefreshAccessTokenResult> => {
+    const { facts, prepared, owner } = args;
+    const state = await set(
+      loadPersonalSubscriptionRefreshState$,
+      facts,
+      prepared.context,
+    );
+    if (!state) {
+      return sourceMissingResult();
+    }
+    if (isTerminalCodexRefreshState(prepared, state)) {
+      return refreshFailedResult("reconnect_required");
+    }
+    if (
+      shouldUseCurrentAccess({
+        refreshArgs: facts,
+        context: prepared.context,
+        state,
+      })
+    ) {
+      return currentRefreshAccessResult({
+        accessSourceKey: facts.accessSourceKey,
+        context: prepared.context,
+        state,
+      });
+    }
+    if (missingRefreshInputNames(state).length > 0) {
+      await set(markPersonalSubscriptionRefresh$, {
+        ...owner,
+        health: { needsReconnect: true, lastRefreshErrorCode: null },
+      });
+      return refreshTokenMissingResult();
+    }
+    const refreshSignal = firewallAuthRefreshTimeoutSignal();
+    const result = await settle(
+      refreshPreparedModelProviderAccessToken(
+        {
+          prepared,
+          inputs: refreshInputsFromState({
+            accessSourceKey: facts.accessSourceKey,
+            state,
+          }),
+        },
+        refreshSignal,
+      ),
+    );
+    if (!result.ok) {
+      const failure = classifyRefreshFailure(result.error, refreshSignal);
+      if (failure.failureReason === "upstream_provider") {
+        L.warn(`${facts.accessSourceKey} token refresh failed`, {
+          accessSourceKey: facts.accessSourceKey,
+          orgId: facts.orgId,
+          userId: facts.userId,
+          ...failure,
+          ...refreshFailureDiagnostic(result.error, refreshSignal),
+          retryAttempted: false,
+          firstProviderStatus: null,
+        });
+      } else {
+        await set(markPersonalSubscriptionRefresh$, {
+          ...owner,
+          health: {
+            needsReconnect: true,
+            lastRefreshErrorCode: failure.errorCode,
+          },
+        });
+      }
+      return refreshFailedResult(failure.failureReason);
+    }
+    const validated = validateRefreshResultOutputs({
+      accessSourceKey: facts.accessSourceKey,
+      context: prepared.context,
+      result: result.value,
+    });
+    if (!validated.ok) {
+      L.warn(`${facts.accessSourceKey} token refresh output invalid`, {
+        accessSourceKey: facts.accessSourceKey,
+        orgId: facts.orgId,
+        userId: facts.userId,
+        errorCode: null,
+        failureReason: "upstream_provider",
+        errorKind: "provider_response",
+        providerStatus: null,
+        retryAttempted: false,
+      });
+      return refreshFailedResult("upstream_provider");
+    }
+    return await set(persistPersonalSubscriptionRefreshOutputs$, {
+      owner,
+      featureSwitchContext: facts.featureSwitchContext,
+      outputs: validated.outputs,
+      accessSourceKey: facts.accessSourceKey,
+      context: prepared.context,
+      expiresIn: result.value.expiresIn,
+    });
+  },
+);
+
+const refreshPersonalSubscriptionForApi$ = command(
+  async (
+    { set },
+    args: PersonalSubscriptionApiLookup,
+    lookup: ResolvedModelProviderRuntimeSecretLookup,
+  ): Promise<RefreshAccessTokenResult> => {
+    const facts: PersonalSubscriptionRefreshFacts = {
+      accessSourceKey: args.providerKey,
+      orgId: args.orgId,
+      userId: args.userId,
+      sourceType: "model-provider",
+      sourceUserId: lookup.metadata.sourceUserId,
+      sourceId: lookup.sourceId,
+      runId: args.runId,
+      metadataKey: lookup.metadata.metadataKey,
+      connectorSecrets: {},
+      accessEnvVars: [args.key],
+      forceRefresh: false,
+      connectorAccessBySlug: new Map<string, BuiltinConnectorAccessState>(),
+      featureSwitchContext: args.featureSwitchContext,
+    };
+    const preparation = prepareRefreshTokenContext(facts);
+    if (!preparation.ok) {
+      return preparation.reason === "refresh-token-missing"
+        ? refreshTokenMissingResult()
+        : { ok: false, reason: preparation.reason };
+    }
+    if (
+      preparation.prepared.sourceType !== "model-provider" ||
+      !isPersonalSubscriptionProviderType(lookup.providerType)
+    ) {
+      throw new Error("Expected a personal subscription refresh preparation");
+    }
+    const result = await set(refreshPreparedPersonalSubscription$, {
+      facts,
+      prepared: preparation.prepared,
+      owner: {
+        orgId: args.orgId,
+        userId: preparation.prepared.context.secretUserId,
+        sourceId: lookup.sourceId,
+        runId: args.runId,
+      },
+    });
+    if (
+      (result.ok && result.status === "refreshed") ||
+      (!result.ok && result.failureReason === "reconnect_required")
+    ) {
+      await publishPersonalModelProvidersChangedSafely(
+        preparation.prepared.context.secretUserId,
+      );
+    }
+    return result;
+  },
+);
+
+const readPersonalSubscriptionApiState$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly runId?: string;
+      readonly lookup: ResolvedModelProviderRuntimeSecretLookup;
+    },
+  ): Promise<ModelProviderRuntimeRefreshState | null> => {
+    const [state] = await get(db$)
+      .select({
+        tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+        needsReconnect: modelProviderAccounts.needsReconnect,
+        lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
+      })
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.id, args.lookup.sourceId),
+          personalSubscriptionAccountAccessCondition(args.runId),
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.lookup.userId),
+          eq(modelProviderAccounts.type, args.lookup.providerType),
+        ),
+      )
+      .limit(1);
+    return state ?? null;
+  },
+);
+
+const resolveCurrentPersonalSubscriptionRuntimeSecret$ = command(
+  async (
+    { set },
+    args: PersonalSubscriptionApiLookup,
+    lookup: ResolvedModelProviderRuntimeSecretLookup,
+    signal: AbortSignal,
+  ): Promise<CurrentModelProviderRuntimeSecretForApiResult> => {
+    if (!isPersonalSubscriptionProviderType(lookup.providerType)) {
+      throw new Error("Expected a personal subscription runtime source");
+    }
+    const owner = {
+      orgId: args.orgId,
+      userId: lookup.userId,
+      type: lookup.providerType,
+      sourceId: lookup.sourceId,
+      runId: args.runId,
+      featureSwitchContext: args.featureSwitchContext,
+    };
+    const stateArgs = { orgId: args.orgId, runId: args.runId, lookup };
+    const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
+    if (!refreshMetadata?.refreshableSecrets.includes(lookup.secretName)) {
+      const bundle = await set(
+        readPersonalSubscriptionCredentialBundle$,
+        owner,
+      );
+      signal.throwIfAborted();
+      const value = bundle?.values.get(lookup.secretName);
+      if (value !== undefined) {
+        return { status: "available", value };
+      }
+      const state = await set(readPersonalSubscriptionApiState$, stateArgs);
+      signal.throwIfAborted();
+      return {
+        status: "unavailable",
+        reconnectState: modelProviderRuntimeReconnectState(state),
+      };
+    }
+    const state = await set(readPersonalSubscriptionApiState$, stateArgs);
+    signal.throwIfAborted();
+    if (!state) {
+      return { status: "unavailable", reconnectState: null };
+    }
+    if (
+      args.providerKey === "codex-oauth-token" &&
+      state.needsReconnect &&
+      isTerminalChatgptRefreshErrorCode(state.lastRefreshErrorCode)
+    ) {
+      return {
+        status: "unavailable",
+        reconnectState: modelProviderRuntimeReconnectState(state),
+      };
+    }
+    if (
+      !state.needsReconnect &&
+      !tokenExpiresAtNeedsRefresh(state.tokenExpiresAt)
+    ) {
+      const bundle = await set(
+        readPersonalSubscriptionCredentialBundle$,
+        owner,
+      );
+      signal.throwIfAborted();
+      const value = bundle?.values.get(lookup.secretName);
+      if (value !== undefined) {
+        return { status: "available", value };
+      }
+    }
+    const result = await set(refreshPersonalSubscriptionForApi$, args, lookup);
+    signal.throwIfAborted();
+    if (result.ok) {
+      const value = result.secrets[args.key];
+      if (value === undefined) {
+        throw new Error(
+          `${args.providerKey} refresh did not resolve API runtime secret ${args.key}`,
+        );
+      }
+      return { status: "available", value };
+    }
+    const currentState = await set(
+      readPersonalSubscriptionApiState$,
+      stateArgs,
+    );
+    signal.throwIfAborted();
+    return {
+      status: "unavailable",
+      reconnectState: modelProviderRuntimeReconnectState(currentState),
+    };
+  },
+);
+
+/** Finish the final reread at its original caller-owned cancellation boundary. */
+const readPersonalSubscriptionApiBundleResult$ = command(
+  async (
+    { set },
+    owner: Parameters<
+      typeof readPersonalSubscriptionCredentialBundle$.write
+    >[1],
+  ) => {
+    const bundle = await set(readPersonalSubscriptionCredentialBundle$, owner);
+    return bundle && !bundle.account.needsReconnect
+      ? { status: "available" as const, values: bundle.values }
+      : {
+          status: "unavailable" as const,
+          reconnectState: bundle
+            ? modelProviderRuntimeReconnectState(bundle.account)
+            : null,
+        };
+  },
+);
+
+/** Exact API bundle resolution through fixed owners; no database handle escapes. */
+export const resolveCurrentPersonalSubscriptionBundleForApi$ = command(
+  async ({ set }, args: PersonalSubscriptionApiLookup, signal: AbortSignal) => {
+    if (!args.metadata.sourceId) {
+      return { status: "unavailable" as const, reconnectState: null };
+    }
+    const lookup = resolveModelProviderRuntimeSecretLookup(args);
+    if (!lookup || !isPersonalSubscriptionProviderType(lookup.providerType)) {
+      throw new Error("Expected a personal subscription credential lookup");
+    }
+    const owner = {
+      orgId: args.orgId,
+      userId: lookup.userId,
+      type: lookup.providerType,
+      sourceId: lookup.sourceId,
+      runId: args.runId,
+      featureSwitchContext: args.featureSwitchContext,
+    };
+    const initial = await set(readPersonalSubscriptionCredentialBundle$, owner);
+    signal.throwIfAborted();
+    const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
+    if (
+      initial &&
+      !initial.account.needsReconnect &&
+      initial.values.get(lookup.secretName)?.trim() &&
+      (!refreshMetadata?.refreshableSecrets.includes(lookup.secretName) ||
+        !tokenExpiresAtNeedsRefresh(initial.account.tokenExpiresAt))
+    ) {
+      return { status: "available" as const, values: initial.values };
+    }
+    const current = await set(
+      resolveCurrentPersonalSubscriptionRuntimeSecret$,
+      args,
+      lookup,
+      signal,
+    );
+    if (current.status === "unavailable") {
+      return current;
+    }
+    // The original final reread finishes before its caller's cancellation gate.
+    return await set(readPersonalSubscriptionApiBundleResult$, owner);
+  },
+);

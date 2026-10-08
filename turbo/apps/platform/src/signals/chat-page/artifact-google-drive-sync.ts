@@ -69,8 +69,7 @@ function googleDriveSyncSuccessMessage(fileCount: number): string {
 }
 
 type ArtifactGoogleDriveSyncResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly message: string };
+  { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 function isArtifactGoogleDriveSyncFailure(
   result: ArtifactGoogleDriveSyncResult,

@@ -103,7 +103,7 @@ async fn spawn_for_paths_uploads_explicit_runtime_files() {
 //
 // Backs the parallel-checkpoint-with-catch-up pattern in `main.rs`: the
 // first `flush(UploadMode::Live)` runs concurrently with
-// `checkpoint::create_checkpoint` and reads the `sandbox_ops` log before
+// `finalization::create_checkpoint` and reads the `sandbox_ops` log before
 // checkpoint's sub-op records are written; a second
 // `flush(UploadMode::Final)` after the join picks up the delta. If the
 // uploader ever stopped being incremental — re-reading from offset 0 —

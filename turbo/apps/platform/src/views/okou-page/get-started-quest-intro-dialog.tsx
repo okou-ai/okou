@@ -180,9 +180,7 @@ function IntroLink({
 }: {
   readonly onClose: () => void;
   readonly pathname:
-    | typeof ROUTES.connectors
-    | typeof ROUTES.workflows
-    | typeof ROUTES.works;
+    typeof ROUTES.connectors | typeof ROUTES.workflows | typeof ROUTES.works;
   readonly escape?: boolean;
   readonly children: ReactNode;
 }) {

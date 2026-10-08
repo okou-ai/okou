@@ -8,8 +8,7 @@ import type {
   ImmutableConnectorCatalogPermissionSummary,
 } from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
 
-// The runtime and physical schema share every supported column. The retained
-// payload column belongs only to the physical schema until the next release.
+// Shared column contract for immutable catalog entries and migration fixtures.
 export function connectorCatalogColumns() {
   return {
     hash: text("hash").notNull(),

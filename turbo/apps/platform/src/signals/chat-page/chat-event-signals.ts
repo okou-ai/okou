@@ -84,9 +84,7 @@ export interface SendInterruptChatEvent {
 }
 
 export type SendChatEventInput =
-  | SendInputChatEvent
-  | SendRevokeChatEvent
-  | SendInterruptChatEvent;
+  SendInputChatEvent | SendRevokeChatEvent | SendInterruptChatEvent;
 
 interface SendChatEventDependencies {
   readonly threadId: string;

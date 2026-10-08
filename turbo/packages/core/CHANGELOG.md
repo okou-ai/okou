@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.736.0](https://github.com/okou-ai/okou/compare/core-v8.735.2...core-v8.736.0) (2026-10-08)
+
+
+### Features
+
+* **notify:** add agent-controlled mail notifications ([#38093](https://github.com/okou-ai/okou/issues/38093)) ([702c270](https://github.com/okou-ai/okou/commit/702c270169c8de738aa9f47ed5480ed377edcfda))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.541.0
+
 ## [8.735.2](https://github.com/okou-ai/okou/compare/core-v8.735.1...core-v8.735.2) (2026-10-08)
 
 

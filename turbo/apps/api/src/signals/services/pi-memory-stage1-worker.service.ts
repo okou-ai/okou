@@ -27,7 +27,8 @@ import {
   type PiMemoryStage1ProviderResult,
 } from "@okouai/pi-agent-runtime/api";
 import {
-  resolvePiMemoryStage1Credential,
+  resolvePiMemoryStage1Credential$,
+  validatePiMemoryStage1Credential$,
   PiMemoryStage1CredentialError,
   PiMemoryStage1CredentialRefreshError,
   type PiMemoryStage1CredentialResult,
@@ -71,7 +72,7 @@ import {
   settle,
   settleIncludingAbort,
 } from "../utils";
-import { commitPiMemoryStage1Candidate } from "./pi-memory-stage1-candidate.service";
+import { commitPiMemoryStage1Candidate$ } from "./pi-memory-stage1-candidate.service";
 import { recordPiMemoryStage1Usage$ } from "./pi-memory-stage1-usage.service";
 import {
   gunzipSessionHistoryBufferWithMaxBytes,
@@ -539,57 +540,55 @@ const loadAndProjectHistory$ = command(
   },
 );
 
-async function commitWorkResult(
-  db: Db,
-  work: ClaimedPiMemoryStage1Work,
-  result:
-    | {
-        readonly kind: "succeeded";
-        readonly rawMemory: string;
-        readonly rolloutSummary: string;
-        readonly rolloutSlug?: string;
-      }
-    | { readonly kind: "succeeded_no_output" }
-    | { readonly kind: "retryable_failure"; readonly errorClass: string }
-    | { readonly kind: "terminal_failure"; readonly errorClass: string },
-  options?: { readonly revalidateSelection: boolean },
-): Promise<boolean> {
-  const committedAt = nowDate();
-  const candidateResult =
-    result.kind === "retryable_failure"
-      ? work.attemptCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS
-        ? {
-            kind: "terminal_failure" as const,
-            errorClass: "attempts_exhausted",
-          }
-        : {
-            kind: result.kind,
-            errorClass: result.errorClass,
-            retryAt: new Date(
-              committedAt.getTime() + PI_MEMORY_STAGE1_RETRY_DELAY_MS,
-            ),
-          }
-      : result;
-  return await db.transaction(async (tx) => {
-    if (
-      options?.revalidateSelection &&
-      !(await validatePiMemoryStage1Selection(tx, work.selection, committedAt))
-    ) {
-      return false;
-    }
-    return await commitPiMemoryStage1Candidate(tx, {
-      memoryStorageId: work.memoryStorageId,
-      orgId: work.orgId,
-      userId: work.userId,
-      piSessionId: work.piSessionId,
-      sourceHistoryHash: work.sourceHistoryHash,
-      leaseToken: work.leaseToken,
-      committedAt,
-      result: candidateResult,
-      selectedSource: work.selection,
-    });
-  });
-}
+const commitWorkResult$ = command(
+  async (
+    { set },
+    work: ClaimedPiMemoryStage1Work,
+    result:
+      | {
+          readonly kind: "succeeded";
+          readonly rawMemory: string;
+          readonly rolloutSummary: string;
+          readonly rolloutSlug?: string;
+        }
+      | { readonly kind: "succeeded_no_output" }
+      | { readonly kind: "retryable_failure"; readonly errorClass: string }
+      | { readonly kind: "terminal_failure"; readonly errorClass: string },
+    options?: { readonly revalidateSelection: boolean },
+  ): Promise<boolean> => {
+    const committedAt = nowDate();
+    const candidateResult =
+      result.kind === "retryable_failure"
+        ? work.attemptCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS
+          ? {
+              kind: "terminal_failure" as const,
+              errorClass: "attempts_exhausted",
+            }
+          : {
+              kind: result.kind,
+              errorClass: result.errorClass,
+              retryAt: new Date(
+                committedAt.getTime() + PI_MEMORY_STAGE1_RETRY_DELAY_MS,
+              ),
+            }
+        : result;
+    return await set(
+      commitPiMemoryStage1Candidate$,
+      {
+        memoryStorageId: work.memoryStorageId,
+        orgId: work.orgId,
+        userId: work.userId,
+        piSessionId: work.piSessionId,
+        sourceHistoryHash: work.sourceHistoryHash,
+        leaseToken: work.leaseToken,
+        committedAt,
+        result: candidateResult,
+        selectedSource: work.selection,
+      },
+      options?.revalidateSelection ? work.selection : undefined,
+    );
+  },
+);
 
 function byteLength(value: string): number {
   return Buffer.byteLength(value, "utf8");
@@ -665,8 +664,7 @@ function logOutcome(args: {
 function isCredentialFailure(
   error: unknown,
 ): error is
-  | PiMemoryStage1CredentialError
-  | PiMemoryStage1CredentialRefreshError {
+  PiMemoryStage1CredentialError | PiMemoryStage1CredentialRefreshError {
   return (
     error instanceof PiMemoryStage1CredentialError ||
     error instanceof PiMemoryStage1CredentialRefreshError
@@ -686,63 +684,67 @@ function workErrorClass(error: unknown): string {
       : "worker_failure";
 }
 
-async function failWork(
-  db: Db,
-  work: ClaimedPiMemoryStage1Work,
-  error: unknown,
-  startedAt: number,
-): Promise<WorkOutcome> {
-  const permanent =
-    error instanceof PermanentSourceError ||
-    error instanceof DisabledWorkError ||
-    error instanceof PiMemoryStage1CredentialError ||
-    error instanceof PiMemoryStage1BudgetError;
-  const errorClass = workErrorClass(error);
-  const committedResult = await settleIncludingAbort(
-    commitWorkResult(
-      db,
-      work,
-      permanent
-        ? { kind: "terminal_failure", errorClass }
-        : { kind: "retryable_failure", errorClass },
-      {
-        revalidateSelection:
-          isCredentialFailure(error) || error instanceof PiMemoryQuotaError,
-      },
-    ),
-  );
-  if (!committedResult.ok || !committedResult.value) {
+const failWork$ = command(
+  async (
+    { set },
+    work: ClaimedPiMemoryStage1Work,
+    error: unknown,
+    startedAt: number,
+  ): Promise<WorkOutcome> => {
+    const permanent =
+      error instanceof PermanentSourceError ||
+      error instanceof DisabledWorkError ||
+      error instanceof PiMemoryStage1CredentialError ||
+      error instanceof PiMemoryStage1BudgetError;
+    const errorClass = workErrorClass(error);
+    const committedResult = await settleIncludingAbort(
+      set(
+        commitWorkResult$,
+        work,
+        permanent
+          ? { kind: "terminal_failure", errorClass }
+          : { kind: "retryable_failure", errorClass },
+        {
+          revalidateSelection:
+            isCredentialFailure(error) || error instanceof PiMemoryQuotaError,
+        },
+      ),
+    );
+    if (!committedResult.ok || !committedResult.value) {
+      logOutcome({
+        work,
+        outcome: "stale_discarded",
+        durationMs: performance.now() - startedAt,
+        errorClass: committedResult.ok ? errorClass : "commit_failed",
+      });
+      return { kind: "stale_discarded" };
+    }
+    const terminal =
+      permanent || work.attemptCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS;
+    const kind = terminal ? "terminal_failure" : "retryable_failure";
     logOutcome({
       work,
-      outcome: "stale_discarded",
+      outcome: kind,
       durationMs: performance.now() - startedAt,
-      errorClass: committedResult.ok ? errorClass : "commit_failed",
+      errorClass: terminal && !permanent ? "attempts_exhausted" : errorClass,
     });
-    return { kind: "stale_discarded" };
-  }
-  const terminal =
-    permanent || work.attemptCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS;
-  const kind = terminal ? "terminal_failure" : "retryable_failure";
-  logOutcome({
-    work,
-    outcome: kind,
-    durationMs: performance.now() - startedAt,
-    errorClass: terminal && !permanent ? "attempts_exhausted" : errorClass,
-  });
-  return { kind };
-}
+    return { kind };
+  },
+);
 
-async function retryOwnedWorkAfterAbort(
-  db: Db,
-  owned: ReadonlySet<ClaimedPiMemoryStage1Work>,
-  reason: unknown,
-): Promise<void> {
-  await Promise.all(
-    [...owned].map(async (work) => {
-      await failWork(db, work, reason, performance.now());
-    }),
-  );
-}
+const retryOwnedWorkAfterAbort$ = command(
+  async (
+    { set },
+    owned: ReadonlySet<ClaimedPiMemoryStage1Work>,
+    reason: unknown,
+  ): Promise<void> => {
+    await Promise.all(
+      [...owned].map(async (work) => {
+        await set(failWork$, work, reason, performance.now());
+      }),
+    );
+  },
+);
 
 async function partitionWorkByPiMemorySwitch(
   db: Db,
@@ -785,9 +787,9 @@ const prepareSourceWork$ = command(
   ): Promise<RoutedWork> => {
     const history = await set(loadAndProjectHistory$, { work }, signal);
     signal.throwIfAborted();
-    const credential = await resolvePiMemoryStage1Credential(
+    const credential = await set(
+      resolvePiMemoryStage1Credential$,
       await set(loadModelCatalog$, signal),
-      set(writeDb$),
       {
         sourceRunId: work.selection.sourceRunId,
         orgId: work.orgId,
@@ -916,7 +918,11 @@ const checkPreparedStage1Request$ = command(
       },
       signal,
     );
-    await prepared.credential.validate(signal);
+    await set(
+      validatePiMemoryStage1Credential$,
+      prepared.credential.proof,
+      signal,
+    );
     await validatePreparedWork(db, prepared.work, signal);
   },
 );
@@ -980,7 +986,6 @@ const settlePreparedWork$ = command(
       readonly startedAt: number;
     },
   ): Promise<WorkOutcome> => {
-    const db = set(writeDb$);
     const { provider, requestId, requestPrepared, startedAt } = observation;
     const observedResult = provider.ok
       ? provider.value
@@ -996,8 +1001,8 @@ const settlePreparedWork$ = command(
         args.pricingResolution,
       );
       if (!recordedUsage.ok) {
-        return await failWork(
-          db,
+        return await set(
+          failWork$,
           args.prepared.work,
           new RetryableWorkError(
             recordedUsage.error instanceof Error &&
@@ -1025,8 +1030,8 @@ const settlePreparedWork$ = command(
         });
         return { kind: "stale_discarded" };
       }
-      return await failWork(
-        db,
+      return await set(
+        failWork$,
         args.prepared.work,
         classifyProviderFailure(provider.error),
         startedAt,
@@ -1038,11 +1043,11 @@ const settlePreparedWork$ = command(
       return parseProviderOutput(providerResult.responseText);
     });
     if (!("ok" in parsed)) {
-      return await failWork(db, args.prepared.work, parsed.error, startedAt);
+      return await set(failWork$, args.prepared.work, parsed.error, startedAt);
     }
     const result = parsed.ok;
     const committed = await settleIncludingAbort(
-      commitWorkResult(db, args.prepared.work, result),
+      set(commitWorkResult$, args.prepared.work, result),
     );
     if (!committed.ok || !committed.value) {
       logOutcome({
@@ -1120,7 +1125,11 @@ export const executePiMemoryStage1Work$ = command(
     const db = set(writeDb$);
     const claim = await claimPiMemoryStage1Work(db, input);
     if (signal.aborted) {
-      await retryOwnedWorkAfterAbort(db, new Set(claim.claimed), signal.reason);
+      await set(
+        retryOwnedWorkAfterAbort$,
+        new Set(claim.claimed),
+        signal.reason,
+      );
       signal.throwIfAborted();
     }
     const owned = new Set(claim.claimed);
@@ -1144,13 +1153,13 @@ export const executePiMemoryStage1Work$ = command(
       partitionWorkByPiMemorySwitch(db, claim.claimed, signal),
     );
     if (signal.aborted) {
-      await retryOwnedWorkAfterAbort(db, owned, signal.reason);
+      await set(retryOwnedWorkAfterAbort$, owned, signal.reason);
       signal.throwIfAborted();
     }
     if (!gated.ok) {
       const outcomes = await Promise.all(
         claim.claimed.map(async (work) => {
-          return await failWork(db, work, gated.error, performance.now());
+          return await set(failWork$, work, gated.error, performance.now());
         }),
       );
       signal.throwIfAborted();
@@ -1163,7 +1172,7 @@ export const executePiMemoryStage1Work$ = command(
     const outcomes: WorkOutcome[] = [];
     for (const work of gated.value.disabled) {
       outcomes.push(
-        await failWork(db, work, new DisabledWorkError(), performance.now()),
+        await set(failWork$, work, new DisabledWorkError(), performance.now()),
       );
       owned.delete(work);
     }
@@ -1185,13 +1194,13 @@ export const executePiMemoryStage1Work$ = command(
         set(prepareSourceWork$, { work }, signal),
       );
       if (signal.aborted) {
-        await retryOwnedWorkAfterAbort(db, owned, signal.reason);
+        await set(retryOwnedWorkAfterAbort$, owned, signal.reason);
         signal.throwIfAborted();
       }
       if (loaded.ok) {
         prepared.push(loaded.value);
       } else {
-        outcomes.push(await failWork(db, work, loaded.error, workStartedAt));
+        outcomes.push(await set(failWork$, work, loaded.error, workStartedAt));
         owned.delete(work);
       }
     }

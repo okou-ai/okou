@@ -16,13 +16,12 @@ import {
   artifactSharePolicySchema,
   type ArtifactSharePolicy,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import { artifactShares } from "@okouai/db/schema/artifact-share";
+import type { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedDeployments,
   privateHostedDeployments,
   type hostedSites,
 } from "@okouai/db/runtime/hosted-site";
-import type { Tx } from "../../lib/db-types";
 import { legacyHostedDeploymentVersion } from "../../lib/hosted-publication";
 import {
   hostedSitePointerSchema,
@@ -37,6 +36,35 @@ import { settle } from "../utils";
 import { ArtifactDeliveryAliasConflict } from "./artifact-delivery.service";
 
 type HostedSite = typeof hostedSites.$inferSelect;
+
+type HostedDeployment = typeof hostedDeployments.$inferSelect;
+type HostedShare = typeof artifactShares.$inferSelect;
+interface StoredHostedObject {
+  readonly buffer: Buffer;
+  readonly etag: string;
+}
+
+interface SnapshotPolicyContext {
+  readonly site: HostedSite;
+  readonly bucket: string;
+  readonly record: Extract<ArtifactDeliveryRecord, { kind: "publication" }>;
+  readonly key: string;
+  readonly stored: StoredHostedObject;
+  readonly policy: ArtifactSharePolicy;
+}
+
+interface HostedPointerPublication {
+  readonly site: HostedSite;
+  readonly bucket: string;
+  readonly key: string;
+  readonly pointerKey: string;
+  readonly desired: ArtifactDeliveryRecord;
+  readonly registry: StoredHostedObject | null;
+  readonly active: StoredHostedObject | null;
+  readonly previous: ArtifactDeliveryRecord | null;
+  readonly pointer: HostedSitePointer;
+  readonly retained: boolean;
+}
 
 /** A strongly consistent hosted-sites object read; null when the key is absent. */
 export function storedObject(bucket: string, key: string, signal: AbortSignal) {
@@ -55,7 +83,7 @@ export function storedObject(bucket: string, key: string, signal: AbortSignal) {
   });
 }
 
-function aliasConflict(): never {
+export function hostedSiteAliasConflict(): never {
   throw new ArtifactDeliveryAliasConflict(
     "Hosted site address belongs to another publication. Choose a different --site value and republish.",
   );
@@ -87,29 +115,23 @@ function validateSnapshotPolicy(
     policy.target.siteId !== site.id ||
     policy.target.manifest.publicSlug !== site.publicSlug
   ) {
-    aliasConflict();
+    hostedSiteAliasConflict();
   }
 }
 
-/** The caller holds the site row; lock its share next, also used by the backfill. */
-const preserveSnapshotToken$ = command(
+/** The owner locks the share before these policy reads. */
+export const readHostedSnapshotPolicy$ = command(
   async (
     { get },
     args: {
-      readonly tx: Tx;
       readonly site: HostedSite;
       readonly bucket: string;
       readonly record: Extract<ArtifactDeliveryRecord, { kind: "publication" }>;
+      readonly share: HostedShare | undefined;
     },
     signal: AbortSignal,
-  ) => {
-    const { site, record } = args;
-    const [share] = await args.tx
-      .select()
-      .from(artifactShares)
-      .where(eq(artifactShares.id, record.shareId))
-      .for("update");
-    signal.throwIfAborted();
+  ): Promise<SnapshotPolicyContext> => {
+    const { site, record, share } = args;
     if (
       !share ||
       share.targetKind !== "html" ||
@@ -121,38 +143,26 @@ const preserveSnapshotToken$ = command(
       record.publicBrand !== site.linkLayoutSegment ||
       record.publicToken === site.publicSlug
     ) {
-      aliasConflict();
+      hostedSiteAliasConflict();
     }
     const key = `artifact-shares/${site.linkLayoutSegment}/${share.id}.json`;
     const stored = await get(storedObject(args.bucket, key, signal));
     signal.throwIfAborted();
     if (!stored) {
-      aliasConflict();
+      hostedSiteAliasConflict();
     }
     const policy = artifactSharePolicySchema.parse(
       JSON.parse(stored.buffer.toString("utf8")),
     );
     validateSnapshotPolicy(policy, site, record);
-    const [source] = await args.tx
-      .select({ id: privateHostedDeployments.id })
-      .from(privateHostedDeployments)
-      .where(
-        and(
-          eq(privateHostedDeployments.id, policy.target.id),
-          eq(privateHostedDeployments.siteId, site.id),
-          eq(privateHostedDeployments.userId, site.userId),
-          eq(privateHostedDeployments.orgId, site.orgId),
-          eq(
-            privateHostedDeployments.linkLayoutSegment,
-            site.linkLayoutSegment,
-          ),
-          eq(privateHostedDeployments.status, "ready"),
-        ),
-      );
-    signal.throwIfAborted();
-    if (!source) {
-      aliasConflict();
-    }
+    return { site, bucket: args.bucket, record, key, stored, policy };
+  },
+);
+
+/** Source admission stays between the owner's policy and token reads. */
+export const preserveHostedSnapshotToken$ = command(
+  async ({ get }, args: SnapshotPolicyContext, signal: AbortSignal) => {
+    const { site, record, key, stored, policy } = args;
     const token = await get(
       storedObject(
         args.bucket,
@@ -173,7 +183,7 @@ const preserveSnapshotToken$ = command(
         ),
       ) !== JSON.stringify(record)
     ) {
-      aliasConflict();
+      hostedSiteAliasConflict();
     }
     if (policy.publicSlug !== undefined) {
       // The old alias still works through its token during this step. Do this
@@ -194,12 +204,11 @@ const preserveSnapshotToken$ = command(
   },
 );
 
-async function retainedPointer(
-  tx: Tx,
+function retainedPointer(
   site: HostedSite,
   current: HostedSitePointer,
   next: HostedSitePointer,
-): Promise<HostedSitePointer> {
+): HostedSitePointer {
   if (
     current.siteId !== site.id ||
     current.publicSlug !== site.publicSlug ||
@@ -207,7 +216,7 @@ async function retainedPointer(
     (current.publicBrand ?? linkLayoutSegment("legacy")) !==
       site.linkLayoutSegment
   ) {
-    aliasConflict();
+    hostedSiteAliasConflict();
   }
   if (
     current.deploymentVersion !== undefined &&
@@ -223,20 +232,26 @@ async function retainedPointer(
   ) {
     return next;
   }
-  // R2 may be ahead of the DB after an interrupted completion transaction.
-  // Retain that acknowledged content instead of publishing an older retry.
-  const [deployment] = await tx
-    .select()
-    .from(hostedDeployments)
-    .where(
-      and(
-        eq(hostedDeployments.id, current.deploymentId),
-        eq(hostedDeployments.siteId, site.id),
-        eq(hostedDeployments.orgId, site.orgId),
-        eq(hostedDeployments.userId, site.userId),
-        eq(hostedDeployments.linkLayoutSegment, site.linkLayoutSegment),
-      ),
-    );
+  return current;
+}
+
+export function retainedHostedDeploymentCondition(
+  site: HostedSite,
+  current: HostedSitePointer,
+) {
+  return and(
+    eq(hostedDeployments.id, current.deploymentId),
+    eq(hostedDeployments.siteId, site.id),
+    eq(hostedDeployments.orgId, site.orgId),
+    eq(hostedDeployments.userId, site.userId),
+    eq(hostedDeployments.linkLayoutSegment, site.linkLayoutSegment),
+  );
+}
+
+export function validateRetainedHostedDeployment(
+  deployment: HostedDeployment | undefined,
+  current: HostedSitePointer,
+) {
   if (
     !deployment ||
     deployment.manifest.access ||
@@ -250,21 +265,19 @@ async function retainedPointer(
       "Hosted site pointer has an invalid public deployment binding",
     );
   }
-  return current;
 }
 
 /** Publish prepared public bytes before changing a same-site historical alias. */
-export const publishHostedSitePointer$ = command(
+export const readHostedPointerPublication$ = command(
   async (
-    { get, set },
+    { get },
     args: {
-      readonly tx: Tx;
       readonly bucket: string;
       readonly site: HostedSite;
       readonly pointer: HostedSitePointer;
     },
     signal: AbortSignal,
-  ): Promise<HostedSitePointer> => {
+  ): Promise<HostedPointerPublication> => {
     const { site } = args;
     const segment = storedLinkLayoutSegment(site.linkLayoutSegment);
     const namespace = hostedSitePointerNamespace(
@@ -291,13 +304,12 @@ export const publishHostedSitePointer$ = command(
       previous.kind !== "publication" &&
       JSON.stringify(previous) !== JSON.stringify(desired)
     ) {
-      aliasConflict();
+      hostedSiteAliasConflict();
     }
     const active = await get(storedObject(args.bucket, pointerKey, signal));
     signal.throwIfAborted();
     const pointer = active
-      ? await retainedPointer(
-          args.tx,
+      ? retainedPointer(
           site,
           hostedSitePointerSchema.parse(
             JSON.parse(active.buffer.toString("utf8")),
@@ -305,11 +317,42 @@ export const publishHostedSitePointer$ = command(
           args.pointer,
         )
       : args.pointer;
-    signal.throwIfAborted();
-    if (previous?.kind === "publication") {
-      await set(preserveSnapshotToken$, { ...args, record: previous }, signal);
-    }
-    signal.throwIfAborted();
+    return {
+      site,
+      bucket: args.bucket,
+      key,
+      pointerKey,
+      desired,
+      registry,
+      active,
+      previous,
+      pointer,
+      retained: pointer !== args.pointer,
+    };
+  },
+);
+
+export function hostedSnapshotSourceCondition(snapshot: SnapshotPolicyContext) {
+  const { site, policy } = snapshot;
+  return and(
+    eq(privateHostedDeployments.id, policy.target.id),
+    eq(privateHostedDeployments.siteId, site.id),
+    eq(privateHostedDeployments.userId, site.userId),
+    eq(privateHostedDeployments.orgId, site.orgId),
+    eq(privateHostedDeployments.linkLayoutSegment, site.linkLayoutSegment),
+    eq(privateHostedDeployments.status, "ready"),
+  );
+}
+
+/** Remote writes remain inside the owner's existing transaction. */
+export const writeHostedPointerPublication$ = command(
+  async (
+    { get },
+    args: HostedPointerPublication,
+    signal: AbortSignal,
+  ): Promise<HostedSitePointer> => {
+    const { pointer, pointerKey, key, desired, registry, active, previous } =
+      args;
     await get(
       writeArtifactSharePolicyObject(
         args.bucket,
@@ -350,7 +393,7 @@ export const publishHostedSitePointer$ = command(
             ),
           ) !== JSON.stringify(desired)
         ) {
-          aliasConflict();
+          hostedSiteAliasConflict();
         }
       }
     }

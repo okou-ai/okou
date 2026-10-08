@@ -11,12 +11,7 @@ import {
 } from "@okouai/pi-agent-runtime";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  updateFeatureSwitchesForUser,
-  deleteFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
@@ -30,7 +25,6 @@ import {
 import {
   createChatEventsFixture,
   claimEnvironment,
-  expectExactPrivatePiMemoryAdmission,
   modelProviderSecretPlaceholder,
   createPiUsagePricingResolution,
   eventBackedContents,
@@ -64,17 +58,7 @@ describe("CHAT-02: model-first routing", () => {
     "references Pi %s resume history without API history or resource IO",
     async (encoding) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      if (!actor.orgId) {
-        throw new Error("Expected private memory owner organization");
-      }
-      const memoryOwner = { orgId: actor.orgId, userId: actor.userId };
-      await updateFeatureSwitchesForUser(context, memoryOwner, {
-        [FeatureSwitchKey.PiMemory]: true,
-      });
-      onTestFinished(async () => {
-        await deleteFeatureSwitchesForUser(context, memoryOwner);
-      });
-      await publishPendingPiInstructions(actor, agentId);
+      await configureSubscriptionPiModel(actor);
       const checkpointObjects = mockPiCheckpointObjectStore();
       let resourceDownloads = 0;
       server.use(
@@ -86,13 +70,11 @@ describe("CHAT-02: model-first routing", () => {
           );
         }),
       );
-      const queued = await queueCapabilityProvenPiRun({
-        actor,
+      const run = await sendChatRun(actor, {
         agentId,
-        runnerGroup,
         prompt: "/skill:long-session finish in sandbox",
+        model: "gpt-6-luna",
       });
-      const run = await queued.launch();
       await flushWaitUntilForTest();
       const claimed = await claimChatRun(runnerGroup, run.runId);
       const session = MemoryPiSession.create({
@@ -170,8 +152,6 @@ describe("CHAT-02: model-first routing", () => {
         },
         claimed.sandboxHeaders,
         [400],
-        undefined,
-        queued.usagePricingResolution,
       );
       expect(JSON.stringify(invalidCheckpoint.body)).toContain(
         encoding === "identity"
@@ -212,8 +192,6 @@ describe("CHAT-02: model-first routing", () => {
         },
         claimed.sandboxHeaders,
         [200],
-        undefined,
-        queued.usagePricingResolution,
       );
       expect(completed.body).toStrictEqual({
         success: true,
@@ -223,25 +201,13 @@ describe("CHAT-02: model-first routing", () => {
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "completed",
       });
-      if (!actor.orgId) {
-        throw new Error("Expected memory owner organization");
-      }
-      await expectExactPrivatePiMemoryAdmission({
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: run.runId,
-      });
       const callsBeforeResume = context.mocks.s3.send.mock.calls.length;
-      const resumed = await sendChatRun(
-        actor,
-        {
-          agentId,
-          threadId: run.threadId,
-          prompt: "continue the long session",
-          model: null,
-        },
-        queued.usagePricingResolution,
-      );
+      const resumed = await sendChatRun(actor, {
+        agentId,
+        threadId: run.threadId,
+        prompt: "continue the long session",
+        model: "gpt-6-luna",
+      });
       await flushWaitUntilForTest();
       const resumedClaim = await claimChatRun(runnerGroup, resumed.runId);
       const resumeSession = resumedClaim.claim.resumeSession;

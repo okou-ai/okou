@@ -9,16 +9,6 @@ export const testUsageSettlementResponseSchema = z.object({
   ok: z.literal(true),
 });
 
-const testUsagePackGrantSchema = z.object({
-  id: z.string().uuid(),
-  user_id: z.string(),
-  grant_type: z.enum(["purchased", "bonus"]),
-  idempotency_key: z.string(),
-  original_amount: z.number(),
-  remaining_amount: z.number(),
-  expires_at: z.string(),
-});
-
 export const testUsageSettlementContract = c.router({
   setup: {
     method: "POST",
@@ -65,35 +55,6 @@ export const testUsageSettlementContract = c.router({
       404: z.string(),
     },
     summary: "Create a member usage pack credit grant in API tests",
-  },
-  state: {
-    method: "POST",
-    path: "/api/test/usage-settlement/state",
-    body: z.object({ org_id: z.string().min(1) }),
-    responses: {
-      200: z.object({
-        org_credits: z.number(),
-        grants: z.array(testUsagePackGrantSchema),
-      }),
-      400: apiErrorSchema,
-      404: z.string(),
-    },
-    summary: "Read usage settlement state in API tests",
-  },
-  admission: {
-    method: "POST",
-    path: "/api/test/usage-settlement/admission",
-    body: z.object({
-      org_id: z.string().min(1),
-      user_id: z.string().min(1),
-      kind: z.enum(["run", "managed-media"]),
-    }),
-    responses: {
-      200: z.object({ allowed: z.boolean() }),
-      400: apiErrorSchema,
-      404: z.string(),
-    },
-    summary: "Check member credit admission in API tests",
   },
 });
 

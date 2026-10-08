@@ -9,7 +9,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../lib/time";
-import { replayPendingChatInputQueueEventFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -954,13 +953,20 @@ describe("CHAT-02: shared user message queue", () => {
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
 
     const previewMessageId = randomUUID();
-    const previewFileId = randomUUID();
-    chat.mockCompletedUploadObject(
-      actor,
-      previewFileId,
-      "preview-notes.txt",
-      18,
-    );
+    const storage = chatCallbacks.acceptChatObjectStorage();
+    const upload = await chat.prepareUpload(actor, {
+      filename: "preview-notes.txt",
+      contentType: "text/plain",
+      size: 18,
+    });
+    storage.addObject({
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${upload.id}/preview-notes.txt`,
+      size: 18,
+    });
+    const { id: previewFileId } = await chat.completeUpload(actor, {
+      id: upload.id,
+    });
     const previewQueued = await chat.requestSendEvent(
       actor,
       {
@@ -985,11 +991,6 @@ describe("CHAT-02: shared user message queue", () => {
       [201],
     );
     expect(previewQueued.body).toMatchObject({ runId: null });
-    const replayedPreviewMessageId = randomUUID();
-    await replayPendingChatInputQueueEventFixture({
-      eventId: previewMessageId,
-      replacementId: replayedPreviewMessageId,
-    });
     const mockMessageId = randomUUID();
     const mockQueued = await chat.requestSendEvent(
       actor,
@@ -1007,8 +1008,7 @@ describe("CHAT-02: shared user message queue", () => {
       [FeatureSwitchKey.RealAgentInPreview]: true,
     });
 
-    // Terminal callbacks and the cleanup safety sweep use the same queued
-    // auto-send builder; finishing the anchor guarantees that builder owns both.
+    // Completing the active Run releases the next normally queued request.
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
     const previewMessages = await waitForThreadMessages(
@@ -1017,7 +1017,7 @@ describe("CHAT-02: shared user message queue", () => {
       (items) => {
         return userMessages(items).some((message) => {
           return (
-            message.revokesEventId === replayedPreviewMessageId &&
+            message.revokesEventId === previewMessageId &&
             typeof message.runId === "string"
           );
         });
@@ -1025,7 +1025,7 @@ describe("CHAT-02: shared user message queue", () => {
     );
     const previewRunId = userMessages(previewMessages.events).find(
       (message) => {
-        return message.revokesEventId === replayedPreviewMessageId;
+        return message.revokesEventId === previewMessageId;
       },
     )?.runId;
     if (!previewRunId) {

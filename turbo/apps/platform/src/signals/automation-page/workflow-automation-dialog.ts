@@ -1,9 +1,7 @@
 import { command, computed, state } from "ccstate";
 
 type WorkflowAutomationDialogIntent =
-  | "automation"
-  | "automation-chat"
-  | "workflow";
+  "automation" | "automation-chat" | "workflow";
 
 const workflowAutomationDialogOpenState$ = state(false);
 const selectedWorkflowAutomationAgentIdState$ = state("");

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.8](https://github.com/okou-ai/okou/compare/ios-v0.6.7...ios-v0.6.8) (2026-10-08)
+
+
+### CI
+
+* skip native builds on release-please pull requests ([#38180](https://github.com/okou-ai/okou/issues/38180)) ([c48c06d](https://github.com/okou-ai/okou/commit/c48c06d5d74c6122dfa094b946f6c8516ad843c7))
+
 ## [0.6.7](https://github.com/okou-ai/okou/compare/ios-v0.6.6...ios-v0.6.7) (2026-10-08)
 
 

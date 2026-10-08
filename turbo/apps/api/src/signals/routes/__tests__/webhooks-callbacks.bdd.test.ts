@@ -2385,7 +2385,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(missingCompleteRun.body);
     expect(missingCompleteRun.body.error.code).toBe("NOT_FOUND");
 
-    const malformedCheckpoint = await api.requestAgentCheckpointUnchecked(
+    const malformedCheckpoint = await api.requestAgentRunOutputsUnchecked(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2398,7 +2398,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(malformedCheckpoint.body);
     expect(malformedCheckpoint.body.error.code).toBe("BAD_REQUEST");
 
-    const uppercaseCheckpointHash = await api.requestAgentCheckpointUnchecked(
+    const uppercaseCheckpointHash = await api.requestAgentRunOutputsUnchecked(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2411,7 +2411,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(uppercaseCheckpointHash.body);
     expect(uppercaseCheckpointHash.body.error.code).toBe("BAD_REQUEST");
 
-    const missingCheckpointRun = await api.requestAgentCheckpoint(
+    const missingCheckpointRun = await api.requestAgentRunOutputs(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2424,7 +2424,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(missingCheckpointRun.body);
     expect(missingCheckpointRun.body.error.code).toBe("NOT_FOUND");
 
-    const mismatchedCheckpoint = await api.requestAgentCheckpoint(
+    const mismatchedCheckpoint = await api.requestAgentRunOutputs(
       {
         runId,
         cliAgentType: "claude-code",

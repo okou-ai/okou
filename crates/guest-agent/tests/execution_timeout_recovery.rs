@@ -54,7 +54,7 @@ async fn execution_timeout_checkpoints_the_resumable_session_before_exit()
     });
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .path("/api/webhooks/agent/session-history/prepare")
             .json_body_includes(format!(r#"{{"runId":"{RUN_ID}"}}"#));
         then.status(200)
             .header("Content-Type", "application/json")
@@ -73,7 +73,7 @@ async fn execution_timeout_checkpoints_the_resumable_session_before_exit()
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(format!(
-                r#"{{"exitCode":{},"checkpoint":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#,
+                r#"{{"exitCode":{},"completion":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#,
                 AGENT_EXECUTION_TIMEOUT_EXIT_CODE
             ));
         then.status(200)

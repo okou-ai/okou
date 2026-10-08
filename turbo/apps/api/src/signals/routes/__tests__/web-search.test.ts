@@ -352,16 +352,6 @@ async function setupConfiguredWebSearchPricing(
   return fixture;
 }
 
-async function setupMissingWebSearchPricing(): Promise<UsagePricingFixture> {
-  const fixture = await createUsagePricingFixture({
-    missing: [webSearchPricingKey()],
-  });
-  onTestFinished(async () => {
-    await fixture.cleanup();
-  });
-  return fixture;
-}
-
 function defaultRequest(
   overrides: Partial<WebSearchRequest> = {},
 ): WebSearchRequest {
@@ -765,32 +755,6 @@ describe("okou web-search route", () => {
 
     expectApiError(response.body);
     expect(response.body.error.code).toBe("NOT_CONFIGURED");
-  });
-
-  it("returns missing pricing before calling Perplexity", async () => {
-    const actor = createBddApi(context).user();
-    let providerRequests = 0;
-    configureProvider();
-    await fundActorWithSubscription(actor);
-    const pricing = await setupMissingWebSearchPricing();
-    server.use(
-      http.post(PERPLEXITY_SEARCH_URL, () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse());
-      }),
-    );
-
-    const response = await accept(
-      client(pricing.resolution)(webSearchContract).search({
-        headers: authenticate(actor),
-        body: defaultRequest(),
-      }),
-      [503],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("PRICING_NOT_CONFIGURED");
-    expect(providerRequests).toBe(0);
   });
 
   it("translates filtered searches and records successful usage", async () => {
