@@ -133,7 +133,11 @@ an archived entry at a different destination: that actual type/link/metadata is
 filtered at its new location before its own unlink/truncate/attribute operation.
 The original archive name/offset is retained for maintained recursive lookup;
 contained relocated symlinks remain supported, while a relative link that would
-escape only after relocation refuses. This is not an atomic whole-archive write
+escape only after relocation refuses. Security-updated maintained extraction
+passes `filter_function`/`extraction_root` through the same recursive boundary
+and returns `(filtered, original)` from its preparation method. That context is
+forwarded unchanged and the filtered entry selected; there is no TypeError retry
+through an older/unfiltered path or replacement of the maintained policy. This is not an atomic whole-archive write
 barrier: earlier bounded entries or enclosing implicit parents can remain after
 refusal. Private CPython extraction methods still require complete version/TCB
 admission independently of these scoped guards.

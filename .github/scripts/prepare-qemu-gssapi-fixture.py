@@ -751,7 +751,7 @@ def decode_package_payload(archive, payload, limit, *, descriptor=None, control_
 
 def extract_deb(archive, root, budget=None, *, descriptor=None):
     class PackageArchive(tarfile.TarFile):
-        def _extract_member(self, member, targetpath, set_attrs=True, numeric_owner=False):
+        def _extract_member(self, member, targetpath, set_attrs=True, numeric_owner=False, **extraction_args):
             # Maintained makelink can recurse here with an ARCHIVED target at a
             # DIFFERENT path after EEXIST/missing-target copy fallback. Filter
             # the actual type/link/metadata at that destination BEFORE even an
@@ -759,12 +759,17 @@ def extract_deb(archive, root, budget=None, *, descriptor=None):
             relative = str(pathlib.Path(targetpath).relative_to(root))
             actual = self._get_extract_tarinfo(
                 member, lambda entry, path: tarfile.data_filter(entry.replace(name=relative), path), str(root))
+            # Maintained security updates return (filtered, original) and pass
+            # filter_function/extraction_root through recursive extraction.
+            # Preserve that context; never retry with a weaker/unfiltered API.
+            if isinstance(actual, tuple):
+                actual, _ = actual
             budget.reserve_output(root, actual, self)
             validate_file_collision(actual)
             # Archive-relative link lookup must retain the original source
             # name/offset; only destination admission uses the relocated name.
             actual.name = member.name
-            super()._extract_member(actual, targetpath, set_attrs, numeric_owner)
+            super()._extract_member(actual, targetpath, set_attrs, numeric_owner, **extraction_args)
 
     # Check/normalize every payload entry before extraction. Absolute in-root
     # Debian aliases become equivalent relative aliases; they can never cause
