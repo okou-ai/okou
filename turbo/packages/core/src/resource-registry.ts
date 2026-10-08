@@ -6,6 +6,7 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
+  PRESENTATION_PREVIEW_INSTRUCTION,
 } from "./presentation-generation-instructions";
 import {
   PRESENTATION_REVERSE_TEMPLATE_ARCHIVE_SHA256,
@@ -3589,7 +3590,7 @@ export function buildPresentationRunbookInstructionLines(args: {
   const packageDir = `./generated/resources/${pkg.slug}`;
   const hostCommand =
     args.hostCommand ??
-    "okou host <output-dir> --site <slug> --artifact-kind presentation-html";
+    "okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png";
   return [
     `Selected presentation template: ${pkg.name} (${pkg.templateId})`,
     `Color system token: ${colorSystemToken}`,
@@ -3600,6 +3601,7 @@ export function buildPresentationRunbookInstructionLines(args: {
     PRESENTATION_IMAGE_BATCH_INSTRUCTION,
     "- Use the requested slide count; default to 8.",
     PRESENTATION_STATIC_HTML_INSTRUCTION,
+    PRESENTATION_PREVIEW_INSTRUCTION,
     `- Host the finished deck: ${hostCommand}`,
     "- Return only the HTML deck.",
   ];

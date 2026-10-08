@@ -1,6 +1,11 @@
-import type { HostedArtifactKind } from "@okouai/api-contracts/contracts/host";
+import type {
+  HostedArtifactKind,
+  HostedSiteCompleteResponse,
+} from "@okouai/api-contracts/contracts/host";
 import { completeHostedSite, prepareHostedSite } from "../api/domains/host";
+import { ApiRequestError } from "../api/core/client-factory";
 import { readStaticSiteFile, scanStaticSite } from "./static-site";
+import { bundleFingerprint, readHostedPreview } from "./preview";
 
 interface PublishStaticSiteProgress {
   readonly phase: "preparing" | "uploading";
@@ -20,6 +25,7 @@ interface PublishStaticSiteResult {
   readonly activeDeploymentVersion?: number;
   readonly fileCount: number;
   readonly size: number;
+  readonly previewImageUrl?: string;
 }
 
 interface PublishStaticSiteOptions {
@@ -28,6 +34,7 @@ interface PublishStaticSiteOptions {
   readonly slugSuffix?: string;
   readonly artifactKind?: HostedArtifactKind;
   readonly spaFallback?: boolean;
+  readonly preview?: string;
   readonly onProgress?: (progress: PublishStaticSiteProgress) => void;
 }
 
@@ -42,6 +49,13 @@ export async function publishStaticSite(
   const totalSize = scan.files.reduce((sum, file) => {
     return sum + file.size;
   }, 0);
+  const preview = options.preview
+    ? await readHostedPreview(
+        options.preview,
+        bundleFingerprint(scan.files),
+        scan.root,
+      )
+    : undefined;
 
   options.onProgress?.({
     phase: "preparing",
@@ -53,6 +67,7 @@ export async function publishStaticSite(
     ...(options.slugSuffix !== undefined && { slugSuffix: options.slugSuffix }),
     artifactKind,
     spaFallback: Boolean(options.spaFallback),
+    ...(preview ? { preview: preview.metadata } : {}),
     files: scan.files.map((file) => {
       return {
         path: file.path,
@@ -63,6 +78,12 @@ export async function publishStaticSite(
       };
     }),
   });
+
+  if (preview && prepared.preview?.sha256 !== preview.metadata.sha256) {
+    throw new Error(
+      "This API did not acknowledge the supplied preview. Deploy the compatible API before publishing; no files were uploaded or activated",
+    );
+  }
 
   const uploadByPath = new Map(
     prepared.uploads.map((upload) => {
@@ -89,8 +110,44 @@ export async function publishStaticSite(
     }
   }
 
-  const completed = await completeHostedSite(prepared.deploymentId);
+  if (preview && prepared.preview) {
+    options.onProgress?.({ phase: "uploading", path: "artifact preview" });
+    const response = await fetch(prepared.preview.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": preview.metadata.contentType },
+      body: new Uint8Array(preview.bytes),
+    });
+    if (!response.ok)
+      throw new Error(
+        `Failed to upload artifact preview (HTTP ${response.status})`,
+      );
+  }
 
+  const completed = await completeHostedSite(prepared.deploymentId).catch(
+    (error: unknown) => {
+      if (error instanceof ApiRequestError && error.status < 500) {
+        throw error;
+      }
+      throw new Error(
+        `Deployment ${prepared.deploymentId} could not be confirmed. Retry completion with: okou host complete ${prepared.deploymentId}`,
+        { cause: error },
+      );
+    },
+  );
+  if (preview && !completed.previewImageUrl) {
+    throw new Error(
+      `API did not confirm the preview for deployment ${prepared.deploymentId}. Retry completion against the compatible API with: okou host complete ${prepared.deploymentId}`,
+    );
+  }
+
+  return publicationResult(completed, scan.files.length, totalSize);
+}
+
+function publicationResult(
+  completed: HostedSiteCompleteResponse,
+  fileCount: number,
+  size: number,
+): PublishStaticSiteResult {
   return {
     siteId: completed.siteId,
     deploymentId: completed.deploymentId,
@@ -111,7 +168,10 @@ export async function publishStaticSite(
     ...(completed.activeDeploymentVersion === undefined
       ? {}
       : { activeDeploymentVersion: completed.activeDeploymentVersion }),
-    fileCount: scan.files.length,
-    size: totalSize,
+    fileCount,
+    size,
+    ...(completed.previewImageUrl
+      ? { previewImageUrl: completed.previewImageUrl }
+      : {}),
   };
 }

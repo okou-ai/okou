@@ -495,6 +495,7 @@ const syncHostedArtifact$ = command(
           slug: hostedSites.slug,
           requestedSlug: hostedSites.requestedSlug,
           createdAt: hostedSites.createdAt,
+          activeDeploymentId: hostedSites.activeDeploymentId,
         })
         .from(hostedSites)
         .where(
@@ -505,6 +506,17 @@ const syncHostedArtifact$ = command(
       signal.throwIfAborted();
       if (!site) {
         return false;
+      }
+
+      const privateSnapshot = args.row.metadata.access === "owner-private-v1";
+      // A late completion/preview for an older publication must not replace
+      // the active site's cover, even if its file row was inserted later.
+      if (
+        !privateSnapshot &&
+        metadataString(args.row.metadata, "deploymentId") !==
+          site.activeDeploymentId
+      ) {
+        return true;
       }
 
       const logicalKey = `site:${site.id}`;
@@ -575,10 +587,12 @@ const syncHostedArtifact$ = command(
         .where(
           and(
             eq(artifacts.id, existingArtifact.id),
-            lte(
-              sql`(${artifacts.projectionCreatedAt}, ${artifacts.projectionFileId})`,
-              sql`(${args.row.createdAt}::timestamp, ${args.row.id}::uuid)`,
-            ),
+            privateSnapshot
+              ? lte(
+                  sql`(${artifacts.projectionCreatedAt}, ${artifacts.projectionFileId})`,
+                  sql`(${args.row.createdAt}::timestamp, ${args.row.id}::uuid)`,
+                )
+              : undefined,
           ),
         );
       signal.throwIfAborted();

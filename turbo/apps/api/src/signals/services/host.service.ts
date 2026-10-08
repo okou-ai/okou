@@ -13,6 +13,7 @@ import {
   type HostedSiteFilesResponse,
   type HostedSiteDeploymentsResponse,
   type HostedSitePrepareRequest,
+  type HostedSitePreview,
 } from "@okouai/api-contracts/contracts/host";
 import { z } from "zod";
 import {
@@ -80,6 +81,11 @@ import {
   type RenderArtifactPreviewArgs,
 } from "./artifact-preview.service";
 import { recordHostedSiteArtifact$ } from "./run-uploaded-files.service";
+import {
+  completeHostedPreview$,
+  prepareHostedPreview$,
+} from "./hosted-preview.service";
+import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import {
   collectHostedSiteDependencies$,
   hostedSiteDeliveryManifest,
@@ -150,6 +156,10 @@ type PrepareDeploymentResult =
           readonly path: string;
           readonly uploadUrl: string;
         }[];
+        readonly preview?: {
+          readonly uploadUrl: string;
+          readonly sha256: string;
+        };
       };
     }
   | { readonly status: "forbidden" }
@@ -171,6 +181,7 @@ type CompleteDeploymentResult =
         readonly isActive?: boolean;
         readonly activeDeploymentVersion?: number;
         readonly status: "ready";
+        readonly previewImageUrl?: string;
       };
     }
   | { readonly status: "not_found"; readonly message: string }
@@ -567,6 +578,7 @@ function buildManifest(args: {
   readonly artifactKind: HostedArtifactKind;
   readonly spaFallback: boolean;
   readonly files: readonly HostedSiteFile[];
+  readonly preview?: HostedSitePreview;
   readonly createdAt: Date;
   readonly layout: LinkLayout;
 }): HostedSiteManifest {
@@ -596,6 +608,7 @@ function buildManifest(args: {
     artifactKind: args.artifactKind,
     spaFallback: args.spaFallback,
     files: manifestFiles,
+    ...(args.preview ? { preview: args.preview } : {}),
   };
 }
 
@@ -873,6 +886,7 @@ async function insertHostedDeployment(
     artifactKind: args.body.artifactKind,
     spaFallback: args.body.spaFallback,
     files: args.body.files,
+    preview: args.body.preview,
     createdAt: context.now,
     layout,
   });
@@ -981,6 +995,10 @@ export const prepareHostedSiteDeployment$ = command(
     if (args.body.requirePrivateArtifact) {
       return { status: "forbidden" };
     }
+    if (args.body.preview) {
+      // Fail before creating a deployment if private preview storage is absent.
+      privateArtifactsBucket();
+    }
     const writeDb = set(writeDb$);
     const siteAndDeployment = await createHostedSiteDeployment(writeDb, args, {
       now: nowDate(),
@@ -1025,6 +1043,14 @@ export const prepareHostedSiteDeployment$ = command(
     );
     signal.throwIfAborted();
 
+    const preview = args.body.preview
+      ? await set(
+          prepareHostedPreview$,
+          siteAndDeployment.deployment.id,
+          args.body.preview,
+          signal,
+        )
+      : undefined;
     return {
       status: "ok",
       body: {
@@ -1034,6 +1060,7 @@ export const prepareHostedSiteDeployment$ = command(
         url,
         ...deploymentVersionResponseFields(siteAndDeployment.deployment),
         uploads,
+        ...(preview ? { preview } : {}),
       },
     };
   },
@@ -1325,6 +1352,36 @@ const publishHostedSiteDeploymentPointers$ = command(
   },
 );
 
+function completedHostedSiteResponse(
+  deployment: HostedDeploymentRow,
+  promotion: HostedSitePromotion,
+  previewImageUrl: string | undefined,
+): CompleteDeploymentResult {
+  const deploymentVersion = legacyHostedDeploymentVersion(deployment.manifest);
+  return {
+    status: "ok",
+    body: {
+      siteId: deployment.siteId,
+      deploymentId: deployment.id,
+      publicSlug: deployment.manifest.publicSlug,
+      url: deployment.url,
+      ...deploymentVersionResponseFields(deployment),
+      ...(deploymentVersion === null
+        ? {}
+        : {
+            isActive: promotion.activeDeploymentId === deployment.id,
+            ...(promotion.activeDeploymentVersion === null
+              ? {}
+              : {
+                  activeDeploymentVersion: promotion.activeDeploymentVersion,
+                }),
+          }),
+      status: "ready",
+      ...(previewImageUrl ? { previewImageUrl } : {}),
+    },
+  };
+}
+
 export const completeHostedSiteDeployment$ = command(
   async (
     { set },
@@ -1370,6 +1427,22 @@ export const completeHostedSiteDeployment$ = command(
       };
     }
 
+    const preview = deployment.manifest.preview
+      ? await set(
+          completeHostedPreview$,
+          {
+            deploymentId: deployment.id,
+            userId: deployment.userId,
+            orgId: deployment.orgId,
+            preview: deployment.manifest.preview,
+          },
+          signal,
+        )
+      : undefined;
+    if (preview?.status === "bad_request") {
+      return preview;
+    }
+
     const manifestKey = await set(
       publishHostedSiteManifest$,
       deployment,
@@ -1385,9 +1458,6 @@ export const completeHostedSiteDeployment$ = command(
       readyAt,
     );
 
-    const deploymentVersion = legacyHostedDeploymentVersion(
-      deployment.manifest,
-    );
     const promoted = await settle(
       set(
         publishHostedSiteDeploymentPointers$,
@@ -1430,7 +1500,10 @@ export const completeHostedSiteDeployment$ = command(
 
     const artifactRow = await set(
       recordHostedSiteArtifact$,
-      hostedSiteArtifactArgs(deployment),
+      {
+        ...hostedSiteArtifactArgs(deployment),
+        ...(preview ? { previewImageUrl: preview.url } : {}),
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -1438,32 +1511,16 @@ export const completeHostedSiteDeployment$ = command(
     // Render the artifact preview as soon as the deploy is recorded. Detached
     // via waitUntil so it survives the response; failures leave the preview
     // empty without blocking the deployment.
-    set(
-      scheduleArtifactPreviewRender$,
-      artifactPreviewArgs(deployment, artifactRow),
-    );
+    // Retain the old-client producer until the sandbox rollout drains (PR 3 of #36205).
+    // A supplied preview never falls back to remote rendering.
+    if (!deployment.manifest.preview) {
+      set(
+        scheduleArtifactPreviewRender$,
+        artifactPreviewArgs(deployment, artifactRow),
+      );
+    }
 
-    return {
-      status: "ok",
-      body: {
-        siteId: deployment.siteId,
-        deploymentId: deployment.id,
-        publicSlug: deployment.manifest.publicSlug,
-        url: deployment.url,
-        ...deploymentVersionResponseFields(deployment),
-        ...(deploymentVersion === null
-          ? {}
-          : {
-              isActive: promotion.activeDeploymentId === deployment.id,
-              ...(promotion.activeDeploymentVersion === null
-                ? {}
-                : {
-                    activeDeploymentVersion: promotion.activeDeploymentVersion,
-                  }),
-            }),
-        status: "ready",
-      },
-    };
+    return completedHostedSiteResponse(deployment, promotion, preview?.url);
   },
 );
 

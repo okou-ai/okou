@@ -10,6 +10,8 @@ import { createArtifactPresentation } from "../shared/artifact-return";
 import { cloneHostedSiteCommand } from "./clone";
 import { deleteHostedSiteCommand } from "./delete";
 import { versionsHostedSiteCommand } from "./versions";
+import { screenshotHostedSiteCommand } from "./screenshot";
+import { completeHostedSiteCommand } from "./complete";
 
 interface HostOptions {
   readonly site?: string;
@@ -17,6 +19,7 @@ interface HostOptions {
   readonly artifactKind?: HostedArtifactKind;
   readonly spa?: boolean;
   readonly json?: boolean;
+  readonly preview?: string;
 }
 
 function parseArtifactKind(value: string): HostedArtifactKind {
@@ -46,14 +49,22 @@ export const hostCommand = new Command()
     parseArtifactKind,
   )
   .option("--spa", "Serve unknown HTML navigation paths from index.html")
+  .option(
+    "--preview <image>",
+    "PNG/JPEG artifact cover outside the hosted directory (up to 5 MiB)",
+  )
   .option("--json", "Output the result and Markdown return forms as JSON")
   .addCommand(cloneHostedSiteCommand)
   .addCommand(versionsHostedSiteCommand)
   .addCommand(deleteHostedSiteCommand)
+  .addCommand(screenshotHostedSiteCommand)
+  .addCommand(completeHostedSiteCommand)
   .addHelpText(
     "after",
     `
 Examples:
+  Capture a cover:      okou host screenshot ./dist --out ./preview.png --spa
+  Publish with cover:   okou host ./dist --site my-product-demo --spa --preview ./preview.png
   Publish a Vite build:  okou host ./dist --site my-product-demo --spa
   Redeploy the same URL: okou host ./dist --site my-product-demo --spa
   List site versions:    okou host versions my-product-demo
@@ -64,6 +75,8 @@ Examples:
 Notes:
   - Publishes a static directory containing index.html. It does not deploy a long-running backend, database, worker, or framework runtime; use the project's deployment workflow for those
   - For an HTML presentation, add --artifact-kind presentation-html
+  - Use a user-selected cover or run host screenshot on the final bundle, inspect the image, and pass --preview; re-capture after editing
+  - Preview images upload separately to private artifact storage and feed Artifacts cards; they do not become public files inside your site
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
@@ -88,6 +101,7 @@ Notes:
         slugSuffix: options.slugSuffix,
         artifactKind: options.artifactKind,
         spaFallback: Boolean(options.spa),
+        preview: options.preview,
         onProgress: options.json
           ? undefined
           : (progress) => {

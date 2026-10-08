@@ -21,6 +21,15 @@ server-side signing-key ownership are unchanged.
 No database migration, client version floor, feature switch or deployment-order
 fallback is required. This change does not deploy or verify production recovery.
 
+## Sandbox-hosted artifact covers (#36205)
+
+Hosted deployment requests may include a separately uploaded private preview.
+Deploy and drain API readers before the new CLI/generation instructions; a
+mixed completion fleet must not ignore the preview requirement. Old requests
+retain backend screenshots until the separately planned retirement. The
+manifest's optional preview metadata and existing file/catalog image reference
+need no database migration. See [the publishing, storage and rollout contract](sandbox-artifact-previews.md).
+
 ## Maps oversized-response error (issue #36791)
 
 `POST /api/maps/search` continues to return HTTP 502 when the Google Maps

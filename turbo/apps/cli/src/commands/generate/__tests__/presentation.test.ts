@@ -72,7 +72,7 @@ describe("okou generate presentation command", () => {
       "Check that shapes, charts, images, or decorative graphics do not cover readable text",
     );
     expect(stdout).toContain(
-      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
+      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png\n",
     );
     expect(stdout).toContain(
       "With privateArtifacts enabled, new artifacts default to only-me.",
@@ -101,10 +101,10 @@ describe("okou generate presentation command", () => {
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     const hostInstructions = stdout.split("\n").filter((line) => {
-      return line.includes("okou host ");
+      return line.startsWith("- Host the finished deck:");
     });
     expect(hostInstructions).toEqual([
-      "- Host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org",
+      "- Host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org --preview ./generated/previews/cover.png",
     ]);
     expect(stdout).toContain("okou web upload-file -f <file> --visibility org");
     expect(stdout).toContain(
@@ -211,7 +211,7 @@ describe("okou generate presentation command", () => {
     );
     expect(stdout).toContain("User request: create a 15-slide launch deck");
     expect(stdout).toContain(
-      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
+      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png\n",
     );
     const imageWorkflowLines = stdout.split("\n").filter((line) => {
       return line.startsWith("- Image workflow:");

@@ -21,6 +21,7 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
+  PRESENTATION_PREVIEW_INSTRUCTION,
 } from "@okouai/core/presentation-generation-instructions";
 import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
@@ -341,7 +342,8 @@ function buildUserPresentationTemplatePrompt(
       "- Use the slide count the user asks for; if unspecified, default to 8 pages.",
       PRESENTATION_IMAGE_BATCH_INSTRUCTION,
       PRESENTATION_STATIC_HTML_INSTRUCTION,
-      "- Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
+      PRESENTATION_PREVIEW_INSTRUCTION,
+      "- Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png",
       "- Return only the generated HTML deck as the final deliverable.",
     ].join("\n"),
   };

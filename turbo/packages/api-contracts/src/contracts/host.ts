@@ -140,6 +140,15 @@ export const hostedSiteDownloadFileSchema = hostedSiteFileSchema.extend({
   downloadUrl: z.string().url(),
 });
 
+export const MAX_HOSTED_PREVIEW_BYTES = 5 * 1024 * 1024;
+
+export const hostedSitePreviewSchema = z.object({
+  size: z.number().int().positive().max(MAX_HOSTED_PREVIEW_BYTES),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  contentType: z.enum(["image/png", "image/jpeg"]),
+});
+export type HostedSitePreview = z.infer<typeof hostedSitePreviewSchema>;
+
 export const hostedSitePrepareRequestSchema = z
   .object({
     /** Fail before creating bytes when private artifact creation is unavailable. */
@@ -149,6 +158,8 @@ export const hostedSitePrepareRequestSchema = z
     artifactKind: hostedArtifactKindSchema.default("hosted-site"),
     spaFallback: z.boolean().default(false),
     files: z.array(hostedSiteFileSchema).min(1).max(5000),
+    /** Uploaded separately to private storage, never into the public bundle. */
+    preview: hostedSitePreviewSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const suffixLength = value.slugSuffix?.length ?? RANDOM_SLUG_SUFFIX_LENGTH;
@@ -182,6 +193,10 @@ export const hostedSitePrepareResponseSchema = z.object({
   artifactUrl: artifactUrlSchema.optional(),
   aliasUrl: z.string().url().optional(),
   uploads: z.array(hostedSiteUploadSchema),
+  /** Acknowledges that this API requires the preview before publication. */
+  preview: z
+    .object({ uploadUrl: z.string().url(), sha256: z.string() })
+    .optional(),
 });
 
 export const hostedSiteCompleteResponseSchema = z.object({
@@ -195,6 +210,7 @@ export const hostedSiteCompleteResponseSchema = z.object({
   isActive: z.boolean().optional(),
   activeDeploymentVersion: z.number().int().positive().optional(),
   status: z.literal("ready"),
+  previewImageUrl: artifactUrlSchema.optional(),
 });
 
 export const hostedSiteFilesResponseSchema = z.object({

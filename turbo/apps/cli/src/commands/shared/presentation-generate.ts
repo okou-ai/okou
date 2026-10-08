@@ -9,6 +9,7 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
+  PRESENTATION_PREVIEW_INSTRUCTION,
 } from "@okouai/core/presentation-generation-instructions";
 import { canonicalizeRegistryId } from "./resource-listing";
 import {
@@ -117,7 +118,7 @@ ${formatPresentationTemplateListing(templates)}`;
           options.visibility === undefined
             ? ""
             : ` --visibility ${options.visibility}`;
-        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag}`;
+        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag} --preview ./generated/previews/cover.png`;
         const deliveryInstructions = [
           options.visibility === undefined
             ? "- With privateArtifacts enabled, new artifacts default to only-me. Otherwise, hosting and upload keep their existing behavior."
@@ -194,6 +195,7 @@ ${formatPresentationTemplateListing(templates)}`;
             "- Check that shapes, charts, images, or decorative graphics do not cover readable text at desktop and mobile viewport sizes.",
             "",
             "## Publish",
+            PRESENTATION_PREVIEW_INSTRUCTION,
             `- Host the finished deck: ${hostCommand}`,
             ...deliveryInstructions,
           ].join("\n"),

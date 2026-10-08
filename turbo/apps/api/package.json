@@ -68,6 +68,7 @@
     "music-metadata": "^11.13.0",
     "pg": "^8.23.0",
     "resend": "^6.12.4",
+    "sharp": "^0.35.5",
     "signal-timers": "^1.0.4",
     "stripe": "^20.4.1",
     "svix": "^2.3.0",

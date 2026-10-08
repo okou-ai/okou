@@ -89,7 +89,7 @@ describe("okou generate source-backed artifact commands", () => {
         `Write the artifact under \`./generated/mockups/${command}-demo/\`.`,
       );
       expect(stdout).toContain(
-        `okou host ./generated/mockups/${command}-demo --site ${command}-demo\n`,
+        `okou host ./generated/mockups/${command}-demo --site ${command}-demo --preview ./generated/previews/${command}-demo.png\n`,
       );
       expect(stdout).toContain(
         "The hosted URL is the preview and user-accessible view for this static HTML artifact.",
@@ -122,7 +122,7 @@ describe("okou generate source-backed artifact commands", () => {
       ]);
 
       expect(output()).toContain(
-        "okou host ./generated/mockups/team-plan --site team-plan --visibility org\n",
+        "okou host ./generated/mockups/team-plan --site team-plan --visibility org --preview ./generated/previews/team-plan.png\n",
       );
       expect(output()).toContain(
         "okou web upload-file -f <file> --visibility org",
