@@ -154,3 +154,8 @@ writer-drain-only deliverable; their functions are dropped in the same
 migration. Production-data convergence before
 removing reader fallbacks is a separate evidence gate; no production operator
 or erasure action is authorized here.
+
+The chat-thread benchmark reference above records the original implementation.
+[#37440 batch016](implementation/issue-37440-batches/batch-016.md) retires that
+privately seeded benchmark; the separate development seed and production capture
+writer are unchanged.

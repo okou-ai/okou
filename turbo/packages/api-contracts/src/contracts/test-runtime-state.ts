@@ -78,11 +78,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("steer-run-time-budget"),
-    run_id: z.uuid(),
-    elapsed_ms: z.int().nonnegative(),
-  }),
-  z.object({
     action: z.literal("read-run-launch-snapshot"),
     run_id: z.uuid(),
   }),
@@ -155,12 +150,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
       autonomy_budget: z.int().min(0).max(32),
     })
     .nullable()
-    .optional(),
-  run_time_budget: z
-    .object({
-      scanned: z.int().nonnegative(),
-      steered: z.int().nonnegative(),
-    })
     .optional(),
   run_launch_snapshot: z
     .object({

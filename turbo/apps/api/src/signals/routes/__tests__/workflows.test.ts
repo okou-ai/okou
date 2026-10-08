@@ -1,15 +1,11 @@
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { gunzipSync } from "node:zlib";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  scopedReviewContract,
-  scopedReviewRoutes,
-} from "../test-get-started-rewards";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
+import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 
 import {
   GetObjectCommand,
@@ -34,6 +30,7 @@ import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
+import { extractFilesFromTarGz } from "../../../lib/tar";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
@@ -57,7 +54,6 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { extractFilesFromTarGz } from "../../../lib/tar";
 import {
   mockGoogleCalendarConnectorOAuth,
   mockNotionConnectorOAuth,
@@ -3212,9 +3208,10 @@ describe("workflow owner profile cancellation", () => {
   });
 });
 
-test("awards the workflow creator only after a queued user workflow really succeeds", async () => {
+test("promotes a queued workflow after failure and completes it with a real Runner claim", async () => {
   const actor = user({ orgRole: "org:admin" });
   await enableWorkflowRuns(actor);
+  const runnerGroup = api.configureRunnerGroup();
   const agent = await createAgent(actor, {
     displayName: "Reward Workflow Agent",
     visibility: "private",
@@ -3227,14 +3224,6 @@ test("awards the workflow creator only after a queued user workflow really succe
   if (!actor.orgId) {
     throw new Error("Expected workflow org");
   }
-  const review = () => {
-    return accept(
-      setupApp({ context, routes: scopedReviewRoutes })(
-        scopedReviewContract,
-      ).process({ body: { orgId: actor.orgId ?? "" } }),
-      [200],
-    );
-  };
   const rewards = async () => {
     return (await readGetStartedStatus(context, actor)).quests.find((q) => {
       return q.key === "workflow";
@@ -3251,10 +3240,12 @@ test("awards the workflow creator only after a queued user workflow really succe
   );
   expect(queued.body.runId).toBeNull();
   const webhooks = createWebhookCallbackApi(context);
+  await api.heartbeatRunner(runnerGroup);
+  const firstClaim = await api.claimRunnerJob(first.runId);
   await webhooks.requestAgentComplete(
     { runId: first.runId, exitCode: 1, error: "Synthetic failure" },
     {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, first.runId)}`,
+      authorization: `Bearer ${firstClaim.sandboxToken}`,
     },
     [200],
   );
@@ -3266,8 +3257,9 @@ test("awards the workflow creator only after a queued user workflow really succe
   if (!next?.runId) {
     throw new Error("Expected the queued workflow to start after failure");
   }
-  await review();
   await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
+  await api.heartbeatRunner(runnerGroup);
+  const nextClaim = await api.claimRunnerJob(next.runId);
   await webhooks.requestAgentComplete(
     {
       runId: next.runId,
@@ -3280,21 +3272,15 @@ test("awards the workflow creator only after a queued user workflow really succe
           .digest("hex"),
       },
     },
-    { authorization: `Bearer ${api.sandboxTokenForRun(actor, next.runId)}` },
+    { authorization: `Bearer ${nextClaim.sandboxToken}` },
     [200],
   );
-  // The next worker attempt is due later; use the test-owned clock, not a sleep.
-  mockNow(now() + 60_001);
-  await review();
-  await expect(rewards()).resolves.toMatchObject({
-    claimedCount: 1,
-    earnedCredits: 1000,
-    canEarnMore: false,
+  await flushWaitUntilForTest();
+  await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
+    status: "failed",
+  });
+  await expect(api.readRun(actor, next.runId)).resolves.toMatchObject({
+    status: "completed",
   });
   await miscApi.deleteWorkflow(actor, workflow.body.id, [204]);
-  await review();
-  await expect(rewards()).resolves.toMatchObject({
-    claimedCount: 1,
-    earnedCredits: 1000,
-  });
 });

@@ -3,8 +3,8 @@ import {
   getStartedContract,
 } from "@okouai/api-contracts/contracts/get-started";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
-import { and, eq } from "drizzle-orm";
 import { command } from "ccstate";
+import { and, eq } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -16,17 +16,17 @@ import {
   completedGetStartedQuestSql,
   unresolvedClaimWhere,
 } from "../services/get-started-member-reward";
-import { ensureGetStartedRewardWallet$ } from "../services/get-started-wallet.service";
+import {
+  normalizeGetStartedPostUrl,
+  processGetStartedClaims$,
+} from "../services/get-started-review.service";
 import {
   createGetStartedClaim$,
   getStartedClaimResponse,
   getStartedStatus$,
   getStartedUtcDay,
 } from "../services/get-started-rewards.service";
-import {
-  normalizeGetStartedPostUrl,
-  processGetStartedClaims$,
-} from "../services/get-started-review.service";
+import { ensureGetStartedRewardWallet$ } from "../services/get-started-wallet.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const status$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -168,7 +168,6 @@ const review$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const processed = await set(
     processGetStartedClaims$,
-    {},
     AbortSignal.any([signal, AbortSignal.timeout(240_000)]),
   );
   signal.throwIfAborted();

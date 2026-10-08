@@ -313,6 +313,21 @@ provider failure; keep actual provider Test-mode/reconnect behavior separately.
 See [batch013](../implementation/issue-37440-batches/batch-013.md) for the explicit
 losses of retired cleanup/monitor/corruption scenarios.
 
+For purchase balances, `billing-usage-pack-credits.test.ts` creates member
+allocations through the normal Usage Pack checkout, then delivers a Stripe
+invoice containing the metadata actually sent to Stripe. Public credits reads
+prove member isolation and admin visibility. Check-in creates the independent
+bonus and its expiry through the normal reward API. Do not manufacture grant
+rows, selected remaining balances or private cleanup. In `weather.test.ts`, the
+five zero-price entries already exist in the production baseline migration;
+normal requests use that catalog directly, without a test-selected pricing alias.
+
+A pending reward submission is separate from operator review. The share cases
+in `get-started.test.ts` retain canonical URLs, idempotency and pending claims;
+they do not prove the removed private review's author verdicts, lease recovery
+or award lifetime. Likewise, public Runner completion and FIFO promotion do not
+prove a privately kicked115-minute budget warning. Keep those losses explicit.
+
 ## Shared Persistent State
 
 Teardown cannot establish correctness for shared persistent state. Another

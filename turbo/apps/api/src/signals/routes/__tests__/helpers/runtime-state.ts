@@ -7,9 +7,9 @@ import {
 } from "@okouai/api-contracts/contracts/test-runtime-state";
 import { onTestFinished } from "vitest";
 
-import { createAppWithRoutes } from "../../../../app-factory-core";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
+import { createAppWithRoutes } from "../../../../app-factory-core";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 
 import { testRuntimeStateRoutes } from "../../test-runtime-state";
@@ -324,26 +324,6 @@ export async function clearRunApiStart(
     action: "clear-run-api-start",
     run_id: runId,
   });
-}
-
-/**
- * Move one owned running run to an elapsed-time boundary and execute the
- * production steering flow without scanning rows owned by other test files.
- */
-export async function steerRunTimeBudgetFixture(
-  context: TestContext,
-  runId: string,
-  elapsedMs: number,
-): Promise<NonNullable<TestRuntimeStateActionResponse["run_time_budget"]>> {
-  const response = await postAction(context, {
-    action: "steer-run-time-budget",
-    run_id: runId,
-    elapsed_ms: elapsedMs,
-  });
-  if (!response.run_time_budget) {
-    throw new Error("steerRunTimeBudgetFixture missing run_time_budget");
-  }
-  return response.run_time_budget;
 }
 
 export async function clearWorkflowAutomationEventConnectorAsPreviousApi(

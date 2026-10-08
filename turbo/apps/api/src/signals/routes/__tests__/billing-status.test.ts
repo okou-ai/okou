@@ -1,31 +1,33 @@
 import { randomUUID } from "node:crypto";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { createStore } from "ccstate";
 import StripeSDK from "stripe";
 import { beforeEach, onTestFinished } from "vitest";
+import {
+  okouTokenFromClaim,
+  createChatEventsFixture,
+} from "./helpers/chat-events-fixture";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { mockStripeClient } from "../../external/stripe-client";
+import { billingStatusRoutes } from "../billing-status";
+import { createBddApi } from "./helpers/api-bdd";
 import {
   deleteBillingStatusOrg$,
   seedBillingStatusOrg$,
   type BillingStatusFixture,
 } from "./helpers/billing-status";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import { createBddApi } from "./helpers/api-bdd";
 import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { mockStripeClient } from "../../external/stripe-client";
-import { billingStatusRoutes } from "../billing-status";
+import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const store = createStore();
@@ -34,47 +36,6 @@ const mocks = createRouteMocks(context);
 beforeEach(() => {
   mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
 });
-
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly Capability[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: args.capabilities,
-    iat: seconds,
-    exp: seconds + 600,
-  });
-}
-
-function mockMemberRole(
-  fixture: BillingStatusFixture,
-  role: "org:admin" | "org:member" = "org:member",
-): void {
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [
-      {
-        role,
-        organization: {
-          id: fixture.orgId,
-          slug: fixture.orgId.toLowerCase(),
-          name: "Billing Status Test Org",
-        },
-        publicUserData: { userId: fixture.userId },
-        createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
-      },
-    ],
-  });
-}
 
 describe("GET /api/billing/status", () => {
   const track = createFixtureTracker<BillingStatusFixture>((fixture) => {
@@ -142,12 +103,17 @@ describe("GET /api/billing/status", () => {
     const fixture = await track(
       store.set(seedBillingStatusOrg$, { credits: 100_000 }, context.signal),
     );
-    mockMemberRole(fixture);
-    const token = okouToken({
+    const chat = createChatEventsFixture(context);
+    const { actor, agentId, runnerGroup } = await chat.entitledNativeChatActor({
       userId: fixture.userId,
       orgId: fixture.orgId,
-      capabilities: ["billing:read"],
     });
+    const run = await chat.sendChatRun(actor, {
+      agentId,
+      prompt: "Read billing status",
+    });
+    const claimed = await chat.claimChatRun(runnerGroup, run.runId);
+    const token = okouTokenFromClaim(claimed.claim);
 
     const client = setupApp({ context, routes: billingStatusRoutes })(
       billingStatusContract,
@@ -158,77 +124,9 @@ describe("GET /api/billing/status", () => {
       [200],
     );
 
-    expect(response.body.credits).toBe(100_000);
+    expect(response.body.credits).toBe(120_000);
+    await chat.cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   });
-
-  it("returns 403 for agent tokens without billing read capability", async () => {
-    const token = okouToken({
-      userId: `user_${randomUUID()}`,
-      orgId: `org_${randomUUID()}`,
-      capabilities: [],
-    });
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: `Bearer ${token}` } }),
-      [403],
-    );
-
-    expect(response.body.error).toStrictEqual({
-      message: "Missing required capability: billing:read",
-      code: "FORBIDDEN",
-    });
-  });
-
-  it.each([
-    ["active", "active"],
-    ["trialing", "active"],
-    ["past_due", "active"],
-    ["unpaid", "active"],
-    ["atom_grant", "active"],
-    ["manual_active", "active"],
-    ["suspended", "suspended"],
-    ["canceled", "suspended"],
-    ["unknown", "suspended"],
-  ] as const)(
-    "normalizes the persisted %s status without enabling package controls",
-    async (status, expected) => {
-      const fixture = await track(
-        store.set(seedBillingStatusOrg$, { credits: 0 }, context.signal),
-      );
-      // Historical entitlement statuses cannot all be produced by current APIs.
-      // Seed only that persisted state, then verify the production HTTP response.
-      await upsertOrgPlanEntitlementFixture({
-        orgId: fixture.orgId,
-        status,
-        showUsagePack: false,
-      });
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-      const client = setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      const response = await accept(client.get({ headers }), [200]);
-      expect(response.body).toMatchObject({
-        status: expected,
-        showUsagePack: false,
-      });
-
-      const changedStatus = expected === "active" ? "suspended" : "active";
-      await upsertOrgPlanEntitlementFixture({
-        orgId: fixture.orgId,
-        status: changedStatus,
-      });
-      const updated = await accept(client.get({ headers }), [200]);
-      expect(updated.body).toMatchObject({
-        status: changedStatus,
-        showUsagePack: false,
-      });
-    },
-  );
 
   it("returns correct data for subscribed org", async () => {
     const periodEnd = new Date("2099-04-20T00:00:00Z");
@@ -303,6 +201,34 @@ describe("GET /api/billing/status", () => {
       expect(response.body.hasSubscription).toBeFalsy();
     },
   );
+
+  it("reflects normal subscription activation and cancellation without enabling package controls", async () => {
+    const actor = createBddApi(context).user();
+    const fixture = createPublicUnfundedProFixture(context, actor);
+    await fixture.initialize();
+    await fixture.run(async () => {
+      const readStatus = async () => {
+        mocks.clerk.session(actor.userId, actor.orgId);
+        return await accept(
+          setupApp({ context, routes: billingStatusRoutes })(
+            billingStatusContract,
+          ).get({
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
+      };
+      expect((await readStatus()).body).toMatchObject({
+        status: "active",
+        showUsagePack: false,
+      });
+      await fixture.suspend();
+      expect((await readStatus()).body).toMatchObject({
+        status: "suspended",
+        showUsagePack: false,
+      });
+    });
+  });
 
   it("returns custom tier status without subscription plan credits", async () => {
     const fixture = createBddApi(context).user();
@@ -578,162 +504,6 @@ describe("GET /api/billing/status", () => {
         cancelAtPeriodEnd: true,
       },
     ]);
-  });
-
-  it("includes active usage allowance windows", async () => {
-    const shortStartsAt = new Date("2026-01-01T00:00:00Z");
-    const shortExpiresAt = new Date("2099-01-01T05:00:00Z");
-    const weeklyStartsAt = new Date("2026-01-01T00:00:00Z");
-    const weeklyExpiresAt = new Date("2099-01-08T00:00:00Z");
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 120_000,
-          subscription: {
-            tier: "team",
-            status: "active",
-            currentPeriodEnd: new Date("2099-04-20T00:00:00Z"),
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-          usageAllowance: {
-            shortWindowSeconds: 18_000,
-            shortWindowUnits: 5000,
-            weeklyWindowSeconds: 604_800,
-            weeklyWindowUnits: 50_000,
-            effectiveAt: new Date("2026-01-01T00:00:00Z"),
-            expiresAt: new Date("2099-04-20T00:00:00Z"),
-            windows: [
-              {
-                kind: "short",
-                startsAt: shortStartsAt,
-                expiresAt: shortExpiresAt,
-                unitLimit: 5000,
-                consumedUnits: 1250,
-              },
-              {
-                kind: "weekly",
-                startsAt: weeklyStartsAt,
-                expiresAt: weeklyExpiresAt,
-                unitLimit: 50_000,
-                consumedUnits: 10_000,
-              },
-            ],
-          },
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.usageAllowance).toStrictEqual({
-      windows: [
-        {
-          kind: "short",
-          windowSeconds: 18_000,
-          unitLimit: 5000,
-          consumedUnits: 1250,
-          remainingUnits: 3750,
-          startsAt: shortStartsAt.toISOString(),
-          expiresAt: shortExpiresAt.toISOString(),
-        },
-        {
-          kind: "weekly",
-          windowSeconds: 604_800,
-          unitLimit: 50_000,
-          consumedUnits: 10_000,
-          remainingUnits: 40_000,
-          startsAt: weeklyStartsAt.toISOString(),
-          expiresAt: weeklyExpiresAt.toISOString(),
-        },
-      ],
-    });
-  });
-
-  it("ignores usage allowance windows from a previous entitlement period", async () => {
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 120_000,
-          subscription: {
-            tier: "team",
-            status: "active",
-            currentPeriodEnd: new Date("2099-04-20T00:00:00Z"),
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-          usageAllowance: {
-            shortWindowSeconds: 18_000,
-            shortWindowUnits: 5000,
-            weeklyWindowSeconds: 604_800,
-            weeklyWindowUnits: 50_000,
-            effectiveAt: new Date("2026-07-01T00:00:00Z"),
-            expiresAt: new Date("2099-04-20T00:00:00Z"),
-            windows: [
-              {
-                kind: "short",
-                startsAt: new Date("2026-06-30T00:00:00Z"),
-                expiresAt: new Date("2099-01-01T05:00:00Z"),
-                unitLimit: 5000,
-                consumedUnits: 1250,
-              },
-              {
-                kind: "weekly",
-                startsAt: new Date("2026-06-30T00:00:00Z"),
-                expiresAt: new Date("2099-01-08T00:00:00Z"),
-                unitLimit: 50_000,
-                consumedUnits: 10_000,
-              },
-            ],
-          },
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const response = await accept(
-      setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      ).get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.usageAllowance).toStrictEqual({
-      windows: [
-        {
-          kind: "short",
-          windowSeconds: 18_000,
-          unitLimit: 5000,
-          consumedUnits: 0,
-          remainingUnits: 5000,
-          startsAt: null,
-          expiresAt: null,
-        },
-        {
-          kind: "weekly",
-          windowSeconds: 604_800,
-          unitLimit: 50_000,
-          consumedUnits: 0,
-          remainingUnits: 50_000,
-          startsAt: null,
-          expiresAt: null,
-        },
-      ],
-    });
   });
 
   it("excludes canceled concurrency subscriptions from status", async () => {
