@@ -5209,12 +5209,31 @@ the regular preferences update to save locale before returning preferences.
 An old App that reads preferences before its startup POST against the new API
 can temporarily receive `409`; its existing POST then initializes the member.
 
-Morning Brief enrollment remains a separate durable obligation. The POST
-attempts it after saving missing preferences, and the enrollment worker admits up to
-20 timezone-bearing members without enrollment rows on each tick before
-processing due work. Qualification checks the Clerk membership and rollout
-boundary; existing `cancelled`, `ineligible`, and `completed` rows are not
-recreated. No schema migration is needed.
+The automatic Morning Brief enrollment side effect described by the original
+rollout is retired by #36270; see the explicit-installation cleanup below.
+Preference initialization still fills missing fields and initializes member
+memory, but no longer prepares or installs Morning Brief.
+
+## Morning Brief automatic enrollment retirement (#36270, 2026-10-08)
+
+Remove the historical timezone/no-enrollment admission scan, enrollment cron
+worker, lease/backoff commands and automatic installer. Preference initialization,
+timezone updates, onboarding completion and Clerk membership creation no longer
+start automatic installation or record membership-based enrollment intent.
+Explicit user installation and preference toggles, timezone synchronization for
+existing installations, and scheduled execution remain supported. An explicit
+choice whose prerequisites are unavailable requires another user enable request;
+there is no background enrollment retry.
+
+This is an API-only policy change with no new request/response shape or destructive
+migration. Existing enrollment rows retain selected-workflow ownership, choices
+and cleanup/claim semantics; their schema is not dropped. Old App/new API and
+new App/old API still use the same preference and onboarding protocols. An older
+API serving, draining or restored by rollback can still auto-install/retry until
+it exits; source removal does not prove production drain. Deployment must promote
+and drain the API before automatic enrollment is declared stopped. The historical
+gap and old preference rollout are accepted as converged per Ethan's explicit
+cleanup decision; CLI authentication is not an enrollment entry point.
 
 ## Pi 0.87.1 model admission (2026-09-23)
 
