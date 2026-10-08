@@ -509,49 +509,66 @@ def own_test_descendants():
 
 
 def run_tests(argv, *, env=None, timeout):
-    # Own Cargo AND its test/native descendants. Cancelling only subprocess.run's
-    # Cargo child is not proof the test executable stopped or released resources.
+    # Own Cargo AND its test/native descendants. One local owner/default SIGCHLD
+    # must retain the leader until its last destructive process-group signal.
+    if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
+        raise RuntimeError("independent fixture child ownership refused")
     process = subprocess.Popen(argv, env=env, cwd=REPO, start_new_session=True)
-    try:
-        code = process.wait(timeout=timeout)
-        if code:
-            raise RuntimeError("independent Rust fixture refused")
-    finally:
+
+    def finish_owned_group():
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            # ESRCH means the owned group already exited; wait/reap and the
-            # explicit group-disappearance check below still must complete.
-            pass
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=5)
-        # A reaped Cargo process may leave its separately running test descendant.
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            # The preceding TERM may already have removed this group. This
-            # expected race does not bypass adopted-child/group verification.
-            pass
-        until = time.monotonic() + 5
-        while True:
+            # WNOWAIT has not released the leader PID. Even an exited Cargo
+            # leader remains reserved while its same-group descendants are killed.
             try:
-                child, _ = os.waitpid(-process.pid, os.WNOHANG)
-                if child:
-                    continue
-            except ChildProcessError:
-                # No waitable adopted group child remains right now; that alone
-                # does not prove termination, so killpg(0) below still gates exit.
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
                 pass
             try:
-                os.killpg(process.pid, 0)
-            except ProcessLookupError:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired as error:
+                raise RuntimeError("owned test leader cleanup unconfirmed") from error
+            # No further destructive signal may use the now-reaped leader ID.
+            until = time.monotonic() + 5
+            while True:
+                try:
+                    child, _ = os.waitpid(-process.pid, os.WNOHANG)
+                    if child:
+                        continue
+                except ChildProcessError:
+                    # Adopted-child absence alone does not prove group removal.
+                    pass
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    break
+                if time.monotonic() >= until:
+                    raise RuntimeError("owned test process-group termination unconfirmed")
+                time.sleep(0.01)
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            event = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            if event is not None:
                 break
-            if time.monotonic() >= until:
-                raise RuntimeError("owned test process-group termination unconfirmed")
-            time.sleep(0.01)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(argv, timeout)
+            time.sleep(min(0.01, remaining))
+    except ChildProcessError as error:
+        # Lost ownership never authorizes a signal against a numeric reused PGID.
+        raise RuntimeError("independent fixture child ownership unavailable") from error
+    except BaseException:
+        finish_owned_group()
+        raise
+    else:
+        # Reaping/interrupts inside cleanup cannot re-enter a signalling handler.
+        finish_owned_group()
+        if event.si_code != os.CLD_EXITED or event.si_status:
+            raise RuntimeError("independent Rust fixture refused")
 
 
 def main():

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Byte-integrity tests for fixture inputs, not Kerberos/QEMU runtime coverage.
+"""Fixture input integrity and real inert process-ownership regressions.
 
-All file contents below are public inert canaries. Nothing is executed or loaded;
-no backend, native result, credential, signed archive or runtime receipt is faked.
+Input files are public inert canaries. Process tests run only standard-library
+Python children, never QEMU/KDC/helper/credential or signed-provider programs.
+No native authentication, loaded-byte admission or runtime receipt is faked.
 """
 import errno
 import hashlib
@@ -11,6 +12,7 @@ import os
 import stat
 import pathlib
 import platform
+import signal
 import subprocess
 import sys
 import tempfile
@@ -554,6 +556,202 @@ class RuntimeInputs(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.verify()
                 del baseline["files"][name]
+
+
+class TestProcessOwnership(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.parent = qemu_gssapi.REPO / "crates/target/qemu-gssapi-runtime-tests"
+        cls.parent.mkdir(parents=True, exist_ok=True)
+        if cls.parent.is_symlink() or cls.parent.resolve() != cls.parent:
+            raise RuntimeError("unsafe fixture-test directory")
+
+    def signal_observer(self, retained, released):
+        real_signal = os.killpg
+        real_waitid = os.waitid
+
+        def observe(group, value):
+            if value:
+                try:
+                    event = real_waitid(os.P_PID, group, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                except ChildProcessError:
+                    # A negative control records the unsafe request, NEVER sends
+                    # an actual signal after the leader identity was released.
+                    released.append((group, value))
+                    return
+                retained.append((group, value, event))
+            return real_signal(group, value)
+
+        return observe
+
+    def test_completed_leader_is_retained_until_last_destructive_group_signal(self):
+        retained, released = [], []
+        descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+        with mock.patch.object(qemu_gssapi.os, 'killpg', side_effect=self.signal_observer(retained, released)):
+            qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', 'pass'], timeout=10)
+        self.assertEqual(released, [])
+        self.assertTrue(retained)
+        for _, _, event in retained:
+            self.assertIsNotNone(event)
+            self.assertEqual((event.si_code, event.si_status), (os.CLD_EXITED, 0))
+        with self.assertRaises(ChildProcessError):
+            os.waitid(os.P_PID, retained[-1][0], os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+
+    def test_interrupt_after_real_leader_reap_never_signals_released_group(self):
+        retained, released, reaped = [], [], []
+        real_wait = subprocess.Popen._try_wait
+
+        def interrupt(process, flags):
+            result = real_wait(process, flags)
+            if result[0] == process.pid and not reaped:
+                reaped.append(result)
+                # This is a real SIGINT at the actual waitpid/bookkeeping seam.
+                # A critical-region mask may defer it until ownership cleanup.
+                signal.raise_signal(signal.SIGINT)
+            return result
+
+        descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+        with mock.patch.object(qemu_gssapi.os, 'killpg', side_effect=self.signal_observer(retained, released)), \
+                mock.patch.object(subprocess.Popen, '_try_wait', interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', 'pass'], timeout=10)
+        self.assertEqual(len(reaped), 1)
+        self.assertEqual(reaped[0][1], 0)
+        self.assertEqual(released, [])
+        with self.assertRaises(ChildProcessError):
+            os.waitid(os.P_PID, reaped[0][0], os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+
+    def test_actual_running_child_deadline_kills_and_reaps_before_refusal(self):
+        retained, released = [], []
+        descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+        with mock.patch.object(qemu_gssapi.os, 'killpg', side_effect=self.signal_observer(retained, released)):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', 'import time;time.sleep(60)'], timeout=0)
+        self.assertEqual(released, [])
+        self.assertTrue(retained)
+        with self.assertRaises(ChildProcessError):
+            os.waitid(os.P_PID, retained[-1][0], os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+
+    def test_actual_running_child_interrupt_kills_and_reaps_before_return(self):
+        retained, released, interrupted = [], [], []
+        real_waitid = os.waitid
+
+        def cancel(kind, pid, options):
+            event = real_waitid(kind, pid, options)
+            if event is None and not interrupted:
+                interrupted.append(pid)
+                signal.raise_signal(signal.SIGINT)
+            return event
+
+        descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+        with mock.patch.object(qemu_gssapi.os, 'killpg', side_effect=self.signal_observer(retained, released)), \
+                mock.patch.object(qemu_gssapi.os, 'waitid', side_effect=cancel):
+            with self.assertRaises(KeyboardInterrupt):
+                qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', 'import time;time.sleep(60)'], timeout=10)
+        self.assertEqual(len(interrupted), 1)
+        self.assertEqual(released, [])
+        self.assertTrue(retained)
+        with self.assertRaises(ChildProcessError):
+            real_waitid(os.P_PID, interrupted[0], os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+
+    def test_failed_real_child_status_is_not_hidden_by_successful_cleanup(self):
+        retained, released = [], []
+        with mock.patch.object(qemu_gssapi.os, 'killpg', side_effect=self.signal_observer(retained, released)):
+            with self.assertRaisesRegex(RuntimeError, 'independent Rust fixture refused'):
+                qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', 'raise SystemExit(3)'], timeout=10)
+        self.assertEqual(released, [])
+        self.assertTrue(retained)
+        self.assertEqual((retained[-1][2].si_code, retained[-1][2].si_status), (os.CLD_EXITED, 3))
+        with self.assertRaises(ChildProcessError):
+            os.waitid(os.P_PID, retained[-1][0], os.WEXITED | os.WNOHANG | os.WNOWAIT)
+
+    def test_actual_external_leader_reap_refuses_without_any_group_signal(self):
+        retained, released, reaped, processes = [], [], [], []
+        real_waitid = os.waitid
+        real_spawn = subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            process = real_spawn(*args, **kwargs)
+            processes.append(process)
+            return process
+
+        def external_reap(kind, pid, options):
+            event = real_waitid(kind, pid, options)
+            if event is not None and not reaped:
+                # A real separate reaping caller uses maintained poll/waitpid,
+                # including its genuine status bookkeeping, not a fake default.
+                reaped.append((pid, processes[0].poll()))
+                return real_waitid(kind, pid, options)
+            return event
+
+        with mock.patch.object(qemu_gssapi.os, 'killpg', side_effect=self.signal_observer(retained, released)), \
+                mock.patch.object(qemu_gssapi.os, 'waitid', side_effect=external_reap), \
+                mock.patch.object(qemu_gssapi.subprocess, 'Popen', side_effect=spawn):
+            with self.assertRaisesRegex(RuntimeError, 'independent fixture child ownership unavailable'):
+                qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', 'pass'], timeout=10)
+        self.assertEqual(len(reaped), 1)
+        self.assertEqual(reaped[0][1], 0)
+        self.assertEqual(retained, [])
+        self.assertEqual(released, [])
+
+    def test_exited_leader_cleanup_reaps_actual_same_group_descendant(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            driver = '''
+import os, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+import qemu_gssapi
+qemu_gssapi.own_test_descendants()
+record = pathlib.Path(sys.argv[2])
+child = "import subprocess,sys,pathlib; p=subprocess.Popen([sys.executable,'-I','-S','-B','-c','import time;time.sleep(60)']); pathlib.Path(sys.argv[1]).write_text(str(p.pid))"
+qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', child, str(record)], timeout=10)
+pid = int(record.read_text())
+try:
+    os.kill(pid, 0)
+except ProcessLookupError:
+    pass
+else:
+    raise AssertionError('owned descendant remained live or unreaped')
+try:
+    os.waitpid(-1, os.WNOHANG)
+except ChildProcessError:
+    pass
+else:
+    raise AssertionError('owned adopted child remained')
+'''
+            result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', driver,
+                                     str(pathlib.Path(qemu_gssapi.__file__).parent), str(base / 'descendant.pid')],
+                                    capture_output=True, text=True, timeout=20,
+                                    env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_ignored_sigchld_refuses_before_starting_a_real_child(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            driver = '''
+import pathlib, signal, sys
+sys.path.insert(0, sys.argv[1])
+import qemu_gssapi
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+try:
+    qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', 'import pathlib,sys;pathlib.Path(sys.argv[1]).write_text("started")', sys.argv[2]], timeout=10)
+except RuntimeError as error:
+    if str(error) != 'independent fixture child ownership refused':
+        raise
+else:
+    raise AssertionError('nondefault child ownership was admitted')
+if pathlib.Path(sys.argv[2]).exists():
+    raise AssertionError('child started before ownership refusal')
+'''
+            result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', driver,
+                                     str(pathlib.Path(qemu_gssapi.__file__).parent), str(base / 'child-started')],
+                                    capture_output=True, text=True, timeout=20,
+                                    env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+            self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":
