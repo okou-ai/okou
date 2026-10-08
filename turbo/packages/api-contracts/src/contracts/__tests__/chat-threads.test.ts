@@ -7,6 +7,7 @@ import {
   chatThreadComputerUseHostContract,
   chatThreadModelSelectionContract,
   chatThreadDraftSchema,
+  chatThreadDraftContract,
   chatThreadArtifactGoogleDriveSyncSchema,
   chatThreadsContract,
   chatEventSchema,
@@ -699,6 +700,104 @@ describe("chat thread generation template contract", () => {
       );
     },
   );
+
+  describe("retired template read and write boundaries", () => {
+    const retiredTemplate = {
+      type: "template",
+      titleSnapshot: "Ada",
+      template: {
+        type: "video",
+        selection: {
+          stylePresetId: "avatar-template:81",
+          voiceId: "legacy/provider/voice",
+          aspectRatio: "16:9",
+          avatarOptions: { voiceId: "legacy/provider/voice" },
+          providerOptions: { caption: false },
+        },
+      },
+    };
+    const currentTemplate = {
+      type: "template",
+      titleSnapshot: "Paper cut",
+      template: {
+        type: "illustration",
+        selection: { illustrationStyleId: "paper-cut" },
+      },
+    };
+    const userMessage = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Explain the product" },
+        retiredTemplate,
+        {
+          type: "feedback",
+          quote: "Previous answer",
+          note: [
+            { type: "text", text: "Use " },
+            retiredTemplate,
+            currentTemplate,
+          ],
+        },
+        currentTemplate,
+      ],
+    };
+    const minimalRetiredTemplate = {
+      ...retiredTemplate,
+      template: {
+        type: "video",
+        selection: { stylePresetId: "avatar-template:81" },
+      },
+    };
+    const expectedWrite = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Explain the product" },
+        minimalRetiredTemplate,
+        {
+          type: "feedback",
+          quote: "Previous answer",
+          note: [
+            { type: "text", text: "Use " },
+            minimalRetiredTemplate,
+            currentTemplate,
+          ],
+        },
+        currentTemplate,
+      ],
+    };
+
+    it.each(["send", "draft"])(
+      "keeps newly written %s selections readable without generation parameters",
+      (surface) => {
+        const written =
+          surface === "send"
+            ? chatEventsContract.send.body.parse({
+                agentId: "agent-1",
+                prompt: "Explain the product",
+                hasTextContent: true,
+                userMessage,
+              }).userMessage
+            : chatThreadByIdContract.patch.body.parse({
+                draftUserMessage: userMessage,
+              }).draftUserMessage;
+
+        expect(written).toStrictEqual(expectedWrite);
+      },
+    );
+
+    it("preserves existing message and draft parameters, including feedback", () => {
+      expect(userMessageDocumentSchema.parse(userMessage)).toStrictEqual(
+        userMessage,
+      );
+      const draft = {
+        draftUserMessage: userMessage,
+        draftAttachments: null,
+      };
+      expect(
+        chatThreadDraftContract.get.responses[200].parse(draft),
+      ).toStrictEqual(draft);
+    });
+  });
 
   it("rejects empty workflow template ids", () => {
     const parsed = generationTemplateRequestSchema.safeParse({

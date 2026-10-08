@@ -743,6 +743,64 @@ const userMessageInputDocumentSchema = z
   })
   .strict();
 
+/**
+ * New writes keep only the retired template identity. The historical decoder
+ * must preserve old parameters, but persisting now-opaque values would break
+ * previous API and App readers. No generation-parameter rules are retained.
+ */
+function newUserMessageTemplatePart(
+  part: Extract<UserMessageInputPart, { type: "template" }>,
+): Extract<UserMessageInputPart, { type: "template" }> {
+  if (part.template.type !== "video") {
+    return part;
+  }
+  return {
+    ...part,
+    template: {
+      type: "video",
+      selection: { stylePresetId: part.template.selection.stylePresetId },
+    },
+  };
+}
+
+function newUserMessageInputPart(
+  part: UserMessageInputPart,
+): UserMessageInputPart {
+  if (part.type === "template") {
+    return newUserMessageTemplatePart(part);
+  }
+  if (part.type === "feedback") {
+    return {
+      ...part,
+      note: part.note.map((note) => {
+        return note.type === "template"
+          ? newUserMessageTemplatePart(note)
+          : note;
+      }),
+    };
+  }
+  return part;
+}
+
+const newUserMessageInputDocumentSchema =
+  userMessageInputDocumentSchema.transform((document) => {
+    return {
+      ...document,
+      parts: document.parts.map(newUserMessageInputPart),
+    };
+  });
+
+const newUserMessageDocumentSchema = userMessageDocumentSchema.transform(
+  (document) => {
+    return {
+      ...document,
+      parts: document.parts.map((part) => {
+        return part.type === "model" ? part : newUserMessageInputPart(part);
+      }),
+    };
+  },
+);
+
 const chatEventBaseSchema = z.object({
   id: z.string(),
   threadId: z.string(),
@@ -1061,7 +1119,7 @@ const chatNormalSendBodyShape = {
    */
   model: selectedModelRequestSchema.nullable().optional(),
   runOptions: chatRunOptionsRequestSchema.optional(),
-  userMessage: userMessageDocumentSchema,
+  userMessage: newUserMessageDocumentSchema,
   computerUseHostId: z.string().uuid().nullable().optional(),
   cloudBrowserEnabled: z.boolean().optional(),
   hasTextContent: z.boolean(),
@@ -1275,7 +1333,7 @@ export const chatThreadByIdContract = c.router({
     pathParams: chatThreadIdPathParamsSchema,
     body: z
       .object({
-        draftUserMessage: userMessageInputDocumentSchema.nullable(),
+        draftUserMessage: newUserMessageInputDocumentSchema.nullable(),
         draftAttachments: z
           .array(persistedAttachmentSchema)
           .nullable()
