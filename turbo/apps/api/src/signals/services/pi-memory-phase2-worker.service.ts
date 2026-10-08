@@ -179,11 +179,9 @@ function createPiMemoryPhase2Recovery(scope?: PiMemoryPhase2OwnerScope) {
         return { outcome: "dispatched", runId: job.maintenanceRunId };
       }
 
-      const db = set(writeDb$);
       await set(
         dispatchRunCallbacks$,
         {
-          db,
           runId: job.maintenanceRunId,
           status: run.status === "completed" ? "completed" : "failed",
           error:

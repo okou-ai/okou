@@ -150,6 +150,11 @@ an earlier retry budget. Aborted messages and tool results cannot supply model
 HTTP evidence. Historical messages without this diagnostic remain supported.
 
 Structured provider codes precede recognized terminal text and HTTP status.
+At owned Guest terminal sources, a diagnosed provider refusal also precedes
+native Codex credential-keyword heuristics: an opaque policy link containing
+`invalid_api_key` does not change the cause. Actual structured credential codes
+retain priority, and stderr keeps its existing native rules rather than gaining
+refusal inference.
 The original body distinguishes ordinary HTTP 429 rate limits from provider
 account balance failures (`provider_insufficient_credits`) and subscription
 usage limits (`usage_limit`), even when the SDK renders all three as a usage
@@ -171,6 +176,16 @@ from `modelRequest`, whose shape is unchanged. Older Guests ignore the additive
 runtime field; newer Guests still accept messages without it. The open reason
 token contract accepts additive API/Runner taxonomy entries without a database
 migration.
+
+A diagnosed `safety_policy_refusal` vetoes native assistant and summary retries
+before generic text matching, even when the preserved provider link contains
+HTTP-looking digits. It also stays out of automatic overflow/threshold compaction:
+context-looking link text must not trigger summarization or replay. The
+[pinned patch contract](../turbo/patches/pi-pending-tools.md#provider-declared-queue-expiry)
+owns these narrow SDK guards; genuine context-overflow recovery is unchanged,
+and no answer/tool/stderr classifier is added. Only the matching patched CLI
+gains those guards. A newer Guest can classify an older CLI's terminal text,
+but cannot undo retries or recovery the old SDK already performed.
 
 A settled final Pi `length` response follows Pi's completed outcome: partial
 assistant text stays in its event and becomes the public result, without a

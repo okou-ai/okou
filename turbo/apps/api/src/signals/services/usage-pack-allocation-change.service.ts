@@ -45,6 +45,7 @@ import {
   type StripeClient,
   type StripeInvoice,
   type StripeInvoiceAutomaticTaxParam,
+  type StripeInvoiceCreatePreviewParams,
   type StripeInvoiceLine,
   type StripePriceRecurring,
   type StripeRef,
@@ -1004,6 +1005,45 @@ function usagePackChangePreviewBlock(
   return undefined;
 }
 
+function usagePackChangeRecurringPreviewParams(
+  subscription: UsagePackChangeSubscriptionInput,
+  items: StripeSubscriptionUpdateItemParam[],
+  sourcePriceId: string,
+  targetPriceId: string,
+): StripeInvoiceCreatePreviewParams {
+  if (!subscriptionScheduleId(subscription)) {
+    return {
+      subscription: subscription.id,
+      preview_mode: "recurring",
+      subscription_details: { items },
+    };
+  }
+  const customerId = stripeObjectId(subscription.customer);
+  if (!customerId) {
+    throw new Error(`Stripe subscription ${subscription.id} has no customer`);
+  }
+  const quantities = new Map(packageQuantitiesForSubscription(subscription));
+  const sourceQuantity = quantities.get(sourcePriceId);
+  if (!sourceQuantity) {
+    throw new Error(`Stripe subscription is missing ${sourcePriceId}`);
+  }
+  if (sourceQuantity === 1) {
+    quantities.delete(sourcePriceId);
+  } else {
+    quantities.set(sourcePriceId, sourceQuantity - 1);
+  }
+  quantities.set(targetPriceId, (quantities.get(targetPriceId) ?? 0) + 1);
+  const discounts = subscriptionPhaseDiscounts(subscription);
+  return {
+    customer: customerId,
+    preview_mode: "recurring",
+    discounts: discounts.length > 0 ? discounts : "",
+    subscription_details: {
+      items: projectedScheduleItems(subscription, quantities),
+    },
+  };
+}
+
 async function previewUsagePackChangeInStripe(
   context: UsagePackChangeContext,
   source: UsagePackAllocationRow,
@@ -1042,13 +1082,14 @@ async function previewUsagePackChangeInStripe(
   );
   const recurringPreviewPromise = subscriptionWillEnd
     ? null
-    : stripe.invoices.createPreview({
-        subscription: subscription.id,
-        preview_mode: "recurring",
-        subscription_details: {
+    : stripe.invoices.createPreview(
+        usagePackChangeRecurringPreviewParams(
+          subscription,
           items,
-        },
-      });
+          source.stripePriceId,
+          targetStripePriceId,
+        ),
+      );
   const immediatePreviewPromise =
     kind === "upgrade"
       ? stripe.invoices.createPreview({

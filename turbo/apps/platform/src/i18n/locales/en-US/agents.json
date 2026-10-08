@@ -453,6 +453,7 @@
         "title": "Support"
       }
     },
+    "categoryFilter": "Filter by category",
     "chat": "Chat",
     "description": "Click any card to start a conversation. It could become an on-demand task, a recurring workflow, or a subagent.",
     "search": {

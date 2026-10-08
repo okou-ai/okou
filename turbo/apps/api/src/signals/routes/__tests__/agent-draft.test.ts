@@ -174,6 +174,55 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
     });
   });
 
+  it("rejects attachments without a message and preserves the saved draft", async () => {
+    const fixture = await seedAgent();
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    const draftUserMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [{ type: "text", text: "saved draft" }],
+    };
+    await accept(
+      draftsClient().patch({
+        params: { id: fixture.agentId },
+        headers: authHeaders(),
+        body: { draftUserMessage, draftAttachments: null },
+      }),
+      [204],
+    );
+
+    const invalid = await accept(
+      draftsClient().patch({
+        params: { id: fixture.agentId },
+        headers: authHeaders(),
+        body: {
+          draftUserMessage: null,
+          draftAttachments: [
+            {
+              id: randomUUID(),
+              url: "https://cdn.example.com/draft-file.txt",
+              filename: "draft-file.txt",
+              contentType: "text/plain",
+              size: 123,
+            },
+          ],
+        },
+      }),
+      [400],
+    );
+    expect(invalid.status).toBe(400);
+    const saved = await accept(
+      draftsClient().get({
+        params: { id: fixture.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(saved.body).toStrictEqual({
+      draftUserMessage,
+      draftAttachments: null,
+    });
+  });
+
   it("converges concurrent first writes without exposing a conflict", async () => {
     const fixture = await seedAgent();
     mocks.clerk.session(fixture.userId, fixture.orgId);

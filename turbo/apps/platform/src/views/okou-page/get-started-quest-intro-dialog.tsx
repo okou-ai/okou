@@ -5,6 +5,8 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
+  buttonVariants,
+  cn,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -15,6 +17,8 @@ import {
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
+import { Link } from "../router/link.tsx";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
 import {
   checkinClaimedOpen$,
   getStartedQuests$,
@@ -90,8 +94,7 @@ function IntroLayout({
   figure,
   secondaryLabel,
   onSecondary,
-  confirmLabel,
-  onConfirm,
+  confirm,
   confirmIsEscape = false,
   children,
 }: {
@@ -102,8 +105,7 @@ function IntroLayout({
   figure?: ReactNode;
   secondaryLabel: string;
   onSecondary: () => void;
-  confirmLabel: string;
-  onConfirm: () => void;
+  confirm: ReactNode;
   /**
    * Whether confirm is the way *out* of the step rather than the way through
    * it. A step whose real action lives in its own body has no primary to give,
@@ -135,15 +137,7 @@ function IntroLayout({
             {/* First in DOM order so it is first in the tab ring and, on the
                 narrow `flex-col-reverse` footer, ends up under the button
                 that is now the only one carrying a fill. */}
-            <Button
-              type="button"
-              variant="link"
-              onClick={onConfirm}
-              data-testid="quest-intro-confirm"
-              className="px-0 text-muted-foreground hover:text-foreground sm:mr-auto"
-            >
-              {confirmLabel}
-            </Button>
+            {confirm}
             <Button type="button" variant="outline" onClick={onSecondary}>
               {secondaryLabel}
             </Button>
@@ -153,13 +147,7 @@ function IntroLayout({
             <Button type="button" variant="outline" onClick={onSecondary}>
               {secondaryLabel}
             </Button>
-            <Button
-              type="button"
-              onClick={onConfirm}
-              data-testid="quest-intro-confirm"
-            >
-              {confirmLabel}
-            </Button>
+            {confirm}
           </>
         )}
       </DialogFooter>
@@ -179,10 +167,42 @@ function IntroLayout({
 }
 
 interface IntroProps {
-  readonly onConfirm: () => void;
   readonly onClose: () => void;
   /** What this step pays, read off the quest the panel already loaded. */
   readonly reward?: number;
+}
+
+function IntroLink({
+  pathname,
+  onClose,
+  escape = false,
+  children,
+}: {
+  readonly onClose: () => void;
+  readonly pathname:
+    | typeof ROUTES.connectors
+    | typeof ROUTES.workflows
+    | typeof ROUTES.works;
+  readonly escape?: boolean;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Link
+      pathname={pathname}
+      className={cn(
+        buttonVariants({ variant: escape ? "link" : "default" }),
+        escape && "px-0 text-muted-foreground hover:text-foreground sm:mr-auto",
+      )}
+      onClick={(event) => {
+        if (shouldHandleLinkClick(event)) {
+          onClose();
+        }
+      }}
+      data-testid="quest-intro-confirm"
+    >
+      {children}
+    </Link>
+  );
 }
 
 function useLaterLabel(): string {
@@ -193,7 +213,6 @@ function useLaterLabel(): string {
 }
 
 function ConnectorIntro({
-  onConfirm,
   onClose,
   reward,
   onNeedsChoice,
@@ -221,10 +240,13 @@ function ConnectorIntro({
       reward={reward}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
-      confirmLabel={t(($) => {
-        return $.chat.agentPage.getStarted.intro.connector.confirm;
-      })}
-      onConfirm={onConfirm}
+      confirm={
+        <IntroLink pathname={ROUTES.connectors} onClose={onClose} escape>
+          {t(($) => {
+            return $.chat.agentPage.getStarted.intro.connector.confirm;
+          })}
+        </IntroLink>
+      }
       // The step is finished by pressing a tile, and a tile is not a button
       // shape -- so the only control with a fill said `Browse all connectors`,
       // which is the exit. The catalog below is the action; leaving it is a
@@ -255,7 +277,7 @@ function ConnectorIntro({
  * a `window.open` that waits on a request first is no longer a user gesture.
  * Without one, confirm falls back to the list.
  */
-function SlackIntro({ onConfirm, onClose, reward }: IntroProps) {
+function SlackIntro({ onClose, reward }: IntroProps) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
   const slackLoadable = useLastLoadable(slackOrgData$);
@@ -264,6 +286,9 @@ function SlackIntro({ onConfirm, onClose, reward }: IntroProps) {
     slack && slack.isAdmin && slack.isInstalled !== true
       ? (slack.installUrl ?? null)
       : null;
+  const confirmLabel = t(($) => {
+    return $.chat.agentPage.getStarted.intro.slack.confirm;
+  });
   return (
     <IntroLayout
       title={t(($) => {
@@ -279,17 +304,24 @@ function SlackIntro({ onConfirm, onClose, reward }: IntroProps) {
       figure={<QuestFigure art="slack" />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
-      confirmLabel={t(($) => {
-        return $.chat.agentPage.getStarted.intro.slack.confirm;
-      })}
-      onConfirm={() => {
-        if (installUrl === null) {
-          onConfirm();
-          return;
-        }
-        openFreshOAuth(installUrl);
-        onClose();
-      }}
+      confirm={
+        installUrl === null ? (
+          <IntroLink pathname={ROUTES.works} onClose={onClose}>
+            {confirmLabel}
+          </IntroLink>
+        ) : (
+          <Button
+            type="button"
+            onClick={() => {
+              openFreshOAuth(installUrl);
+              onClose();
+            }}
+            data-testid="quest-intro-confirm"
+          >
+            {confirmLabel}
+          </Button>
+        )
+      }
     >
       <IntroNote>
         {t(($) => {
@@ -300,7 +332,11 @@ function SlackIntro({ onConfirm, onClose, reward }: IntroProps) {
   );
 }
 
-function InviteIntro({ onConfirm, onClose, reward }: IntroProps) {
+function InviteIntro({
+  onConfirm,
+  onClose,
+  reward,
+}: IntroProps & { readonly onConfirm: () => void }) {
   const { t } = useTranslation();
   return (
     <IntroLayout
@@ -314,10 +350,17 @@ function InviteIntro({ onConfirm, onClose, reward }: IntroProps) {
       figure={<QuestFigure art="invite" />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
-      confirmLabel={t(($) => {
-        return $.chat.agentPage.getStarted.intro.invite.confirm;
-      })}
-      onConfirm={onConfirm}
+      confirm={
+        <Button
+          type="button"
+          onClick={onConfirm}
+          data-testid="quest-intro-confirm"
+        >
+          {t(($) => {
+            return $.chat.agentPage.getStarted.intro.invite.confirm;
+          })}
+        </Button>
+      }
     >
       <IntroNote>
         {t(($) => {
@@ -344,7 +387,7 @@ function InviteIntro({ onConfirm, onClose, reward }: IntroProps) {
  * assistant writes from that sentence belongs to the reader, and that is the
  * one the reward is recorded against.
  */
-function WorkflowIntro({ onConfirm, onClose, reward }: IntroProps) {
+function WorkflowIntro({ onClose, reward }: IntroProps) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
   const navigate = useSet(detachedNavigateTo$);
@@ -369,10 +412,13 @@ function WorkflowIntro({ onConfirm, onClose, reward }: IntroProps) {
       reward={reward}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
-      confirmLabel={t(($) => {
-        return $.chat.taskChips.workflows.browse;
-      })}
-      onConfirm={onConfirm}
+      confirm={
+        <IntroLink pathname={ROUTES.workflows} onClose={onClose} escape>
+          {t(($) => {
+            return $.chat.taskChips.workflows.browse;
+          })}
+        </IntroLink>
+      }
       // The step is finished by pressing a card, and a card is not a button
       // shape, so the only control with a fill would have been the way out.
       confirmIsEscape
@@ -393,14 +439,11 @@ function WorkflowIntro({ onConfirm, onClose, reward }: IntroProps) {
 
 /**
  * Says what a quest is worth before the app hands the user off.
- *
- * `onConfirm` runs the same handoff the row ran on its own, so the dialog only
- * adds the explanation; it never becomes the thing that does the work.
  */
 export function GetStartedQuestIntroDialog({
-  onConfirm,
+  onInvite,
 }: {
-  onConfirm: (key: GetStartedQuestKey) => void;
+  onInvite: () => void;
 }) {
   const openKey = useGet(questIntroKey$);
   const setOpenKey = useSet(setQuestIntroKey$);
@@ -411,10 +454,8 @@ export function GetStartedQuestIntroDialog({
   const close = () => {
     setOpenKey(null);
   };
-  const confirm = () => {
-    if (introducedKey !== null) {
-      onConfirm(introducedKey);
-    }
+  const confirmInvite = () => {
+    onInvite();
     close();
   };
   // The quest list the panel already loaded is where the price lives, so the
@@ -426,7 +467,7 @@ export function GetStartedQuestIntroDialog({
           return quest.key === introducedKey;
         })?.rewardAmount
       : undefined;
-  const props: IntroProps = { onConfirm: confirm, onClose: close, reward };
+  const props: IntroProps = { onClose: close, reward };
   const needsChoice = (connector: PlatformConnectorCatalogConnectItem) => {
     setSelectedSlug(connector.slug);
   };
@@ -456,14 +497,10 @@ export function GetStartedQuestIntroDialog({
             <ConnectorIntro {...props} onNeedsChoice={needsChoice} />
           )}
           {introducedKey === "slack" && <SlackIntro {...props} />}
-          {introducedKey === "invite" && <InviteIntro {...props} />}
-          {introducedKey === "workflow" && (
-            <WorkflowIntro
-              onConfirm={confirm}
-              onClose={close}
-              reward={reward}
-            />
+          {introducedKey === "invite" && (
+            <InviteIntro {...props} onConfirm={confirmInvite} />
           )}
+          {introducedKey === "workflow" && <WorkflowIntro {...props} />}
         </DialogContent>
       </Dialog>
       <QuestConnectModal />

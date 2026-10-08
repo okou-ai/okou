@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.4...runner-storage-v0.2.5) (2026-10-08)
+
+
+### Documentation
+
+* **rust:** document public storage telemetry contract ([#37990](https://github.com/okou-ai/okou/issues/37990)) ([b175f81](https://github.com/okou-ai/okou/commit/b175f81cc9214c967b309b6372fdd74099149152))
+
+
+### Refactoring
+
+* assemble current run inputs without agent configuration ([#38004](https://github.com/okou-ai/okou/issues/38004)) ([22efd4b](https://github.com/okou-ai/okou/commit/22efd4b6b34872c0585a0d4c3778cb3b59d9d100))
+
 ## [0.2.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.3...runner-storage-v0.2.4) (2026-10-08)
 
 ## [0.2.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.2...runner-storage-v0.2.3) (2026-10-07)

@@ -741,16 +741,9 @@ export default [
       // has actually connected, so these exact byte, deadline, identity,
       // retention and language-precedence boundaries have no HTTP ingress.
       "src/signals/services/__tests__/morning-brief-composition.test.ts",
-      // A physical relation versus a compatibility view cannot be selected
-      // through the production API. This focused PostgreSQL test proves the
-      // exact Agent Draft writer through both rollout targets.
-      "src/signals/services/__tests__/agent-draft-write.service.test.ts",
       // Trigger presence is a deployment boundary, not an HTTP input. Private
       // schemas exercise the entitlement writer, rollback, and actual locks.
       "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
-      // OAuth trigger presence, config-key movement and row-lock interleavings
-      // require isolated PostgreSQL schemas outside the product API boundary.
-      "src/signals/services/__tests__/custom-connector-oauth-write.service.test.ts",
       // Hosting trigger coexistence, ownership locks and allocation rollback
       // require isolated PostgreSQL schemas; route suites cover product APIs.
       "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
@@ -904,16 +897,9 @@ export default [
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // A physical relation versus a compatibility view cannot be selected
-      // through the production API. This focused PostgreSQL test proves the
-      // exact Agent Draft writer through both rollout targets.
-      "src/signals/services/__tests__/agent-draft-write.service.test.ts",
       // Trigger presence is a deployment boundary, not an HTTP input. Private
       // schemas exercise the entitlement writer, rollback, and actual locks.
       "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
-      // OAuth trigger presence, config-key movement and row-lock interleavings
-      // require isolated PostgreSQL schemas outside the product API boundary.
-      "src/signals/services/__tests__/custom-connector-oauth-write.service.test.ts",
       // Hosting trigger coexistence, ownership locks and allocation rollback
       // require isolated PostgreSQL schemas; route suites cover product APIs.
       "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
