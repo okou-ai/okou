@@ -1898,6 +1898,13 @@
       "when": 1791464547115,
       "tag": "1348_connector_catalog_payload_independent_api",
       "breakpoints": true
+    },
+    {
+      "idx": 1349,
+      "version": "7",
+      "when": 1791468635481,
+      "tag": "1349_drop_connector_catalog_payload",
+      "breakpoints": true
     }
   ]
 }

@@ -347,6 +347,37 @@ and never acquires a host token. Existing installation and chat host identities
 are preserved. Legacy contraction requires the Desktop version floor and API
 serving/rollback drain. See [the full contract](desktop-session-auth.md).
 
+## Connector catalog payload contraction (not yet production accepted)
+
+Migration `1349_drop_connector_catalog_payload` physically drops only
+`connector_catalog_entries.payload`. The canonical schema and runtime now share
+one payload-free table declaration with the same `(hash, slug)` primary key and
+required projections; the existing runtime export path remains supported.
+No retained generation, projection, pointer, Run/permission capture, preparation
+receipt or skill registration is rewritten or deleted. Publisher hashing and
+permission-summary derivation are unchanged; an existing-hash retry still does
+not update stored summaries.
+
+**Release gate.** Do not merge or release this contraction until a separate
+successful production release contains preparation migration 1348 and its
+payload-independent API, and the outgoing dual-writing API has demonstrably
+exited. Do not ship preparation and DROP in the same production workflow run:
+migrations execute before API promotion, so DROP would break the serving dual
+writer. A merged PR, green CI or a historical payload-only drain confirmation
+is not evidence that this new boundary has passed. The official rollback
+resolver must continue requiring the canonical first-parent main introduction
+commit for preparation migration 1348; do not remove or lower that floor.
+
+At implementation refresh on 2026-10-08, the latest successful production API
+[promotion job](https://github.com/okou-ai/okou/actions/runs/37767112573/job/113281739918)
+was at `c069adbf01450fffc71d9e011025924792524d57`, which does not contain
+[#38099](https://github.com/okou-ai/okou/pull/38099). Preparation is merged at
+`9d3a1b406f1f44b224c33046162df01a77e035f8`, not production accepted.
+The contraction PR must remain draft until the release and drain receipts exist.
+This change does not execute production migrations, approve a release or close
+[#37899](https://github.com/okou-ai/okou/issues/37899); acceptance follows a
+successful contraction production release and verification.
+
 ## Connector catalog payload-independent API (preparatory release)
 
 Migration `1348_connector_catalog_payload_independent_api` keeps the physical
