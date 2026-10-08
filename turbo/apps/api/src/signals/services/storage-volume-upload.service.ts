@@ -18,9 +18,14 @@ import {
 } from "./storage-version-registration.service";
 import { piResourceProjectionValues } from "./pi-resource-version-index.service";
 import {
-  consumePublicationFence,
+  generationScopeCondition,
+  publicationScopeCondition,
   type StoragePublicationFence,
 } from "./storage-publication-fence.service";
+import {
+  storagePublicationGenerations,
+  storagePublicationTokens,
+} from "@okouai/db/schema/storage-publication-fence";
 
 interface UploadedVolume {
   readonly storageName: string;
@@ -143,7 +148,19 @@ const commitPreparedVolumeUpload$ = command(
       if (!fence) {
         return;
       }
-      if (!(await consumePublicationFence(tx, fence, nowDate()))) {
+      // Own generation before token, matching reservation and cleanup order.
+      const [generation] = await tx
+        .update(storagePublicationGenerations)
+        .set({ updatedAt: nowDate() })
+        .where(generationScopeCondition(fence.scope))
+        .returning({ generation: storagePublicationGenerations.generation });
+      const [publication] = generation
+        ? await tx
+            .delete(storagePublicationTokens)
+            .where(publicationScopeCondition(fence))
+            .returning({ token: storagePublicationTokens.token })
+        : [];
+      if (!publication) {
         throw new StalePublicationFenceError(
           "Storage publication was superseded before Storage HEAD commit",
         );

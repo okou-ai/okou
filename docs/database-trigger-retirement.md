@@ -171,10 +171,17 @@ complete their metadata writes. `upsertOrgMetadataFixture` already writes the
 managed entitlement. Deliberately divergent entitlement fixtures use the same
 canonical runtime mapping and explicit status.
 
-The #32575 cleanup removes the entitlement suite's outgoing private-schema
-variants after its production gate. Its current-schema infrastructure cases
-retain historical corruption, constraint-failure rollback and lock-contention
-coverage. Shared private fixtures remain for the other #33747 domains.
+Those remaining private setup routes are unprocessed inventory, not an exception
+to the current public-construction rule. Their existence in this writer
+inventory is historical/implementation evidence, not testing guidance.
+
+The #32575 cleanup removed the entitlement suite's outgoing private-schema
+variants after its production gate.
+[#37440 batch 006](implementation/issue-37440-batches/batch-006.md) now retires
+the five remaining private service cases and their three local helpers. Their
+manual/legacy entitlement, missing-row corruption and injected rollback
+guarantees are no longer asserted by API tests. Production writers and schema
+validators remain unchanged; other private fixtures require separate review.
 
 ### Repair and backfill writes
 
@@ -202,10 +209,11 @@ trigger served outgoing API statements; current API writers do not depend on it.
 The prepared compatibility matrix covered retained triggers, absent entitlement
 triggers and contracted columns. After the #32575 cleanup gate, the permanent
 entitlement schema validator exercises canonical writes on both historical
-migration replay and a regenerated schema. Current API infrastructure cases
-inject constraints, historical corrupt state and a verified blocked writer in
-private current-schema tables. Routine billing and invitation behavior is
-verified through production HTTP routes and App pages.
+migration replay and a regenerated schema. That historical preparation evidence
+does not authorize current API cases to inject constraints or corrupt rows.
+Batch 006 records the retired entitlement guarantees explicitly. Normal billing
+and invitation behavior belongs at its production HTTP/UI boundary; this
+retirement does not certify unrelated fixtures in those suites.
 
 The 1132 release boundary above records the prepared artifact and enforced
 rollback floor. #34317 adds migration 1137 to remove the two physical invitation
@@ -411,7 +419,7 @@ same behavior. Production reconciliation remains a product responsibility.
 | `signals/services/org-deletion-billing.service.ts`                                                                 | Reads billing correlations to cancel Stripe objects. It does not delete local roots; cancellation callbacks/reconciliation use the explicit lifecycle writer. Roots have no organization foreign key and do not disappear through an organization cascade. Preserve existing billing retention.                                                                           |
 | `signals/routes/test-usage-pack-subscription-state.ts`                                                             | Current seed and both root cleanup operations use the explicit boundary. Timestamp/legacy Checkout correlation actions change neither status nor organization. The explicitly named pre-serialization fixture deliberately reconstructs historical competing roots and calls the explicit repair operation. It is fixture-owned setup, not a current admission path.      |
 | `signals/routes/test-billing-reconciliation-state.ts`                                                              | Setup and cleanup lock their complete, uniquely owned organization set before writing any root, allocation or organization metadata. Guard release is part of cleanup.                                                                                                                                                                                                    |
-| `turbo/packages/db/scripts/test-migration-consistency-schema.ts`                                                   | Checks contracted inventory and permanent guard uniqueness/range. Private API suites own pending behavior and historical writer controls. No current numbered external-data migration writes these roots. Shipped migrations and historical numbered scripts remain unchanged.                                                                                            |
+| `turbo/packages/db/scripts/test-migration-consistency-schema.ts`                                                   | Checks contracted inventory and permanent guard uniqueness/range. Batch 006 retires the private pending-snapshot service suite; it does not alter these permanent schema checks. No current numbered external-data migration writes these roots. Shipped migrations and historical numbered scripts remain unchanged.                                                     |
 
 There is no current product/admin endpoint for moving a root to another
 organization or physically deleting it. A new administrative writer must use
@@ -488,15 +496,24 @@ bounded batches without pre-acquiring subordinate locks. Never reset a live
 guard to zero to force a purchase through. Keep raw historical fixtures and
 permanent migrations as evidence, not executable current repair instructions.
 
-The private PostgreSQL suite exercises retained/absent triggers, guard/index
-prerequisites, admission, duplicate requests, all terminal releases, deletion,
-rollback, grandfathered rows, repair, organization movement and deterministic
-blocked prepared/outgoing transactions. API route coverage exercises Checkout,
-saved-card confirmation, webhook/invoice processing, migration, scoped billing
-cron and cleanup. A cron-expired snapshot must permit a subsequent real
-Checkout request. Run the same routes in isolated UTC databases with the
-trigger retained and with only this trigger/function absent; never drop shared
-suite triggers to select a test mode.
+Preparation-era verification selected retained/absent triggers and exercised
+guard/index prerequisites and prepared/outgoing transactions. Preserve those
+historical receipts; they are not instructions to recreate private test modes.
+Batch 006 retires the remaining 12 private pending-snapshot declarations
+(18 expanded executions), including exact row/count admission, forced SQL
+interleaving, six raw status releases, deletion/rollback, grandfathered rows,
+organization movement and corrupt-count repair. These precise internal
+guarantees have no claimed public replacement.
+
+Existing public Plan preview/confirmation concurrency remains covered by
+`billing-checkout.test.ts`, using Clerk/Stripe boundary mocks and HTTP 200/409
+observations. The usage-pack Checkout concurrency/replacement scenario also
+retains its one-payable-Stripe-Session and unchanged public billing assertions;
+its separate private teardown remains unprocessed. Neither proves raw guard
+counts or the removed six-status matrix. Other billing/cron/fixture consumers
+require their own scenario review; a protected cron is not a user-accessible
+construction path. Production writers, repair semantics, locks and constraints
+remain unchanged.
 
 Migration 1132 removes the shipped trigger/function and retains the guard
 table, unique index and count constraint. Its release record must include the

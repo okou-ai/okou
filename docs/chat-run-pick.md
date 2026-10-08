@@ -650,10 +650,13 @@ signing and assembly. Cache writes occur after pending commit. Compare cache
 read/write cost with direct in-memory signing before claiming this cache improves
 latency. Nested spans must not be added to their enclosing duration.
 
-Storage cache tests distinguish production from cache consumption. Chat tests
-use enqueue/pick and Runner claim to verify cache creation and reuse. A scoped
-PostgreSQL fault rejects only the selected cache write after a pending run and
-job exist; the run must still be claimable with a complete URL. Deferred external
+Chat cache tests use enqueue/pick and Runner claim alongside private cache
+read/write fixtures; those remaining paths are not certified public coverage.
+[#37440 batch 006](implementation/issue-37440-batches/batch-006.md) retires the
+scoped PostgreSQL fault case and its trigger helper. Its exact proof that a
+cache write fails after pending Run/job creation while a claim still returns a
+complete fresh URL has no public replacement. Production post-commit ordering
+and cache failure handling remain unchanged. Deferred external
 KMS and signing observations verify that both start before either completes,
 while the input remains unconsumed and no runner job is available until KMS
 finishes. An Official automation test holds the real Gmail label lookup during

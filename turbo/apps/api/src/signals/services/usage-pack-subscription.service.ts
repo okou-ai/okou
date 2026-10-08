@@ -1666,9 +1666,7 @@ async function claimUsagePackPurchase(
                     preview.usagePackSubscriptionId,
                 }),
               ),
-              notExists(
-                inFlightPlanPurchaseQuery(tx, orgId, planClaimStaleBefore),
-              ),
+              notExists(inFlightPlanPurchaseQuery(orgId, planClaimStaleBefore)),
             ),
           )
           .returning({ id: usagePackSubscriptions.id });

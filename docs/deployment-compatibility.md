@@ -122,7 +122,8 @@ skips to 5 and 4 stays unsupported everywhere.
 validate the generation 5 shape. The API claim gate, the CLI launch reader,
 the Pi runtime and the guest-agent request diagnostics accept it. Writers are
 gated by the `piOpenRouterChatCompletions` feature switch, off by default;
-with it off every captured route is unchanged.
+with it off every captured route is unchanged. (The switch was later removed; see
+[switch removal](#switch-removed-2026-10-08).)
 
 **Activation.** Enable the switch only after every serving Runner advertises
 generation 5. The claim gate never hands a generation 5 job to an older
@@ -147,6 +148,27 @@ Haiku 5.5, DeepSeek V4.1 Flash). The Codex projection is unchanged.
 **Rollback.** Disabling the switch returns new launches to Responses. Rolling
 the Runner back below this release while the switch is on leaves generation 5
 jobs queued; disable the switch first.
+
+### Switch removed (2026-10-08)
+
+The `piOpenRouterChatCompletions` switch is gone and its enabled behavior is
+permanent: every new Pi OpenRouter launch (Auto `okou-1.0`, Pi memory
+maintenance and API-side Stage 1) captures the generation 5 Chat Completions
+route. The API no longer writes generation 1 Responses configs for OpenRouter.
+
+**Runner prerequisite.** Production Runners already advertise generation 5:
+`runner-rs-v0.220.22` (built from a `main` commit that contains #37987) was
+promoted to production on 2026-10-08 07:59 UTC. A Runner without generation 5
+still never claims these jobs; they stay queued until a capable Runner claims
+them, so a Runner rollback below that release stalls Pi OpenRouter launches.
+
+**Readers stay.** Already captured Runs keep their route. Generation 1/2/3
+readers in the API claim gate, CLI, Pi runtime and Runner remain until those
+stored contexts can no longer be pending.
+
+**API rollback.** Rolling the API back to a release that still has the switch
+(off by default) returns new launches to Responses. A release before #37987
+cannot read generation 5 and leaves those jobs unclaimable.
 
 ## Official Workflow canonical queue contexts (#29908, writer cutover)
 
@@ -930,6 +952,36 @@ shapes. The old API may still reject a catalog whose redundant metadata differs
 from the stored version; the new API accepts it and retains the storage-owned
 metadata. Rolling back restores that stricter catalog acceptance behavior.
 No production migration, deployment or storage write is executed by this PR.
+
+## Connector permission baseline retirement
+
+New API writers no longer persist `connectorPermissionBaseline` in Runner job
+execution contexts, including memory-maintenance jobs. Claim resolves the
+current connector catalog by the queued builtin slugs in one pointer/entry
+query, then overlays current user grants. Connector targets, captured credentials,
+custom connector policies, model-provider policies and Runner wire fields retain
+their existing owners. The immutable catalog entry key remains `(hash, slug)`;
+this change does not garbage-collect catalog generations or remove OAuth
+`contract_hash` identities.
+
+Stored-context readers strip the retired field, including malformed and future
+baseline values, without changing Pi-generation negotiation or invalid-context
+failure handling. Migration `1348_retire_connector_permission_baseline` removes
+existing queue baselines without changing the rest of each execution context.
+
+- **Old writer / new reader:** an old queued baseline is ignored; claim always
+  refreshes permissions against the current catalog and current grants.
+- **New writer / old reader:** the field was optional. The old reader takes its
+  existing missing-baseline current-catalog path.
+- **Old / new Runner:** the baseline was API-only and never part of the claim
+  response, so there is no Runner or CLI version floor.
+
+The migration may run before API promotion. Outgoing API writers can still add
+baselines after it runs; those rows drain through claim, terminal deletion or
+queue expiry (two hours). Therefore absence from every queue row is only true
+once outgoing writers and their queued jobs have drained. Rolling back the API
+restores baseline writes but can still claim new baseline-free jobs. No release
+or production activation is performed by this change.
 
 ## Connector catalog business readers on pointer and immutable entries
 
@@ -9483,32 +9535,25 @@ protocols keep their existing shapes, so a running older Runner can finish the
 run it already owns. This change does not restore the removed thread/session
 foreign keys.
 
-## Connector permission baseline retirement
+## New-workspace onboarding credits become personal usage packs (2026-10-08)
 
-New API writers no longer persist `connectorPermissionBaseline` in Runner job
-execution contexts, including memory-maintenance jobs. Claim resolves the
-current connector catalog by the queued builtin slugs in one pointer/entry
-query, then overlays current user grants. Connector targets, captured credentials,
-custom connector policies, model-provider policies and Runner wire fields retain
-their existing owners. The immutable catalog entry key remains `(hash, slug)`;
-this change does not garbage-collect catalog generations or remove OAuth
-`contract_hash` identities.
+Limited-free workspace bootstrap gives its creator 1,000 member-owned usage-pack
+`bonus` credits with the unchanged 30-day expiry, instead of increasing the shared
+organization balance. Eligibility and paid-tier race handling are unchanged. No
+subscription or allocation is created, and existing shared onboarding grants are
+not migrated, refilled, or extended.
 
-Stored-context readers strip the retired field, including malformed and future
-baseline values, without changing Pi-generation negotiation or invalid-context
-failure handling. Migration `1348_retire_connector_permission_baseline` removes
-existing queue baselines without changing the rest of each execution context.
+Issuance keeps the existing `(org_id, limited-free-onboarding)` expiry-record
+receipt as a zero-amount, zero-remaining reservation. That receipt and the personal
+grant commit in the bootstrap transaction. Legacy receipts, including spent or
+expired ones, still prevent another award; new reservations cannot be displayed
+or spent as shared credits. The receipt also prevents an old API or rollback
+writer from awarding shared onboarding credits after a new personal grant.
 
-- **Old writer / new reader:** an old queued baseline is ignored; claim always
-  refreshes permissions against the current catalog and current grants.
-- **New writer / old reader:** the field was optional. The old reader takes its
-  existing missing-baseline current-catalog path.
-- **Old / new Runner:** the baseline was API-only and never part of the claim
-  response, so there is no Runner or CLI version floor.
-
-The migration may run before API promotion. Outgoing API writers can still add
-baselines after it runs; those rows drain through claim, terminal deletion or
-queue expiry (two hours). Therefore absence from every queue row is only true
-once outgoing writers and their queued jobs have drained. Rolling back the API
-restores baseline writes but can still claim new baseline-free jobs. No release
-or production activation is performed by this change.
+Old and new APIs already read personal usage-pack balances for billing and credit
+admission. During a rolling deployment, whichever bootstrap writer wins the common
+receipt determines whether a newly initialized workspace receives the old shared
+grant or the new personal grant; the other writer cannot award both. Existing
+clients use their unchanged billing endpoints. No database migration, client
+version floor, or Runner protocol change is required. This change does not deploy
+or activate production changes.

@@ -91,7 +91,6 @@ import {
 } from "./pi-memory-builtin-config";
 import {
   materializePreparedPiProvider,
-  piOpenRouterChatCompletionsEnabled,
   resolvePlatformMemoryPiModelConfig,
   resolvePreparedPiModelConfig,
 } from "./pi-sandbox-config";
@@ -376,18 +375,12 @@ async function prepareMaintenanceModel(
           sourceId: credential.pin.modelProviderId ?? "",
           piExecution: true,
         });
-  const openrouterChatCompletions = piOpenRouterChatCompletionsEnabled(
-    admitted.featureSwitchContext,
-  );
-  const piInput = { catalog, piExecution: true, openrouterChatCompletions };
+  const piInput = { catalog, piExecution: true };
   const modelProvider = resolvedProvider
     ? credential.pin.modelProvider === "built-in"
       ? {
           ...resolvedProvider,
-          piModelConfig: resolvePlatformMemoryPiModelConfig(
-            resolvedProvider,
-            openrouterChatCompletions,
-          ),
+          piModelConfig: resolvePlatformMemoryPiModelConfig(resolvedProvider),
         }
       : materializePreparedPiProvider(piInput, resolvedProvider)
     : null;
