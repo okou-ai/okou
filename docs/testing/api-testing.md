@@ -118,6 +118,14 @@ route integration test is supposed to cover.
 
 ## External Behavior Boundary
 
+First identify the useful behavior and the real caller that can trigger it.
+Evaluate whether the case protects a normal lifecycle or overtests a contrived
+internal state or race. Delete unjustified coverage together with unused support;
+rewrite valuable behavior through an existing normal API or genuine provider
+webhook. If those interfaces cannot construct the case, reconsider its value
+instead of treating an existing test as permission to keep private setup. See
+the [scenario decision procedure](./testing-external-behavior.md#cases-without-public-construction).
+
 API route tests must construct, drive, and observe a case through production
 interfaces available to the real caller. Follow the complete chain, including
 shared fixtures and nested helpers. A final public response does not make

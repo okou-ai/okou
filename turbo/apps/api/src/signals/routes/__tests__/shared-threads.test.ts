@@ -14,7 +14,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { rejectSharedThreadArtifactWrites } from "../../../test-fixtures/shared-thread";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { sharedThreadRoutes } from "../shared-threads";
@@ -519,42 +518,6 @@ describe("optional shared-thread titles", () => {
     mockGoogleText();
     const response = await accept(client().create(requestBody(fixture)), [413]);
     expect(response.body.error.code).toBe("SHARED_THREAD_TOO_LARGE");
-    await expectNoShare(fixture);
-  });
-
-  it("rolls back the share when the real artifact write fails after title degradation", async () => {
-    const fixture = await prepareShare();
-    if (!fixture.actor.orgId) {
-      throw new Error("Expected a test-owned organization");
-    }
-    // The scoped infrastructure fault is the only non-public setup: no user
-    // input can force this second transaction statement to fail independently.
-    const release = await rejectSharedThreadArtifactWrites(
-      fixture.actor.orgId,
-      context.signal,
-    );
-    onTestFinished(release);
-    mockGoogleText();
-    server.use(
-      http.post(endpoint, () => {
-        return new HttpResponse(null, { status: 429 });
-      }),
-    );
-    // The client can choose the share ID before creating it. This lets public
-    // reads prove rollback without recovering an ID from diagnostic reporting.
-    const id = randomUUID();
-    await expect(
-      client().create({
-        ...requestBody(fixture),
-        body: { eventIds: [fixture.eventId], id },
-      }),
-    ).rejects.toThrow(
-      "Unknown response status 500 for POST /api/chat-threads/:threadId/shared-threads",
-    );
-    await flushWaitUntilForTest();
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledOnce();
-    await accept(client().get({ params: { id } }), [404]);
-    await accept(client().meta({ params: { id } }), [404]);
     await expectNoShare(fixture);
   });
 });
