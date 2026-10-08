@@ -260,7 +260,7 @@ const guardMaintenancePreparation$ = command(
       return notFound("Pi memory maintenance checkpoint already committed");
     }
     const [active] = await db
-      .select()
+      .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
       .from(piMemoryPhase2Jobs)
       .where(storageMaintenanceJobCondition(binding, nowDate()))
       .limit(1)
