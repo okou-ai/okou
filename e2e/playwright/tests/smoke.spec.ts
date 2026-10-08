@@ -19,7 +19,10 @@ async function expectChatShellInPlace(workspace: Locator): Promise<void> {
           "[data-chat-thread-container-id] > header",
         );
         const composer = pane.querySelector("[data-chat-composer]");
-        if (!header || !composer) {
+        const card = composer?.querySelector(
+          '[data-slot="chat-composer-card"]',
+        );
+        if (!header || !composer || !card) {
           throw new Error("Expected the chat header and composer");
         }
         const top = pane.getBoundingClientRect().top + pane.clientTop;
@@ -30,10 +33,20 @@ async function expectChatShellInPlace(workspace: Locator): Promise<void> {
           composerInset: Math.round(
             top + pane.clientHeight - composer.getBoundingClientRect().bottom,
           ),
+          bottomGap: Math.round(
+            composer.getBoundingClientRect().bottom -
+              card.getBoundingClientRect().bottom,
+          ),
         };
       }),
     )
-    .toEqual({ scrollTop: 0, overflow: 0, headerInset: 0, composerInset: 0 });
+    .toEqual({
+      scrollTop: 0,
+      overflow: 0,
+      headerInset: 0,
+      composerInset: 0,
+      bottomGap: 16,
+    });
 }
 
 test("send a message and receive the assistant reply", async ({ page }) => {
@@ -103,5 +116,38 @@ test("send a message and receive the assistant reply", async ({ page }) => {
       await editor.fill("");
       await expectChatShellInPlace(workspace);
     }
+  });
+
+  await test.step("share the composer gutter with the mobile safe area", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const workspace = page.getByTestId("workspace-inset");
+    const composer = workspace.locator("[data-chat-composer]");
+    const card = composer.locator('[data-slot="chat-composer-card"]');
+
+    // Desktop CI has no home indicator. Supply its environment inset and
+    // exercise both directions of the keyboard's safe-area transition.
+    for (const inset of [0, 24, 0, 34, 0]) {
+      await page.evaluate((value) => {
+        document.documentElement.style.setProperty("--sab", `${value}px`);
+      }, inset);
+      await expect
+        .poll(async () => {
+          const footerBounds = await composer.boundingBox();
+          const cardBounds = await card.boundingBox();
+          if (!footerBounds || !cardBounds) {
+            throw new Error("Expected the chat composer to be rendered");
+          }
+          return Math.round(
+            footerBounds.y +
+              footerBounds.height -
+              cardBounds.y -
+              cardBounds.height,
+          );
+        })
+        .toBe(Math.max(16, inset));
+    }
+    await page.evaluate(() => {
+      document.documentElement.style.removeProperty("--sab");
+    });
   });
 });

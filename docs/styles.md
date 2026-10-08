@@ -316,9 +316,12 @@ still painting when it meets a clipping ancestor or the pane edge ends in a
 visible straight seam instead of fading out, and the gap is not a place to
 absorb an arbitrarily wide shadow.
 
-The chat footer keeps both its 8px content gutter and `pb-safe-or-2` padding
-inside the composer's scrollport. Both take real layout space; negative margins
-must not offset them. This preserves the 16px desktop gap, lets the veil fade
+The chat footer owns one bottom reserve inside the composer's scrollport with
+`pb-safe-or-4`: the larger of the 16px gutter and the keyboard-aware safe area.
+The content wrapper adds no bottom padding. The gutter and safe area protect
+the same space; adding them would enlarge the blank when a mobile browser
+restores its safe area after dismissing the keyboard. Negative margins must
+not offset the reserve. This preserves the 16px desktop gap, lets the veil fade
 inside the clipping boundary, and keeps the scrollport inside the footer.
 
 Standalone selectable controls use the shared `ToggleButton` and its required

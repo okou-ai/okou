@@ -4266,17 +4266,17 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
       ref={composerLayoutRef}
       className="relative shrink-0"
     >
-      {/* Keep both the content gutter and safe-area padding inside this
-          scrollport, so the focus veil fades within the real bottom gap.
-          Negative margins would extend its box beyond the footer and make
-          the workspace itself scrollable. */}
+      {/* The gutter and safe area share one bottom reserve. Adding padding
+          on the content as well makes the gap grow beyond the safe area
+          when a mobile browser restores it after dismissing the keyboard.
+          Keep that reserve inside the scrollport without negative margins. */}
       <div
         className={cn(
-          "overflow-y-auto [scrollbar-gutter:stable] pb-safe-or-2 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
+          "overflow-y-auto [scrollbar-gutter:stable] pb-safe-or-4 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
           standalonePwa && "overscroll-contain",
         )}
       >
-        <div className="mx-auto max-w-[900px] pb-2">
+        <div className="mx-auto max-w-[900px]">
           <ChatComposer signals={thread.composer} />
           <PersonalClaudeCodeDeviceAuthDialog />
           <PersonalCodexDeviceAuthDialog />
