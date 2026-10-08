@@ -225,13 +225,19 @@ private listing/retry matrix and its forced retry endpoint. Other
 `api-bdd-storages` prepare/commit/list/download consumers still use the private
 storage-fixture route and remain unprocessed; they are not compliant examples.
 
-For bulk read notifications, `chat-thread-mark-agent-read.test.ts` creates each
-unread thread through a normal chat send and user cancellation after billing
-webhook/onboarding and personal-subscription setup. It marks the Agent read
-through the normal route, observes Ably notification payloads, and reads every
-known thread's cursor through its normal GET. A bounded sidebar indicator is
-not an exhaustive readback for a 100+ thread case. Synthetic terminal events
-and private cursor/event joins are not an alternative construction boundary.
+For mixed scenarios, remove the unsupported private phase and keep the independent
+public behavior. In `integrations.bdd.test.ts`, an unonboarded member installs Slack
+through its OAuth flow and sends signed channel/DM ingress to receive setup
+guidance; deleting a default Agent directly is unnecessary. Its queued Web/Slack
+session case uses actual Runner claims/completion and public session/event reads,
+without a SQL trigger rewriting callback branding. In
+`chat-events-model-source-context.test.ts`, ordinary sends prove 404/400 and
+external attachment-request cancellation without cancelling database queries.
+
+The bulk read notification matrix in `chat-thread-mark-agent-read.test.ts` still
+uses synthetic terminal events/private readbacks for its large cases. Batch 008's
+attempted public rewrite failed CI and was restored without credit; this matrix
+remains unprocessed, and its retained helpers are not compliant examples.
 
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).

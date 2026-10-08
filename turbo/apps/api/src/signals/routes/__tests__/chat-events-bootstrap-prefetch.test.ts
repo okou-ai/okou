@@ -11,7 +11,6 @@ import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { testContext } from "../../../__tests__/test-context";
 import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { createDeferredPromise } from "../../utils";
-import { withAgentBootstrapFailureFixture } from "../../../test-fixtures/agent-bootstrap-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   barrierQueryBinds,
@@ -765,55 +764,7 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
   });
 
-  it("rejects the input when a matching prefetch fails instead of rereading", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const clientEventId = randomUUID();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    const sent = await withAgentBootstrapFailureFixture(
-      { userId: actor.userId, orgId: actor.orgId, agentId },
-      async () => {
-        const response = await chat.requestSendEvent(
-          actor,
-          { agentId, prompt: "fail fast during preparation", clientEventId },
-          [201],
-        );
-        if (response.status !== 201) {
-          throw new Error("Expected enqueue to accept the input");
-        }
-        expect(response.body.runId).toBeNull();
-        await expect(flushWaitUntilForTest()).rejects.toThrow("Failed query");
-        return response;
-      },
-    );
-    const events = (await chat.listThreadEvents(actor, sent.body.threadId))
-      .events;
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-        error: "internal_error",
-      }),
-    );
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "internal_error",
-      }),
-    );
-    expect(
-      userMessages(events).some((message) => {
-        return (
-          message.revokesEventId === clientEventId &&
-          message.runId !== undefined
-        );
-      }),
-    ).toBeFalsy();
-  });
-
-  it("keeps an active run steerable when its unused speculative read fails", async () => {
+  it("delivers a steer input to the active authenticated Runner", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const active = await sendChatRun(actor, {
@@ -825,26 +776,22 @@ describe("chat agent bootstrap prefetch", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
-    await withAgentBootstrapFailureFixture(
-      { userId: actor.userId, orgId: actor.orgId, agentId },
-      async () => {
-        const sent = await chat.requestSendEvent(
-          actor,
-          {
-            agentId,
-            threadId: active.threadId,
-            prompt: "steer the existing run",
-            clientEventId,
-          },
-          [201],
-        );
-        if (sent.status !== 201) {
-          throw new Error("Expected the steer input to be accepted");
-        }
-        expect(sent.body.runId).toBeNull();
-        await flushWaitUntilForTest();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: active.threadId,
+        prompt: "steer the existing run",
+        clientEventId,
       },
+      [201],
     );
+    if (sent.status !== 201) {
+      throw new Error("Expected the steer input to be accepted");
+    }
+    expect(sent.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+
     await expect(
       api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
     ).resolves.toStrictEqual({
