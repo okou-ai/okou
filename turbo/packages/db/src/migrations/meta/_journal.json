@@ -1902,8 +1902,15 @@
     {
       "idx": 1349,
       "version": "7",
-      "when": 1791468635481,
-      "tag": "1349_drop_connector_catalog_payload",
+      "when": 1791466652113,
+      "tag": "1349_retire_connector_permission_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1350,
+      "version": "7",
+      "when": 1791471764350,
+      "tag": "1350_drop_connector_catalog_payload",
       "breakpoints": true
     }
   ]

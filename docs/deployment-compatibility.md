@@ -349,7 +349,7 @@ serving/rollback drain. See [the full contract](desktop-session-auth.md).
 
 ## Connector catalog payload contraction (not yet production accepted)
 
-Migration `1349_drop_connector_catalog_payload` physically drops only
+Migration `1350_drop_connector_catalog_payload` physically drops only
 `connector_catalog_entries.payload`. The canonical schema and runtime now share
 one payload-free table declaration with the same `(hash, slug)` primary key and
 required projections; the existing runtime export path remains supported.
@@ -368,12 +368,18 @@ is not evidence that this new boundary has passed. The official rollback
 resolver must continue requiring the canonical first-parent main introduction
 commit for preparation migration 1348; do not remove or lower that floor.
 
-At implementation refresh on 2026-10-08, the latest successful production API
-[promotion job](https://github.com/okou-ai/okou/actions/runs/37767112573/job/113281739918)
-was at `c069adbf01450fffc71d9e011025924792524d57`, which does not contain
-[#38099](https://github.com/okou-ai/okou/pull/38099). Preparation is merged at
-`9d3a1b406f1f44b224c33046162df01a77e035f8`, not production accepted.
-The contraction PR must remain draft until the release and drain receipts exist.
+Preparation [#38099](https://github.com/okou-ai/okou/pull/38099), merged at
+`9d3a1b406f1f44b224c33046162df01a77e035f8`, shipped independently in API 1.715.0
+(release [#38145](https://github.com/okou-ai/okou/pull/38145)) at
+`a17b5e424a8944d832875c8097c0a4330d172bc9`. The successful
+[production API promotion job](https://github.com/okou-ai/okou/actions/runs/37794041015/job/113376087119)
+completed production migrations before API promotion and finished at
+2026-10-08 14:56:47 UTC. Git ancestry confirms it contains the canonical
+preparation commit. Ethan subsequently confirmed that the old serving API had
+exited and authorized review/merge of the contraction. This is the operator's
+drain confirmation, not an independently measured invocation inventory.
+The separate preparation-release boundary is satisfied; physical contraction
+is not yet production accepted.
 This change does not execute production migrations, approve a release or close
 [#37899](https://github.com/okou-ai/okou/issues/37899); acceptance follows a
 successful contraction production release and verification.
@@ -1025,6 +1031,36 @@ shapes. The old API may still reject a catalog whose redundant metadata differs
 from the stored version; the new API accepts it and retains the storage-owned
 metadata. Rolling back restores that stricter catalog acceptance behavior.
 No production migration, deployment or storage write is executed by this PR.
+
+## Connector permission baseline retirement
+
+New API writers no longer persist `connectorPermissionBaseline` in Runner job
+execution contexts, including memory-maintenance jobs. Claim resolves the
+current connector catalog by the queued builtin slugs in one pointer/entry
+query, then overlays current user grants. Connector targets, captured credentials,
+custom connector policies, model-provider policies and Runner wire fields retain
+their existing owners. The immutable catalog entry key remains `(hash, slug)`;
+this change does not garbage-collect catalog generations or remove OAuth
+`contract_hash` identities.
+
+Stored-context readers strip the retired field, including malformed and future
+baseline values, without changing Pi-generation negotiation or invalid-context
+failure handling. Migration `1349_retire_connector_permission_baseline` removes
+existing queue baselines without changing the rest of each execution context.
+
+- **Old writer / new reader:** an old queued baseline is ignored; claim always
+  refreshes permissions against the current catalog and current grants.
+- **New writer / old reader:** the field was optional. The old reader takes its
+  existing missing-baseline current-catalog path.
+- **Old / new Runner:** the baseline was API-only and never part of the claim
+  response, so there is no Runner or CLI version floor.
+
+The migration may run before API promotion. Outgoing API writers can still add
+baselines after it runs; those rows drain through claim, terminal deletion or
+queue expiry (two hours). Therefore absence from every queue row is only true
+once outgoing writers and their queued jobs have drained. Rolling back the API
+restores baseline writes but can still claim new baseline-free jobs. No release
+or production activation is performed by this change.
 
 ## Connector catalog business readers on pointer and immutable entries
 

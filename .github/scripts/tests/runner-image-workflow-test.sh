@@ -161,6 +161,7 @@ jq -e '
   (.jobs.prepare | has("container") | not) and
   .jobs.prepare.permissions.actions == "read" and
   .jobs.prepare.outputs["runner-binary-compile-matrix"] == "${{ steps.binary-plan.outputs.compile-matrix }}" and
+  .jobs.prepare.outputs["runner-binary-hit-matrix"] == "${{ steps.binary-plan.outputs.hit-matrix }}" and
   .jobs.prepare.outputs["runner-binary-hit-references"] == "${{ steps.binary-plan.outputs.hit-references }}" and
   any(.jobs.prepare.steps[];
     .id == "binary-plan" and
@@ -310,17 +311,18 @@ fi
 jq -e '
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
-    .key] == ["compile"]) and
+    .key] == ["compile", "prewarm-rust-cache"]) and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; (.uses // "") | startswith("mozilla-actions/sccache-action@"))) |
     .key] == []) and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |
-    .key] == ["compile"])
-' <<<"$workflow_json" >/dev/null || fail "compiler caches must exist only in the miss-only compile job"
+    .key] == ["compile", "prewarm-rust-cache"])
+' <<<"$workflow_json" >/dev/null || fail "compiler caches must stay in the miss-only compiler and main dependency prewarmer"
 
 jq -e '
   .jobs.build.name == "Build runner image (${{ matrix.label }})" and
+  (.jobs.build.needs | sort) == ["compile", "prepare"] and
   .jobs.build["runs-on"] == "ubuntu-latest" and
   .jobs.build["timeout-minutes"] == 20 and
   (.jobs.build | has("container") | not) and

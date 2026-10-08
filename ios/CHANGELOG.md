@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.7](https://github.com/okou-ai/okou/compare/ios-v0.6.6...ios-v0.6.7) (2026-10-08)
+
+
+### Bug Fixes
+
+* **ios:** stabilize conversation row heights while scrolling ([#38077](https://github.com/okou-ai/okou/issues/38077)) ([ca6ff65](https://github.com/okou-ai/okou/commit/ca6ff65fb0f20601c1495c3f88a1da3c05410374))
+
 ## [0.6.6](https://github.com/okou-ai/okou/compare/ios-v0.6.5...ios-v0.6.6) (2026-10-08)
 
 

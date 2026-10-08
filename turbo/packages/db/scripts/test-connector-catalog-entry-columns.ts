@@ -61,7 +61,7 @@ const preparation = await readFile(
 );
 const contraction = await readFile(
   new URL(
-    "../src/migrations/1349_drop_connector_catalog_payload.sql",
+    "../src/migrations/1350_drop_connector_catalog_payload.sql",
     import.meta.url,
   ),
   "utf8",

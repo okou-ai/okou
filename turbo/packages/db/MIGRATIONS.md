@@ -124,11 +124,12 @@ are enforced by the integration ingress tests.
   projections fail with transactional DDL rollback, populated rows are unchanged,
   outgoing dual writers and column-only writers coexist, MCP remains optional,
   and the runtime ORM works after contraction migration
-  `1349_drop_connector_catalog_payload`. The contraction uses a frozen outgoing
+  `1350_drop_connector_catalog_payload`. The contraction uses a frozen outgoing
   table fixture, verifies transactional DROP rollback and preserves every
   retained hash/slug, projection and the current pointer (including historical
   and partial generations). Retain it through the production payload contraction;
-  neither preparation nor contraction is production accepted by this PR.
+  preparation shipped in API 1.715.0, while contraction still requires its own
+  successful production release and verification.
   `test-connector-catalog-columns-permanent.ts` asserts physical payload absence
   and runs current column INSERT/SELECT/RETURNING, same-hash retry (including
   unchanged stored summaries) and all ten required constraints against both

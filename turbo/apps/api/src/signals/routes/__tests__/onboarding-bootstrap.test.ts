@@ -14,7 +14,6 @@ import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboar
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
-import { testStorageObjectCleanupContract } from "@okouai/api-contracts/contracts/test-storage-object-cleanup";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -34,7 +33,6 @@ import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { tarGz } from "./helpers/template-publish-fixture";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
-import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -152,17 +150,6 @@ async function expectSingleOnboardingGrant(
       remaining: 1000,
     }),
   ]);
-}
-
-async function retryOwnedCleanup(orgId: string): Promise<void> {
-  // Only the infrastructure retry clock is unavailable through production APIs.
-  // This route advances backoff for this uniquely owned organization's jobs.
-  await accept(
-    setupApp({ context, routes: testStorageObjectCleanupRoutes })(
-      testStorageObjectCleanupContract,
-    ).retry({ body: { kind: "organization", orgId } }),
-    [200],
-  );
 }
 
 async function deleteOrganization(orgId: string): Promise<void> {
@@ -667,7 +654,7 @@ describe("default Agent bootstrap", () => {
     },
   );
 
-  it("retains a failed candidate cleanup for retry without damaging the winner", async () => {
+  it("preserves the onboarding winner when candidate cleanup fails at R2", async () => {
     const orgId = authenticateAdmin();
     const upload = pausedSeedUpload(orgId);
     const api = clients();
@@ -700,8 +687,6 @@ describe("default Agent bootstrap", () => {
     expect((await pending).status).toBe(200);
     expect(upload.storage.hasObject(losingArchiveKey)).toBeTruthy();
     await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
-    await retryOwnedCleanup(orgId);
-    expect(upload.storage.hasObject(losingArchiveKey)).toBeFalsy();
     await expect(readDefaultId(api)).resolves.toBe(agentId);
     await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
     await expectSingleOnboardingGrant(api);

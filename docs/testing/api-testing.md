@@ -226,6 +226,18 @@ retry matrix remains unprocessed and is not an example of compliant setup.
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
 
+For storage URL reuse, see `workflow-skill-storage-presigned-url-cache.suite.ts`:
+create a workflow or custom connector through its normal API, associate it with
+an Agent, and compare the archive URLs delivered by authenticated Runner claims.
+The readonly case checks the returned two-day lifetime. Observe external signing
+at the provider mock when useful; do not discover object prefixes through DB
+helpers, download through a storage fixture, or inspect/expire cache rows. A
+private teardown is still part of the construction chain. Use ordinary case
+isolation and normal resource deletion instead of a cache mutation endpoint.
+This proves normal issuance and reuse, not an injected four-hour refresh threshold
+or an exact SQL lookup count. A benchmark that seeds API-owned cache rows and
+calls private services does not become an owning-package library contract.
+
 ## Shared Persistent State
 
 Teardown cannot establish correctness for shared persistent state. Another
