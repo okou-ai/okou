@@ -45,6 +45,9 @@ test.each(["horizontal", "vertical"] as const)(
       });
     });
     await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    if (layout === "vertical") {
+      click(screen.getByLabelText("Open menu"));
+    }
     const pinned =
       layout === "horizontal"
         ? await screen.findByTestId("pinned-agents-grid")
@@ -58,9 +61,6 @@ test.each(["horizontal", "vertical"] as const)(
     const list = layout === "horizontal" ? sidebar() : mobileSidebar();
     await within(list).findByText("Read conversation");
 
-    if (layout === "vertical") {
-      click(screen.getByLabelText("Open menu"));
-    }
     click(current);
     await waitFor(() => {
       expect(
@@ -101,7 +101,9 @@ test.each(["horizontal", "vertical"] as const)(
       expect(pinned.dataset.sidebarExpanded).toBe(
         layout === "vertical" ? "true" : undefined,
       );
-      await user.keyboard("{Escape}");
+      if (screen.queryByRole("menu")) {
+        await user.keyboard("{Escape}");
+      }
     }
 
     current.focus();

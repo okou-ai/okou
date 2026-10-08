@@ -142,6 +142,7 @@ test("Show unread agents and contextual actions in the pinned section", async ()
     path: `/agents/${AGENT_ID}/chat`,
     sharedWorkerTestTransport: "message-port",
   });
+  click(screen.getByLabelText("Open menu"));
 
   const nav = await waitFor(() => {
     const current = mobileSidebar();

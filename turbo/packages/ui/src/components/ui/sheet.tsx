@@ -59,15 +59,25 @@ SheetOverlay.displayName = "SheetOverlay";
 interface SheetContentProps extends SheetPrimitive.Popup.Props {
   overlayClassName?: string;
   side?: "top" | "bottom" | "left" | "right";
+  keepMounted?: SheetPrimitive.Portal.Props["keepMounted"];
+  showCloseButton?: boolean;
 }
 
 const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
   (
-    { children, className, overlayClassName, side = "right", ...props },
+    {
+      children,
+      className,
+      overlayClassName,
+      side = "right",
+      keepMounted,
+      showCloseButton = true,
+      ...props
+    },
     ref,
   ) => {
     return (
-      <SheetPortal>
+      <SheetPortal keepMounted={keepMounted}>
         <SheetOverlay className={overlayClassName} forceRender />
         <SheetPrimitive.Popup
           ref={ref}
@@ -93,24 +103,26 @@ const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
           {...props}
         >
           {children}
-          <SheetPrimitive.Close
-            data-slot="sheet-close"
-            render={
-              <IconButton
-                // Offsets on an absolutely positioned child resolve against the
-                // padding box, so the popup's own insets do not move this
-                // control. It clears the same edges the popup does.
-                className={cn(
-                  "absolute opacity-70 hover:opacity-100",
-                  side === "bottom" ? "top-4" : "top-safe-offset-4",
-                  side === "left" ? "right-4" : "right-safe-offset-4",
-                )}
-                aria-label="Close"
-              />
-            }
-          >
-            <X size={20} className="text-foreground" />
-          </SheetPrimitive.Close>
+          {showCloseButton && (
+            <SheetPrimitive.Close
+              data-slot="sheet-close"
+              render={
+                <IconButton
+                  // Offsets on an absolutely positioned child resolve against the
+                  // padding box, so the popup's own insets do not move this
+                  // control. It clears the same edges the popup does.
+                  className={cn(
+                    "absolute opacity-70 hover:opacity-100",
+                    side === "bottom" ? "top-4" : "top-safe-offset-4",
+                    side === "left" ? "right-4" : "right-safe-offset-4",
+                  )}
+                  aria-label="Close"
+                />
+              }
+            >
+              <X size={20} className="text-foreground" />
+            </SheetPrimitive.Close>
+          )}
         </SheetPrimitive.Popup>
       </SheetPortal>
     );
