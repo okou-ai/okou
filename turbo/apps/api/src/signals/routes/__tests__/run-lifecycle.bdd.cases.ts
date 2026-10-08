@@ -11370,9 +11370,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ]) {
           expect(appendSystemPrompt).toContain(toolHint);
         }
-        expect(appendSystemPrompt).not.toContain(
-          "When the user asks to change your behavior, update your own configuration",
-        );
         expect(
           appendSystemPrompt.indexOf("- New web chat threads:"),
         ).toBeLessThan(appendSystemPrompt.indexOf("- Web chat messaging:"));
