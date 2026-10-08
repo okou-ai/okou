@@ -13,7 +13,7 @@ import {
 import { executeRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   presignedGetUrlSignerForBucket,
   type PresignedGetUrlSigner,
@@ -579,17 +579,32 @@ async function signCacheValue(args: {
   };
 }
 
-async function upsertCacheValues(
-  db: Db,
-  values: readonly CacheRowValue[],
-): Promise<void> {
-  if (values.length === 0) {
-    return;
-  }
-  const orderedValues = [...values].sort((left, right) => {
-    return left.cacheKey.localeCompare(right.cacheKey);
-  });
-  const set = {
+function storagePresignedUrlCacheValues(values: readonly CacheRowValue[]) {
+  return [...values]
+    .sort((left, right) => {
+      return left.cacheKey.localeCompare(right.cacheKey);
+    })
+    .map((value) => {
+      return {
+        cacheKey: value.cacheKey,
+        scope: value.scope,
+        bucket: value.bucket,
+        objectKey: value.objectKey,
+        storageVersionId: value.storageVersionId,
+        resolvedOrgId: value.resolvedOrgId,
+        publicEndpoint: value.publicEndpoint,
+        ttlSeconds: value.ttlSeconds,
+        presignedUrl: value.presignedUrl,
+        expiresAt: value.expiresAt,
+        refreshAfter: value.refreshAfter,
+        lastRequestedAt: value.lastRequestedAt,
+        updatedAt: value.updatedAt,
+      };
+    });
+}
+
+function storagePresignedUrlCacheConflictSet() {
+  return {
     scope: sql`excluded.scope`,
     bucket: sql`excluded.bucket`,
     objectKey: sql`excluded.object_key`,
@@ -603,30 +618,21 @@ async function upsertCacheValues(
     lastRequestedAt: sql`excluded.last_requested_at`,
     updatedAt: sql`excluded.updated_at`,
   };
+}
+
+async function upsertCacheValues(
+  db: Db,
+  values: readonly CacheRowValue[],
+): Promise<void> {
+  if (values.length === 0) {
+    return;
+  }
   await db
     .insert(systemStoragePresignedUrlCache)
-    .values(
-      orderedValues.map((value) => {
-        return {
-          cacheKey: value.cacheKey,
-          scope: value.scope,
-          bucket: value.bucket,
-          objectKey: value.objectKey,
-          storageVersionId: value.storageVersionId,
-          resolvedOrgId: value.resolvedOrgId,
-          publicEndpoint: value.publicEndpoint,
-          ttlSeconds: value.ttlSeconds,
-          presignedUrl: value.presignedUrl,
-          expiresAt: value.expiresAt,
-          refreshAfter: value.refreshAfter,
-          lastRequestedAt: value.lastRequestedAt,
-          updatedAt: value.updatedAt,
-        };
-      }),
-    )
+    .values(storagePresignedUrlCacheValues(values))
     .onConflictDoUpdate({
       target: systemStoragePresignedUrlCache.cacheKey,
-      set,
+      set: storagePresignedUrlCacheConflictSet(),
     });
 }
 
@@ -1286,20 +1292,93 @@ export function resolvePresentationTemplatePreviewPresignedUrls(args: {
   });
 }
 
-export function resolvePrivateArtifactPreviewPresignedUrls(args: {
-  readonly db: Db;
-  readonly requests: readonly PrivateArtifactPreviewPresignedUrlRequest[];
-  readonly issuedAt?: Date;
-}): Computed<Promise<ReadonlyMap<string, StoragePresignedUrlResult>>> {
-  return resolveStoragePresignedUrls({
-    ...args,
-    scope: "private_artifact_preview",
-    ttlSeconds: PRESIGNED_URL_TTL_SECONDS,
-    cacheKey: privateArtifactPreviewPresignedUrlCacheKey,
-    normalize: privateArtifactPreviewRequest,
-    minimumRemainingMs: PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS,
-  });
-}
+export const resolvePrivateArtifactPreviewPresignedUrls$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly requests: readonly PrivateArtifactPreviewPresignedUrlRequest[];
+      readonly issuedAt?: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string, StoragePresignedUrlResult>> => {
+    if (args.requests.length === 0) {
+      return new Map();
+    }
+    const requestsByCacheKey = new Map(
+      args.requests.map((request) => {
+        return [
+          privateArtifactPreviewPresignedUrlCacheKey(request),
+          privateArtifactPreviewRequest(request),
+        ];
+      }),
+    );
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        cacheKey: systemStoragePresignedUrlCache.cacheKey,
+        presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+        expiresAt: systemStoragePresignedUrlCache.expiresAt,
+      })
+      .from(systemStoragePresignedUrlCache)
+      .where(
+        and(
+          eq(systemStoragePresignedUrlCache.scope, "private_artifact_preview"),
+          inArray(systemStoragePresignedUrlCache.cacheKey, [
+            ...requestsByCacheKey.keys(),
+          ]),
+        ),
+      );
+    signal.throwIfAborted();
+    const issuedAt = args.issuedAt ?? nowDate();
+    const results = new Map<string, StoragePresignedUrlResult>();
+    const needsFresh: StoragePresignedUrlFreshRequest[] = [];
+    classifyStoragePresignedUrlCacheRows({
+      requestsByCacheKey,
+      rows,
+      issuedAt,
+      minimumRemainingMs: PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS,
+      results,
+      needsFresh,
+      stats: {
+        requestedCount: args.requests.length,
+        uniqueKeyCount: requestsByCacheKey.size,
+        hitCount: 0,
+        hardExpiredCount: 0,
+        missingCount: 0,
+        freshCount: 0,
+      },
+    });
+    const freshValues = await Promise.all(
+      needsFresh.map((entry) => {
+        return signCacheValue({
+          ...entry,
+          sign: get(
+            presignedGetUrlSignerForBucket(
+              entry.request.bucket,
+              entry.request.publicEndpoint,
+            ),
+          ),
+          ttlSeconds: PRESIGNED_URL_TTL_SECONDS,
+          issuedAt,
+          lastRequestedAt: issuedAt,
+        });
+      }),
+    );
+    signal.throwIfAborted();
+    appendFreshStoragePresignedUrlResults({ results, needsFresh, freshValues });
+    if (freshValues.length > 0) {
+      await db
+        .insert(systemStoragePresignedUrlCache)
+        .values(storagePresignedUrlCacheValues(freshValues))
+        .onConflictDoUpdate({
+          target: systemStoragePresignedUrlCache.cacheKey,
+          set: storagePresignedUrlCacheConflictSet(),
+        });
+      signal.throwIfAborted();
+    }
+    return results;
+  },
+);
 
 export const pruneStoragePresignedUrls$ = command(
   async (

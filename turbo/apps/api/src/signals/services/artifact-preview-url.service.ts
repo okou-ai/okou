@@ -1,18 +1,17 @@
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
-import { writeDb$ } from "../external/db";
-import { generateArtifactPreviewUrl } from "../external/s3";
+import { generateArtifactPreviewUrl$ } from "../external/s3";
 import {
   privateArtifactPreviewPresignedUrlCacheKey,
-  resolvePrivateArtifactPreviewPresignedUrls,
+  resolvePrivateArtifactPreviewPresignedUrls$,
   type PrivateArtifactPreviewPresignedUrlRequest,
 } from "./system-storage-presigned-url-cache.service";
 
 /** Call only after resolving the viewer's current access to this object. */
 export const resolveArtifactPreviewUrl$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly bucket: string;
       readonly key: string;
@@ -22,11 +21,15 @@ export const resolveArtifactPreviewUrl$ = command(
     signal: AbortSignal,
   ): Promise<{ readonly url: string; readonly expiresAt: string }> => {
     if (args.bucket !== env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")) {
-      const preview = await get(
-        generateArtifactPreviewUrl(args.bucket, args.key, {
+      const preview = await set(
+        generateArtifactPreviewUrl$,
+        args.bucket,
+        args.key,
+        {
           signingDate: args.signingDate,
           ...(args.filename !== undefined ? { filename: args.filename } : {}),
-        }),
+        },
+        signal,
       );
       signal.throwIfAborted();
       return preview;
@@ -37,12 +40,13 @@ export const resolveArtifactPreviewUrl$ = command(
       objectKey: args.key,
       ...(args.filename !== undefined ? { filename: args.filename } : {}),
     };
-    const results = await get(
-      resolvePrivateArtifactPreviewPresignedUrls({
-        db: set(writeDb$),
+    const results = await set(
+      resolvePrivateArtifactPreviewPresignedUrls$,
+      {
         requests: [request],
         issuedAt: args.signingDate,
-      }),
+      },
+      signal,
     );
     signal.throwIfAborted();
     const result = results.get(
