@@ -793,7 +793,8 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
 
     const billing = await runs.readBillingStatus(admin);
     expect(billing).toMatchObject({
-      credits: 1000,
+      credits: 0,
+      creditGrants: [],
       tier: "limited-free-1",
       onboardingPaymentPending: false,
     });
@@ -808,14 +809,22 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     ).resolves.toMatchObject({
       body: { allowed: true, count: 0, limit: 10 },
     });
-    const onboardingCreditGrant = billing.creditGrants.find((grant) => {
-      return grant.source === "onboarding";
+    const personalCredits = await runs.readUsagePackCredits(admin);
+    expect(personalCredits).toMatchObject({
+      totalCredits: 1000,
+      purchasedCredits: 0,
+      bonusCredits: 1000,
     });
-    expect(onboardingCreditGrant).toMatchObject({
-      amount: 1000,
-      remaining: 1000,
-    });
-    expectExpiresAboutThirtyDaysFromNow(onboardingCreditGrant?.expiresAt);
+    expect(personalCredits.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 1000,
+        remaining: 1000,
+      }),
+    ]);
+    expectExpiresAboutThirtyDaysFromNow(
+      personalCredits.creditGrants[0]?.expiresAt,
+    );
     // A new organization starts in Auto, the null selection.
     const available = await createMiscRoutesApi(context).listRunModels(admin);
     expect(
@@ -829,6 +838,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const admin = await createLimitedFreeOrgFromClerk();
+    const personalBefore = await runs.readUsagePackCredits(admin);
 
     api.verifyNextClerkWebhook({
       type: "organizationMembership.created",
@@ -845,10 +855,16 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
 
     const repeatedBilling = await runs.readBillingStatus(admin);
     expect(repeatedBilling).toMatchObject({
-      credits: 1000,
+      credits: 0,
+      creditGrants: [],
       tier: "limited-free-1",
       onboardingPaymentPending: false,
     });
+    expect(personalBefore.totalCredits).toBe(1000);
+    expect(personalBefore.creditGrants).toHaveLength(1);
+    await expect(runs.readUsagePackCredits(admin)).resolves.toStrictEqual(
+      personalBefore,
+    );
 
     const status = await bdd.readOnboardingStatus(admin);
     expect(status).toMatchObject({

@@ -5000,8 +5000,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const agentId = onboarding.defaultAgentId;
         await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
           tier: "limited-free-1",
-          credits: 1000,
+          credits: 0,
+          creditGrants: [],
           onboardingPaymentPending: false,
+        });
+        await expect(api.readUsagePackCredits(actor)).resolves.toMatchObject({
+          totalCredits: 1000,
+          purchasedCredits: 0,
+          bonusCredits: 1000,
         });
         // A new organization starts in Auto, the null selection.
         const runModels = await misc.listRunModels(actor);

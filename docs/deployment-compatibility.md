@@ -1,5 +1,28 @@
 # Deployment Compatibility
 
+## New-workspace onboarding credits become personal usage packs (2026-10-08)
+
+Limited-free workspace bootstrap gives its creator 1,000 member-owned usage-pack
+`bonus` credits with the unchanged 30-day expiry, instead of increasing the shared
+organization balance. Eligibility and paid-tier race handling are unchanged. No
+subscription or allocation is created, and existing shared onboarding grants are
+not migrated, refilled, or extended.
+
+Issuance keeps the existing `(org_id, limited-free-onboarding)` expiry-record
+receipt as a zero-amount, zero-remaining reservation. That receipt and the personal
+grant commit in the bootstrap transaction. Legacy receipts, including spent or
+expired ones, still prevent another award; new reservations cannot be displayed
+or spent as shared credits. The receipt also prevents an old API or rollback
+writer from awarding shared onboarding credits after a new personal grant.
+
+Old and new APIs already read personal usage-pack balances for billing and credit
+admission. During a rolling deployment, whichever bootstrap writer wins the common
+receipt determines whether a newly initialized workspace receives the old shared
+grant or the new personal grant; the other writer cannot award both. Existing
+clients use their unchanged billing endpoints. No database migration, client
+version floor, or Runner protocol change is required. This change does not deploy
+or activate production changes.
+
 ## SEO partial SERP results (issue #36799)
 
 `POST /api/seo/serp` returns HTTP 200 for DataForSEO task status `40106`

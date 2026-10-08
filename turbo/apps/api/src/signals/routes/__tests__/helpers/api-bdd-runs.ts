@@ -4,7 +4,10 @@ import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { mockClerkUsers } from "./clerk-users";
 
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import {
+  billingStatusContract,
+  billingUsagePackCreditsContract,
+} from "@okouai/api-contracts/contracts/billing";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   cliAuthApproveContract,
@@ -65,6 +68,7 @@ import type { UsagePricingResolution } from "../../../context/usage-pricing-reso
 import { mockStripeClient } from "../../../external/stripe-client";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
+import { billingUsagePackCreditsRoutes } from "../../billing-usage-pack-credits";
 import { cliAuthRoutes } from "../../cli-auth";
 import { cronProcessUsageEventsRoutes } from "../../cron-process-usage-events";
 import { cronTelegramCleanupRoutes } from "../../cron-telegram-cleanup";
@@ -162,6 +166,7 @@ const runRoutes = [
   ...runnersRoutes,
   ...webhooksStripeRoutes,
   ...billingStatusRoutes,
+  ...billingUsagePackCreditsRoutes,
   ...runModelsRoutes,
   ...meModelProvidersUpsertRoutes,
   ...runDetailRoutes,
@@ -1099,6 +1104,16 @@ export function createRunsApi(
     async readBillingStatus(actor: ApiTestUser) {
       const response = await accept(
         runApp(context)(billingStatusContract).get({
+          headers: authenticate(context, actor),
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async readUsagePackCredits(actor: ApiTestUser) {
+      const response = await accept(
+        runApp(context)(billingUsagePackCreditsContract).get({
           headers: authenticate(context, actor),
         }),
         [200],
