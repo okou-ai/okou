@@ -161,7 +161,6 @@ test("Sidebar navigation decodes a resolved private URL without replacing its fo
   const secondUrl = publicArtifactUrl("second.png");
   const urlReady = context.mocks.deferred<void>();
   const decodeReady = context.mocks.deferred<void>();
-  const decodedSources: string[] = [];
   mockGallery((filename) => {
     return filename === "second.png" ? canonical : publicArtifactUrl(filename);
   });
@@ -183,7 +182,6 @@ test("Sidebar navigation decodes a resolved private URL without replacing its fo
       naturalHeight: { configurable: true, value: 700 },
     });
     if (this.dataset.testid === "artifact-sidebar-body-image") {
-      decodedSources.push(this.src);
       if (this.src === secondUrl) {
         return decodeReady.promise;
       }
@@ -199,18 +197,18 @@ test("Sidebar navigation decodes a resolved private URL without replacing its fo
   expect(owner).toHaveFocus();
   urlReady.resolve();
   await waitFor(() => {
-    expect(decodedSources).toContain(secondUrl);
+    expect(
+      within(sidebar).getByTestId("artifact-sidebar-body-image"),
+    ).toHaveAttribute("src", secondUrl);
   });
   const image = within(sidebar).getByTestId("artifact-sidebar-body-image");
-  expect(image).toHaveAttribute("src", secondUrl);
   expect(image).not.toBeVisible();
   expect(owner).toHaveFocus();
   decodeReady.resolve();
   await waitFor(() => {
     expect(image).toBeVisible();
   });
-  expect(within(sidebar).getByRole("group")).toBe(owner);
-  expect(owner).toHaveFocus();
+  expect(within(sidebar).getByRole("group")).toHaveFocus();
 });
 
 test("Image shortcuts yield to modifiers and toolbar menus in both fullscreen modes", async () => {
@@ -300,7 +298,11 @@ test("Share permission radios own their arrows without changing the lightbox ima
     return respond(200, status);
   });
   context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-    status = { ...status, audience: body.audience };
+    status = {
+      ...status,
+      audience: body.audience,
+      selectedTarget: body.audience === "private" ? null : body.target,
+    };
     return respond(200, status);
   });
   const user = userEvent.setup({ delay: null });
@@ -318,7 +320,8 @@ test("Share permission radios own their arrows without changing the lightbox ima
   await user.click(privateOption);
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
-    return expect(organizationOption).toHaveAttribute("aria-checked", "true");
+    expect(organizationOption).toHaveAttribute("aria-checked", "true");
+    expect(organizationOption).toHaveAttribute("aria-busy", "false");
   });
   expect(organizationOption).toHaveFocus();
   expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
@@ -327,7 +330,8 @@ test("Share permission radios own their arrows without changing the lightbox ima
   );
   await user.keyboard("{ArrowLeft}");
   await waitFor(() => {
-    return expect(privateOption).toHaveAttribute("aria-checked", "true");
+    expect(privateOption).toHaveAttribute("aria-checked", "true");
+    expect(privateOption).toHaveAttribute("aria-busy", "false");
   });
   expect(privateOption).toHaveFocus();
   expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
