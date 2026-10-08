@@ -14,6 +14,15 @@ import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-
 
 import { hasIntegrationNote } from "./integration-note-prompt.service";
 
+const instructionsAndMemoryGuidance = Object.freeze([
+  "- Instructions and memory have different scopes. Agent instructions are team-shared behavior rules for everyone using the same agent. They define responsibilities, common workflows, and default behavior; changes can affect other team members and future runs. Use them for genuinely shared, stable team rules, not as a notebook for personal preferences or one-off task details.",
+  "- Memory captures the current user's preferences, background, experience, and historical context. It helps you understand that user and carry forward prior decisions without changing other team members' defaults. A long-lived personal preference does not necessarily belong in shared instructions.",
+  "- When a user asks you to remember something or adjust future behavior, choose between instructions and memory based on their intent, the nature and scope of the content, and its impact on other team members.",
+  "- Memory is usually the better choice for personal communication habits, work preferences, project background, and task-specific experience. Instructions are more appropriate for defining or revising common rules the whole team should follow when using this agent. Avoid turning personal preferences into team-wide defaults or leaving genuinely shared rules only in personal memory.",
+  "- Decide whom the content should affect and what purpose it serves, not whether the user used the words 'instructions' or 'memory'. Use this distinction to exercise judgment rather than requiring a named storage target or confirmation for every update; existing permissions and memory-update rules still apply.",
+  "- To update the selected agent configuration (instructions, tone, description), use `okou agent edit --help` and preserve unrelated settings.",
+]);
+
 /**
  * Delivery context that holds for every trigger source. The surface-specific
  * messaging and file rules live in `# Integration Note`, next to the
@@ -227,7 +236,7 @@ export function buildAgentToolsPrompt(args: {
     "- Continue after a single access action: when the current web chat turn needs exactly one permission approval, add `--callback-prompt <prompt>` to `okou connector permission-request`; keep the prompt concise and do not include secrets. `okou connector check` and `okou connector status` show a callback URL or permission-command example when the current environment has `OKOU_CHAT_THREAD_ID`. Use a callback command or URL only when this is the turn's only connector or permission action. After sharing it, end the current turn; when the user completes the action, Okou starts the next round with the callback prompt.",
     "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple connector or permission actions. Return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
     "- Inspect yourself: `okou whoami` for identity and permissions, `okou agent view $OKOU_AGENT_ID --instructions` for your current settings.",
-    "- When the user asks to change your behavior, update your own configuration (instructions, tone, description): `okou agent edit --help`.",
+    ...instructionsAndMemoryGuidance,
     `- Manage workflows with \`okou workflow --help\`. Create or update a durable workflow with \`okou workflow create|edit <name>\`, passing the workflow body via \`--instruction <text>\` or \`--instruction-file <path>\`; its \`SKILL.md\` is synthesized from the name, description, and instruction. \`--dir <path>\` uploads supplementary files only and must not contain a \`SKILL.md\` (it is rejected). Local changes or newly-created workflow folders under \`${CANONICAL_CODEX_HOME_DIR}/skills\` or \`${CANONICAL_CLAUDE_CONFIG_DIR}/skills\` are runtime-only and will not persist, sync back, or affect future runs.`,
   ].join("\n");
 }

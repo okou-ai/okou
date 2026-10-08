@@ -527,14 +527,65 @@ test("A user can inspect steps, context, and network details from an exported lo
   if (!networkRow) {
     throw new Error("Expected a network log row");
   }
-  click(networkRow);
+  const disclosure = queryAllByRoleFast("button", networkRow)[0];
+  if (!disclosure) {
+    throw new Error("Expected a network detail disclosure button");
+  }
+  expect(disclosure).toHaveAccessibleName(
+    "https://api.github.com/repos/okou-ai/okou",
+  );
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  const detailsId = disclosure.getAttribute("aria-controls");
+  if (!detailsId) {
+    throw new Error("Expected a controlled network detail row");
+  }
+  const details = document.getElementById(detailsId);
+  expect(details).not.toBeVisible();
+
+  await user.click(disclosure);
   await waitFor(() => {
     expect(screen.getByText("github-connector")).toBeInTheDocument();
   });
+  expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  expect(disclosure).toHaveFocus();
+  expect(details).toBeVisible();
+  expect(details).toHaveRole("row");
   expect(screen.getAllByText("Connector Diagnostic")).toHaveLength(1);
   expect(screen.getByText("Request Headers (1)")).toBeInTheDocument();
   expect(screen.getByText("Response Headers (0)")).toBeInTheDocument();
   expect(screen.getAllByText("truncated")).toHaveLength(2);
+
+  await user.keyboard("{Enter}");
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  expect(disclosure).toHaveFocus();
+  expect(details).not.toBeVisible();
+
+  await user.keyboard(" ");
+  expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  expect(disclosure).toHaveFocus();
+  expect(details).toBeVisible();
+
+  const requestHeaders = screen.getByText("Request Headers (1)");
+  await user.click(requestHeaders);
+  expect(screen.getByText("Content-Type")).toBeVisible();
+  expect(disclosure).toHaveAttribute("aria-expanded", "true");
+
+  await user.click(disclosure);
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  expect(details).not.toBeVisible();
+  const nextDisclosure = queryAllByRoleFast("button", networkTable).find(
+    (button) => {
+      return button.textContent?.trim() === "https://slack.com/api/auth.test";
+    },
+  );
+  if (!nextDisclosure) {
+    throw new Error("Expected the next network detail disclosure button");
+  }
+  expect(nextDisclosure).not.toHaveAttribute("aria-controls", detailsId);
+  await user.click(nextDisclosure);
+  expect(nextDisclosure).toHaveFocus();
+  expect(screen.getByText("slack-connector")).toBeInTheDocument();
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
 });
 
 test("An imported log does not expose debug diagnostics when debug access is disabled", async () => {

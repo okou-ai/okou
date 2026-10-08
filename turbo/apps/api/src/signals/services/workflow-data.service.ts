@@ -1,4 +1,4 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import type {
   WorkflowImportSource,
   WorkflowSummary,
@@ -307,37 +307,42 @@ function shadowWinnerFromRows(
   return winners;
 }
 
-export async function loadWorkflowShadowWinner(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly member: WorkflowMember;
-    readonly workflow: WorkflowRow;
-  },
-): Promise<WorkflowShadow | null> {
-  const [winner] = await db
-    .select({
-      id: workflows.id,
-      name: workflows.name,
-      displayName: workflows.displayName,
-    })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.agentId, args.workflow.agentId),
-        eq(workflows.name, args.workflow.name),
-        injectableWorkflowCondition(args.member.userId),
-      ),
-    )
-    .orderBy(...workflowRunPrioritySort(args.member.userId))
-    .limit(1);
+export const readWorkflowShadowWinner$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly workflow: WorkflowRow;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowShadow | null> => {
+    const db = get(db$);
+    const [winner] = await db
+      .select({
+        id: workflows.id,
+        name: workflows.name,
+        displayName: workflows.displayName,
+      })
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.agentId, args.workflow.agentId),
+          eq(workflows.name, args.workflow.name),
+          injectableWorkflowCondition(args.member.userId),
+        ),
+      )
+      .orderBy(...workflowRunPrioritySort(args.member.userId))
+      .limit(1);
 
-  if (!winner || winner.id === args.workflow.id) {
-    return null;
-  }
-  return winner;
-}
+    signal.throwIfAborted();
+    if (!winner || winner.id === args.workflow.id) {
+      return null;
+    }
+    return winner;
+  },
+);
 
 export function workflowList(args: {
   readonly orgId: string;

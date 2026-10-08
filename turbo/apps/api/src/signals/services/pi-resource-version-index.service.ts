@@ -17,7 +17,7 @@ import {
   RESOURCE_ARCHIVE_MAX_BYTES,
 } from "../../lib/pi-resource-index";
 import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -218,41 +218,39 @@ export function piResourceVersionIndexesResult(
   return { indexes, misses };
 }
 
-export async function readPiResourceVersionIndexes(
-  db: Pick<Db, "select">,
-  versionIds: readonly string[],
-  signal?: AbortSignal,
-) {
-  const unique = [...new Set(versionIds)];
-  if (unique.length === 0) {
-    return piResourceVersionIndexesResult(unique, []);
-  }
-  const rows = await db
-    .select({
-      versionId: piResourceVersionIndexes.storageVersionId,
-      status: piResourceVersionIndexes.status,
-      storageId: storageVersions.storageId,
-      archiveSize: piResourceVersionIndexes.sourceArchiveSize,
-      projection: piResourceVersionIndexes.projection,
-      projectionHash: piResourceVersionIndexes.projectionHash,
-    })
-    .from(piResourceVersionIndexes)
-    .innerJoin(
-      storageVersions,
-      eq(storageVersions.id, piResourceVersionIndexes.storageVersionId),
-    )
-    .where(
-      and(
-        inArray(piResourceVersionIndexes.storageVersionId, unique),
-        eq(
-          piResourceVersionIndexes.extractorVersion,
-          PI_RESOURCE_EXTRACTOR_VERSION,
+export const readPiResourceVersionIndexes$ = command(
+  async ({ get }, versionIds: readonly string[], signal: AbortSignal) => {
+    const unique = [...new Set(versionIds)];
+    if (unique.length === 0) {
+      return piResourceVersionIndexesResult(unique, []);
+    }
+    const rows = await get(db$)
+      .select({
+        versionId: piResourceVersionIndexes.storageVersionId,
+        status: piResourceVersionIndexes.status,
+        storageId: storageVersions.storageId,
+        archiveSize: piResourceVersionIndexes.sourceArchiveSize,
+        projection: piResourceVersionIndexes.projection,
+        projectionHash: piResourceVersionIndexes.projectionHash,
+      })
+      .from(piResourceVersionIndexes)
+      .innerJoin(
+        storageVersions,
+        eq(storageVersions.id, piResourceVersionIndexes.storageVersionId),
+      )
+      .where(
+        and(
+          inArray(piResourceVersionIndexes.storageVersionId, unique),
+          eq(
+            piResourceVersionIndexes.extractorVersion,
+            PI_RESOURCE_EXTRACTOR_VERSION,
+          ),
         ),
-      ),
-    );
-  signal?.throwIfAborted();
-  return piResourceVersionIndexesResult(unique, rows);
-}
+      );
+    signal.throwIfAborted();
+    return piResourceVersionIndexesResult(unique, rows);
+  },
+);
 
 const claimWork$ = command(
   async (
