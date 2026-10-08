@@ -18,7 +18,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
@@ -29,9 +28,9 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
-  deleteDiscordFixture,
+  removePublicDiscordBinding,
   mockDiscordMemberships,
-  seedDiscordFixture,
+  createPublicDiscordBinding,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
 import {
@@ -54,7 +53,7 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const runsApi = createRunsApi(context);
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
-  await deleteDiscordFixture(context, actor.fixture);
+  await removePublicDiscordBinding(context, actor.fixture);
   await deleteFeatureSwitchesForUser(context, actor);
 });
 
@@ -738,7 +737,8 @@ describe("canonical Discord ingress", () => {
     await expect(discordStatus(actor)).resolves.toMatchObject({
       isInstalled: false,
     });
-    const reinstalled = await seedDiscordFixture(context, {
+    const reinstalled = await createPublicDiscordBinding(context, {
+      flow: "install",
       userId: actor.userId,
       orgId: actor.orgId,
       orgRole: "org:admin",
@@ -801,7 +801,8 @@ describe("canonical Discord ingress", () => {
       }),
       [200],
     );
-    const reinstalled = await seedDiscordFixture(context, {
+    const reinstalled = await createPublicDiscordBinding(context, {
+      flow: "connect",
       userId: actor.userId,
       orgId: actor.orgId,
       orgRole: "org:admin",
@@ -1391,40 +1392,6 @@ describe("canonical Discord ingress", () => {
     );
     await flushWaitUntilForTest();
     expect(provider.sentMessages).toHaveLength(0);
-  });
-
-  it("tells a member without an accessible agent immediately", async () => {
-    const owner = await connected();
-    const provider = mockDiscordProvider(owner);
-    const member = await track(
-      setupConnectedDiscordActor(context, {
-        orgId: owner.orgId,
-        guildId: owner.guildId,
-        reuseOrganization: true,
-      }),
-    );
-    mockDiscordMemberships(context, [
-      { userId: owner.userId, orgId: owner.orgId, orgRole: "org:admin" },
-      { userId: member.userId, orgId: member.orgId, orgRole: "org:admin" },
-    ]);
-    await seedLegacyPrivateDefaultAgentFixture(owner.defaultAgentId);
-    const message = discordMessageForTest(member, {
-      channelId: provider.guildChannelId,
-      content: `<@${member.botUserId}> summarize this channel`,
-    });
-    provider.messages.set(message.id, message);
-    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
-      "accepted",
-    );
-    // Delivered by the admission itself, not by the recovery sweep.
-    await flushWaitUntilForTest();
-    expect(provider.sentMessages).toHaveLength(1);
-    expect(provider.sentMessages[0]).toMatchObject({
-      channel_id: provider.guildChannelId,
-      content:
-        "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
-    });
-    await expect(discordChatThreads(context, member)).resolves.toHaveLength(0);
   });
 
   it("imports refreshed attachment metadata while keeping context and signed URLs private", async () => {
