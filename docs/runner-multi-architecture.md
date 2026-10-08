@@ -96,7 +96,7 @@ binaries are not re-uploaded as a combined GitHub artifact.
 
 The binary input key hashes the committed source/build inventory, target and
 embedded CLI content, not the source commit identity. The CLI contribution is
-its actual package SHA-256 plus a canonical projection of the independent
+its actual package SHA-256 plus a canonical projection of the validated
 manifest fields consumed by `crates/runner/build.rs`: CLI/Pi versions and
 session-construction digest. Fixed manifest schema/path and package SHA/size
 agreement remain validated before lookup, but are not hashed again. Commit
@@ -109,6 +109,39 @@ unchanged. Input schema 6 intentionally starts a new key space, so the first
 build of each input combination misses once without migrating old references.
 The digest helper is itself part of the committed build inventory; changing its
 hash recipe also rotates keys without changing the cache artifact schema.
+
+### Package-bound CLI identity and local rootfs keys
+
+The CLI postbuild step writes `okouBuildIdentity` into the existing packed
+`package.json`. Its mandatory schema version 1 contains `piAgentRuntime`, `piSdk`
+(the upstream version plus first-party patch-set digest), and
+`sessionConstruction.digest`; the existing package `version` remains the CLI
+version. The record contains neither commit provenance nor its own final SHA or
+size. Artifact preparation reads identity from the actual packed file, rather
+than independently rereading workspace metadata after packing.
+
+Native verification and Rust compilation/staging require one regular packed
+`package/package.json`, at most 16 KiB, with valid consumed fields and no duplicate
+consumed keys or metadata entries. The compressed package remains bounded at
+64 MiB; both readers cap the complete decompressed stream at 256 MiB and never
+extract or execute package code. Missing identity or disagreement with the
+external/compiled identity fails directly; there is no legacy-format fallback.
+Commit provenance, actual package SHA/size, ready checksums, canonical asset
+checks, captured package URLs and immutable versioned publication remain
+mandatory. New package bytes require a new CLI version through the normal
+CLI-to-Runner release dependency, not overwriting an existing versioned object.
+
+The **local rootfs** CLI contribution is only the SHA-256 computed from the
+verified package. Packed identity uniquely determines the installed versions and
+session metadata; package size follows from bytes and installation paths follow
+from the CLI version and fixed rules. Installed metadata and exact sidecar
+checks remain, but they are not independent hash inputs. Changes to installed
+schema, serialization or fixed installation paths must rotate the local rootfs
+recipe version. Local rootfs cache version 3 starts a new namespace without old-cache fallback. Shared R2 template
+cache version 1, snapshot cache version 3, guest binaries, customization, disk,
+CA and DNS inputs are unchanged. The CI binary-key recipe above is unchanged.
+This makes the authority and hash contract simpler; it does not establish a
+higher cache-hit rate or measured build acceleration.
 
 Targets without an available cache reference use the normal compile job, which
 uploads the binary directly to the existing content-addressed R2 cache. Only

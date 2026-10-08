@@ -94,6 +94,7 @@
 4 check-release-please-workspace-coverage-test.sh
 4 cleanup-stale-runners-test.sh
 4 clerk-test-resource-workflow-test.sh
+4 cli-package-identity-test.sh
 4 deploy-cli-local-test.sh
 4 dev-runner-test.sh
 4 fetch-okou-app-artifact-test.sh

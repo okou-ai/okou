@@ -20,15 +20,15 @@ const TEMPLATE_CACHE_VERSION: u32 = 1;
 ///
 /// Rootfs images are not shared through R2 because they include guest binaries
 /// and host-local CA material.
-const ROOTFS_CACHE_VERSION: u32 = 2;
+const ROOTFS_CACHE_VERSION: u32 = 3;
 
 /// Bump to invalidate all cached snapshots (local only; R2 stores only the template).
 const SNAPSHOT_CACHE_VERSION: u32 = 3;
 
 /// Rootfs-hash inputs contributed by an installed Okou CLI artifact.
 pub(super) struct OkouCliHashInput<'a> {
-    pub(super) package_path: &'a Path,
-    pub(super) installed_manifest: &'a [u8],
+    /// SHA-256 calculated from the verified package, whose identity is bound to it.
+    pub(super) package_sha256: &'a str,
 }
 
 /// Shared template and local rootfs identities for a full image build.
@@ -83,7 +83,9 @@ fn update_rootfs_hash_field(hasher: &mut Sha256, label: &[u8], value: &[u8]) -> 
 /// fields are ordered as version, template hash, customization script, rootfs disk
 /// size, CA fingerprint, DNS resolver, then one destination/content pair per guest
 /// binary in inventory order, then, only when an Okou CLI artifact is installed,
-/// its installed manifest and package bytes. Fixed-width integers use big-endian
+/// its verified package SHA-256. Packed identity determines the installed manifest;
+/// metadata and byte integrity are validated before cache selection, not hashed twice.
+/// Fixed-width integers use big-endian
 /// bytes and IPv4 addresses use their four network-order octets. Future inputs
 /// must use `update_rootfs_hash_field` so arbitrary value bytes cannot shift field
 /// boundaries.
@@ -125,15 +127,11 @@ async fn compute_rootfs_hash(
     }
 
     if let Some(okou_cli) = okou_cli {
-        let package = tokio::fs::read(okou_cli.package_path).await.map_err(|e| {
-            RunnerError::Internal(format!("read {}: {e}", okou_cli.package_path.display()))
-        })?;
         update_rootfs_hash_field(
             &mut hasher,
-            b"okou_cli_installed_manifest:",
-            okou_cli.installed_manifest,
+            b"okou_cli_package_sha256:",
+            okou_cli.package_sha256.as_bytes(),
         )?;
-        update_rootfs_hash_field(&mut hasher, b"okou_cli_package:", &package)?;
     }
 
     Ok(hex::encode(hasher.finalize()))
@@ -474,64 +472,90 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn compute_rootfs_hash_sensitive_to_okou_cli_artifact() {
+    async fn compute_rootfs_hash_sensitive_to_verified_cli_package_sha() {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("agent");
         tokio::fs::write(&bin, b"binary-content").await.unwrap();
-        let package_a = dir.path().join("package-a.tgz");
-        let package_b = dir.path().join("package-b.tgz");
-        tokio::fs::write(&package_a, b"bundle-a").await.unwrap();
-        tokio::fs::write(&package_b, b"bundle-b").await.unwrap();
         let bins: &[(&Path, &str)] = &[(&bin, "/usr/local/bin/guest-agent")];
-        let manifest_a = br#"{"versions":{"cli":"9.353.0"}}"#;
-        let manifest_b = br#"{"versions":{"cli":"9.353.1"}}"#;
+        let sha_a = hex::encode(Sha256::digest(b"bundle-a"));
+        let sha_b = hex::encode(Sha256::digest(b"bundle-b"));
+        let a = OkouCliHashInput {
+            package_sha256: &sha_a,
+        };
+        let b = OkouCliHashInput {
+            package_sha256: &sha_b,
+        };
 
-        let hash = |package: &'static Path, manifest: &'static [u8]| {
-            let okou_cli = OkouCliHashInput {
-                package_path: package,
-                installed_manifest: manifest,
-            };
-            async move {
-                compute_rootfs_hash(
-                    "template-a",
-                    bins,
-                    "ca-a",
-                    DNS_PROBE_RESOLVER_IPV4,
-                    16384,
-                    Some(&okou_cli),
-                )
+        let hash = async |cli: Option<&OkouCliHashInput<'_>>| {
+            compute_rootfs_hash(
+                "template-a",
+                bins,
+                "ca-a",
+                DNS_PROBE_RESOLVER_IPV4,
+                16384,
+                cli,
+            )
+            .await
+            .unwrap()
+        };
+        let with_a = hash(Some(&a)).await;
+        assert_ne!(hash(None).await, with_a, "CLI and no-CLI are distinct");
+        assert_eq!(
+            with_a,
+            hash(Some(&a)).await,
+            "same verified SHA is deterministic"
+        );
+        assert_ne!(
+            with_a,
+            hash(Some(&b)).await,
+            "changed package SHA invalidates rootfs"
+        );
+    }
+
+    #[tokio::test]
+    async fn rootfs_cli_identity_is_determined_by_the_verified_package() {
+        use super::super::okou_cli::{OkouCliArtifact, test_support::write_artifact_dir};
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        let changed = dir.path().join("changed");
+        for path in [&a, &b, &changed] {
+            std::fs::create_dir(path).unwrap();
+        }
+        write_artifact_dir(&a, b"same-program", "9.353.0", "1.36.0");
+        write_artifact_dir(&b, b"same-program", "9.353.0", "1.36.0");
+        write_artifact_dir(&changed, b"same-program", "9.353.0", "1.36.1");
+        let manifest = b.join("manifest.json");
+        let mut provenance: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+        provenance["commitSha"] = serde_json::json!("e".repeat(40));
+        std::fs::write(manifest, serde_json::to_vec(&provenance).unwrap()).unwrap();
+        let artifact_a = OkouCliArtifact::resolve(&a).await.unwrap();
+        let artifact_b = OkouCliArtifact::resolve(&b).await.unwrap();
+        let artifact_changed = OkouCliArtifact::resolve(&changed).await.unwrap();
+        assert_eq!(
+            artifact_a.installed_manifest_bytes(),
+            artifact_b.installed_manifest_bytes()
+        );
+        assert_ne!(
+            artifact_a.installed_manifest_bytes(),
+            artifact_changed.installed_manifest_bytes()
+        );
+        let hash = async |cli: &OkouCliArtifact| {
+            compute_rootfs_build_hashes(&[], "ca-a", 16384, Some(&cli.hash_input()))
                 .await
                 .unwrap()
-            }
+                .rootfs_hash
         };
-        let package_a: &'static Path = Box::leak(package_a.into_boxed_path());
-        let package_b: &'static Path = Box::leak(package_b.into_boxed_path());
-
-        let without = compute_rootfs_hash(
-            "template-a",
-            bins,
-            "ca-a",
-            DNS_PROBE_RESOLVER_IPV4,
-            16384,
-            None,
-        )
-        .await
-        .unwrap();
-        let with_a = hash(package_a, manifest_a).await;
-        assert_ne!(
-            without, with_a,
-            "installing a CLI must change the rootfs hash"
-        );
-        assert_eq!(with_a, hash(package_a, manifest_a).await, "deterministic");
-        assert_ne!(
-            with_a,
-            hash(package_b, manifest_a).await,
-            "hash must change with package bytes"
+        assert_eq!(
+            hash(&artifact_a).await,
+            hash(&artifact_b).await,
+            "provenance is not installation identity"
         );
         assert_ne!(
-            with_a,
-            hash(package_a, manifest_b).await,
-            "hash must change with the installed manifest"
+            hash(&artifact_a).await,
+            hash(&artifact_changed).await,
+            "packed metadata changes rotate package SHA and rootfs"
         );
     }
 

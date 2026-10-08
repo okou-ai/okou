@@ -1,5 +1,7 @@
 mod axiom_layer;
 mod byte_size;
+#[cfg(any(test, bundled_okou_cli))]
+mod cli_package;
 mod cmd;
 mod config;
 mod deps;
