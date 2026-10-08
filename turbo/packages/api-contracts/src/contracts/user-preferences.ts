@@ -136,8 +136,7 @@ export const userPreferencesContract = c.router({
       401: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary:
-      "Initialize missing timezone, locale and member memory and enroll Morning Brief",
+    summary: "Initialize missing timezone, locale and member memory",
   },
   get: {
     method: "GET",

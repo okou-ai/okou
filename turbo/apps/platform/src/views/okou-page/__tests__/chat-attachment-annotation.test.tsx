@@ -180,6 +180,101 @@ test("A tool shortcut works on open and text is typed onto the image", async () 
   );
 });
 
+test.each([
+  { mode: "composing", isComposing: true, keyCode: 13 },
+  { mode: "Safari final key", isComposing: false, keyCode: 229 },
+])(
+  "IME Enter ($mode) keeps the text mark open until ordinary Enter",
+  async ({ isComposing, keyCode }) => {
+    const user = userEvent.setup();
+    const image = draftAttachment("ime-label.png");
+    mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    const surface = await openAnnotationEditor("ime-label.png");
+    await user.keyboard("t");
+    clickSurface(surface, 7);
+
+    const input = await screen.findByLabelText("Type here");
+    await waitFor(() => {
+      expect(input).toHaveFocus();
+    });
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: "标注" } });
+    if (!isComposing) {
+      fireEvent.compositionEnd(input, { data: "标注" });
+    }
+    fireEvent.keyDown(input, { key: "Enter", isComposing, keyCode });
+
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("标注");
+    expect(screen.getByText("1 mark")).toBeInTheDocument();
+    if (isComposing) {
+      fireEvent.compositionEnd(input, { data: "标注" });
+    }
+
+    await user.keyboard("{Shift>}{Enter}{/Shift}Second line");
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("标注\nSecond line");
+    await user.keyboard("{Enter}");
+
+    expect(screen.queryByLabelText("Type here")).toBeNull();
+    expect(screen.getByTestId("annotation-mark-1")).toHaveTextContent(
+      "标注 Second line",
+    );
+    expect(screen.getByTestId("image-annotation-panel")).toHaveFocus();
+  },
+);
+
+test.each([
+  { key: "Backspace", mode: "composing", isComposing: true, keyCode: 8 },
+  { key: "Delete", mode: "composing", isComposing: true, keyCode: 46 },
+  {
+    key: "Backspace",
+    mode: "Safari final key",
+    isComposing: false,
+    keyCode: 229,
+  },
+  { key: "Delete", mode: "Safari final key", isComposing: false, keyCode: 229 },
+])(
+  "IME $key ($mode) preserves an empty note; ordinary $key deletes its mark",
+  async ({ key, isComposing, keyCode }) => {
+    const user = userEvent.setup();
+    const image = draftAttachment("ime-note.png", {
+      annotatedFileId: "draft-ime-note-annotated",
+      annotations: boxAnnotation([{ id: "ime-note", ordinal: 1 }]),
+    });
+    mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    await openAnnotationEditor("ime-note.png");
+    click(screen.getByTestId("annotation-mark-1"));
+
+    const input = await screen.findByLabelText("What should change?");
+    await waitFor(() => {
+      expect(input).toHaveFocus();
+    });
+    fireEvent.compositionStart(input);
+    if (!isComposing) {
+      fireEvent.compositionEnd(input);
+    }
+    fireEvent.keyDown(input, { key, isComposing, keyCode });
+
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("");
+    expect(screen.getByTestId("annotation-mark-1")).toBeInTheDocument();
+    if (isComposing) {
+      fireEvent.compositionEnd(input);
+    }
+    await user.keyboard(`{${key}}`);
+
+    expect(screen.queryByLabelText("What should change?")).toBeNull();
+    expect(screen.queryByTestId("annotation-mark-1")).toBeNull();
+    expect(screen.getByText("0 marks")).toBeInTheDocument();
+    expect(screen.getByTestId("image-annotation-panel")).toHaveFocus();
+  },
+);
+
 /**
  * Undo, redo and delete sit together in the pill, next to the tools. Delete
  * only means something while a mark is open, so it says so until one is.

@@ -6554,7 +6554,12 @@ function ComposerConnectorAccountMenuContent({
           </span>
         </div>
         {showSearch ? (
-          <div className="shrink-0 border-b border-border/50 px-3 py-2">
+          <div className="relative shrink-0 border-b border-border/50 px-3 py-2">
+            <Search
+              size={16}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
             <Input
               value={search}
               onChange={(event) => {
@@ -6567,7 +6572,7 @@ function ComposerConnectorAccountMenuContent({
               placeholder={t(($) => {
                 return $.connectors.accounts.find;
               })}
-              className="h-8"
+              className="h-8 pl-9"
             />
           </div>
         ) : null}
@@ -6857,6 +6862,7 @@ function ConnectorsPopoverButton({
         </Tooltip>
       </TooltipProvider>
       <PopoverContent
+        initialFocus={isMobileTextInputDevice() ? false : undefined}
         side="top"
         align="start"
         aria-label={t(($) => {
@@ -6884,6 +6890,19 @@ function ConnectorsPopoverButton({
       />
     </Popover>
   );
+}
+
+function focusComposerConnectorSearch(element: HTMLElement | null) {
+  const panel = element?.closest("[data-connector-panel]");
+  if (
+    panel?.closest("[data-slot='popover-content'][data-open]") &&
+    panel.ownerDocument.activeElement === panel &&
+    !isMobileTextInputDevice()
+  ) {
+    panel
+      .querySelector<HTMLInputElement>("[data-connector-search]")
+      ?.focus({ preventScroll: true });
+  }
 }
 
 /**
@@ -6970,13 +6989,34 @@ function ComposerConnectorsPopoverBody({
   };
 
   return (
-    <div className={cn("flex min-h-0 flex-col", showSearch && "h-100")}>
+    <div
+      data-connector-panel
+      // Base UI focuses this while loading; once ready, search is first.
+      tabIndex={connectorsLoading ? 0 : -1}
+      onFocus={(event) => {
+        focusComposerConnectorSearch(event.currentTarget);
+      }}
+      className={cn(
+        "flex min-h-0 flex-col outline-none",
+        showSearch && "h-100",
+      )}
+    >
       {(connectorItems.length > 0 || connectorsLoading) && (
         <div className="flex min-h-0 flex-1 flex-col py-1">
           {showSearch && (
-            <div className="shrink-0 px-3 py-1 border-b border-border/50">
+            <div className="flex shrink-0 items-center gap-2 px-3 py-1 border-b border-border/50">
+              <Search
+                size={16}
+                aria-hidden="true"
+                className="pointer-events-none shrink-0 text-muted-foreground"
+              />
               <input
+                ref={focusComposerConnectorSearch}
+                data-connector-search
                 type="text"
+                aria-label={t(($) => {
+                  return $.chat.connectors.find;
+                })}
                 placeholder={t(($) => {
                   return $.chat.connectors.find;
                 })}
@@ -6986,7 +7026,7 @@ function ComposerConnectorsPopoverBody({
                     popoverSearch: e.target.value,
                   });
                 }}
-                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                className="min-w-0 w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
               />
             </div>
           )}

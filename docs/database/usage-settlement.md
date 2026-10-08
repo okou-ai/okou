@@ -30,7 +30,7 @@ debits use the same atomic arithmetic policy.
 ## Allowance data removed
 
 The owner confirmed that only the Okou team received Allowance and requested
-complete deletion of that history. Migration 1345 drops the entitlement, window
+complete deletion of that history. Migration 1346 drops the entitlement, window
 and allocation tables and the hourly Allowance columns. No serving code issues,
 reads, refreshes, reserves or consumes Allowance. Reports sum only recorded
 `creditsCharged`; wallets and ordinary usage facts are not changed, and processed

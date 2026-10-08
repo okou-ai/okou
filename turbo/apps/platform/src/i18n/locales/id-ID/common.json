@@ -2096,7 +2096,6 @@
         "default": "Sedang berpikir..."
       },
       "viewActivityLogs": "Lihat log aktivitas",
-      "viewLangfuseTrace": "Lihat trace Langfuse",
       "viewLogs": "Lihat log eksekusi",
       "waitingIn": "Menunggu di",
       "workedFor": "Dikerjakan selama {{duration}}",

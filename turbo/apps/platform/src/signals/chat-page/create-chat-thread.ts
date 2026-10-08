@@ -214,10 +214,6 @@ import {
 import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
 import { createSubscriptionResetCardSignalsRegistry } from "./subscription-reset-block.ts";
 import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
-import {
-  createRunDetailSignalsRegistry,
-  type RunDetailSignals,
-} from "./run-detail.ts";
 import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
 import {
   createThreadActivitySummarySignals,
@@ -975,7 +971,6 @@ function createRenderedChatGroups(
 
 interface RegisteredChatEvent {
   readonly event: ChatEvent;
-  readonly runDetail: RunDetailSignals | undefined;
   readonly userMessageRenderDocument: UserMessageRenderDocument | undefined;
 }
 
@@ -1981,7 +1976,6 @@ function createPagedEventResources({
     previewCatalogReady$,
   );
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
-  const runDetailSignals = createRunDetailSignalsRegistry();
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
@@ -2001,9 +1995,6 @@ function createPagedEventResources({
     ({ set }, event: ChatEvent): RegisteredChatEvent => {
       return {
         event,
-        runDetail: event.runId
-          ? set(runDetailSignals.register$, event.runId)
-          : undefined,
         userMessageRenderDocument: set(
           registerUserMessageRenderDocument$,
           event,
@@ -2040,13 +2031,6 @@ function createPagedEventResources({
   });
 
   const registeredEvents$ = state<RegisteredChatEvent[]>([]);
-  const runDetails$ = computed((get) => {
-    return new Map(
-      get(registeredEvents$).flatMap(({ runDetail }) => {
-        return runDetail ? [[runDetail.runId, runDetail] as const] : [];
-      }),
-    );
-  });
   // Tree parsing is not part of the sync: the render window decides which
   // events need trees, so the ensure step runs at the window's write points.
   const syncRegisteredEvents$ = command(
@@ -2076,7 +2060,6 @@ function createPagedEventResources({
     diagramCodesForEvents$,
     mermaidDiagrams,
     publicSignals: {
-      runDetails$,
       browserSessionSignals,
       subscribeBrowserSessions$: browserSessionSignals.subscribe$,
       retryRichEventTree$,
@@ -3540,7 +3523,6 @@ function createThinkingIndicatorSignals() {
 
 function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
-    runDetails$: events.runDetails$,
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,

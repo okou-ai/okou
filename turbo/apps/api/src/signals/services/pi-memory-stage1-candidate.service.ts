@@ -82,7 +82,7 @@ async function releaseCandidateReferences(
   }
 }
 
-/** Supported insertion path for admission and controlled fixture/repair writers. */
+/** Candidate insertion within the caller-owned admission transaction. */
 export async function insertPiMemoryStage1Candidates(
   tx: Tx,
   rows: readonly (typeof piMemoryStage1Candidates.$inferInsert)[],
