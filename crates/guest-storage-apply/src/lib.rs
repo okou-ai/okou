@@ -40,6 +40,17 @@
 //! and their padding are exempt, including unread payloads of skipped entries;
 //! sparse files retain their physical-data streaming and hole-seeking behavior.
 //! The budget resets between members.
+//!
+//! ## Skipped archive entry diagnostics
+//!
+//! Each archive attempt logs at most 32 examples across its path/link rejection
+//! checks, followed by one total skipped/suppressed-count summary when any entry
+//! was skipped. Entry, link and archive-target paths in these diagnostics are
+//! escaped and limited to 256 UTF8 bytes, including a truncation marker. No list
+//! of rejected paths is retained, and concurrent attempts have separate budgets.
+//! The summary is also emitted on an extraction error; it does not imply success
+//! or roll back accepted entries. Diagnostic truncation never changes the paths
+//! used for safety checks or extraction, and exhaustion continues safe skipping.
 
 mod archive;
 mod cleanup;
