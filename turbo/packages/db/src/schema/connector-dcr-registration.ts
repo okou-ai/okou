@@ -10,7 +10,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-/** Organization-scoped client registration for one exact builtin MCP contract. */
+/** Organization-scoped OAuth client registration for a builtin MCP method. */
 export const builtinConnectorDcrRegistrations = pgTable(
   "connector_dcr_registrations",
   {
@@ -18,7 +18,6 @@ export const builtinConnectorDcrRegistrations = pgTable(
     orgId: text("org_id").notNull(),
     connectorSlug: varchar("connector_slug", { length: 64 }).notNull(),
     authMethod: varchar("auth_method", { length: 50 }).notNull(),
-    contractHash: varchar("contract_hash", { length: 64 }).notNull(),
     issuer: text("issuer").notNull(),
     clientId: text("client_id").notNull(),
     encryptedClientSecret: text("encrypted_client_secret"),
@@ -43,19 +42,17 @@ export const builtinConnectorDcrRegistrations = pgTable(
         table.orgId,
         table.connectorSlug,
         table.authMethod,
-        table.contractHash,
       ),
-      unique("uq_connector_dcr_issuer").on(
+      index("idx_connector_dcr_issuer").on(
         table.orgId,
         table.connectorSlug,
         table.authMethod,
-        table.contractHash,
         table.issuer,
       ),
       index("idx_connector_dcr_org").on(table.orgId),
       check(
         "chk_connector_dcr_identity",
-        sql`btrim(${table.issuer}) <> '' AND btrim(${table.clientId}) <> '' AND btrim(${table.redirectUri}) <> '' AND ${table.contractHash} ~ '^[a-f0-9]{64}$'`,
+        sql`btrim(${table.issuer}) <> '' AND btrim(${table.clientId}) <> '' AND btrim(${table.redirectUri}) <> ''`,
       ),
       check(
         "chk_connector_dcr_client_auth",

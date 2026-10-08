@@ -2017,7 +2017,6 @@ async function validateConnectorAutomaticOAuthConstraints(
   await client.connect();
   const accountId = "73000000-0000-4000-8000-000000000001";
   const registrationId = "73000000-0000-4000-8000-000000000002";
-  const contractHash = "a".repeat(64);
   try {
     await client.query(
       `INSERT INTO connectors (id, connector_slug, auth_method, automatic_auth_type, storage_version, org_id, user_id) VALUES ($1, 'migration-mcp', 'smart-connect', 'none', 1, 'migration-builtin-org', 'migration-builtin-user')`,
@@ -2038,14 +2037,14 @@ async function validateConnectorAutomaticOAuthConstraints(
       [accountId],
     );
     await client.query(
-      `INSERT INTO connector_dcr_registrations (id, org_id, connector_slug, auth_method, contract_hash, issuer, client_id, token_endpoint_auth_method, redirect_uri, issued_at) VALUES ($1, 'migration-builtin-org', 'migration-mcp', 'smart-connect', $2, 'https://issuer.example.test', 'builtin-client', 'none', 'https://api.example.test/callback', now())`,
-      [registrationId, contractHash],
+      `INSERT INTO connector_dcr_registrations (id, org_id, connector_slug, auth_method, issuer, client_id, token_endpoint_auth_method, redirect_uri, issued_at) VALUES ($1, 'migration-builtin-org', 'migration-mcp', 'smart-connect', 'https://issuer.example.test', 'builtin-client', 'none', 'https://api.example.test/callback', now())`,
+      [registrationId],
     );
-    const insertBinding = `INSERT INTO connector_account_oauth_bindings (connector_account_id, org_id, user_id, connector_slug, auth_method, storage_version, contract_hash, endpoint, issuer, resource, token_endpoint, client_id, token_endpoint_auth_method, registration_method, dcr_registration_id) VALUES ($1, $2, 'migration-builtin-user', 'migration-mcp', 'smart-connect', 1, $3, 'https://mcp.example.test', 'https://issuer.example.test', 'https://mcp.example.test', 'https://issuer.example.test/token', 'builtin-client', 'none', 'dcr', $4)`;
+    const insertBinding = `INSERT INTO connector_account_oauth_bindings (connector_account_id, org_id, user_id, connector_slug, auth_method, storage_version, endpoint, issuer, resource, token_endpoint, client_id, token_endpoint_auth_method, registration_method, dcr_registration_id) VALUES ($1, $2, 'migration-builtin-user', 'migration-mcp', $3, 1, 'https://mcp.example.test', 'https://issuer.example.test', 'https://mcp.example.test', 'https://issuer.example.test/token', 'builtin-client', 'none', 'dcr', $4)`;
     await expectDatabaseError(client, {
       code: "23503",
       query: insertBinding,
-      values: [accountId, "foreign-org", contractHash, registrationId],
+      values: [accountId, "foreign-org", "smart-connect", registrationId],
     });
     await expectDatabaseError(client, {
       code: "23503",
@@ -2053,14 +2052,14 @@ async function validateConnectorAutomaticOAuthConstraints(
       values: [
         accountId,
         "migration-builtin-org",
-        "b".repeat(64),
+        "different-method",
         registrationId,
       ],
     });
     await client.query(insertBinding, [
       accountId,
       "migration-builtin-org",
-      contractHash,
+      "smart-connect",
       registrationId,
     ]);
     await expectDatabaseError(client, {
@@ -2087,7 +2086,7 @@ async function validateConnectorAutomaticOAuthConstraints(
     await client.end();
   }
   console.log(
-    "   ✅ Builtin Automatic OAuth retains method identity and rejects cross-owner or cross-contract bindings\n",
+    "   ✅ Builtin Automatic OAuth retains method ownership and rejects cross-owner or cross-method bindings\n",
   );
 }
 

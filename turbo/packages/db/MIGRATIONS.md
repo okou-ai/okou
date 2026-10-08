@@ -112,6 +112,18 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-oauth-contract-hash-retirement.ts` protects migration
+  `1354_retire_oauth_contract_hash`: both physical hash columns disappear,
+  multiple historical registrations for the same method/issuer and their exact
+  account references survive, encrypted secrets and account metadata are
+  unchanged, builtin authorization context cleanup is idempotent, and unrelated,
+  malformed and absent contexts remain byte-identical. The permanent Automatic
+  OAuth constraints in `test-migration-consistency-schema.ts` retain method and
+  account ownership, client-auth validation and account-deletion cascades.
+  Retain the transition validator until production migration is verified and
+  its migration passes the journal squash frontier. Old API compatibility is
+  intentionally unsupported for this owner-approved contraction.
+
 - `scripts/test-run-checkpoint-retirement-preparation.ts` protects migration
   `1352_detach_memory_history_from_run_checkpoints`: historical memory checkpoint
   IDs survive, outgoing writers remain valid, new failure updates omit the old

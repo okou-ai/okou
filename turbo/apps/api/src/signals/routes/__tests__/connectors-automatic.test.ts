@@ -149,6 +149,31 @@ describe("builtin MCP automatic authentication", () => {
     expect((await begin(f, connectionId)).body).toStrictEqual(connected.body);
   });
 
+  it("rejects discovery metadata whose issuer differs from the requested issuer", async () => {
+    const f = await fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      metadataIssuer: "https://different-issuer.example.test",
+    });
+    await accept(
+      automatic().start({
+        headers,
+        params: { connectorSlug: f.slug },
+        body: { authMethod: f.methodId, account: { intent: "add" } },
+      }),
+      [409],
+    );
+    expect(provider.tokenBodies).toHaveLength(0);
+    expect(
+      (
+        await accept(
+          accounts().connections({ headers, query: f.target }),
+          [200],
+        )
+      ).body.connections,
+    ).toStrictEqual([]);
+  });
+
   it("completes CIMD OAuth through the fixed callback and exact receipt", async () => {
     const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {

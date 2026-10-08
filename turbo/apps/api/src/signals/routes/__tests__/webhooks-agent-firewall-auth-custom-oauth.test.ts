@@ -447,7 +447,7 @@ describe.each(["configured", "automatic"] as const)(
       });
     });
 
-    it("requires reconnect instead of replacing a verified principal during refresh", async () => {
+    it("updates verified principal metadata during refresh without requiring reconnect", async () => {
       const publicFixture = createPublicFirewallFixture(context, {
         orgRole: "org:admin",
       });
@@ -471,18 +471,15 @@ describe.each(["configured", "automatic"] as const)(
         );
 
         const refreshed = await custom.request(custom.account.id, true);
-        expect(refreshed.status).toBe(502);
+        expect(refreshed.status).toBe(200);
         expect(refreshed.body).toMatchObject({
-          error: {
-            code: "TOKEN_REFRESH_FAILED",
-            failureReason: "reconnect_required",
+          headers: {
+            Authorization:
+              mode === "automatic"
+                ? "Bearer automatic-refreshed-access-token"
+                : "Bearer custom-oauth-refreshed-access-token",
           },
         });
-        expect(JSON.stringify(refreshed.body)).not.toContain(
-          mode === "automatic"
-            ? "automatic-refreshed-access-token"
-            : "custom-oauth-refreshed-access-token",
-        );
         await expect(
           custom.connectors.listCustomConnectorAccounts(
             custom.actor,
@@ -491,11 +488,11 @@ describe.each(["configured", "automatic"] as const)(
         ).resolves.toContainEqual(
           expect.objectContaining({
             id: custom.account.id,
-            externalId: `${mode}-original-user`,
-            externalUsername: `${mode}-original-name`,
-            externalEmail: `${mode}-original@example.test`,
-            connectionStatus: "reconnect-required",
-            reconnectReason: "authorization_expired_or_revoked",
+            externalId: `${mode}-other-user`,
+            externalUsername: `${mode}-other-name`,
+            externalEmail: `${mode}-other@example.test`,
+            connectionStatus: "connected",
+            reconnectReason: null,
           }),
         );
       });
