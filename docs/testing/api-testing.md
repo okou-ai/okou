@@ -647,3 +647,33 @@ loses retention tombstones, exact sweep counts and physical deletion guarantees.
 Likewise, the selected `get-started.test.ts` check-in case proves public bonus
 visibility and expiry; private admission-service booleans are not evidence that
 a user can spend the credits. Other settlement fixtures remain unprocessed.
+
+### Fixed catalog, public account selection and activity summaries
+
+`run-lifecycle-automatic.bdd.test.ts` looks up an existing fixed Automatic
+connector, uses paid onboarding and personal model APIs, connects through real
+OAuth/no-auth routes, then obtains credentials from Runner heartbeat/claim. It
+checks both normal user and Runner access and acknowledges cancellation with the
+actual claim token. A catalog publisher protected by `CRON_SECRET` is an operator
+boundary; changing its storage version or inventing a method is not user setup.
+
+`chat-events-bootstrap-prefetch.test.ts` selects an account through the normal
+connector API, sends and claims a Run, then selects another account for the next
+Run. That proves successive selections. It does not prove which SQL snapshot wins
+when selection changes during an internally paused query.
+
+`chat-activity-summary.test.ts` constructs a real claimed Run, delivers activity
+through authenticated callbacks and observes the summary API and external Google
+request. Test provider failures on an initial request, and test bounded payloads
+with fresh activity. Do not alter persisted attempt/claim timestamps to force a
+second attempt. First-attempt and cached-result checks do not establish lease
+fencing, recovery after cooldown or stale-summary preservation across a later
+failure. Application lifetime cancellation is not automatically HTTP caller
+cancellation: follow the actual signal ownership before naming the behavior.
+
+The retired email-outbox state operation is not a teardown model. Cleanup does
+not authorize arbitrary SQL deletion of application rows. Its removed export
+cases also relied on private worker/cleanup commands and fabricated history;
+ordinary export request/status checks do not prove the removed physical inventory,
+multipart grace-period or expired-download guarantees. Remaining export worker
+and onboarding-storage fixtures are unprocessed, not approved examples.

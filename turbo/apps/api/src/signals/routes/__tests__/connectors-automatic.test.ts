@@ -13,10 +13,7 @@ import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
-import {
-  automaticMcpCatalogFixture,
-  installAutomaticMcpCatalog,
-} from "./helpers/connector-automatic-catalog";
+import { automaticMcpCatalogFixture } from "./helpers/connector-automatic-catalog";
 
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -37,7 +34,7 @@ function accounts() {
   return setupApp({ context, routes })(connectorAccountsContract);
 }
 
-async function fixture(legacyCatalog = false) {
+function fixture() {
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -45,13 +42,8 @@ async function fixture(legacyCatalog = false) {
   mocks.clerk.session(actor.userId, actor.orgId);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
-  const catalog = legacyCatalog
-    ? await installAutomaticMcpCatalog()
-    : automaticMcpCatalogFixture();
+  const catalog = automaticMcpCatalogFixture();
   onTestFinished(async () => {
-    if (legacyCatalog) {
-      mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalog.bucket);
-    }
     mocks.clerk.session(actor.userId, actor.orgId);
     const existing = await accept(
       accounts().connections({ headers, query: catalog.target }),
@@ -126,7 +118,7 @@ function receipt(f: Fixture, attemptId: string) {
 
 describe("builtin MCP automatic authentication", () => {
   it("connects and reconnects accepted no-auth with its exact catalog method", async () => {
-    const f = await fixture();
+    const f = fixture();
     mockAutomaticMcpOAuthProvider(context, {
       registration: "none",
       authentication: "none",
@@ -158,7 +150,7 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it("completes CIMD OAuth through the fixed callback and exact receipt", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
     });
@@ -203,7 +195,7 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it("persists a verified OIDC identity without expanding scopes", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       identity: {
@@ -236,7 +228,7 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it("keeps verified identity when an optional ID-token label is oversized", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       identity: {
@@ -266,7 +258,7 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it("keeps a successful connection unnamed for a future-issued ID token", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       identity: {
@@ -295,7 +287,7 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it("keeps a successful connection unnamed when its ID token is invalid", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       identity: {
@@ -326,7 +318,7 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it("keeps DCR clients bound and rejects an OAuth issuer mismatch", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "dcr",
     });
@@ -352,7 +344,7 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it("connects and reuses a DCR client with millisecond issuance and expiry", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "dcr",
       dcrClientIdIssuedAt: now() - 1000,
@@ -371,7 +363,7 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it("does not resurrect an account deleted during its reconnect token exchange", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
     });
@@ -416,7 +408,7 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it("consumes cancellation without accepting a subsequent authorization code", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
     });
