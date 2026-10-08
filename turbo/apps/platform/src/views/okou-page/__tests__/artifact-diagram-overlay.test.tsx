@@ -153,7 +153,7 @@ test("changing document fullscreen preserves the paragraph currently being read"
   const { documentDialog } = await openDocument();
   const viewport = within(documentDialog).getByTestId("artifact-dialog-stage");
   const wide = () => {
-    return documentDialog.getAttribute("data-mode") === "fullscreen";
+    return documentDialog.dataset.mode === "fullscreen";
   };
   vi.spyOn(viewport, "getBoundingClientRect").mockImplementation(() => {
     return new DOMRect(0, 10, wide() ? 800 : 400, 100);
