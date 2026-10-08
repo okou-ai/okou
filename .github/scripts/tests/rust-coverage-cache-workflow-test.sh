@@ -41,9 +41,9 @@ jq -e '
     .with["save-if"] == "${{ github.ref == '\''refs/heads/main'\'' }}"
   ) and
   any($coverage.steps[];
-    .name == "Install cargo-llvm-cov" and
+    .name == "Install coverage tools" and
     ((.uses // "") | startswith("taiki-e/install-action@")) and
-    .with.tool == "cargo-llvm-cov@0.9.1"
+    .with.tool == "cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148"
   ) and
   any($coverage.steps[];
     ((.uses // "") | startswith("astral-sh/setup-uv@")) and
@@ -57,7 +57,7 @@ jq -e '
   ) and
   any($coverage.steps[];
     .name == "Run tests with coverage" and
-    .run == "cd crates\ncargo llvm-cov --all-targets --all-features --lcov --output-path lcov.info\n"
+    .run == "cd crates\ncargo llvm-cov nextest --all-targets --all-features --test-threads 8 --lcov --output-path lcov.info\n"
   ) and
   any($coverage.steps[];
     .name == "Validate coverage report" and
@@ -138,7 +138,7 @@ action_index() {
 checkout_index=$(action_index "actions/checkout")
 sccache_index=$(step_index "Setup R2 sccache")
 rust_cache_index=$(action_index "Swatinem/rust-cache")
-install_index=$(step_index "Install cargo-llvm-cov")
+install_index=$(step_index "Install coverage tools")
 coverage_index=$(step_index "Run tests with coverage")
 report_index=$(step_index "Validate coverage report")
 codecov_index=$(step_index "Upload coverage to Codecov")
@@ -151,7 +151,7 @@ done
 ((checkout_index < sccache_index)) || fail "sccache must start after checkout"
 ((sccache_index < rust_cache_index)) || fail "sccache must start before Cargo cache restoration"
 ((rust_cache_index < install_index)) || fail "the existing Rust cache must precede tool installation"
-((install_index < coverage_index)) || fail "cargo-llvm-cov must be installed before coverage"
+((install_index < coverage_index)) || fail "cargo-llvm-cov and cargo-nextest must be installed before coverage"
 ((coverage_index < report_index)) || fail "coverage report validation must follow coverage"
 ((report_index < codecov_index)) || fail "Codecov must consume the validated report"
 

@@ -119,6 +119,28 @@ Pre-commit hooks run `cargo fmt` and `cargo doc --profile local` on staged Rust
 files. Clippy remains in the Crates CI workflow. To run it locally from `crates/`,
 use `cargo clippy --profile local --all-targets --all-features`.
 
+## Coverage in CI
+
+The Crates coverage job installs pinned `cargo-llvm-cov` and `cargo-nextest`
+versions and runs the full target/feature selection through nextest. It limits
+execution to eight concurrent tests on the eight-core runner, while retaining
+R2 sccache, the existing Rust cache, line-tables-only debug information, and the
+locked Python addon setup.
+
+After preparing the addon environment from the repository root, run the same
+coverage command from `crates/`:
+
+```bash
+cargo llvm-cov nextest --all-targets --all-features --test-threads 8 \
+  --lcov --output-path lcov.info
+```
+
+Nextest schedules tests across executables and runs each case in a separate
+process. Guest mock fixtures recognize the verified Cargo or nextest parent
+session so the mock binaries are built once per invocation, not once per case.
+The job validates the LCOV source-file count and normalized source-set digest
+before uploading to Codecov; failed coverage still fails the Crates gate.
+
 ## Test Organization
 
 ### Shared firewall contract in CI

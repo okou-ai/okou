@@ -716,7 +716,7 @@ pub fn ensure_canonical_workspace_for_test() -> Result<(), String> {
     Ok(())
 }
 
-/// Build the mock binary once per verified Cargo test invocation and resolve
+/// Build the mock binary once per verified Cargo or nextest invocation and resolve
 /// its filesystem path.
 ///
 /// The subprocess `cargo build` must land the artifact in the same
@@ -906,7 +906,7 @@ fn build_and_locate_mock_package(package: &str, binary: &str) -> Result<PathBuf,
         .parent()
         .ok_or_else(|| "guest-agent workspace directory".to_string())?;
 
-    let build_session = cargo_build_session_id();
+    let build_session = test_runner_build_session_id();
     build_and_locate_mock_package_in_workspace(
         workspace_dir,
         target_profile_dir,
@@ -1003,8 +1003,8 @@ pub fn acquire_mock_build_lock(lock: &Path) -> Result<std::fs::File, String> {
     Ok(file)
 }
 
-/// Resolve a reusable session only for tests launched directly by Cargo on Linux.
-fn cargo_build_session_id() -> Option<String> {
+/// Resolve a reusable session for direct Cargo or nextest children on Linux.
+pub fn test_runner_build_session_id() -> Option<String> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
     let parent_pid = status
         .lines()
@@ -1013,7 +1013,8 @@ fn cargo_build_session_id() -> Option<String> {
         .parse::<u32>()
         .ok()?;
     let parent_exe = std::fs::read_link(format!("/proc/{parent_pid}/exe")).ok()?;
-    if parent_exe.file_name()? != OsStr::new("cargo") {
+    let parent_name = parent_exe.file_name()?;
+    if parent_name != OsStr::new("cargo") && parent_name != OsStr::new("cargo-nextest") {
         return None;
     }
 
