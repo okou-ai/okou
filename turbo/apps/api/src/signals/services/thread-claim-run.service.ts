@@ -209,6 +209,7 @@ import {
 } from "./pending-launch-tail-plan";
 import {
   materializePreparedPiProvider,
+  piOpenRouterChatCompletionsEnabled,
   type PiModelPreparationInput,
   resolvePreparedPiModelConfig,
   shouldUsePiExecution,
@@ -6493,9 +6494,10 @@ export function createThreadClaimRunObjects(
     if (isRouteError(provider)) {
       return provider;
     }
+    const featureSwitchContext = await get(preCreateModelFeatureSwitchContext$);
     const materialized = safeSync(() => {
       return materializePreparedPiProvider(
-        piModelPreparationInput(context.input.args),
+        piModelPreparationInput(context.input.args, featureSwitchContext),
         provider,
       );
     });
@@ -7421,7 +7423,10 @@ export function createThreadClaimRunObjects(
       ? modelProviderFramework(modelProvider)
       : requestedFramework;
     const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
+      input: piModelPreparationInput(
+        args,
+        await get(preCreateModelFeatureSwitchContext$),
+      ),
       modelProvider,
     });
     return officialWorkflowRunCandidates(
@@ -7630,6 +7635,9 @@ export function createThreadClaimRunObjects(
           piExecution: selectedRunPiExecution(input.command),
           codexServiceTier: input.command.codexServiceTier,
           reasoningEffort: input.command.reasoningEffort,
+          openrouterChatCompletions: piOpenRouterChatCompletionsEnabled(
+            await get(preCreateModelFeatureSwitchContext$),
+          ),
         },
         modelProvider,
       });
@@ -8264,7 +8272,10 @@ export function createThreadClaimRunObjects(
     const { body } = bodyContext;
     const { modelProvider, framework } = runtimeContext;
     const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
+      input: piModelPreparationInput(
+        args,
+        await get(preCreateModelFeatureSwitchContext$),
+      ),
       modelProvider,
     });
     const resolved = resolveCompatibleDirectResumeSession({
@@ -13632,12 +13643,15 @@ function piModelPreparationInput(
     RunModelProviderArgs,
     "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
   >,
+  featureSwitchContext: FeatureSwitchContext,
 ): PiModelPreparationInput {
   return {
     catalog: args.catalog,
     piExecution: args.piExecution,
     codexServiceTier: args.codexServiceTier,
     reasoningEffort: args.agentRunMetadata?.reasoningEffort,
+    openrouterChatCompletions:
+      piOpenRouterChatCompletionsEnabled(featureSwitchContext),
   };
 }
 

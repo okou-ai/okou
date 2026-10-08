@@ -236,7 +236,12 @@ async function materializeSandboxModel(
       },
     });
     outcome = "success";
-    return model;
+    // Chat Completions pins OpenRouter's sticky routing to the owning thread so
+    // every Run of that thread reuses one upstream prompt cache.
+    const threadId = env.OKOU_CHAT_THREAD_ID?.trim();
+    return model.dialect === "openai-completions" && threadId
+      ? { ...model, sessionAffinityKey: threadId }
+      : model;
   } finally {
     finish(outcome);
   }

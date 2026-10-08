@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
 import { resolvePiMemoryBuiltinRoute } from "./pi-memory-builtin-config";
+import { piOpenRouterChatCompletionsEnabled } from "./pi-sandbox-config";
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
@@ -216,10 +217,10 @@ async function builtinCredential(
   if (route?.providerType !== "openrouter-codex") {
     return skip("provider_model_unsupported");
   }
-  const endpoint = getModelProviderPiEndpoint(
-    route.providerType,
-    "openai-responses",
-  );
+  const dialect = piOpenRouterChatCompletionsEnabled(args.context)
+    ? "openai-completions"
+    : "openai-responses";
+  const endpoint = getModelProviderPiEndpoint(route.providerType, dialect);
   if (!endpoint) {
     return skip("provider_model_unsupported");
   }
@@ -256,7 +257,7 @@ async function builtinCredential(
       apiKey,
       model: route.upstreamModel,
       baseUrl: endpoint.baseUrl,
-      dialect: "openai-responses",
+      dialect,
       transport: "sse",
     },
     {

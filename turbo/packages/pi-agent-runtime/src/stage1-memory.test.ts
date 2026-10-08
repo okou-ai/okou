@@ -388,4 +388,113 @@ describe("Pi memory Stage 1 runtime", () => {
       server.close();
     }
   });
+
+  it("sends the fixed Stage 1 request through OpenRouter Chat Completions", async () => {
+    const requests: unknown[] = [];
+    const server = createServer((request, response) => {
+      void (async () => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        requests.push(
+          JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown,
+        );
+        const text = JSON.stringify({
+          raw_memory: "memory",
+          rollout_summary: "summary",
+          rollout_slug: "slug",
+        });
+        const chunk = (body: unknown) => {
+          return `data: ${JSON.stringify(body)}\n\n`;
+        };
+        const base = {
+          id: "chatcmpl_stage1",
+          object: "chat.completion.chunk",
+          model: "deepseek/deepseek-v4.1-flash",
+        };
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(
+          chunk({
+            ...base,
+            choices: [
+              { index: 0, delta: { content: text }, finish_reason: null },
+            ],
+          }) +
+            chunk({
+              ...base,
+              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+              usage: {
+                prompt_tokens: 11,
+                completion_tokens: 7,
+                prompt_tokens_details: { cached_tokens: 2 },
+              },
+            }) +
+            "data: [DONE]\n\n",
+        );
+      })().catch((error: unknown) => {
+        response.destroy(error instanceof Error ? error : new Error("test"));
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("Stage 1 test server has no TCP address");
+    }
+    try {
+      const result = await runPiMemoryStage1Extraction({
+        model: {
+          provider: "openrouter",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: "test-key",
+          model: "deepseek/deepseek-v4.1-flash",
+          dialect: "openai-completions",
+          transport: "sse",
+        },
+        evidence: [{ kind: "human", content: "work" }],
+        requestId: "00000000-0000-4000-8000-000000000999",
+      });
+
+      expect(result).toMatchObject({
+        responseText: expect.stringContaining("raw_memory"),
+        usage: { input: 9, output: 7, cacheRead: 2 },
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        model: "deepseek/deepseek-v4.1-flash",
+        reasoning: { effort: "low" },
+        max_tokens: 32_768,
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "pi_memory_stage1",
+            strict: true,
+            schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+          },
+        },
+        messages: [
+          { role: "system" },
+          {
+            role: "user",
+            content: [
+              expect.objectContaining({
+                type: "text",
+                text: expect.stringContaining("work"),
+              }),
+            ],
+          },
+        ],
+      });
+      expect(requests[0]).not.toHaveProperty("tools");
+      expect(requests[0]).not.toHaveProperty("input");
+    } finally {
+      server.close();
+    }
+  });
 });
