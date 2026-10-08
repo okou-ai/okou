@@ -165,13 +165,13 @@ function projectionScopeCondition(
 
 const backfillMissingProjections$ = command(
   async (
-    { set },
+    { get, set },
     scope: MemorySummaryProjectionScope | undefined,
     currentTime: Date,
     signal: AbortSignal,
   ): Promise<number> => {
     const db = set(writeDb$);
-    const rows = await db
+    const rows = await get(db$)
       .select({
         memoryStorageId: storages.id,
         storageVersionId: storageVersions.id,

@@ -540,6 +540,10 @@ const commitVerifiedStorageVersion$ = command(
       let step = plan.next();
       while (!step.done) {
         const statement = step.value;
+        if (!("sql" in statement)) {
+          step = plan.next([nowDate()]);
+          continue;
+        }
         let rows: readonly unknown[] = [];
         if (statement.rowSchema) {
           rows = parseRawRows(
