@@ -563,8 +563,7 @@ function resolveVncConnectionUpdate(
   host: ReturnType<typeof canonicalizeVncHost> | undefined,
   security: ReturnType<typeof prepareVncSecurity> | undefined,
   preparedCredential:
-    | Awaited<ReturnType<typeof prepareVncCredentialSelection>>
-    | undefined,
+    Awaited<ReturnType<typeof prepareVncCredentialSelection>> | undefined,
 ) {
   const newHost = (host?.ok ? host.value : undefined) ?? current.host;
   const newPort = args.body.port ?? current.port;

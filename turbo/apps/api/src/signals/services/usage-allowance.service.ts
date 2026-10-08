@@ -408,6 +408,4 @@ export const refreshUsageAllowanceAvailability$ = command(
 );
 
 export type UsageAllowanceAvailabilitySnapshot =
-  | UsageAllowanceAvailability
-  | "allowance_refresh_required"
-  | null;
+  UsageAllowanceAvailability | "allowance_refresh_required" | null;

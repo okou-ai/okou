@@ -52,8 +52,7 @@ const ACCOUNT_CONFLICT_MESSAGE =
   "The subscription account changed concurrently. Refresh and try again.";
 
 export type PersonalSubscriptionProviderType =
-  | typeof CODEX_TYPE
-  | typeof CLAUDE_CODE_TYPE;
+  typeof CODEX_TYPE | typeof CLAUDE_CODE_TYPE;
 
 /** Connected Claude/Codex member accounts read together for one queued model route. */
 export interface MemberModelAccountSnapshot {

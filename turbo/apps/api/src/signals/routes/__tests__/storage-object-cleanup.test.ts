@@ -37,11 +37,7 @@ const webhooks = createWebhookCallbackApi(context);
 function objectStore() {
   const objects = new Map<string, Buffer>();
   let failure:
-    | "list"
-    | "delete"
-    | "partial-delete"
-    | "lost-delete-receipt"
-    | undefined;
+    "list" | "delete" | "partial-delete" | "lost-delete-receipt" | undefined;
   let beforeList: (() => Promise<void>) | undefined;
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
     if (command instanceof HeadObjectCommand) {

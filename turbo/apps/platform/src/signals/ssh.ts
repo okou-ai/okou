@@ -660,9 +660,9 @@ export const acceptSshConflictReview$ = command(
 
 function textField(form: HTMLFormElement, name: string): string {
   const field = form.elements.namedItem(name);
-  if (
-    !(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)
-  ) {
+  if (!(
+    field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement
+  )) {
     throw new Error(`Missing SSH form field: ${name}`);
   }
   // FormData omits disabled controls, but an uncertain draft must stay frozen.

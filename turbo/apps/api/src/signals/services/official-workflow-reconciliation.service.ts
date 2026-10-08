@@ -1927,8 +1927,7 @@ interface DormantIdentityReservation {
 }
 function resolveDormantReservationChoice(args: {
   readonly identity:
-    | typeof officialWorkflowAutomationIdentities.$inferSelect
-    | undefined;
+    typeof officialWorkflowAutomationIdentities.$inferSelect | undefined;
   readonly fallbackIntendedEnabled: boolean;
 }): { readonly id: string | null; readonly intendedEnabled: boolean } {
   return {
@@ -1942,8 +1941,7 @@ async function persistDormantIdentityReservation(
   tx: Tx,
   input: {
     readonly identity:
-      | typeof officialWorkflowAutomationIdentities.$inferSelect
-      | undefined;
+      typeof officialWorkflowAutomationIdentities.$inferSelect | undefined;
     readonly reservationId: string | null;
     readonly intendedEnabled: boolean;
     readonly workflowId: string;
@@ -2591,8 +2589,7 @@ interface DormantBlueprintReconciliationArgs {
   readonly blueprint: OfficialWorkflowAcceptedBlueprint;
   readonly activeDefinitionOnly: boolean;
   readonly identity:
-    | typeof officialWorkflowAutomationIdentities.$inferSelect
-    | undefined;
+    typeof officialWorkflowAutomationIdentities.$inferSelect | undefined;
   readonly overrides: readonly OfficialWorkflowParameterBinding[];
   readonly userTimezone: string | null;
 }

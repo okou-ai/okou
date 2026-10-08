@@ -14,9 +14,7 @@ import {
 import { orgCustomConnectors } from "./org-custom-connector";
 
 export type OrgCustomConnectorDcrTokenEndpointAuthMethod =
-  | "none"
-  | "client_secret_basic"
-  | "client_secret_post";
+  "none" | "client_secret_basic" | "client_secret_post";
 
 /**
  * Organization-owned OAuth Dynamic Client Registration result shared by

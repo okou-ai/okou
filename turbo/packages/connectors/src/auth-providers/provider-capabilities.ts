@@ -2331,10 +2331,12 @@ export type ConnectorAuthProviderConnectorSlug =
 
 type ConnectorAuthProviderMethodRegistrationMap = {
   readonly [ConnectorSlug in ConnectorAuthProviderConnectorSlug]: {
-    readonly [AuthMethodId in Extract<
-      ConnectorAuthProviderMethodRegistrationEntry,
-      { readonly connectorSlug: ConnectorSlug }
-    >["authMethodId"]]: Extract<
+    readonly [
+      AuthMethodId in Extract<
+        ConnectorAuthProviderMethodRegistrationEntry,
+        { readonly connectorSlug: ConnectorSlug }
+      >["authMethodId"]
+    ]: Extract<
       ConnectorAuthProviderMethodRegistrationEntry,
       {
         readonly connectorSlug: ConnectorSlug;

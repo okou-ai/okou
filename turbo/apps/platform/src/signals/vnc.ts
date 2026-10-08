@@ -702,9 +702,9 @@ export const openVncDialog$ = command(
 
 function textField(form: HTMLFormElement, name: string): string {
   const input = form.elements.namedItem(name);
-  if (
-    !(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)
-  ) {
+  if (!(
+    input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement
+  )) {
     throw new Error(`Missing VNC form field: ${name}`);
   }
   // Uncertain drafts are disabled, so FormData would omit their values.

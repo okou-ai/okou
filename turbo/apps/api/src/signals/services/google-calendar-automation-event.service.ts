@@ -105,9 +105,7 @@ type GoogleCalendarWatchReconcileResult =
       readonly kind: "failed";
     };
 type GoogleCalendarWatchTargetType =
-  | "primary"
-  | "explicit_calendar"
-  | "verified_legacy_primary_alias";
+  "primary" | "explicit_calendar" | "verified_legacy_primary_alias";
 
 interface GoogleCalendarWatchActionRequiredEpisode {
   readonly reason: GoogleCalendarWatchActionRequiredReason;
@@ -126,8 +124,7 @@ interface GoogleCalendarFetchError {
 }
 
 type GoogleCalendarFetchResult<T> =
-  | GoogleCalendarFetchOk<T>
-  | GoogleCalendarFetchError;
+  GoogleCalendarFetchOk<T> | GoogleCalendarFetchError;
 
 const calendarWatchResponseSchema = z.object({
   id: z.string(),

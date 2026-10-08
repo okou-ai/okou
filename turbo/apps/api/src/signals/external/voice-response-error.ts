@@ -1,7 +1,5 @@
 type VoiceResponseFailureReason =
-  | "not_configured"
-  | "deadline_exceeded"
-  | "transcription_rate_exceeded";
+  "not_configured" | "deadline_exceeded" | "transcription_rate_exceeded";
 
 /** A finite cause, without retaining provider output or the original error. */
 export class VoiceResponseError extends Error {

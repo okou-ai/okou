@@ -63,11 +63,7 @@ import { onRef } from "../utils.ts";
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
 export type WorkflowFilter =
-  | "all"
-  | "automated"
-  | "without"
-  | "private"
-  | "public";
+  "all" | "automated" | "without" | "private" | "public";
 export type WorkflowSortMode = "next-run" | "alphabetical" | "created";
 export interface WorkflowCopyFormState {
   readonly selectedAgentId: string | null;
@@ -194,11 +190,7 @@ function workflowDetailRouteForTab(
 }
 
 export type WorkflowCronFrequency =
-  | "every_day"
-  | "every_weekday"
-  | "every_week"
-  | "every_month"
-  | "custom";
+  "every_day" | "every_weekday" | "every_week" | "every_month" | "custom";
 
 export interface WorkflowCronFields {
   readonly frequency: WorkflowCronFrequency;

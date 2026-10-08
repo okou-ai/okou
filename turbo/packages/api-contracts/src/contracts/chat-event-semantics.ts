@@ -11,8 +11,7 @@ type UnsequencedChatEvent<T> = T extends unknown
 // Local optimistic events use the same business shape without server ordering.
 // Persisted-only callers retain their required seqId through the overload below.
 type ChatEvent = (
-  | PersistedChatEvent
-  | UnsequencedChatEvent<PersistedChatEvent>
+  PersistedChatEvent | UnsequencedChatEvent<PersistedChatEvent>
 ) & {
   readonly optimisticUserMessageAssociation?: "run" | "queue";
 };

@@ -168,7 +168,7 @@ async function print(result: ReadResult, json: boolean, signal: AbortSignal) {
     );
     return;
   }
-  for (let index = 0; index < result.chunks.length; ) {
+  for (let index = 0; index < result.chunks.length;) {
     const first = result.chunks[index];
     if (!first) throw new Error("Missing SSH output chunk");
     const firstBytes = Buffer.from(first.data, "base64");

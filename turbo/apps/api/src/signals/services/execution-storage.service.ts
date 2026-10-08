@@ -47,8 +47,7 @@ export interface WritebackStorageRequest extends ExecutionStorageIdentity {
 }
 
 export type ExecutionStorageRequest =
-  | ReadOnlyStorageRequest
-  | WritebackStorageRequest;
+  ReadOnlyStorageRequest | WritebackStorageRequest;
 export type PreparedStorageIdentity = ExecutionStorageIdentity;
 
 /**

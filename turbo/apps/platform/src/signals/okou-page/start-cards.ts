@@ -103,8 +103,7 @@ export const startCardSubscriptionPinned$ = computed(
 );
 
 export type StartCardSubscriptionProvider =
-  | "codex-oauth-token"
-  | "claude-code-oauth-token";
+  "codex-oauth-token" | "claude-code-oauth-token";
 
 /** Opens the chosen personal subscription connection on every plan. */
 export const connectStartCardSubscription$ = command(

@@ -228,8 +228,7 @@ interface GmailHistoryLabelAdded {
 }
 
 type GmailHistoryMessageEvent =
-  | GmailHistoryMessageAdded
-  | GmailHistoryLabelAdded;
+  GmailHistoryMessageAdded | GmailHistoryLabelAdded;
 
 interface GmailMessageContext {
   readonly messageId: string;

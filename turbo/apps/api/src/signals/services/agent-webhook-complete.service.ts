@@ -111,8 +111,7 @@ interface CompletionSuccessResponse {
 }
 
 type CompletionResponse =
-  | CompletionSuccessResponse
-  | AgentCheckpointErrorResponse;
+  CompletionSuccessResponse | AgentCheckpointErrorResponse;
 
 interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly id: string;

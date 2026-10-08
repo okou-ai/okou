@@ -2187,8 +2187,7 @@ function scheduleClaimSucceededSideEffects(args: {
   readonly pollHttpRequestMs: number | undefined;
   readonly pollReason: string | undefined;
   readonly preferenceResolution:
-    | RunnerPreferenceTelemetryResolution
-    | undefined;
+    RunnerPreferenceTelemetryResolution | undefined;
   readonly preferenceClaimState: RunnerPreferenceTelemetryState | undefined;
   readonly preferenceTargetedSelf: boolean | undefined;
   readonly historyGenerationRunId: string | undefined;
@@ -2223,8 +2222,7 @@ interface ClaimTimingMetricArgs {
   readonly pollHttpRequestMs: number | undefined;
   readonly pollReason: string | undefined;
   readonly preferenceResolution:
-    | RunnerPreferenceTelemetryResolution
-    | undefined;
+    RunnerPreferenceTelemetryResolution | undefined;
   readonly preferenceClaimState: RunnerPreferenceTelemetryState | undefined;
   readonly preferenceTargetedSelf: boolean | undefined;
   readonly historyGenerationRunId: string | undefined;

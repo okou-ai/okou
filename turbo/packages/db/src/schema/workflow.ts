@@ -34,16 +34,9 @@ export type OfficialWorkflowInstallationState = "installing" | "installed";
 /** The local tool a skill-imported workflow came from. */
 export type WorkflowImportSource = "claudeCode" | "codex";
 export type OfficialWorkflowReconciliationStatus =
-  | "current"
-  | "reconciling"
-  | "needs_reconfiguration"
-  | "failed";
+  "current" | "reconciling" | "needs_reconfiguration" | "failed";
 export type OfficialWorkflowAutomationIdentityState =
-  | "active"
-  | "reconciling"
-  | "needs_reconfiguration"
-  | "failed"
-  | "removed";
+  "active" | "reconciling" | "needs_reconfiguration" | "failed" | "removed";
 
 /**
  * Workflows table

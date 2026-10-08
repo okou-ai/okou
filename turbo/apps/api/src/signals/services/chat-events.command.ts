@@ -1356,8 +1356,7 @@ interface NormalSendInput {
 function normalSendInputInsertSql(
   event: ReturnType<typeof normalSendEvent>,
   replacementRows:
-    | Parameters<typeof requireChatEventReplacementTarget>[0]
-    | null,
+    Parameters<typeof requireChatEventReplacementTarget>[0] | null,
 ) {
   return replacementRows === null
     ? chatEventInsertSql(event, "id")

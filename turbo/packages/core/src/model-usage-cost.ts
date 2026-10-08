@@ -11,10 +11,7 @@ interface ModelUsageCostPrice {
 }
 
 type UnavailablePrice =
-  | "invalid_usage"
-  | "missing_price"
-  | "fallback_price"
-  | "invalid_price";
+  "invalid_usage" | "missing_price" | "fallback_price" | "invalid_price";
 
 export function valueModelUsage(
   entries: readonly ModelUsageCostEntry[],

@@ -818,11 +818,7 @@ async function generateEntries(
 }
 
 type HomeTaskRefreshOutcome =
-  | "refreshed"
-  | "unchanged"
-  | "removed"
-  | "skipped"
-  | "failed";
+  "refreshed" | "unchanged" | "removed" | "skipped" | "failed";
 
 class HomeTaskScopeUnavailableError extends Error {
   constructor() {

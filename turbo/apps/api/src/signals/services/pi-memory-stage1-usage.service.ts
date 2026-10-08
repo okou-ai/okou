@@ -216,11 +216,7 @@ export async function recordPiMemoryStage1Usage(
 export interface PiMemoryStage1UsageReceipt {
   readonly accountingAt: string | null;
   readonly disposition:
-    | "new"
-    | "replay"
-    | "legacy_replay"
-    | "zero_usage"
-    | "subscription";
+    "new" | "replay" | "legacy_replay" | "zero_usage" | "subscription";
 }
 
 /** Opaque logical response identity; category delivery/outcome is not identity. */

@@ -33,12 +33,7 @@ export type WorkflowCoverTone =
 
 /** The shape of the thing a workflow leaves behind, sketched under its marks. */
 export type WorkflowCoverKind =
-  | "doc"
-  | "card"
-  | "list"
-  | "check"
-  | "table"
-  | "chart";
+  "doc" | "card" | "list" | "check" | "table" | "chart";
 
 /**
  * What the shelf cover draws. `sources` are the connectors the workflow reads

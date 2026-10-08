@@ -5,10 +5,7 @@ import { setupApp } from "../../../../__tests__/test-helpers";
 import { testCronCleanupSandboxesStateRoutes } from "../../test-cron-cleanup-sandboxes-state";
 
 export type TestTerminalRunStatus =
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "timeout";
+  "completed" | "failed" | "cancelled" | "timeout";
 
 export async function transitionRunToTerminal(
   context: TestContext,

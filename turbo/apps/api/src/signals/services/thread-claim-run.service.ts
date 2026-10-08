@@ -1554,9 +1554,7 @@ type QueuedModelContext =
       readonly runCodexServiceTier: "fast" | undefined;
       readonly reasoningEffort: ReasoningEffort | undefined;
       readonly builtInModelRuntimeRoute:
-        | BuiltInModelRuntimeRoute
-        | null
-        | undefined;
+        BuiltInModelRuntimeRoute | null | undefined;
       readonly memberAccountSnapshot: MemberModelAccountSnapshot | null;
     };
 
@@ -1626,9 +1624,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
 }
 
 type RunnerInputResult =
-  | ReturnType<typeof prepareRunnerStorageInput>
-  | CreateRunErrorResult
-  | null;
+  ReturnType<typeof prepareRunnerStorageInput> | CreateRunErrorResult | null;
 
 function customConnectorSourceStorageRows(
   snapshot: ConnectorSourceSnapshot,
@@ -8186,8 +8182,7 @@ interface PrepareAgentRunStorageManifestArgs {
   readonly artifacts: readonly ContextArtifact[];
   readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
   readonly additionalVolumeSources:
-    | readonly StorageManifestSource[]
-    | undefined;
+    readonly StorageManifestSource[] | undefined;
   readonly framework: SupportedFramework | "pi";
   /** Canonical session persistence replaces matching request writeback artifacts. */
   readonly persistedStorageMounts?: readonly PersistedStorageMount[];
@@ -8220,8 +8215,7 @@ interface BuildStorageManifestEntriesArgs {
   readonly composeVolumes: readonly ResolvedVolume[];
   readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
   readonly additionalVolumeSources:
-    | readonly StorageManifestSource[]
-    | undefined;
+    readonly StorageManifestSource[] | undefined;
   readonly artifacts: readonly ContextArtifact[];
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
@@ -8312,11 +8306,9 @@ class StorageManifestEntryPhaseTiming {
     private readonly resolveActionType: ApiDispatchTimingActionType,
     private readonly generateActionType: ApiDispatchTimingActionType,
     private readonly resolveDimensions:
-      | ApiDispatchTimingDimensionsInput
-      | undefined,
+      ApiDispatchTimingDimensionsInput | undefined,
     private readonly generateDimensions:
-      | ApiDispatchTimingDimensionsInput
-      | undefined,
+      ApiDispatchTimingDimensionsInput | undefined,
   ) {}
 
   async measureResolve<T>(operation: () => T | Promise<T>): Promise<T> {
@@ -9041,8 +9033,7 @@ function storageManifestRequests(args: {
   readonly composeVolumes: readonly ResolvedVolume[];
   readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
   readonly additionalVolumeSources:
-    | readonly StorageManifestSource[]
-    | undefined;
+    readonly StorageManifestSource[] | undefined;
   readonly artifacts: readonly ContextArtifact[];
 }): readonly StorageRequest[] {
   const requests: StorageRequest[] = [];
@@ -9829,8 +9820,7 @@ interface EffectiveConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants:
-    | readonly AgentCustomConnectorGrant[]
-    | undefined;
+    readonly AgentCustomConnectorGrant[] | undefined;
   readonly source: ConnectorScopeSource;
 }
 
@@ -9988,8 +9978,7 @@ interface BuiltinConnectorRuntimeContext {
   readonly vars: Record<string, string> | undefined;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly connectorSlugs: readonly ConnectorSlug[];
   readonly mcpConnectorSlugs: readonly ConnectorSlug[];
   readonly connectorSourceIdBySlug: Readonly<Record<string, string>>;
@@ -10068,8 +10057,7 @@ interface LaunchRunRowsArgs {
   readonly runnerGroup: string | undefined;
   readonly launchSnapshot: AgentRunLaunchSnapshot;
   readonly officialWorkflowProvenance:
-    | AgentRunOfficialWorkflowProvenance
-    | undefined;
+    AgentRunOfficialWorkflowProvenance | undefined;
   readonly error: string | undefined;
   readonly creditAdmitted: boolean;
 }
@@ -11085,8 +11073,7 @@ function eagerStoredConnectorSecretNames(args: {
   readonly storedEnvironment: Record<string, string> | undefined;
   readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
   readonly overriddenSecretAliases: ReadonlySet<string>;
 }): ReadonlySet<string> {
   const names = new Set<string>();
@@ -11242,8 +11229,7 @@ interface StoredConnectorMaterializationArgs {
   readonly userId: string;
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly connectorIdCandidatesBySlug:
-    | ReadonlyMap<ConnectorSlug, readonly string[]>
-    | undefined;
+    ReadonlyMap<ConnectorSlug, readonly string[]> | undefined;
   readonly scopeSource: ConnectorScopeSource;
   readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
 }
@@ -11461,11 +11447,9 @@ interface RunConnectorPreparation {
     readonly userId: string;
     readonly allowedCustomConnectorIds: readonly string[];
     readonly connectorIdCandidatesByCustomConnectorId:
-      | ReadonlyMap<string, readonly string[]>
-      | undefined;
+      ReadonlyMap<string, readonly string[]> | undefined;
     readonly customConnectorGrants:
-      | readonly AgentCustomConnectorGrant[]
-      | undefined;
+      readonly AgentCustomConnectorGrant[] | undefined;
     readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
   } | null;
 }
@@ -11728,8 +11712,7 @@ interface AgentRunsCreateInternalRunCallback {
 }
 
 type AgentRunsCreateRunCallback =
-  | AgentRunsCreateHttpRunCallback
-  | AgentRunsCreateInternalRunCallback;
+  AgentRunsCreateHttpRunCallback | AgentRunsCreateInternalRunCallback;
 
 interface AgentRunsCreateAgentRunMetadata {
   readonly workflowAutomationId?: string;
@@ -11924,8 +11907,7 @@ function expandEnvironment(args: {
   readonly secrets: Record<string, string> | undefined;
   readonly additionalEnvironment: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
   readonly storedConnectorEnvironment: Record<string, string> | undefined;
   readonly connectorVars: Record<string, string> | undefined;
 }): Record<string, string> | null {
@@ -11958,8 +11940,7 @@ function expandStoredConnectorEnvironment(args: {
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
 }): Record<string, string> | undefined {
   if (!args.environment) {
     return undefined;
@@ -12013,8 +11994,7 @@ function withoutLegacyAgentRunEnvironmentEntries<T>(
 function filterSecretConnectorMap(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly overriddenSecrets: readonly (
-    | Readonly<Record<string, unknown>>
-    | undefined
+    Readonly<Record<string, unknown>> | undefined
   )[];
 }): Record<string, string> | undefined {
   if (!args.secretConnectorMap) {
@@ -12037,8 +12017,7 @@ function filterSecretConnectorMap(args: {
 
 function filterSecretConnectorMetadataMap(args: {
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly secretConnectorMap: Record<string, string> | undefined;
 }): Record<string, SecretConnectorMetadata> | undefined {
   if (!args.secretConnectorMetadataMap || !args.secretConnectorMap) {
@@ -12179,8 +12158,7 @@ function buildStoredExecutionContextDraft(
     readonly modelUsageLongContextMinTotalInputTokens: number;
     readonly apiStartTime: number;
     readonly additionalVolumes:
-      | readonly AgentRunCreateAdditionalVolume[]
-      | undefined;
+      readonly AgentRunCreateAdditionalVolume[] | undefined;
     readonly platformEnvironment: Record<string, string> | undefined;
     readonly userTimezone: string | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
@@ -12367,8 +12345,7 @@ interface BuildRunnerJobPayloadInput {
   readonly modelUsageLongContextMinTotalInputTokens: number;
   readonly apiStartTime: number;
   readonly additionalVolumes:
-    | readonly AgentRunCreateAdditionalVolume[]
-    | undefined;
+    readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly okouTokenComputerUseHostId: string | undefined;
@@ -12723,8 +12700,7 @@ function missingEnvironmentReferences(args: {
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
   readonly additionalEnvironment: Record<string, string> | undefined;
   readonly storedConnectorEnvironment: Record<string, string> | undefined;
   readonly connectorVars: Record<string, string> | undefined;
@@ -12753,8 +12729,7 @@ function missingReferencesInEnvironment(args: {
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
 }): string[] {
   if (!args.environment) {
     return [];
@@ -12785,8 +12760,7 @@ function assertStoredConnectorEnvironmentReferences(args: {
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
 }): void {
   const missing = missingReferencesInEnvironment(args);
   if (missing.length > 0) {
@@ -14018,8 +13992,7 @@ function prepareRunOutputMetadata(args: {
 }): {
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
   readonly additionalVolumes:
-    | readonly AgentRunCreateAdditionalVolume[]
-    | undefined;
+    readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
 } {
   const additionalVolumes = preparedRunAdditionalVolumes({
@@ -14080,9 +14053,7 @@ type RunWorkflowModelState =
   | undefined;
 
 type PreparedOfficialWorkflow =
-  | OfficialWorkflowRunObservation
-  | CreateRunErrorResult
-  | undefined;
+  OfficialWorkflowRunObservation | CreateRunErrorResult | undefined;
 // --- Thread-private implementation: Pi launch resources ---
 
 function noContentPiMemoryRecall(args: {
@@ -14124,8 +14095,7 @@ function bindStableAppendSystemPrompt(
 // --- Thread-private implementation: launch admission ---
 
 type AtomicLaunchCommitAttempt =
-  | AtomicLaunchCommitResult
-  | CreateRunErrorResult;
+  AtomicLaunchCommitResult | CreateRunErrorResult;
 
 interface AtomicLaunchCommitCompletion {
   readonly result: AtomicLaunchCommitAttempt;

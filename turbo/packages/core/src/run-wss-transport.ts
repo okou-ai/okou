@@ -36,12 +36,7 @@ type Socket = Pick<
 >;
 
 export type RunWssState =
-  | "idle"
-  | "connecting"
-  | "ready"
-  | "reconnecting"
-  | "closed"
-  | "failed";
+  "idle" | "connecting" | "ready" | "reconnecting" | "closed" | "failed";
 
 export interface RunWssTransportOptions {
   /** Called synchronously; there is no offline frame queue or business receipt. */

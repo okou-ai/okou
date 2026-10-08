@@ -1232,8 +1232,7 @@ test("Keep scopes, topics, and subscriber releases independent on one port", asy
     id: string,
     scope: "user" | "org",
     topicName:
-      | "presentationTemplatesChanged"
-      | "connectorPermissionUpdated" = topic,
+      "presentationTemplatesChanged" | "connectorPermissionUpdated" = topic,
   ) => {
     return bridge.subscribeRealtime(
       id,

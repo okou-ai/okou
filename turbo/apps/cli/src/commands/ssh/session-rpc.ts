@@ -103,13 +103,7 @@ export type SessionReadFailure = Extract<
   { type: "failed" | "rpc_error" }
 >;
 type Method =
-  | "start"
-  | "list"
-  | "status"
-  | "read"
-  | "write"
-  | "signal"
-  | "close";
+  "start" | "list" | "status" | "read" | "write" | "signal" | "close";
 const expected: Record<Method, Result["type"]> = {
   start: "started",
   list: "sessions",

@@ -183,10 +183,7 @@ export type ConnectorGrantConfig =
   | ConnectorManagedGrantConfig;
 
 export type ConnectorAccessKind =
-  | "static"
-  | "refresh-token"
-  | "none"
-  | "automatic";
+  "static" | "refresh-token" | "none" | "automatic";
 
 export const CONNECTOR_PLATFORM_SECRET_NAMES = [
   "GOOGLE_ADS_DEVELOPER_TOKEN",
@@ -198,11 +195,9 @@ export type ConnectorPlatformSecretName =
 export type ConnectorSecretValueRef = `$secrets.${string}`;
 export type ConnectorVariableValueRef = `$vars.${string}`;
 export type ConnectorOutputValueRef =
-  | ConnectorSecretValueRef
-  | ConnectorVariableValueRef;
+  ConnectorSecretValueRef | ConnectorVariableValueRef;
 export type ConnectorRefreshTokenInputValueRef =
-  | ConnectorSecretValueRef
-  | ConnectorVariableValueRef;
+  ConnectorSecretValueRef | ConnectorVariableValueRef;
 export type ConnectorEnvBindingValue =
   | ConnectorRefreshTokenInputValueRef
   | {

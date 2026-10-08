@@ -174,8 +174,7 @@ describe("okou workflow edit command", () => {
       ]);
 
       const files = capturedBody?.files as
-        | Array<{ path: string; content: string }>
-        | undefined;
+        Array<{ path: string; content: string }> | undefined;
       expect(files).toBeDefined();
       expect(files).toHaveLength(1);
       expect(files?.[0]?.path).toBe("notes.md");

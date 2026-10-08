@@ -31,10 +31,7 @@ type ResetOutcome =
   ResetPersonalModelProviderSubscriptionUsageResponse["outcome"];
 
 export type SubscriptionResetActionState =
-  | "idle"
-  | "loading"
-  | "error"
-  | ResetOutcome;
+  "idle" | "loading" | "error" | ResetOutcome;
 
 export interface SubscriptionResetSignals extends SubscriptionResetDescriptor {
   readonly status$: Computed<Promise<SubscriptionResetStatus>>;

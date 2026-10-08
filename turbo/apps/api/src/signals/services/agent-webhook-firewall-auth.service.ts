@@ -333,9 +333,7 @@ type ResolveFirewallAuthResult =
     };
 
 type FirewallAuthTimingActionType =
-  | "firewall_auth_prepare"
-  | "firewall_auth_resolve"
-  | "firewall_auth_admit";
+  "firewall_auth_prepare" | "firewall_auth_resolve" | "firewall_auth_admit";
 const FIREWALL_AUTH_SANDBOX_TYPE = "runner";
 
 interface FirewallAuthTimingRecord {
@@ -713,8 +711,7 @@ interface RefreshExpiredTokensArgs {
   readonly secrets: Record<string, string>;
   readonly secretConnectorMap: Record<string, string>;
   readonly secretConnectorMetadataMap?:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -2723,8 +2720,7 @@ async function refreshAccessTokenForSource(
 function buildMetadataByAccessSource(
   refreshable: Map<string, string>,
   secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined,
+    Record<string, SecretConnectorMetadata> | undefined,
 ): Map<string, SecretConnectorMetadata> {
   const metadataByAccessSource = new Map<string, SecretConnectorMetadata>();
   for (const [key, accessSourceKey] of refreshable) {
@@ -2740,8 +2736,7 @@ function hasForbiddenModelProviderOwner(
   auth: SandboxAuth,
   secretConnectorMap: Record<string, string>,
   secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined,
+    Record<string, SecretConnectorMetadata> | undefined,
   referencedKeys: Set<string>,
 ): boolean {
   for (const key of referencedKeys) {
@@ -2786,8 +2781,7 @@ const emptyRefreshResult = Object.freeze({
 function buildRefreshableMap(
   secretConnectorMap: Record<string, string>,
   secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined,
+    Record<string, SecretConnectorMetadata> | undefined,
   connectorAccessBySlug: ReadonlyMap<string, BuiltinConnectorAccessState>,
   referencedKeys: Set<string>,
 ): Map<string, string> {
@@ -2913,8 +2907,7 @@ function modelProviderAccessSecretName(args: {
 function referencedModelProviderAccessMap(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
 }): Map<string, string> {
   const refreshable = new Map<string, string>();
@@ -2956,8 +2949,7 @@ async function syncStoredConnectorRuntimeSecrets(args: {
   readonly secrets: Record<string, string>;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -3312,8 +3304,7 @@ async function syncModelProviderRuntimeSecrets(args: {
   readonly secrets: Record<string, string>;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly featureSwitchContext: FeatureSwitchContext;
 }): Promise<void> {
@@ -3329,8 +3320,7 @@ function syncPlatformRuntimeSecrets(args: {
   readonly secrets: Record<string, string>;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -3419,8 +3409,7 @@ function canResolveMissingAccessSecret(args: {
   readonly key: string;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
     BuiltinConnectorAccessState
@@ -3460,8 +3449,7 @@ function canResolveMissingAccessSecret(args: {
 function referencedConnectorSlugs(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
 }): readonly string[] {
   if (!args.secretConnectorMap) {
@@ -3488,8 +3476,7 @@ function referencedConnectorSlugs(args: {
 function hasUnavailableAccessSource(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -3568,8 +3555,7 @@ function connectorAccessCredentialStatus(
 function connectorSlugsWithReconnectRequiredStatus(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -3621,8 +3607,7 @@ function hasMissingUnresolvableSecrets(args: {
   readonly referencedKeys: Set<string>;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
     BuiltinConnectorAccessState

@@ -56,8 +56,7 @@ function getInfoObject(node: Rule.Node): Rule.Node | null {
 
 function getStaticMessage(node: Rule.Node): string | null {
   const firstArgument = (node as NodeWithCallee).arguments?.[0] as
-    | LiteralNode
-    | undefined;
+    LiteralNode | undefined;
   if (
     firstArgument?.type === "Literal" &&
     typeof firstArgument.value === "string"

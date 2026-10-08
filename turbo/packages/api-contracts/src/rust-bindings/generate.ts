@@ -68,13 +68,7 @@ const httpMethods = [
 
 export type HttpMethod = (typeof httpMethods)[number];
 export type RustMethodVariant =
-  | "Get"
-  | "Post"
-  | "Put"
-  | "Patch"
-  | "Delete"
-  | "Head"
-  | "Options";
+  "Get" | "Post" | "Put" | "Patch" | "Delete" | "Head" | "Options";
 
 export interface NormalizedRouteBinding {
   readonly method: HttpMethod;

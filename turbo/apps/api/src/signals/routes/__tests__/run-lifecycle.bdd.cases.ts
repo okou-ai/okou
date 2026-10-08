@@ -772,11 +772,7 @@ async function entitledRunActor(
 }
 
 type OrdinaryRunOAuthSlug =
-  | "x"
-  | "slack"
-  | "test-oauth"
-  | "google-ads"
-  | "cloudflare";
+  "x" | "slack" | "test-oauth" | "google-ads" | "cloudflare";
 
 interface OrdinaryRunOAuthToken {
   readonly connectorSlug: OrdinaryRunOAuthSlug;

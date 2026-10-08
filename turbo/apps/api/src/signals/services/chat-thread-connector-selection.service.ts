@@ -59,8 +59,7 @@ type UpdateChatThreadConnectorSelectionResult =
   | { readonly kind: "invalid"; readonly message: string };
 
 type ClearChatThreadConnectorSelectionResult =
-  | { readonly kind: "cleared" }
-  | { readonly kind: "not_found" };
+  { readonly kind: "cleared" } | { readonly kind: "not_found" };
 
 function targetFromRow(row: ConnectorSelectionRow): ConnectorAccountTarget {
   if (row.connectorSlug !== null && row.customConnectorId === null) {
