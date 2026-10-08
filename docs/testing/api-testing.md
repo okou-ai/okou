@@ -301,6 +301,18 @@ a test-selected pricing alias with no configured row is application state, not a
 external provider failure. Deleting those cases does not establish missing-price
 fail-closed coverage; neighboring pricing fixtures remain unprocessed.
 
+For expiration, distinguish public access from physical cleanup. In
+`connector-oauth-completion.test.ts`, normal OAuth start/callback creates a
+receipt; advancing application time makes that receipt return 404 while the
+connector account still returns 200. This proves access expiry and account
+preservation. It does not prove an operator sweep deleted two physical rows.
+Do not add owner selectors, smaller test batch sizes or a private cron driver to
+retain that internal assertion. Similarly, a valid Stripe OAuth connection
+followed by private corruption of its storage version or identity is not a
+provider failure; keep actual provider Test-mode/reconnect behavior separately.
+See [batch013](../implementation/issue-37440-batches/batch-013.md) for the explicit
+losses of retired cleanup/monitor/corruption scenarios.
+
 ## Shared Persistent State
 
 Teardown cannot establish correctness for shared persistent state. Another

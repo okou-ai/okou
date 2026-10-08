@@ -33,7 +33,6 @@ import {
   type Job as RunnerJob,
 } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { testCustomConnectorSkillVersionAssociationContract } from "@okouai/api-contracts/contracts/test-custom-connector-skill-version-association";
 import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import {
   UNKNOWN_PERMISSION_GRANT,
@@ -79,7 +78,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-import { testCustomConnectorSkillVersionAssociationRoutes } from "../test-custom-connector-skill-version-association";
 import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import {
   createBddApi,
@@ -8172,95 +8170,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(restoredSkillMount?.versionId).toBe(updatedSkill.versionId);
 
         await api.requestCancelRun(actor, restoredRun.runId, [200]);
-      });
-
-      it("fails closed when a custom skill version belongs to another storage", async () => {
-        const api = createRunsApi(context);
-        const bdd = createBddApi(context);
-        bdd.acceptAgentStorageWrites();
-        const connectors = createConnectorBddApi(context);
-        const storages = createStoragesBddApi(context);
-        const stateClient = setupApp({
-          context,
-          routes: testCustomConnectorSkillVersionAssociationRoutes,
-        })(testCustomConnectorSkillVersionAssociationContract);
-        const { actor, agentId } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
-        const suffix = randomUUID().slice(0, 8);
-        const target = await connectors.createCustomConnector(actor, {
-          displayName: "BDD Exact Skill Target",
-          prefixTemplates: [`https://exact-target-${suffix}.example.test/api/`],
-          fields: [
-            {
-              key: "secret",
-              label: "API token",
-              kind: "secret",
-              required: true,
-            },
-          ],
-          headerInjections: [
-            {
-              name: "Authorization",
-              valueTemplate: "Bearer {{secrets.secret}}",
-            },
-          ],
-          queryInjections: [],
-          authMode: "manual",
-          skillMarkdown: "Use only the target connector skill.",
-        });
-        const other = await connectors.createCustomConnector(actor, {
-          displayName: "BDD Exact Skill Other",
-          prefixTemplates: [`https://exact-other-${suffix}.example.test/api/`],
-          fields: [
-            {
-              key: "secret",
-              label: "API token",
-              kind: "secret",
-              required: true,
-            },
-          ],
-          headerInjections: [
-            {
-              name: "Authorization",
-              valueTemplate: "Bearer {{secrets.secret}}",
-            },
-          ],
-          queryInjections: [],
-          authMode: "manual",
-          skillMarkdown: "Use only the other connector skill.",
-        });
-        onTestFinished(async () => {
-          await connectors.deleteCustomConnector(actor, target.id);
-          await connectors.deleteCustomConnector(actor, other.id);
-        });
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          target.id,
-        ]);
-        const otherSkill = await storages.downloadStorage(actor, {
-          name: getCustomConnectorSkillStorageName(other.id),
-          owner: "organization",
-        });
-
-        await accept(
-          stateClient.associate({
-            body: {
-              connectorId: target.id,
-              skillStorageVersionId: otherSkill.versionId,
-            },
-          }),
-          [200],
-        );
-        // A Thread launch failure creates no run; the thread rejects the input.
-        const failure = await api.readThreadLaunchFailure(actor, {
-          agentId,
-          prompt: "reject the wrong custom skill storage owner",
-        });
-        expect(failure).toStrictEqual({
-          pickError: "Custom connector skill registration is unavailable",
-          inputError: "internal_error",
-        });
       });
 
       it("fails expired custom OAuth without a refresh token at matched auth", async () => {
