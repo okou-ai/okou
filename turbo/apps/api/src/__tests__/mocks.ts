@@ -131,7 +131,6 @@ export interface ApiTestMocks {
     readonly useRealBatchPublish: Mock<() => boolean>;
     readonly publish: AsyncMock;
     readonly createTokenRequest: AsyncMock;
-    readonly requestToken: AsyncMock;
   };
   readonly clerk: {
     readonly sessions: { readonly getSession: AsyncMock };
@@ -555,7 +554,6 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       useRealBatchPublish: vi.fn<() => boolean>(),
       publish: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       createTokenRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-      requestToken: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
     axiom,
     axiomLogging,
@@ -1077,9 +1075,6 @@ vi.mock("ably", async (importOriginal) => {
       createTokenRequest: (...args: unknown[]): Promise<unknown> => {
         return apiTestMocks.ably.createTokenRequest(...args);
       },
-      requestToken: (...args: unknown[]): Promise<unknown> => {
-        return apiTestMocks.ably.requestToken(...args);
-      },
     };
   }
   return { default: { Rest: MockRest } };
@@ -1465,10 +1460,6 @@ export function resetApiTestMocks(): void {
   apiTestMocks.ably.publish.mockReset();
   apiTestMocks.ably.publish.mockResolvedValue(undefined);
   apiTestMocks.ably.createTokenRequest.mockReset();
-  apiTestMocks.ably.requestToken.mockReset();
-  apiTestMocks.ably.requestToken.mockResolvedValue({
-    token: "test-ably-token",
-  });
   apiTestMocks.axiom.useRealTelemetry.mockReset();
   apiTestMocks.axiom.useRealTelemetry.mockReturnValue(false);
   apiTestMocks.axiom.clientError.mockReset();

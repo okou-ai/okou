@@ -15,8 +15,6 @@ import { checkpoints } from "@okouai/db/schema/checkpoint";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
-import { piLangfuseDebugUserId } from "../../lib/pi-langfuse-debug";
-import { recordPiLangfuseRunEndToEnd } from "../../lib/pi-langfuse-tracing";
 import { now, nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$, type Db } from "../external/db";
@@ -25,7 +23,7 @@ import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
-import { safeSync, tapError } from "../utils";
+import { tapError } from "../utils";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
@@ -118,7 +116,6 @@ type CompletionResponse =
 
 interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly id: string;
-  readonly apiStartedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
   readonly error: string | null;
   readonly orgId: string;
@@ -128,7 +125,6 @@ interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly chatThreadId: string | null;
   readonly triggerSource: string | null;
   readonly launchSnapshot: (typeof agentRuns.$inferSelect)["launchSnapshot"];
-  readonly langfuseTraceEnabled: boolean;
 }
 
 interface PreparedCompletion {
@@ -257,7 +253,6 @@ function createInitialCompletionRun(runId: string, userId: string) {
     const [run] = await db
       .select({
         id: agentRuns.id,
-        apiStartedAt: agentRuns.apiStartedAt,
         error: agentRuns.error,
         orgId: agentRuns.orgId,
         sessionId: agentRuns.sessionId,
@@ -267,7 +262,6 @@ function createInitialCompletionRun(runId: string, userId: string) {
         chatThreadId: agentRuns.chatThreadId,
         triggerSource: agentRuns.triggerSource,
         launchSnapshot: agentRuns.launchSnapshot,
-        langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
         modelProvider: agentRuns.modelProvider,
         modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
         selectedModel: agentRuns.selectedModel,
@@ -333,7 +327,6 @@ async function lockCompletionRun(
   const [run] = await tx
     .select({
       id: agentRuns.id,
-      apiStartedAt: agentRuns.apiStartedAt,
       error: agentRuns.error,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
@@ -343,7 +336,6 @@ async function lockCompletionRun(
       chatThreadId: agentRuns.chatThreadId,
       triggerSource: agentRuns.triggerSource,
       launchSnapshot: agentRuns.launchSnapshot,
-      langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
       modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
       selectedModel: agentRuns.selectedModel,
@@ -778,7 +770,7 @@ async function expireCommittedRunTimeBudget<T extends CompletionCommit>(
 
 /**
  * Record telemetry for the committed completion: terminal-transition metrics
- * for the first commit, a debug trace for a duplicate terminal completion.
+ * for the first commit, a debug log for a duplicate terminal completion.
  */
 function recordCompletionCommitOutcome(
   input: CompleteAgentRunInput,
@@ -787,22 +779,6 @@ function recordCompletionCommitOutcome(
   if (commit.transitioned) {
     const terminalCommittedAt = now();
     const terminalCommittedAtIso = new Date(terminalCommittedAt).toISOString();
-    if (
-      commit.run.launchSnapshot?.framework === "pi" &&
-      commit.run.langfuseTraceEnabled
-    ) {
-      safeSync(() => {
-        recordPiLangfuseRunEndToEnd({
-          enabled: true,
-          runId: input.body.runId,
-          sessionId: commit.run.sessionId,
-          userId: piLangfuseDebugUserId(commit.run.userId),
-          apiStartedAt: commit.run.apiStartedAt?.getTime(),
-          terminalCommittedAt,
-          terminalStatus: commit.responseStatus,
-        });
-      });
-    }
     recordSandboxOperation({
       sandboxType: "runner",
       actionType: "run_terminal_transition_committed",

@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.378.25](https://github.com/okou-ai/okou/compare/cli-v9.378.24...cli-v9.378.25) (2026-10-08)
+
+
+### Bug Fixes
+
+* **maps:** explain oversized grounding responses ([#38046](https://github.com/okou-ai/okou/issues/38046)) ([9ea9cde](https://github.com/okou-ai/okou/commit/9ea9cde34b01d89bb258b44250ce4b17260cf37c)), closes [#36791](https://github.com/okou-ai/okou/issues/36791)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.539.1
+    * @okouai/core bumped to 8.735.1
+    * @okouai/pi-agent-runtime bumped to 1.46.25
+
 ## [9.378.24](https://github.com/okou-ai/okou/compare/cli-v9.378.23...cli-v9.378.24) (2026-10-08)
 
 

@@ -591,6 +591,14 @@ function InlineMarkEditor({
           setNote(mark.id, event.target.value);
         }}
         onKeyDown={(event) => {
+          // IME confirmation and deletion belong to the textarea. Safari can
+          // clear isComposing before its final keydown, which still uses 229.
+          if (
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229
+          ) {
+            return;
+          }
           // Enter finishes the sentence; Shift+Enter breaks the line, which is
           // the only reason this is a textarea rather than one long line. The
           // text is already saved on every keystroke, so finishing only puts
