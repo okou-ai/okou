@@ -108,6 +108,7 @@ export function createPublicChatAdmissionFixture(context: TestContext) {
       id: subscriptionId,
       status: "active",
       metadata: {},
+      items: { data: [{ price: { id: env("OKOU_PRICE_PRO") } }] },
     });
     context.mocks.stripe.subscriptions.update.mockResolvedValue({
       id: subscriptionId,

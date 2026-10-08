@@ -169,6 +169,7 @@ async function cleanupFundedScrapeActor(
     id: owned.subscriptionId,
     status: "active",
     metadata: {},
+    items: { data: [{ price: { id: env("OKOU_PRICE_PRO") } }] },
   });
   context.mocks.stripe.subscriptions.update.mockResolvedValue({
     id: owned.subscriptionId,
