@@ -5173,6 +5173,8 @@
     "mermaid": {
       "diagramLabel": "다이어그램",
       "expand": "다이어그램 확대",
+      "fillView": "화면 채우기",
+      "restoreView": "보기 복원",
       "viewSource": "다이어그램 소스"
     },
     "notFound": {

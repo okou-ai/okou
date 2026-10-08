@@ -21,6 +21,7 @@ import {
   deferAblySubscribeOnChannel,
   deferNextAblySubscribe,
   getAuthTokenHistory,
+  getAblyPresenceCount,
   hasChannelSubscription,
   hasChannelSubscriptionOnChannel,
   hasSharedDatabaseSubscription,
@@ -697,6 +698,7 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       hasSubscription,
       hasSubscriptionOnChannel,
       getAuthTokenHistory,
+      getPresenceCount: getAblyPresenceCount,
     },
     deferred: <T>() => {
       return createDeferredPromise<T>(getSignal());

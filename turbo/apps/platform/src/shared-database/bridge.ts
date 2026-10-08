@@ -12,6 +12,7 @@ import type {
 
 export interface SharedDatabaseBridge {
   registerTab(signal: AbortSignal): Promise<void>;
+  setTabVisibility(visibility: DocumentVisibilityState): void;
   subscribeRealtime(
     subscriptionId: string,
     scope: SharedDatabaseRealtimeScope,

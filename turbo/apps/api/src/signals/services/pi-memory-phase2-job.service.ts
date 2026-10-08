@@ -34,8 +34,8 @@ import { writeDb$ } from "../external/db";
 
 export const PI_MEMORY_PHASE2_LEASE_DURATION_MS = 60 * 60 * 1000;
 export const PI_MEMORY_PHASE2_RETRY_DELAY_MS = 60 * 60 * 1000;
-export const PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS = 6 * 60 * 60 * 1000;
-export const PI_MEMORY_PHASE2_MAX_UNUSED_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const PI_MEMORY_PHASE2_MAX_UNUSED_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface PiMemoryPhase2OwnerScope {
   readonly memoryStorageId: string;
@@ -74,7 +74,6 @@ export interface ClaimedPiMemoryPhase2Job extends PiMemoryPhase2OwnerScope {
 
 interface ClaimPiMemoryPhase2JobArgs {
   readonly currentTime: Date;
-  readonly scope?: PiMemoryPhase2OwnerScope;
 }
 
 interface PiMemoryPhase2LeaseFence extends PiMemoryPhase2OwnerScope {
@@ -332,16 +331,6 @@ export async function notifyPiMemoryPhase2ExternalHeadChange(
     )
     .returning({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId });
   return updated !== undefined;
-}
-
-function claimScopeCondition(scope: PiMemoryPhase2OwnerScope | undefined) {
-  return scope
-    ? and(
-        eq(piMemoryPhase2Jobs.memoryStorageId, scope.memoryStorageId),
-        eq(piMemoryPhase2Jobs.orgId, scope.orgId),
-        eq(piMemoryPhase2Jobs.userId, scope.userId),
-      )
-    : undefined;
 }
 
 async function selectClaimCandidates(
@@ -641,7 +630,6 @@ function claimableJobCondition(args: ClaimPiMemoryPhase2JobArgs) {
       isNull(piMemoryPhase2Jobs.lastSucceededAt),
       lte(piMemoryPhase2Jobs.lastSucceededAt, cooldownBoundary),
     ),
-    claimScopeCondition(args.scope),
   );
 }
 

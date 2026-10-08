@@ -1,9 +1,9 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import type { AudioInputQuotaResponse } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { userBehaviorCount } from "@okouai/db/schema/user-behavior-count";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
-import { db$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   AUDIO_INPUT_BEHAVIOR_KEY,
@@ -11,6 +11,28 @@ import {
   sttDailyRateKey,
 } from "./voice-io-limits";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+
+export const recordAudioInputUsage$ = command(
+  async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
+    await set(writeDb$)
+      .insert(userBehaviorCount)
+      .values({
+        orgId,
+        userId,
+        behaviorKey: AUDIO_INPUT_BEHAVIOR_KEY,
+        count: 1,
+      })
+      .onConflictDoUpdate({
+        target: [
+          userBehaviorCount.orgId,
+          userBehaviorCount.userId,
+          userBehaviorCount.behaviorKey,
+        ],
+        set: { count: sql`${userBehaviorCount.count} + 1`, lastAt: sql`now()` },
+      });
+    signal.throwIfAborted();
+  },
+);
 
 function blockedQuota(count: number, limit: number): AudioInputQuotaResponse {
   return { allowed: false, count, limit };

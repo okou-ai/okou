@@ -149,6 +149,8 @@ surface; the index does not replace their detailed rules.
   streaming terminal records, partial failures, accounting, and continuation hints.
 - [Platform lint boundaries](./platform-lint.md): current transport and lifecycle
   exceptions, polling policy, and retired configuration history.
+- [Desktop minimum version policy](./desktop-version-policy.md): admission, required
+  upgrades, staged activation, and rollback.
 - [Native Desktop session authentication](./desktop-session-auth.md): single
   Clerk credential, host binding, provider freshness and migration acceptance.
 - [Clerk customization](./clerk-customize.md): hosted Clerk styling ownership,

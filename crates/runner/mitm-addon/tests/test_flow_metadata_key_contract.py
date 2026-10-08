@@ -15,6 +15,8 @@ from types import SimpleNamespace
 import flow_metadata_key_linter
 import pytest
 
+import flow_metadata_keys as metadata_keys
+
 _ADDON_ROOT = Path(__file__).resolve().parents[1]
 _FIXTURE_ROOT = _ADDON_ROOT / "tests" / "fixtures" / "flow_metadata_key_linter"
 _CHECK_SCRIPT = _ADDON_ROOT / "scripts" / "check-flow-metadata-keys.py"
@@ -108,6 +110,48 @@ def test_check_flow_metadata_keys_cli_passes_clean_addon(tmp_path):
 
     assert result.returncode == 0
     assert result.stdout == ""
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    ("alias_value", "expression", "has_violation"),
+    [
+        ("flow.metadata", "[(meta := {}) for _ in rows]", True),
+        ("flow.metadata", "[(meta := {}) for _ in [1] if condition]", True),
+        ("flow.metadata", "((meta := {}) for _ in [1])", True),
+        ("flow.metadata", "[(meta := {}) for _ in [1]]", False),
+        ("flow.metadata", "[(meta := flow.metadata) for _ in [1] if (meta := {})]", False),
+        ("{}", "[(meta := {}) for _ in rows]", False),
+        ("{}", "list((meta := flow.metadata) for _ in [1])", True),
+    ],
+)
+def test_check_flow_metadata_keys_cli_tracks_optional_comprehension_rebindings(
+    tmp_path, alias_value, expression, has_violation
+):
+    addon_root = tmp_path / "mitm-addon"
+    check_script = _copy_linter_scripts(addon_root)
+    src_root = addon_root / "src"
+    src_root.mkdir()
+    (src_root / "flow_metadata_keys.py").write_text(
+        'SANDBOX_RUN_ID = "sandbox_run_id"\n', encoding="utf-8"
+    )
+    (src_root / "optional_comprehension.py").write_text(
+        "def exercise(flow, rows, condition):\n"
+        f"    meta = {alias_value}\n"
+        f"    {expression}\n"
+        '    meta["sandbox_run_id"] = "run-1"\n',
+        encoding="utf-8",
+    )
+
+    result = _run_check_script(check_script, addon_root, tmp_path)
+
+    assert result.returncode == (1 if has_violation else 0)
+    assert result.stdout == (
+        "src/optional_comprehension.py:4: use metadata_keys.SANDBOX_RUN_ID "
+        "for flow.metadata access\n"
+        if has_violation
+        else ""
+    )
     assert result.stderr == ""
 
 
@@ -309,6 +353,140 @@ def test_registered_flow_metadata_guard_flags_composed_iterables(tmp_path):
     )
 
 
+def test_registered_flow_metadata_guard_projects_nested_mapping_constructor_keys(tmp_path):
+    source_path = tmp_path / "nested_mapping_constructors.py"
+    _write_python_source(
+        source_path,
+        "nested_mapping_constructors.base.py.txt",
+        "nested_mapping_constructors.allowed.py.txt",
+    )
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == _expected_lines(
+        "nested_mapping_constructors.expected.txt"
+    )
+
+
+def test_registered_flow_metadata_guard_preserves_nested_mapping_controls(tmp_path):
+    source_path = tmp_path / "nested_mapping_controls.py"
+    _write_python_source(source_path, "nested_mapping_constructors.allowed.py.txt")
+
+    assert flow_metadata_key_linter.metadata_key_violations(source_path) == []
+
+
+@pytest.mark.parametrize(
+    "wrapper", ["frozenset", "iter", "list", "reversed", "set", "sorted", "tuple"]
+)
+@pytest.mark.parametrize(
+    ("constructor_input", "reports_key"),
+    [
+        ('[(("sandbox_run_id", "run-1"), None)]', True),
+        ('{(("sandbox_run_id", "run-1"), None): 0}', True),
+        ('{("xy", "sandbox_run_id"): None}', False),
+    ],
+)
+def test_registered_flow_metadata_guard_distinguishes_wrapped_mapping_entries(
+    tmp_path, wrapper, constructor_input, reports_key
+):
+    source_path = tmp_path / "wrapped_mapping.py"
+    source_path.write_text(
+        f"flow.metadata.update(list(dict({wrapper}({constructor_input}))))\n",
+        encoding="utf-8",
+    )
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == (
+        ["wrapped_mapping.py:1: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access"]
+        if reports_key
+        else []
+    )
+
+
+@pytest.mark.parametrize("has_violations", [True, False])
+def test_check_flow_metadata_keys_cli_projects_nested_mapping_constructor_keys(
+    tmp_path, has_violations
+):
+    addon_root = tmp_path / "mitm-addon"
+    check_script = _copy_linter_scripts(addon_root)
+    src_root = addon_root / "src"
+    src_root.mkdir()
+    (src_root / "flow_metadata_keys.py").write_text(
+        'SANDBOX_RUN_ID = "sandbox_run_id"\n', encoding="utf-8"
+    )
+    fixture_names = ["nested_mapping_constructors.allowed.py.txt"]
+    if has_violations:
+        fixture_names.insert(0, "nested_mapping_constructors.base.py.txt")
+    _write_python_source(src_root / "nested_mapping_constructors.py", *fixture_names)
+
+    result = _run_check_script(check_script, addon_root, tmp_path)
+
+    expected = _expected_lines("nested_mapping_constructors.expected.txt")
+    assert result.returncode == (1 if has_violations else 0)
+    assert result.stdout == (
+        "".join(f"src/{line}\n" for line in expected) if has_violations else ""
+    )
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "nested_dict",
+        "wrapped_entries",
+        "fromkeys",
+        "mapping_copy",
+        "deep_dict",
+        "copied_fromkeys",
+        "iterated_mapping_entries",
+        "keys_view_entries",
+        "starred_constructor",
+        "conditional_constructor",
+        "unpacked_mapping",
+        "named_constructor",
+        "boolean_constructor",
+        "conditional_starred_constructor",
+        "direct_mapping_control",
+        "direct_entries_control",
+    ],
+)
+def test_nested_mapping_constructor_fixture_matches_runtime_metadata(case):
+    # Execute only explicitly selected, checked-in bounded functions as a diagnostic oracle.
+    namespace = runpy.run_path(str(_FIXTURE_ROOT / "nested_mapping_constructors.base.py.txt"))
+    flow = SimpleNamespace(metadata={})
+
+    namespace[case](flow)
+
+    assert flow.metadata == {"sandbox_run_id": "run-1"}
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ("canonical_constant", {"sandbox_run_id": "run-1"}),
+        ("tuple_mapping", {("sandbox_run_id", "run-1"): None}),
+        ("value_only", {"external": "sandbox_run_id"}),
+        ("iterated_mapping_value_only", {"x": "y"}),
+        ("entry_string_key", {"x": "y"}),
+        ("fromkeys_value_only", {"external": "sandbox_run_id"}),
+        ("copy_value_only", {"external": "sandbox_run_id"}),
+        ("keyword_key", {"x": "y"}),
+        ("unpacked_keyword_key", {"x": "y"}),
+    ],
+)
+def test_nested_mapping_control_fixture_matches_runtime_metadata(case, expected):
+    namespace = runpy.run_path(
+        str(_FIXTURE_ROOT / "nested_mapping_constructors.allowed.py.txt"),
+        init_globals={"metadata_keys": metadata_keys},
+    )
+    flow = SimpleNamespace(metadata={})
+
+    namespace[case](flow)
+
+    assert flow.metadata == expected
+
+
 def test_registered_flow_metadata_guard_tracks_for_statement_variants(tmp_path):
     source_path = tmp_path / "for_statement_flow.py"
     _write_python_source(source_path, "for_statement_flow.base.py.txt")
@@ -450,6 +628,69 @@ async def test_loop_alias_fixture_matches_runtime_metadata_accesses(case, access
     metadata = _TrackedMetadata()
 
     result = namespace[case](SimpleNamespace(metadata=metadata))
+    if inspect.isawaitable(result):
+        await result
+
+    assert metadata.accesses == ["sandbox_run_id"] * access_count
+
+
+def test_registered_flow_metadata_guard_tracks_comprehension_walrus_exits(tmp_path):
+    source_path = tmp_path / "comprehension_walrus_flow.py"
+    _write_python_source(source_path, "comprehension_walrus_flow.base.py.txt")
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == _expected_lines(
+        "comprehension_walrus_flow.expected.txt"
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "access_count"),
+    [
+        ("optional_list_rows", 1),
+        ("optional_set_rows", 1),
+        ("optional_dict_rows", 1),
+        ("optional_dict_key", 1),
+        ("filtered_list", 1),
+        ("filtered_set", 1),
+        ("filtered_dict", 1),
+        ("filter_creates_alias_before_rejection", 1),
+        ("filter_kills_alias_before_rejection", 0),
+        ("later_filter_creates_alias", 0),
+        ("optional_first_generator", 1),
+        ("optional_later_generator", 1),
+        ("empty_later_generator_retains_filter_effect", 0),
+        ("nested_optional_rebind", 1),
+        ("nested_guaranteed_rebind", 0),
+        ("nested_deferred_rebind", 1),
+        ("deferred_nested_eager_rebind", 1),
+        ("unconsumed_generator", 1),
+        ("deferred_filter_rebind", 1),
+        ("deferred_later_iterable_access", 1),
+        ("consumed_generator_addition", 1),
+        ("directly_iterated_generator_addition", 1),
+        ("consumed_generator_filter_alias", 1),
+        ("deferred_body_diagnostics_are_retained", 1),
+        ("generator_first_iterable_is_evaluated", 2),
+        ("ordinary_dictionary", 0),
+        ("guaranteed_list_rebind", 0),
+        ("guaranteed_set_rebind", 0),
+        ("guaranteed_dict_rebind", 0),
+        ("later_statement_rebinds", 0),
+        ("statically_empty_body", 1),
+        ("comprehension_target_stays_local", 1),
+        ("lambda_target_stays_local", 1),
+        ("optional_addition_is_retained", 0),
+        ("optional_async_rows", 1),
+    ],
+)
+async def test_comprehension_walrus_fixture_matches_runtime_metadata_accesses(case, access_count):
+    # Execute only the checked-in bounded fixture; consume generators only inside its controls.
+    namespace = runpy.run_path(str(_FIXTURE_ROOT / "comprehension_walrus_flow.base.py.txt"))
+    metadata = _TrackedMetadata()
+
+    result = namespace[case](SimpleNamespace(metadata=metadata), [], False)
     if inspect.isawaitable(result):
         await result
 

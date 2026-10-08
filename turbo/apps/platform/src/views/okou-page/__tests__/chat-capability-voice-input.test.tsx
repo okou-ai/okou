@@ -97,12 +97,15 @@ async function setupShortcutTranscription() {
   const response = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+    return HttpResponse.json({ text: "Shortcut voice note" });
+  });
   context.mocks.http.post("*/api/voice-io/transcribe/segment", async () => {
     requested.resolve();
     await response.promise;
     return HttpResponse.json({
       transcript: "um shortcut voice note",
-      polishedText: "Shortcut voice note",
+
       language: "en-US",
     });
   });
@@ -165,6 +168,9 @@ test("Transcribe a voice draft using the latest assistant reference", async () =
   const transcriptionReady = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+    return HttpResponse.json({ text: "Send the launch update tomorrow." });
+  });
   context.mocks.http.post(
     "*/api/voice-io/transcribe/segment",
     async ({ request }) => {
@@ -184,7 +190,7 @@ test("Transcribe a voice draft using the latest assistant reference", async () =
       await transcriptionReady.promise;
       return HttpResponse.json({
         transcript: "um send the launch update tomorrow",
-        polishedText: "Send the launch update tomorrow.",
+
         language: "en-US",
       });
     },
@@ -287,10 +293,13 @@ test("Keep a silent voice draft recording until the user stops it", async () => 
     },
   });
   installAvailableVoiceQuota();
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+    return HttpResponse.json({ text: "Extended voice draft." });
+  });
   context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
     return HttpResponse.json({
       transcript: "Extended voice draft",
-      polishedText: "Extended voice draft.",
+
       language: "en-US",
     });
   });

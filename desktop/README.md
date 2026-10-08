@@ -77,7 +77,11 @@ Unsigned development and CI apps keep production updates disabled.
 Stopping, changing workspace, signing out, quitting, and installing updates close
 command admission and drain claimed work before retiring the host connection. Native
 input is never replayed after a timeout. Background updates also wait until the
-host has been idle for 30 minutes.
+host has been idle for 30 minutes. Required upgrades bypass that grace while
+still waiting for claimed commands, completion reports, and host cleanup.
+
+See [the minimum version policy](../docs/desktop-version-policy.md) for the
+default-disabled deployment floor, visible upgrade states, and activation gates.
 
 ## Release
 

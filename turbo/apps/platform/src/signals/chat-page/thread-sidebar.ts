@@ -27,7 +27,11 @@ import {
   previewAttachmentFromUrl,
 } from "./parse-body-blocks.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
-import { openDiagramLightbox$ } from "../okou-page/attachment-chips.ts";
+import {
+  createArtifactDiagramPreviewSignals,
+  type ArtifactDiagramPreviewSignals,
+} from "../artifact-diagram-preview.ts";
+import type { MermaidDiagramPreviewCommand } from "../mermaid-diagram.ts";
 import {
   createZoomableImageCanvasSignals,
   type ZoomableImageCanvasSignals,
@@ -102,7 +106,10 @@ function artifactRefFromUrl(url: string): ArtifactRef {
   };
 }
 
-function withTextPreview(ref: ArtifactRef): ArtifactRef {
+function withTextPreview(
+  ref: ArtifactRef,
+  openDiagram$: MermaidDiagramPreviewCommand,
+): ArtifactRef {
   if (!isTextPreviewKind(ref.kind)) {
     return ref;
   }
@@ -113,7 +120,7 @@ function withTextPreview(ref: ArtifactRef): ArtifactRef {
     text$,
     ...(ref.kind === "markdown"
       ? {
-          markdownTree$: createMarkdownPreviewTree(text$, openDiagramLightbox$),
+          markdownTree$: createMarkdownPreviewTree(text$, openDiagram$),
         }
       : {}),
   };
@@ -121,41 +128,48 @@ function withTextPreview(ref: ArtifactRef): ArtifactRef {
 
 function materializeArtifactRef(
   input: ArtifactRefInput,
+  openDiagram$: MermaidDiagramPreviewCommand,
   signal: AbortSignal,
 ): ArtifactRef {
   if (typeof input === "string") {
-    return withTextPreview(artifactRefFromUrl(input));
+    return withTextPreview(artifactRefFromUrl(input), openDiagram$);
   }
   if (!("file" in input)) {
-    return withTextPreview({
-      url: input.url,
-      ...attachmentPreviewSignalsFor(input),
-      kind: classifyChatAttachment({
-        contentType: input.contentType,
-        filename: input.filename,
+    return withTextPreview(
+      {
         url: input.url,
+        ...attachmentPreviewSignalsFor(input),
+        kind: classifyChatAttachment({
+          contentType: input.contentType,
+          filename: input.filename,
+          url: input.url,
+        }),
+        filename: input.filename,
+        ...(input.text$ === undefined ? {} : { text$: input.text$ }),
+        ...(input.shareAvailable === undefined
+          ? {}
+          : { shareAvailable: input.shareAvailable }),
+      },
+      openDiagram$,
+    );
+  }
+  const resource = createObjectUrlResource(input.file, signal);
+  return withTextPreview(
+    {
+      url: resource.url,
+      ...createAttachmentPreviewSignals(resource.url),
+      kind: classifyChatAttachment({
+        contentType: input.file.type,
+        filename: input.file.name,
+        url: resource.url,
       }),
-      filename: input.filename,
-      ...(input.text$ === undefined ? {} : { text$: input.text$ }),
+      filename: input.file.name,
       ...(input.shareAvailable === undefined
         ? {}
         : { shareAvailable: input.shareAvailable }),
-    });
-  }
-  const resource = createObjectUrlResource(input.file, signal);
-  return withTextPreview({
-    url: resource.url,
-    ...createAttachmentPreviewSignals(resource.url),
-    kind: classifyChatAttachment({
-      contentType: input.file.type,
-      filename: input.file.name,
-      url: resource.url,
-    }),
-    filename: input.file.name,
-    ...(input.shareAvailable === undefined
-      ? {}
-      : { shareAvailable: input.shareAvailable }),
-  });
+    },
+    openDiagram$,
+  );
 }
 
 export type ThreadSidebarArtifactSource =
@@ -199,6 +213,7 @@ export interface ThreadSidebarSignals {
   readonly fullscreen$: Computed<boolean>;
   readonly toggleFullscreen$: Command<void, []>;
   readonly imageCanvas: ZoomableImageCanvasSignals;
+  readonly diagram: ArtifactDiagramPreviewSignals;
   /**
    * Thread-scoped artifact catalog. Loaded pages persist across sidebar
    * close/reopen — ccstate computeds keep the cache — and are only dropped
@@ -211,6 +226,7 @@ export interface ThreadSidebarSignals {
 
 function createCatalogArtifactPreviewSignals(
   artifactCatalog: ArtifactCatalogSignals,
+  openDiagram$: MermaidDiagramPreviewCommand,
 ) {
   const resourceUrl$ = computed(async (get) => {
     const preview = await get(artifactCatalog.selectedArtifactPreview$);
@@ -238,7 +254,7 @@ function createCatalogArtifactPreviewSignals(
   });
   const selectedArtifactMarkdownTree$ = createMarkdownPreviewTree(
     selectedArtifactText$,
-    openDiagramLightbox$,
+    openDiagram$,
   );
 
   return {
@@ -259,14 +275,27 @@ export function createThreadSidebarSignals(
   const internalEditingAutomationId$ = state<string | null>(null);
   const resetSidebarSessionSignal$ = resetSignal();
   const imageCanvas = createZoomableImageCanvasSignals();
+  const diagram = createArtifactDiagramPreviewSignals();
   const artifactCatalog = createArtifactCatalogSignals({
     chatThreadId: threadId,
   });
-  const preview = createCatalogArtifactPreviewSignals(artifactCatalog);
+  const preview = createCatalogArtifactPreviewSignals(
+    artifactCatalog,
+    diagram.open$,
+  );
 
   const startSession$ = command(({ set }, signal: AbortSignal): AbortSignal => {
     signal.throwIfAborted();
-    return set(resetSidebarSessionSignal$, signal);
+    set(diagram.dispose$);
+    const sessionSignal = set(resetSidebarSessionSignal$, signal);
+    sessionSignal.addEventListener(
+      "abort",
+      () => {
+        set(diagram.dispose$);
+      },
+      { once: true },
+    );
+    return sessionSignal;
   });
 
   const publishTarget$ = command(
@@ -318,7 +347,7 @@ export function createThreadSidebarSignals(
         type: "artifact",
         source: {
           kind: "attachment",
-          ref: materializeArtifactRef(input, sessionSignal),
+          ref: materializeArtifactRef(input, diagram.open$, sessionSignal),
         },
       });
     },
@@ -363,6 +392,7 @@ export function createThreadSidebarSignals(
       });
     }),
     imageCanvas,
+    diagram,
     artifactCatalog,
     selectedArtifactText$: preview.text$,
     selectedArtifactMarkdownTree$: preview.markdownTree$,

@@ -17,7 +17,7 @@ export interface VoiceDraftSegment {
   readonly endSample: number;
   readonly final: boolean;
   readonly transcript?: string;
-  /** Only locally skipped silence has a policy version; old provider checkpoints remain valid. */
+  /** Only locally skipped silence has a policy version. */
   readonly vadPolicyVersion?: string;
 }
 
@@ -42,13 +42,27 @@ interface VoiceDraftRecordingDatabase extends DBSchema {
 async function openVoiceDraftRecordingDatabase() {
   return await observeClientOperation(
     { event_name: "indexeddb.open", database: "voice_drafts" },
-    () => {
-      return openDB<VoiceDraftRecordingDatabase>("okou-voice-drafts", 1, {
-        upgrade(database) {
-          database.createObjectStore("drafts");
-          database.createObjectStore("chunks");
+    async () => {
+      const database = await openDB<VoiceDraftRecordingDatabase>(
+        "okou-voice-drafts",
+        2,
+        {
+          upgrade(database, oldVersion) {
+            // The split transcription/polish pipeline deliberately discards the
+            // former combined-finalization recordings, not unrelated App data.
+            if (oldVersion > 0) {
+              database.deleteObjectStore("drafts");
+              database.deleteObjectStore("chunks");
+            }
+            database.createObjectStore("drafts");
+            database.createObjectStore("chunks");
+          },
         },
+      );
+      database.addEventListener("versionchange", () => {
+        database.close();
       });
+      return database;
     },
   );
 }

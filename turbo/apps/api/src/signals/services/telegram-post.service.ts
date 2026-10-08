@@ -29,8 +29,6 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import {
-  buildFileDownloadUrl,
-  getFile,
   sendChatAction,
   sendMessage,
   type TelegramReplyMarkup,
@@ -40,10 +38,7 @@ import {
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
 import { safeJsonParse, settle, tapError } from "../utils";
-import {
-  InputFileImportError,
-  type CanonicalInputAsset,
-} from "./canonical-asset.service";
+import type { CanonicalInputAsset } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
@@ -1127,25 +1122,11 @@ function telegramInputFiles(
             messageId: `${chatId}:${source.message.message_id}`,
             externalFileId: file.file_unique_id,
           },
-          download: async (downloadSignal) => {
-            const metadata = await getFile(
-              source.botToken,
-              file.file_id,
-              downloadSignal,
-            );
-            if (!metadata.file_path) {
-              throw new Error("Telegram file has no download path");
-            }
-            if ((metadata.file_size ?? 0) > MAX_TELEGRAM_DOWNLOAD_BYTES) {
-              throw new InputFileImportError(
-                "too-large",
-                "Telegram file exceeds the download limit",
-              );
-            }
-            return fetch(
-              buildFileDownloadUrl(source.botToken, metadata.file_path),
-              { signal: downloadSignal },
-            );
+          resource: {
+            provider: "telegram",
+            botToken: source.botToken,
+            fileId: file.file_id,
+            maxBytes: MAX_TELEGRAM_DOWNLOAD_BYTES,
           },
         },
       ]

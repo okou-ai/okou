@@ -27,6 +27,10 @@ export function sessionOutputChannelName(
   return `run-output:${userId}:${orgId}:${runId}`;
 }
 
+export function foregroundChannelName(userId: string, orgId: string): string {
+  return `user-org-foreground:${userId}:${orgId}`;
+}
+
 export const connectorChangedPayloadSchema = z.object({
   connectorSlug: connectorSlugSchema,
 });

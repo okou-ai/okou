@@ -3,11 +3,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import type { PreparedUsageBatch } from "./credit-usage-batch";
 import type { PricedUsageEvent } from "./credit-usage-pricing";
-import {
-  planUsageCharges,
-  planMemberGrantDeductions,
-  planExpiryLotDeductions,
-} from "./credit-usage-settlement-plan";
+import { planUsageCharges } from "./credit-usage-settlement-plan";
 import {
   entitlementQuery,
   allocationQuery,
@@ -18,28 +14,14 @@ import {
 } from "./usage-allowance-settlement-plan";
 import type { PreparedUsageAllowanceRefresh } from "./usage-allowance.service";
 
-/** Freeze the split before committing. Concurrent overuse is an accepted trade-off. */
+/** Prices and allowance allocations are prepared; cash is selected under locks at commit. */
 export function usageFinancialPlan(
-  batch: PreparedUsageBatch,
   priced: readonly PricedUsageEvent[],
   allowance: ReturnType<typeof planAllowanceWrites>,
   at: Date,
 ) {
   const charges = planUsageCharges(priced, allowance.applied);
-  const deduction = planMemberGrantDeductions(
-    charges.byUser,
-    batch.grants.grants.filter((grant) => {
-      return grant.expiresAt > at;
-    }),
-  );
-  const expiry = planExpiryLotDeductions(
-    batch.lots.lots.filter((lot) => {
-      return lot.expiresAt > at;
-    }),
-    deduction.sharedCredits,
-    at,
-  );
-  return { at, priced, allowance, charges, deduction, expiry };
+  return { at, priced, allowance, charges };
 }
 
 export type PreparedUsageFinancialPlan = ReturnType<typeof usageFinancialPlan>;
@@ -72,6 +54,6 @@ export const prepareUsageFinancialPlan$ = command(
       windows,
       entitlement,
     );
-    return usageFinancialPlan(args.batch, priced, allowance, at);
+    return usageFinancialPlan(priced, allowance, at);
   },
 );

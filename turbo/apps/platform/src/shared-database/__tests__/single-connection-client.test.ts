@@ -46,6 +46,8 @@ class FakeBridge implements SharedDatabaseBridge {
     return Promise.resolve();
   }
 
+  setTabVisibility(_visibility: DocumentVisibilityState): void {}
+
   subscribeRealtime(
     _subscriptionId: string,
     _scope: SharedDatabaseRealtimeScope,
