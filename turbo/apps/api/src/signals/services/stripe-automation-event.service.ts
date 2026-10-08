@@ -19,17 +19,7 @@ import {
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import {
-  and,
-  asc,
-  eq,
-  getTableColumns,
-  inArray,
-  isNull,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
@@ -977,12 +967,12 @@ const claimDueDelivery$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const currentTime = nowDate();
-    // Preserve the ordered SKIP LOCKED pick and revision fence in one statement.
+    // Scalar candidate reads keep the update on one primary key, while the CTE
+    // preserves the ordered SKIP LOCKED pick and revision fence.
     const due = db.$with("due_stripe_delivery").as(
       db
         .select({
           id: stripeWorkflowDeliveries.id,
-          attempts: stripeWorkflowDeliveries.attempts,
           revision: stripeWorkflowDeliveries.revision,
         })
         .from(stripeWorkflowDeliveries)
@@ -1007,22 +997,24 @@ const claimDueDelivery$ = command(
       .with(due)
       .update(stripeWorkflowDeliveries)
       .set({
-        attempts: sql`${due.attempts} + 1`,
-        revision: sql`${due.revision} + 1`,
+        attempts: sql`${stripeWorkflowDeliveries.attempts} + 1`,
+        revision: sql`${stripeWorkflowDeliveries.revision} + 1`,
         claimExpiresAt: new Date(
           currentTime.getTime() + STRIPE_DELIVERY_CLAIM_MS,
         ),
         updatedAt: currentTime,
       })
-      .from(due)
       .where(
         and(
-          eq(stripeWorkflowDeliveries.id, due.id),
+          eq(stripeWorkflowDeliveries.id, db.select({ id: due.id }).from(due)),
           eq(stripeWorkflowDeliveries.status, "pending"),
-          eq(stripeWorkflowDeliveries.revision, due.revision),
+          eq(
+            stripeWorkflowDeliveries.revision,
+            db.select({ revision: due.revision }).from(due),
+          ),
         ),
       )
-      .returning(getTableColumns(stripeWorkflowDeliveries));
+      .returning();
     signal.throwIfAborted();
     return claimed ?? null;
   },
