@@ -31,6 +31,22 @@ export const discordOauthContract = c.router({
     },
     summary: "Start browser-correlated Discord installation or account linking",
   },
+  approve: {
+    method: "POST",
+    path: "/api/integrations/discord/oauth/approve",
+    headers: authHeadersSchema,
+    body: z.strictObject({ state: z.string(), approvalProof: z.string() }),
+    responses: {
+      200: z.object({ approved: z.literal(true) }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Approve provider evidence in the authenticated consent browser",
+  },
   complete: {
     method: "POST",
     path: "/api/integrations/discord/oauth/complete",
