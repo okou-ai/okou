@@ -45,7 +45,7 @@
     "@tiptap/extension-document": "3.31.0",
     "@tiptap/extension-hard-break": "3.31.0",
     "@tiptap/extension-heading": "3.31.0",
-    "@tiptap/extension-horizontal-rule": "3.31.0",
+    "@tiptap/extension-horizontal-rule": "3.31.4",
     "@tiptap/extension-italic": "3.31.0",
     "@tiptap/extension-list": "3.31.0",
     "@tiptap/extension-paragraph": "3.31.0",
