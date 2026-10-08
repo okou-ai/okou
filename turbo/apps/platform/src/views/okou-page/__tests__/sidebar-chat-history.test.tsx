@@ -55,6 +55,7 @@ import {
 import { mockNow } from "../../../__tests__/time.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { PLACEHOLDER } from "./chat-test-helpers.ts";
 import { mockChatEventRows } from "./chat-event-test-helpers.ts";
 import {
@@ -85,7 +86,42 @@ test("Browse a long sidebar chat history", async () => {
   expect(scrollArea).toBeInTheDocument();
 });
 
-test("Toggle the chat list from its title with pointer and keyboard", async () => {
+test.each([false, true])(
+  "Keep the three-column chat list expanded with saved collapsed state %s",
+  async (savedCollapsed) => {
+    const collapsedStorage = localStorageSignals(
+      "sidebar-session-list-collapsed",
+    );
+    context.store.set(collapsedStorage.set$, String(savedCollapsed));
+    prepareDefaultAgent();
+    mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+
+    await setupSidebarPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+    });
+
+    const list = await screen.findByTestId("chat-list-column");
+    const thread = await within(list).findByText("Release plan");
+    const title = within(list).getByText("Chats with Okou");
+    expect(
+      queryAllByRoleFast("button", list).some((button) => {
+        return button.textContent?.includes("Chats with Okou");
+      }),
+    ).toBe(false);
+    expect(thread).toBeVisible();
+
+    click(title);
+    expect(thread).toBeVisible();
+    for (const button of within(list).getAllByLabelText("New chat")) {
+      expect(button).toBeEnabled();
+    }
+    expect(within(list).getByLabelText("Open chat list menu")).toBeEnabled();
+  },
+);
+
+test("Toggle the mobile chat list from its title with pointer and keyboard", async () => {
+  mockMobileLayout();
   const user = userEvent.setup({ delay: null });
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
@@ -95,8 +131,12 @@ test("Toggle the chat list from its title with pointer and keyboard", async () =
     path: `/agents/${AGENT_ID}/chat`,
   });
 
-  const list = await screen.findByTestId("chat-list-column");
-  await within(list).findByText("Release plan");
+  click(screen.getByLabelText("Open menu"));
+  const list = await waitFor(() => {
+    const current = mobileSidebar();
+    expect(within(current).getByText("Release plan")).toBeInTheDocument();
+    return current;
+  });
   const titleButton = buttonByText("Chats with Okou", list);
   const contentId = titleButton.getAttribute("aria-controls");
   if (!contentId) {
