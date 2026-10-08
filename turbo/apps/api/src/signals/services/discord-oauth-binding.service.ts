@@ -121,21 +121,22 @@ export const persistDiscordOauth$ = command(
         if (!installation || installation.botUserId !== evidence.botUserId) {
           throw new BindingConflict();
         }
-        await tx
+        // One owner-qualified upsert acquires the identity parent lock. An
+        // INSERT DO NOTHING followed by SELECT has a release/delete gap that
+        // can reject a valid concurrent claim after cleanup removes the row.
+        // Existing ownership is NEVER changed; another owner's row returns none.
+        const [owner] = await tx
           .insert(discordUserIdentities)
           .values({
             discordUserId: evidence.discordUserId,
             userId: attempt.userId,
           })
-          .onConflictDoNothing();
-        signal.throwIfAborted();
-        const [owner] = await tx
-          .select({ userId: discordUserIdentities.userId })
-          .from(discordUserIdentities)
-          .where(
-            eq(discordUserIdentities.discordUserId, evidence.discordUserId),
-          )
-          .for("update");
+          .onConflictDoUpdate({
+            target: discordUserIdentities.discordUserId,
+            set: { userId: attempt.userId },
+            setWhere: eq(discordUserIdentities.userId, attempt.userId),
+          })
+          .returning({ userId: discordUserIdentities.userId });
         signal.throwIfAborted();
         if (owner?.userId !== attempt.userId) {
           throw new BindingConflict();
