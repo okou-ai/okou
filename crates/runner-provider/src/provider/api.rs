@@ -11,8 +11,9 @@ use tracing::{error, info, warn};
 use api_contracts::generated::{
     constants::runners::{
         BUILTIN_FIREWALL_CATALOG_MAX_BYTES, CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
-        PI_MODEL_CONFIG_CURRENT_GENERATION, PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-        PI_MODEL_CONFIG_LEGACY_GENERATION, RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
+        PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION, PI_MODEL_CONFIG_CURRENT_GENERATION,
+        PI_MODEL_CONFIG_DIALECT_TIER_GENERATION, PI_MODEL_CONFIG_LEGACY_GENERATION,
+        RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
     },
     decode_paths, routes,
     types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
@@ -101,7 +102,7 @@ impl<'a> From<&'a InstalledOkouCli> for ClaimInstalledVersions<'a> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunnerClaimCapabilities {
-    pi_model_config_generations: [u32; 3],
+    pi_model_config_generations: [u32; 4],
 }
 
 #[derive(Serialize)]
@@ -1810,6 +1811,7 @@ fn claim_request_body<'a>(
                 PI_MODEL_CONFIG_LEGACY_GENERATION,
                 PI_MODEL_CONFIG_CURRENT_GENERATION,
                 PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
+                PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
             ],
         },
         telemetry: ClaimRequestTelemetry {
@@ -3516,7 +3518,7 @@ mod tests {
         assert!(!body.to_string().contains("path"));
         assert_eq!(
             body["capabilities"]["piModelConfigGenerations"],
-            serde_json::json!([1, 2, 3])
+            serde_json::json!([1, 2, 3, 5])
         );
 
         let runner_identity = test_runner_identity();
@@ -5647,10 +5649,6 @@ mod tests {
             "test-region"
         );
         assert_eq!(context.storage_manifest.as_ref().unwrap().storages.len(), 1);
-        assert!(
-            !context.storage_manifest.as_ref().unwrap().storages[0].baseline_candidate,
-            "the previous claim fixture must default an absent marker to false"
-        );
         assert_eq!(context.cli_agent_session_id(), Some("fixture-session-id"));
         assert_eq!(
             context.environment.as_ref().unwrap()["FIXTURE_MODEL"],
@@ -5902,6 +5900,7 @@ mod tests {
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let mut response: serde_json::Value =
             serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        // Supported older APIs may include this optional observation field.
         response["storageManifest"] = serde_json::json!({
             "storageMounts": [
                 {
@@ -5947,7 +5946,6 @@ mod tests {
 
         assert_eq!(manifest.storages.len(), 1);
         assert_eq!(manifest.storages[0].name, "fixture-workspace");
-        assert!(manifest.storages[0].baseline_candidate);
         assert_eq!(
             manifest.storages[0].vas_version_id,
             "fixture-storage-version"
@@ -6038,7 +6036,7 @@ mod tests {
                                         "heartbeatGeneration": TEST_HEARTBEAT_GENERATION,
                                     },
                                     "runnerHostname": "prod-1.aws.vm3.ai",
-                                    "capabilities": { "piModelConfigGenerations": [1, 2, 3] },
+                                    "capabilities": { "piModelConfigGenerations": [1, 2, 3, 5] },
                                     "telemetry": {},
                                 })
                     });

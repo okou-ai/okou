@@ -14,8 +14,11 @@ use std::path::Path;
 /// Extraction is non-atomic and does not roll back entries written before a
 /// later error. Entries rejected by the path and link safety checks, and link
 /// targets or sources that are missing or unreadable for non-transport reasons,
-/// are logged and skipped. Consequently, `Ok(())` means that all accepted
-/// entries were processed and the enclosing gzip member passed validation,
+/// are skipped with bounded diagnostics: at most 32 examples per attempt and
+/// one skipped/suppressed summary, including on failure. Displayed paths are
+/// escaped and capped at 256 bytes; safety checks use the unchanged paths.
+/// Consequently, `Ok(())` means that all accepted entries were processed and
+/// the enclosing gzip member passed validation,
 /// not that every archive entry was unpacked.
 ///
 /// # TOCTOU (documented, not mitigated)
@@ -39,6 +42,7 @@ use std::path::Path;
 /// accepted entry, or a gzip validation failure terminates extraction. Files
 /// written before an error remain in the target directory.
 pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(), DownloadError> {
+    let mut skipped_entries = SkippedEntries { target, skipped: 0 };
     let (reader, http_body_read_failure) = source.into_parts();
     let decoder = flate2::read::GzDecoder::new(reader);
     let budget = MetadataBudget::default();
@@ -69,11 +73,7 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
         // (normalize to collapse any .. components before checking)
         let full_path = target.join(&entry_path);
         if !is_within(&full_path, target) {
-            log_warn!(
-                LOG_TAG,
-                "Skipping entry with path escaping target dir: {}",
-                entry_path.display()
-            );
+            skipped_entries.record("entry with path escaping target dir", &entry_path, None);
             continue;
         }
 
@@ -88,22 +88,17 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
                     ));
                 }
                 _ => {
-                    log_warn!(
-                        LOG_TAG,
-                        "Skipping symlink with unreadable target: {}",
-                        entry_path.display()
-                    );
+                    skipped_entries.record("symlink with unreadable target", &entry_path, None);
                     continue;
                 }
             };
             let link_dir = full_path.parent().unwrap_or(target);
             let resolved = link_dir.join(&*link_target);
             if !is_within(&resolved, target) {
-                log_warn!(
-                    LOG_TAG,
-                    "Skipping symlink with target escaping dir: {} -> {}",
-                    entry_path.display(),
-                    link_target.display()
+                skipped_entries.record(
+                    "symlink with target escaping dir",
+                    &entry_path,
+                    Some(&link_target),
                 );
                 continue;
             }
@@ -120,21 +115,16 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
                     ));
                 }
                 _ => {
-                    log_warn!(
-                        LOG_TAG,
-                        "Skipping hardlink with unreadable source: {}",
-                        entry_path.display()
-                    );
+                    skipped_entries.record("hardlink with unreadable source", &entry_path, None);
                     continue;
                 }
             };
             let resolved = target.join(&*link_name);
             if !is_within(&resolved, target) {
-                log_warn!(
-                    LOG_TAG,
-                    "Skipping hardlink with source escaping dir: {} -> {}",
-                    entry_path.display(),
-                    link_name.display()
+                skipped_entries.record(
+                    "hardlink with source escaping dir",
+                    &entry_path,
+                    Some(&link_name),
                 );
                 continue;
             }
@@ -146,10 +136,10 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
         // exist yet. This applies to ALL entry types — a symlink/hardlink entry extracted
         // through a malicious symlink directory is equally dangerous.
         if !ancestors_within_target(&full_path, target) {
-            log_warn!(
-                LOG_TAG,
-                "Skipping entry whose parent resolves outside target: {}",
-                entry_path.display()
+            skipped_entries.record(
+                "entry whose parent resolves outside target",
+                &entry_path,
+                None,
             );
             continue;
         }
@@ -174,6 +164,78 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
         .map_err(|e| archive_error("Failed to finish gzip archive", e))?;
 
     Ok(())
+}
+
+const MAX_SKIP_EXAMPLES: u64 = 32;
+const MAX_DIAGNOSTIC_PATH_BYTES: usize = 256;
+
+/// Owned by one extraction attempt, never shared between worker threads.
+struct SkippedEntries<'a> {
+    target: &'a Path,
+    skipped: u64,
+}
+
+impl SkippedEntries<'_> {
+    fn record(&mut self, reason: &'static str, path: &Path, link: Option<&Path>) {
+        self.skipped = self.skipped.saturating_add(1);
+        if self.skipped > MAX_SKIP_EXAMPLES {
+            return;
+        }
+
+        // Render only sampled entries, without copying full GNU/PAX names.
+        let path = diagnostic_path(path);
+        let target = diagnostic_path(self.target);
+        if let Some(link) = link {
+            log_warn!(
+                LOG_TAG,
+                "Skipping {reason}: {path} -> {} (archive target: {target})",
+                diagnostic_path(link)
+            );
+        } else {
+            log_warn!(
+                LOG_TAG,
+                "Skipping {reason}: {path} (archive target: {target})"
+            );
+        }
+    }
+}
+
+impl Drop for SkippedEntries<'_> {
+    fn drop(&mut self) {
+        if self.skipped != 0 {
+            // A neutral count, not a success record: also emitted on early errors.
+            log_warn!(
+                LOG_TAG,
+                "Archive skipped-entry summary for {}: skipped={}, suppressed={}",
+                diagnostic_path(self.target),
+                self.skipped,
+                self.skipped.saturating_sub(MAX_SKIP_EXAMPLES)
+            );
+        }
+    }
+}
+
+/// Bound both the input inspected and escaped UTF8 output. Lossy decoding is
+/// diagnostic-only; containment and unpacking always use the original paths.
+fn diagnostic_path(path: &Path) -> String {
+    const ELLIPSIS: &str = "...";
+    let bytes = path.as_os_str().as_encoded_bytes();
+    let (prefix, remainder) = bytes.split_at(bytes.len().min(MAX_DIAGNOSTIC_PATH_BYTES));
+    let mut rendered = String::with_capacity(MAX_DIAGNOSTIC_PATH_BYTES);
+    let mut truncated = !remainder.is_empty();
+    for character in String::from_utf8_lossy(prefix).chars() {
+        let escaped = character.escape_debug();
+        let length = escaped.clone().map(char::len_utf8).sum::<usize>();
+        if rendered.len() + length > MAX_DIAGNOSTIC_PATH_BYTES - ELLIPSIS.len() {
+            truncated = true;
+            break;
+        }
+        rendered.extend(escaped);
+    }
+    if truncated {
+        rendered.push_str(ELLIPSIS);
+    }
+    rendered
 }
 
 fn archive_error(message: impl Into<String>, error: io::Error) -> DownloadError {

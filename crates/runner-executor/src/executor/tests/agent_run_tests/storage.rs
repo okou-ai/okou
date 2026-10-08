@@ -231,8 +231,7 @@ async fn run_in_sandbox_starts_deferred_cache_fill_after_agent_spawn() {
     let mut ctx = minimal_context();
     let mut archive_server = spawn_storage_archive_server(&extracted_archive()).await;
     let archive_url = format!("{}/archive.tar.gz", archive_server.url());
-    let mut storage = api_storage("instructions", "/home/user/.codex", "v1", &archive_url);
-    storage.baseline_candidate = true;
+    let storage = api_storage("instructions", "/home/user/.codex", "v1", &archive_url);
     ctx.storage_manifest = Some(StorageManifest {
         storages: vec![storage],
         artifacts: vec![],

@@ -8,6 +8,8 @@ import {
   CardContent,
   cn,
   Input,
+  Toggle,
+  ToggleGroup,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { Link } from "../router/link.tsx";
@@ -148,43 +150,36 @@ export function IdeationPage() {
 
             <div className="pt-2 pb-3">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    className={cn(
-                      "h-7 shrink-0 rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors cursor-pointer",
-                      selectedTab === "all"
-                        ? "bg-muted text-foreground"
-                        : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
-                    )}
-                    onClick={() => {
-                      return setActiveTab("all");
-                    }}
-                  >
+                <ToggleGroup
+                  value={[selectedTab]}
+                  onValueChange={(value) => {
+                    const nextTab = value[0];
+                    if (nextTab !== undefined) {
+                      setActiveTab(nextTab);
+                    }
+                  }}
+                  aria-label={t(($) => {
+                    return $.ideation.categoryFilter;
+                  })}
+                  className="min-w-0 flex-1 flex-wrap"
+                >
+                  <Toggle value="all" variant="filter">
                     {t(($) => {
                       return $.ideation.all;
                     })}
-                  </button>
+                  </Toggle>
                   {categories.map((category) => {
                     return (
-                      <button
+                      <Toggle
                         key={category.id}
-                        type="button"
-                        className={cn(
-                          "h-7 shrink-0 rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors cursor-pointer",
-                          selectedTab === category.id
-                            ? "bg-muted text-foreground"
-                            : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
-                        )}
-                        onClick={() => {
-                          return setActiveTab(category.id);
-                        }}
+                        value={category.id}
+                        variant="filter"
                       >
                         {category.title}
-                      </button>
+                      </Toggle>
                     );
                   })}
-                </div>
+                </ToggleGroup>
                 <div className="relative w-full min-w-0 sm:max-w-[240px] sm:flex-1 sm:min-w-[12rem]">
                   <Search
                     className="pointer-events-none absolute left-3 top-1/2 z-10 size-[14px] -translate-y-1/2 text-muted-foreground"

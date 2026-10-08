@@ -100,7 +100,7 @@ import {
   type WorkflowAutomationAccountConnectorSlug,
 } from "../services/workflow-automation-account-classification.service";
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
-import { reconcileGoogleMeetSubscriptionsForUser } from "../services/google-meet-automation-event.service";
+import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-event.service";
 import {
   loadVisibleWorkflowById,
   requireWorkflowPermission,
@@ -1653,7 +1653,11 @@ const reconcileCopiedWorkflowAutomationWatches$ = command(
     }
     if (args.copied.accountConnectorSlugs.includes("google-meet")) {
       await bestEffort(
-        reconcileGoogleMeetSubscriptionsForUser(owner, signal),
+        set(
+          reconcileGoogleMeetSubscriptionsForUser$,
+          { orgId: owner.orgId, userId: owner.userId },
+          signal,
+        ),
         signal,
       );
     }

@@ -29,7 +29,12 @@ import {
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
+import {
+  builtinConnectorCredentialRuntimeValueRef,
+  loadBuiltinConnectorCredentialConnection$,
+  loadBuiltinConnectorCredentialValues$,
+  refreshBuiltinConnectorCredentialAccess$,
+} from "./builtin-connector-credential-runtime.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { GoogleCalendarSourceTransitionChangedError } from "./workflow-google-calendar-queue.service";
@@ -43,11 +48,6 @@ import { workflowAutomationCanFire$ } from "./workflow-automation-access.service
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
-import {
-  loadBuiltinConnectorCredentialConnection$,
-  loadBuiltinConnectorCredentialValues$,
-  refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
 import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
 
 const log = logger("api:google-calendar-automation-event");

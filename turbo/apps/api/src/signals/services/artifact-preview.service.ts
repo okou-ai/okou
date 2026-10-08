@@ -25,10 +25,10 @@ import {
   privateArtifactRecord,
 } from "./private-artifact-storage.service";
 import {
-  queueArtifactCatalogFile,
+  queueArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
-import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
+import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
 import { extractPrivateVideoPoster$ } from "./private-video-preview.service";
 
 const log = logger("artifacts:preview");
@@ -775,6 +775,7 @@ const renderAndStoreArtifactPreview$ = command(
       );
     }
     const db = set(writeDb$);
+    // Publish the preview reference and its recoverable catalog handoff together.
     await db.transaction(async (tx) => {
       const [row] = await tx
         .update(runUploadedFiles)
@@ -785,13 +786,14 @@ const renderAndStoreArtifactPreview$ = command(
         .where(eq(runUploadedFiles.id, args.id))
         .returning({ id: runUploadedFiles.id });
       if (row) {
-        await queueArtifactCatalogFile(tx, row.id, signal);
+        await tx.execute(queueArtifactCatalogFileSql(row.id));
+        signal.throwIfAborted();
       }
     });
     signal.throwIfAborted();
 
     await set(syncArtifactCatalogForFile$, args.id, signal);
-    await publishArtifactsChangedForRun(db, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     return true;
   },
 );

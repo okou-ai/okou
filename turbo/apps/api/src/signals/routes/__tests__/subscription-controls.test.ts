@@ -156,6 +156,42 @@ test("agents read all subscriptions and single-account live usage without a fail
     },
   });
   expect(detail.body).not.toHaveProperty("secrets");
+  expect(detail.body.modelProviderId).toStrictEqual(expect.any(String));
+  expect(listed.body.modelProviders).toContainEqual(
+    expect.objectContaining({
+      id: detail.body.id,
+      modelProviderId: detail.body.modelProviderId,
+    }),
+  );
+  const otherDetail = await accept(
+    app()(personalSubscriptionsContract).get({
+      headers,
+      params: { id: accountIds[1] },
+    }),
+    [200],
+  );
+  expect(otherDetail.body).toMatchObject({
+    id: accountIds[1],
+    modelProviderId: detail.body.modelProviderId,
+    type: "codex-oauth-token",
+  });
+  const repeatedDetail = await accept(
+    app()(personalSubscriptionsContract).get({
+      headers,
+      params: { id: accountIds[0] },
+    }),
+    [200],
+  );
+  expect(repeatedDetail.body).toMatchObject({
+    id: accountIds[0],
+    modelProviderId: detail.body.modelProviderId,
+  });
+  for (const response of [detail.body, otherDetail.body, repeatedDetail.body]) {
+    expect(response).not.toHaveProperty("secrets");
+    expect(response).not.toHaveProperty("externalAccountId");
+    expect(response).not.toHaveProperty("orgId");
+    expect(response).not.toHaveProperty("userId");
+  }
 });
 
 test("cLI account activation reuses the existing switch behavior", async () => {

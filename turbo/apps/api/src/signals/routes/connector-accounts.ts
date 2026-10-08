@@ -34,7 +34,7 @@ import { deleteCustomConnectorAccount$ } from "../services/custom-connector.serv
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
 import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
-import { reconcileGoogleMeetSubscriptionsForUser } from "../services/google-meet-automation-event.service";
+import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-event.service";
 
 function targetFromQuery(
   query: ConnectorAccountTarget,
@@ -300,8 +300,9 @@ const setDefaultInner$ = command(
                   { orgId: auth.orgId, userId: auth.userId },
                   signal,
                 )
-              : reconcileGoogleMeetSubscriptionsForUser(
-                  { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+              : set(
+                  reconcileGoogleMeetSubscriptionsForUser$,
+                  { orgId: auth.orgId, userId: auth.userId },
                   signal,
                 ),
         signal,

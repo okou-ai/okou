@@ -29,11 +29,10 @@ import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-cre
 import {
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
-import {
   builtinConnectorCredentialRuntimeValueRef,
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
+
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import {
   GmailAuthorizationError,

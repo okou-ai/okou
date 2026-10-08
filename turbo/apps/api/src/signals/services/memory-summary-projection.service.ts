@@ -179,153 +179,164 @@ function projectionScopeCondition(
     : undefined;
 }
 
-async function backfillMissingProjections(
-  db: Db,
-  scope: MemorySummaryProjectionScope | undefined,
-  currentTime: Date,
-  signal: AbortSignal,
-): Promise<number> {
-  const rows = await db
-    .select({
-      memoryStorageId: storages.id,
-      storageVersionId: storageVersions.id,
-      orgId: storages.orgId,
-      userId: storages.userId,
-    })
-    .from(storageVersions)
-    .innerJoin(storages, eq(storages.id, storageVersions.storageId))
-    .leftJoin(
-      memorySummaryProjections,
-      and(
-        eq(memorySummaryProjections.memoryStorageId, storages.id),
-        eq(memorySummaryProjections.storageVersionId, storageVersions.id),
-      ),
-    )
-    .where(
-      and(
-        eq(storages.name, MEMORY_ARTIFACT_NAME),
-        ne(storages.userId, VOLUME_ORG_USER_ID),
-        isNull(memorySummaryProjections.storageVersionId),
-        scope ? eq(storages.id, scope.memoryStorageId) : undefined,
-        scope ? eq(storageVersions.id, scope.storageVersionId) : undefined,
-      ),
-    )
-    .orderBy(asc(storageVersions.createdAt), asc(storageVersions.id))
-    .limit(scope ? 1 : BACKFILL_BATCH_SIZE);
-  signal.throwIfAborted();
-  if (rows.length === 0) {
-    return 0;
-  }
-
-  const inserted = await db
-    .insert(memorySummaryProjections)
-    .values(
-      rows.map((row) => {
-        return { ...row, availableAt: currentTime };
-      }),
-    )
-    .onConflictDoNothing()
-    .returning({
-      memoryStorageId: memorySummaryProjections.memoryStorageId,
-    });
-  signal.throwIfAborted();
-  return inserted.length;
-}
-
-async function claimProjectionWork(
-  db: Db,
-  scope: MemorySummaryProjectionScope | undefined,
-  currentTime: Date,
-  signal: AbortSignal,
-): Promise<readonly ClaimedProjection[]> {
-  return await db.transaction(async (tx) => {
-    const rows = await tx
+const backfillMissingProjections$ = command(
+  async (
+    { set },
+    scope: MemorySummaryProjectionScope | undefined,
+    currentTime: Date,
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const db = set(writeDb$);
+    const rows = await db
       .select({
-        memoryStorageId: memorySummaryProjections.memoryStorageId,
-        storageVersionId: memorySummaryProjections.storageVersionId,
-        orgId: memorySummaryProjections.orgId,
-        userId: memorySummaryProjections.userId,
-        attemptCount: memorySummaryProjections.attemptCount,
-        s3Key: storageVersions.s3Key,
-        storageSize: storageVersions.size,
-        archiveSize: storageVersions.archiveSize,
-        fileCount: storageVersions.fileCount,
+        memoryStorageId: storages.id,
+        storageVersionId: storageVersions.id,
+        orgId: storages.orgId,
+        userId: storages.userId,
       })
-      .from(memorySummaryProjections)
-      .innerJoin(
-        storages,
+      .from(storageVersions)
+      .innerJoin(storages, eq(storages.id, storageVersions.storageId))
+      .leftJoin(
+        memorySummaryProjections,
         and(
-          eq(storages.id, memorySummaryProjections.memoryStorageId),
-          eq(storages.orgId, memorySummaryProjections.orgId),
-          eq(storages.userId, memorySummaryProjections.userId),
-          eq(storages.name, MEMORY_ARTIFACT_NAME),
-          ne(storages.userId, VOLUME_ORG_USER_ID),
-        ),
-      )
-      .innerJoin(
-        storageVersions,
-        and(
-          eq(storageVersions.id, memorySummaryProjections.storageVersionId),
-          eq(
-            storageVersions.storageId,
-            memorySummaryProjections.memoryStorageId,
-          ),
+          eq(memorySummaryProjections.memoryStorageId, storages.id),
+          eq(memorySummaryProjections.storageVersionId, storageVersions.id),
         ),
       )
       .where(
         and(
-          or(
-            and(
-              eq(memorySummaryProjections.status, "pending"),
-              lte(memorySummaryProjections.availableAt, currentTime),
-            ),
-            and(
-              eq(memorySummaryProjections.status, "running"),
-              lte(memorySummaryProjections.leaseExpiresAt, currentTime),
-            ),
-          ),
-          projectionScopeCondition(scope),
+          eq(storages.name, MEMORY_ARTIFACT_NAME),
+          ne(storages.userId, VOLUME_ORG_USER_ID),
+          isNull(memorySummaryProjections.storageVersionId),
+          scope ? eq(storages.id, scope.memoryStorageId) : undefined,
+          scope ? eq(storageVersions.id, scope.storageVersionId) : undefined,
         ),
       )
-      .orderBy(
-        asc(memorySummaryProjections.availableAt),
-        asc(memorySummaryProjections.memoryStorageId),
-        asc(memorySummaryProjections.storageVersionId),
-      )
-      .limit(scope ? 1 : WORK_BATCH_SIZE)
-      .for("update", { of: memorySummaryProjections, skipLocked: true });
+      .orderBy(asc(storageVersions.createdAt), asc(storageVersions.id))
+      .limit(scope ? 1 : BACKFILL_BATCH_SIZE);
     signal.throwIfAborted();
+    if (rows.length === 0) {
+      return 0;
+    }
 
-    const claimed: ClaimedProjection[] = [];
-    for (const row of rows) {
-      const leaseId = randomUUID();
-      const attemptCount = row.attemptCount + 1;
-      const [updated] = await tx
-        .update(memorySummaryProjections)
-        .set({
-          status: "running",
-          leaseId,
-          leaseExpiresAt: new Date(currentTime.getTime() + WORK_LEASE_MS),
-          attemptCount,
-          updatedAt: currentTime,
+    const inserted = await db
+      .insert(memorySummaryProjections)
+      .values(
+        rows.map((row) => {
+          return { ...row, availableAt: currentTime };
+        }),
+      )
+      .onConflictDoNothing()
+      .returning({
+        memoryStorageId: memorySummaryProjections.memoryStorageId,
+      });
+    signal.throwIfAborted();
+    return inserted.length;
+  },
+);
+
+const claimProjectionWork$ = command(
+  async (
+    { set },
+    scope: MemorySummaryProjectionScope | undefined,
+    currentTime: Date,
+    signal: AbortSignal,
+  ): Promise<readonly ClaimedProjection[]> => {
+    const db = set(writeDb$);
+    // Claim selection and lease assignment are one atomic worker admission.
+    // The existing row locks prevent duplicate live leases across workers.
+    return await db.transaction(async (tx) => {
+      const rows = await tx
+        .select({
+          memoryStorageId: memorySummaryProjections.memoryStorageId,
+          storageVersionId: memorySummaryProjections.storageVersionId,
+          orgId: memorySummaryProjections.orgId,
+          userId: memorySummaryProjections.userId,
+          attemptCount: memorySummaryProjections.attemptCount,
+          s3Key: storageVersions.s3Key,
+          storageSize: storageVersions.size,
+          archiveSize: storageVersions.archiveSize,
+          fileCount: storageVersions.fileCount,
         })
-        .where(
+        .from(memorySummaryProjections)
+        .innerJoin(
+          storages,
           and(
-            eq(memorySummaryProjections.memoryStorageId, row.memoryStorageId),
-            eq(memorySummaryProjections.storageVersionId, row.storageVersionId),
+            eq(storages.id, memorySummaryProjections.memoryStorageId),
+            eq(storages.orgId, memorySummaryProjections.orgId),
+            eq(storages.userId, memorySummaryProjections.userId),
+            eq(storages.name, MEMORY_ARTIFACT_NAME),
+            ne(storages.userId, VOLUME_ORG_USER_ID),
           ),
         )
-        .returning({
-          memoryStorageId: memorySummaryProjections.memoryStorageId,
-        });
-      if (updated) {
-        claimed.push({ ...row, leaseId, attemptCount });
+        .innerJoin(
+          storageVersions,
+          and(
+            eq(storageVersions.id, memorySummaryProjections.storageVersionId),
+            eq(
+              storageVersions.storageId,
+              memorySummaryProjections.memoryStorageId,
+            ),
+          ),
+        )
+        .where(
+          and(
+            or(
+              and(
+                eq(memorySummaryProjections.status, "pending"),
+                lte(memorySummaryProjections.availableAt, currentTime),
+              ),
+              and(
+                eq(memorySummaryProjections.status, "running"),
+                lte(memorySummaryProjections.leaseExpiresAt, currentTime),
+              ),
+            ),
+            projectionScopeCondition(scope),
+          ),
+        )
+        .orderBy(
+          asc(memorySummaryProjections.availableAt),
+          asc(memorySummaryProjections.memoryStorageId),
+          asc(memorySummaryProjections.storageVersionId),
+        )
+        .limit(scope ? 1 : WORK_BATCH_SIZE)
+        .for("update", { of: memorySummaryProjections, skipLocked: true });
+      signal.throwIfAborted();
+
+      const claimed: ClaimedProjection[] = [];
+      for (const row of rows) {
+        const leaseId = randomUUID();
+        const attemptCount = row.attemptCount + 1;
+        const [updated] = await tx
+          .update(memorySummaryProjections)
+          .set({
+            status: "running",
+            leaseId,
+            leaseExpiresAt: new Date(currentTime.getTime() + WORK_LEASE_MS),
+            attemptCount,
+            updatedAt: currentTime,
+          })
+          .where(
+            and(
+              eq(memorySummaryProjections.memoryStorageId, row.memoryStorageId),
+              eq(
+                memorySummaryProjections.storageVersionId,
+                row.storageVersionId,
+              ),
+            ),
+          )
+          .returning({
+            memoryStorageId: memorySummaryProjections.memoryStorageId,
+          });
+        if (updated) {
+          claimed.push({ ...row, leaseId, attemptCount });
+        }
       }
-    }
-    signal.throwIfAborted();
-    return claimed;
-  });
-}
+      signal.throwIfAborted();
+      return claimed;
+    });
+  },
+);
 
 function isSafeArchivePath(path: string): boolean {
   if (
@@ -639,32 +650,35 @@ function leaseCondition(work: ClaimedProjection) {
   );
 }
 
-async function finishProjection(
-  db: Db,
-  work: ClaimedProjection,
-  result: MaterializationResult,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [updated] = await db
-    .update(memorySummaryProjections)
-    .set({
-      status: result.status,
-      leaseId: null,
-      leaseExpiresAt: null,
-      lastErrorClass: null,
-      content: result.status === "ready" ? result.content : null,
-      sourceHash: result.status === "ready" ? result.sourceHash : null,
-      sourceSize: result.status === "ready" ? result.sourceSize : null,
-      tokenCount: result.status === "ready" ? result.tokenCount : null,
-      updatedAt: nowDate(),
-    })
-    .where(leaseCondition(work))
-    .returning({
-      memoryStorageId: memorySummaryProjections.memoryStorageId,
-    });
-  signal.throwIfAborted();
-  return updated !== undefined;
-}
+const finishProjection$ = command(
+  async (
+    { set },
+    work: ClaimedProjection,
+    result: MaterializationResult,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [updated] = await db
+      .update(memorySummaryProjections)
+      .set({
+        status: result.status,
+        leaseId: null,
+        leaseExpiresAt: null,
+        lastErrorClass: null,
+        content: result.status === "ready" ? result.content : null,
+        sourceHash: result.status === "ready" ? result.sourceHash : null,
+        sourceSize: result.status === "ready" ? result.sourceSize : null,
+        tokenCount: result.status === "ready" ? result.tokenCount : null,
+        updatedAt: nowDate(),
+      })
+      .where(leaseCondition(work))
+      .returning({
+        memoryStorageId: memorySummaryProjections.memoryStorageId,
+      });
+    signal.throwIfAborted();
+    return updated !== undefined;
+  },
+);
 
 function retryDelay(attemptCount: number): number {
   return Math.min(
@@ -683,32 +697,35 @@ function retryErrorClass(error: unknown): string {
   return "unknown";
 }
 
-async function retryProjection(
-  db: Db,
-  work: ClaimedProjection,
-  errorClass: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const currentTime = nowDate();
-  const [updated] = await db
-    .update(memorySummaryProjections)
-    .set({
-      status: "pending",
-      leaseId: null,
-      leaseExpiresAt: null,
-      availableAt: new Date(
-        currentTime.getTime() + retryDelay(work.attemptCount),
-      ),
-      lastErrorClass: errorClass,
-      updatedAt: currentTime,
-    })
-    .where(leaseCondition(work))
-    .returning({
-      memoryStorageId: memorySummaryProjections.memoryStorageId,
-    });
-  signal.throwIfAborted();
-  return updated !== undefined;
-}
+const retryProjection$ = command(
+  async (
+    { set },
+    work: ClaimedProjection,
+    errorClass: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    const [updated] = await db
+      .update(memorySummaryProjections)
+      .set({
+        status: "pending",
+        leaseId: null,
+        leaseExpiresAt: null,
+        availableAt: new Date(
+          currentTime.getTime() + retryDelay(work.attemptCount),
+        ),
+        lastErrorClass: errorClass,
+        updatedAt: currentTime,
+      })
+      .where(leaseCondition(work))
+      .returning({
+        memoryStorageId: memorySummaryProjections.memoryStorageId,
+      });
+    signal.throwIfAborted();
+    return updated !== undefined;
+  },
+);
 
 function logProjectionOutcome(args: {
   readonly work: ClaimedProjection;
@@ -734,15 +751,14 @@ export const executeMemorySummaryProjectionWork$ = command(
     input: MemorySummaryProjectionWorkerInput,
     signal: AbortSignal,
   ): Promise<MemorySummaryProjectionWorkerResult> => {
-    const db = set(writeDb$);
-    const backfilled = await backfillMissingProjections(
-      db,
+    const backfilled = await set(
+      backfillMissingProjections$,
       input.scope,
       input.currentTime,
       signal,
     );
-    const claimed = await claimProjectionWork(
-      db,
+    const claimed = await set(
+      claimProjectionWork$,
       input.scope,
       input.currentTime,
       signal,
@@ -759,8 +775,8 @@ export const executeMemorySummaryProjectionWork$ = command(
       );
       if (!materialized.ok) {
         const errorClass = retryErrorClass(materialized.error);
-        const retriedCurrent = await retryProjection(
-          db,
+        const retriedCurrent = await set(
+          retryProjection$,
           work,
           errorClass,
           signal,
@@ -779,8 +795,8 @@ export const executeMemorySummaryProjectionWork$ = command(
         continue;
       }
 
-      const finished = await finishProjection(
-        db,
+      const finished = await set(
+        finishProjection$,
         work,
         materialized.value,
         signal,

@@ -453,6 +453,7 @@
         "title": "Support"
       }
     },
+    "categoryFilter": "Filtrer par catégorie",
     "chat": "Chat",
     "description": "Cliquez sur n'importe quelle carte pour démarrer une conversation. Cela pourrait devenir une tâche à la demande, un workflow récurrent ou un sous-agent.",
     "search": {
