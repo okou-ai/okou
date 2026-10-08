@@ -744,6 +744,19 @@ async function prepareClaudeAccountIdentities(
   return identities.size === 0 ? null : identities;
 }
 
+function exactConnectedPersonalAccountCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly id: string;
+}) {
+  return and(
+    eq(modelProviderAccounts.id, args.id),
+    isNull(modelProviderAccounts.disconnectedAt),
+    eq(modelProviderAccounts.orgId, args.orgId),
+    eq(modelProviderAccounts.userId, args.userId),
+  );
+}
+
 async function accountWithProvider(
   db: Db,
   args: {
@@ -762,14 +775,7 @@ async function accountWithProvider(
       modelProviders,
       eq(modelProviderAccounts.modelProviderId, modelProviders.id),
     )
-    .where(
-      and(
-        eq(modelProviderAccounts.id, args.id),
-        isNull(modelProviderAccounts.disconnectedAt),
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-      ),
-    )
+    .where(exactConnectedPersonalAccountCondition(args))
     .limit(1);
   return row ?? null;
 }
@@ -789,9 +795,19 @@ export const activatePersonalModelProviderAccount$ = command(
     | ReturnType<typeof conflict>
   > => {
     const db = set(writeDb$);
+    // Deactivating siblings and activating the target must commit together.
     const result = await withAccountConflict(
       db.transaction(async (tx) => {
-        const current = await accountWithProvider(tx, args);
+        const [row] = await tx
+          .select({ account: modelProviderAccounts, provider: providerColumns })
+          .from(modelProviderAccounts)
+          .innerJoin(
+            modelProviders,
+            eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+          )
+          .where(exactConnectedPersonalAccountCondition(args))
+          .limit(1);
+        const current = row ?? null;
         if (
           !current ||
           !isPersonalSubscriptionProviderType(current.account.type)
