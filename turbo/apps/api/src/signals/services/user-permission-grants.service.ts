@@ -1,20 +1,14 @@
 import { command } from "ccstate";
-import type { StoredConnectorPermissionBaseline } from "@okouai/api-contracts/contracts/runners";
-import {
-  createFirewallMetadataPolicyResolver,
-  permissionGrantsToFirewallPolicies,
-} from "@okouai/connectors/firewall-metadata/policy";
+import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
 import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallPolicies,
   type FirewallPolicy,
-  type FirewallPolicyValue,
   type NetworkPolicies,
   type NetworkPolicy,
 } from "@okouai/connectors/firewall-types";
 
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
-import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { and, asc, eq, gt, inArray, isNull, or, type SQL } from "drizzle-orm";
 import type {
@@ -38,13 +32,6 @@ import type {
   ConnectorServerFirewallSelection,
   ConnectorServerFirewallMetadataCatalog,
 } from "./connector-server-firewall-catalog.service";
-import { connectorCatalogSource } from "./connector-catalog-source";
-import { connectorCatalogExecutableCapabilityDigest } from "./connector-catalog-compatibility.service";
-import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import {
-  connectorCatalogValidationAuthorityIsCurrent,
-  currentConnectorCatalogValidatorIdentity,
-} from "./connector-catalog-validator-authority";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
 import {
   loadConnectorRuntimeSlugSelection,
@@ -83,21 +70,6 @@ interface ConnectorPermissionPolicyBaseline {
   readonly permissionNames: readonly string[];
   readonly defaultPolicy: FirewallPolicy;
 }
-
-type BaselineNetworkPolicyRefreshResolution =
-  | {
-      readonly kind: "compatible";
-      readonly refreshes: readonly ActiveNetworkPolicyRefresh[];
-    }
-  | {
-      readonly kind: "empty";
-      readonly refreshes: readonly ActiveNetworkPolicyRefresh[];
-    }
-  | { readonly kind: "incompatible" };
-
-type BaselineNetworkPolicyDatabaseMeasure = <T>(
-  operation: () => Promise<T>,
-) => Promise<T>;
 
 interface UserPermissionGrantBaseScope {
   readonly orgId: string;
@@ -403,47 +375,6 @@ export const resolveActiveNetworkPolicyRefreshes$ = command(
   },
 );
 
-function baselineStaticIdentityIsCurrent(
-  baseline: StoredConnectorPermissionBaseline,
-  current: {
-    readonly sourceId: string;
-    readonly capabilityDigest: string;
-    readonly validator: ReturnType<
-      typeof currentConnectorCatalogValidatorIdentity
-    >;
-  },
-): boolean {
-  return (
-    baseline.catalogIdentity.sourceId === current.sourceId &&
-    baseline.catalogIdentity.schemaVersion ===
-      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION &&
-    baseline.catalogIdentity.capabilityDigest === current.capabilityDigest &&
-    connectorCatalogValidationAuthorityIsCurrent({
-      authority: {
-        validatorVersion: baseline.validationAuthority.backendVersion,
-        buildCommitSha: baseline.validationAuthority.buildCommitSha,
-      },
-      validator: current.validator,
-    })
-  );
-}
-
-function defaultFirewallPolicyForBaseline(
-  baseline: StoredConnectorPermissionBaseline["connectors"][string],
-): FirewallPolicy {
-  const resolver = createFirewallMetadataPolicyResolver({
-    defaultPolicy: baseline.defaultPolicy,
-  });
-  const policies: Record<string, FirewallPolicyValue> = {};
-  for (const permissionName of baseline.permissionNames) {
-    policies[permissionName] = resolver.permission(permissionName);
-  }
-  return {
-    policies,
-    unknownPolicy: resolver.unknown(),
-  };
-}
-
 function activeNetworkPolicyRefreshesForPermissionBaselines(
   baselines: readonly ConnectorPermissionPolicyBaseline[],
   grants: readonly ResolvedPermissionGrant[],
@@ -472,90 +403,6 @@ function activeNetworkPolicyRefreshesForPermissionBaselines(
       nextRefreshAt: nextRefreshAt?.toISOString() ?? null,
     };
   });
-}
-
-export async function resolveActiveNetworkPolicyRefreshesFromBaseline(
-  db: ReadonlyDb,
-  scope: UserPermissionGrantScope,
-  baseline: StoredConnectorPermissionBaseline,
-  measureDatabase: BaselineNetworkPolicyDatabaseMeasure,
-  checkedAt: Date = nowDate(),
-): Promise<BaselineNetworkPolicyRefreshResolution> {
-  const connectorSlugs = Object.keys(baseline.connectors);
-  if (connectorSlugs.length === 0) {
-    return { kind: "empty", refreshes: [] };
-  }
-  const current = {
-    sourceId: connectorCatalogSource().sourceId,
-    capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
-    validator: currentConnectorCatalogValidatorIdentity(),
-  };
-  if (!baselineStaticIdentityIsCurrent(baseline, current)) {
-    return { kind: "incompatible" };
-  }
-
-  const rows = await measureDatabase(async () => {
-    return await db
-      .select({
-        identity: {
-          schemaVersion: connectorCatalog.schemaVersion,
-          catalogDigest: connectorCatalog.hash,
-        },
-        grant: {
-          connectorSlug: userPermissionGrants.connectorSlug,
-          permission: userPermissionGrants.permission,
-          action: userPermissionGrants.action,
-          expiresAt: userPermissionGrants.expiresAt,
-        },
-      })
-      .from(connectorCatalog)
-      .leftJoin(
-        userPermissionGrants,
-        and(
-          eq(userPermissionGrants.orgId, scope.orgId),
-          eq(userPermissionGrants.userId, scope.userId),
-          eq(userPermissionGrants.agentId, scope.agentId),
-          inArray(userPermissionGrants.connectorSlug, connectorSlugs),
-          activeUserPermissionGrantCondition(checkedAt),
-        ),
-      )
-      .where(
-        eq(
-          connectorCatalog.schemaVersion,
-          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ),
-      )
-      .orderBy(
-        asc(userPermissionGrants.connectorSlug),
-        asc(userPermissionGrants.permission),
-      );
-  });
-
-  const first = rows[0];
-  if (
-    first === undefined ||
-    first.identity.schemaVersion !== baseline.catalogIdentity.schemaVersion ||
-    first.identity.catalogDigest !== baseline.catalogIdentity.catalogDigest
-  ) {
-    return { kind: "incompatible" };
-  }
-
-  const grants = rows.flatMap((row): readonly ResolvedPermissionGrant[] => {
-    return row.grant === null ? [] : [row.grant];
-  });
-  return {
-    kind: "compatible",
-    refreshes: activeNetworkPolicyRefreshesForPermissionBaselines(
-      Object.entries(baseline.connectors).map(([connectorSlug, entry]) => {
-        return {
-          connectorSlug,
-          permissionNames: entry.permissionNames,
-          defaultPolicy: defaultFirewallPolicyForBaseline(entry),
-        };
-      }),
-      grants,
-    ),
-  };
 }
 
 export function networkPolicyRefreshesRecord(

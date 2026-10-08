@@ -1,5 +1,4 @@
 import {
-  connectorCatalogValidationAuthorityIsCurrent,
   createConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidatorIdentity,
 } from "@okouai/connectors/connector-catalog/authority";
@@ -8,7 +7,6 @@ import { CONNECTOR_CATALOG_VALIDATOR_VERSION } from "@okouai/connectors/connecto
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { env } from "../../lib/env";
 
-export { connectorCatalogValidationAuthorityIsCurrent };
 export type { ConnectorCatalogValidatorIdentity };
 
 function currentBuildCommitSha(): string | null {

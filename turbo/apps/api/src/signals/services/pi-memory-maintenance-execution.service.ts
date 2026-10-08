@@ -1301,7 +1301,6 @@ function buildMaintenanceExecutionContext(
     firewalls: permissions?.firewalls,
     networkPolicies: permissions?.networkPolicies,
     connectorRuntimeTargets: [...(permissions?.builtinRuntimeTargets ?? [])],
-    connectorPermissionBaseline: permissions?.connectorPermissionBaseline,
     featureFlags: getAllFeatureStates(args.featureSwitchContext),
     billableFirewalls: [...args.usage.billableFirewalls],
     modelUsageProvider: args.usage.modelUsageProvider,

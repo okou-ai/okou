@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
+  claimCompatibleStoredExecutionContextSchema,
   compatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
   connectorRuntimeSyncResultSchema,
@@ -37,7 +38,6 @@ import {
   sandboxReuseResultSchema as runnersSandboxReuseResultSchema,
   storageMountEntrySchema,
   storageManifestSchema,
-  storedConnectorPermissionBaselineSchema,
   storedExecutionContextSchema,
   storedResumeSessionSchema,
   workspaceReuseResultSchema as runnersWorkspaceReuseResultSchema,
@@ -900,7 +900,7 @@ describe("connector runtime synchronization contract", () => {
   });
 });
 
-describe("stored connector permission baseline contract", () => {
+describe("retired connector permission baseline compatibility", () => {
   const storedContext = {
     storageMounts: [],
     connectorRuntimeTargets: [],
@@ -912,88 +912,23 @@ describe("stored connector permission baseline contract", () => {
     cliAgentType: "codex",
   };
 
-  it("accepts compact versioned defaults", () => {
-    expect(
-      storedConnectorPermissionBaselineSchema.parse(
-        connectorPermissionBaselineFixture(),
-      ),
-    ).toEqual(connectorPermissionBaselineFixture());
-  });
-
-  it("rejects unsupported, overlapping, and unknown permission metadata", () => {
-    const baseline = connectorPermissionBaselineFixture();
-    expect(
-      storedConnectorPermissionBaselineSchema.safeParse({
-        ...baseline,
-        version: 2,
-      }).success,
-    ).toBe(false);
-    expect(
-      storedConnectorPermissionBaselineSchema.safeParse({
-        ...baseline,
-        connectors: {
-          slack: {
-            ...baseline.connectors.slack,
-            defaultPolicy: {
-              ...baseline.connectors.slack.defaultPolicy,
-              permissionOverrides: {
-                allow: ["chat:write"],
-                deny: ["chat:write"],
-              },
-            },
-          },
-        },
-      }).success,
-    ).toBe(false);
-    expect(
-      storedConnectorPermissionBaselineSchema.safeParse({
-        ...baseline,
-        connectors: {
-          slack: {
-            ...baseline.connectors.slack,
-            defaultPolicy: {
-              ...baseline.connectors.slack.defaultPolicy,
-              permissionOverrides: {
-                deny: ["files:write"],
-              },
-            },
-          },
-        },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("isolates future metadata to the compatible persisted reader", () => {
-    const futureBaseline = { version: 2, payload: "future" };
+  it.each([
+    ["previous writer", connectorPermissionBaselineFixture()],
+    ["future metadata", { version: 2, payload: "future" }],
+    ["malformed metadata", "invalid"],
+  ])("strips %s metadata from every persisted reader", (_name, baseline) => {
     const context = {
       ...storedContext,
-      connectorPermissionBaseline: futureBaseline,
+      connectorPermissionBaseline: baseline,
     };
 
-    expect(storedExecutionContextSchema.safeParse(context).success).toBe(false);
-
-    const parsed = compatibleStoredExecutionContextSchema.parse(context);
-
-    expect(parsed.connectorPermissionBaseline).toEqual(futureBaseline);
-    expect(
-      storedConnectorPermissionBaselineSchema.safeParse(
-        parsed.connectorPermissionBaseline,
-      ).success,
-    ).toBe(false);
-  });
-
-  it("allows a previous reader to ignore the new optional field", () => {
-    const previousStoredExecutionContextSchema = z
-      .object(storedExecutionContextSchema.shape)
-      .omit({
-        connectorPermissionBaseline: true,
-      });
-    const parsed = previousStoredExecutionContextSchema.parse({
-      ...storedContext,
-      connectorPermissionBaseline: connectorPermissionBaselineFixture(),
-    });
-
-    expect(parsed).not.toHaveProperty("connectorPermissionBaseline");
+    for (const schema of [
+      storedExecutionContextSchema,
+      compatibleStoredExecutionContextSchema,
+      claimCompatibleStoredExecutionContextSchema,
+    ]) {
+      expect(schema.parse(context)).toEqual(storedContext);
+    }
   });
 });
 

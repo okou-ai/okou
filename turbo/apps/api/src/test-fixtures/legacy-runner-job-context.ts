@@ -3,9 +3,6 @@ import { storedExecutionContextSchema } from "@okouai/api-contracts/contracts/ru
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
-import { connectorCatalogExecutableCapabilityDigest } from "../signals/services/connector-catalog-compatibility.service";
-import { connectorCatalogSource } from "../signals/services/connector-catalog-source";
-import { currentConnectorCatalogValidatorIdentity } from "../signals/services/connector-catalog-validator-authority";
 
 /**
  * Current APIs cannot produce the old queued context. Keep that supported
@@ -22,37 +19,51 @@ export async function replaceRunnerJobWithLegacyConnectorBaselineFixture({
   readonly catalogVersion: string;
   readonly catalogDigest: string;
 }) {
-  const validator = currentConnectorCatalogValidatorIdentity();
-  const executionContext = storedExecutionContextSchema.parse({
-    storageMounts: [],
-    environment: null,
-    platformEnvironment: {},
-    secretValueEnvironmentKeys: null,
-    resumeSession: null,
-    encryptedSecrets: null,
-    cliAgentType,
-    connectorRuntimeTargets: [{ kind: "builtin", connectorSlug: "github" }],
-    networkPolicies: {
-      github: {
-        allow: [],
-        deny: ["user:read"],
-        ask: [],
-        unknownPolicy: "deny",
+  const executionContext = {
+    ...storedExecutionContextSchema.parse({
+      storageMounts: [],
+      environment: null,
+      platformEnvironment: {},
+      secretValueEnvironmentKeys: null,
+      resumeSession: null,
+      encryptedSecrets: null,
+      cliAgentType,
+      connectorRuntimeTargets: [{ kind: "builtin", connectorSlug: "github" }],
+      networkPolicies: {
+        github: {
+          allow: [],
+          deny: ["user:read"],
+          ask: [],
+          unknownPolicy: "deny",
+        },
       },
-    },
+      ...(cliAgentType === "pi"
+        ? {
+            piSessionId: randomUUID(),
+            piLaunchConfig: { schemaVersion: 2 },
+            piModelConfig: {
+              provider: "openrouter",
+              baseUrl: "https://openrouter.ai/api/v1",
+              model: "@preset/okou-1-0",
+              apiKeyEnv: "OPENAI_API_KEY",
+              credentialSecretName: "OPENROUTER_API_KEY",
+            },
+          }
+        : {}),
+    }),
+    // Add the retired field after current-schema parsing, which strips it.
     connectorPermissionBaseline: {
       version: 1,
       catalogIdentity: {
-        sourceId: connectorCatalogSource().sourceId,
+        sourceId: "retired-catalog-source",
         schemaVersion: 4,
-        // Older contexts stored the publication version rather than its hash alias.
         catalogVersion,
         catalogDigest,
-        capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
+        capabilityDigest: `sha256:${"0".repeat(64)}`,
       },
       validationAuthority: {
-        backendVersion: validator.validatorVersion,
-        buildCommitSha: validator.buildCommitSha,
+        backendVersion: "1.0.0",
+        buildCommitSha: null,
       },
       connectors: {
         github: {
@@ -64,20 +75,7 @@ export async function replaceRunnerJobWithLegacyConnectorBaselineFixture({
         },
       },
     },
-    ...(cliAgentType === "pi"
-      ? {
-          piSessionId: randomUUID(),
-          piLaunchConfig: { schemaVersion: 2 },
-          piModelConfig: {
-            provider: "openrouter",
-            baseUrl: "https://openrouter.ai/api/v1",
-            model: "@preset/okou-1-0",
-            apiKeyEnv: "OPENAI_API_KEY",
-            credentialSecretName: "OPENROUTER_API_KEY",
-          },
-        }
-      : {}),
-  });
+  };
   const updated = await db()
     .update(runnerJobQueue)
     .set({ executionContext })

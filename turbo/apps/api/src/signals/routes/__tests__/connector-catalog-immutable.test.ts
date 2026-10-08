@@ -428,7 +428,7 @@ describe("slug-first current catalog business readers", () => {
   });
 
   it.each(["claude-code", "pi"] as const)(
-    "claims an old %s execution context and v1 permission baseline",
+    "claims an old %s context using current permissions instead of its baseline",
     async (cliAgentType) => {
       const candidate = await publishedCatalog();
       const bdd = createBddApi(context);
@@ -457,12 +457,10 @@ describe("slug-first current catalog business readers", () => {
       await runs.heartbeatRunner(runnerGroup);
       const claim = await runs.claimRunnerJob(run.runId);
       expect(claim.cliAgentType).toBe(cliAgentType);
-      expect(claim.networkPolicies?.github).toStrictEqual({
-        allow: [],
-        deny: ["user:read"],
-        ask: [],
-        unknownPolicy: "deny",
-      });
+      expect(claim.networkPolicies?.github?.allow).toContain("user:read");
+      expect(claim.networkPolicies?.github?.deny).not.toContain("user:read");
+      expect(claim.networkPolicies?.github?.unknownPolicy).toBe("allow");
+      expect(claim).not.toHaveProperty("connectorPermissionBaseline");
       if (cliAgentType === "pi") {
         expect(claim.piSessionId).toBe(storedContext.piSessionId);
         expect(claim.piLaunchConfig).toStrictEqual(
