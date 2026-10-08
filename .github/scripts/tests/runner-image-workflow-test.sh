@@ -192,7 +192,8 @@ jq -e '
 
 jq -e '
   .jobs.compile["runs-on"] == "ubuntu-latest-8-cores" and
-  .jobs.compile.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009" and
+  .jobs.compile.container.image == "${{ needs.prepare.outputs.runner-toolchain-image }}" and
+  .jobs.compile.env.RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE == .jobs.compile.container.image and
   (.jobs.compile.if | contains("!cancelled()")) and
   (.jobs.compile.if | contains("needs.prepare.result == '\''success'\''")) and
   (.jobs.compile.if | contains("runner-binary-miss-count != '\''0'\''")) and
@@ -232,7 +233,8 @@ jq -e '
     .key] | sort) == ["compile", "native-release-build", "prewarm-rust-cache"] and
   .jobs["native-release-build"].needs == ["prepare"] and
   .jobs["native-release-build"]["timeout-minutes"] == 25 and
-  .jobs["native-release-build"].container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825" and
+  .jobs["native-release-build"].container.image == .jobs.compile.container.image and
+  .jobs["native-release-build"].env.RUNNER_RELEASE_TOOLCHAIN_IMAGE == .jobs.compile.container.image and
   (.jobs["native-release-build"] | has("environment") | not) and
   (.jobs["native-release-build"].if | contains("current-runner-image-needed")) and
   .jobs["native-release-build"].env.SOURCE_SHA == "${{ needs.prepare.outputs.source-head-sha }}" and

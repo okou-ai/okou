@@ -35,6 +35,17 @@ def regular(path, limit=64 * 1024 * 1024):
     return path.read_bytes()
 
 
+def toolchain_image():
+    contract = ROOT / '.github/scripts/runner-binary-build/contract.env'
+    regular(contract, 16384)
+    # Use the canonical recipe's Bash semantics without ambient startup files.
+    # This producer/consumer is restricted to the same okou-ai repository.
+    return subprocess.check_output(
+        ['bash', '-eu', '-c', '. "$1"; printf %s "$RUNNER_BINARY_TOOLCHAIN_IMAGE"',
+         'runner-toolchain', str(contract)],
+        env={'PATH': os.defpath, 'GITHUB_REPOSITORY_OWNER': 'okou-ai'}, text=True)
+
+
 def git(*args):
     return subprocess.check_output(['git', '-c', f'safe.directory={ROOT}', *args], cwd=ROOT).strip()
 
@@ -188,6 +199,7 @@ def finish(out, profile, target, head):
     context_bytes = regular(ROOT / 'crates/target/f5-release-input/context.json', 65536)
     context = json.loads(context_bytes)
     require(context['source']['headSha'] == head and context['target'] == target
+            and context['toolchainImage'] == toolchain_image()
             and context['producer']['runId'] == int(os.environ['GITHUB_RUN_ID'])
             and context['producer']['runAttempt'] == int(os.environ['GITHUB_RUN_ATTEMPT'])
             and context['cli']['commitSha'] == head,
@@ -265,7 +277,7 @@ def validate(out, package, profile, target, head):
     require(sha(context_bytes) == manifest['distributionContextSha256']
             and context['producer'] == producer and context['cli'] == manifest['cli']
             and context['compiler'] == manifest['compiler']
-            and context['toolchainImage'] == 'ghcr.io/okou-ai/vm0-toolchain-rust:20260825',
+            and context['toolchainImage'] == toolchain_image(),
             'original optimized compiler/source/CLI context changed')
     compiler_root = check_ci_source_record(manifest['ciCompilerSource'], target, head) if profile == 'ci' else None
     for kind, names in (('worker', set(WORKER)), ('peer', {'qemu_gssapi'})):

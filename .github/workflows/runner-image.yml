@@ -60,6 +60,7 @@ jobs:
       job-ref: ${{ steps.identity.outputs.job-ref }}
       head-sha: ${{ steps.identity.outputs.head-sha }}
       producer-head-sha: ${{ steps.identity.outputs.producer-head-sha }}
+      runner-toolchain-image: ${{ steps.toolchain.outputs.image }}
       pr-number: ${{ steps.identity.outputs.pr-number }}
       pr-head-ref: ${{ steps.identity.outputs.pr-head-ref }}
       turbo-runner-consumer-needed: ${{ steps.needed.outputs.turbo-runner-consumer-needed }}
@@ -97,6 +98,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CHECK_PR_OPEN: "true"
         run: .github/scripts/runner-image-context.sh resolve
+
+      # Both compiler jobs use the selected source's canonical image, never
+      # an independently maintained conformance pin or a merge-tree recipe.
+      - name: Resolve selected Runner toolchain
+        id: toolchain
+        if: steps.identity.outputs.release-skip != 'true'
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.identity.outputs.source-head-sha }}
+        run: |
+          set -euo pipefail
+          contract=$(mktemp "${RUNNER_TEMP:?missing Runner input directory}/runner-toolchain.XXXXXXXX")
+          trap 'rm -f "$contract"' EXIT
+          git show "${SOURCE_SHA}:.github/scripts/runner-binary-build/contract.env" > "$contract"
+          . "$contract"
+          printf 'image=%s\n' "${RUNNER_BINARY_TOOLCHAIN_IMAGE:?missing canonical toolchain}" >> "$GITHUB_OUTPUT"
 
       - name: Determine base ref
         id: base
@@ -356,7 +373,7 @@ jobs:
     name: Compile runner binary (${{ matrix.label }})
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      image: ${{ needs.prepare.outputs.runner-toolchain-image }}
     permissions:
       actions: read
       contents: read
@@ -375,7 +392,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-compile-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
-      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ${{ needs.prepare.outputs.runner-toolchain-image }}
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
       GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
@@ -663,7 +680,7 @@ jobs:
     name: Compile full-LTO native package consumer (${{ matrix.label }})
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+      image: ${{ needs.prepare.outputs.runner-toolchain-image }}
     defaults:
       run:
         shell: bash
@@ -685,7 +702,7 @@ jobs:
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
       SOURCE_SHA: ${{ needs.prepare.outputs.source-head-sha }}
-      RUNNER_RELEASE_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+      RUNNER_RELEASE_TOOLCHAIN_IMAGE: ${{ needs.prepare.outputs.runner-toolchain-image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

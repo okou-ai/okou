@@ -11,7 +11,8 @@ cd "$repo_root"
 : "${SOURCE_SHA:?missing optimized supervisor source SHA}" "${TARGET_TRIPLE:?missing optimized supervisor target}"
 . .github/scripts/runner-image-target.sh
 runner_image_validate_target "$TARGET_TRIPLE"
-[[ ${RUNNER_RELEASE_TOOLCHAIN_IMAGE:-} == ghcr.io/okou-ai/vm0-toolchain-rust:20260825 ]] || exit 1
+. .github/scripts/runner-binary-build/contract.env
+[[ ${RUNNER_RELEASE_TOOLCHAIN_IMAGE:-} == "$RUNNER_BINARY_TOOLCHAIN_IMAGE" ]] || exit 1
 [[ -f crates/target/f5-release-input/context.json ]] || exit 1
 export CARGO_TARGET_DIR="$PWD/crates/target"
 # Ordinary optimized integration tests link the unmodified production library;

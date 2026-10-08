@@ -11,9 +11,9 @@ import subprocess
 import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-IMAGE = 'ghcr.io/okou-ai/vm0-toolchain-rust:20260825'
 TARGETS = ('x86_64-unknown-linux-musl', 'aarch64-unknown-linux-musl')
 INPUTS = ('crates/Cargo.toml', 'crates/Cargo.lock', 'crates/.cargo/config.toml',
+          '.github/scripts/runner-binary-build/contract.env',
           'crates/runner/guest-binaries.json', 'crates/runner/build.rs',
           'crates/kerberos-worker/build.rs', 'crates/kerberos-worker/native/build.sh',
           '.github/scripts/build-runner-native-release.sh',
@@ -35,6 +35,17 @@ def regular(path, limit):
     require(stat.S_ISREG(info.st_mode) and 0 < info.st_size <= limit, 'invalid bounded release input')
     require(path.resolve() == path.absolute(), 'release input has a noncanonical ancestor')
     return path.read_bytes()
+
+
+def toolchain_image():
+    contract = ROOT / '.github/scripts/runner-binary-build/contract.env'
+    regular(contract, 16384)
+    # Use the canonical recipe's Bash semantics without ambient startup files.
+    # This producer/consumer is restricted to the same okou-ai repository.
+    return subprocess.check_output(
+        ['bash', '-eu', '-c', '. "$1"; printf %s "$RUNNER_BINARY_TOOLCHAIN_IMAGE"',
+         'runner-toolchain', str(contract)],
+        env={'PATH': os.defpath, 'GITHUB_REPOSITORY_OWNER': 'okou-ai'}, text=True)
 
 
 def git(*args):
@@ -81,7 +92,7 @@ def write(path, value):
 
 
 def prepare(out, head, target, image):
-    require(image == IMAGE and target in TARGETS, 'release toolchain or target mismatch')
+    require(image == toolchain_image() and target in TARGETS, 'release toolchain or target mismatch')
     for name in os.environ:
         if (name in ('RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_RUSTFLAGS', 'RUSTC', 'RUSTC_WORKSPACE_WRAPPER')
                 or name.startswith('CARGO_PROFILE_') or (name.startswith('CARGO_TARGET_') and name.endswith('_RUSTFLAGS'))):
@@ -169,7 +180,7 @@ def finish(out):
 def validate(out, head, target):
     manifest = json.loads(regular(out / 'manifest.json', 65536))
     require(manifest['profile'] == 'release' and manifest['target'] == target
-            and manifest['toolchainImage'] == IMAGE and manifest['source'] == source(head)
+            and manifest['toolchainImage'] == toolchain_image() and manifest['source'] == source(head)
             and manifest['releaseContract'] == release_contract()
             and manifest['cli']['commitSha'] == head, 'release source/profile/target/CLI identity mismatch')
     producer = manifest['producer']

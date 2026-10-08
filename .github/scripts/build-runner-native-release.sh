@@ -11,7 +11,8 @@ cd "$repo_root"
   "${RUNNER_RELEASE_TOOLCHAIN_IMAGE:?missing release toolchain image}"
 . .github/scripts/runner-image-target.sh
 runner_image_validate_target "$TARGET_TRIPLE"
-# This is deliberately NOT an override of runner-binary-build/contract.env (ci).
+# Share only the canonical Runner toolchain; preserve the distinct release
+# recipe/profile below, never override runner-binary-build/contract.env (ci).
 output="$PWD/crates/target/f5-release-input"
 export CARGO_TARGET_DIR="$PWD/crates/target"
 mkdir -p "$CARGO_TARGET_DIR"

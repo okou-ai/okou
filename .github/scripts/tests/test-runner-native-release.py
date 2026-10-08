@@ -5,7 +5,9 @@ import json
 import os
 import pathlib
 import subprocess
+import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 
@@ -20,8 +22,11 @@ class ReleaseConsumerGraph(unittest.TestCase):
         jobs = workflow_jobs()
         producer = jobs['native-release-build']
         self.assertEqual(producer['timeout-minutes'], 25)
-        self.assertEqual(producer['container']['image'],
-                         'ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825')
+        # Compare the actual two producer boundaries, not two independently
+        # updated image literals. Their ci helper bytes must remain identical.
+        self.assertEqual(producer['container']['image'], jobs['compile']['container']['image'])
+        self.assertEqual(producer['env']['RUNNER_RELEASE_TOOLCHAIN_IMAGE'],
+                         jobs['compile']['env']['RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE'])
         self.assertNotIn('environment', producer)
         self.assertEqual(producer['permissions'], {'actions': 'read', 'contents': 'read'})
         self.assertEqual(producer['needs'], ['prepare'])
@@ -40,6 +45,99 @@ class ReleaseConsumerGraph(unittest.TestCase):
                             for s in consumer['steps']))
         self.assertTrue(any(s.get('with', {}).get('if-no-files-found') == 'error'
                             for s in consumer['steps']))
+
+    def test_release_image_admission_uses_the_canonical_runner_contract(self):
+        path = ROOT / '.github/scripts/runner-native-release.py'
+        spec = importlib.util.spec_from_file_location('native_release_image', path)
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        canonical = subprocess.check_output(
+            ['bash', '-eu', '-c', '. "$1"; printf %s "$RUNNER_BINARY_TOOLCHAIN_IMAGE"',
+             'contract', str(ROOT / '.github/scripts/runner-binary-build/contract.env')],
+            env={'PATH': os.defpath, 'GITHUB_REPOSITORY_OWNER': 'okou-ai'}, text=True)
+        # The correct image advances to the real source-HEAD gate; a stale or
+        # unrelated image must refuse before Git/CLI/compiler input admission.
+        with self.assertRaisesRegex(ValueError, 'release source HEAD mismatch'):
+            module.prepare(ROOT / 'crates/target/unused-release-input', '0' * 40,
+                           'x86_64-unknown-linux-musl', canonical)
+        for image in ('ghcr.io/okou-ai/vm0-toolchain-rust:20260825', 'unselected-image'):
+            with self.subTest(image=image), self.assertRaisesRegex(ValueError, 'release toolchain or target mismatch'):
+                module.prepare(ROOT / 'crates/target/unused-release-input', '0' * 40,
+                               'x86_64-unknown-linux-musl', image)
+
+    def test_workflow_resolves_the_selected_head_not_the_checkout_recipe(self):
+        jobs = workflow_jobs()
+        self.assertEqual(jobs['prepare']['outputs']['runner-toolchain-image'], '${{ steps.toolchain.outputs.image }}')
+        step = next(s for s in jobs['prepare']['steps'] if s.get('id') == 'toolchain')
+        self.assertEqual(step['shell'], 'bash')
+        self.assertEqual(step['if'], "steps.identity.outputs.release-skip != 'true'")
+        self.assertEqual(step['env']['SOURCE_SHA'], '${{ steps.identity.outputs.source-head-sha }}')
+        for job, field in (('compile', 'RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE'),
+                           ('native-release-build', 'RUNNER_RELEASE_TOOLCHAIN_IMAGE')):
+            self.assertEqual(jobs[job]['container']['image'], '${{ needs.prepare.outputs.runner-toolchain-image }}')
+            self.assertEqual(jobs[job]['env'][field], jobs[job]['container']['image'])
+        original = (ROOT / '.github/scripts/runner-binary-build/contract.env').read_text()
+        image = subprocess.check_output(
+            ['bash', '-eu', '-c', '. "$1"; printf %s "$RUNNER_BINARY_TOOLCHAIN_IMAGE"',
+             'contract', str(ROOT / '.github/scripts/runner-binary-build/contract.env')],
+            env={'PATH': os.defpath, 'GITHUB_REPOSITORY_OWNER': 'okou-ai'}, text=True)
+        future = image.rsplit(':', 1)[0] + ':regression-fixture'
+        assignment = next(line for line in original.splitlines() if line.startswith('RUNNER_BINARY_TOOLCHAIN_IMAGE='))
+        with tempfile.TemporaryDirectory(dir=ROOT / 'crates/target') as directory:
+            repo = pathlib.Path(directory) / 'repo'; repo.mkdir()
+            contract = repo / '.github/scripts/runner-binary-build/contract.env'
+            contract.parent.mkdir(parents=True)
+            subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+            heads = []
+            for content in (original, original.replace(assignment, 'RUNNER_BINARY_TOOLCHAIN_IMAGE=' + future)):
+                contract.write_text(content)
+                subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+                subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Fixture',
+                                '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'recipe'], check=True)
+                heads.append(subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip())
+            output = pathlib.Path(directory) / 'github-output'
+            # HEAD/checkout remains the future recipe while both original and
+            # future selected commits execute through the actual workflow step.
+            for head, expected in zip(heads, (image, future)):
+                output.write_text('')
+                result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', step['run']], cwd=repo,
+                                        env={'PATH': os.defpath, 'SOURCE_SHA': head, 'GITHUB_OUTPUT': str(output),
+                                             'RUNNER_TEMP': directory, 'GITHUB_REPOSITORY_OWNER': 'okou-ai'},
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(output.read_text(), 'image=' + expected + '\n')
+                self.assertEqual(list(pathlib.Path(directory).glob('runner-toolchain.*')), [])
+            output.write_text('')
+            result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', step['run']], cwd=repo,
+                                    env={'PATH': os.defpath, 'SOURCE_SHA': '0' * 40, 'GITHUB_OUTPUT': str(output),
+                                         'RUNNER_TEMP': directory, 'GITHUB_REPOSITORY_OWNER': 'okou-ai'},
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(output.read_text(), '')  # no checkout or latest fallback
+            self.assertEqual(list(pathlib.Path(directory).glob('runner-toolchain.*')), [])
+
+    def test_both_context_validators_follow_recipe_changes_without_ambient_startup(self):
+        original = (ROOT / '.github/scripts/runner-binary-build/contract.env').read_text()
+        assignment = next(line for line in original.splitlines() if line.startswith('RUNNER_BINARY_TOOLCHAIN_IMAGE='))
+        with tempfile.TemporaryDirectory(dir=ROOT / 'crates/target') as directory:
+            root = pathlib.Path(directory)
+            contract = root / '.github/scripts/runner-binary-build/contract.env'
+            contract.parent.mkdir(parents=True)
+            startup = root / 'ambient-bash'; startup.write_text('echo unselected-startup; exit 9\n')
+            for name in ('runner-native-release.py', 'runner-native-supervisor.py'):
+                spec = importlib.util.spec_from_file_location('native_contract', ROOT / '.github/scripts' / name)
+                module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.ROOT = root
+                contract.write_text(original)
+                image = module.toolchain_image()
+                future = image.rsplit(':', 1)[0] + ':regression-fixture'
+                contract.write_text(original.replace(assignment, 'RUNNER_BINARY_TOOLCHAIN_IMAGE=' + future))
+                with patch.dict(os.environ, {'BASH_ENV': str(startup), 'GITHUB_REPOSITORY_OWNER': 'unselected-owner'}):
+                    self.assertEqual(module.toolchain_image(), future)
+                contract.unlink(); contract.symlink_to(startup)
+                with self.assertRaises(ValueError): module.toolchain_image()
+                contract.unlink()
+        spec = importlib.util.spec_from_file_location('native_input_contract', ROOT / '.github/scripts/runner-native-release.py')
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        self.assertIn('.github/scripts/runner-binary-build/contract.env', module.INPUTS)
 
     def test_native_ci_job_requires_native_preinstalled_aws_without_x86_installer(self):
         job = workflow_jobs()['native-package']
