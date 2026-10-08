@@ -325,24 +325,37 @@ const navigate$ = command(
   },
 );
 
+interface NavigateToOptions {
+  pathParams?: Parameters<typeof generateRouterPath>[1];
+  searchParams?: URLSearchParams;
+  hash?: string;
+  replace?: boolean;
+}
+
+export const navigateTo$ = command(
+  (
+    { set },
+    pathname: Parameters<typeof generateRouterPath>[0],
+    options: NavigateToOptions | undefined,
+    signal: AbortSignal,
+  ) => {
+    return set(
+      navigate$,
+      generateRouterPath(pathname, options?.pathParams),
+      options ?? {},
+      signal,
+    );
+  },
+);
+
 export const detachedNavigateTo$ = command(
   (
     { set, get },
     pathname: Parameters<typeof generateRouterPath>[0],
-    options?: {
-      pathParams?: Parameters<typeof generateRouterPath>[1];
-      searchParams?: URLSearchParams;
-      hash?: string;
-      replace?: boolean;
-    },
+    options?: NavigateToOptions,
   ) => {
     detach(
-      set(
-        navigate$,
-        generateRouterPath(pathname, options?.pathParams),
-        options ?? {},
-        get(rootSignal$),
-      ),
+      set(navigateTo$, pathname, options, get(rootSignal$)),
       Reason.Entrance,
     );
   },

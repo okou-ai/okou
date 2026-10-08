@@ -225,13 +225,17 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   );
 });
 
-test("Archive from the mobile header and return to the thread's agent only after saving", async () => {
+test("Archive from the mobile header and return to the thread's agent before saving", async () => {
   context.mocks.browser.matchMedia(false);
   const archiveResponse = context.mocks.deferred<void>();
   const events: ChatThreadEvent[] = [];
+  let archiveRequestAborted = false;
   context.mocks.api(
     chatThreadArchiveContract.archive,
-    async ({ params, query, respond }) => {
+    async ({ params, query, request, respond }) => {
+      request.signal.addEventListener("abort", () => {
+        archiveRequestAborted = true;
+      });
       await archiveResponse.promise;
       events.push(
         chatListEvent(951, 1, "archived", params.id, {
@@ -247,25 +251,21 @@ test("Archive from the mobile header and return to the thread's agent only after
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Archive chat"));
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  expect(menuItemNamed("Unarchive chat")).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
-  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
-
-  archiveResponse.resolve();
   await waitFor(() => {
     expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
   });
   expect(
     screen.queryByText("Review the header layout"),
   ).not.toBeInTheDocument();
+
+  archiveResponse.resolve();
+  await waitFor(() => {
+    expect(events).toHaveLength(1);
+  });
+  expect(archiveRequestAborted).toBeFalsy();
 });
 
-test("Stay in the current thread and show the archive API error", async () => {
+test("Show the archive API error after leaving the thread", async () => {
   context.mocks.browser.matchMedia(false);
   context.mocks.api(chatThreadArchiveContract.archive, ({ respond }) => {
     return respond(500, { error: { message: "Archive request failed" } });
@@ -277,8 +277,7 @@ test("Stay in the current thread and show the archive API error", async () => {
   await expect(
     screen.findByText("Archive request failed"),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
-  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
+  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
 });
 
 test("Hide header archiving when the archive switch is off", async () => {

@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { detachedNavigateTo$ } from "../route.ts";
+import { navigateTo$ } from "../route.ts";
 import { setChatThreadArchived$ } from "./chat-event.ts";
 import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
 
@@ -17,12 +17,21 @@ export const setChatThreadArchivedFromHeader$ = command(
     if (get(chatThreadMetaMap$).get(threadId)?.archived === archived) {
       return;
     }
-    await set(setChatThreadArchived$, { threadId, archived }, signal);
-    signal.throwIfAborted();
-    if (archived) {
-      set(detachedNavigateTo$, "/agents/:agentId/chat", {
-        pathParams: { agentId },
-      });
+    if (!archived) {
+      await set(setChatThreadArchived$, { threadId, archived }, signal);
+      return;
     }
+    // The archive is optimistic, so leave the thread without waiting for the
+    // request. The caller passes a root-scoped signal because this navigation
+    // aborts the current page signal.
+    await Promise.all([
+      set(setChatThreadArchived$, { threadId, archived }, signal),
+      set(
+        navigateTo$,
+        "/agents/:agentId/chat",
+        { pathParams: { agentId } },
+        signal,
+      ),
+    ]);
   },
 );

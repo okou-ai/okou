@@ -30,6 +30,7 @@ import { setChatThreadArchivedFromHeader$ } from "../../signals/chat-page/chat-t
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
 export function ChatThreadPinButton({
@@ -95,6 +96,7 @@ export function MobileChatThreadMoreMenu({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
+  const rootSignal = useGet(rootSignal$);
   const pinned = useGet(thread.pin.pinned$);
   const setPinned = useSet(thread.pin.setPinned$);
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
@@ -169,7 +171,8 @@ export function MobileChatThreadMoreMenu({
                     agentId: thread.agentId,
                     archived: !archived,
                   },
-                  pageSignal,
+                  // Archiving navigates away immediately, which aborts the page signal.
+                  rootSignal,
                 ),
                 Reason.DomCallback,
               );
