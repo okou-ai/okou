@@ -7,11 +7,12 @@ private let muted = Color(red: 0.40, green: 0.44, blue: 0.52)
 private let brand = Color(red: 1, green: 0.647, blue: 0)
 
 struct DesktopView: View {
+  static let titlebarExtension: CGFloat = 4
   @Environment(\.displayScale) private var displayScale
   @ObservedObject var model: DesktopModel
   var body: some View {
     VStack(spacing: 0) {
-      Color(nsColor: .windowBackgroundColor).frame(height: 4)
+      Color(nsColor: .windowBackgroundColor).frame(height: Self.titlebarExtension)
         .overlay(alignment: .bottom) {
           Rectangle().fill(foreground.opacity(0.1)).frame(height: 1 / displayScale)
         }
