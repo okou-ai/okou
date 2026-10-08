@@ -182,7 +182,6 @@ test("An optimistic QuickTime preview does not list artifacts before thread crea
   });
   const { confirmation, requests } = await openUnconfirmedConversation();
   const user = userEvent.setup({ delay: null });
-  await user.click(fastButton("Attach"));
   await user.upload(
     composerFileInput(),
     new File(["video fixture"], "recording.mov", {

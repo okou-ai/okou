@@ -421,6 +421,43 @@ test("Combine workspace and member-package credits for administrators", async ()
   expect(within(menu).queryByText("20,400 credits")).toBeNull();
 });
 
+test.each([
+  [-23_000, 50_000, "50,000 credits"],
+  [-23_000, 0, "0 credits"],
+])(
+  "Organization debt %i does not cancel %i prepaid member credits",
+  async (orgCredits, packCredits, label) => {
+    mockAdminAccountSidebar();
+    mockAdminBillingStatus(orgCredits);
+    context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
+      return respond(200, {
+        totalCredits: packCredits,
+        purchasedCredits: packCredits,
+        bonusCredits: 0,
+        creditGrants: [],
+      });
+    });
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      auth: {
+        user: {
+          id: "test-user-123",
+          fullName: "Alex Rivera",
+          email: "alex.rivera@example.test",
+        },
+      },
+    });
+    const menu = await openAccountMenu();
+    const creditItem = await within(menu).findByTestId(
+      "account-menu-credit-balance",
+    );
+    await waitFor(() => {
+      expect(creditItem).toHaveTextContent(label);
+    });
+  },
+);
+
 test("Export account data from the account menu", async () => {
   mockAdminAccountSidebar();
   const openMock = context.mocks.browser.open(null);

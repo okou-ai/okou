@@ -28,7 +28,6 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { and, asc, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
-import { readPiLangfuseServerConfig } from "../../lib/pi-langfuse-debug";
 import { db$, type Db } from "../external/db";
 import {
   activePaidConcurrencySlots,
@@ -264,7 +263,6 @@ export function agentRunById(args: {
         createdAt: agentRuns.createdAt,
         startedAt: agentRuns.startedAt,
         completedAt: agentRuns.completedAt,
-        langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
         modelProvider: agentRuns.modelProvider,
         modelRuntimeProvider: agentRuns.modelRuntimeProvider,
         selectedModel: agentRuns.selectedModel,
@@ -288,9 +286,6 @@ export function agentRunById(args: {
 
     const source = await persistedRunSource(get(db$), run, args);
 
-    const langfuseConfig = run.langfuseTraceEnabled
-      ? readPiLangfuseServerConfig()
-      : undefined;
     return {
       runId: run.id,
       status: run.status as RunStatus,
@@ -313,11 +308,6 @@ export function agentRunById(args: {
       startedAt: run.startedAt?.toISOString(),
       completedAt: run.completedAt?.toISOString(),
       source,
-      ...(langfuseConfig
-        ? {
-            langfuseTraceUrl: `${langfuseConfig.baseUrl}/project/${encodeURIComponent(langfuseConfig.projectId)}/traces/${run.id.replaceAll("-", "")}`,
-          }
-        : {}),
     };
   });
 }

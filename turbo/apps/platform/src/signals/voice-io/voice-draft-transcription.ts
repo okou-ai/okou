@@ -6,6 +6,7 @@ import {
 } from "../external/voice-draft-store.ts";
 import { detach, Reason, resetSignal } from "../utils.ts";
 import { nextVoiceDraftSegment } from "./voice-draft-audio.ts";
+import { polishVoiceDraft$ } from "./voice-draft-polish.ts";
 import { VOICE_DRAFT_PCM_SAMPLE_RATE } from "./voice-draft-pcm.ts";
 import {
   transcribeVoiceDraftSegment$,
@@ -48,6 +49,9 @@ function createTranscriptionState() {
   const resetSession$ = resetSignal();
   const session$ = state<VoiceDraftTranscriptionSession | null>(null);
   const segments$ = state<readonly VoiceDraftTranscriptionSegment[]>([]);
+  const polishResult$ = state<Promise<
+    VoiceDraftTranscriptionResult | undefined
+  > | null>(null);
   // Each append starts finite, ordered command work. Its promise is also the
   // drain handle used by Stop, Retry, and cancellation; no state read starts I/O.
   const enqueue$ = command(
@@ -109,7 +113,7 @@ function createTranscriptionState() {
     },
   );
 
-  return { session$, segments$, enqueue$, resetSession$ };
+  return { session$, segments$, polishResult$, enqueue$, resetSession$ };
 }
 
 type TranscriptionState = ReturnType<typeof createTranscriptionState>;
@@ -118,7 +122,7 @@ function createInitialization(
   options: VoiceDraftTranscriptionOptions,
   state: TranscriptionState,
 ) {
-  const { session$, segments$, enqueue$, resetSession$ } = state;
+  const { session$, segments$, polishResult$, enqueue$, resetSession$ } = state;
   const initialize$ = command(async ({ get, set }, signal: AbortSignal) => {
     const key = await get(options.storageKey$);
     signal.throwIfAborted();
@@ -135,7 +139,10 @@ function createInitialization(
       return;
     }
     set(resetSession$);
-    await Promise.allSettled([get(segments$).at(-1)?.result]);
+    await Promise.allSettled([
+      get(segments$).at(-1)?.result,
+      get(polishResult$),
+    ]);
     signal.throwIfAborted();
     if (get(session$) !== current) {
       return;
@@ -166,6 +173,7 @@ function createInitialization(
     }
     set(session$, session);
     set(segments$, restored);
+    set(polishResult$, null);
   });
 
   return initialize$;
@@ -305,7 +313,7 @@ export function createVoiceDraftTranscriptionSignals(
   options: VoiceDraftTranscriptionOptions,
 ) {
   const state = createTranscriptionState();
-  const { session$, segments$, resetSession$ } = state;
+  const { session$, segments$, polishResult$, resetSession$ } = state;
   const initialize$ = createInitialization(options, state);
   const append$ = createSegmentPreparation(options, state);
   const retry$ = createCheckpointRetry(state);
@@ -331,7 +339,7 @@ export function createVoiceDraftTranscriptionSignals(
         await set(append$, true, signal);
       }
     }
-    const result = await get(segments$).at(-1)?.result;
+    let result = await get(segments$).at(-1)?.result;
     signal.throwIfAborted();
     if (!result) {
       if (get(segments$).length > 0) {
@@ -340,7 +348,24 @@ export function createVoiceDraftTranscriptionSignals(
       return;
     }
     if (result.kind === "transcribed") {
+      const session = get(session$);
+      if (!session) {
+        throw new Error("Voice transcription session changed before polish");
+      }
+      const pending = set(
+        polishVoiceDraft$,
+        session.recording.key,
+        session.recording.recordingId,
+        AbortSignal.any([signal, session.signal]),
+      );
+      set(polishResult$, pending);
+      result = await pending;
+      signal.throwIfAborted();
+      session.signal.throwIfAborted();
       set(refreshAudioInputQuota$);
+      if (!result) {
+        await set(openAudioInputQuotaRecovery$, signal);
+      }
     }
     return result;
   });
@@ -348,11 +373,15 @@ export function createVoiceDraftTranscriptionSignals(
   const cancel$ = command(async ({ get, set }, signal: AbortSignal) => {
     const session = get(session$);
     set(resetSession$);
-    await Promise.allSettled([get(segments$).at(-1)?.result]);
+    await Promise.allSettled([
+      get(segments$).at(-1)?.result,
+      get(polishResult$),
+    ]);
     signal.throwIfAborted();
     if (get(session$) === session) {
       set(session$, null);
       set(segments$, []);
+      set(polishResult$, null);
     }
   });
 

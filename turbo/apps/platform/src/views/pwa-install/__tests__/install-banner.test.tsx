@@ -72,11 +72,6 @@ test("The standalone app hides the install banner", async () => {
 
   await setupPage({ context, path: "/", host: "app.okou.ai" });
 
-  await waitFor(() => {
-    const agentsLink = queryAllByRoleFast("link").find((candidate) => {
-      return candidate.textContent?.trim() === "Agents";
-    });
-    expect(agentsLink).toHaveAttribute("href", "/agents");
-  });
+  expect(getButton({ label: "Open menu" })).toBeEnabled();
   expect(screen.queryByText("Install Okou for a better experience")).toBeNull();
 });

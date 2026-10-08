@@ -27,6 +27,13 @@ struct DesktopConfiguration: Decodable {
 
 @MainActor
 final class DesktopModel: ObservableObject {
+  @Published var compatibility: DesktopCompatibility
+  @Published var upgradePhase: DesktopUpgradePhase = .checking
+  @Published var compatibilityChecking = false
+  var requestRequiredUpdate: (() -> Void)?
+  private var compatibilityTask: Task<Void, Never>?
+  private var drainTask: Task<Void, Never>?
+  private var compatibilityRevision = 0
   @Published var preparing = true
   @Published var signedIn = false
   @Published var email = ""
@@ -65,7 +72,7 @@ final class DesktopModel: ObservableObject {
   var permissionsReady: Bool {
     permissions["accessibility"].bool == true && permissions["screenRecording"].bool == true
   }
-  var ready: Bool { signedIn && organization != nil && permissionsReady }
+  var ready: Bool { signedIn && organization != nil && permissionsReady && !compatibility.required }
   var online: Bool { ["online", "connecting", "recovering", "stopping"].contains(runtime.status) }
   var statusLabel: String {
     [
@@ -88,6 +95,11 @@ final class DesktopModel: ObservableObject {
       ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent(appName)
     preferences = try Preferences(directory: directory)
+    compatibility = DesktopCompatibility(
+      version: version,
+      minimumSupportedVersion: preferences.string("desktopMinimumSupportedVersion"),
+      rejected: preferences.bool("desktopUpdateRequired")
+        && preferences.string("desktopRejectedVersion") == version)
     keepAwake = preferences.bool("keepAwakeEnabled")
     let telemetry = [
       "OKOU_DESKTOP_SENTRY_DSN": Bundle.main.object(forInfoDictionaryKey: "OkouSentryDSN")
@@ -108,8 +120,16 @@ final class DesktopModel: ObservableObject {
         return try await self.sessionToken(forceRefresh: forceRefresh)
       },
       onChange: { [weak self] state in
-        self?.runtime = state
-        self?.didChange?()
+        guard let self else { return }
+        let newlyRejected = state.updateRequired && !self.runtime.updateRequired
+        self.runtime = state
+        if newlyRejected {
+          self.compatibilityRevision += 1
+          self.compatibility.reject(minimum: state.minimumSupportedVersion)
+          self.persistCompatibility()
+          self.beginRequiredUpgrade()
+        }
+        self.didChange?()
       })
   }
   static var authKeychainService: String { "\(Bundle.main.bundleIdentifier!).native-auth" }
@@ -123,6 +143,9 @@ final class DesktopModel: ObservableObject {
   func start() {
     applyKeepAwake()
     authTask = Task {
+      let alreadyRequired = compatibility.required
+      await checkCompatibility()
+      if alreadyRequired && compatibility.required { beginRequiredUpgrade() }
       Self.configureAuthentication(configuration)
       do {
         try await refreshIdentity()
@@ -130,7 +153,7 @@ final class DesktopModel: ObservableObject {
       } catch { self.error = error.localizedDescription }
       preparing = false
       didChange?()
-      if ready { Task { await host.start() } }
+      if ready { Task { await startHostIfSupported() } }
       refreshTask = Task {
         while !Task.isCancelled {
           do {
@@ -150,6 +173,75 @@ final class DesktopModel: ObservableObject {
         }
       }
     }
+  }
+  func checkCompatibility() async {
+    if let task = compatibilityTask {
+      await task.value
+      return
+    }
+    let task = Task { @MainActor in
+      compatibilityChecking = true
+      defer { compatibilityChecking = false }
+      do {
+        let revision = compatibilityRevision
+        let response = try await api.request("api/desktop/compatibility", timeout: 10)
+        try Task.checkCancellation()
+        guard compatibilityRevision == revision else { return }
+        let wasRequired = compatibility.required
+        try compatibility.apply(response)
+        persistCompatibility()
+        if compatibility.required && !wasRequired { beginRequiredUpgrade() }
+      } catch is CancellationError { return } catch {
+        // A failed check must never unlock a previously rejected installation.
+        if compatibility.required { upgradePhase = .failed(error.localizedDescription) }
+      }
+      didChange?()
+    }
+    compatibilityTask = task
+    await task.value
+    compatibilityTask = nil
+  }
+  private func persistCompatibility() {
+    do {
+      try preferences.set([
+        "desktopMinimumSupportedVersion": compatibility.minimumSupportedVersion.map(
+          JSONValue.string) ?? .null,
+        "desktopUpdateRequired": .bool(compatibility.rejected),
+        "desktopRejectedVersion": compatibility.rejected ? .string(version) : .null,
+      ])
+    } catch { self.error = error.localizedDescription }
+  }
+  private func beginRequiredUpgrade() {
+    guard compatibility.required else { return }
+    if drainTask == nil { drainTask = Task { await host.stop() } }
+    upgradePhase = .checking
+    showWorkspaces = false
+    requestRequiredUpdate?()
+    didChange?()
+  }
+  private func startHostIfSupported() async {
+    await checkCompatibility()
+    guard ready else { return }
+    await drainTask?.value
+    drainTask = nil
+    await host.start()
+  }
+  func retryRequiredUpgrade() {
+    Task {
+      await checkCompatibility()
+      if compatibility.required { beginRequiredUpgrade() }
+    }
+  }
+  func drainForUpgrade() async {
+    upgradePhase = .draining
+    await drainTask?.value
+    await host.stop()
+  }
+  func stopForUpdate() async { await host.stop() }
+  func downloadLatest() {
+    NSWorkspace.shared.open(
+      configuration.apiURL.appendingPathComponent(
+        "api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/dmg"))
   }
   private func sessionToken(forceRefresh: Bool) async throws -> String {
     let expected = identityGeneration
@@ -261,7 +353,7 @@ final class DesktopModel: ObservableObject {
       _ = try await Clerk.shared.auth.startHostedAuth()
       try await self.refreshIdentity()
       if self.organization == nil && self.signedIn { await self.selectWorkspace() }
-      if self.ready { Task { await self.host.start() } }
+      if self.ready { Task { await self.startHostIfSupported() } }
     }
   }
   func signOut() {
@@ -297,7 +389,7 @@ final class DesktopModel: ObservableObject {
       try await Clerk.shared.auth.setActive(sessionId: session, organizationId: id)
       try await self.refreshIdentity()
       self.showWorkspaces = false
-      if self.ready { Task { await self.host.start() } }
+      if self.ready { Task { await self.startHostIfSupported() } }
     }
   }
   func goOnline() {
@@ -307,7 +399,7 @@ final class DesktopModel: ObservableObject {
           "permission_denied", "Complete account and permissions setup before going online")
       }
       await self.host.stop()
-      Task { await self.host.start() }
+      Task { await self.startHostIfSupported() }
     }
   }
   func goOffline() { perform { await self.host.stop() } }
@@ -326,7 +418,7 @@ final class DesktopModel: ObservableObject {
     perform {
       self.permissions = try await self.executor.requestPermission(screenRecording: screenRecording)
       try await self.refreshPermissions()
-      if self.ready && !self.online { Task { await self.host.start() } }
+      if self.ready && !self.online { Task { await self.startHostIfSupported() } }
     }
   }
   func probeBrowser(_ target: String) {
@@ -377,6 +469,7 @@ final class DesktopModel: ObservableObject {
   }
   func shutdown() async {
     identityGeneration += 1
+    compatibilityTask?.cancel()
     authTask?.cancel()
     identityRefreshTask?.cancel()
     refreshTask?.cancel()

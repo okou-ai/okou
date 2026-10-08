@@ -209,7 +209,11 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
       visited before the implicit comprehension scope is pushed; afterward, named
       expression targets are written to the containing non-comprehension scope and
       the current comprehension state. Nested comprehensions reuse that containing
-      target, while entry into a new lexical scope resets the index stack.
+      target, while entry into a new lexical scope resets the index stack. Eager
+      comprehensions join possible empty-iterable and rejected-filter exits with
+      the reached tail state before discarding their local scope. Generator tails
+      also retain the unadvanced creation state after first-iterable evaluation,
+      so delayed rebindings cannot unconditionally discard enclosing aliases.
     * ``_implicit_exception_alias_scope_projections`` projects implicit
       comprehension-local aliases back to the surrounding scopes that remain
       visible if eager comprehension evaluation fails. Generator-expression
@@ -1494,6 +1498,13 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._implicit_exception_alias_scope_projections.append((outer_scope_index, local_names))
         if deferred:
             self._exception_alias_scopes.append(_ExceptionAliasState())
+        exit_snapshots: list[list[set[str]]] = []
+        if (
+            deferred
+            or first_generator.is_async
+            or _literal_iteration_limit(first_generator.iter) is None
+        ):
+            exit_snapshots.append(self._alias_scope_snapshot())
         reached_generators = [first_generator]
         body_is_reachable = True
         self._visit_assignment_target(first_generator.target, direct_value_is_metadata_alias=False)
@@ -1501,9 +1512,11 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             self._record_metadata_merge_key_violations(condition)
             self.visit(condition)
             self._record_truth_test_exception(condition)
-            if _static_truth_value(condition) is not True:
+            condition_truth = _static_truth_value(condition)
+            if condition_truth is not True:
+                exit_snapshots.append(self._alias_scope_snapshot())
                 self._record_later_comprehension_iterations(reached_generators)
-            if _static_truth_value(condition) is False:
+            if condition_truth is False:
                 body_is_reachable = False
                 break
         for generator in remaining_generators if body_is_reachable else []:
@@ -1511,6 +1524,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             self.visit(generator.iter)
             if generator.is_async or _iteration_may_raise(generator.iter, advances=True):
                 self._record_implicit_exception_aliases()
+            if generator.is_async or _literal_iteration_limit(generator.iter) in (None, 0):
+                exit_snapshots.append(self._alias_scope_snapshot())
             if not generator.is_async and _iterable_is_statically_empty(generator.iter):
                 body_is_reachable = False
                 break
@@ -1520,9 +1535,11 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 self._record_metadata_merge_key_violations(condition)
                 self.visit(condition)
                 self._record_truth_test_exception(condition)
-                if _static_truth_value(condition) is not True:
+                condition_truth = _static_truth_value(condition)
+                if condition_truth is not True:
+                    exit_snapshots.append(self._alias_scope_snapshot())
                     self._record_later_comprehension_iterations(reached_generators)
-                if _static_truth_value(condition) is False:
+                if condition_truth is False:
                     body_is_reachable = False
                     break
             if not body_is_reachable:
@@ -1534,6 +1551,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             self._record_later_comprehension_iterations(reached_generators)
         if deferred:
             self._exception_alias_scopes.pop()
+        exit_snapshots.append(self._alias_scope_snapshot())
+        self._merge_alias_scope_snapshots(exit_snapshots)
         self._implicit_exception_alias_scope_projections.pop()
         self._named_expr_target_scope_indexes.pop()
         self._metadata_alias_scopes.pop()

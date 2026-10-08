@@ -25,7 +25,7 @@ interface RecordingDatabase extends DBSchema {
 }
 
 async function savedRecording() {
-  const database = await openDB<RecordingDatabase>("okou-voice-drafts", 1);
+  const database = await openDB<RecordingDatabase>("okou-voice-drafts");
   const recordings = await database.getAll("drafts");
   database.close();
   return recordings[0] ?? null;
@@ -84,13 +84,16 @@ test("Recover committed PCM after a reload during recording", async () => {
   });
   installVoiceBoundaries();
   const uploads: ArrayBuffer[] = [];
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+    return HttpResponse.json({ text: "Recovered audio." });
+  });
   context.mocks.http.post(
     "*/api/voice-io/transcribe/segment",
     async ({ request }) => {
       uploads.push(await uploadedAudio(request));
       return HttpResponse.json({
         transcript: "recovered",
-        polishedText: "Recovered audio.",
+
         language: "en-US",
       });
     },
@@ -144,13 +147,16 @@ test("Include the final worklet chunk before transcribing", async () => {
     finalPcmSamples: new Float32Array(1024).fill(-0.75),
   });
   const consoleErrors = installVoiceBoundaries();
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+    return HttpResponse.json({ text: "Complete recording." });
+  });
   context.mocks.http.post(
     "*/api/voice-io/transcribe/segment",
     async ({ request }) => {
       upload.resolve(await uploadedAudio(request));
       return HttpResponse.json({
         transcript: "complete",
-        polishedText: "Complete recording.",
+
         language: "en-US",
       });
     },
@@ -171,4 +177,70 @@ test("Include the final worklet chunk before transcribing", async () => {
     return await expect(savedRecording()).resolves.toBeNull();
   });
   expect(consoleErrors).toStrictEqual([]);
+});
+
+test("Restore completed transcripts after reload and retry only polish", async () => {
+  const resetFirstPage$ = resetSignal();
+  const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
+  context.mocks.browser.voiceInput({ rms: 0.12 });
+  installVoiceBoundaries();
+  let transcribed = false;
+  let polishAvailable = false;
+  context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
+    if (transcribed) {
+      return HttpResponse.json(
+        {
+          error: {
+            code: "UNEXPECTED_RETRANSCRIPTION",
+            message: "Completed audio must not be uploaded again",
+          },
+        },
+        { status: 502 },
+      );
+    }
+    transcribed = true;
+    return HttpResponse.json({
+      transcript: "Keep this saved speech.",
+      language: "en",
+    });
+  });
+  context.mocks.http.post(
+    "*/api/voice-io/polish/segments",
+    async ({ request }) => {
+      await expect(request.json()).resolves.toMatchObject({
+        segments: ["Keep this saved speech."],
+      });
+      return polishAvailable
+        ? HttpResponse.json({ text: "Keep this saved speech." })
+        : HttpResponse.json(
+            {
+              error: {
+                code: "PROVIDER_UNAVAILABLE",
+                message: "Editing is busy",
+              },
+            },
+            { status: 503 },
+          );
+    },
+  );
+  await setupPage({
+    context: { ...context, signal: firstPageSignal },
+    path: RUN_PATH,
+  });
+  click(await findEnabledButton("Voice input"));
+  click(await findEnabledButton("Stop recording"));
+  await findEnabledButton("Retry");
+  await expect(
+    screen.findByText("Editing is busy", { exact: false }),
+  ).resolves.toBeInTheDocument();
+  context.store.set(resetFirstPage$);
+  releasePageDom();
+  polishAvailable = true;
+  await setupPage({ context: secondContext, path: RUN_PATH });
+  click(await findEnabledButton("Retry"));
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "Keep this saved speech.",
+    );
+  });
 });

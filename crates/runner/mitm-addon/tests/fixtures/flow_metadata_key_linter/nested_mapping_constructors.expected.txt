@@ -1,0 +1,16 @@
+nested_mapping_constructors.py:2: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:6: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:10: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:14: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:18: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:22: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:26: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:30: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:34: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:38: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:42: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:46: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:50: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:54: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:58: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+nested_mapping_constructors.py:62: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access

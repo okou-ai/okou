@@ -7,7 +7,10 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
-import type { Db } from "./db";
+import { db$, writeDb$, type Db } from "./db";
+import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { nowDate } from "../../lib/time";
 import {
   decryptPersistentSecretValue,
@@ -422,17 +425,80 @@ export async function fetchFeishuUserInfo(
   };
 }
 
-async function getFeishuRequestContext(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-  },
+interface FeishuRequestCredentials {
+  readonly context: {
+    readonly token: string;
+    readonly apiOrigin: string;
+    readonly providerName: string;
+  };
+  readonly refreshedToken?: {
+    readonly encryptedTenantAccessToken: string;
+    readonly expiresInSeconds: number;
+  };
+}
+
+async function resolveFeishuRequestCredentials(
+  installation: typeof feishuOrgInstallations.$inferSelect,
   signal: AbortSignal,
-): Promise<{
-  readonly token: string;
-  readonly apiOrigin: string;
-  readonly providerName: string;
-}> {
+): Promise<FeishuRequestCredentials> {
+  const context = { orgId: installation.orgId };
+  const platform = FEISHU_PLATFORMS[installation.platform];
+  if (
+    installation.encryptedTenantAccessToken &&
+    tokenIsFresh(installation.tenantAccessTokenExpiresAt)
+  ) {
+    return {
+      context: {
+        token: await decryptPersistentSecretValue(
+          installation.encryptedTenantAccessToken,
+          context,
+        ),
+        apiOrigin: platform.apiOrigin,
+        providerName: platform.name,
+      },
+    };
+  }
+  const appSecret = await decryptPersistentSecretValue(
+    installation.encryptedAppSecret,
+    context,
+  );
+  const token = await fetchFeishuTenantAccessToken(
+    { appId: installation.appId, platform: installation.platform, appSecret },
+    signal,
+  );
+  const encryptedToken = await encryptPersistentSecretValue(
+    token.token,
+    context,
+  );
+  return {
+    context: {
+      token: token.token,
+      apiOrigin: platform.apiOrigin,
+      providerName: platform.name,
+    },
+    refreshedToken: {
+      encryptedTenantAccessToken: encryptedToken,
+      expiresInSeconds: token.expiresInSeconds,
+    },
+  };
+}
+
+function feishuTokenUpdateValues(
+  token: NonNullable<FeishuRequestCredentials["refreshedToken"]>,
+) {
+  return {
+    encryptedTenantAccessToken: token.encryptedTenantAccessToken,
+    tenantAccessTokenExpiresAt: new Date(
+      nowDate().getTime() + token.expiresInSeconds * 1000,
+    ),
+    updatedAt: nowDate(),
+  };
+}
+
+async function getFeishuRequestContext(
+  args: { readonly db: Db; readonly installationId: string },
+  signal: AbortSignal,
+): Promise<FeishuRequestCredentials["context"]> {
   const [installation] = await args.db
     .select()
     .from(feishuOrgInstallations)
@@ -445,86 +511,87 @@ async function getFeishuRequestContext(
   if (!(await isFeishuInstallationEnabled(args.db, installation))) {
     throw new FeishuApiError("Lark integration is not enabled", 403);
   }
-  const context = { orgId: installation.orgId };
-  if (
-    installation.encryptedTenantAccessToken &&
-    tokenIsFresh(installation.tenantAccessTokenExpiresAt)
-  ) {
-    return {
-      token: await decryptPersistentSecretValue(
-        installation.encryptedTenantAccessToken,
-        context,
-      ),
-      apiOrigin: FEISHU_PLATFORMS[installation.platform].apiOrigin,
-      providerName: FEISHU_PLATFORMS[installation.platform].name,
-    };
-  }
-
-  const appSecret = await decryptPersistentSecretValue(
-    installation.encryptedAppSecret,
-    context,
+  const credentials = await resolveFeishuRequestCredentials(
+    installation,
+    signal,
   );
-  const token = await fetchFeishuTenantAccessToken(
-    {
-      appId: installation.appId,
-      platform: installation.platform,
-      appSecret,
+  if (credentials.refreshedToken) {
+    await args.db
+      .update(feishuOrgInstallations)
+      .set(feishuTokenUpdateValues(credentials.refreshedToken))
+      .where(eq(feishuOrgInstallations.id, args.installationId));
+    signal.throwIfAborted();
+  }
+  return credentials.context;
+}
+
+export const downloadFeishuMessageResource$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly installationId: string;
+      readonly messageId: string;
+      readonly fileKey: string;
+      readonly resourceType: "file" | "image";
     },
-    signal,
-  );
-  const encryptedToken = await encryptPersistentSecretValue(
-    token.token,
-    context,
-  );
-  await args.db
-    .update(feishuOrgInstallations)
-    .set({
-      encryptedTenantAccessToken: encryptedToken,
-      tenantAccessTokenExpiresAt: new Date(
-        nowDate().getTime() + token.expiresInSeconds * 1000,
-      ),
-      updatedAt: nowDate(),
-    })
-    .where(eq(feishuOrgInstallations.id, args.installationId));
-  signal.throwIfAborted();
-  return {
-    token: token.token,
-    apiOrigin: FEISHU_PLATFORMS[installation.platform].apiOrigin,
-    providerName: FEISHU_PLATFORMS[installation.platform].name,
-  };
-}
-
-export async function downloadFeishuMessageResource(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly messageId: string;
-    readonly fileKey: string;
-    readonly resourceType: "file" | "image";
-  },
-  signal: AbortSignal,
-): Promise<Response> {
-  const { token, apiOrigin, providerName } = await getFeishuRequestContext(
-    args,
-    signal,
-  );
-  const url = new URL(
-    `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/resources/${encodeURIComponent(args.fileKey)}`,
-  );
-  url.searchParams.set("type", args.resourceType);
-  const response = await fetch(url, {
-    headers: { authorization: `Bearer ${token}` },
-    signal,
-  });
-  if (!response.ok) {
-    throw new FeishuApiError(
-      `${providerName} file download returned HTTP ${response.status}`,
-      response.status >= 500 ? 502 : 400,
-      response.status,
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    const [installation] = await get(db$)
+      .select()
+      .from(feishuOrgInstallations)
+      .where(eq(feishuOrgInstallations.id, args.installationId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!installation) {
+      throw new Error("Bot installation not found");
+    }
+    if (installation.platform === "lark") {
+      if (!installation.ownerUserId) {
+        throw new FeishuApiError("Lark integration is not enabled", 403);
+      }
+      const context = await set(
+        loadUserFeatureSwitchContext$,
+        installation.orgId,
+        installation.ownerUserId,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!isFeatureEnabled(FEISHU_PLATFORMS.lark.featureSwitch, context)) {
+        throw new FeishuApiError("Lark integration is not enabled", 403);
+      }
+    }
+    const credentials = await resolveFeishuRequestCredentials(
+      installation,
+      signal,
     );
-  }
-  return response;
-}
+    signal.throwIfAborted();
+    if (credentials.refreshedToken) {
+      await set(writeDb$)
+        .update(feishuOrgInstallations)
+        .set(feishuTokenUpdateValues(credentials.refreshedToken))
+        .where(eq(feishuOrgInstallations.id, args.installationId));
+      signal.throwIfAborted();
+    }
+    const { token, apiOrigin, providerName } = credentials.context;
+    const url = new URL(
+      `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/resources/${encodeURIComponent(args.fileKey)}`,
+    );
+    url.searchParams.set("type", args.resourceType);
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+      signal,
+    });
+    signal.throwIfAborted();
+    if (!response.ok) {
+      throw new FeishuApiError(
+        `${providerName} file download returned HTTP ${response.status}`,
+        response.status >= 500 ? 502 : 400,
+        response.status,
+      );
+    }
+    return response;
+  },
+);
 
 export async function uploadFeishuFile(
   args: {

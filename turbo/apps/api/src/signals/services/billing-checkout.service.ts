@@ -17,7 +17,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
@@ -42,7 +42,7 @@ import {
   PLAN_PURCHASE_CLAIM_STALE_MS,
   PLAN_PURCHASE_CLAIM_STATUS,
 } from "./billing-purchase-claim.service";
-import { onRejection } from "../utils";
+import { settleIncludingAbort } from "../utils";
 import {
   createBillingPreviewToken,
   parseBillingPreviewToken,
@@ -178,11 +178,11 @@ export type BillingSubscriptionTier = SubscriptionCheckoutTier | "custom";
 
 export const orgPlanSubscriptionId$ = command(
   async (
-    { set },
+    { get },
     orgId: string,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [plan] = await db
       .select({
         stripeSubscriptionId: orgPlanEntitlements.stripeSubscriptionId,
@@ -475,11 +475,11 @@ interface ExistingCreditBilling {
 
 const existingCreditBilling$ = command(
   async (
-    { set },
+    { get },
     orgId: string,
     signal: AbortSignal,
   ): Promise<ExistingCreditBilling | null> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [org] = await db
       .select({
         customerId: orgMetadata.stripeCustomerId,
@@ -1073,61 +1073,79 @@ async function planPurchasePreviewStillMatches(
  * claimed purchase ID, so a repeated call can never create a second
  * subscription for the same claim.
  */
-async function createConfirmedPlanSubscription(
-  args: {
-    readonly stripe: StripeClient;
-    readonly orgId: string;
-    readonly preview: PlanPurchasePreviewToken;
-    readonly paymentMethod: BillingPurchasePaymentMethod;
-    /** Undo the purchase claim when Stripe did not create the subscription. */
-    readonly release: () => Promise<void>;
+const createConfirmedPlanSubscription$ = command(
+  async (
+    { set },
+    args: {
+      readonly stripe: StripeClient;
+      readonly orgId: string;
+      readonly preview: PlanPurchasePreviewToken;
+      readonly paymentMethod: BillingPurchasePaymentMethod;
+      readonly previousStatus: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<ConfirmPlanPurchaseResult> => {
+    const { stripe, orgId, preview, paymentMethod } = args;
+    const metadata: StripeMetadataParam = {
+      ...checkoutSessionMetadata({
+        orgId,
+        tier: preview.tier,
+        priceId: preview.priceId,
+        purchaseCreatedAt: purchasePreviewCreatedAt(preview),
+      }),
+      billingPurchaseId: preview.purchaseId,
+    };
+    // A rejected create leaves no subscription to bind, so the claim is
+    // released and the previous status restored. If Stripe did create it
+    // anyway, the next confirm resumes it by purchase identity, and a webhook
+    // that already bound it is left untouched by the release predicate.
+    const created = await settleIncludingAbort(
+      stripe.subscriptions.create(
+        {
+          customer: preview.customerId,
+          items: [{ price: preview.priceId, quantity: 1 }],
+          ...stripeBillingPurchasePaymentParams(paymentMethod),
+          metadata,
+          payment_behavior: "default_incomplete",
+          ...(preview.trialDays === undefined
+            ? {}
+            : { trial_period_days: preview.trialDays }),
+          expand: ["latest_invoice"],
+        },
+        { idempotencyKey: `plan-purchase:${preview.purchaseId}:subscription` },
+      ),
+    );
+    if (signal.aborted) {
+      // A rejected provider call still owns cleanup before its error propagates.
+      // A successful irreversible creation instead leaves the claim to Stripe.
+      if (created.ok) {
+        signal.throwIfAborted();
+      }
+    }
+    if (!created.ok) {
+      await set(
+        releasePlanPurchaseClaim$,
+        orgId,
+        preview,
+        args.previousStatus,
+        signal,
+      );
+      throw created.error;
+    }
+    signal.throwIfAborted();
+    const completion = await completeBillingOperationInvoiceWithInvoice(
+      stripe,
+      expandedLatestInvoice(created.value),
+      `plan:${preview.purchaseId}`,
+      signal,
+      { payOpenInvoice: true },
+    );
+    return {
+      status: "confirmed",
+      ...completion,
+    };
   },
-  signal: AbortSignal,
-): Promise<ConfirmPlanPurchaseResult> {
-  const { stripe, orgId, preview, paymentMethod } = args;
-  const metadata: StripeMetadataParam = {
-    ...checkoutSessionMetadata({
-      orgId,
-      tier: preview.tier,
-      priceId: preview.priceId,
-      purchaseCreatedAt: purchasePreviewCreatedAt(preview),
-    }),
-    billingPurchaseId: preview.purchaseId,
-  };
-  // A rejected create leaves no subscription to bind, so the claim is
-  // released and the previous status restored. If Stripe did create it
-  // anyway, the next confirm resumes it by purchase identity, and a webhook
-  // that already bound it is left untouched by the release predicate.
-  const subscription = await onRejection(
-    stripe.subscriptions.create(
-      {
-        customer: preview.customerId,
-        items: [{ price: preview.priceId, quantity: 1 }],
-        ...stripeBillingPurchasePaymentParams(paymentMethod),
-        metadata,
-        payment_behavior: "default_incomplete",
-        ...(preview.trialDays === undefined
-          ? {}
-          : { trial_period_days: preview.trialDays }),
-        expand: ["latest_invoice"],
-      },
-      { idempotencyKey: `plan-purchase:${preview.purchaseId}:subscription` },
-    ),
-    args.release,
-  );
-  signal.throwIfAborted();
-  const completion = await completeBillingOperationInvoiceWithInvoice(
-    stripe,
-    expandedLatestInvoice(subscription),
-    `plan:${preview.purchaseId}`,
-    signal,
-    { payOpenInvoice: true },
-  );
-  return {
-    status: "confirmed",
-    ...completion,
-  };
-}
+);
 
 async function completeExistingPlanPurchase(
   stripe: StripeClient,
@@ -1196,20 +1214,22 @@ interface PlanPurchaseOrgState {
  * With a bound source subscription the status belongs to that subscription
  * and webhooks read it, so it is left untouched; only the row version moves.
  */
-async function claimPlanPurchase(
-  db: Pick<Db, "transaction">,
-  orgId: string,
-  preview: PlanPurchasePreviewToken,
-  org: PlanPurchaseOrgState,
-): Promise<boolean> {
-  const at = nowDate();
-  const staleBefore = new Date(at.getTime() - PLAN_PURCHASE_CLAIM_STALE_MS);
-  const persistsClaim = preview.sourceSubscriptionId === null;
-  return await db.transaction(async (tx) => {
+const claimPlanPurchase$ = command(
+  async (
+    { set },
+    orgId: string,
+    preview: PlanPurchasePreviewToken,
+    org: PlanPurchaseOrgState,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const at = nowDate();
+    const staleBefore = new Date(at.getTime() - PLAN_PURCHASE_CLAIM_STALE_MS);
+    const persistsClaim = preview.sourceSubscriptionId === null;
     // Best effort only: a concurrent Plan or pack purchase may still create a
     // second Stripe subscription. Local entitlement binds once (conditional
     // organization binding) and reconciliation refunds the extra payment.
-    const claimed = await tx
+    const claimed = await db
       .update(orgMetadata)
       .set({
         ...(persistsClaim
@@ -1244,7 +1264,7 @@ async function claimPlanPurchase(
               ? isNull(orgMetadata.subscriptionStatus)
               : eq(orgMetadata.subscriptionStatus, org.subscriptionStatus),
           notExists(
-            inFlightUsagePackPurchaseQuery(tx, {
+            inFlightUsagePackPurchaseQuery({
               orgId,
               sourceSubscriptionId: preview.sourceSubscriptionId,
               excludeUsagePackSubscriptionId: null,
@@ -1253,39 +1273,48 @@ async function claimPlanPurchase(
         ),
       )
       .returning({ orgId: orgMetadata.orgId });
+    signal.throwIfAborted();
     return claimed.length === 1;
-  });
-}
+  },
+);
 
-/** Undo an unpublished claim; a binding that already moved is left alone. */
-async function releasePlanPurchaseClaim(
-  db: Pick<Db, "update">,
-  orgId: string,
-  preview: PlanPurchasePreviewToken,
-  previousStatus: string | null,
-): Promise<void> {
-  if (preview.sourceSubscriptionId !== null) {
-    // A bound-source claim persisted nothing beyond its row version.
-    return;
-  }
-  await db
-    .update(orgMetadata)
-    .set({ subscriptionStatus: previousStatus, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(orgMetadata.orgId, orgId),
-        eq(orgMetadata.stripeCustomerId, preview.customerId),
-        preview.sourceSubscriptionId === null
-          ? isNull(orgMetadata.stripeSubscriptionId)
-          : eq(orgMetadata.stripeSubscriptionId, preview.sourceSubscriptionId),
-        eq(orgMetadata.subscriptionStatus, PLAN_PURCHASE_CLAIM_STATUS),
-      ),
-    );
-}
+/** Undo an unpublished claim even on abort; leave a moved binding alone. */
+const releasePlanPurchaseClaim$ = command(
+  async (
+    { set },
+    orgId: string,
+    preview: PlanPurchasePreviewToken,
+    previousStatus: string | null,
+    _signal: AbortSignal,
+  ): Promise<void> => {
+    if (preview.sourceSubscriptionId !== null) {
+      // A bound-source claim persisted nothing beyond its row version.
+      return;
+    }
+    // Cleanup must finish before the original rejection (including abort)
+    // propagates, so it deliberately does not check the owner's signal.
+    await set(writeDb$)
+      .update(orgMetadata)
+      .set({ subscriptionStatus: previousStatus, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(orgMetadata.orgId, orgId),
+          eq(orgMetadata.stripeCustomerId, preview.customerId),
+          preview.sourceSubscriptionId === null
+            ? isNull(orgMetadata.stripeSubscriptionId)
+            : eq(
+                orgMetadata.stripeSubscriptionId,
+                preview.sourceSubscriptionId,
+              ),
+          eq(orgMetadata.subscriptionStatus, PLAN_PURCHASE_CLAIM_STATUS),
+        ),
+      );
+  },
+);
 
 type ClaimedPlanPurchaseAdmission =
   | {
-      readonly kind: "result";
+      readonly kind: "result" | "release";
       readonly result: ConfirmPlanPurchaseResult;
     }
   | {
@@ -1302,25 +1331,14 @@ async function admitClaimedPlanPurchase(
   stripe: StripeClient,
   orgId: string,
   preview: PlanPurchasePreviewToken,
-  release: () => Promise<void>,
   signal: AbortSignal,
 ): Promise<ClaimedPlanPurchaseAdmission> {
-  const released = async (
-    result: ConfirmPlanPurchaseResult,
-  ): Promise<ClaimedPlanPurchaseAdmission> => {
-    await release();
-    signal.throwIfAborted();
-    return { kind: "result", result };
-  };
-  const invalid = async () => {
-    return await released({ status: "invalid_preview" });
-  };
   const subscriptionState = await planPurchaseSubscriptionState(
     planPurchaseStateArgs(stripe, orgId, preview),
     signal,
   );
   if (subscriptionState.hasCompetingPurchase) {
-    return await invalid();
+    return { kind: "release", result: { status: "invalid_preview" } };
   }
   if (subscriptionState.existing) {
     const result = await completeExistingPlanPurchase(
@@ -1329,9 +1347,10 @@ async function admitClaimedPlanPurchase(
       subscriptionState.existing,
       signal,
     );
-    return result.status === "confirmed"
-      ? { kind: "result", result }
-      : await released(result);
+    return {
+      kind: result.status === "confirmed" ? "result" : "release",
+      result,
+    };
   }
   const route = await resolveBillingPurchaseRoute(
     {
@@ -1360,25 +1379,94 @@ async function admitClaimedPlanPurchase(
       },
       signal,
     );
-    return await released({
-      status: "confirmed",
-      response: { status: "checkout_required", checkoutUrl: url },
-      paidInvoice: null,
-    });
+    return {
+      kind: "release",
+      result: {
+        status: "confirmed",
+        response: { status: "checkout_required", checkoutUrl: url },
+        paidInvoice: null,
+      },
+    };
   }
   if (
     route.customerId !== preview.customerId ||
     route.paymentMethodId !== preview.paymentMethodId ||
     !(await planPurchasePreviewStillMatches(stripe, preview, signal))
   ) {
-    return await invalid();
+    return { kind: "release", result: { status: "invalid_preview" } };
   }
   return { kind: "create", paymentMethod: route };
 }
 
-export const confirmPlanPurchase$ = command(
+interface ClaimedPlanPurchaseArgs {
+  readonly stripe: StripeClient;
+  readonly orgId: string;
+  readonly preview: PlanPurchasePreviewToken;
+  readonly previousStatus: string | null;
+}
+
+const prepareClaimedPlanPurchaseAdmission$ = command(
   async (
     { set },
+    args: ClaimedPlanPurchaseArgs,
+    signal: AbortSignal,
+  ): Promise<ClaimedPlanPurchaseAdmission> => {
+    const admission = await admitClaimedPlanPurchase(
+      args.stripe,
+      args.orgId,
+      args.preview,
+      signal,
+    );
+    if (admission.kind === "release") {
+      await set(
+        releasePlanPurchaseClaim$,
+        args.orgId,
+        args.preview,
+        args.previousStatus,
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+    return admission;
+  },
+);
+
+const admitClaimedPlanPurchase$ = command(
+  async (
+    { set },
+    args: ClaimedPlanPurchaseArgs,
+    signal: AbortSignal,
+  ): Promise<ClaimedPlanPurchaseAdmission> => {
+    const { orgId, preview, previousStatus } = args;
+    // Preserve rejection cleanup for the whole admission, including a failed
+    // normal release, without passing a database/accessor closure to a helper.
+    const admitted = await settleIncludingAbort(
+      set(prepareClaimedPlanPurchaseAdmission$, args, signal),
+    );
+    if (signal.aborted) {
+      // A rejected admission still owns cleanup before its error propagates.
+      if (admitted.ok) {
+        signal.throwIfAborted();
+      }
+    }
+    if (!admitted.ok) {
+      await set(
+        releasePlanPurchaseClaim$,
+        orgId,
+        preview,
+        previousStatus,
+        signal,
+      );
+      throw admitted.error;
+    }
+    signal.throwIfAborted();
+    return admitted.value;
+  },
+);
+
+export const confirmPlanPurchase$ = command(
+  async (
+    { get, set },
     orgId: string,
     previewToken: string,
     signal: AbortSignal,
@@ -1393,8 +1481,7 @@ export const confirmPlanPurchase$ = command(
       return { status: "invalid_preview" };
     }
 
-    const db = set(writeDb$);
-    const [org] = await db
+    const [org] = await get(db$)
       .select({
         customerId: orgMetadata.stripeCustomerId,
         subscriptionId: orgMetadata.stripeSubscriptionId,
@@ -1449,7 +1536,7 @@ export const confirmPlanPurchase$ = command(
       );
     }
 
-    if (!(await claimPlanPurchase(db, orgId, preview, org))) {
+    if (!(await set(claimPlanPurchase$, orgId, preview, org, signal))) {
       // Deterministic loser: another purchase owns the organization's
       // billing row. No provider call was made.
       return { status: "invalid_preview" };
@@ -1464,27 +1551,26 @@ export const confirmPlanPurchase$ = command(
           ? ATOM_GRANT_SUBSCRIPTION_STATUS
           : null
         : org.subscriptionStatus;
-    const release = async () => {
-      await releasePlanPurchaseClaim(db, orgId, preview, previousStatus);
-    };
     // Before creation nothing irreversible exists, so a failure releases the
     // claim. After creation the claim stays until the subscription webhook
     // (or paid-invoice reconciliation) binds the organization to it.
-    const admission = await onRejection(
-      admitClaimedPlanPurchase(stripe, orgId, preview, release, signal),
-      release,
+    const admission = await set(
+      admitClaimedPlanPurchase$,
+      { stripe, orgId, preview, previousStatus },
+      signal,
     );
     signal.throwIfAborted();
-    if (admission.kind === "result") {
+    if (admission.kind !== "create") {
       return admission.result;
     }
-    return await createConfirmedPlanSubscription(
+    return await set(
+      createConfirmedPlanSubscription$,
       {
         stripe,
         orgId,
         preview,
         paymentMethod: admission.paymentMethod,
-        release,
+        previousStatus,
       },
       signal,
     );
@@ -1561,12 +1647,11 @@ const createCheckoutSession$ = command(
 
 export const completeCheckoutSession$ = command(
   async (
-    { set },
+    { get, set },
     args: CompleteCheckoutSessionArgs,
     signal: AbortSignal,
   ): Promise<CheckoutCompletionResult> => {
-    const db = set(writeDb$);
-    const [org] = await db
+    const [org] = await get(db$)
       .select({
         stripeCustomerId: orgMetadata.stripeCustomerId,
         stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
@@ -1627,7 +1712,7 @@ export const completeCheckoutSession$ = command(
     const alreadyPaidSubscription =
       org.stripeSubscriptionId === subscription.id && org.tier === tier;
 
-    const [published] = await db
+    const [published] = await set(writeDb$)
       .update(orgMetadata)
       .set({
         stripeSubscriptionId: subscription.id,

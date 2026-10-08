@@ -16,7 +16,10 @@ import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { audioInputLifetimeQuota } from "../services/voice-io.service";
+import {
+  audioInputLifetimeQuota,
+  recordAudioInputUsage$,
+} from "../services/voice-io.service";
 import {
   badRequest,
   getAudioDuration,
@@ -24,7 +27,7 @@ import {
   recordSttUsage$,
   sttDailyPolicy$,
 } from "../services/voice-io-post.service";
-import { transcribeVoiceSegment$ } from "../services/voice-io-transcribe.service";
+import { transcribeCompatibleVoiceSegment$ } from "../services/voice-io-finalize.service";
 import { safeJsonParse } from "../utils";
 
 const ALLOWED_VOICE_DRAFT_MIME_TYPES = [
@@ -231,7 +234,7 @@ const voiceIoTranscribeHandler$ = command(
       ...(editorContext === undefined ? {} : { editorContext }),
     };
     const result = await set(
-      transcribeVoiceSegment$,
+      transcribeCompatibleVoiceSegment$,
       { ...input, ...segment },
       signal,
     );
@@ -243,12 +246,14 @@ const voiceIoTranscribeHandler$ = command(
       recordSttUsage$,
       {
         ...policy,
-        recordLifetimeUsage: policy.recordLifetimeUsage && segment.final,
         orgId: auth.orgId,
         userId: auth.userId,
       },
       signal,
     );
+    if (segment.final && quota.limit !== null) {
+      await set(recordAudioInputUsage$, auth.orgId, auth.userId, signal);
+    }
     return result;
   },
 );

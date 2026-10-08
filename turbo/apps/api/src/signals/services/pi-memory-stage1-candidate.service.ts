@@ -82,30 +82,6 @@ async function releaseCandidateReferences(
   }
 }
 
-/** Supported insertion path for admission and controlled fixture/repair writers. */
-export async function insertPiMemoryStage1Candidates(
-  tx: Tx,
-  rows: readonly (typeof piMemoryStage1Candidates.$inferInsert)[],
-) {
-  if (rows.length === 0) {
-    return [];
-  }
-  const ids = [
-    ...new Set(
-      rows.map((row) => {
-        return row.memoryStorageId;
-      }),
-    ),
-  ];
-  await tx
-    .select({ id: storages.id })
-    .from(storages)
-    .where(inArray(storages.id, ids))
-    .orderBy(asc(storages.id))
-    .for("no key update");
-  return await insertCandidateRows(tx, rows);
-}
-
 async function insertCandidateRows(
   tx: Tx,
   rows: readonly (typeof piMemoryStage1Candidates.$inferInsert)[],

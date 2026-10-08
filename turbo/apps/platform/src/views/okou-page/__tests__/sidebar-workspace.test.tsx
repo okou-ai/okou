@@ -25,6 +25,7 @@ import {
 } from "./sidebar-test-helpers.tsx";
 
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -126,6 +127,7 @@ test("Filter workspace search to chats and navigate", async () => {
 });
 
 test("Show unread agents and contextual actions in the pinned section", async () => {
+  const user = userEvent.setup();
   mockMobileLayout();
   prepareAgents();
   context.mocks.data.userPreferences({
@@ -142,6 +144,7 @@ test("Show unread agents and contextual actions in the pinned section", async ()
     path: `/agents/${AGENT_ID}/chat`,
     sharedWorkerTestTransport: "message-port",
   });
+  click(screen.getByLabelText("Open menu"));
 
   const nav = await waitFor(() => {
     const current = mobileSidebar();
@@ -171,11 +174,11 @@ test("Show unread agents and contextual actions in the pinned section", async ()
   expect(menuItemByText("Mark all read")).toBeInTheDocument();
   expect(menuItemByText("Pin to sidebar")).toBeInTheDocument();
   expect(queryMenuItemByText("Unpin")).not.toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+  await user.keyboard("{Escape}");
 
   click(within(researchSidebarRow).getByLabelText("Open agent menu"));
   expect(menuItemByText("Unpin")).toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+  await user.keyboard("{Escape}");
 
   unreadAgentIds = [SUPPORT_AGENT_ID];
   changeChatThreadReadCursor({

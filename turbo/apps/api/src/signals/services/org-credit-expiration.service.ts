@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { eq } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
@@ -22,6 +24,12 @@ export async function expireOrgCreditsInTransaction(
   orgId: string,
   at: Date,
 ): Promise<void> {
+  // Cash writers acquire the wallet before grant/expiry-lot locks.
+  await tx
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .for("update");
   const outcome = orgCreditExpirationOutcome(
     parseRawRows(
       orgCreditExpirationOutcomeRow,

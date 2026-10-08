@@ -200,6 +200,17 @@ preservation; it does not claim the SQL 23514 rollback or selectable physical/vi
 schema guarantees of the removed service case. The existing simultaneous PATCH
 case remains meaningful public concurrency without a private row-count probe.
 
+For provider deletion failures, see the three public user-deletion cases in
+[`storage-object-cleanup.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/storage-object-cleanup.test.ts).
+They publish Memory through a real Runner claim and storage prepare/commit,
+then deliver a genuine Clerk deletion event and observe S3 rejection, partial
+deletion or a lost response. Upload only to keys returned by the normal protocol.
+A retired export row and a private retry command do not become public merely
+because the final observation is an S3 object. These cases use the first real
+billing-status request to own per-case isolation; teardown never authenticates
+the deleted user to assert Run/Agent absence. The neighboring storage-fixture
+retry matrix remains unprocessed and is not an example of compliant setup.
+
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
 

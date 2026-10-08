@@ -15,7 +15,6 @@ import {
   failPiMemoryPhase2Job$,
   PI_MEMORY_PHASE2_LEASE_DURATION_MS,
   type ClaimedPiMemoryPhase2Job,
-  type PiMemoryPhase2OwnerScope,
 } from "./pi-memory-phase2-job.service";
 const log = logger("PiMemoryPhase2Worker");
 
@@ -60,9 +59,7 @@ const failClaim$ = command(
   },
 );
 
-function createPiMemoryPhase2RecoveryCandidate(
-  scope?: PiMemoryPhase2OwnerScope,
-) {
+function createPiMemoryPhase2RecoveryCandidate() {
   return computed(async (get) => {
     const db = get(db$);
     const [job] = await db
@@ -81,13 +78,6 @@ function createPiMemoryPhase2RecoveryCandidate(
         and(
           eq(piMemoryPhase2Jobs.status, "leased"),
           isNotNull(piMemoryPhase2Jobs.maintenanceRunId),
-          ...(scope
-            ? [
-                eq(piMemoryPhase2Jobs.memoryStorageId, scope.memoryStorageId),
-                eq(piMemoryPhase2Jobs.orgId, scope.orgId),
-                eq(piMemoryPhase2Jobs.userId, scope.userId),
-              ]
-            : []),
         ),
       )
       .orderBy(asc(piMemoryPhase2Jobs.leaseExpiresAt))
@@ -96,8 +86,8 @@ function createPiMemoryPhase2RecoveryCandidate(
   });
 }
 
-function createPiMemoryPhase2Recovery(scope?: PiMemoryPhase2OwnerScope) {
-  const leasedJob$ = createPiMemoryPhase2RecoveryCandidate(scope);
+function createPiMemoryPhase2Recovery() {
+  const leasedJob$ = createPiMemoryPhase2RecoveryCandidate();
   const recoveryRun$ = computed(async (get) => {
     const db = get(db$);
     const job = await get(leasedJob$);
@@ -200,8 +190,8 @@ function createPiMemoryPhase2Recovery(scope?: PiMemoryPhase2OwnerScope) {
 
 // Each graph is consumed once per Store. Requests own fresh Stores; callers
 // executing another work unit in the same Store construct another graph first.
-export function createPiMemoryPhase2Worker(scope?: PiMemoryPhase2OwnerScope) {
-  const recoverMaintenanceRun$ = createPiMemoryPhase2Recovery(scope);
+export function createPiMemoryPhase2Worker() {
+  const recoverMaintenanceRun$ = createPiMemoryPhase2Recovery();
   const execute$ = command(
     async (
       { set },
@@ -215,7 +205,7 @@ export function createPiMemoryPhase2Worker(scope?: PiMemoryPhase2OwnerScope) {
       if (recovered) {
         return recovered;
       }
-      const claim = await claimPiMemoryPhase2Job(db, { scope, currentTime });
+      const claim = await claimPiMemoryPhase2Job(db, { currentTime });
       signal.throwIfAborted();
       if (!claim) {
         return { outcome: "no_work" };
