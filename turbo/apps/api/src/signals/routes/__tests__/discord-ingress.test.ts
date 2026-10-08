@@ -53,6 +53,7 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const runsApi = createRunsApi(context);
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
+  mockDiscordMemberships(context, [actor]);
   await removePublicDiscordBinding(context, actor.fixture);
   await deleteFeatureSwitchesForUser(context, actor);
 });

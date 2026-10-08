@@ -92,7 +92,7 @@ async function fixture(
     botUserId,
   });
   const auth = createAuthOrgAgentsBddApi(context);
-  const actor = auth.user({ orgId, userId });
+  const actor = { ...auth.user({ orgId, userId }), orgId };
   let headers: { authorization: string };
   if (options.runToken || options.withoutDiscordCapabilities) {
     if (options.withoutDiscordCapabilities) {
@@ -531,8 +531,8 @@ describe("Discord native authorization and reads", () => {
         return entry.content;
       }),
     ).toStrictEqual([
-      "Other organization: 42 open deals",
-      "this organization can still reply",
+      expect.stringContaining("Other organization: 42 open deals"),
+      expect.stringContaining("this organization can still reply"),
     ]);
   });
 

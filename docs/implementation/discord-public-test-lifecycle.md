@@ -7,10 +7,15 @@ new parity cases.
 
 ## Construction and retirement
 
-- `helpers/discord.ts` constructs bindings using authenticated OAuth start,
-  returned state and browser cookie, the production callback, and production
-  integration status. Discord IDs are external provider mock context, not proof
-  submitted to a binding endpoint. Install and connect are explicit choices.
+- `helpers/discord.ts` constructs bindings through one uniform public lifecycle:
+  authenticated OAuth start returns state in its authorization URL and a separate
+  completion token; provider callback redirects to the configured App's approval
+  fragment; the authenticated consent browser approves using the callback-issued
+  approval proof; the original authenticated opener completes using only its
+  start-issued completion token; integration status provides connection IDs.
+  Proofs stay in function-local memory, are never logged, and have no cookie
+  fallback. Discord IDs are external provider context, never binding proof.
+  Install and connect are explicit choices.
 - Teardown calls production disconnect; installer-owned fixtures additionally
   call production uninstall, without elevating a member to admin.
 - OAuth provider handlers have a finite exchange lifetime and fall through for
@@ -58,6 +63,26 @@ Totals: **9 declarations deleted** (six preview-only, one SQL barrier, one
 private export construction, one private legacy-agent construction). No
 parameter branches deleted. All six routed preference declarations, including
 three context branches and four revocation branches, are rewritten, not removed.
+
+## Additional reachable-state correction
+
+`integrations-discord.test.ts`: `rejects DM selections for another Discord sender
+or another Okou user` previously provisioned the same Discord sender for two
+Okou owners and expected selection notifications for both. That private phase is
+incompatible with the actual OAuth ownership constraint. **Rewrite** the
+foreign-owner branch using that owner's independent, genuinely authorized
+Discord account; retain all three attempted selection IDs (another sender of the
+same Okou user, a foreign owner, and an unknown ID), 404/no-existence-leak
+responses, the owner's visible binding list, and successful own selection.
+The impossible same-sender/cross-owner state and foreign-owner notification
+expectation are not retained. No declaration or parameter branch is deleted by
+this correction.
+
+The native multi-organization DM privacy declaration now sends through real
+Run-issued tokens, so accepted messages include normal agent/model attribution.
+It verifies the delivered text while allowing that genuine attribution, rather
+than requiring the unattributed string produced by invented Runs. Read denial
+and cross-organization content privacy assertions remain unchanged.
 
 ## Retained suites and boundaries
 

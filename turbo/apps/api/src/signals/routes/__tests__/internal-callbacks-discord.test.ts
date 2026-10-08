@@ -12,7 +12,10 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
-import { removePublicDiscordBinding } from "./helpers/discord";
+import {
+  removePublicDiscordBinding,
+  mockDiscordMemberships,
+} from "./helpers/discord";
 import {
   discordChatThreads,
   discordMessageForTest,
@@ -30,6 +33,7 @@ const webhooks = createWebhookCallbackApi(context);
 const trackDiscordFixture = createFixtureTracker(
   async (fixture: { actor: ConnectedDiscordActor; deleted: boolean }) => {
     if (!fixture.deleted) {
+      mockDiscordMemberships(context, [fixture.actor]);
       await removePublicDiscordBinding(context, fixture.actor.fixture);
     }
   },

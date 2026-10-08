@@ -6,7 +6,8 @@ import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/int
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import { mockEnv } from "../../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
+import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { discordOauthRoutes } from "../../discord-oauth";
 import { integrationsDiscordRoutes } from "../../integrations-discord";
@@ -66,6 +67,7 @@ export function mockDiscordMemberships(
             id: `orgmem_${actor.orgId}_${actor.userId}`,
             publicUserData: { userId: actor.userId },
             role: actor.orgRole ?? "org:admin",
+            createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
             organization: { id: actor.orgId, name: "Discord test workspace" },
           };
         }),
@@ -91,6 +93,7 @@ export function createPublicDiscordBinding(
     args.orgId,
     args.orgRole,
   );
+  mockOptionalEnv("DISCORD_OAUTH_CLIENT_SECRET", "discord-test-client-secret");
   const identity = {
     orgId: args.orgId,
     userId: args.userId,
@@ -101,6 +104,9 @@ export function createPublicDiscordBinding(
     botUserId: args.botUserId ?? "123456789012345678",
     discordUserId: args.discordUserId ?? uniqueDiscordSnowflake(),
   };
+  const applicationId = env("DISCORD_APPLICATION_ID") ?? identity.botUserId;
+  const botAuthorization = `Bot ${env("DISCORD_BOT_TOKEN")}`;
+  const dmChannelId = uniqueDiscordSnowflake();
   const code = randomUUID();
   const accessToken = `discord-access-${randomUUID()}`;
   const base = "https://discord.com/api/v10";
@@ -129,6 +135,35 @@ export function createPublicDiscordBinding(
         guild: { id: identity.guildId, name: identity.guildName },
       });
     }),
+    http.get(`${base}/oauth2/@me`, ({ request }) => {
+      if (
+        !active ||
+        request.headers.get("authorization") !== `Bearer ${accessToken}`
+      ) {
+        return;
+      }
+      return HttpResponse.json({
+        application: { id: applicationId },
+        scopes:
+          args.flow === "install"
+            ? ["identify", "guilds", "bot", "applications.commands"]
+            : ["identify", "guilds"],
+        expires: new Date(now() + 3600_000).toISOString(),
+        user: { id: identity.discordUserId, username: "member", bot: false },
+      });
+    }),
+    http.get(`${base}/oauth2/applications/@me`, ({ request }) => {
+      if (
+        !active ||
+        request.headers.get("authorization") !== botAuthorization
+      ) {
+        return;
+      }
+      return HttpResponse.json({
+        id: applicationId,
+        bot: { id: identity.botUserId, username: "Okou", bot: true },
+      });
+    }),
     http.get(`${base}/users/@me`, ({ request }) => {
       if (!active) {
         return;
@@ -140,7 +175,7 @@ export function createPublicDiscordBinding(
           username: "member",
         });
       }
-      if (authorization?.startsWith("Bot ")) {
+      if (authorization === botAuthorization) {
         return HttpResponse.json({
           id: identity.botUserId,
           username: "Okou",
@@ -157,7 +192,7 @@ export function createPublicDiscordBinding(
       }
       const after = new URL(request.url).searchParams.get("after");
       return HttpResponse.json(
-        after
+        after && after !== "0"
           ? []
           : [
               {
@@ -169,6 +204,59 @@ export function createPublicDiscordBinding(
               },
             ],
       );
+    }),
+    http.post(`${base}/users/@me/channels`, async ({ request }) => {
+      if (!active) {
+        return;
+      }
+      const body = z
+        .object({ recipient_id: z.string() })
+        .parse(await request.json());
+      if (body.recipient_id !== identity.discordUserId) {
+        return;
+      }
+      return HttpResponse.json({
+        id: dmChannelId,
+        type: 1,
+        recipients: [{ id: identity.discordUserId, username: "member" }],
+      });
+    }),
+    http.get(`${base}/channels/${dmChannelId}`, () => {
+      if (!active) {
+        return;
+      }
+      return HttpResponse.json({
+        id: dmChannelId,
+        type: 1,
+        recipients: [{ id: identity.discordUserId, username: "member" }],
+      });
+    }),
+    http.post(
+      `${base}/channels/${dmChannelId}/messages`,
+      async ({ request }) => {
+        if (!active) {
+          return;
+        }
+        const body = z
+          .object({ content: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json({
+          id: uniqueDiscordSnowflake(),
+          channel_id: dmChannelId,
+          author: { id: identity.botUserId, username: "Okou", bot: true },
+          content: body.content,
+          timestamp: new Date(now()).toISOString(),
+          attachments: [],
+        });
+      },
+    ),
+    http.get(`${base}/guilds/${identity.guildId}/roles`, () => {
+      if (!active) {
+        return;
+      }
+      return HttpResponse.json([
+        { id: identity.guildId, name: "@everyone", permissions: "8" },
+      ]);
     }),
     http.get(`${base}/guilds/${identity.guildId}`, () => {
       if (!active) {
@@ -211,15 +299,9 @@ export function createPublicDiscordBinding(
     if (!state) {
       throw new Error("Discord OAuth start did not issue state");
     }
-    const cookie = started.headers.get("set-cookie")?.split(";")[0];
-    if (!cookie) {
-      throw new Error(
-        "Discord OAuth start did not correlate the starting browser",
-      );
-    }
-    const completed = await accept(
+    const completionToken = started.body.completionToken;
+    const callback = await accept(
       oauth.callback({
-        extraHeaders: { cookie },
         query: {
           code,
           state,
@@ -228,13 +310,61 @@ export function createPublicDiscordBinding(
       }),
       [307],
     );
-    const location = completed.headers.get("location");
+    const location = callback.headers.get("location");
+    if (!location) {
+      throw new Error(
+        "Discord OAuth callback did not return its approval landing",
+      );
+    }
+    const landing = new URL(location);
+    const fragment = new URLSearchParams(landing.hash.slice(1));
+    const approvalProof = fragment.get("approval_proof");
     if (
-      !location ||
-      new URL(location).searchParams.get("discord") !==
-        (args.flow === "install" ? "installed" : "connected")
+      landing.origin !== new URL(env("APP_URL")).origin ||
+      landing.pathname !== "/works" ||
+      landing.searchParams.get("discord") !== "pending" ||
+      fragment.get("discord_oauth") !== "approve" ||
+      fragment.get("state") !== state ||
+      !approvalProof
     ) {
-      throw new Error(`Discord OAuth callback did not complete: ${location}`);
+      // Never log the fragment: the consent browser alone owns this proof.
+      throw new Error(
+        "Discord OAuth callback did not reach the approval landing",
+      );
+    }
+    // Consent browser and opener authenticate independently as the real owner.
+    // The consent proof is never passed to the opener's complete request.
+    createRouteMocks(context).clerk.session(
+      args.userId,
+      args.orgId,
+      args.orgRole,
+    );
+    await accept(
+      oauth.approve({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { state, approvalProof },
+      }),
+      [200],
+    );
+    createRouteMocks(context).clerk.session(
+      args.userId,
+      args.orgId,
+      args.orgRole,
+    );
+    const completed = await accept(
+      oauth.complete({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { state, completionToken },
+      }),
+      [200],
+    );
+    if (
+      completed.body.status !==
+      (args.flow === "install" ? "installed" : "connected")
+    ) {
+      throw new Error(
+        "Discord OAuth completion returned the wrong flow status",
+      );
     }
     const status = await accept(
       setupApp({ context, routes: integrationsDiscordRoutes })(
