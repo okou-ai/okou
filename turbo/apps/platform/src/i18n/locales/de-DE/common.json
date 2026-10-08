@@ -2557,7 +2557,6 @@
         "visualMethods": "Visual methods"
       },
       "workflows": {
-        "back": "Workflows entdecken",
         "browse": "Workflows entdecken",
         "close": "Schließen",
         "contextPrefix": "Das ist mir wichtig: {{preference}}",
@@ -2566,14 +2565,7 @@
             "cadence": "Täglich oder wöchentlich",
             "description": "Beobachten Sie Preise und Funktionen auf Wettbewerber-Websites, sichern Sie die Funde in Notion und melden Sie sie in Slack.",
             "name": "Wettbewerbsbeobachtung",
-            "next": "Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
             "prompt": "Helfen Sie mir, diesen Workflow einzurichten: Wettbewerbsbeobachtung. Gewählte Wettbewerberseiten regelmäßig prüfen. Wichtige Änderungen bei Preisen, Angeboten und Botschaften erkennen. Ergebnisse mit Quellen in Notion speichern und optional Slack benachrichtigen. Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
-            "results": {
-              "one": "Vorher-Nachher-Vergleiche",
-              "three": "Kurze Erläuterung der Änderungen",
-              "two": "Quellenlinks für jedes Ergebnis"
-            },
-            "scope": "Beobachten Sie Preise und Funktionen auf Wettbewerber-Websites, sichern Sie die Funde in Notion und melden Sie sie in Slack.",
             "steps": {
               "one": "Gewählte Wettbewerberseiten regelmäßig prüfen",
               "three": "Ergebnisse mit Quellen in Notion speichern und optional Slack benachrichtigen",
@@ -2585,14 +2577,7 @@
             "cadence": "Wenn eine neue E-Mail eingeht",
             "description": "Sortieren Sie Ihren Posteingang und entwerfen Sie Antworten auf die E-Mails, die sie benötigen.",
             "name": "Sortieren Sie Gmail- und Antwortentwürfe",
-            "next": "Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
             "prompt": "Helfen Sie mir, diesen Workflow einzurichten: Sortieren Sie Gmail- und Antwortentwürfe. Eingehende Nachrichten im gewählten Bereich lesen. Nach Dringlichkeit und vereinbarten Regeln sortieren. Antwortvorschläge als Gmail-Entwürfe speichern. Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung. E-Mail-Antworten bleiben Entwürfe, die ich selbst prüfe und versende.",
-            "results": {
-              "one": "Nach Dringlichkeit sortierte E-Mails",
-              "three": "Antwortentwürfe in Gmail",
-              "two": "Hervorgehobene wichtige Anfragen"
-            },
-            "scope": "Sortieren Sie Ihren Posteingang und entwerfen Sie Antworten auf die E-Mails, die sie benötigen.",
             "steps": {
               "one": "Eingehende Nachrichten im gewählten Bereich lesen",
               "three": "Antwortvorschläge als Gmail-Entwürfe speichern",
@@ -2604,14 +2589,7 @@
             "cadence": "Wenn Sie eine Rechnung markieren",
             "description": "Legen Sie Rechnungs-E-Mails in Google Drive ab und protokollieren Sie jede einzelne in Google Sheets.",
             "name": "Reichen Sie Gmail-Rechnungen in Google Drive ein",
-            "next": "Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
             "prompt": "Helfen Sie mir, diesen Workflow einzurichten: Reichen Sie Gmail-Rechnungen in Google Drive ein. Rechnungen anhand des gewählten Gmail-Labels erkennen. Rechnungsanhänge im vereinbarten Drive-Ordner ablegen. Details auf Wunsch in Google Sheets protokollieren. Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
-            "results": {
-              "one": "Rechnungen im richtigen Ordner",
-              "three": "Optionales Rechnungsregister in Sheets",
-              "two": "Einheitlicher Ablageverlauf"
-            },
-            "scope": "Legen Sie Rechnungs-E-Mails in Google Drive ab und protokollieren Sie jede einzelne in Google Sheets.",
             "steps": {
               "one": "Rechnungen anhand des gewählten Gmail-Labels erkennen",
               "three": "Details auf Wunsch in Google Sheets protokollieren",
@@ -2623,14 +2601,7 @@
             "cadence": "Wenn ein Meeting hinzugefügt wird",
             "description": "Informieren Sie sich vor jedem Kalenderereignis über die Personen, die Sie treffen.",
             "name": "Recherchieren Sie Ihre Kalenderbesprechungen",
-            "next": "Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
             "prompt": "Helfen Sie mir, diesen Workflow einzurichten: Recherchieren Sie Ihre Kalenderbesprechungen. Teilnehmer und Details eines neuen Termins lesen. Beruflichen Kontext und Unternehmen recherchieren. Ein Briefing mit Quellen und Gesprächsthemen vorbereiten. Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
-            "results": {
-              "one": "Hintergrund zu Teilnehmern und Unternehmen",
-              "three": "Vorgeschlagene Gesprächsthemen",
-              "two": "Relevante Informationen mit Quellen"
-            },
-            "scope": "Informieren Sie sich vor jedem Kalenderereignis über die Personen, die Sie treffen.",
             "steps": {
               "one": "Teilnehmer und Details eines neuen Termins lesen",
               "three": "Ein Briefing mit Quellen und Gesprächsthemen vorbereiten",
@@ -2642,14 +2613,7 @@
             "cadence": "Jeden Morgen",
             "description": "Veröffentlichen Sie tägliche Besucher, Anmeldungen und Aktivierungsnummern in Slack.",
             "name": "Veröffentlichen Sie tägliche Kennzahlen auf Slack",
-            "next": "Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
             "prompt": "Helfen Sie mir, diesen Workflow einzurichten: Veröffentlichen Sie tägliche Kennzahlen auf Slack. Vereinbarte Website- und Registrierungskennzahlen abrufen. Eine Tagesübersicht mit eindeutigem Berichtszeitraum erstellen. Die Übersicht im gewählten Slack-Ziel teilen. Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
-            "results": {
-              "one": "Tägliche Besucher",
-              "three": "Klar ausgewiesener Berichtszeitraum",
-              "two": "Registrierungen und Aktivierungen, soweit verfügbar"
-            },
-            "scope": "Veröffentlichen Sie tägliche Besucher, Anmeldungen und Aktivierungsnummern in Slack.",
             "steps": {
               "one": "Vereinbarte Website- und Registrierungskennzahlen abrufen",
               "three": "Die Übersicht im gewählten Slack-Ziel teilen",
@@ -2661,14 +2625,7 @@
             "cadence": "Jeden Morgen",
             "description": "Machen Sie aus Gmail-, Kalender- und Notion-Updates einen kurzen Tagesplan in Slack.",
             "name": "Morgenbriefing",
-            "next": "Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
             "prompt": "Helfen Sie mir, diesen Workflow einzurichten: Morgenbriefing. Wichtige E-Mails und heutige Termine lesen. Entscheidungen, Nachfassaufgaben und Fokuszeit priorisieren. Einen kurzen Morgenplan in Slack bereitstellen. Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
-            "results": {
-              "one": "Heutige Prioritäten",
-              "three": "Offene Antworten und Entscheidungen",
-              "two": "Meetings und Fokuszeit"
-            },
-            "scope": "Machen Sie aus Gmail-, Kalender- und Notion-Updates einen kurzen Tagesplan in Slack.",
             "steps": {
               "one": "Wichtige E-Mails und heutige Termine lesen",
               "three": "Einen kurzen Morgenplan in Slack bereitstellen",
@@ -2680,14 +2637,7 @@
             "cadence": "Regelmäßig auf neue Meetingnotizen prüfen",
             "description": "Teilen Sie nach jedem Meeting eine Zusammenfassung mit Entscheidungen und Aktionspunkten.",
             "name": "Erhalten Sie Besprechungsrückblicke in Slack",
-            "next": "Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
             "prompt": "Helfen Sie mir, diesen Workflow einzurichten: Erhalten Sie Besprechungsrückblicke in Slack. Ein neues Meetingtranskript lesen. Genannte Entscheidungen, Aufgaben, Verantwortliche und Fristen extrahieren. Eine kurze Zusammenfassung an das gewählte Ziel senden. Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
-            "results": {
-              "one": "Entscheidungen aus dem Gespräch",
-              "three": "Klar gekennzeichnete fehlende Angaben",
-              "two": "Aufgaben und genannte Verantwortliche"
-            },
-            "scope": "Teilen Sie nach jedem Meeting eine Zusammenfassung mit Entscheidungen und Aktionspunkten.",
             "steps": {
               "one": "Ein neues Meetingtranskript lesen",
               "three": "Eine kurze Zusammenfassung an das gewählte Ziel senden",
@@ -2699,14 +2649,7 @@
             "cadence": "Wenn eine passende Antwort eingeht",
             "description": "Verfolgen Sie eine Unterhaltung und erhalten Sie die Kernpunkte neuer Antworten sowie nächste Schritte.",
             "name": "E-Mail-Antworten verfolgen",
-            "next": "Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
             "prompt": "Helfen Sie mir, diesen Workflow einzurichten: E-Mail-Antworten verfolgen. Eine E-Mail-Unterhaltung und vereinbarte Absender verfolgen. Eine neue Antwort erkennen und Kernpunkte zusammenfassen. Einmal benachrichtigen und bei Bedarf einen Antwortentwurf erstellen. Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung. E-Mail-Antworten bleiben Entwürfe, die ich selbst prüfe und versende.",
-            "results": {
-              "one": "Eingegangene Antwort und Kernpunkte",
-              "three": "Bei Bedarf ein Entwurf für die Folgeantwort",
-              "two": "Erforderliche Schritte oder Fristen"
-            },
-            "scope": "Verfolgen Sie eine Unterhaltung und erhalten Sie die Kernpunkte neuer Antworten sowie nächste Schritte.",
             "steps": {
               "one": "Eine E-Mail-Unterhaltung und vereinbarte Absender verfolgen",
               "three": "Einmal benachrichtigen und bei Bedarf einen Antwortentwurf erstellen",
@@ -2718,14 +2661,7 @@
             "cadence": "Jede Woche",
             "description": "Fassen Sie GitHub-, Gmail- und Kalenderaktivität zu einem wöchentlichen Slack-Update zusammen.",
             "name": "Persönlicher Wochenüberblick",
-            "next": "Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
             "prompt": "Helfen Sie mir, diesen Workflow einzurichten: Persönlicher Wochenüberblick. Aktivitäten aus gewählten Quellen sammeln. Erfolge, offene Entscheidungen und Nachfassaufgaben gliedern. Einen Wochenrückblick im gewählten Slack-Ziel teilen. Erstellen Sie zuerst einen Entwurf. Bestätigen Sie Quellen, Umfang, Zeitpunkt und Ziel vor der Aktivierung.",
-            "results": {
-              "one": "Erfolge der Woche",
-              "three": "Bevorstehende Verpflichtungen",
-              "two": "Offene Entscheidungen und Nachfassaufgaben"
-            },
-            "scope": "Fassen Sie GitHub-, Gmail- und Kalenderaktivität zu einem wöchentlichen Slack-Update zusammen.",
             "steps": {
               "one": "Aktivitäten aus gewählten Quellen sammeln",
               "three": "Einen Wochenrückblick im gewählten Slack-Ziel teilen",
@@ -2734,9 +2670,6 @@
             "title": "Die Arbeitswoche übersichtlich abschließen"
           }
         },
-        "next": "Nächster Workflow",
-        "ownSources": "Ihr Workflow verwendet Ihre eigenen Quellen und Inhalte.",
-        "placeholder": "Optional — was ist Ihnen wichtig?",
         "preview": {
           "competitors": {
             "changed": "Changed",
@@ -2830,13 +2763,10 @@
             "two": "Wrapped up the onboarding guide"
           }
         },
-        "previous": "Vorheriger Workflow",
         "sample": "Beispiel",
         "tailor": "Was möchten Sie anpassen?",
         "use": "Diesen Workflow verwenden",
-        "whatHappens": "Ablauf bei jeder Ausführung",
-        "whatYouGet": "Ihre Ergebnisse",
-        "worksWith": "Verwendete Apps"
+        "whatHappens": "Ablauf bei jeder Ausführung"
       }
     },
     "templates": {

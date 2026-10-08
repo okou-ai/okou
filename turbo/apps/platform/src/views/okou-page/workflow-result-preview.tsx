@@ -349,7 +349,11 @@ const PREVIEW_CONTENT = {
   reply: ReplyPreview,
 } satisfies Record<WorkflowRecommendationId, () => ReactNode>;
 
-/** The sample result a workflow dialog shows: a full-size mock of the thing. */
+/**
+ * The sample result a workflow dialog shows: a full-size mock of the thing,
+ * centred on a tinted column that runs to the dialog's edges. Stacked above
+ * the details below md, its top inset clears the dialog's close button.
+ */
 export function WorkflowResultPreview({
   id,
 }: {
@@ -375,11 +379,11 @@ export function WorkflowResultPreview({
       role="img"
       aria-label={`${sample}: ${copy[id].label}`}
       className={cn(
-        "relative block min-w-0 rounded-2xl p-5",
+        "relative flex min-w-0 items-center justify-center px-8 pt-14 pb-8 md:px-14 md:py-10",
         PREVIEW_COLORS[id],
       )}
     >
-      <span className="flex min-h-60 min-w-0 flex-col gap-4 rounded-lg bg-card p-4 text-xs leading-relaxed text-foreground">
+      <span className="flex min-h-60 w-full min-w-0 flex-col gap-4 rounded-lg bg-card p-4 text-xs leading-relaxed text-foreground shadow-surface">
         <span className="block text-muted-foreground">{copy[id].label}</span>
         <Preview />
         <span className="mt-auto self-end text-[10px] text-muted-foreground">
