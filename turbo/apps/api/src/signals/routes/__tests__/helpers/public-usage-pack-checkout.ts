@@ -126,10 +126,14 @@ export async function purchaseUsagePacks(
       headers: { authorization: "Bearer clerk-session" },
       body: {
         tier: "pro",
-        memberUsagePacks: selections.map((s) => {
+        memberUsagePacks: members.map((userId) => {
+          const selected = selections.find((selection) => {
+            return selection.userId === userId;
+          });
+          // Checkout requires an explicit selection for every Clerk member.
           return {
-            memberId: s.userId,
-            usagePackUsd: s.usd,
+            memberId: userId,
+            usagePackUsd: selected ? selected.usd : 0,
           };
         }),
         successUrl: `${origin}/billing`,

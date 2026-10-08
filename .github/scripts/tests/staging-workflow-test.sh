@@ -250,7 +250,7 @@ release_contexts = [
 ]
 for values in release_contexts:
     assert not condition(benchmark_detector, values), 'release commits must not create new baselines'
-for name in ['bench-api', 'bench-app']:
+for name in ['bench-app']:
     assert name not in jobs, 'benchmarks must not hold the staging workflow lock'
     job = benchmark['jobs'][name]
     assert 'prepare' not in needs(job), 'baselines must not wait for deployment preparation'

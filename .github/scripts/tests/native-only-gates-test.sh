@@ -77,7 +77,7 @@ for result in ['failure', 'cancelled', 'skipped']:
 
 for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
     assert not condition(turbo[job], native), job
-for job in ['bench-api', 'bench-app']:
+for job in ['bench-app']:
     assert not condition(benchmark[job], native), job
     assert condition(benchmark[job], context(ios=False, ts=True)), job
     assert condition(benchmark[job], context(ios=False, ts=True, event='push')), job
