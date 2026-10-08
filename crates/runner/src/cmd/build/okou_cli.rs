@@ -193,7 +193,7 @@ impl OkouCliArtifact {
                 "Okou CLI package size {package_size} does not match manifest {expected_size}"
             )));
         }
-        let identity = crate::cli_package::read_identity(package_bytes)
+        let identity = runner_cli_package::read_identity(package_bytes)
             .map_err(|e| RunnerError::Internal(format!("invalid packed CLI identity: {e}")))?;
         if versions.cli != identity.versions.cli
             || versions.pi_agent_runtime != identity.versions.pi_agent_runtime

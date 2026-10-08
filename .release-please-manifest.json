@@ -27,6 +27,7 @@
   "crates/guest-state-restore": "0.4.0",
   "crates/guest-write-file": "0.1.206",
   "crates/runner": "0.220.24",
+  "crates/runner-cli-package": "0.1.0",
   "crates/runner-executor": "0.5.7",
   "crates/runner-host": "0.2.14",
   "crates/runner-lifecycle": "0.1.37",

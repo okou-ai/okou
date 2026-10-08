@@ -134,6 +134,9 @@
             "release-type": "rust",
             "component": "runner-rs"
         },
+        "crates/runner-cli-package": {
+            "release-type": "rust"
+        },
         "crates/runner-executor": {
             "release-type": "rust"
         },

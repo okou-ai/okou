@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 api-contracts.workspace = true
 guest-contracts.workspace = true
+runner-cli-package.workspace = true
 sandbox = { workspace = true }
 nbd-cow = { workspace = true }
 sandbox-firecracker = { workspace = true }
@@ -50,8 +51,7 @@ runner-supervisor.workspace = true
 runner-types.workspace = true
 
 [build-dependencies]
-flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
-tar = { workspace = true, features = ["xattr"] }
+runner-cli-package.workspace = true
 hex = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }

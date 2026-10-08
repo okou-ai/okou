@@ -10,23 +10,32 @@ const MAX_PACKAGE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_METADATA_BYTES: u64 = 16 * 1024;
 
+/// Release versions and SDK patch identity carried by the package.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CliVersions {
-    pub(crate) cli: String,
-    pub(crate) pi_agent_runtime: String,
-    pub(crate) pi_sdk: String,
+pub struct CliVersions {
+    /// CLI version from the packed package's existing `version`.
+    pub cli: String,
+    /// Bundled Pi runtime release version.
+    pub pi_agent_runtime: String,
+    /// Upstream Pi SDK version plus first-party patch-set digest.
+    pub pi_sdk: String,
 }
 
+/// Session-construction identity recorded before packing.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
-pub(crate) struct CliSessionConstruction {
-    pub(crate) digest: String,
+pub struct CliSessionConstruction {
+    /// Lowercase SHA-256 of the session construction.
+    pub digest: String,
 }
 
+/// Identity decoded from the mandatory packed metadata.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct CliIdentity {
-    pub(crate) versions: CliVersions,
-    pub(crate) session_construction: CliSessionConstruction,
+pub struct CliIdentity {
+    /// Release and SDK identities.
+    pub versions: CliVersions,
+    /// Session-construction parity identity.
+    pub session_construction: CliSessionConstruction,
 }
 
 #[derive(Deserialize)]
@@ -46,7 +55,8 @@ struct BuildIdentity {
     session_construction: CliSessionConstruction,
 }
 
-pub(crate) fn valid_lower_hex(value: &str, len: usize) -> bool {
+/// Whether a value has exactly the requested number of lowercase hex digits.
+pub fn valid_lower_hex(value: &str, len: usize) -> bool {
     value.len() == len
         && value
             .bytes()
@@ -66,7 +76,7 @@ fn valid_release_version(value: &str) -> bool {
 
 /// Decode exactly one regular metadata entry without extracting or running code.
 /// Bound the entire decompressed stream, including skipped entries and gzip EOF.
-pub(crate) fn read_identity(package: &[u8]) -> Result<CliIdentity, String> {
+pub fn read_identity(package: &[u8]) -> Result<CliIdentity, String> {
     if package.is_empty() || package.len() > MAX_PACKAGE_BYTES {
         return Err("CLI package size is out of bounds".into());
     }

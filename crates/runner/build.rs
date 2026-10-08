@@ -8,9 +8,7 @@ use std::{env, fs};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-#[path = "src/cli_package.rs"]
-mod cli_package;
-use cli_package::{CliSessionConstruction, CliVersions, valid_lower_hex};
+use runner_cli_package::{CliSessionConstruction, CliVersions, valid_lower_hex};
 
 const GUEST_BINARIES_FILE: &str = "guest-binaries.json";
 const MAX_CLI_PACKAGE_SIZE: u64 = 64 * 1024 * 1024;
@@ -58,7 +56,6 @@ fn main() {
     println!("cargo::rerun-if-changed=scripts/customize-rootfs.sh");
     println!("cargo::rerun-if-changed=scripts/verify-rootfs.sh");
     println!("cargo::rerun-if-changed={GUEST_BINARIES_FILE}");
-    println!("cargo::rerun-if-changed=src/cli_package.rs");
 
     generate_addon_files();
     let guests = load_guest_binaries();
@@ -193,7 +190,7 @@ fn embed_guest_cli(path: &str, manifest_path: &str, workspace_root: &Path) {
         hex::encode(Sha256::digest(&bytes)),
         "CLI package digest mismatch"
     );
-    let identity = cli_package::read_identity(&bytes).expect("read packed CLI identity");
+    let identity = runner_cli_package::read_identity(&bytes).expect("read packed CLI identity");
     assert_eq!(
         manifest.versions, identity.versions,
         "CLI identity mismatch"

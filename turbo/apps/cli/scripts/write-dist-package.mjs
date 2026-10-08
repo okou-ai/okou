@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 
 const cliRoot = new URL("../", import.meta.url);
 const turboRoot = new URL("../../", cliRoot);
-const readJson = (url) => JSON.parse(readFileSync(url, "utf8"));
+const readJson = (url) => {
+  return JSON.parse(readFileSync(url, "utf8"));
+};
 const pkg = readJson(new URL("dist/package.json", cliRoot));
 const runtime = readJson(
   new URL("packages/pi-agent-runtime/package.json", turboRoot),
@@ -40,13 +42,16 @@ if (
 }
 const patchesRoot = new URL("patches/", turboRoot);
 const patches = readdirSync(patchesRoot, { withFileTypes: true })
-  .filter(
-    (entry) =>
+  .filter((entry) => {
+    return (
       entry.isFile() &&
       entry.name.startsWith("@earendil-works__") &&
-      entry.name.endsWith(".patch"),
-  )
-  .map((entry) => entry.name)
+      entry.name.endsWith(".patch")
+    );
+  })
+  .map((entry) => {
+    return entry.name;
+  })
   .sort();
 if (patches.length === 0) {
   throw new Error("CLI build identity requires the first-party Pi SDK patches");
