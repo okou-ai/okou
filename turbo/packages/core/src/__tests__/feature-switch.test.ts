@@ -27,6 +27,24 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("enables private artifacts for everyone and honors explicit opt-outs", () => {
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent", userId: "external-user" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.PrivateArtifacts, context)).toBe(
+        true,
+      );
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PrivateArtifacts, {
+          ...context,
+          overrides: { [FeatureSwitchKey.PrivateArtifacts]: false },
+        }),
+      ).toBe(false);
+    }
+  });
+
   it("enables Browser native input for staff and honors overrides", () => {
     const external = { orgId: "org_nonexistent" };
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
@@ -268,6 +286,25 @@ describe("isFeatureEnabled", () => {
 });
 
 describe("getAllFeatureStates", () => {
+  it("defaults private artifacts on for everyone and honors explicit opt-outs", () => {
+    expect(getAllFeatureStates()[FeatureSwitchKey.PrivateArtifacts]).toBe(true);
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent", userId: "external-user" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(
+        getAllFeatureStates(context)[FeatureSwitchKey.PrivateArtifacts],
+      ).toBe(true);
+      expect(
+        getAllFeatureStates({
+          ...context,
+          overrides: { [FeatureSwitchKey.PrivateArtifacts]: false },
+        })[FeatureSwitchKey.PrivateArtifacts],
+      ).toBe(false);
+    }
+  });
+
   it("should return states for all feature switches", () => {
     const states = getAllFeatureStates();
     // Globally enabled switches should be true
@@ -440,6 +477,9 @@ describe("getFeatureSwitchMetadata", () => {
   it("should classify non-internal switches by rollout audience", () => {
     const metadata = getFeatureSwitchMetadata();
 
+    expect(metadata[FeatureSwitchKey.PrivateArtifacts].rolloutStage).toBe(
+      "released",
+    );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
     expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
       "beta",

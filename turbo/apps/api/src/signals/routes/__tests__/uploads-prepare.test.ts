@@ -4,6 +4,8 @@ import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -23,6 +25,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
+import { featureSwitchesRoutes } from "../feature-switches";
 
 const uploadsTestRoutes = Object.freeze([
   ...uploadsCompleteRoutes,
@@ -39,6 +42,19 @@ beforeEach(() => {
   mocks.s3.listObjects([]);
 });
 
+async function useLegacyPublicUploads(userId: string, orgId: string) {
+  mocks.clerk.session(userId, orgId);
+  await accept(
+    setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    ).update({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: false } },
+    }),
+    [200],
+  );
+}
+
 function currentSecond(): number {
   return Math.floor(now() / 1000);
 }
@@ -49,7 +65,7 @@ function validBody() {
 
 describe("POST /api/uploads/prepare", () => {
   it("registers the legacy public URL before issuing upload credentials", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    await useLegacyPublicUploads(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const registrations: unknown[] = [];
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       if (command instanceof PutObjectCommand) {
@@ -85,7 +101,7 @@ describe("POST /api/uploads/prepare", () => {
   });
 
   it("does not issue upload credentials when public registration fails", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    await useLegacyPublicUploads(`user_${randomUUID()}`, `org_${randomUUID()}`);
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       if (command instanceof PutObjectCommand) {
         return Promise.reject(new Error("Registry unavailable"));
@@ -148,16 +164,17 @@ describe("POST /api/uploads/prepare", () => {
     );
     expect(response.body.url).toMatch(/^https?:\/\//);
     expect(response.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.txt$/u,
+      /^http:\/\/localhost:3002\/artifacts\/[0-9a-z]{10}\.txt$/u,
     );
     expect(response.body.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it("returns Okou artifact metadata for run uploads", async () => {
+  it("returns Okou artifact metadata for legacy public run uploads", async () => {
     const userId = `user_${randomUUID().slice(0, 8)}`;
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const runId = `run_${randomUUID()}`;
     await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
+    await useLegacyPublicUploads(userId, orgId);
     const seconds = currentSecond();
     const token = signSandboxJwtForTests({
       scope: "okou",
@@ -189,10 +206,10 @@ describe("POST /api/uploads/prepare", () => {
     });
   });
 
-  it("returns Okou artifact metadata for browser uploads", async () => {
+  it("returns Okou artifact metadata for legacy public browser uploads", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
+    await useLegacyPublicUploads(userId, orgId);
 
     const response = await setupApp({ context, routes: uploadsTestRoutes })(
       uploadsContract,
@@ -292,7 +309,10 @@ describe("POST /api/uploads/prepare", () => {
   ])(
     "prepares %s with compatible upload metadata",
     async (contentType, expected) => {
-      mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+      await useLegacyPublicUploads(
+        `user_${randomUUID()}`,
+        `org_${randomUUID()}`,
+      );
       let registration: unknown;
       context.mocks.s3.send.mockImplementation((command) => {
         if (command instanceof PutObjectCommand) {
@@ -323,7 +343,7 @@ describe("POST /api/uploads/prepare", () => {
   it("returns presigned upload URL and final CDN URL with full body shape", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
+    await useLegacyPublicUploads(userId, orgId);
 
     const client = setupApp({ context, routes: uploadsTestRoutes })(
       uploadsContract,
@@ -360,7 +380,7 @@ describe("POST /api/uploads/prepare", () => {
   it("uses flat 10-character keys and signed filename metadata", async () => {
     const orgId = `org_${randomUUID()}`;
     const peer = { userId: `user_${randomUUID()}`, orgId };
-    mocks.clerk.session(peer.userId, peer.orgId);
+    await useLegacyPublicUploads(peer.userId, peer.orgId);
     const client = setupApp({ context, routes: uploadsTestRoutes })(
       uploadsContract,
     );
@@ -417,7 +437,7 @@ describe("POST /api/uploads/prepare", () => {
   it("retries with a new artifact id when a flat hash is occupied", async () => {
     const orgId = `org_${randomUUID()}`;
     const actor = { userId: `user_${randomUUID()}`, orgId };
-    mocks.clerk.session(actor.userId, actor.orgId);
+    await useLegacyPublicUploads(actor.userId, actor.orgId);
     const prefixes: string[] = [];
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       if (command?.constructor.name !== "ListObjectsV2Command") {
@@ -540,7 +560,7 @@ describe("POST /api/uploads/prepare", () => {
   it("uses the public S3 endpoint for externally consumed upload URLs", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
+    await useLegacyPublicUploads(userId, orgId);
     mockEnv("S3_ENDPOINT", "http://internal-s3.example.com");
     mockEnv("S3_PUBLIC_ENDPOINT", "http://public-s3.example.com");
 
@@ -574,7 +594,7 @@ describe("POST /api/uploads/prepare", () => {
   it("preserves original filenames in metadata while using flat keys", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
+    await useLegacyPublicUploads(userId, orgId);
 
     const client = setupApp({ context, routes: uploadsTestRoutes })(
       uploadsContract,
