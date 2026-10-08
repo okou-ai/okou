@@ -230,6 +230,17 @@ async function artifactActor(
   return { actor, agentId: agent.agentId, runnerGroup, objectStore };
 }
 
+async function useLegacyPublicArtifacts(owner: ArtifactActor): Promise<void> {
+  if (!owner.actor.orgId) {
+    throw new Error("Expected an organization for the public artifact opt-out");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...owner.actor, orgId: owner.actor.orgId },
+    { [FeatureSwitchKey.PrivateArtifacts]: false },
+  );
+}
+
 async function sendChatRun(
   actor: ApiTestUser,
   body: {
@@ -553,8 +564,9 @@ describe("video Artifact previews", () => {
     ).toBeTruthy();
   }, 180_000);
 
-  it("generates a poster immediately for an ordinary video upload", async () => {
+  it("generates a public poster immediately when private artifacts are disabled", async () => {
     const owner = await artifactActor("Artifacts API video preview agent");
+    await useLegacyPublicArtifacts(owner);
     if (!owner.actor.orgId) {
       throw new Error("Expected video preview test actor to have an org");
     }
@@ -703,6 +715,7 @@ describe("video Artifact previews", () => {
     const owner = await artifactActor(
       "Artifacts API concurrent video preview agent",
     );
+    await useLegacyPublicArtifacts(owner);
     mockCloudflareVideoFrame(owner.actor.userId);
     owner.objectStore.rejectNextImmutablePutAsExisting("image/jpeg");
 
@@ -908,6 +921,7 @@ describe("hosted Artifact previews", () => {
 
   it("renders current-layout deployments from their hosted-site domain", async () => {
     const owner = await artifactActor("Artifacts API Okou preview image agent");
+    await useLegacyPublicArtifacts(owner);
     mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
     mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
@@ -970,7 +984,10 @@ describe("hosted Artifact previews", () => {
 
     const firstArtifact = await findCatalogArtifact(owner.actor, site);
     expect(firstArtifact?.thumbnail?.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
+      /^http:\/\/localhost:3002\/artifacts\/[0-9a-z]{10}\.webp$/u,
+    );
+    const previewReference = await resolvePrivatePreviewReference(
+      firstArtifact?.thumbnail?.url ?? "",
     );
     const threadArtifacts = await chat.listThreadArtifacts(
       owner.actor,
@@ -1014,13 +1031,17 @@ describe("hosted Artifact previews", () => {
     });
     expect(
       owner.objectStore.puts.find((put) => {
-        return /^artifacts\/[0-9a-z]{10}\.webp$/u.test(put.key);
+        return (
+          put.key ===
+          `private-artifacts/${previewReference.id}/preview-v3-${artifact.deploymentId}.webp`
+        );
       }),
     ).toMatchObject({
-      bucket: "test-user-artifacts",
+      bucket: "test-private-artifacts",
       cacheControl: "public, max-age=31536000, immutable",
       contentType: "image/webp",
       ifNoneMatch: "*",
+      metadata: { "artifact-id": previewReference.id },
     });
 
     await chat.completeHostedSiteWithBearer(
@@ -1076,7 +1097,7 @@ describe("hosted Artifact previews", () => {
     expect(snapshotRequests[1]?.body).not.toHaveProperty("waitForSelector");
     const previewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
+      /^http:\/\/localhost:3002\/artifacts\/[0-9a-z]{10}\.webp$/u,
     );
   }, 120_000);
 
@@ -1145,7 +1166,7 @@ describe("hosted Artifact previews", () => {
     });
     const previewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
+      /^http:\/\/localhost:3002\/artifacts\/[0-9a-z]{10}\.webp$/u,
     );
   }, 120_000);
 
@@ -1253,7 +1274,7 @@ describe("hosted Artifact previews", () => {
     });
     const previewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
+      /^http:\/\/localhost:3002\/artifacts\/[0-9a-z]{10}\.webp$/u,
     );
   }, 120_000);
 
@@ -1285,7 +1306,7 @@ describe("hosted Artifact previews", () => {
     expect(backoffMs).toBeLessThanOrEqual(2500);
     const previewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
+      /^http:\/\/localhost:3002\/artifacts\/[0-9a-z]{10}\.webp$/u,
     );
   }, 120_000);
 
