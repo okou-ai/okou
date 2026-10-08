@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.378.22](https://github.com/okou-ai/okou/compare/cli-v9.378.21...cli-v9.378.22) (2026-10-08)
+
+
+### Refactoring
+
+* **api:** unify test projects with per-case database isolation ([#37896](https://github.com/okou-ai/okou/issues/37896)) ([28c0ec4](https://github.com/okou-ai/okou/commit/28c0ec43505f5032b005505d92c5e7c6d74d8a03))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.538.0
+    * @okouai/connectors bumped to 3.16.7
+    * @okouai/core bumped to 8.734.8
+    * @okouai/pi-agent-runtime bumped to 1.46.22
+
 ## [9.378.21](https://github.com/okou-ai/okou/compare/cli-v9.378.20...cli-v9.378.21) (2026-10-07)
 
 

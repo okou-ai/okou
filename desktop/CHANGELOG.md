@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.0](https://github.com/okou-ai/okou/compare/desktop-v0.49.75...desktop-v0.50.0) (2026-10-08)
+
+
+### Features
+
+* **desktop:** replace electron with native swift desktop ([#37889](https://github.com/okou-ai/okou/issues/37889)) ([303d7bc](https://github.com/okou-ai/okou/commit/303d7bc2e3176b02c66ca3ef1c9c9b0eb2bb7700))
+
 ## [0.49.75](https://github.com/okou-ai/okou/compare/desktop-v0.49.74...desktop-v0.49.75) (2026-10-07)
 
 

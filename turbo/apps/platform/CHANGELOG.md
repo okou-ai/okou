@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1002.0](https://github.com/okou-ai/okou/compare/app-v0.1001.5...app-v0.1002.0) (2026-10-08)
+
+
+### Features
+
+* **platform:** prepare tailscale-aware ssh and vnc readers ([#37814](https://github.com/okou-ai/okou/issues/37814)) ([a648388](https://github.com/okou-ai/okou/commit/a648388f2dd47531d577fe4e68205c505335a9c3))
+
+
+### Bug Fixes
+
+* **platform:** drop credential source column from chat model picker ([#37924](https://github.com/okou-ai/okou/issues/37924)) ([3fbe719](https://github.com/okou-ai/okou/commit/3fbe719ec539bb68a51d0fb5deccfd9381b92989))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.538.0
+    * @okouai/connectors bumped to 3.16.7
+    * @okouai/core bumped to 8.734.8
+
 ## [0.1001.5](https://github.com/okou-ai/okou/compare/app-v0.1001.4...app-v0.1001.5) (2026-10-07)
 
 

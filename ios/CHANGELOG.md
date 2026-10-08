@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5](https://github.com/okou-ai/okou/compare/ios-v0.6.4...ios-v0.6.5) (2026-10-08)
+
+
+### Refactoring
+
+* **ios:** extract thread model selection into a pure function ([#37919](https://github.com/okou-ai/okou/issues/37919)) ([9b92382](https://github.com/okou-ai/okou/commit/9b92382260fa4f0fc48a6e91c09e9d313fffd90e))
+
 ## [0.6.4](https://github.com/okou-ai/okou/compare/ios-v0.6.3...ios-v0.6.4) (2026-10-07)
 
 
