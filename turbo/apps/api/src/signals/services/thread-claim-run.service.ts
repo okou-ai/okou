@@ -24,7 +24,7 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import {
   AUTO_RUN_KEY_VENDOR,
-  AUTO_RUN_MODEL,
+  isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
@@ -3196,14 +3196,12 @@ export function createThreadClaimRunObjects(
             : undefined),
       },
       featureSwitchContext,
-      runCodexServiceTier:
-        pin.selectedModel === AUTO_RUN_MODEL
-          ? undefined
-          : (selection.codexServiceTier ?? undefined),
-      reasoningEffort:
-        pin.selectedModel === AUTO_RUN_MODEL
-          ? undefined
-          : (selection.reasoningEffort ?? undefined),
+      runCodexServiceTier: isAutoSelectedModel(pin.selectedModel)
+        ? undefined
+        : (selection.codexServiceTier ?? undefined),
+      reasoningEffort: isAutoSelectedModel(pin.selectedModel)
+        ? undefined
+        : (selection.reasoningEffort ?? undefined),
       builtInModelRuntimeRoute,
       memberAccountSnapshot,
     };

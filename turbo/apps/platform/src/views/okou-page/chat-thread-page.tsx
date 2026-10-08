@@ -269,7 +269,7 @@ import type {
   ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
 import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import { AUTO_RUN_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
@@ -3334,7 +3334,12 @@ function ChatThreadNextRunModelNotice({
       : {}),
   };
   let label: string;
-  if (selectedRunSelection.selectedModel !== runningSelection.selectedModel) {
+  if (
+    !sameSelectedModel(
+      selectedRunSelection.selectedModel,
+      runningSelection.selectedModel,
+    )
+  ) {
     label = t(
       ($) => {
         return $.chat.run.selectedModelAppliesAfterCurrentRun;

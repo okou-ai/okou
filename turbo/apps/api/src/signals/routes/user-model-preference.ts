@@ -6,6 +6,7 @@ import {
   type UpdateUserModelPreferenceRequest,
   userModelPreferenceContract,
 } from "@okouai/api-contracts/contracts/user-model-preference";
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { command, computed } from "ccstate";
 
 import { badRequestMessage } from "../../lib/error";
@@ -114,7 +115,13 @@ const persistUserModelPreference$ = command(
     const auth = get(organizationAuthContext$);
     const result = await set(
       updateUserModelPreference$,
-      { orgId: auth.orgId, userId: auth.userId, preference },
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        preference: isAutoSelectedModel(preference.selectedModel)
+          ? { ...preference, selectedModel: null, serviceTier: null }
+          : preference,
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -139,10 +146,14 @@ function resolveRequestedPreferenceModels(
   request: UpdateUserModelPreferenceRequest,
 ): UpdateUserModelPreferenceRequest | ReturnType<typeof badRequestMessage> {
   const selectedModel =
-    request.selectedModel === null
+    request.selectedModel === null || isAutoSelectedModel(request.selectedModel)
       ? null
       : resolveCatalogRunModel(catalog, request.selectedModel);
-  if (request.selectedModel !== null && selectedModel === null) {
+  if (
+    request.selectedModel !== null &&
+    !isAutoSelectedModel(request.selectedModel) &&
+    selectedModel === null
+  ) {
     return badRequestMessage(`Unknown model "${request.selectedModel}"`);
   }
   const patch = request.modelSettingsPatch;

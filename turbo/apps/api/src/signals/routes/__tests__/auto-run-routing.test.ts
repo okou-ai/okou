@@ -12,9 +12,30 @@ const {
   sendChatRun,
   claimChatRun,
   cancelChatRun,
+  expectThreadCreatedModelEvent,
 } = createChatEventsFixture(context);
 
 describe("fixed Auto through public admission and runner claim", () => {
+  it.each([null, "auto"])(
+    "preserves PR1 public writes for Auto intent %s",
+    async (model) => {
+      await seedBuiltInModelKey("okou-1.0");
+      const { actor, agentId } = await entitledNativeChatActor();
+      const run = await sendChatRun(actor, {
+        agentId,
+        model,
+        prompt: "Use Auto intent",
+      });
+      await expectThreadCreatedModelEvent(actor, run.threadId, null);
+      const log = await api.readRun(actor, run.runId);
+      expect(log.source).toMatchObject({
+        model: "okou-1.0",
+        providerType: "built-in",
+        credentialScope: "org",
+      });
+    },
+  );
+
   it("claims fixed Auto through the platform OpenRouter preset", async () => {
     await seedBuiltInModelKey("okou-1.0");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
@@ -34,6 +55,7 @@ describe("fixed Auto through public admission and runner claim", () => {
       credentialScope: "org",
     });
     expect(claimed.claim.cliAgentType).toBe("pi");
+    expect(claimed.claim.modelUsageProvider).toBe("okou-1.0");
     expect(claimed.claim.piModelConfig).toMatchObject({
       provider: "openrouter",
       model: "@preset/okou-1-0",

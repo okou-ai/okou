@@ -1,3 +1,7 @@
+import {
+  AUTO_SELECTED_MODEL,
+  isAutoSelectedModel,
+} from "@okouai/core/auto-run-model";
 import type { Tx } from "../../lib/db-types";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
@@ -659,8 +663,11 @@ function requestedThreadRunSettings(
   },
 ): ThreadRunSettings | ReturnType<typeof badRequestMessage> {
   // An explicit null selects Auto; omission keeps the current selection.
-  const selectedModel =
+  const requestedModel =
     body.model === undefined ? current.selectedModel : body.model;
+  const selectedModel = isAutoSelectedModel(requestedModel)
+    ? null
+    : requestedModel;
   const effort = resolveChatReasoningEffort({
     catalog,
     selectedModel,
@@ -1534,6 +1541,7 @@ const prepareNormalSend$ = command(
     signal.throwIfAborted();
     if (
       typeof args.body.model === "string" &&
+      args.body.model !== AUTO_SELECTED_MODEL &&
       resolveRunSelectionModel(catalog, args.body.model) === null
     ) {
       return badRequestMessage(`Unknown model "${args.body.model}"`);

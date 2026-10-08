@@ -1,4 +1,9 @@
 import {
+  AUTO_RUN_MODEL,
+  isAutoSelectedModel,
+  isAutoRunPreset,
+} from "@okouai/core/auto-run-model";
+import {
   isOkouRunModel,
   type OkouRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -349,6 +354,19 @@ export function piAgentStreamForConfig(
   };
 }
 
+function capturedAutoCatalogIdentity(config: PiAgentModelConfig): string {
+  const identity = config.catalogModel ?? config.model;
+  // Auto's capability class is platform-owned, not a second route.
+  // The request still sends the immutable runtime model below.
+  const autoRuntime =
+    config.provider === "openrouter" &&
+    (config.dialect === "openai-responses" ||
+      config.dialect === "openai-completions") &&
+    isAutoRunPreset(config.model) &&
+    (isAutoSelectedModel(identity) || isAutoRunPreset(identity));
+  return autoRuntime ? AUTO_RUN_MODEL : identity;
+}
+
 /** Resolve model metadata from Pi's provider catalog. */
 export function resolvePiAgentModel(
   config: PiAgentModelConfig,
@@ -366,7 +384,7 @@ export function resolvePiAgentModel(
   }
   const source = sourceModel(
     config.provider,
-    config.catalogModel ?? config.model,
+    capturedAutoCatalogIdentity(config),
   );
   if (!source) {
     return null;

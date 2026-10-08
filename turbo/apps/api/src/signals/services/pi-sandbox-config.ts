@@ -31,7 +31,7 @@ import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
 import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 
 import {
-  AUTO_RUN_MODEL,
+  isAutoSelectedModel,
   AUTO_RUN_PROVIDER,
   isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
@@ -195,7 +195,7 @@ function resolvePiRouteModelConfig(
   }
   if (
     !isBuiltInModelProviderType(provider.type) ||
-    provider.selectedModel !== AUTO_RUN_MODEL ||
+    !isAutoSelectedModel(provider.selectedModel) ||
     provider.concreteType !== AUTO_RUN_PROVIDER ||
     !isAutoRunPreset(provider.upstreamModel)
   ) {

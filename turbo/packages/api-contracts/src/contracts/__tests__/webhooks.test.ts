@@ -22,10 +22,38 @@ import {
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
   webhookTelemetryContract,
+  webhookUsageEventContract,
 } from "../webhooks";
 
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
+
+describe("captured runtime usage identities", () => {
+  it.each(["okou-1.0", "@preset/okou-1-0", "@preset/" + "x".repeat(247)])(
+    "accepts complete billing identity %s",
+    (provider) => {
+      const body = {
+        runId: storageId,
+        events: [
+          {
+            idempotencyKey: storageId,
+            kind: "model",
+            provider,
+            category: "tokens.input",
+            quantity: 1,
+          },
+        ],
+      };
+      expect(webhookUsageEventContract.send.body.parse(body)).toEqual(body);
+      expect(
+        webhookUsageEventContract.send.body.safeParse({
+          ...body,
+          events: [{ ...body.events[0], provider: "x".repeat(256) }],
+        }).success,
+      ).toBe(false);
+    },
+  );
+});
 
 describe("archive size mismatch telemetry", () => {
   const operation = {

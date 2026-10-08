@@ -1231,7 +1231,8 @@ const webhookUsageEventItemSchema = z
   .object({
     idempotencyKey: z.uuid(),
     kind: z.enum(["connector", "model", "image"]),
-    provider: z.string().min(1).max(100),
+    // Runtime model identities share agent_runs.model_runtime_model's 255 limit.
+    provider: z.string().min(1).max(255),
     category: z.string().min(1).max(100),
     quantity: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   })

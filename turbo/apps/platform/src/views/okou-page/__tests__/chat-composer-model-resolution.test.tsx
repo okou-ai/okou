@@ -1,3 +1,5 @@
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import { mockAutoRunModel } from "../../../mocks/handlers/api-run-models.ts";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -151,20 +153,34 @@ test("Switch only the thread to Auto when its model is no longer selectable", as
   });
 });
 
-test("Show Auto selected for a thread on Auto", async () => {
-  installRunChat({ selectedModel: null });
-  configureRunModels(["claude-opus-5"]);
+test.each([null, "auto", "okou-1.0"])(
+  "Show Auto selected for a thread storing %s",
+  async (selectedModel) => {
+    installRunChat({ selectedModel });
+    configureRunModels(["claude-opus-5"]);
+    context.mocks.api(runModelsMainContract.list, ({ respond }) => {
+      return respond(200, {
+        models: [
+          {
+            ...mockAutoRunModel(),
+            model: selectedModel === "auto" ? "auto" : null,
+          },
+          runModelFixture("claude-opus-5", 1),
+        ],
+      });
+    });
 
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
+    await setupPage({
+      context,
+      path: RUN_PATH,
+    });
 
-  await readyChat();
-  const panel = await openModelPanel("Auto");
-  expect(modelOption(/^Auto/u, panel)).toBeChecked();
-  expect(modelOption(/^Claude Opus 5/u, panel)).not.toBeChecked();
-});
+    await readyChat();
+    const panel = await openModelPanel("Auto");
+    expect(modelOption(/^Auto/u, panel)).toBeChecked();
+    expect(modelOption(/^Claude Opus 5/u, panel)).not.toBeChecked();
+  },
+);
 
 test("Keep the stored selection when sending on an available model", async () => {
   const sentModels: (string | null | undefined)[] = [];
