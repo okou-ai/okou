@@ -62,4 +62,5 @@ export enum FeatureSwitchKey {
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
   AgentResponsibilitySetup = "agentResponsibilitySetup",
+  PiOpenRouterChatCompletions = "_piOpenRouterChatCompletions",
 }

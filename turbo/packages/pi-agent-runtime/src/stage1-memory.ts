@@ -324,6 +324,64 @@ function stage1PayloadInput(
   return part;
 }
 
+const PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "pi_memory_stage1",
+    strict: true,
+    schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+  },
+};
+
+/** Return the single text part, normalizing string content to one part. */
+function singleChatTextPart(
+  message: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (typeof message.content === "string") {
+    const part = { type: "text", text: message.content };
+    message.content = [part];
+    return part;
+  }
+  if (!Array.isArray(message.content) || message.content.length !== 1) {
+    return undefined;
+  }
+  const part: unknown = message.content[0];
+  return isRecord(part) && part.type === "text" ? part : undefined;
+}
+
+/** Locate the Chat Completions evidence slot; cache breakpoints may wrap text. */
+function stage1ChatPayloadInput(
+  normalized: Record<string, unknown>,
+): Record<string, unknown> {
+  const messages = normalized.messages;
+  if (
+    !Array.isArray(messages) ||
+    messages.length !== 2 ||
+    normalized.max_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
+    normalized.max_completion_tokens !== undefined ||
+    JSON.stringify(normalized.response_format) !==
+      JSON.stringify(PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT)
+  ) {
+    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+  }
+  const [system, user]: unknown[] = messages;
+  const systemPart =
+    isRecord(system) && ["system", "developer"].includes(String(system.role))
+      ? singleChatTextPart(system)
+      : undefined;
+  const userPart =
+    isRecord(user) && user.role === "user"
+      ? singleChatTextPart(user)
+      : undefined;
+  if (
+    systemPart?.text !== PI_MEMORY_STAGE1_SYSTEM_PROMPT ||
+    userPart?.text !== renderPiMemoryStage1Input("")
+  ) {
+    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+  }
+  return userPart;
+}
+
 function shapeProviderPayload(
   payload: unknown,
   evidence: readonly PiMemoryStage1Evidence[],
@@ -334,14 +392,22 @@ function shapeProviderPayload(
   const native = model.api === "openai-codex-responses";
   if (
     !isRecord(normalized) ||
-    !Array.isArray(normalized.input) ||
-    normalized.input.length !== (native ? 1 : 2) ||
     normalized.tools !== undefined ||
     normalized.model !== model.id ||
     normalized.service_tier !== undefined
   )
     throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-  const part = stage1PayloadInput(normalized, normalized.input, native);
+  let part: Record<string, unknown>;
+  if (model.api === "openai-completions") {
+    part = stage1ChatPayloadInput(normalized);
+  } else {
+    if (
+      !Array.isArray(normalized.input) ||
+      normalized.input.length !== (native ? 1 : 2)
+    )
+      throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+    part = stage1PayloadInput(normalized, normalized.input, native);
+  }
   const budget = stage1InputBudgets(
     model.contextWindow,
     native ? { maxTokens: model.maxTokens } : undefined,
@@ -395,6 +461,7 @@ export async function runPiMemoryStage1Extraction(
   if (
     !model ||
     (model.api !== "openai-responses" &&
+      model.api !== "openai-completions" &&
       model.api !== "openai-codex-responses") ||
     args.model.serviceTier !== undefined ||
     !args.model.apiKey.trim()
@@ -419,17 +486,26 @@ export async function runPiMemoryStage1Extraction(
     piAgentStreamForConfig(args.model)(model, context, {
       apiKey: args.model.apiKey,
       reasoning: PI_MEMORY_STAGE1_REASONING,
-      samplingParams: {
-        max_output_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
-        text: {
-          format: {
-            type: "json_schema",
-            name: "pi_memory_stage1",
-            strict: true,
-            schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
-          },
-        },
-      },
+      samplingParams:
+        model.api === "openai-completions"
+          ? {
+              // Replace the adapter's catalog-ceiling default with the fixed
+              // Stage 1 cap; undefined is dropped from the serialized request.
+              max_completion_tokens: undefined,
+              max_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
+              response_format: PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT,
+            }
+          : {
+              max_output_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
+              text: {
+                format: {
+                  type: "json_schema",
+                  name: "pi_memory_stage1",
+                  strict: true,
+                  schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+                },
+              },
+            },
       onObservedResponseStatus: (status) => {
         responseStatus = status;
       },

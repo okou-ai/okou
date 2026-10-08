@@ -11,8 +11,9 @@ use tracing::{error, info, warn};
 use api_contracts::generated::{
     constants::runners::{
         BUILTIN_FIREWALL_CATALOG_MAX_BYTES, CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
-        PI_MODEL_CONFIG_CURRENT_GENERATION, PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-        PI_MODEL_CONFIG_LEGACY_GENERATION, RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
+        PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION, PI_MODEL_CONFIG_CURRENT_GENERATION,
+        PI_MODEL_CONFIG_DIALECT_TIER_GENERATION, PI_MODEL_CONFIG_LEGACY_GENERATION,
+        RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
     },
     decode_paths, routes,
     types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
@@ -101,7 +102,7 @@ impl<'a> From<&'a InstalledOkouCli> for ClaimInstalledVersions<'a> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunnerClaimCapabilities {
-    pi_model_config_generations: [u32; 3],
+    pi_model_config_generations: [u32; 4],
 }
 
 #[derive(Serialize)]
@@ -1810,6 +1811,7 @@ fn claim_request_body<'a>(
                 PI_MODEL_CONFIG_LEGACY_GENERATION,
                 PI_MODEL_CONFIG_CURRENT_GENERATION,
                 PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
+                PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
             ],
         },
         telemetry: ClaimRequestTelemetry {
@@ -3516,7 +3518,7 @@ mod tests {
         assert!(!body.to_string().contains("path"));
         assert_eq!(
             body["capabilities"]["piModelConfigGenerations"],
-            serde_json::json!([1, 2, 3])
+            serde_json::json!([1, 2, 3, 5])
         );
 
         let runner_identity = test_runner_identity();
@@ -6038,7 +6040,7 @@ mod tests {
                                         "heartbeatGeneration": TEST_HEARTBEAT_GENERATION,
                                     },
                                     "runnerHostname": "prod-1.aws.vm3.ai",
-                                    "capabilities": { "piModelConfigGenerations": [1, 2, 3] },
+                                    "capabilities": { "piModelConfigGenerations": [1, 2, 3, 5] },
                                     "telemetry": {},
                                 })
                     });

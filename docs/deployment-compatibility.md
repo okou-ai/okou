@@ -1,5 +1,45 @@
 # Deployment Compatibility
 
+## Pi OpenRouter Chat Completions route (generation 5, default off)
+
+Pi model configuration gains generation 5 (`dialect: "openai-completions"`,
+`provider: "openrouter"`, exactly one `api-key` binding, no `serviceTier`). It
+moves Pi OpenRouter routes from OpenAI Responses to OpenRouter Chat
+Completions: the Auto `okou-1.0` Preset route, Pi memory maintenance and the
+API-side Stage 1 extraction. Generation 4 was the retired native carrier;
+Runners built before its removal can still advertise 4, so the new route
+skips to 5 and 4 stays unsupported everywhere.
+
+**Readers ship first.** Runners advertise `[1, 2, 3, 5]` on claim and
+validate the generation 5 shape. The API claim gate, the CLI launch reader,
+the Pi runtime and the guest-agent request diagnostics accept it. Writers are
+gated by the `_piOpenRouterChatCompletions` feature switch, off by default;
+with it off every captured route is unchanged.
+
+**Activation.** Enable the switch only after every serving Runner advertises
+generation 5. The claim gate never hands a generation 5 job to an older
+Runner; such a job stays queued until a capable Runner claims it. The switch
+is evaluated
+when a Run's launch context is captured; already captured Runs keep their
+route. Pi memory maintenance and Stage 1 read the same switch from the owner's
+feature-switch context.
+
+**Request policy.** The Preset owns reasoning and routing: requests carry no
+reasoning parameters for Preset models. The client sends Anthropic-style
+cache breakpoints, which OpenRouter translates for other upstreams, replays
+`reasoning_details`, and sets `x-session-id` to the owning chat thread
+(`OKOU_CHAT_THREAD_ID`) so every Run of a thread keeps one upstream sticky
+route. The firewall already authorizes `/chat/completions` for
+`openrouter-codex`.
+
+**Context window.** Pi now uses a 1,000,000-token window for `okou-1.0`, the
+smallest window among the Preset's candidate backends (GPT-6 Luna, Claude
+Haiku 5.5, DeepSeek V4.1 Flash). The Codex projection is unchanged.
+
+**Rollback.** Disabling the switch returns new launches to Responses. Rolling
+the Runner back below this release while the switch is on leaves generation 5
+jobs queued; disable the switch first.
+
 ## Pi turn-end stdout boundaries (2026-10-08)
 
 The CLI's Pi JSON/RPC serializer omits `turn_end.message` and

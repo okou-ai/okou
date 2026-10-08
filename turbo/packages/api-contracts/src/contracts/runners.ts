@@ -81,6 +81,9 @@ export const PI_MODEL_CONFIG_LEGACY_GENERATION = 1;
 // Existing versioned writers stay on generation 2 until their activation slice.
 export const PI_MODEL_CONFIG_CURRENT_GENERATION = 2;
 export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
+// Generation 4 was the retired native carrier; Runners built before its
+// removal may still advertise it, so OpenRouter Chat Completions skips to 5.
+export const PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION = 5;
 export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
 /**
  * Minimum `@okouai/cli` version boundary for `__agent-loop` launch-payload
@@ -1130,10 +1133,37 @@ export const piModelConfigV3Schema = z
   ])
   .readonly();
 
+/**
+ * OpenRouter Chat Completions route. It has one public API-key binding and no
+ * request service tier; an OpenRouter Preset owns reasoning and routing policy.
+ */
+export const piModelConfigV5Schema = z
+  .object({
+    schemaVersion: z.literal(PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION),
+    dialect: z.literal("openai-completions"),
+    transport: z.literal("sse"),
+    provider: z.literal("openrouter"),
+    baseUrl: z.url(),
+    model: z.string().min(1).max(512),
+    catalogModel: z.string().min(1).max(512).optional(),
+    thinkingLevel: z
+      .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+      .optional(),
+    credentialBindings: z
+      .array(piModelCredentialBindingSchema)
+      .length(1)
+      .refine((bindings) => {
+        return bindings[0]?.kind === "api-key";
+      }, "Chat Completions requires exactly one API-key binding"),
+  })
+  .strict()
+  .readonly();
+
 export const piModelConfigSchema = z.union([
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
+  piModelConfigV5Schema,
 ]);
 
 const lowercaseSha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -1849,6 +1879,7 @@ export type PiModelConfig = z.infer<typeof piModelConfigSchema>;
 export type PiModelConfigLegacy = z.infer<typeof piModelConfigLegacySchema>;
 export type PiModelConfigV2 = z.infer<typeof piModelConfigV2Schema>;
 export type PiModelConfigV3 = z.infer<typeof piModelConfigV3Schema>;
+export type PiModelConfigV5 = z.infer<typeof piModelConfigV5Schema>;
 export type PiModelCredentialBinding = z.infer<
   typeof piModelCredentialBindingSchema
 >;

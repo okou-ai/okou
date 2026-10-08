@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { OKOU_MODEL_METADATA } from "@okouai/api-contracts/contracts/okou-model-metadata";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
+import { streamSimple as streamSimpleCompletions } from "@earendil-works/pi-ai/api/openai-completions";
 import {
   stream as streamResponses,
   streamSimple as streamSimpleResponses,
@@ -68,8 +69,8 @@ function okouSourceModel(
     id: model,
     name: metadata.displayName,
     provider,
-    // The source API tag only guards reuse of API-specific compatibility.
-    // Okou executes on OpenRouter Responses without completions compatibility.
+    // The source API tag only guards reuse of API-specific compatibility; the
+    // captured route dialect selects the transport.
     api: "openai-completions",
     baseUrl: "https://openrouter.ai/api/v1",
     // Reasoning is configured by the OpenRouter Preset, not by the client.
@@ -100,6 +101,25 @@ function isResponsesModel(
 ): model is Model<"openai-responses"> {
   return model.api === "openai-responses";
 }
+
+function isCompletionsModel(
+  model: Model<Api>,
+): model is Model<"openai-completions"> {
+  return model.api === "openai-completions";
+}
+
+/**
+ * OpenRouter request policy for Chat Completions. Preset model IDs defeat Pi's
+ * ID-based detection, so the OpenRouter reasoning shape, Anthropic-style cache
+ * breakpoints and session-affinity header are explicit. OpenRouter translates
+ * the breakpoints for other upstreams.
+ */
+const OPENROUTER_COMPLETIONS_COMPAT = {
+  thinkingFormat: "openrouter",
+  cacheControlFormat: "anthropic",
+  sendSessionAffinityHeaders: true,
+  sessionAffinityFormat: "openrouter",
+} as const satisfies NonNullable<Model<"openai-completions">["compat"]>;
 
 function isCodexResponsesModel(
   model: Model<Api>,
@@ -248,8 +268,13 @@ export const piAgentRegisteredStream = (
   context: TranscriptContext,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream => {
+  if (isCompletionsModel(model)) {
+    return streamSimpleCompletions(model, context, options);
+  }
   if (!isResponsesModel(model)) {
-    throw new Error(`Pi runtime requires openai-responses, got ${model.api}`);
+    throw new Error(
+      `Pi runtime requires openai-responses or openai-completions, got ${model.api}`,
+    );
   }
   return piAgentStream(model, context, options);
 };
@@ -275,6 +300,19 @@ export function piAgentStreamForConfig(
         ...configuredOptions,
         fetch,
       };
+      if (config.dialect === "openai-completions") {
+        if (!isCompletionsModel(model)) {
+          throw new Error(
+            `Pi Chat Completions route received unexpected ${model.api} model`,
+          );
+        }
+        return streamSimpleCompletions(model, context, {
+          ...responseOptions,
+          ...(config.sessionAffinityKey === undefined
+            ? {}
+            : { sessionId: config.sessionAffinityKey }),
+        });
+      }
       if (config.dialect === "openai-responses") {
         if (!isResponsesModel(model)) {
           throw new Error(
@@ -314,7 +352,11 @@ export function piAgentStreamForConfig(
 /** Resolve model metadata from Pi's provider catalog. */
 export function resolvePiAgentModel(
   config: PiAgentModelConfig,
-): Model<"openai-responses"> | Model<"openai-codex-responses"> | null {
+):
+  | Model<"openai-responses">
+  | Model<"openai-completions">
+  | Model<"openai-codex-responses">
+  | null {
   if (
     config.serviceTier !== undefined &&
     config.serviceTier !==
@@ -349,6 +391,16 @@ export function resolvePiAgentModel(
     maxTokens: source.maxTokens,
     headers: source.headers,
   };
+  if (dialect === "openai-completions") {
+    const completionsCompat = isCompletionsModel(source)
+      ? source.compat
+      : undefined;
+    return {
+      ...base,
+      api: "openai-completions",
+      compat: { ...completionsCompat, ...OPENROUTER_COMPLETIONS_COMPAT },
+    };
+  }
   // Pi's catalog API tag controls only whether its API-specific compatibility
   // metadata is safe to reuse. It never selects Okou's runtime transport.
   const compat =

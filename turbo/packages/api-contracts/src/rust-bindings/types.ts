@@ -6,6 +6,7 @@ import {
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
+  piModelConfigV5Schema,
   runnersModelProviderFailuresContract,
   runnerCancellationResponseSchema,
   runnerNextSteerableInputResponseSchema,
@@ -536,6 +537,63 @@ export const rustTypeBindings = [
           ];
         },
       ),
+    ],
+  },
+  {
+    schema: piModelConfigV5Schema,
+    rustModulePath: ["runners", "runs"],
+    rustTypeName: "PiModelConfigV5",
+    direction: "response",
+    fieldTypeOverrides: {
+      environment: "String",
+      secretName: "String",
+    },
+    declarations: [
+      {
+        rustTypeName: "PiModelConfigV5",
+        rustDoc: ["API-owned non-secret OpenRouter Chat Completions Pi route."],
+        fields: {
+          schemaVersion: ["Pi model configuration generation."],
+          dialect: ["Chat Completions request dialect."],
+          transport: ["Transport policy selected by the route."],
+          provider: ["Native Pi catalog provider selected by the route."],
+          baseUrl: ["Exact base URL used for model requests."],
+          model: ["Exact provider model identifier sent with requests."],
+          catalogModel: [
+            "Optional native Pi catalog model used for trusted route metadata.",
+          ],
+          thinkingLevel: ["Explicit Pi thinking level."],
+          credentialBindings: [
+            "Exactly one non-secret API-key binding materialized only at an execution edge.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "PiModelConfigV5ThinkingLevel",
+        rustDoc: ["Thinking levels supported by Pi sessions."],
+        variants: {
+          off: ["Disable model thinking."],
+          minimal: ["Minimal thinking."],
+          low: ["Low thinking."],
+          medium: ["Medium thinking."],
+          high: ["High thinking."],
+          xhigh: ["Extra-high thinking."],
+          max: ["Maximum thinking."],
+        },
+      },
+      {
+        rustTypeName: "PiModelConfigV5CredentialBinding",
+        rustDoc: ["One non-secret execution-edge credential binding."],
+        fields: {
+          environment: ["Sandbox environment entry containing the value."],
+          secretName: ["API-owned encrypted secret containing the value."],
+        },
+        variants: {
+          "api-key": ["Chat Completions API-key binding."],
+          "access-token": ["ChatGPT access-token binding."],
+          "account-id": ["ChatGPT account-ID binding."],
+        },
+      },
     ],
   },
   {
