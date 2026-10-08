@@ -92,15 +92,15 @@ import {
   loadOwnedRunAutonomyBudget,
 } from "../services/autonomy-budget.service";
 import { awaitWithSignal, bestEffort, onRejection, settle } from "../utils";
-import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
-import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
+import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-watch.service";
+import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-watch.service";
 import { reprojectWorkflowAutomationsForOwner } from "../services/workflow-automation-account-projection.service";
 import {
   workflowAutomationAccountConnectorSlug,
   type WorkflowAutomationAccountConnectorSlug,
 } from "../services/workflow-automation-account-classification.service";
-import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
-import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-event.service";
+import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-watch.service";
+import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-watch.service";
 import {
   loadVisibleWorkflowById,
   requireWorkflowPermission,

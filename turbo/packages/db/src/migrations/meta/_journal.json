@@ -1930,8 +1930,15 @@
     {
       "idx": 1353,
       "version": "7",
-      "when": 1791478420726,
-      "tag": "1353_retire_oauth_contract_hash",
+      "when": 1791477992014,
+      "tag": "1353_retire_deepseek_memory_route",
+      "breakpoints": true
+    },
+    {
+      "idx": 1354,
+      "version": "7",
+      "when": 1791479786306,
+      "tag": "1354_retire_oauth_contract_hash",
       "breakpoints": true
     }
   ]

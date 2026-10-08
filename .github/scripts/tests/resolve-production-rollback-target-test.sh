@@ -44,6 +44,8 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "77357abdb29ce96b2caf9ee679299602757844dc" ]; then
+      [ "${MOCK_PI_MEMORY_LUNA_ROUTING_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
       [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
@@ -231,6 +233,7 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
 grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft owner key floor"
 grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
@@ -269,6 +272,15 @@ grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version o
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates Pi memory Luna routing" \
+  run_resolver "${tmp_dir}/pi-memory-luna-floor.output" MOCK_PI_MEMORY_LUNA_ROUTING_FLOOR_VALID=0
+grep -Fq '77357abdb29ce96b2caf9ee679299602757844dc' "${tmp_dir}/failure.err" || fail "memory route retirement rejection must identify the Luna routing commit"
+[ ! -s "${tmp_dir}/pi-memory-luna-floor.output" ] || fail "DeepSeek-selecting API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "DeepSeek-selecting API must fail before artifact or host access"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates the chat thread draft child-only writer" \

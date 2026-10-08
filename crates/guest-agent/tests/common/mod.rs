@@ -35,7 +35,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::sync::{
-    Arc, Mutex,
+    Arc, Mutex, MutexGuard,
     atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 use std::task::Poll;
@@ -49,6 +49,20 @@ use tokio::sync::{mpsc, oneshot};
 use process_session::CommandSession;
 
 pub type SystemLogOverrideGuard = system_log::SystemLogOverrideGuard;
+
+/// Search textual JSON values and member names without cloning or serialization.
+/// This is not arbitrary serialized-JSON substring search: callers use literal
+/// unescaped ASCII sentinels, not JSON syntax, escapes or primitive numbers.
+pub(crate) fn contains_json_text(value: &Value, needle: &str) -> bool {
+    match value {
+        Value::String(text) => text.contains(needle),
+        Value::Array(values) => values.iter().any(|value| contains_json_text(value, needle)),
+        Value::Object(members) => members
+            .iter()
+            .any(|(key, value)| key.contains(needle) || contains_json_text(value, needle)),
+        Value::Null | Value::Bool(_) | Value::Number(_) => false,
+    }
+}
 
 static UNIQUE_TEMP_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -359,11 +373,14 @@ impl RecordingServer {
         })
     }
 
-    pub fn events(&self) -> Result<Vec<RecordedHttpEvent>, String> {
+    fn lock_events(&self) -> Result<MutexGuard<'_, Vec<RecordedHttpEvent>>, String> {
         self.events
             .lock()
-            .map(|events| events.clone())
             .map_err(|_| "recording server event mutex poisoned".to_string())
+    }
+
+    pub fn events(&self) -> Result<Vec<RecordedHttpEvent>, String> {
+        self.lock_events().map(|events| events.clone())
     }
 
     pub fn requests(&self) -> Result<Vec<RecordedRequest>, String> {
@@ -383,16 +400,18 @@ impl RecordingServer {
         timeout: Duration,
     ) -> Result<Vec<RecordedHttpEvent>, String> {
         let started_at = Instant::now();
-        let mut last_len = self.events()?.len();
+        let mut last_len = self.lock_events()?.len();
         let mut quiet_started_at = Instant::now();
 
         loop {
-            let events = self.events()?;
-            if events.len() != last_len {
-                last_len = events.len();
-                quiet_started_at = Instant::now();
-            } else if quiet_started_at.elapsed() >= quiet_for {
-                return Ok(events);
+            {
+                let events = self.lock_events()?;
+                if events.len() != last_len {
+                    last_len = events.len();
+                    quiet_started_at = Instant::now();
+                } else if quiet_started_at.elapsed() >= quiet_for {
+                    return Ok(events.clone());
+                }
             }
 
             if started_at.elapsed() >= timeout {

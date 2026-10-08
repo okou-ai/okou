@@ -11,7 +11,7 @@ import { startMaintenanceRun$ } from "./pi-memory-maintenance-execution.service"
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 
 import {
-  claimPiMemoryPhase2Job,
+  claimPiMemoryPhase2Job$,
   failPiMemoryPhase2Job$,
   PI_MEMORY_PHASE2_LEASE_DURATION_MS,
   type ClaimedPiMemoryPhase2Job,
@@ -198,14 +198,13 @@ export function createPiMemoryPhase2Worker() {
       currentTime: Date,
       signal: AbortSignal,
     ): Promise<PiMemoryPhase2WorkerResult> => {
-      const db = set(writeDb$);
       signal.throwIfAborted();
       const recovered = await set(recoverMaintenanceRun$, currentTime, signal);
       signal.throwIfAborted();
       if (recovered) {
         return recovered;
       }
-      const claim = await claimPiMemoryPhase2Job(db, { currentTime });
+      const claim = await set(claimPiMemoryPhase2Job$, { currentTime });
       signal.throwIfAborted();
       if (!claim) {
         return { outcome: "no_work" };

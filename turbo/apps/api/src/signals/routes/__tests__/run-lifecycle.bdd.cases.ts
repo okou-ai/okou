@@ -5184,7 +5184,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, sent.runId, [200]);
       });
 
-      it("keeps built-in DeepSeek admission after a Slack fixture releases its shared key", async () => {
+      it("keeps built-in Auto admission after a Slack fixture releases its shared key", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const selectedModel = "okou-1.0";
@@ -5224,7 +5224,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const sent = await chat.sendAndLaunch(actor, {
           agentId,
-          prompt: "built-in DeepSeek admission after shared fixture release",
+          prompt: "built-in Auto admission after shared fixture release",
           model: null,
         });
         // The pick admitted the built-in route and created the run.
@@ -5232,29 +5232,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           status: "pending",
         });
         await api.requestCancelRun(actor, sent.runId, [200]);
-      });
-
-      it("rejects a memory-only model for foreground input", async () => {
-        const selectedModel = "deepseek-v4.1-flash";
-        const api = createRunsApi(context);
-        const chat = createChatFilesBddApi(context);
-        const { actor, agentId } = await entitledRunActor();
-        // This catalog row remains for independent memory, never foreground execution.
-        await seedBuiltInDefaultModelKey();
-        const rejected = await chat.requestSendEvent(
-          actor,
-          {
-            agentId,
-            prompt: "reject a retained memory-only selection",
-            model: selectedModel,
-            clientEventId: randomUUID(),
-          },
-          [400],
-        );
-        expectApiError(rejected.body);
-        expect(rejected.body.error.code).toBe("BAD_REQUEST");
-        const queue = await api.readRunQueue(actor);
-        expect(queue.body.concurrency.active).toBe(0);
       });
 
       it("does not add Codex image upload guidance to a Claude web chat run", async () => {

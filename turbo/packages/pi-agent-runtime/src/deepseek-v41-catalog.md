@@ -1,5 +1,12 @@
 # DeepSeek V4.1 Flash Pi catalog
 
+This is a historical provenance record. The hand-pinned V4.1 model and its
+limit override are retired after memory moved to Luna and captured execution
+and late usage drained. See the
+[retirement contract](../../../../docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
+The sections below describe the former implementation, not current execution
+authority. Historical catalog labels and accounting identities remain.
+
 `model.ts:sourceModel` supplies the exact OpenRouter V4.1 identity missing from
 pi-ai 0.85.1. The commit-addressed CLI registers this same metadata in
 the real SDK ModelRuntime. This is a model definition, not a substitute V4

@@ -113,7 +113,7 @@ are enforced by the integration ingress tests.
 ### Active transition validators
 
 - `scripts/test-oauth-contract-hash-retirement.ts` protects migration
-  `1353_retire_oauth_contract_hash`: both physical hash columns disappear,
+  `1354_retire_oauth_contract_hash`: both physical hash columns disappear,
   multiple historical registrations for the same method/issuer and their exact
   account references survive, encrypted secrets and account metadata are
   unchanged, builtin authorization context cleanup is idempotent, and unrelated,
@@ -329,6 +329,14 @@ subscriptions, and the independent OpenRouter DeepSeek memory binding.
 Historical catalog metadata and pricing remain unchanged; active metadata
 without a route does not grant execution. See
 [cleanup boundaries](../../../docs/retired-model-route-cleanup.md).
+
+Migration `1347_pi_memory_luna_route` restores the managed OpenRouter Luna
+binding. Migration `1353_retire_deepseek_memory_route` subsequently deletes
+only DeepSeek V4.1 Flash execution routes after the production drain gate.
+Luna APIs work both before and after deletion; rollback requires #38129's
+Luna routing commit. Historical model metadata and all usage/pricing are
+unchanged. See the
+[retirement receipt and deployment contract](../../../docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
 
 Migrations `1330_drop_retired_model_configuration_columns` and
 `1331_delete_organization_model_provider_rows` contract the remaining model

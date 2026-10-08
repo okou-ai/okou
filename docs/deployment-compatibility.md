@@ -1,9 +1,9 @@
 # Deployment Compatibility
 
-## Automatic OAuth contract hash retirement (migration 1353)
+## Automatic OAuth contract hash retirement (migration 1354)
 
 Builtin Automatic OAuth no longer computes, writes, reads or compares a local
-configuration fingerprint. Migration `1353_retire_oauth_contract_hash` physically
+configuration fingerprint. Migration `1354_retire_oauth_contract_hash` physically
 removes `contract_hash` from account bindings and DCR registrations and removes
 `contractHash` only from builtin Automatic authorization contexts. Existing
 accounts, encrypted credentials, DCR client IDs and exact registration references
@@ -90,22 +90,49 @@ Responses/Chat Completions firewall, credentials and Runner accounting apply.
 This change does not activate the Chat Completions feature switch or change
 foreground Auto selection.
 
-Old API with the expanded catalog still selects DeepSeek for Built-in memory.
-New API with a compatible existing Runner dispatches the existing Pi launch
+The Luna API with a compatible existing Runner dispatches the existing Pi launch
 shape with Luna and preserves the claim capability gates. Both old and new
-CLI artifacts already resolve personal/OpenRouter Luna and historical DeepSeek.
+supported CLI artifacts resolve personal/OpenRouter Luna.
 API/CLI deployment order does not rewrite captured Runs or queued launch
 contexts. In-flight Stage 1 API invocations keep their resolved request.
 Historical DeepSeek and GPT-5.6 Luna maintenance models remain recognizable to
-cleanup and settlement, and the DeepSeek route and all prices remain intact.
-Rolling back the API restores its previous selection policy. No stored Run,
-candidate, session, checkpoint or usage row is rewritten.
+cleanup and accounting. No stored Run, candidate, session, checkpoint or usage
+row is rewritten.
 
-DeepSeek is never selected by the new memory admission code. Remove its
-retained catalog route/runtime support only after older API writers and all
-captured DeepSeek maintenance Runs have drained, late proxy/callback usage has
-settled, and supported rollback versions no longer select or execute it.
-Historical model recognition and pricing remain required for retained usage.
+## DeepSeek memory execution retirement (2026-10-08)
+
+Migration `1353_retire_deepseek_memory_route` deletes only the
+`deepseek-v4.1-flash` execution routes. The runtime removes its hand-pinned
+model, limit correction and historical consolidation-effort branch. Historical
+model recognition, catalog labels, replacement chains and all prices remain
+required for retained usage.
+
+The Luna API (`1.715.0`, release commit
+`a17b5e424a8944d832875c8097c0a4330d172bc9`) completed
+[production promotion](https://github.com/okou-ai/okou/actions/runs/37794041015/job/113376087119)
+at 2026-10-08 14:56:47 UTC. A read-only production census on 2026-10-08 found
+no nonterminal DeepSeek Runs, no raw DeepSeek usage awaiting settlement, no
+active Stage 1/Phase 2 leases or retries, and no pending Phase 2 callbacks.
+The latest retained DeepSeek Run ended at 2026-10-02 23:01:18.992 UTC, beyond
+the two-hour runtime plus two-minute finalization bound. Terminal failures
+remain historical outcomes, not unfinished attempts. DeepSeek usage is retained
+in hourly rollups, so retirement must not delete its billing identities.
+
+The production rollback resolver explicitly requires Luna routing commit
+`77357abdb29ce96b2caf9ee679299602757844dc` (#38129). The existing connector
+catalog floor already excludes earlier APIs; the explicit memory floor keeps
+that requirement independent of connector cleanup.
+
+- **Luna API after route deletion:** both memory stages resolve their Luna
+  binding; foreground Auto and personal subscription routes are unchanged.
+- **Retirement API before migration:** the extra DeepSeek row grants no new
+  admission; both memory stages already select Luna.
+- **Existing Runner/CLI and rollback:** supported artifacts resolve Luna and
+  retain captured launch/accounting contracts. No captured DeepSeek execution
+  remains, and APIs that could admit it are rejected as rollback targets.
+
+This is retirement readiness evidence, not a receipt for deploying migration 1353. The normal production release applies the migration before promoting the
+retirement API.
 
 ## Maps oversized-response error (issue #36791)
 
@@ -9033,11 +9060,12 @@ handoff metadata and observational accounting semantics are unchanged.
 
 ## DeepSeek V4.1 Flash Pi coverage
 
-The [V4.1 Pi catalog and deployment contract](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)
-requires the API's matching commit-addressed CLI for new admission and preserves
-old captured contexts. Existing Responses schemas and Runner claims are unchanged.
-Retain the V4.1 reader and API billing writer in serving/recovery and rollback
-targets while admitted V4.1 Pi work remains.
+The [historical V4.1 Pi catalog](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)
+records the former commit-addressed CLI and captured-context contract. Its
+execution window is closed by the
+[memory retirement gate](#deepseek-memory-execution-retirement-2026-10-08).
+Historical accounting identities remain; Responses schemas and Runner claims
+are unchanged.
 
 ## Durable Run stop intent (#34383)
 

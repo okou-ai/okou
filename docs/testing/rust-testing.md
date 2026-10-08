@@ -145,6 +145,26 @@ failed coverage still fails the Crates gate.
 
 ## Test Organization
 
+### Keep large fixtures cheap without weakening their contracts
+
+Remove redundant setup and observation instead of reducing a slow test's workload.
+A sequential authentication matrix may share freshly generated invariant synthetic
+server material within that test, but each client exchange and session proof must
+remain independent. Do not commit private keys or cache production credentials.
+
+Count recorded events under their owner's lock when waiting for quiescence;
+clone complete bodies only when an owned snapshot is needed. Never hold a
+synchronous guard across an await. Consume owned parsed arrays rather than
+cloning them, and reuse canonical fixture bytes for exact-original checks.
+Textual JSON observations must include member names and preserve the caller's
+search domain; they are not arbitrary serialized-JSON substring searches.
+
+Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
+strengths, every assertion and actual retained image buffers. Compare complete
+unchanged target selections with matching profile/instrumentation/thread settings;
+exclude compilation and warm-build differences from speed claims. Local samples
+do not establish stable CI speedup or memory reduction.
+
 ### Shared firewall contract in CI
 
 The Crates coverage job runs the `runner-types` integration tests

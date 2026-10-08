@@ -107,38 +107,38 @@ import {
 } from "../utils";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { parseGithubWebhookAutomationConfig } from "./github-webhook-automation-event.service";
+import { parseGithubWebhookAutomationConfig } from "./github-webhook-automation-config";
 import {
   readGmailAutomationConnectorId$,
   gmailSelectedAccountCondition,
 } from "./gmail-automation-account.service";
 import {
-  ensureGmailWatchForUser$,
   hasEnabledGmailConsumer$,
   resolveGmailLabelForUser$,
-} from "./gmail-automation-event.service";
+  ensureGmailWatchForUser$,
+} from "./gmail-automation-watch.service";
 import { readGoogleCalendarAutomationConnectorId$ } from "./google-calendar-automation-account.service";
 import {
-  ensureGoogleCalendarWatchForUser$,
-  hasEnabledGoogleCalendarConsumer$,
   normalizeGoogleCalendarId,
   normalizeGoogleCalendarIdForConnector$,
   reconcileGoogleCalendarWatchTarget$,
   releaseStagedGoogleCalendarWatchTarget$,
+  ensureGoogleCalendarWatchForUser$,
+  hasEnabledGoogleCalendarConsumer$,
   stageGoogleCalendarWatchTargetForReconfiguration$,
   type StagedGoogleCalendarWatchTarget,
-} from "./google-calendar-automation-event.service";
+} from "./google-calendar-automation-watch.service";
 import {
-  ensureGoogleFormsWatchForUser$,
   readGoogleFormsActivationAccount$,
+  prepareGoogleFormsResponseEventConfigForPersist$,
+  ensureGoogleFormsWatchForUser$,
   reprojectGoogleFormsAutomationOwnership$,
   hasEnabledGoogleFormsConsumer$,
-  prepareGoogleFormsResponseEventConfigForPersist$,
-} from "./google-forms-automation-event.service";
+} from "./google-forms-automation-watch.service";
 import {
   ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
   hasEnabledGoogleMeetConsumer$,
-} from "./google-meet-automation-event.service";
+} from "./google-meet-automation-watch.service";
 import { persistMorningBriefAutomationToggle$ } from "./morning-brief-automation-toggle.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
@@ -147,7 +147,7 @@ import {
   prepareNotionDatabaseItemEventConfigForPersist$,
   prepareNotionPageContentUpdatedEventConfigForPersist$,
   validateNotionEventConfigForConnector$,
-} from "./notion-automation-event.service";
+} from "./notion-automation-preparation.service";
 import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
 import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalog-read.service";
 import {
