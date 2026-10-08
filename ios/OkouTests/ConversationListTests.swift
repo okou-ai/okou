@@ -33,6 +33,10 @@ final class ConversationListTests: XCTestCase {
       XCTAssertTrue(scroll.accessibilityScroll(direction))
       try await eventually { abs(scroll.contentOffset.y - before) > 1 }
       await stableHostingGeometry(host.view)
+      // Stable geometry can precede the scroll delegate's completion on a cold
+      // renderer. Wait for the saved reading position to match the viewport
+      // before starting another action or changing its width/font.
+      try await savedReadingPositionMatchesViewport(conversation, in: host.view)
       XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
       for row in markers(in: host.view) where row.window != nil {
         guard let cell = enclosingCell(row), cell.frame.intersects(scroll.bounds) else { continue }
@@ -60,8 +64,11 @@ final class ConversationListTests: XCTestCase {
       offset(of: position.messageID, in: host.view) ?? .infinity, position.offset, accuracy: 1)
     let resizedHeight = scroll.contentSize.height
     XCTAssertNotEqual(resizedHeight, height)
+    let before = scroll.contentOffset.y
     XCTAssertTrue(scroll.accessibilityScroll(.up))
+    try await eventually { abs(scroll.contentOffset.y - before) > 1 }
     await stableHostingGeometry(host.view)
+    try await savedReadingPositionMatchesViewport(conversation, in: host.view)
     XCTAssertEqual(scroll.contentSize.height, resizedHeight, accuracy: 1)
 
     let resizedPosition = try XCTUnwrap(conversation.readingPosition)
@@ -195,6 +202,18 @@ final class ConversationListTests: XCTestCase {
       guard let y = offset(of: pending.id, in: reopened.view) else { return false }
       return y >= 0 && y < reopened.view.bounds.height
     }
+  }
+}
+
+@MainActor
+private func savedReadingPositionMatchesViewport(_ conversation: ConversationStore, in view: UIView)
+  async throws
+{
+  try await eventually {
+    guard let saved = conversation.readingPosition,
+      let actual = offset(of: saved.messageID, in: view)
+    else { return false }
+    return abs(actual - saved.offset) < 1
   }
 }
 
