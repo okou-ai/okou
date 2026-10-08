@@ -8,7 +8,7 @@ import {
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
 import {
-  observePiMemoryStage1Cost,
+  observePiMemoryStage1Cost$,
   observePiMemoryStage1MissingUsage,
 } from "./pi-memory-stage1-cost.service";
 import {
@@ -72,7 +72,7 @@ import {
   settleIncludingAbort,
 } from "../utils";
 import { commitPiMemoryStage1Candidate } from "./pi-memory-stage1-candidate.service";
-import { recordPiMemoryStage1Usage } from "./pi-memory-stage1-usage.service";
+import { recordPiMemoryStage1Usage$ } from "./pi-memory-stage1-usage.service";
 import {
   gunzipSessionHistoryBufferWithMaxBytes,
   unzstdSessionHistoryBufferWithMaxBytes,
@@ -849,35 +849,37 @@ function classifyProviderFailure(error: unknown): unknown {
     : new RetryableWorkError("provider_failure");
 }
 
-async function recordObservedUsage(
-  db: Db,
-  prepared: RoutedWork,
-  observedResult: PiMemoryStage1ProviderResult,
-  requestId: string,
-  pricingResolution: UsagePricingResolution,
-) {
-  const usageArgs = {
-    memoryStorageId: prepared.work.memoryStorageId,
-    piSessionId: prepared.work.piSessionId,
-    sourceHistoryHash: prepared.work.sourceHistoryHash,
-    model: prepared.credential.selectedModel,
-    billing: prepared.credential.billing,
-    longContextMinTotalInputTokens:
-      prepared.credential.longContextMinTotalInputTokens,
-    responseSourceId: observedResult.responseId ?? `request:${requestId}`,
-    usage: observedResult.usage,
-  };
-  const recordedUsage = await settleIncludingAbort(
-    recordPiMemoryStage1Usage(db, usageArgs),
-  );
-  await observePiMemoryStage1Cost(
-    db,
-    usageArgs,
-    recordedUsage.ok ? recordedUsage.value : null,
-    pricingResolution,
-  );
-  return recordedUsage;
-}
+const recordObservedUsage$ = command(
+  async (
+    { set },
+    prepared: RoutedWork,
+    observedResult: PiMemoryStage1ProviderResult,
+    requestId: string,
+    pricingResolution: UsagePricingResolution,
+  ) => {
+    const usageArgs = {
+      memoryStorageId: prepared.work.memoryStorageId,
+      piSessionId: prepared.work.piSessionId,
+      sourceHistoryHash: prepared.work.sourceHistoryHash,
+      model: prepared.credential.selectedModel,
+      billing: prepared.credential.billing,
+      longContextMinTotalInputTokens:
+        prepared.credential.longContextMinTotalInputTokens,
+      responseSourceId: observedResult.responseId ?? `request:${requestId}`,
+      usage: observedResult.usage,
+    };
+    const recordedUsage = await settleIncludingAbort(
+      set(recordPiMemoryStage1Usage$, usageArgs),
+    );
+    await set(
+      observePiMemoryStage1Cost$,
+      usageArgs,
+      recordedUsage.ok ? recordedUsage.value : null,
+      pricingResolution,
+    );
+    return recordedUsage;
+  },
+);
 
 interface ProcessPreparedWorkArgs {
   readonly prepared: RoutedWork;
@@ -986,8 +988,8 @@ const settlePreparedWork$ = command(
         ? provider.error.result
         : undefined;
     if (observedResult) {
-      const recordedUsage = await recordObservedUsage(
-        db,
+      const recordedUsage = await set(
+        recordObservedUsage$,
         args.prepared,
         observedResult,
         requestId,
