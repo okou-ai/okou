@@ -39,7 +39,9 @@ and preserves billing identity fences and transactional rollback without any
 window reconciliation. Privacy deletion still erases owned raw/hourly usage;
 there is no separate Allowance archive cleanup.
 See [deployment compatibility](../deployment-compatibility.md#organization-usage-allowance-retired)
-for the coordinated DB/API cutover, rollback floor and external Stripe isolation.
+for the owner-accepted, non-rolling DB/API cutover, rollback floor and external
+Stripe isolation. Deployment-window errors may affect shared paths for external
+organizations too; risk acceptance does not authorize production execution.
 
 ## Provider-result delivery
 

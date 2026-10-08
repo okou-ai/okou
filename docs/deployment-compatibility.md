@@ -259,15 +259,33 @@ convert discarded rights into credits, alter wallets, delete ordinary usage or
 reprice/replay processed events. This is an owner-supplied usage boundary, not a
 new production census. Shipped migrations and snapshots remain immutable.
 
-**Deployment ordering.** Stop vm0-atom Allowance issuance first, then quiesce and
-drain old API/cron writers before applying 1345 and promoting the matching API.
-This is not rolling-compatible: old APIs still query the removed allocation
-and entitlement tables and write the retired hourly shape. The new API reads
-an old DB but its credit-only hourly INSERT lacks the old required
-`allowance_units` column, so the new compactor must not run before 1345 either.
-The coordinated migration/API cutover requires separately authorized rollout
-interruption or a separately reviewed preparatory release; deletion approval
-does not claim that production rollout approval or execution has occurred.
+**Owner-accepted single-release cutover.** On 2026-10-08, Linghan separately
+accepted production errors from the outgoing API during the deployment window
+and selected this single-PR contraction instead of a preparatory release.
+This acceptance is not limited to organizations that received Allowance:
+outgoing billing-status and finalized-usage queries reference the dropped
+tables even for external organizations with no Allowance rows. Shared usage,
+settlement/compaction and other old readers/writers of the retired shape can
+also fail. Errors can include PostgreSQL `42P01` for a missing table.
+
+Stop vm0-atom Allowance issuance before the cutover; its merged retirement PR
+alone does not prove serving deployment or stopped issuance. The existing
+production release runs migrations before updating/promoting the API and does
+not establish an API/cron serving drain. Applying 1345 while the outgoing API
+still serves is therefore an explicitly accepted interruption, not a safe
+rolling deployment. The exposure starts when the contracted schema becomes
+visible and ends only when the matching API is fully serving and incompatible
+API/cron work has drained. A failed or delayed promotion extends it until
+forward recovery completes; there is no guaranteed duration based on nominal
+pipeline timing.
+
+Reversing that order is not supported: the new API's credit-only hourly INSERT
+omits the old required `allowance_units` column, so the new compactor must not
+run before 1345. The rollback floor below only protects later rollback choices;
+it does not prevent the outgoing API's migration-to-promotion errors. This
+recorded risk acceptance permits retaining the single-PR design and merge
+review. It does not authorize immediate production deployment, migration,
+issuance operations or Stripe writes, and is not evidence of their execution.
 
 **Rollback floor.** The production rollback resolver requires the first-parent
 `main` commit that adds 1345. No earlier API is a supported rollback target

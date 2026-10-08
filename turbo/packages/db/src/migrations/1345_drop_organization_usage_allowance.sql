@@ -1,5 +1,7 @@
 -- Owner-approved removal of team-only Allowance history. Do not reprice usage
--- or convert discarded rights into credits. Drain old API/cron writers first.
+-- or convert discarded rights into credits. The owner accepted outgoing API
+-- deployment-window errors for this non-rolling contraction; see deployment
+-- compatibility. Risk acceptance alone does not authorize production execution.
 ALTER TABLE "usage_event_hourly_rollup" DROP CONSTRAINT "fk_usage_event_hourly_rollup_short_window";--> statement-breakpoint
 ALTER TABLE "usage_event_hourly_rollup" DROP CONSTRAINT "fk_usage_event_hourly_rollup_weekly_window";--> statement-breakpoint
 ALTER TABLE "usage_event_hourly_rollup" DROP CONSTRAINT "chk_usage_event_hourly_rollup_allowance_units";--> statement-breakpoint

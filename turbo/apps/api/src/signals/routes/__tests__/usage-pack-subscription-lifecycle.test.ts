@@ -753,11 +753,14 @@ describe("usage pack subscription Stripe lifecycle", () => {
           purchasedCredits: 16_670,
           bonusCredits: 866,
           totalCredits: 17_536,
-          creditGrants: credits.body.creditGrants,
+          // Equal creation timestamps do not define an order between grants.
+          // Require the same complete grants and cardinality in both balances.
+          creditGrants: expect.arrayContaining(credits.body.creditGrants),
         },
       ],
     });
     expect(credits.body.creditGrants).toHaveLength(2);
+    expect(credits.body.memberCredits?.[0]?.creditGrants).toHaveLength(2);
   });
 
   it("grants fully discounted renewal credits without a refundable amount", async () => {
