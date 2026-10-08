@@ -538,7 +538,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private func applyObservedHeights() {
     guard !isScrolling, !appliesRows else { return }
-    let position = source.anchor.capture()
+    // A width/font snapshot can still be restoring its anchor when a mounted
+    // Markdown view acquires its final height. Keep that intended position.
+    let position = source.anchor.preservedPosition ?? source.anchor.capture()
     let atBottom =
       source.followsBottom
       || collection.contentSize.height + collection.adjustedContentInset.bottom
@@ -562,6 +564,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       guard let self, !stopped else { return }
       appliesRows = false
       collection.layoutIfNeeded()
+      if isScrolling {
+        publishMetrics()
+        return
+      }
       if atBottom {
         source.anchor.followBottom()
       } else if let position {

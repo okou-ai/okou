@@ -57,7 +57,9 @@ final class ConversationListTests: XCTestCase {
       scroll.bounds.width != originalWidth && scroll.contentSize.height != height
     }
     await stableHostingGeometry(host.view)
-    try await eventually {
+    try await eventually(
+      message: readingDescription(position.messageID, conversation: conversation, view: host.view)
+    ) {
       abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
     }
     XCTAssertEqual(
