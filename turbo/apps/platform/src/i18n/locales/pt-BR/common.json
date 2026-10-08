@@ -2161,7 +2161,6 @@
         "default": "Pensando..."
       },
       "viewActivityLogs": "Ver logs de atividade",
-      "viewLangfuseTrace": "Ver trace do Langfuse",
       "viewLogs": "Ver logs da execução",
       "waitingIn": "Aguardando na",
       "workedFor": "Trabalhou por {{duration}}",

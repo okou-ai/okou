@@ -6358,56 +6358,44 @@ restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 That API rollback adds no stored-history rewrite, migration, or alternate reader.
 
-### Pi Langfuse trace relay
+### Pi debug tracing retired (deployment blocked)
 
-New run contexts no longer store or inject platform Langfuse credentials.
-The commit-pinned CLI exports
-OTLP to `POST /api/webhooks/agent/:runId/langfuse/traces` using its existing
-`OKOU_TOKEN`. The API checks that token's run/user/org and the run's captured
-`langfuseTraceEnabled`, then forwards only the OTLP body and encoding headers
-with server-owned Langfuse credentials. Connector account selection cannot
-change this destination or authentication. API execution, ownership transfer,
-Sandbox Wait, and Sandbox Execution are sibling observations under the
-deterministic Run End-to-End parent. LLM and tool observations stay inside their
-execution phase. Both V3 and V4 sandbox handoffs carry that run parent and a
-required `sandboxWaitStartedAt` timestamp when tracing is admitted. This
-staff-only trace contract has no legacy shape or historical rewrite.
+The owner requested abandonment of `_langfuseTrace` and complete removal of
+its implementation. The originating changes were #33756 (admission, terminal
+observation and plugin), #34158 (authenticated relay), #34148/#34215 (trace
+links) and #34326 (bootstrap retirement). No debug trace is exported by the new
+API or CLI. Ordinary Pi session validation, native tools, memory, model usage,
+terminal commits and Axiom/Sentry telemetry remain authoritative and unchanged.
+The independent Langfuse connector and immutable release/migration history are
+not part of platform debug tracing.
 
-The API phase ends when handoff preparation starts. Transfer preparation ends
-when manifest publication starts; the sandbox emits Sandbox Wait from that same
-timestamp through native execution start. Publication, handoff restoration, and
-runtime startup therefore belong to waiting. Publication failures still mark
-the transfer as failed. Cross-host clock skew never produces a fabricated or
-negative wait; invalid intervals are omitted.
+New Platform builds neither render the action nor create its per-run detail
+registry. Old Platform builds tolerate the missing optional run-detail URL.
+Previously captured CLIs may still attempt the removed relay, receiving 404;
+the patched exporter isolates those failures from agent execution. New CLIs
+ignore old tracing environment entries and do not load the plugin. Previously
+stored switch overrides pass through ordinary registry-key filtering. This
+retirement does not delete remote project traces, provider credentials, queued
+execution contexts or user-owned connector accounts.
 
-The relay sets `x-langfuse-ingestion-version: 4` on its upstream request so
-Langfuse stores native observations without synthesizing an extra trace span.
-The API owns this version declaration; incoming headers cannot downgrade it.
-This staff-only feature requires v4 ingestion and has no legacy ingestion
-fallback or historical trace backfill.
+**Database and release gate.** Migration `1345_outstanding_the_hood` drops
+`agent_runs.langfuse_trace_enabled` without rewriting historical migrations.
+Migrations precede API promotion. Outgoing APIs explicitly name that column
+in launch inserts, run detail reads and completion selections; generic Drizzle
+selections/returning can name it too. Disabling the switch does not make those
+APIs column-independent. Applying this migration during an ordinary rolling
+release would break run creation, reads and completion until they drain.
 
-The API and its pinned CLI must ship together through the existing deployment
-pipeline. Existing Guests already pass the first-party API URL, run token, and
-trusted platform environment to that CLI; no Runner promotion is needed.
-
-The relay first reached production on 2026-09-15 at 05:11:55 UTC in API 1.603.0
-and CLI 9.331.0, at commit `4a60b74daa3cba9e11fdb6a072fa989dd1a242d3`
-([deployment](https://github.com/vm0-ai/vm0/actions/runs/34931381962/job/104260645155)).
-[#34256](https://github.com/vm0-ai/vm0/issues/34256) explicitly retires optional
-legacy tracing support: claim-time credential extraction and the Guest bootstrap
-file are removed. The 07:19 and 07:21 UTC observations found empty admission and
-runner queues and only post-rollout nonterminal Pi runs. Those observations do
-not certify complete draining of captured legacy contexts or close the rollback
-window; the retirement decision accepts loss of optional tracing for such contexts.
-
-An older context retains its captured CLI URL. That CLI treats an absent bootstrap
-path as tracing disabled, so agent execution continues without legacy exports.
-Guests still filter platform Langfuse project keys from tracing-enabled Pi child
-environments. The current CLI only configures the relay and has no direct-export
-fallback. This change does not repair exports from an already-running legacy CLI.
-An API rollback that removes the relay route drops optional trace exports from
-relay-enabled runs; agent execution continues independently. This retirement does
-not change production rollback policy.
+Keep the cleanup PR Draft and do not release it under the normal rolling
+pipeline until the owner chooses and verifies a deployment boundary: either a
+separately released column-independent API before contraction, or an explicitly
+authorized cutover that stops all outgoing API request, cron and completion
+writers before migration and keeps them stopped through promotion. No downtime,
+release, drain or production mutation is authorized by the cleanup request.
+The repository rollback resolver rejects commits before this contraction's
+first-parent main commit; a rollback below it requires a reviewed forward
+migration restoring the column before an older API serves. This floor protects
+rollback only and does not solve the outgoing-writer promotion gate.
 
 ### Runner
 

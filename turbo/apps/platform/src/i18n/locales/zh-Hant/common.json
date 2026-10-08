@@ -2108,7 +2108,6 @@
         "default": "思考中…"
       },
       "viewActivityLogs": "檢視活動日誌",
-      "viewLangfuseTrace": "檢視Langfuse追蹤",
       "viewLogs": "檢視執行日誌",
       "waitingIn": "正在等待",
       "workedFor": "共工作 {{duration}}",

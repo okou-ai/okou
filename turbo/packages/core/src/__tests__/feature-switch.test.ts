@@ -18,7 +18,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.FeishuIntegration).toBe("_feishuIntegration");
     expect(FeatureSwitchKey.OkouDebug).toBe("_debug");
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
-    expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
@@ -232,26 +231,6 @@ describe("isFeatureEnabled", () => {
 
   it("should return false when no orgId provided but switch has enabledOrgIdHashes", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Lab, {})).toBe(false);
-  });
-
-  it("should default Langfuse tracing off for every org and accept user overrides", () => {
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
-        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
-        orgId: "org_nonexistent",
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
-        userId: "any-user",
-        orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
-      }),
-    ).toBe(true);
   });
 
   it("should apply user overrides to the staff-default Official Workflows switch", () => {

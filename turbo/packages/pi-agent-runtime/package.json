@@ -29,7 +29,6 @@
   "dependencies": {
     "@earendil-works/pi-ai": "0.87.1",
     "@earendil-works/pi-coding-agent": "0.87.1",
-    "@langfuse/pi-observability-plugin": "0.1.2",
     "@okouai/api-contracts": "workspace:*",
     "gpt-tokenizer": "^3.4.0",
     "yaml": "^2.9.0"
