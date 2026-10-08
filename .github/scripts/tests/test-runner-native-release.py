@@ -88,7 +88,8 @@ class ReleaseConsumerGraph(unittest.TestCase):
             contract.parent.mkdir(parents=True)
             subprocess.run(['git', 'init', '-q', str(repo)], check=True)
             heads = []
-            for content in (original, original.replace(assignment, 'RUNNER_BINARY_TOOLCHAIN_IMAGE=' + future)):
+            future_assignment = assignment.rsplit(':', 1)[0] + ':regression-fixture'
+            for content in (original, original.replace(assignment, future_assignment)):
                 contract.write_text(content)
                 subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
                 subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Fixture',
@@ -98,14 +99,17 @@ class ReleaseConsumerGraph(unittest.TestCase):
             # HEAD/checkout remains the future recipe while both original and
             # future selected commits execute through the actual workflow step.
             for head, expected in zip(heads, (image, future)):
-                output.write_text('')
-                result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', step['run']], cwd=repo,
-                                        env={'PATH': os.defpath, 'SOURCE_SHA': head, 'GITHUB_OUTPUT': str(output),
-                                             'RUNNER_TEMP': directory, 'GITHUB_REPOSITORY_OWNER': 'okou-ai'},
-                                        capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(output.read_text(), 'image=' + expected + '\n')
-                self.assertEqual(list(pathlib.Path(directory).glob('runner-toolchain.*')), [])
+                for owner in ('okou-ai', 'fixture-owner'):
+                    with self.subTest(head=head, owner=owner):
+                        output.write_text('')
+                        result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', step['run']], cwd=repo,
+                                                env={'PATH': os.defpath, 'SOURCE_SHA': head, 'GITHUB_OUTPUT': str(output),
+                                                     'RUNNER_TEMP': directory, 'GITHUB_REPOSITORY_OWNER': owner},
+                                                capture_output=True, text=True)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        owned_image = expected.replace('ghcr.io/okou-ai/', 'ghcr.io/' + owner + '/')
+                        self.assertEqual(output.read_text(), 'image=' + owned_image + '\n')
+                        self.assertEqual(list(pathlib.Path(directory).glob('runner-toolchain.*')), [])
             output.write_text('')
             result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', step['run']], cwd=repo,
                                     env={'PATH': os.defpath, 'SOURCE_SHA': '0' * 40, 'GITHUB_OUTPUT': str(output),

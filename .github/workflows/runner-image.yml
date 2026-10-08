@@ -109,11 +109,14 @@ jobs:
           SOURCE_SHA: ${{ steps.identity.outputs.source-head-sha }}
         run: |
           set -euo pipefail
-          contract=$(mktemp "${RUNNER_TEMP:?missing Runner input directory}/runner-toolchain.XXXXXXXX")
-          trap 'rm -f "$contract"' EXIT
-          git show "${SOURCE_SHA}:.github/scripts/runner-binary-build/contract.env" > "$contract"
-          . "$contract"
-          printf 'image=%s\n' "${RUNNER_BINARY_TOOLCHAIN_IMAGE:?missing canonical toolchain}" >> "$GITHUB_OUTPUT"
+          contract_dir=$(mktemp -d "${RUNNER_TEMP:?missing Runner input directory}/runner-toolchain.XXXXXXXX")
+          trap 'rm -f "$contract_dir/contract.env"; rmdir "$contract_dir"' EXIT
+          git show "${SOURCE_SHA}:.github/scripts/runner-binary-build/contract.env" > "$contract_dir/contract.env"
+          (
+            cd "$contract_dir"
+            . ./contract.env
+            printf 'image=%s\n' "${RUNNER_BINARY_TOOLCHAIN_IMAGE:?missing canonical toolchain}" >> "$GITHUB_OUTPUT"
+          )
 
       - name: Determine base ref
         id: base

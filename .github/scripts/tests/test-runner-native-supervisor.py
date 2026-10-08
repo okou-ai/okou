@@ -196,6 +196,33 @@ class OptimizedSupervisor(unittest.TestCase):
         build['package_id'] = 'path+file:///producer/other/crates/kerberos-worker#0.1.0'
         with self.assertRaises(ValueError): validate(library, build, source)
 
+    def test_finish_refuses_stale_image_before_any_compiler_input_is_read(self):
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory(dir=ROOT / 'crates/target') as directory:
+            repo = Path(directory) / 'repo'; repo.mkdir()
+            contract = repo / '.github/scripts/runner-binary-build/contract.env'
+            contract.parent.mkdir(parents=True)
+            contract.write_bytes((ROOT / '.github/scripts/runner-binary-build/contract.env').read_bytes())
+            (repo / '.gitignore').write_text('/crates/target/\n')
+            subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+            subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+            subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Fixture',
+                            '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'recipe'], check=True)
+            head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+            implementation = module(); implementation.ROOT = repo
+            context = repo / 'crates/target/f5-release-input/context.json'
+            context.parent.mkdir(parents=True)
+            # Deliberately incomplete inert input, not a compiler context or
+            # receipt: no producer, CLI, compiler events, helper or output exists.
+            context.write_text(json.dumps({'source': {'headSha': head},
+                                          'target': 'x86_64-unknown-linux-musl',
+                                          'toolchainImage': 'unselected-image'}))
+            out = repo / 'crates/target/absent-compiler-output'
+            with self.assertRaisesRegex(ValueError, 'optimized compiler lost original same-source producer/CLI context'):
+                implementation.finish(out, 'release', 'x86_64-unknown-linux-musl', head)
+            self.assertFalse(out.exists())
+
     def test_profile_target_matrix_requires_original_package_and_failure_gate(self):
         jobs = json.loads(Path(os.environ['RUNNER_NATIVE_WORKFLOW_JSON']).read_text())['jobs']
         consumer = jobs['native-supervisor-runtime']
