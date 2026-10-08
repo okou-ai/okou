@@ -1286,16 +1286,9 @@ const storedExecutionContextObjectSchema = z.object({
   piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
+/** Reads persisted execution contexts while stripping unknown writer metadata. */
 export const storedExecutionContextSchema =
   storedExecutionContextObjectSchema.superRefine(requireCompletePiFields);
-
-/**
- * Tolerant reader for execution contexts already persisted in a database or
- * encrypted queue payload. Unknown fields from older writers are stripped,
- * including retired connector permission baselines.
- */
-export const compatibleStoredExecutionContextSchema =
-  storedExecutionContextSchema;
 
 /**
  * Claim-time reader that inspects Pi generation support before decoding the
@@ -1802,9 +1795,6 @@ export type PiInstalledCliRequirement = z.infer<
 export type PiLangfuseParent = z.infer<typeof piLangfuseParentSchema>;
 export type PiResourceSnapshot = z.infer<typeof piResourceSnapshotSchema>;
 export type PiLaunchPayload = z.infer<typeof piLaunchPayloadSchema>;
-export type CompatibleStoredExecutionContext = z.infer<
-  typeof compatibleStoredExecutionContextSchema
->;
 export type ClaimCompatibleStoredExecutionContext = z.infer<
   typeof claimCompatibleStoredExecutionContextSchema
 >;

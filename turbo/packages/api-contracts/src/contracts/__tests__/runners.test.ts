@@ -6,7 +6,6 @@ import { z } from "zod";
 import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
-  compatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
   connectorRuntimeSyncResultSchema,
   elapsedSinceApiStartMs,
@@ -191,7 +190,7 @@ describe("runner claim response contract", () => {
       encryptedSecrets: null,
       cliAgentType: "claude-code",
     });
-    const roundTripped = compatibleStoredExecutionContextSchema.parse(
+    const roundTripped = storedExecutionContextSchema.parse(
       JSON.parse(JSON.stringify(storedContext)),
     );
 
@@ -202,7 +201,7 @@ describe("runner claim response contract", () => {
       USER_VALUE: "user-value",
     });
 
-    const emptyTrustedContext = compatibleStoredExecutionContextSchema.parse({
+    const emptyTrustedContext = storedExecutionContextSchema.parse({
       ...storedContext,
       platformEnvironment: {},
     });
@@ -540,10 +539,6 @@ describe("Pi sandbox execution contract", () => {
       ...storedContext,
       ...piStoredContext,
     });
-    const compatible = compatibleStoredExecutionContextSchema.parse({
-      ...storedContext,
-      ...piStoredContext,
-    });
     const claimed = executionContextSchema.parse({
       ...executionContextSchema.parse(loadRunnerClaimResponseFixture()),
       cliAgentType: "pi",
@@ -551,7 +546,6 @@ describe("Pi sandbox execution contract", () => {
     });
 
     expect(stored.piSessionId).toBe(piStoredContext.piSessionId);
-    expect(compatible.piSessionId).toBe(piStoredContext.piSessionId);
     expect(claimed.piSessionId).toBe(piStoredContext.piSessionId);
     expect(jobSchema.parse(pollJob)).not.toHaveProperty("piExecutionMode");
   });
@@ -590,9 +584,6 @@ describe("Pi sandbox execution contract", () => {
     expect(storedExecutionContextSchema.safeParse(storedContext).success).toBe(
       false,
     );
-    expect(
-      compatibleStoredExecutionContextSchema.safeParse(storedContext).success,
-    ).toBe(false);
   });
 
   it.each(["piLaunchConfig", "piModelConfig"] as const)(
@@ -606,10 +597,6 @@ describe("Pi sandbox execution contract", () => {
 
       expect(
         storedExecutionContextSchema.safeParse(invalidStoredContext).success,
-      ).toBe(false);
-      expect(
-        compatibleStoredExecutionContextSchema.safeParse(invalidStoredContext)
-          .success,
       ).toBe(false);
     },
   );
@@ -985,13 +972,13 @@ describe("runner storage manifest contract", () => {
 
   it("requires canonical mounts while ignoring previous stored fields", () => {
     expect(
-      compatibleStoredExecutionContextSchema.parse({
+      storedExecutionContextSchema.parse({
         ...storedContext,
         storageManifest: null,
       }),
     ).toEqual(storedContext);
     expect(
-      compatibleStoredExecutionContextSchema.parse({
+      storedExecutionContextSchema.parse({
         ...storedContext,
         storageManifest: {
           storages: [{ futureLegacyField: true }],
@@ -1000,7 +987,7 @@ describe("runner storage manifest contract", () => {
       }),
     ).toEqual(storedContext);
     expect(
-      compatibleStoredExecutionContextSchema.safeParse({
+      storedExecutionContextSchema.safeParse({
         ...storedContext,
         storageMounts: undefined,
       }).success,
