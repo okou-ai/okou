@@ -841,6 +841,66 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(providerCalls).toBe(5);
   });
 
+  it.each(["content-length", "streamed body"] as const)(
+    "explains an oversized Maps response detected by %s without charging credits [MAPS-A]",
+    async (sizeDetection) => {
+      const bdd = createBddApi(context);
+      const billing = createMapsBillingApi(context);
+      const runs = createRunsApi(context);
+      const admin = bdd.user();
+      bdd.acceptAgentStorageWrites();
+      await runs.grantProEntitlement(admin);
+      billing.configureMapsProvider();
+
+      const providerBody = await vertexMapsResponse({
+        answer: "private-provider-answer",
+      }).text();
+      const bytes = new TextEncoder().encode(
+        providerBody.padEnd(512 * 1024 + 1),
+      );
+      server.use(
+        http.post(VERTEX_MAPS_URL, () => {
+          if (sizeDetection === "content-length") {
+            return new HttpResponse(bytes, {
+              headers: {
+                "Content-Type": "application/json",
+                "Content-Length": String(bytes.byteLength),
+              },
+            });
+          }
+          return new HttpResponse(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(bytes.subarray(0, 512 * 1024));
+                controller.enqueue(bytes.subarray(512 * 1024));
+                controller.close();
+              },
+            }),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        }),
+      );
+
+      const before = await billing.readBillingStatus(admin);
+      const search = await billing.requestMapsSearch(
+        admin,
+        { query: "coffee near Union Square" },
+        [502],
+      );
+      expect(search.headers.get("cache-control")).toBe("private, no-store");
+      expect(search.body).toStrictEqual({
+        error: {
+          code: "MAPS_RESPONSE_TOO_LARGE",
+          message:
+            "Google Maps grounding response exceeded Okou's response size limit. Narrow the search area, request fewer places, or split the query before trying again.",
+        },
+      });
+      expect((await billing.readBillingStatus(admin)).credits).toBe(
+        before.credits,
+      );
+    },
+  );
+
   it("rebases part-local UTF-8 citations into the display-ready answer [MAPS-A]", async () => {
     const bdd = createBddApi(context);
     const billing = createMapsBillingApi(context);

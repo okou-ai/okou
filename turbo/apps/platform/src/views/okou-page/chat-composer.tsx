@@ -2382,11 +2382,6 @@ function TemplatePreviewPage({
               }}
               className="absolute inset-y-0 right-0 w-1/2 cursor-e-resize bg-transparent focus:outline-none disabled:cursor-default"
             />
-            {template.state === "loading" || html.state === "loading" ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-muted">
-                <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
-              </div>
-            ) : null}
           </div>
           <div
             className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 lg:grid-cols-8"

@@ -585,7 +585,7 @@ export interface StripeInvoiceCreatePreviewParams {
   readonly subscription?: string;
   readonly schedule?: string;
   readonly preview_mode: "next" | "recurring";
-  readonly discounts?: "" | { readonly coupon: string }[];
+  readonly discounts?: "" | StripeSchedulePhaseDiscountParam[];
   readonly invoice_items?: {
     readonly price: string;
     readonly quantity: number;

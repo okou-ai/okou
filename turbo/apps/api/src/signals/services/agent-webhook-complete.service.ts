@@ -665,7 +665,6 @@ const dispatchTerminalCompleteSideEffects$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     if (input.deliveryNotification?.chatEventsAppended) {
       await publishChatThreadMessageCreatedSafely({
         userId: input.deliveryNotification.userId,
@@ -680,7 +679,6 @@ const dispatchTerminalCompleteSideEffects$ = command(
       set(
         dispatchRunCallbacks$,
         {
-          db,
           runId: input.runId,
           status: callbackStatus,
           error: input.error,
