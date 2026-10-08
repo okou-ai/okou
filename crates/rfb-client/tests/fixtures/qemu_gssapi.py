@@ -523,6 +523,8 @@ def run_tests(argv, *, env=None, timeout):
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
+                # No signalable group was found; still reap the retained
+                # leader and check adopted children/group termination below.
                 pass
             try:
                 process.wait(timeout=5)
