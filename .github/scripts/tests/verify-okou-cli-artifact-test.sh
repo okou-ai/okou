@@ -32,7 +32,13 @@ create_artifact() {
       name: "@okouai/cli",
       version: $version,
       private: true,
-      bin: {okou: "okou.js"}
+      bin: {okou: "okou.js"},
+      okouBuildIdentity: {
+        schemaVersion: 1,
+        piAgentRuntime: "1.36.0",
+        piSdk: "0.86.1+okou.0123456789ab",
+        sessionConstruction: {digest: ("d" * 64)}
+      }
     }' >"${package_root}/package.json"
   printf 'okou\n' >"${package_root}/okou.js"
   if [[ "$include_worker" == "true" ]]; then
@@ -132,5 +138,23 @@ reject_artifact missing-session-construction \
 reject_artifact invalid-session-construction \
   "Verifier accepted a session-construction digest that is not 64 lowercase hex" \
   true true "$cli_version" "$versions_json" '{"digest":"nope"}' >/dev/null
+
+# Well-shaped external metadata must still agree with the unchanged package.
+for mutation in \
+  '.versions.piAgentRuntime = "1.36.1"' \
+  '.versions.piSdk = "0.86.1+okou.aaaaaaaaaaaa"' \
+  '.sessionConstruction.digest = ("e" * 64)'; do
+  cp "${complete_artifact}/manifest.json" "${tmp_dir}/valid-manifest.json"
+  jq "$mutation" "${tmp_dir}/valid-manifest.json" > "${complete_artifact}/manifest.json"
+  manifest_sha256="$(sha256sum "${complete_artifact}/manifest.json" | cut -d ' ' -f 1)"
+  jq -n --arg commit "$commit_sha" --arg sha "$manifest_sha256" \
+    '{version: 1, commitSha: $commit, manifestSha256: $sha}' > "${complete_artifact}/ready.json"
+  if bash "$verify_script" "$complete_artifact" "$commit_sha" > "${tmp_dir}/mismatch.txt" 2>&1; then
+    echo "Verifier accepted external-only identity mutation: $mutation" >&2
+    exit 1
+  fi
+  grep -Fq 'CLI artifact identity does not match packed identity' "${tmp_dir}/mismatch.txt"
+  cp "${tmp_dir}/valid-manifest.json" "${complete_artifact}/manifest.json"
+done
 
 echo "verify-okou-cli-artifact tests passed"

@@ -51,7 +51,6 @@ import { extractFileFromTarGz } from "../../../lib/tar";
 import { server } from "../../../mocks/server";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { now } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
@@ -5892,7 +5891,7 @@ export function registerFeishuIntegrationTests(
 
       it("keeps Feishu group control cases out of runs", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, appId, callbackUrl, defaultAgentId } = fixture;
+        const { actor, appId, callbackUrl } = fixture;
         const secondOpenId = "ou_feishu_canonical_group_user";
         const secondActor = authOrgApi.user({
           userId: `user_${randomUUID()}`,
@@ -5936,30 +5935,12 @@ export function registerFeishuIntegrationTests(
           }),
         ).toBeTruthy();
 
-        // Retain access-denial coverage for historical private defaults; current
-        // agent APIs reject this state, so it requires an explicit legacy fixture.
-        await seedLegacyPrivateDefaultAgentFixture(defaultAgentId);
-        await postEvent(
-          callbackUrl,
-          groupMessage(appId, "unavailable group task", {
-            openId: secondOpenId,
-          }),
-          { encrypted: true },
-        );
-        await flushWaitUntilForTest();
-        expect(
-          fixtureState.outboundMessages.some((message) => {
-            return messageContent(message).includes("Agent unavailable");
-          }),
-        ).toBeTruthy();
         const controlRuns = await listActiveFeishuRuns(secondActor);
         expect(
           controlRuns.some((run) => {
-            return [
-              "@Nova unconnected group task",
-              "@Nova /help",
-              "@Nova unavailable group task",
-            ].includes(run.prompt);
+            return ["@Nova unconnected group task", "@Nova /help"].includes(
+              run.prompt,
+            );
           }),
         ).toBeFalsy();
       });

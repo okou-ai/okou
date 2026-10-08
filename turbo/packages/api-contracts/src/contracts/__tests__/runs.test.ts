@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   claudeToolEntrySchema,
   getRunResponseSchema,
+  runResultSchema,
   networkLogEntrySchema,
   unifiedRunRequestSchema,
 } from "../runs";
@@ -228,6 +229,35 @@ describe("network log model catalog cache telemetry", () => {
           ...invalidEntry,
         }).success,
       ).toBe(false);
+    }
+  });
+});
+
+describe("Run result generations", () => {
+  const identity = {
+    agentSessionId: "agent-session",
+    conversationId: "conversation",
+  };
+  it("accepts current outputs and historical checkpoint identities", () => {
+    for (const result of [
+      {
+        ...identity,
+        checkpointId: "historical-id",
+        artifact: { memory: "old-version" },
+      },
+      {
+        ...identity,
+        storageOutputs: [
+          {
+            name: "memory",
+            version: "version",
+            mountPath: "/memory",
+            missingRootPolicy: "preserveParentVersion",
+          },
+        ],
+      },
+    ]) {
+      expect(runResultSchema.parse(result)).toStrictEqual(result);
     }
   });
 });

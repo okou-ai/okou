@@ -1,5 +1,5 @@
 {
-  "id": "7f0045ed-0e1a-4fe3-8abd-42ae2b682843",
+  "id": "83edfbc7-0c00-42d4-8c90-f6429bba86e5",
   "prevId": "d943ace1-a60f-4a0b-bf76-0ac3cb22a615",
   "version": "7",
   "dialect": "postgresql",
@@ -9920,6 +9920,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "contract_hash": {
+          "name": "contract_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
         "endpoint": {
           "name": "endpoint",
           "type": "text",
@@ -10040,13 +10046,15 @@
             "dcr_registration_id",
             "org_id",
             "connector_slug",
-            "auth_method"
+            "auth_method",
+            "contract_hash"
           ],
           "columnsTo": [
             "id",
             "org_id",
             "connector_slug",
-            "auth_method"
+            "auth_method",
+            "contract_hash"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -10058,7 +10066,7 @@
       "checkConstraints": {
         "chk_connector_oauth_binding_identity": {
           "name": "chk_connector_oauth_binding_identity",
-          "value": "\"connector_account_oauth_bindings\".\"storage_version\" > 0 AND btrim(\"connector_account_oauth_bindings\".\"endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"issuer\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"resource\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"token_endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"client_id\") <> ''"
+          "value": "\"connector_account_oauth_bindings\".\"storage_version\" > 0 AND \"connector_account_oauth_bindings\".\"contract_hash\" ~ '^[a-f0-9]{64}$' AND btrim(\"connector_account_oauth_bindings\".\"endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"issuer\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"resource\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"token_endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"client_id\") <> ''"
         },
         "chk_connector_oauth_binding_token_auth": {
           "name": "chk_connector_oauth_binding_token_auth",
@@ -10224,6 +10232,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "contract_hash": {
+          "name": "contract_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
         "issuer": {
           "name": "issuer",
           "type": "text",
@@ -10282,39 +10296,6 @@
         }
       },
       "indexes": {
-        "idx_connector_dcr_issuer": {
-          "name": "idx_connector_dcr_issuer",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "connector_slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "auth_method",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "issuer",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_connector_dcr_org": {
           "name": "idx_connector_dcr_org",
           "columns": [
@@ -10341,7 +10322,19 @@
             "id",
             "org_id",
             "connector_slug",
-            "auth_method"
+            "auth_method",
+            "contract_hash"
+          ]
+        },
+        "uq_connector_dcr_issuer": {
+          "name": "uq_connector_dcr_issuer",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "connector_slug",
+            "auth_method",
+            "contract_hash",
+            "issuer"
           ]
         }
       },
@@ -10349,7 +10342,7 @@
       "checkConstraints": {
         "chk_connector_dcr_identity": {
           "name": "chk_connector_dcr_identity",
-          "value": "btrim(\"connector_dcr_registrations\".\"issuer\") <> '' AND btrim(\"connector_dcr_registrations\".\"client_id\") <> '' AND btrim(\"connector_dcr_registrations\".\"redirect_uri\") <> ''"
+          "value": "btrim(\"connector_dcr_registrations\".\"issuer\") <> '' AND btrim(\"connector_dcr_registrations\".\"client_id\") <> '' AND btrim(\"connector_dcr_registrations\".\"redirect_uri\") <> '' AND \"connector_dcr_registrations\".\"contract_hash\" ~ '^[a-f0-9]{64}$'"
         },
         "chk_connector_dcr_client_auth": {
           "name": "chk_connector_dcr_client_auth",
@@ -22344,7 +22337,7 @@
         },
         "pi_memory_phase2_jobs_maintenance_history_check": {
           "name": "pi_memory_phase2_jobs_maintenance_history_check",
-          "value": "(\n          \"pi_memory_phase2_jobs\".\"last_maintenance_run_id\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_revision\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_base_version_id\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_selection_digest\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_checkpoint_id\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_checkpoint_version_id\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_outcome\" IS NULL\n        ) OR (\n          \"pi_memory_phase2_jobs\".\"last_maintenance_run_id\" IS NOT NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_revision\" IS NOT NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_revision\" > 0 AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_base_version_id\" IS NOT NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_selection_digest\" IS NOT NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_outcome\" IN ('published', 'no_diff', 'failed') AND\n          (\n            (\n              \"pi_memory_phase2_jobs\".\"last_maintenance_outcome\" = 'failed' AND\n              \"pi_memory_phase2_jobs\".\"last_maintenance_checkpoint_id\" IS NULL AND\n              \"pi_memory_phase2_jobs\".\"last_maintenance_checkpoint_version_id\" IS NULL\n            ) OR (\n              \"pi_memory_phase2_jobs\".\"last_maintenance_outcome\" IN ('published', 'no_diff') AND\n              \"pi_memory_phase2_jobs\".\"last_maintenance_checkpoint_version_id\" IS NOT NULL\n            )\n          )\n        )"
+          "value": "(\n          \"pi_memory_phase2_jobs\".\"last_maintenance_run_id\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_revision\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_base_version_id\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_selection_digest\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_checkpoint_version_id\" IS NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_outcome\" IS NULL\n        ) OR (\n          \"pi_memory_phase2_jobs\".\"last_maintenance_run_id\" IS NOT NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_revision\" IS NOT NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_revision\" > 0 AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_base_version_id\" IS NOT NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_selection_digest\" IS NOT NULL AND\n          \"pi_memory_phase2_jobs\".\"last_maintenance_outcome\" IN ('published', 'no_diff', 'failed') AND\n          (\n            (\n              \"pi_memory_phase2_jobs\".\"last_maintenance_outcome\" = 'failed' AND\n              \"pi_memory_phase2_jobs\".\"last_maintenance_checkpoint_version_id\" IS NULL\n            ) OR (\n              \"pi_memory_phase2_jobs\".\"last_maintenance_outcome\" IN ('published', 'no_diff') AND\n              \"pi_memory_phase2_jobs\".\"last_maintenance_checkpoint_version_id\" IS NOT NULL\n            )\n          )\n        )"
         },
         "pi_memory_phase2_jobs_conflict_check": {
           "name": "pi_memory_phase2_jobs_conflict_check",

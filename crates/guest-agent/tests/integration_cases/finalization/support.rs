@@ -77,7 +77,7 @@ pub(super) async fn create_bounded_checkpoint(
 ) -> Result<(), guest_agent::error::AgentError> {
     let session_metadata = checkpoint_session_metadata(runtime);
     let checkpoint =
-        guest_agent::checkpoint::prepare_checkpoint_for_runtime_with_history_limits_for_test(
+        guest_agent::finalization::prepare_finalization_for_runtime_with_history_limits_for_test(
             runtime,
             &session_metadata,
             CHECKPOINT_TEST_CANDIDATE_MAX_BYTES,
@@ -92,7 +92,7 @@ pub(super) async fn create_bounded_recovery_checkpoint(
 ) -> Result<(), guest_agent::error::AgentError> {
     let session_metadata = checkpoint_session_metadata(runtime);
     let checkpoint =
-        guest_agent::checkpoint::prepare_recovery_checkpoint_for_runtime_with_history_limits_for_test(
+        guest_agent::finalization::prepare_recovery_finalization_for_runtime_with_history_limits_for_test(
             runtime,
             &session_metadata,
             CHECKPOINT_TEST_CANDIDATE_MAX_BYTES,
@@ -105,9 +105,9 @@ pub(super) async fn create_bounded_recovery_checkpoint(
 pub(super) async fn report_prepared_checkpoint(
     runtime: &guest_agent::run_context::GuestRuntime,
     exit_code: i32,
-    checkpoint: guest_agent::checkpoint::PreparedCheckpoint,
+    checkpoint: guest_agent::finalization::PreparedFinalization,
 ) -> Result<(), guest_agent::error::AgentError> {
-    guest_agent::complete::report_checkpoint_for_run(
+    guest_agent::complete::report_finalization_for_run(
         runtime, exit_code, None, None, None, checkpoint,
     )
     .await

@@ -27,7 +27,7 @@ async fn success_checkpoint_uses_captured_startup_environment() {
 
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .path("/api/webhooks/agent/session-history/prepare")
             .header("authorization", "Bearer startup-token")
             .header("x-vercel-protection-bypass", "startup-bypass")
             .json_body_includes(r#"{"runId":"startup-run"}"#);
@@ -44,14 +44,14 @@ async fn success_checkpoint_uses_captured_startup_environment() {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(r#"{"runId":"startup-run"}"#)
-            .json_body_includes(r#"{"checkpoint":{"cliAgentType":"claude-code"}}"#)
-            .json_body_includes(r#"{"checkpoint":{"cliAgentSessionId":"startup-session"}}"#);
+            .json_body_includes(r#"{"completion":{"cliAgentType":"claude-code"}}"#)
+            .json_body_includes(r#"{"completion":{"cliAgentSessionId":"startup-session"}}"#);
         then.status(200)
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
     let mut command = checkpoint_child_command(
-        "integration_cases::checkpoint::process_env::captured_startup_environment_child",
+        "integration_cases::finalization::process_env::captured_startup_environment_child",
     )
     .unwrap();
     command
@@ -98,7 +98,7 @@ async fn success_checkpoint_uses_captured_startup_environment() {
 async fn captured_startup_environment_child() {
     let runtime = guest_agent::run_context::GuestRuntime::from_process_env().unwrap();
     assert_eq!(runtime.config.prompt, "startup checkpoint prompt");
-    let checkpoint = guest_agent::checkpoint::prepare_checkpoint_for_runtime(
+    let checkpoint = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
         &checkpoint_session_metadata(&runtime),
     )

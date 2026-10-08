@@ -113,7 +113,7 @@ are enforced by the integration ingress tests.
 ### Active transition validators
 
 - `scripts/test-oauth-contract-hash-retirement.ts` protects migration
-  `1352_retire_oauth_contract_hash`: both physical hash columns disappear,
+  `1353_retire_oauth_contract_hash`: both physical hash columns disappear,
   multiple historical registrations for the same method/issuer and their exact
   account references survive, encrypted secrets and account metadata are
   unchanged, builtin authorization context cleanup is idempotent, and unrelated,
@@ -123,6 +123,14 @@ are enforced by the integration ingress tests.
   Retain the transition validator until production migration is verified and
   its migration passes the journal squash frontier. Old API compatibility is
   intentionally unsupported for this owner-approved contraction.
+
+- `scripts/test-run-checkpoint-retirement-preparation.ts` protects migration
+  `1352_detach_memory_history_from_run_checkpoints`: historical memory checkpoint
+  IDs survive, outgoing writers remain valid, new failure updates omit the old
+  ID, and publication version/revision constraints remain enforced. It stops at
+  that journal frontier so the later physical ID contraction does not rewrite
+  this transition's historical evidence. Retain it through #38124's two-release
+  retirement cycle.
 
 - `scripts/test-connector-catalog-entry-columns.ts` protects migrations
   `1339_expand_connector_catalog_entry_columns` and

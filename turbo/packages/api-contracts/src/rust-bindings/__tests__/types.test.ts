@@ -167,6 +167,21 @@ const expectedBindings = [
     direction: "request",
   },
   {
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
+    rustTypeName: "Request",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
+    rustTypeName: "Response",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
+    rustTypeName: "SessionHistoryEncoding",
+    direction: "request",
+  },
+  {
     rustModulePath: ["webhooks", "agent", "complete"],
     rustTypeName: "Request",
     direction: "request",

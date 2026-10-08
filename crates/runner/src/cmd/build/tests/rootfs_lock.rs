@@ -112,9 +112,8 @@ async fn cached_rootfs_requires_a_matching_cli_sidecar() {
         .await
         .unwrap();
 
-    let input = tempfile::tempdir().unwrap();
-    okou_cli::test_support::write_artifact_dir(input.path(), b"tarball-bytes", "9.353.0", "1.36.0");
-    let artifact = OkouCliArtifact::resolve(input.path()).await.unwrap();
+    let artifact =
+        okou_cli::test_support::stage_fixture(b"tarball-bytes", "9.353.0", "1.36.0").await;
     let error = verify_cli_sidecar(&rootfs, Some(&artifact))
         .await
         .unwrap_err();

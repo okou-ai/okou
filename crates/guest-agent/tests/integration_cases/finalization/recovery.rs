@@ -17,7 +17,7 @@ async fn recovery_checkpoint_uploads_valid_session_history() {
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .path("/api/webhooks/agent/session-history/prepare")
             .json_body_includes(r#"{"runId":"test-run-001"}"#);
         then.status(200)
             .header("Content-Type", "application/json")
@@ -36,13 +36,13 @@ async fn recovery_checkpoint_uploads_valid_session_history() {
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
-            .json_body_includes(r#"{"checkpoint":{"cliAgentSessionId":"recovery-session"}}"#);
+            .json_body_includes(r#"{"completion":{"cliAgentSessionId":"recovery-session"}}"#);
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({"success": true, "status": "failed"}));
     });
 
-    let result = guest_agent::checkpoint::prepare_recovery_checkpoint_for_runtime(
+    let result = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
         &runtime,
         &checkpoint_session_metadata(&runtime),
     )
@@ -75,14 +75,14 @@ async fn recovery_checkpoint_does_not_prune_eligible_claude_history() {
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history");
+            .path("/api/webhooks/agent/session-history/prepare");
         then.status(200);
     });
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(
-                r#"{"checkpoint":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+                r#"{"completion":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
             );
         then.status(200)
             .header("Content-Type", "application/json")
@@ -111,14 +111,14 @@ async fn recovery_checkpoint_does_not_prune_eligible_codex_history() {
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history");
+            .path("/api/webhooks/agent/session-history/prepare");
         then.status(200);
     });
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(
-                r#"{"checkpoint":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+                r#"{"completion":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
             );
         then.status(200)
             .header("Content-Type", "application/json")
@@ -165,7 +165,7 @@ async fn assert_recovery_checkpoint_ignores_legacy_history_marker(
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .path("/api/webhooks/agent/session-history/prepare")
             .json_body_includes(r#"{"runId":"test-run-001"}"#);
         then.status(200)
             .header("Content-Type", "application/json")
@@ -185,14 +185,14 @@ async fn assert_recovery_checkpoint_ignores_legacy_history_marker(
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(format!(
-                r#"{{"checkpoint":{{"cliAgentSessionId":"{session_id}"}}}}"#
+                r#"{{"completion":{{"cliAgentSessionId":"{session_id}"}}}}"#
             ));
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({"success": true, "status": "failed"}));
     });
 
-    let result = guest_agent::checkpoint::prepare_recovery_checkpoint_for_runtime(
+    let result = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
         &runtime,
         &checkpoint_session_metadata(&runtime),
     )
@@ -236,21 +236,21 @@ async fn recovery_checkpoint_continues_without_partial_jsonl_history() {
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history");
+            .path("/api/webhooks/agent/session-history/prepare");
         then.status(200);
     });
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(
-                r#"{"checkpoint":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+                r#"{"completion":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
             );
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({"success": true, "status": "failed"}));
     });
 
-    let result = guest_agent::checkpoint::prepare_recovery_checkpoint_for_runtime(
+    let result = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
         &runtime,
         &checkpoint_session_metadata(&runtime),
     )
@@ -284,21 +284,21 @@ async fn recovery_checkpoint_continues_without_non_utf8_session_history() {
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history");
+            .path("/api/webhooks/agent/session-history/prepare");
         then.status(200);
     });
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(
-                r#"{"checkpoint":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+                r#"{"completion":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
             );
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({"success": true, "status": "failed"}));
     });
 
-    let result = guest_agent::checkpoint::prepare_recovery_checkpoint_for_runtime(
+    let result = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
         &runtime,
         &checkpoint_session_metadata(&runtime),
     )
@@ -326,7 +326,7 @@ async fn recovery_checkpoint_skips_when_session_id_is_missing() {
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history");
+            .path("/api/webhooks/agent/session-history/prepare");
         then.status(200);
     });
     let complete_mock = server.mock(|when, then| {
@@ -334,7 +334,7 @@ async fn recovery_checkpoint_skips_when_session_id_is_missing() {
         then.status(200);
     });
 
-    let result = guest_agent::checkpoint::prepare_recovery_checkpoint_for_runtime(
+    let result = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
         &runtime,
         &checkpoint_session_metadata(&runtime),
     )
@@ -366,21 +366,21 @@ async fn recovery_checkpoint_continues_when_derived_history_is_missing() {
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history");
+            .path("/api/webhooks/agent/session-history/prepare");
         then.status(200);
     });
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(
-                r#"{"checkpoint":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+                r#"{"completion":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
             );
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({"success": true, "status": "failed"}));
     });
 
-    let result = guest_agent::checkpoint::prepare_recovery_checkpoint_for_runtime(
+    let result = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
         &runtime,
         &checkpoint_session_metadata(&runtime),
     )
@@ -409,21 +409,21 @@ async fn recovery_checkpoint_continues_without_invalid_history_source() {
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history");
+            .path("/api/webhooks/agent/session-history/prepare");
         then.status(200);
     });
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(
-                r#"{"checkpoint":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+                r#"{"completion":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
             );
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({"success": true, "status": "failed"}));
     });
 
-    let result = guest_agent::checkpoint::prepare_recovery_checkpoint_for_runtime(
+    let result = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
         &runtime,
         &checkpoint_session_metadata(&runtime),
     )

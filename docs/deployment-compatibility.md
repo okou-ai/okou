@@ -1,9 +1,9 @@
 # Deployment Compatibility
 
-## Automatic OAuth contract hash retirement (migration 1352)
+## Automatic OAuth contract hash retirement (migration 1353)
 
 Builtin Automatic OAuth no longer computes, writes, reads or compares a local
-configuration fingerprint. Migration `1352_retire_oauth_contract_hash` physically
+configuration fingerprint. Migration `1353_retire_oauth_contract_hash` physically
 removes `contract_hash` from account bindings and DCR registrations and removes
 `contractHash` only from builtin Automatic authorization contexts. Existing
 accounts, encrypted credentials, DCR client IDs and exact registration references
@@ -303,6 +303,71 @@ The existing capability-empty host behavior is preserved. Shared Computer Use ta
 and screenshot retention remain intact; this change performs no historical
 command or object-storage deletion. Retired switch overrides already pass through
 the general registry-key filtering.
+
+## Generic Run checkpoint retirement: release 1 (#38124)
+
+Run completion now saves native CLI history in Conversation, writeback outputs
+in `agent_runs.result.storageOutputs`, and the terminal transition together.
+Only writeback names, mount paths, versions and missing-root policies are added
+to the existing result JSON. They provide exact retry evidence for successful,
+failed and cancelled recovery reports, including two mounts with the same name.
+Read-only versions remain owned by immutable Run launch mounts; there is no new
+recovery snapshot or checkpoint entity. Historical result `checkpointId` values
+remain readable and opaque. No historical results or blobs are rewritten.
+
+Pi memory publication remains owned by the generic Storage commit transaction
+and its validated, lease/revision/base/selection-bound publication receipt
+(`pi_memory_phase2_checkpoints`, whose physical name is retained). The observer
+uses that receipt alone, including no-diff publications; a successful CLI exit
+without a receipt cannot advance watermarks. Already settled callbacks are
+idempotent without generic checkpoint ID backfill. Runtime code no longer reads
+or writes `lastMaintenanceCheckpointId` or the generic `checkpoints` table.
+The physical table, ID columns and indexes remain for release 2. Migration
+`1352_detach_memory_history_from_run_checkpoints` removes only the old ID's
+participation in the memory job history CHECK constraint. Existing IDs remain
+untouched; outgoing writers continue to satisfy the relaxed constraint, while
+new failure updates no longer need to clear an obsolete ID. Publication version,
+revision, lease and selection constraints remain enforced. Apply this migration
+before promoting the table-independent API.
+
+### Serving combinations and activation
+
+- **Current old Guest -> new API:** the combined `/complete.checkpoint` payload
+  is normalized into the same Run completion path. The old
+  `/api/webhooks/agent/checkpoints/prepare-history` upload URL remains an adapter.
+  Neither adapter accesses the generic checkpoint table or returns a fake ID.
+- **New Guest -> new API:** native uploads use
+  `/api/webhooks/agent/session-history/prepare`; `/complete.completion` carries
+  native identity and writeback outputs. Both metadata fields together are
+  rejected. Failed/cancelled recovery and metadata-free Runner fallback retain
+  their terminal-state rules; Pi history promotes its Session only on success.
+- **New Guest -> pre-transition API:** unsupported. The new presign URL is absent
+  and the old API cannot commit checkpoint-free output results. Deploy and verify
+  the prepared API on every serving instance before promoting new Guest images.
+- **Pre-transition API -> new persisted results:** unsupported because clean
+  completion still queries the generic table. Exclude those instances from
+  serving and supported rollback before enabling new writes. Rollback must stay
+  at this table-independent API generation or a descendant.
+
+The current Guest has no standalone checkpoint-create caller: finalization sends
+only the combined completion request. Repository callers outside tests do not
+use `/api/webhooks/agent/checkpoints`. Its API handler is retired in this release;
+legacy contract declarations remain for the release 2 protocol cleanup. Verify
+that the deployed producer inventory matches before promotion; any external
+standalone producer must upgrade or drain, not receive a synthetic checkpoint ID.
+Drain pre-transition in-flight completion/recovery reports before API cutover:
+old terminal Runs may have Conversation + checkpoint rows but no Run-owned exact
+output evidence. Metadata-free terminal acknowledgements and historical reads
+remain supported; conflicting or unverifiable included outputs are rejected.
+
+Record serving/rollback inventory and outgoing API drain, then verify completion,
+exact retries, failed/cancelled recovery, next-run native resume, file HEADs and
+memory publication/no-diff/lost-or-repeated acknowledgement with old and new
+Guest producers. A merge or green CI does not establish production acceptance.
+After acceptance, drain old Guest images, uploads and queued callbacks before
+release 2 removes adapters and drops the generic table and obsolete ID columns.
+The outgoing release 1 API is already independent of the dropped table, matching
+the repository's migration-before-API-promotion deployment order.
 
 ## Dynamic Run inputs without Agent execution configuration
 
@@ -6523,24 +6588,38 @@ persistence constraints.
 
 ### Version-addressed CLI artifacts in the runner rootfs
 
-Every CLI artifact `manifest.json` records the release versions of what the
-bundle contains: `versions.cli` (`@okouai/cli`), `versions.piAgentRuntime`
-(`@okouai/pi-agent-runtime`), and `versions.piSdk` (the pinned upstream Pi SDK
-plus a digest of the first-party patch set). A release additionally publishes
-the release commit's artifact at `okou-cli/v<versions.cli>/`. That path is
-immutable: the publish step fails the release when the version already exists
-with different bytes, so one CLI version identifies exactly one bundle and the
-semantic version can serve as a compatibility identity.
+Every CLI package carries mandatory `okouBuildIdentity` schema 1 in its packed
+`package.json`: Pi runtime version, Pi SDK version plus the first-party patch-set
+digest, and session-construction digest. The existing package `version` identifies
+`@okouai/cli`. The artifact producer derives `manifest.json` identity from those
+packed bytes, not a later workspace read. Native verification and Runner
+compilation reject missing identity or disagreement with the external identity;
+there is no legacy-package reader or compatibility fallback.
+
+A release additionally publishes the release commit's artifact at
+`okou-cli/v<versions.cli>/`. That path is immutable: the publish step fails the
+release when the version already exists with different bytes. New package bytes
+require a new CLI version through the existing CLI-to-Runner release dependency;
+never overwrite a versioned object or redirect a historical package URL.
 
 A Runner compiled with an embedded CLI bundle installs its verified
 `package.tgz` into the rootfs customize layer at
-`/usr/local/lib/okou-cli/<version>/`. The compiled version, Pi SDK and session
-identity are validated against the explicitly supplied package manifest during
-compilation; only the package bytes are embedded. `runner build` stages those
-bytes alongside the embedded Guest binaries and writes `/usr/local/bin/okou`
-and `/usr/local/lib/okou-cli/installed.json`. The package bytes and installed
-manifest are part of the rootfs hash, and `verify-rootfs.sh` checks the
-installed manifest against the verified identity.
+`/usr/local/lib/okou-cli/<version>/`. A build-only native module inside Runner
+validates the external inputs and generates installed metadata through the
+existing `guest-contracts` schema. Compilation snapshots the exact verified
+package buffer and generated `installed.json` into embedded resources, with SHA
+and version from that same buffer; it does not embed a subsequently reread input
+path. `runner build` only stages those trusted compiled bytes alongside the
+embedded Guest binaries. It does not reparse the archive, compare identity,
+rehash or recheck size, or regenerate installed metadata. The installer writes
+`/usr/local/bin/okou` and `/usr/local/lib/okou-cli/installed.json`. No new CLI
+package crate or runtime decoder is needed. The CLI contributes only its actual
+build-verified package SHA-256 to the local rootfs hash. Installed metadata remains
+determined by that package and the fixed installation recipe; `verify-rootfs.sh`
+and exact cached-sidecar comparison still validate it. Local rootfs cache version
+3 isolates this recipe. Changes to fixed installed schema, serialization or paths
+must rotate that version; shared template and snapshot versions are unchanged.
+This hash change does not remove installed metadata or change guest launch selection.
 
 New Runner binaries no longer accept `--okou-cli-artifact DIR`, and current
 release/preview orchestration does not stage a separate host CLI artifact. A

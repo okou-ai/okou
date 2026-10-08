@@ -220,8 +220,24 @@ deletion or a lost response. Upload only to keys returned by the normal protocol
 A retired export row and a private retry command do not become public merely
 because the final observation is an S3 object. These cases use the first real
 billing-status request to own per-case isolation; teardown never authenticates
-the deleted user to assert Run/Agent absence. The neighboring storage-fixture
-retry matrix remains unprocessed and is not an example of compliant setup.
+the deleted user to assert Run/Agent absence. Batch 007 retired the neighboring
+private listing/retry matrix and its forced retry endpoint. Other
+`api-bdd-storages` prepare/commit/list/download consumers still use the private
+storage-fixture route and remain unprocessed; they are not compliant examples.
+
+For mixed scenarios, remove the unsupported private phase and keep the independent
+public behavior. In `integrations.bdd.test.ts`, an unonboarded member installs Slack
+through its OAuth flow and sends signed channel/DM ingress to receive setup
+guidance; deleting a default Agent directly is unnecessary. Its queued Web/Slack
+session case uses actual Runner claims/completion and public session/event reads,
+without a SQL trigger rewriting callback branding. In
+`chat-events-model-source-context.test.ts`, ordinary sends prove 404/400 and
+external attachment-request cancellation without cancelling database queries.
+
+The bulk read notification matrix in `chat-thread-mark-agent-read.test.ts` still
+uses synthetic terminal events/private readbacks for its large cases. Batch 008's
+attempted public rewrite failed CI and was restored without credit; this matrix
+remains unprocessed, and its retained helpers are not compliant examples.
 
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).

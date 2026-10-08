@@ -70,15 +70,6 @@ function storageHeadValues(volume: PreparedServerSideVolume) {
   };
 }
 
-function preparedProjection(volume: PreparedServerSideVolume) {
-  return volume.piResourceIndex?.kind === "prepared"
-    ? piResourceProjectionValues(
-        volume.piResourceIndex.projection,
-        volume.version.archiveSize,
-      )
-    : undefined;
-}
-
 interface PreparedVolumePublication {
   readonly volume: PreparedServerSideVolume;
   readonly publicationFence?: StoragePublicationFence;
@@ -94,7 +85,14 @@ const commitPreparedVolumeUpload$ = command(
     const db = set(writeDb$);
     const version = args.volume.version;
     const fence = args.publicationFence;
-    const projection = preparedProjection(args.volume);
+    const projection =
+      args.volume.piResourceIndex?.kind === "prepared"
+        ? piResourceProjectionValues(
+            args.volume.piResourceIndex.projection,
+            args.volume.version.archiveSize,
+            nowDate(),
+          )
+        : undefined;
     await db.transaction(async (tx) => {
       // The version insert's FK check keeps the Storage parent from being
       // deleted, and the HEAD UPDATE below then owns that row implicitly.
@@ -142,7 +140,7 @@ const commitPreparedVolumeUpload$ = command(
             sourceArchiveSize: version.archiveSize,
           })
           .onConflictDoNothing();
-        await tx.execute(repairVolumeIndexSql(version));
+        await tx.execute(repairVolumeIndexSql(version, nowDate()));
       }
       signal.throwIfAborted();
       if (!fence) {

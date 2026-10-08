@@ -12494,7 +12494,7 @@ function assembleRunnerLaunch(args: {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly runnerGroup: string;
   readonly body: CreateRunBody;
-  readonly checkpointArtifacts: readonly AgentRunCreateContextArtifact[];
+  readonly writebackArtifacts: readonly AgentRunCreateContextArtifact[];
   readonly preparedStorage: PreparedAgentRunStorage;
   readonly contextDraft: BuiltStoredExecutionContextDraft;
   readonly piResources: PreparedPiLaunchResources | undefined;
@@ -12532,7 +12532,7 @@ function assembleRunnerLaunch(args: {
     runStorageMounts: persistedStorageMounts,
     sessionStorageMounts: sessionStorageMountsForPersistence({
       resolvedMounts: persistedStorageMounts,
-      artifacts: args.checkpointArtifacts,
+      artifacts: args.writebackArtifacts,
     }),
   };
 }
@@ -12543,7 +12543,7 @@ interface StorageMaterializationInput {
   readonly storageManifestStats: StorageManifestBuildStats;
 }
 
-function runnerCheckpointArtifacts(args: BuildRunnerJobPayloadInput) {
+function runnerWritebackArtifacts(args: BuildRunnerJobPayloadInput) {
   return args.artifactMissingRootPolicy === undefined
     ? args.artifacts
     : args.artifacts.map((artifact) => {
@@ -12562,7 +12562,7 @@ function prepareRunnerStorageInput(input: StorageMaterializationInput) {
     args,
     storageManifestStats,
     body,
-    checkpointArtifacts: runnerCheckpointArtifacts(args),
+    writebackArtifacts: runnerWritebackArtifacts(args),
     group: preparedRunnerGroup(),
     platformEnvironment: args.includeOkouTokenSecret
       ? { ...args.platformEnvironment, ...okouTokenEnvironment(body) }
@@ -12617,7 +12617,7 @@ function finalizedMaterializedLaunch(
   storage: MaterializedRunnerStorage,
   contextDraft: BuiltStoredExecutionContextDraft,
 ): PreparedRunnerLaunch {
-  const { args, group, body, checkpointArtifacts } = storage.input;
+  const { args, group, body, writebackArtifacts } = storage.input;
   return assembleRunnerLaunch({
     runId: args.run.id,
     userId: args.userId,
@@ -12625,7 +12625,7 @@ function finalizedMaterializedLaunch(
     launchSnapshot: args.launchSnapshot,
     runnerGroup: group,
     body,
-    checkpointArtifacts,
+    writebackArtifacts,
     preparedStorage: storage.preparedStorage.prepared,
     contextDraft,
     piResources: storage.piResources,

@@ -206,6 +206,7 @@ export {
   webhookCompleteContract,
   webhookCheckpointsContract,
   webhookCheckpointsPrepareHistoryContract,
+  webhookSessionHistoryPrepareContract,
   webhookHeartbeatContract,
   webhookTelemetryContract,
   // Direct upload contracts (Webhook endpoints for sandbox)

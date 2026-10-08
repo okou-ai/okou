@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Completed-run checkpoint coverage through the supported agent, chat, and run APIs.
+# Run completion coverage through the supported agent, chat, and run APIs.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
@@ -16,13 +16,13 @@ teardown() {
     runner_e2e_teardown_test
 }
 
-@test "completed chat run exposes a checkpoint id" {
-    run create_runner_agent "e2e-run-checkpoint-${TEST_ID}"
+@test "completed chat run exposes native history and published outputs" {
+    run create_runner_agent "e2e-run-completion-${TEST_ID}"
     echo "$output"
     assert_success
     AGENT_ID="$output"
 
-    local marker="CHECKPOINT_COMPLETED_${TEST_ID}"
+    local marker="RUN_COMPLETED_${TEST_ID}"
     run runner_e2e_start_mock_shell_chat_run \
         "$AGENT_ID" \
         "printf '${marker}\\n'"
@@ -40,7 +40,13 @@ teardown() {
     assert_success
     run jq -e '
         .status == "completed" and
-        (.result.checkpointId | type == "string" and length > 0)
+        (.result.conversationId | type == "string" and length > 0) and
+        (.result.storageOutputs | type == "array") and
+        all(.result.storageOutputs[];
+            (.name | type == "string" and length > 0) and
+            (.version | type == "string" and length > 0) and
+            (.mountPath | type == "string" and length > 0)
+        )
     ' <<<"$output"
     echo "$output"
     assert_success

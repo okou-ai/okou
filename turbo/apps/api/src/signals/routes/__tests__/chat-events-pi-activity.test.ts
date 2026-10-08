@@ -503,7 +503,7 @@ describe("CHAT-02: model-first routing", () => {
         artifact: { memory: checkpointedMemory.versionId },
       },
     });
-    const committedH2 = await webhooks.requestAgentCheckpoint(
+    const committedH2 = await webhooks.requestAgentRunOutputs(
       {
         runId: run.runId,
         cliAgentType: "pi",
@@ -514,27 +514,26 @@ describe("CHAT-02: model-first routing", () => {
       claimed.sandboxHeaders,
       [200],
     );
-    const committedH2Body = committedH2.body;
-    if ("error" in committedH2Body) {
-      throw new Error(
-        `Expected H2 checkpoint success: ${committedH2Body.error.message}`,
-      );
-    }
-    const idempotentH2 = await webhooks.requestAgentCheckpoint(
-      {
-        runId: run.runId,
-        cliAgentType: "pi",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
-        artifactSnapshots: memoryArtifactSnapshots,
-      },
-      claimed.sandboxHeaders,
-      [200],
-    );
-    expect(idempotentH2.body).toMatchObject({
-      checkpointId: committedH2Body.checkpointId,
-      conversationId: committedH2Body.conversationId,
+    expect(committedH2.body).toStrictEqual({
+      success: true,
+      status: "completed",
     });
+    const committedResult = (await api.readRun(actor, run.runId)).result;
+    const idempotentH2 = await webhooks.requestAgentRunOutputs(
+      {
+        runId: run.runId,
+        cliAgentType: "pi",
+        cliAgentSessionId: run.threadId,
+        cliAgentSessionHistoryHash: h2Hash,
+        artifactSnapshots: memoryArtifactSnapshots,
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    expect(idempotentH2.body).toStrictEqual(committedH2.body);
+    expect((await api.readRun(actor, run.runId)).result).toStrictEqual(
+      committedResult,
+    );
 
     h2Session.appendMessage({
       role: "assistant",
@@ -575,7 +574,7 @@ describe("CHAT-02: model-first routing", () => {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${replacementH2Hash}.blob`,
       Buffer.from(replacementH2, "utf8"),
     );
-    const replacementCheckpoint = await webhooks.requestAgentCheckpoint(
+    const replacementCheckpoint = await webhooks.requestAgentRunOutputs(
       {
         runId: run.runId,
         cliAgentType: "pi",
@@ -586,7 +585,7 @@ describe("CHAT-02: model-first routing", () => {
       [400],
     );
     expect(JSON.stringify(replacementCheckpoint.body)).toContain(
-      "[PI_H2_ALREADY_COMMITTED]",
+      "[RUN_OUTPUT_ALREADY_COMMITTED]",
     );
 
     const failedRun = await sendChatRunAfterPick(actor, {
@@ -654,7 +653,7 @@ describe("CHAT-02: model-first routing", () => {
       [400],
     );
     expect(JSON.stringify(lateFailedH2.body)).toContain("[PI_H2_RUN_TERMINAL]");
-    const spoofedFailedH2 = await webhooks.requestAgentCheckpoint(
+    const spoofedFailedH2 = await webhooks.requestAgentRunOutputs(
       {
         runId: failedRun.runId,
         cliAgentType: "claude-code",
@@ -720,7 +719,7 @@ describe("CHAT-02: model-first routing", () => {
       status: "failed",
     });
     await waitForRunStatus(actor, retry.runId, "failed");
-    const retryLateFailedH2 = await webhooks.requestAgentCheckpoint(
+    const retryLateFailedH2 = await webhooks.requestAgentRunOutputs(
       {
         runId: retry.runId,
         cliAgentType: "pi",

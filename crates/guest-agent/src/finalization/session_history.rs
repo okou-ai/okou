@@ -1,6 +1,6 @@
 //! Checkpoint-specific session-history preparation and persistence.
 
-use super::{CheckpointInputs, CheckpointMode, LOG_TAG};
+use super::{FinalizationInputs, FinalizationMode, LOG_TAG};
 use crate::constants;
 use crate::env;
 use crate::error::AgentError;
@@ -14,7 +14,7 @@ use api_contracts::generated::constants::runners::{
     SESSION_HISTORY_ENCODING_IDENTITY, SESSION_HISTORY_ENCODING_ZSTD,
     SESSION_HISTORY_GZIP_MIN_BYTES,
 };
-use api_contracts::generated::types::webhooks::agent::checkpoints::prepare_history;
+use api_contracts::generated::types::webhooks::agent::session_history::prepare as prepare_history;
 use bytes::Bytes;
 use guest_contracts::session_history_identity::SessionHistorySourceRef;
 use guest_telemetry::telemetry::{
@@ -383,7 +383,7 @@ fn record_history_failure(op: &str, start: std::time::Instant, message: &str) {
 }
 
 pub(super) struct CheckpointSessionHistoryInputs {
-    mode: CheckpointMode,
+    mode: FinalizationMode,
     framework: env::Framework,
     limits: CheckpointSessionHistoryLimits,
     cli_agent_session_id: String,
@@ -391,7 +391,7 @@ pub(super) struct CheckpointSessionHistoryInputs {
 }
 
 impl CheckpointSessionHistoryInputs {
-    pub(super) fn from_checkpoint(mode: CheckpointMode, inputs: &CheckpointInputs<'_>) -> Self {
+    pub(super) fn from_checkpoint(mode: FinalizationMode, inputs: &FinalizationInputs<'_>) -> Self {
         Self {
             mode,
             framework: inputs.framework,
@@ -416,7 +416,7 @@ pub(super) enum CheckpointSessionHistory {
     Unavailable { cli_agent_session_id: String },
 }
 
-enum PreparedCheckpointSessionHistory {
+enum PreparedFinalizationSessionHistory {
     Upload {
         checkpoint: Box<UploadedCheckpointSessionHistory>,
         upload: SessionHistoryUpload,
@@ -613,7 +613,7 @@ async fn upload_session_history(
 }
 
 fn prepare_session_history(
-    mode: CheckpointMode,
+    mode: FinalizationMode,
     framework: env::Framework,
     limits: CheckpointSessionHistoryLimits,
     cli_agent_session_id: &str,
@@ -1089,9 +1089,9 @@ fn strip_jsonl_line_ending(line: &[u8]) -> &[u8] {
     line.strip_suffix(b"\r").unwrap_or(line)
 }
 
-fn prepare_checkpoint_session_history(
+fn prepare_finalization_session_history(
     inputs: CheckpointSessionHistoryInputs,
-) -> Result<PreparedCheckpointSessionHistory, AgentError> {
+) -> Result<PreparedFinalizationSessionHistory, AgentError> {
     let CheckpointSessionHistoryInputs {
         mode,
         framework,
@@ -1132,7 +1132,7 @@ fn prepare_checkpoint_session_history(
                 live_history,
             } = prepared_history;
             let upload = upload_source.into_upload(history_size)?;
-            Ok(PreparedCheckpointSessionHistory::Upload {
+            Ok(PreparedFinalizationSessionHistory::Upload {
                 checkpoint: Box::new(UploadedCheckpointSessionHistory {
                     cli_agent_session_id,
                     history_source,
@@ -1144,7 +1144,7 @@ fn prepare_checkpoint_session_history(
             })
         }
         PreparedSessionHistoryOutcome::DiscardedOversized => {
-            Ok(PreparedCheckpointSessionHistory::DiscardedOversized {
+            Ok(PreparedFinalizationSessionHistory::DiscardedOversized {
                 cli_agent_session_id,
             })
         }
@@ -1152,7 +1152,7 @@ fn prepare_checkpoint_session_history(
 }
 
 fn pi_history_preparation_is_fatal(
-    mode: CheckpointMode,
+    mode: FinalizationMode,
     framework: env::Framework,
     error: &AgentError,
 ) -> bool {
@@ -1178,7 +1178,7 @@ pub(super) async fn prepare_and_upload_session_history(
     let framework = inputs.framework;
     let mode = inputs.mode;
     let prepared =
-        match run_session_history_blocking(move || prepare_checkpoint_session_history(inputs))
+        match run_session_history_blocking(move || prepare_finalization_session_history(inputs))
             .await?
         {
             Ok(prepared) => prepared,
@@ -1196,7 +1196,7 @@ pub(super) async fn prepare_and_upload_session_history(
             }
         };
     match prepared {
-        PreparedCheckpointSessionHistory::Upload { checkpoint, upload } => {
+        PreparedFinalizationSessionHistory::Upload { checkpoint, upload } => {
             match upload_session_history(http, run_id, &checkpoint.history_hash, upload).await? {
                 SessionHistoryUploadOutcome::Uploaded => {
                     Ok(CheckpointSessionHistory::Uploaded(*checkpoint))
@@ -1208,7 +1208,7 @@ pub(super) async fn prepare_and_upload_session_history(
                 }
             }
         }
-        PreparedCheckpointSessionHistory::DiscardedOversized {
+        PreparedFinalizationSessionHistory::DiscardedOversized {
             cli_agent_session_id,
         } => Ok(CheckpointSessionHistory::DiscardedOversized {
             cli_agent_session_id,
@@ -1216,7 +1216,7 @@ pub(super) async fn prepare_and_upload_session_history(
     }
 }
 
-pub(super) fn reconcile_live_history_after_checkpoint(live_history: PreparedLiveHistory) -> bool {
+pub(super) fn reconcile_live_history_after_finalization(live_history: PreparedLiveHistory) -> bool {
     let started_at = std::time::Instant::now();
     match live_history {
         PreparedLiveHistory::MatchesCheckpoint => true,
@@ -1275,7 +1275,7 @@ pub(super) fn reconcile_live_history_after_checkpoint(live_history: PreparedLive
 }
 
 pub(super) fn write_final_session_history_identity(
-    mode: CheckpointMode,
+    mode: FinalizationMode,
     cli_agent_session_id: &str,
     history_hash: &str,
     history_size: u64,
@@ -1283,7 +1283,7 @@ pub(super) fn write_final_session_history_identity(
     framework: env::Framework,
     final_session_history_identity_file: &str,
 ) {
-    if !matches!(mode, CheckpointMode::Success) {
+    if !matches!(mode, FinalizationMode::Success) {
         return;
     }
     let identity = match build_final_session_history_identity(
@@ -1393,17 +1393,17 @@ mod tests {
     fn pi_success_does_not_downgrade_a_late_history_size_failure() {
         let too_large = AgentError::CheckpointHistoryTooLarge { max_bytes: 128 };
         assert!(pi_history_preparation_is_fatal(
-            CheckpointMode::Success,
+            FinalizationMode::Success,
             env::Framework::Pi,
             &too_large
         ));
         assert!(!pi_history_preparation_is_fatal(
-            CheckpointMode::Recovery,
+            FinalizationMode::Recovery,
             env::Framework::Pi,
             &too_large
         ));
         assert!(!pi_history_preparation_is_fatal(
-            CheckpointMode::Success,
+            FinalizationMode::Success,
             env::Framework::ClaudeCode,
             &too_large
         ));

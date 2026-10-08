@@ -310,7 +310,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     const result = await runs.readRun(run.actor, run.runId);
     expect(result.status).toBe(status);
     if (status === "completed") {
-      expect(result.result?.checkpointId).toStrictEqual(expect.any(String));
+      expect(result.result?.conversationId).toStrictEqual(expect.any(String));
     }
   }
 

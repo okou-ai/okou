@@ -260,7 +260,7 @@ const guardMaintenancePreparation$ = command(
       return notFound("Pi memory maintenance checkpoint already committed");
     }
     const [active] = await db
-      .select()
+      .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
       .from(piMemoryPhase2Jobs)
       .where(storageMaintenanceJobCondition(binding, nowDate()))
       .limit(1)
@@ -540,6 +540,10 @@ const commitVerifiedStorageVersion$ = command(
       let step = plan.next();
       while (!step.done) {
         const statement = step.value;
+        if (!("sql" in statement)) {
+          step = plan.next([nowDate()]);
+          continue;
+        }
         let rows: readonly unknown[] = [];
         if (statement.rowSchema) {
           rows = parseRawRows(

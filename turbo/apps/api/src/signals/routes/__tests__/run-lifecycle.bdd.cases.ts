@@ -2211,8 +2211,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
         const completedInitialRun = await api.readRun(actor, initialRun.runId);
-        const checkpointId = completedInitialRun.result?.checkpointId;
-        if (!checkpointId) {
+        const conversationId = completedInitialRun.result?.conversationId;
+        if (!conversationId) {
           throw new Error("Expected the canonical checkpoint to persist");
         }
 
@@ -2582,7 +2582,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const completed = await api.readRun(actor, created.runId);
         expect(completed.status).toBe("completed");
         expect(completed.completedAt).toBeDefined();
-        expect(completed.result?.checkpointId).toBeDefined();
+        expect(completed.result?.conversationId).toBeDefined();
         await expect(
           readConnectorDiagnosticRegistration(created.runId),
         ).resolves.toBeNull();
@@ -12584,11 +12584,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [400],
         );
         expect(JSON.stringify(history.body)).toContain(
-          "[CHECKPOINT_RUN_TERMINAL]",
+          "[RUN_HISTORY_TERMINAL]",
         );
         expect(context.mocks.s3.send.mock.calls).toHaveLength(s3CallCount);
 
-        const checkpoint = await webhooks.requestAgentCheckpoint(
+        const lateCompletion = await webhooks.requestAgentRunOutputs(
           {
             runId: created.runId,
             cliAgentType: "claude-code",
@@ -12596,11 +12596,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             cliAgentSessionHistoryDisposition: "unavailable",
           },
           sandboxHeaders,
-          [400],
+          [200],
         );
-        expect(JSON.stringify(checkpoint.body)).toContain(
-          "[CHECKPOINT_RUN_TERMINAL]",
-        );
+        expect(lateCompletion.body).toStrictEqual({
+          success: true,
+          status: "failed",
+        });
 
         const usage = await webhooks.requestAgentUsageEvent(
           {
@@ -13060,6 +13061,94 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
       });
 
+      it.each(["failed", "cancelled"] as const)(
+        "preserves exact native recovery outputs after a %s Runner fallback",
+        async (terminalStatus) => {
+          const api = createRunsApi(context);
+          const webhooks = createWebhookCallbackApi(context);
+          const { actor, agentId } = await entitledRunActor(
+            {},
+            NATIVE_RUNNER_ROUTE,
+          );
+          const run = await api.createThreadRun(actor, {
+            agentId,
+            prompt: "recover native history after Runner fallback",
+          });
+          const claim = await api.claimRunnerJob(run.runId);
+          const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+          if (terminalStatus === "cancelled") {
+            await api.requestCancelRun(actor, run.runId, [200]);
+          } else {
+            await webhooks.requestAgentComplete(
+              { runId: run.runId, exitCode: 1, error: "original failure" },
+              headers,
+              [200],
+            );
+          }
+          const history = `recovered native history ${run.runId}`;
+          const hash = createHash("sha256").update(history).digest("hex");
+          mockSessionHistoryBlob(hash, history);
+          const body = {
+            runId: run.runId,
+            exitCode: 1,
+            completion: {
+              cliAgentType: "claude-code",
+              cliAgentSessionId: `recovered-${run.runId}`,
+              cliAgentSessionHistoryHash: hash,
+            },
+          } as const;
+          const recovered = await webhooks.requestAgentComplete(
+            body,
+            headers,
+            [200],
+          );
+          expect(recovered.body).toStrictEqual({
+            success: true,
+            status: "failed",
+          });
+          const persisted = await api.readRun(actor, run.runId);
+          expect(persisted.status).toBe(terminalStatus);
+          expect(persisted.result).toMatchObject({
+            conversationId: expect.any(String),
+            storageOutputs: expect.any(Array),
+          });
+          await webhooks.requestAgentComplete(body, headers, [200]);
+          expect((await api.readRun(actor, run.runId)).result).toStrictEqual(
+            persisted.result,
+          );
+          const conflict = await webhooks.requestAgentComplete(
+            {
+              ...body,
+              completion: {
+                ...body.completion,
+                cliAgentSessionId: "conflicting-native-session",
+              },
+            },
+            headers,
+            [400],
+          );
+          expectApiError(conflict.body);
+          expect(conflict.body.error.message).toContain(
+            "[RUN_OUTPUT_ALREADY_COMMITTED]",
+          );
+          expect((await api.readRun(actor, run.runId)).result).toStrictEqual(
+            persisted.result,
+          );
+          const next = await api.createThreadRun(actor, {
+            agentId,
+            threadId: run.threadId,
+            prompt: "resume recovered native history",
+          });
+          expect(
+            (await api.claimRunnerJob(next.runId)).resumeSession,
+          ).toMatchObject({
+            sessionId: body.completion.cliAgentSessionId,
+            historyRef: { kind: "blob", hash },
+          });
+          await api.requestCancelRun(actor, next.runId, [200]);
+        },
+      );
+
       it.each(["claude-code", "codex"] as const)(
         "atomically completes a run with a %s checkpoint",
         async (cliAgentType) => {
@@ -13120,7 +13209,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const settled = await api.readRun(actor, run.runId);
           expect(settled.status).toBe("completed");
           expect(settled.result).toMatchObject({
-            checkpointId: expect.any(String),
             agentSessionId: expect.any(String),
             conversationId: expect.any(String),
           });
@@ -13160,7 +13248,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           expectApiError(conflictingCheckpoint.body);
           expect(conflictingCheckpoint.body.error.message).toContain(
-            "Final checkpoint does not exactly match",
+            "Final output does not exactly match",
           );
           await expect(
             readSessionHistoryBlobRefCountFixture(historyHash),
@@ -13463,7 +13551,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "Agent execution timed out after 7200 seconds",
         );
 
-        await webhooks.requestAgentCheckpoint(
+        await webhooks.requestAgentRunOutputs(
           {
             runId: source.runId,
             cliAgentType: "claude-code",
@@ -13524,7 +13612,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(missing.body).toStrictEqual({ success: true, status: "failed" });
         const failed = await api.readRun(actor, run.runId);
         expect(failed.status).toBe("failed");
-        expect(failed.error).toBe("Checkpoint for run not found");
+        expect(failed.error).toBe("Run completion outputs were not provided");
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: "poolMiss",
@@ -13641,7 +13729,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(cancelled.status).toBe("cancelled");
       });
 
-      it("rejects a standalone checkpoint while pending and checkpoints on completion", async () => {
+      it("persists native history and outputs atomically on completion", async () => {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
@@ -13668,27 +13756,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const historyHash = createHash("sha256")
           .update(`bdd null vars checkpoint ${run.runId}`)
           .digest("hex");
-        const rejectedCheckpoint = await webhooks.requestAgentCheckpoint(
-          {
-            runId: run.runId,
-            cliAgentType: "claude-code",
-            cliAgentSessionId: `bdd-null-vars-cli-${run.runId}`,
-            cliAgentSessionHistoryHash: historyHash,
-          },
-          sandboxHeaders,
-          [400],
-        );
-        expectApiError(rejectedCheckpoint.body);
-        expect(rejectedCheckpoint.body.error.message).toContain(
-          "Standalone checkpoint cannot persist while the run status is pending",
-        );
-
         await webhooks.requestAgentComplete(
           {
             runId: run.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-null-vars-cli-${run.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -13699,7 +13772,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         const completed = await api.readRun(actor, run.runId);
         expect(completed.status).toBe("completed");
-        expect(completed.result?.checkpointId).toBeDefined();
+        expect(completed.result?.conversationId).toBeDefined();
       });
     });
   }

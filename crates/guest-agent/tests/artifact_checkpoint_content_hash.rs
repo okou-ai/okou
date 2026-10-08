@@ -30,7 +30,7 @@ fn checkpoint_request_has_artifact_snapshot(
         return false;
     };
     let Some(snapshots) = body
-        .get("checkpoint")
+        .get("completion")
         .and_then(|checkpoint| checkpoint.get("artifactSnapshots"))
         .and_then(|value| value.as_array())
     else {
@@ -178,7 +178,7 @@ async fn unchanged_artifact_checkpoint_records_content_hash_timing()
 
     let history_prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .path("/api/webhooks/agent/session-history/prepare")
             .json_body_includes(format!(r#"{{"runId":"{RUN_ID}"}}"#));
         then.status(200)
             .header("Content-Type", "application/json")
@@ -218,9 +218,9 @@ async fn unchanged_artifact_checkpoint_records_content_hash_timing()
     });
 
     let checkpoint =
-        guest_agent::checkpoint::prepare_checkpoint_for_runtime(&runtime, &session_metadata)
+        guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &session_metadata)
             .await?;
-    guest_agent::complete::report_checkpoint_for_run(&runtime, 0, None, None, None, checkpoint)
+    guest_agent::complete::report_finalization_for_run(&runtime, 0, None, None, None, checkpoint)
         .await?;
 
     history_prepare.assert_calls_async(1).await;

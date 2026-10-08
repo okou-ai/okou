@@ -14,6 +14,7 @@ import {
 import {
   webhookCheckpointsContract,
   webhookCheckpointsPrepareHistoryContract,
+  webhookSessionHistoryPrepareContract,
   webhookCompleteContract,
   webhookEventsContract,
   webhookHeartbeatContract,
@@ -145,6 +146,11 @@ export const rustRouteBindings = [
   {
     route: webhookCheckpointsPrepareHistoryContract.prepare,
     rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
+    rustConstName: "PREPARE",
+  },
+  {
+    route: webhookSessionHistoryPrepareContract.prepare,
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
     rustConstName: "PREPARE",
   },
   {

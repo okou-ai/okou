@@ -8,7 +8,7 @@
 //! a partial remote checkpoint. The second phase retains input indices so it
 //! can overlap remote work without changing result order or error selection.
 
-use super::{CheckpointMode, LOG_TAG};
+use super::{FinalizationMode, LOG_TAG};
 use crate::artifact as vas;
 use crate::content_hash;
 use crate::env;
@@ -78,7 +78,7 @@ fn maintenance_checkpoint_guard(
     raw_launch: &str,
     launch_payload_file: &str,
     run_id: &str,
-    mode: CheckpointMode,
+    mode: FinalizationMode,
 ) -> Result<Option<MaintenanceCheckpointGuard>, AgentError> {
     let Some(launch) = maintenance_launch(raw_launch)? else {
         return Ok(None);
@@ -86,7 +86,7 @@ fn maintenance_checkpoint_guard(
     if launch.schema_version != 1 {
         return Err(maintenance_checkpoint_error());
     }
-    if mode == CheckpointMode::Recovery {
+    if mode == FinalizationMode::Recovery {
         return Ok(Some(MaintenanceCheckpointGuard {
             launch,
             attestation: None,
@@ -310,14 +310,14 @@ async fn snapshot_artifact_plan(
 /// `artifact_snapshot_pipelines_overlap_and_preserve_result_order`.
 ///
 /// The checkpoint caller in `checkpoint/mod.rs` runs this prerequisite with
-/// session-history preparation in `prepare_checkpoint_impl` via
+/// session-history preparation in `prepare_finalization_impl` via
 /// `tokio::join!` and waits for both results before constructing the combined
 /// completion request.
 pub(super) async fn snapshot_artifact_entries_for_checkpoint(
     http: &HttpClient,
     run_id: &str,
     entries: &[env::ArtifactEnv],
-    mode: CheckpointMode,
+    mode: FinalizationMode,
     pi_launch_config: &str,
     pi_launch_payload_file: &str,
 ) -> Result<Option<Vec<checkpoints::ArtifactSnapshot>>, AgentError> {
@@ -341,7 +341,7 @@ pub(super) async fn snapshot_artifact_entries_for_checkpoint(
         {
             return Err(maintenance_checkpoint_error());
         }
-        if mode == CheckpointMode::Recovery {
+        if mode == FinalizationMode::Recovery {
             return Ok(Some(vec![build_artifact_snapshot_entry(
                 &entry.name,
                 &entry.version_id,
@@ -435,8 +435,15 @@ async fn snapshot_artifact_entries(
     run_id: &str,
     entries: &[env::ArtifactEnv],
 ) -> Result<Option<Vec<checkpoints::ArtifactSnapshot>>, AgentError> {
-    snapshot_artifact_entries_for_checkpoint(http, run_id, entries, CheckpointMode::Success, "", "")
-        .await
+    snapshot_artifact_entries_for_checkpoint(
+        http,
+        run_id,
+        entries,
+        FinalizationMode::Success,
+        "",
+        "",
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -693,7 +700,7 @@ mod tests {
             &http,
             "maintenance-run",
             &entries,
-            CheckpointMode::Recovery,
+            FinalizationMode::Recovery,
             &launch.to_string(),
             &launch_payload_file.to_string_lossy(),
         )
@@ -825,7 +832,7 @@ mod tests {
             &http,
             "maintenance-run-success",
             &entries,
-            CheckpointMode::Success,
+            FinalizationMode::Success,
             &launch.to_string(),
             &launch_payload_file.to_string_lossy(),
         )

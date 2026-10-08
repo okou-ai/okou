@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "build": "tsup",
-    "postbuild": "cp package.json dist/ && pnpm json -I -f dist/package.json -e 'this.name=\"@okouai/cli\"; delete this.scripts; delete this.devDependencies; this.bin={okou:\"okou.js\"}; this.files=[\"*.js\",\"*.js.map\",\"*.wasm\",\"migrations/*.sql\"]'",
+    "postbuild": "cp package.json dist/ && pnpm json -I -f dist/package.json -e 'this.name=\"@okouai/cli\"; delete this.scripts; delete this.devDependencies; this.bin={okou:\"okou.js\"}; this.files=[\"*.js\",\"*.js.map\",\"*.wasm\",\"migrations/*.sql\"]' && node scripts/write-dist-package.mjs",
     "dev": "tsup --watch",
     "bench:startup": "pnpm build && OKOU_STARTUP_BENCH=1 vitest run src/__tests__/okou-startup.bench.test.ts",
     "test": "vitest run",

@@ -1,6 +1,5 @@
 import { createStore } from "ccstate";
 
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { blobs } from "@okouai/db/schema/blob";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
@@ -22,19 +21,6 @@ export async function readSessionHistoryBlobRefCountFixture(
     throw new Error("Expected the Session history Blob fixture to exist");
   }
   return blob.refCount;
-}
-
-export async function clearRunLaunchSnapshotFixture(
-  runId: string,
-): Promise<void> {
-  const rows = await db()
-    .update(agentRuns)
-    .set({ launchSnapshot: null })
-    .where(eq(agentRuns.id, runId))
-    .returning({ id: agentRuns.id });
-  if (rows.length !== 1) {
-    throw new Error("Expected one Run launch snapshot to clear");
-  }
 }
 
 export async function listAgentRunsFixture(args: {
@@ -59,49 +45,4 @@ export async function listAgentRunsFixture(args: {
       limit: args.limit ?? 50,
     }),
   );
-}
-
-/** Simulate historical or alternate built-in model route metadata not constructible through current routing. */
-export async function setRunModelRuntimeRouteFixture(args: {
-  readonly runId: string;
-  readonly modelRuntimeProvider: string | null;
-  readonly modelRuntimeModel: string | null;
-  readonly selectedModel?: string;
-}): Promise<void> {
-  const updated = await db()
-    .update(agentRuns)
-    .set({
-      ...(args.selectedModel !== undefined && {
-        selectedModel: args.selectedModel,
-      }),
-      modelRuntimeProvider: args.modelRuntimeProvider,
-      modelRuntimeModel: args.modelRuntimeModel,
-    })
-    .where(eq(agentRuns.id, args.runId))
-    .returning({ id: agentRuns.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one run runtime route to update");
-  }
-}
-
-/** Operational source and model admission are not exposed by the public run
- * read. Keep this test-owned persisted observation separate from runtime-route
- * assertions so it cannot change existing fixture result contracts. */
-export async function readRunModelSourceFixture(runId: string) {
-  const [run] = await db()
-    .select({
-      modelProvider: agentRuns.modelProvider,
-      modelProviderId: agentRuns.modelProviderId,
-      modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
-      selectedModel: agentRuns.selectedModel,
-      creditAdmitted: agentRuns.creditAdmitted,
-      builtInModelKeyId: agentRuns.builtInModelKeyId,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  if (!run) {
-    throw new Error("Expected one run model source");
-  }
-  return run;
 }

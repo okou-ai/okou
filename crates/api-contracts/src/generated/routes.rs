@@ -502,6 +502,19 @@ pub mod webhooks {
             };
         }
 
+        /// Generated route bindings under `webhooks::agent::session_history`.
+        pub mod session_history {
+            /// Generated route bindings under `webhooks::agent::session_history::prepare`.
+            pub mod prepare {
+                /// Get presigned URL for uploading session history to S3.
+                /// Route contract: `POST /api/webhooks/agent/session-history/prepare`.
+                pub const PREPARE: crate::Route = crate::Route {
+                    method: crate::Method::Post,
+                    path: "/api/webhooks/agent/session-history/prepare",
+                };
+            }
+        }
+
         /// Generated route bindings under `webhooks::agent::session_output`.
         pub mod session_output {
             /// Publish transient session output from sandbox.

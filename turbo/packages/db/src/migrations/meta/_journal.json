@@ -1923,8 +1923,15 @@
     {
       "idx": 1352,
       "version": "7",
-      "when": 1791476446643,
-      "tag": "1352_retire_oauth_contract_hash",
+      "when": 1791475819219,
+      "tag": "1352_detach_memory_history_from_run_checkpoints",
+      "breakpoints": true
+    },
+    {
+      "idx": 1353,
+      "version": "7",
+      "when": 1791478420726,
+      "tag": "1353_retire_oauth_contract_hash",
       "breakpoints": true
     }
   ]
