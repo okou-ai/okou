@@ -42,6 +42,36 @@ unchanged.
 No database, Runner protocol, version floor, or rollout fallback is required.
 This change does not deploy or activate production changes.
 
+## PWA foreground push suppression
+
+Web Push delivery checks Ably Presence on
+`user-org-foreground:<userId>:<orgId>` for the notification owner's user and
+organization. Each SharedWorker aggregates tab visibility and enters this
+channel while any of its registered tabs is visible. Push subscriptions remain
+user-scoped; foreground activity in another organization does not suppress the
+notification. Successful and failed Run notifications share the check.
+
+Deploy the API before the Platform: platform realtime tokens now grant
+`presence` only on the authenticated user's active-org foreground channel.
+Old Platform clients do not enter it, so the new API continues sending their
+notifications. A new Platform against an old API cannot enter the channel;
+this mixed version is not the supported rollout order. API rollback therefore
+requires rolling back the Platform as well. No permission-denial fallback or
+new feature switch is added for this fix to existing notifications.
+
+Tab visibility messages stay within the page/SharedWorker protocol. Worker
+asset URLs are versioned, so old pages keep their old Worker protocol while new
+pages connect to the new Worker. The ServiceWorker Push protocol, subscription
+storage, and database schema are unchanged.
+
+Presence query errors propagate to the existing terminal side-effect boundary;
+they do not fall back to sending Push. There is no application-level query
+budget or message-ACK delay. Normal hidden/pagehide/disconnect events clear
+foreground state, but this change adds no tab-expiry timer: a crashed visible
+tab can remain recorded while other tabs keep its Worker alive. Ably owns
+cleanup of a failed Worker connection and reconnect restoration; abnormal
+connection cleanup is not instantaneous.
+
 ## Pi OpenRouter Chat Completions route (generation 5, default off)
 
 Pi model configuration gains generation 5 (`dialect: "openai-completions"`,
@@ -261,7 +291,7 @@ serving/rollback drain. See [the full contract](desktop-session-auth.md).
 
 ## Connector catalog payload-independent API (preparatory release)
 
-Migration `1346_connector_catalog_payload_independent_api` keeps the physical
+Migration `1347_connector_catalog_payload_independent_api` keeps the physical
 `connector_catalog_entries.payload` column but drops its NOT NULL constraint.
 The ten required projections become NOT NULL; `mcp` remains nullable for
 non-MCP connectors. The migration performs no backfill, summary recomputation,
@@ -278,7 +308,7 @@ schema equivalence; it must not be imported by API queries.
 outgoing #37900-or-later dual writer supplies every required projection, so it
 can continue reading and writing while the column is retained. A payload-only
 writer cannot insert after the constraint change and must already be excluded
-from serving. The new API needs migration 1346 before writing without payload;
+from serving. The new API needs migration 1347 before writing without payload;
 its readers accept projected rows regardless of whether payload is populated.
 App/CLI/Runner responses and current/captured generation lookup are unchanged.
 Entry preparation receipts, same-hash retries, skill registration and
@@ -286,7 +316,7 @@ complete-generation pointer publication retain their existing ownership/order.
 Permission-summary derivation is unchanged.
 
 **Rollback floor.** The resolver loaded from main resolves the first-parent
-commit introducing migration 1346 and requires every target to contain it,
+commit introducing migration 1347 and requires every target to contain it,
 failing closed on missing/invalid history before artifact or host access. This
 excludes payload-dependent API versions without pinning a branch-only SHA.
 Merging this preparation advances the official rollback floor; until a release
@@ -1490,6 +1520,63 @@ remain log-free. No API/Guest/addon/Platform rollout, protocol change, migration
 Web floor is needed. A normal Runner rollout is needed to observe these fields;
 production activation or deployment is not included in this PR. Runner rollback
 removes the local attributes only, without changing download behavior.
+
+## Client-owned voice transcription and independent polish
+
+Microphone input now uses two independent requests. Every audio segment, including
+its tail, calls `/api/voice-io/transcribe/segment` with the same transcript-only
+model prompt. The client sends `final: false` on every audio request so it also
+works against serving/rollback APIs that require the field. Model context is a
+spelling/overlap suffix capped at 1,000 characters, not the accumulated recording.
+The client waits for all segment checkpoints, then calls the additive
+`/api/voice-io/polish/segments` with a nonempty, recording-ordered `segments` array. Its combined text is bounded
+at 262,144 characters. Both model stages have an owner-bound 60-second deadline.
+Daily request/duration usage remains attached to successful audio transcription;
+finite lifetime recording usage is counted only after successful polish. Empty
+recordings never request polish or consume recording usage.
+
+The client keeps PCM and segment checkpoints in IndexedDB. A failed/cancelled
+polish does not erase those checkpoints; Retry/reload submits only polish once
+transcription is complete. VAD runs before each new audio upload and inspects only
+the non-overlapping samples. Silent tails do not upload audio; earlier speech
+still reaches the independent polish request.
+
+The owner explicitly authorized discarding old voice recordings. Opening version
+2 of `okou-voice-drafts` replaces its `drafts` and `chunks` stores atomically,
+including old PCM and combined-finalization progress. Other App databases are
+untouched. Version 2 checkpoints retain ordinary resume/retry behavior. No old
+recording converter, tombstone contract, or cache fallback is provided.
+
+HTTP compatibility is temporary and separate from the approved cache retirement:
+
+- **Old Web/new API:** the original final/full-prefix segment contract and the
+  original `/api/voice-io/polish` `text` body remain accepted. A final HTTP request
+  adapts to separate transcript-only and text-only model calls, never the former
+  combined prompt. A silent/text-only final still edits the saved prefix. Only a
+  successful final consumes finite recording usage. The combined legacy request
+  has an 80-second owner-bound deadline below the edge's 100-second timeout.
+- **New Web/old API:** all audio requests use `final: false`. Only `404` from the
+  additive polish route uses the old segment endpoint's existing text-only final
+  request, including its quota writer. It sends no audio and preserves completed
+  transcription checkpoints on failure. Other failures never trigger another
+  generation path.
+- **New Web/new API:** the client independently orchestrates transcription and
+  ordered-text polish. Successful polish consumes finite recording usage.
+
+Normal API-first/App-second promotion is safe for these HTTP producers. In a
+later release, raise the App floor only after the first containing App is live;
+then retire old final/full-prefix/text adapters after the old senders are excluded.
+The new-App fallback and `final: false` sender remain until older API versions
+are outside both serving and supported rollback targets. Every protected surface
+must close before removing the shared bridge. Follow-up retirement PR:
+`chore(voice): retire split-pipeline rollout bridge`, required after those gates;
+this run does not create that later PR or change live floor/deployment settings.
+
+The cache cutover remains destructive by explicit owner decision. Old tabs do
+not gain a version-2 cache reader from HTTP compatibility and may need refresh
+once that cache upgrades. Rolling the App back to its version-1 cache reader
+requires clearing only the voice database, rather than treating a `VersionError`
+as an empty recording. Retired cache contents cannot be recovered by rollback.
 
 ## File transcription and Seedream 5 retirement
 
@@ -8521,15 +8608,26 @@ discovery. None/manual and Automatic methods are executable. Plaud's Automatic
 method defaults off in auth-method discovery through `plaudConnector`; this
 switch does not gate existing account callbacks or execution.
 
-Outside the platform API admission path, connector intent is an owner-disambiguation
-hint, not a credential-identity lock. The addon matches active firewall URLs and
-applies route precedence first. One eligible owner governs the request even when
-intent is absent, malformed, mismatched, or names an absent owner. Removing a builtin
-at an overlapping destination can therefore leave a sole eligible custom owner whose
-credentials may be injected, subject to its authorization checks. Multiple eligible
-owners require valid intent selecting one of them; unresolved ambiguity is blocked.
-With no active firewall match, ordinary network fallback applies without resolving
-or injecting managed connector credentials. See
+Outside the platform API admission path, connector intent affects registered
+builtin eligibility and final owner disambiguation; it is not a credential-identity
+lock. After gathering active firewall base matches, the addon excludes registered
+builtin candidates when a registered custom candidate matches, unless present intent
+identifies a matching registered builtin. This filter precedes base/rule specificity,
+even for a broader custom base and narrower builtin base. Classification comes from
+registry-owned `connectorRuntimeTargets`; unclassified firewall entries are not
+excluded by this rule. A matching custom denial or malformed configuration does not
+reconsider excluded builtin candidates.
+
+The remaining candidates undergo base specificity, matching rule specificity, then
+owner disambiguation. The builtin-intent exception retains eligibility, not an
+override of specificity or authorization. One eligible owner governs the request even
+when intent is absent, malformed, mismatched, or names an absent owner. Removing a
+builtin at an overlapping destination can therefore leave a sole eligible custom
+owner whose credentials may be injected, subject to its authorization checks.
+Multiple eligible owners require valid intent selecting one of them; unresolved
+ambiguity is blocked. With no active firewall match, ordinary network fallback
+applies without resolving or injecting managed connector credentials. See the staged
+contract and broader-custom/narrower-builtin example in
 [ordinary connector firewall owner selection](mitm-addon-contracts.md#ordinary-connector-firewall-owner-selection).
 
 This ordinary selection rule does not relax the separate

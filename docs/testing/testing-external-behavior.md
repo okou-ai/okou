@@ -155,6 +155,14 @@ Inventory-item progress and test-declaration/parameter-branch changes are
 different measures; neither endpoint removal nor helper renaming establishes
 compliance by itself.
 
+A genuine shared-library protocol can have its own boundary. For example,
+`piMemoryPhase2SelectionDigest` is exported by `@okouai/pi-agent-runtime/api`
+and consumed by both API maintenance and runtime filesystem code. Its owning
+package tests the fixed byte-encoding vectors without an API database, worker
+or private fixture. Batch 005 retains those vectors there while removing a
+redundant API wrapper. This does not authorize relocating API service tests or
+privately constructed business scenarios into a library package.
+
 ## Infrastructure and External Providers
 
 Basic app construction, test identity setup at the Clerk boundary, database

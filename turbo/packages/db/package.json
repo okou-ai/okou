@@ -24,6 +24,10 @@
       "import": "./src/operations/org-metadata-canonical-write.ts",
       "types": "./src/operations/org-metadata-canonical-write.ts"
     },
+    "./operations/usage-pack-overdraft-transfer": {
+      "import": "./src/operations/usage-pack-overdraft-transfer.ts",
+      "types": "./src/operations/usage-pack-overdraft-transfer.ts"
+    },
     "./types": {
       "import": "./src/types.ts",
       "types": "./src/types.ts"
@@ -38,7 +42,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
-    "test:migration-consistency": "pnpm test:connector-catalog-entry-columns && pnpm test:unselectable-thread-model-cleanup && pnpm test:auto-model-selection-null && pnpm test:file-run-provenance && pnpm test:file-thread-associations && pnpm test:legacy-free-retirement && pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:plan-entitlement-capability-migration && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:vnc-configuration && pnpm test:vnc-runner-authority && pnpm test:agent-grant-table-retirement && pnpm test:native-morning-brief-storage-retirement && pnpm test:morning-brief-enrollment-installation && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:hosted-publication-history-audit && pnpm test:hosted-publication-runtime && pnpm test:hosted-publication-contraction && pnpm test:hosted-publication-pointers && pnpm test:private-artifact-absolute-urls && pnpm test:pro-suspend-retirement && pnpm test:slack-ingress-failed-retirement && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:retire-v7-chat-event-snapshots && pnpm --filter api test:chat-event-sequences && pnpm --filter api test:chat-event-context && pnpm --filter api test:chat-event-auxiliary && tsx scripts/test-migration-consistency-schema.ts",
+    "test:migration-consistency": "pnpm test:connector-catalog-entry-columns && pnpm test:unselectable-thread-model-cleanup && pnpm test:auto-model-selection-null && pnpm test:file-run-provenance && pnpm test:file-thread-associations && pnpm test:legacy-free-retirement && pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:usage-pack-overdraft-transfer && pnpm test:plan-entitlement-capability-migration && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:vnc-configuration && pnpm test:vnc-runner-authority && pnpm test:agent-grant-table-retirement && pnpm test:native-morning-brief-storage-retirement && pnpm test:morning-brief-enrollment-installation && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:hosted-publication-history-audit && pnpm test:hosted-publication-runtime && pnpm test:hosted-publication-contraction && pnpm test:hosted-publication-pointers && pnpm test:private-artifact-absolute-urls && pnpm test:pro-suspend-retirement && pnpm test:slack-ingress-failed-retirement && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:retire-v7-chat-event-snapshots && pnpm --filter api test:chat-event-sequences && pnpm --filter api test:chat-event-context && pnpm --filter api test:chat-event-auxiliary && tsx scripts/test-migration-consistency-schema.ts",
     "test:vnc-configuration": "tsx scripts/test-vnc-configuration.ts",
     "test:native-morning-brief-storage-retirement": "tsx scripts/test-native-morning-brief-storage-retirement.ts",
     "test:agent-grant-table-retirement": "tsx scripts/test-agent-grant-table-retirement.ts",
@@ -46,6 +50,7 @@
     "test:cloudflare-access": "tsx scripts/test-cloudflare-access.ts",
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",
     "test:show-usage-pack-migration": "tsx scripts/test-show-usage-pack-migration.ts",
+    "test:usage-pack-overdraft-transfer": "tsx scripts/test-usage-pack-overdraft-transfer.ts",
     "test:plan-entitlement-capability-migration": "tsx scripts/test-plan-entitlement-capability-migration.ts",
     "test:migration-runner": "tsx scripts/test-migration-runner-timeouts.ts",
     "lint:jsonb-contracts": "tsx scripts/check-jsonb-contracts.ts",

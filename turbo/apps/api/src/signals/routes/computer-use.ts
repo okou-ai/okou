@@ -1,3 +1,4 @@
+import { desktopUpgradeRequired } from "../../lib/desktop-compatibility";
 import { command } from "ccstate";
 import {
   computerUseAuditEventsContract,
@@ -100,6 +101,9 @@ const hostStartInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
+  if (result.status === "upgrade_required") {
+    return desktopUpgradeRequired(result.minimumSupportedVersion);
+  }
   if (result.status !== "started" || result.hostToken === null) {
     throw new Error("Legacy host START did not issue its credential");
   }
@@ -382,6 +386,9 @@ const hostCommandNextInner$ = command(
     );
     signal.throwIfAborted();
 
+    if (result.status === "upgrade_required") {
+      return desktopUpgradeRequired(result.minimumSupportedVersion);
+    }
     if (result.status === "invalid_token") {
       return invalidComputerUseToken;
     }

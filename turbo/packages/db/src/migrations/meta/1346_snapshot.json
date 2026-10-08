@@ -1,5 +1,5 @@
 {
-  "id": "8428e401-f19d-4183-8e65-9726380b62cc",
+  "id": "7105121a-03fe-4b0c-a03b-70a0527378f6",
   "prevId": "d34fa3c7-1c0d-4544-8add-cf81af920c9a",
   "version": "7",
   "dialect": "postgresql",
@@ -10120,47 +10120,53 @@
           "primaryKey": false,
           "notNull": true
         },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
         "label": {
           "name": "label",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "description": {
           "name": "description",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "category": {
           "name": "category",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "icon": {
           "name": "icon",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "tags": {
           "name": "tags",
           "type": "text[]",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "generation": {
           "name": "generation",
           "type": "text[]",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "auth_methods": {
           "name": "auth_methods",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "mcp": {
           "name": "mcp",
@@ -10172,22 +10178,16 @@
           "name": "skill",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "firewall": {
           "name": "firewall",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "permission_summary": {
           "name": "permission_summary",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
@@ -29843,6 +29843,84 @@
         "chk_usage_pack_credit_refunds_attempt": {
           "name": "chk_usage_pack_credit_refunds_attempt",
           "value": "\"usage_pack_credit_refunds\".\"attempt\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.usage_pack_overdraft_transfers": {
+      "name": "usage_pack_overdraft_transfers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credit_grant_id": {
+          "name": "credit_grant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_usage_pack_overdraft_transfers_org": {
+          "name": "idx_usage_pack_overdraft_transfers_org",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_usage_pack_overdraft_transfers_amount": {
+          "name": "chk_usage_pack_overdraft_transfers_amount",
+          "value": "\"usage_pack_overdraft_transfers\".\"amount\" > 0"
         }
       },
       "isRLSEnabled": false

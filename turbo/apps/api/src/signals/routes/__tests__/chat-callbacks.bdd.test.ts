@@ -1488,6 +1488,88 @@ describe("CHAT-02: completed chat callback", () => {
     ).toBeTruthy();
   });
 
+  it.each([
+    { status: "completed", presence: "same-org" },
+    { status: "failed", presence: "same-org" },
+    { status: "completed", presence: "other-org" },
+    { status: "failed", presence: "other-org" },
+    { status: "completed", presence: "none" },
+    { status: "failed", presence: "none" },
+  ] as const)(
+    "$status push is suppressed only by $presence foreground presence",
+    async ({ status, presence }) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const run = await startChatRun(actor, {
+        agentId,
+        prompt: "Notify my org",
+      });
+      await chatCallbacks.registerPushSubscription(actor);
+      chatCallbacks.enableVapid();
+      chatCallbacks.mockVertexCompletions(() => {
+        return new HttpResponse(null, { status: 503 });
+      });
+      const foregroundOrg = presence === "same-org" ? actor.orgId : "other-org";
+      context.mocks.ably.presenceGet.mockImplementation((channelName) => {
+        const present =
+          presence !== "none" &&
+          channelName ===
+            `user-org-foreground:${actor.userId}:${foregroundOrg}`;
+        return Promise.resolve({
+          items: present
+            ? [{ clientId: actor.userId, connectionId: "desktop" }]
+            : [],
+        });
+      });
+      const headers = await claimChatRun(runnerGroup, run.runId);
+      if (status === "completed") {
+        chatCallbacks.mockChatOutputEvents([
+          assistantEvent(0, "Completed answer"),
+        ]);
+        await completeChatRunOk(run.runId, headers, { lastEventSequence: 0 });
+      } else {
+        await failChatRun(run.runId, headers, "Task failed");
+      }
+      await flushWaitUntilForTest();
+      expect(context.mocks.ably.presenceGet).toHaveBeenCalledWith(
+        `user-org-foreground:${actor.userId}:${actor.orgId}`,
+        { clientId: actor.userId, limit: 1 },
+      );
+      expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(
+        presence === "same-org" ? 0 : 1,
+      );
+      const events = await chat.listThreadEvents(actor, run.threadId);
+      expect(lifecycleMarkers(events.events, run.runId, status)).toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it("does not fall back to push when the foreground query fails", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const run = await startChatRun(actor, { agentId, prompt: "Notify me" });
+    await chatCallbacks.registerPushSubscription(actor);
+    chatCallbacks.enableVapid();
+    chatCallbacks.mockVertexCompletions(() => {
+      return new HttpResponse(null, { status: 503 });
+    });
+    context.mocks.ably.presenceGet.mockRejectedValue(
+      new Error("Presence unavailable"),
+    );
+    const headers = await claimChatRun(runnerGroup, run.runId);
+    chatCallbacks.mockChatOutputEvents([assistantEvent(0, "Completed answer")]);
+    await completeChatRunOk(run.runId, headers, { lastEventSequence: 0 });
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.presenceGet).toHaveBeenCalledWith(
+      `user-org-foreground:${actor.userId}:${actor.orgId}`,
+      { clientId: actor.userId, limit: 1 },
+    );
+    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
+    const events = await chat.listThreadEvents(actor, run.threadId);
+    expect(events.events).toContainEqual(
+      expect.objectContaining({ content: "Completed answer" }),
+    );
+  });
+
   it("keeps the completed output after a push delivery failure", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, { agentId, prompt: "Notify me" });

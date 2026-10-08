@@ -17,6 +17,7 @@ import { mockStripeWebhookEventConstructor } from "../../external/stripe-client"
 import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
+  mockGitHubConnectorOAuth,
   mockStripeConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -644,39 +645,151 @@ describe("Stripe automation event webhook", () => {
     });
   });
 
-  it("marks only the exact deauthorized account for reconnect and keeps its automation enabled", async () => {
-    const affected = await setupScenario({ accountId: STRIPE_ACCOUNT_ID });
-    const unaffected = await setupScenario({
-      accountId: "acct_stripe_workflow_other",
-    });
-    await postStripeAutomationEvent(
-      invoicePaidEvent({ eventId: "evt_before_deauthorization" }),
-    );
-    const deauthorization = {
-      id: "evt_deauthorized",
+  it("validates deauthorization before dropping test events and leaves connections unchanged for rejected or ignored events", async () => {
+    const accountId = `acct_stripe_boundary_${randomUUID()}`;
+    const { actor } = await workflows.setupWorkflowOrg();
+    const connected = await connectStripeOAuth(actor, accountId);
+    const event = {
+      id: `evt_${randomUUID()}`,
       type: "account.application.deauthorized",
-      account: STRIPE_ACCOUNT_ID,
+      account: accountId,
       livemode: true,
       created: Math.floor(now() / 1000),
       data: { object: {} },
     };
-    await postStripeAutomationEvent(deauthorization);
-    await postStripeAutomationEvent(deauthorization);
 
-    const affectedConnector = await connectors.readConnectorBySlug(
+    for (const malformed of [
+      { ...event, type: undefined },
+      { ...event, id: undefined },
+      { ...event, created: -1 },
+      { ...event, livemode: undefined },
+      { ...event, data: undefined },
+      { ...event, account: undefined },
+      { ...event, livemode: false, data: undefined },
+      { ...event, livemode: false, account: "" },
+    ]) {
+      const rejected = await postStripeAutomationEvent(malformed, 400);
+      await expect(rejected.json()).resolves.toStrictEqual({
+        error: "Invalid supported Stripe automation event",
+      });
+    }
+    // The base test-mode schema permits no account; live validation does not.
+    for (const ignored of [
+      { ...event, livemode: false },
+      { ...event, livemode: false, account: undefined },
+      { type: "customer.created", account: accountId },
+    ]) {
+      const dropped = await postStripeAutomationEvent(ignored);
+      await expect(dropped.text()).resolves.toBe("OK");
+    }
+    await expect(
+      connectors.readConnectorBySlug(actor, "stripe"),
+    ).resolves.toStrictEqual(connected);
+  });
+
+  it("marks all matching OAuth connections across owners, preserves other connections, and accepts repeated deauthorization", async () => {
+    const accountId = `acct_stripe_deauthorized_${randomUUID()}`;
+    const affected = await setupScenario({ accountId });
+    const sharedOwner = await setupScenario({ accountId });
+    const unaffected = await setupScenario({
+      accountId: `acct_stripe_other_${randomUUID()}`,
+    });
+    const additionalAccount = await addStripeOAuthAccount(
+      affected.actor,
+      "Shared Stripe account",
+      accountId,
+    );
+    const apiToken = await connectors.connectManualGrant(
+      affected.actor,
+      "stripe",
+      "api-token",
+      { apiKey: "sk_test_stripe_deauthorization" },
+    );
+    mockGitHubConnectorOAuth();
+    const githubStart = await connectors.startOauth(
+      unaffected.actor,
+      "github",
+      "oauth",
+    );
+    const githubState = new URL(githubStart.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!githubState) {
+      throw new Error("Expected GitHub OAuth state");
+    }
+    await connectors.completeOauthCallback("github", {
+      code: `github-deauthorization-${randomUUID()}`,
+      state: githubState,
+    });
+    const github = await connectors.readConnectorBySlug(
+      unaffected.actor,
+      "github",
+    );
+    await postStripeAutomationEvent(
+      invoicePaidEvent({ accountId, eventId: `evt_${randomUUID()}` }),
+    );
+    const deauthorization = {
+      id: `evt_${randomUUID()}`,
+      type: "account.application.deauthorized",
+      account: accountId,
+      livemode: true,
+      created: Math.floor(now() / 1000),
+      data: { object: {} },
+    };
+    const firstReceivedAt = Date.parse("2026-10-08T11:00:00.000Z");
+    mockNow(firstReceivedAt);
+    await postStripeAutomationEvent(deauthorization);
+    for (const owner of [affected, sharedOwner]) {
+      await expect(
+        connectors.readConnectorBySlug(owner.actor, "stripe"),
+      ).resolves.toMatchObject({
+        connectionStatus: "reconnect-required",
+        reconnectReason: "authorization_expired_or_revoked",
+        updatedAt: new Date(firstReceivedAt).toISOString(),
+      });
+    }
+
+    const repeatedAt = firstReceivedAt + 60_000;
+    mockNow(repeatedAt);
+    await postStripeAutomationEvent(deauthorization);
+    for (const owner of [affected, sharedOwner]) {
+      await expect(
+        connectors.readConnectorBySlug(owner.actor, "stripe"),
+      ).resolves.toMatchObject({
+        connectionStatus: "reconnect-required",
+        reconnectReason: "authorization_expired_or_revoked",
+        updatedAt: new Date(repeatedAt).toISOString(),
+      });
+      await expect(readStripeAutomation(owner)).resolves.toMatchObject({
+        id: owner.automationId,
+        enabled: true,
+      });
+    }
+    const accounts = await connectors.listBuiltinConnectorAccounts(
       affected.actor,
       "stripe",
     );
-    expect(affectedConnector.connectionStatus).toBe("reconnect-required");
-    expect(affectedConnector.reconnectReason).toBe(
-      "authorization_expired_or_revoked",
+    expect(accounts).toContainEqual(
+      expect.objectContaining({
+        id: additionalAccount.id,
+        connectionStatus: "reconnect-required",
+        reconnectReason: "authorization_expired_or_revoked",
+        updatedAt: new Date(repeatedAt).toISOString(),
+      }),
+    );
+    expect(accounts).toContainEqual(
+      expect.objectContaining({
+        id: apiToken.id,
+        authMethod: "api-token",
+        connectionStatus: "connected",
+        updatedAt: apiToken.updatedAt,
+      }),
     );
     await expect(
       connectors.readConnectorBySlug(unaffected.actor, "stripe"),
-    ).resolves.toMatchObject({ connectionStatus: "connected" });
-    await expect(readStripeAutomation(affected)).resolves.toMatchObject({
-      id: affected.automationId,
-      enabled: true,
-    });
+    ).resolves.toStrictEqual(unaffected.connector);
+    await expect(
+      connectors.readConnectorBySlug(unaffected.actor, "github"),
+    ).resolves.toStrictEqual(github);
   });
 });

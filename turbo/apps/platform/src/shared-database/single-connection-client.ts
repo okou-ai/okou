@@ -45,6 +45,10 @@ export class SingleConnectionSharedDatabaseBridge implements SharedDatabaseBridg
     signal.throwIfAborted();
   }
 
+  setTabVisibility(visibility: DocumentVisibilityState): void {
+    this.requireRegistered(this.bridge).setTabVisibility(visibility);
+  }
+
   subscribeRealtime(
     subscriptionId: string,
     scope: SharedDatabaseRealtimeScope,

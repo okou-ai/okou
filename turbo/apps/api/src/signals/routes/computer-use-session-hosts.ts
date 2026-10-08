@@ -1,3 +1,4 @@
+import { desktopUpgradeRequired } from "../../lib/desktop-compatibility";
 import { command, computed, type Command } from "ccstate";
 import { computerUseSessionHostsContract as contract } from "@okouai/api-contracts/contracts/computer-use";
 
@@ -93,6 +94,9 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     { ...body.data, ...identity, session: identity },
     signal,
   );
+  if (result.status === "upgrade_required") {
+    return desktopUpgradeRequired(result.minimumSupportedVersion);
+  }
   if (result.status === "invalid_session") {
     return invalidSession;
   }
@@ -177,6 +181,9 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
+  if (result.status === "upgrade_required") {
+    return desktopUpgradeRequired(result.minimumSupportedVersion);
+  }
   if (result.status === "invalid_token") {
     return invalidConnection;
   }

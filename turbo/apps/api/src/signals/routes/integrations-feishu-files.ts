@@ -28,14 +28,14 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
 import {
-  downloadFeishuMessageResource,
+  downloadFeishuMessageResource$,
   FeishuApiError,
   replyWithFeishuMessage,
   sendFeishuMessage,
   uploadFeishuFile,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   downloadS3Buffer,
   generatePresignedPutUrl,
@@ -93,85 +93,93 @@ function feishuUploadSizeError(size: number) {
     : undefined;
 }
 
-async function resolveInstallation(
-  args: {
-    readonly platform?: FeishuPlatform;
-    readonly db: Db;
-    readonly orgId: string;
-    readonly installationId: string | undefined;
+const resolveInstallation$ = command(
+  async (
+    { get },
+    args: {
+      readonly platform?: FeishuPlatform;
+      readonly orgId: string;
+      readonly installationId: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<InstallationResolution> => {
+    const installations = await get(db$)
+      .select({ id: feishuOrgInstallations.id })
+      .from(feishuOrgInstallations)
+      .where(
+        and(
+          eq(feishuOrgInstallations.orgId, args.orgId),
+          eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
+          isNotNull(feishuOrgInstallations.setupCompletedAt),
+          ...(args.installationId
+            ? [eq(feishuOrgInstallations.id, args.installationId)]
+            : []),
+        ),
+      )
+      .limit(2);
+    signal.throwIfAborted();
+    const installation = installations[0];
+    if (!installation) {
+      return { kind: "not_found" };
+    }
+    if (!args.installationId && installations.length > 1) {
+      return { kind: "ambiguous" };
+    }
+    return { kind: "resolved", id: installation.id };
   },
-  signal: AbortSignal,
-): Promise<InstallationResolution> {
-  const installations = await args.db
-    .select({ id: feishuOrgInstallations.id })
-    .from(feishuOrgInstallations)
-    .where(
-      and(
-        eq(feishuOrgInstallations.orgId, args.orgId),
-        eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
-        isNotNull(feishuOrgInstallations.setupCompletedAt),
-        ...(args.installationId
-          ? [eq(feishuOrgInstallations.id, args.installationId)]
-          : []),
-      ),
-    )
-    .limit(2);
-  signal.throwIfAborted();
-  const installation = installations[0];
-  if (!installation) {
-    return { kind: "not_found" };
-  }
-  if (!args.installationId && installations.length > 1) {
-    return { kind: "ambiguous" };
-  }
-  return { kind: "resolved", id: installation.id };
-}
+);
 
-async function resolveDownloadTarget(args: {
-  readonly db: Db;
-  readonly runId: string | undefined;
-  readonly installationId: string | undefined;
-  readonly messageId: string;
-  readonly fileKey: string;
-  readonly type: FeishuResourceType;
-}): Promise<FeishuDownloadTarget | null> {
-  if (!args.fileKey.startsWith(FEISHU_FILE_ID_PREFIX)) {
-    return {
-      installationId: args.installationId,
-      messageId: args.messageId,
-      fileKey: args.fileKey,
-      type: args.type,
-    };
-  }
-  if (!args.runId) {
-    return null;
-  }
-  const [callback] = await args.db
-    .select({ payload: agentRunCallbacks.payload })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "feishu:org"),
-      ),
-    )
-    .limit(1);
-  const parsed = feishuOrgCallbackPayloadSchema.safeParse(callback?.payload);
-  if (!parsed.success) {
-    return null;
-  }
-  const file = parsed.data.files?.find((candidate) => {
-    return candidate.fileId === args.fileKey;
-  });
-  return file
-    ? {
-        installationId: parsed.data.installationId,
-        messageId: file.messageId,
-        fileKey: file.fileKey,
-        type: file.type,
-      }
-    : null;
-}
+const resolveDownloadTarget$ = command(
+  async (
+    { get },
+    args: {
+      readonly runId: string | undefined;
+      readonly installationId: string | undefined;
+      readonly messageId: string;
+      readonly fileKey: string;
+      readonly type: FeishuResourceType;
+    },
+    signal: AbortSignal,
+  ): Promise<FeishuDownloadTarget | null> => {
+    if (!args.fileKey.startsWith(FEISHU_FILE_ID_PREFIX)) {
+      return {
+        installationId: args.installationId,
+        messageId: args.messageId,
+        fileKey: args.fileKey,
+        type: args.type,
+      };
+    }
+    if (!args.runId) {
+      return null;
+    }
+    const [callback] = await get(db$)
+      .select({ payload: agentRunCallbacks.payload })
+      .from(agentRunCallbacks)
+      .where(
+        and(
+          eq(agentRunCallbacks.runId, args.runId),
+          eq(agentRunCallbacks.internalKind, "feishu:org"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const parsed = feishuOrgCallbackPayloadSchema.safeParse(callback?.payload);
+    if (!parsed.success) {
+      return null;
+    }
+    const file = parsed.data.files?.find((candidate) => {
+      return candidate.fileId === args.fileKey;
+    });
+    return file
+      ? {
+          installationId: parsed.data.installationId,
+          messageId: file.messageId,
+          fileKey: file.fileKey,
+          type: file.type,
+        }
+      : null;
+  },
+);
 
 function installationError(
   resolution: Exclude<InstallationResolution, { readonly kind: "resolved" }>,
@@ -258,36 +266,38 @@ function uploadMetadata(args: {
   };
 }
 
-async function resolveUserOpenId(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly userId: string;
-    readonly requestedOpenId: string | undefined;
+const resolveUserOpenId$ = command(
+  async (
+    { get },
+    args: {
+      readonly installationId: string;
+      readonly userId: string;
+      readonly requestedOpenId: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "resolved"; readonly openId: string | undefined }
+    | { readonly kind: "not_found" }
+  > => {
+    if (args.requestedOpenId !== "me") {
+      return { kind: "resolved", openId: args.requestedOpenId };
+    }
+    const [connection] = await get(db$)
+      .select({ openId: feishuOrgConnections.feishuOpenId })
+      .from(feishuOrgConnections)
+      .where(
+        and(
+          eq(feishuOrgConnections.installationId, args.installationId),
+          eq(feishuOrgConnections.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return connection
+      ? { kind: "resolved", openId: connection.openId }
+      : { kind: "not_found" };
   },
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "resolved"; readonly openId: string | undefined }
-  | { readonly kind: "not_found" }
-> {
-  if (args.requestedOpenId !== "me") {
-    return { kind: "resolved", openId: args.requestedOpenId };
-  }
-  const [connection] = await args.db
-    .select({ openId: feishuOrgConnections.feishuOpenId })
-    .from(feishuOrgConnections)
-    .where(
-      and(
-        eq(feishuOrgConnections.installationId, args.installationId),
-        eq(feishuOrgConnections.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return connection
-    ? { kind: "resolved", openId: connection.openId }
-    : { kind: "not_found" };
-}
+);
 
 function deliverUploadedFile(
   args: {
@@ -334,15 +344,17 @@ function deliverUploadedFile(
 const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(integrationsFeishuDownloadFileContract.download));
-  const db = set(writeDb$);
-  const target = await resolveDownloadTarget({
-    db,
-    runId: "runId" in auth ? auth.runId : undefined,
-    installationId: query.installation_id,
-    messageId: query.message_id,
-    fileKey: query.file_key,
-    type: query.type,
-  });
+  const target = await set(
+    resolveDownloadTarget$,
+    {
+      runId: "runId" in auth ? auth.runId : undefined,
+      installationId: query.installation_id,
+      messageId: query.message_id,
+      fileKey: query.file_key,
+      type: query.type,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!target) {
     return apiError(
@@ -351,9 +363,9 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
       `Invalid ${FEISHU_PLATFORMS[get(feishuRequestPlatform$)].name} file id`,
     );
   }
-  const installation = await resolveInstallation(
+  const installation = await set(
+    resolveInstallation$,
     {
-      db,
       orgId: auth.orgId,
       installationId: target.installationId,
       platform: get(feishuRequestPlatform$),
@@ -369,9 +381,9 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const downloaded = await settle(
-    downloadFeishuMessageResource(
+    set(
+      downloadFeishuMessageResource$,
       {
-        db,
         installationId: installation.id,
         messageId: target.messageId,
         fileKey: target.fileKey,
@@ -496,9 +508,9 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
   const db = set(writeDb$);
-  const installation = await resolveInstallation(
+  const installation = await set(
+    resolveInstallation$,
     {
-      db,
       orgId: auth.orgId,
       installationId: body.installationId,
       platform: get(feishuRequestPlatform$),
@@ -513,9 +525,9 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const user = await resolveUserOpenId(
+  const user = await set(
+    resolveUserOpenId$,
     {
-      db,
       installationId: installation.id,
       userId: auth.userId,
       requestedOpenId: body.user,

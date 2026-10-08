@@ -39,14 +39,41 @@ OAuth challenge until replaced. Production-entrypoint coverage is in
 
 ## Ordinary connector firewall owner selection
 
-Outside the platform API admission path, the addon matches active firewall URLs
-and applies route precedence before using connector intent. One eligible owner
-governs the request regardless of whether intent is absent, malformed, mismatched,
-or names a connector omitted from the run. Its permission, network-policy, and
-destination checks still apply. Multiple eligible owners require a valid intent
-that selects one of them; otherwise the route is ambiguous and blocked. A URL
-without an active firewall match keeps the ordinary network fallback. The private
-intent header is always stripped before upstream forwarding. Shared-base
+Outside the platform API admission path, the addon first gathers active firewall
+base matches, then selects an owner in this order:
+
+1. **Filter registered connector candidates.** The registry classifies builtin
+   and custom firewalls only when their identities are registered in
+   `connectorRuntimeTargets`; source-provided ownership markers are not trusted.
+   If a registered custom candidate matches, registered builtin candidates are
+   excluded unless a present intent identifies a matching registered builtin.
+   This eligibility filter runs before base/rule specificity or permission
+   checks, even when the custom base is broader than the builtin base.
+   Unclassified firewall entries are not excluded by this rule and can still
+   compete with custom candidates or make the route ambiguous.
+2. **Apply route precedence to the remaining candidates.** Compare base
+   specificity, then matching rule specificity. The matching-builtin-intent
+   exception only retains builtin eligibility; it does not override this
+   precedence or grant authorization.
+3. **Disambiguate the remaining owners.** One eligible owner governs the request
+   regardless of whether intent is absent, malformed, mismatched, or names a
+   connector omitted from the run. Multiple eligible owners require a valid
+   intent that selects one of them; otherwise the route is ambiguous and
+   blocked. The selected owner's permission, network-policy, and destination
+   checks still apply.
+
+For example, register only a builtin with base `https://api.example.com/v1/` and
+a custom connector with base `https://api.example.com/`, with both policies
+allowing the request. An untagged `GET https://api.example.com/v1/items/123`
+selects the custom connector's credentials despite the narrower builtin base.
+Present intent naming that matching builtin prevents builtin exclusion; ordinary
+specificity, owner disambiguation, and authorization checks still follow. If a
+matching custom candidate is denied or blocked for malformed configuration, the
+excluded builtin candidates are not reconsidered. Existing executable coverage
+is in [cross-firewall precedence tests](../crates/runner/mitm-addon/tests/test_compiled_firewall_cross_firewall_precedence.py).
+
+A URL without an active firewall match keeps the ordinary network fallback. The
+private intent header is always stripped before upstream forwarding. Shared-base
 diagnostics also do not use intent to override a sole active owner.
 
 Firewall matching governs when managed connector credentials may be attached;

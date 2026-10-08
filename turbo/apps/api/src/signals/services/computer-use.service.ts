@@ -1,3 +1,4 @@
+import { desktopVersionIsSupported } from "../../lib/desktop-version";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command, computed, type Computed } from "ccstate";
@@ -31,6 +32,7 @@ import {
   computerUseHosts,
 } from "@okouai/db/schema/computer-use-host";
 
+import { desktopMinimumSupportedVersion } from "../../lib/desktop-compatibility";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -139,7 +141,13 @@ type StopComputerUseHostResult =
   | { readonly status: "stopped"; readonly hostId: string }
   | { readonly status: "invalid_token" };
 
+type DesktopUpgradeRequired = {
+  readonly status: "upgrade_required";
+  readonly minimumSupportedVersion: string;
+};
+
 type ClaimNextComputerUseHostCommandResult =
+  | DesktopUpgradeRequired
   | { readonly status: "invalid_token" }
   | { readonly status: "idle" }
   | {
@@ -253,12 +261,18 @@ function normalizeHostPermissions(
 export function computerUseHostIsOnline(
   host: {
     readonly status: string;
+    readonly appVersion: string;
+    readonly tokenHash: string | null;
     readonly revokedAt: Date | null;
     readonly lastSeenAt: Date;
   },
   now: Date,
 ): boolean {
+  const minimum = desktopMinimumSupportedVersion();
   return (
+    (minimum === null ||
+      (host.tokenHash === null &&
+        desktopVersionIsSupported(host.appVersion, minimum))) &&
     host.status === "online" &&
     host.revokedAt === null &&
     now.getTime() - host.lastSeenAt.getTime() <=
@@ -850,7 +864,9 @@ export const startComputerUseHost$ = command(
     },
     signal: AbortSignal,
   ): Promise<
-    StartComputerUseHostResult | { readonly status: "invalid_session" }
+    | StartComputerUseHostResult
+    | DesktopUpgradeRequired
+    | { readonly status: "invalid_session" }
   > => {
     signal.throwIfAborted();
     const db = set(writeDb$);
@@ -866,6 +882,14 @@ export const startComputerUseHost$ = command(
       !(await verifyComputerUseSession(get(clerk$), params.session, signal))
     ) {
       return { status: "invalid_session" };
+    }
+    const minimum = desktopMinimumSupportedVersion();
+    if (
+      minimum !== null &&
+      (!params.session ||
+        !desktopVersionIsSupported(params.appVersion, minimum))
+    ) {
+      return { status: "upgrade_required", minimumSupportedVersion: minimum };
     }
     const hostToken = params.session
       ? null
@@ -944,6 +968,8 @@ const COMPUTER_USE_HOST_LIVENESS_REFRESH_MS = 30 * 1000;
 
 function computerUseHostLivenessIsFresh(
   host: {
+    readonly appVersion: string;
+    readonly tokenHash: string | null;
     readonly status: string;
     readonly revokedAt: Date | null;
     readonly lastSeenAt: Date;
@@ -1394,6 +1420,15 @@ export const claimNextComputerUseHostCommand$ = command(
     if (!host) {
       return { status: "invalid_token" };
     }
+    const minimum = desktopMinimumSupportedVersion();
+    if (
+      minimum !== null &&
+      ("hostToken" in params ||
+        !desktopVersionIsSupported(host.appVersion, minimum))
+    ) {
+      return { status: "upgrade_required", minimumSupportedVersion: minimum };
+    }
+
     const now = nowDate();
 
     // Only rewrite the host row when its capabilities changed or its liveness

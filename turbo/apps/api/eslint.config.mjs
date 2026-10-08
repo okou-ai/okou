@@ -718,12 +718,6 @@ export default [
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // The production cron exposes aggregate Phase 2 outcomes, but no API
-      // constructs or inspects exact job and Storage state matrices. These
-      // focused tests pin the finite job, usage, worker composition, generic
-      // Storage publication guard, notification, and concurrency contracts.
-      "src/signals/services/__tests__/pi-memory-phase2-job.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
       // The post-commit presigned URL cache write is log-only. Every value an
       // endpoint can produce fits the cache columns, so only the command's
       // data parameter can carry a row PostgreSQL rejects.
@@ -750,10 +744,6 @@ export default [
       // Pending guard coexistence, repair and row-lock races require private
       // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
       "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
-      // #34044 requires real transactions, UTC clock, deletion and old-writer races.
-      "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
-      // D explicitly requires immutable billing/compaction snapshot infrastructure.
-      "src/signals/services/__tests__/pi-memory-stage1-usage.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
       // #34693 and #34711 need the persisted membership fence in both
       // overlapping commit orders, the foreign-key cascades that invalidate a
@@ -880,18 +870,11 @@ export default [
       // policy lookup byte-for-byte; individual provider routes cannot cover
       // every lookup-table row without duplicating the contract under test.
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // The production cron exposes aggregate Phase 2 outcomes, but cannot
-      // construct or inspect the exact usage, worker, PostgreSQL concurrency,
-      // generic Storage publication guard, notification, and selection state
-      // matrices covered by these focused tests.
-      "src/signals/services/__tests__/pi-memory-phase2-job.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
       // The post-commit presigned URL cache write is log-only. Every value an
       // endpoint can produce fits the cache columns, so only the command's
       // data parameter can carry a row PostgreSQL rejects.
       "src/signals/services/__tests__/execution-storage.service.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
@@ -904,10 +887,6 @@ export default [
       // Pending guard coexistence, repair and row-lock races require private
       // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
       "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
-      // #34044 requires real transactions, UTC clock, deletion and old-writer races.
-      "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
-      // D explicitly requires immutable billing/compaction snapshot infrastructure.
-      "src/signals/services/__tests__/pi-memory-stage1-usage.service.test.ts",
       // The logger is the subject here, not a diagnostic: this suite covers the
       // app factory's log wiring and flush ownership, which no route exposes.
       "src/__tests__/app-factory.test.ts",

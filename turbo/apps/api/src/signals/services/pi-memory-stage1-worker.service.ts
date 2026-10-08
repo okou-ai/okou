@@ -53,16 +53,7 @@ import { blobs } from "@okouai/db/schema/blob";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import {
-  and,
-  asc,
-  eq,
-  getTableColumns,
-  gt,
-  inArray,
-  lte,
-  or,
-} from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt, lte, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
@@ -114,13 +105,7 @@ const stage1OutputSchema = z
   })
   .strict();
 
-interface PiMemoryStage1Scope {
-  readonly memoryStorageIds: readonly string[];
-  readonly piSessionId?: string;
-}
-
 interface PiMemoryStage1WorkerInput {
-  readonly scope: PiMemoryStage1Scope | undefined;
   readonly currentTime: Date;
 }
 
@@ -211,20 +196,6 @@ class DisabledWorkError extends Error {
     super("Pi memory is disabled for the Stage 1 work owner");
     this.name = "DisabledWorkError";
   }
-}
-
-function scopeCondition(scope: PiMemoryStage1Scope | undefined) {
-  return scope
-    ? and(
-        inArray(
-          piMemoryStage1Candidates.memoryStorageId,
-          scope.memoryStorageIds,
-        ),
-        scope.piSessionId
-          ? eq(piMemoryStage1Candidates.piSessionId, scope.piSessionId)
-          : undefined,
-      )
-    : undefined;
 }
 
 function dueCondition(currentTime: Date) {
@@ -343,24 +314,20 @@ async function selectDueCandidateRows(
       blobs,
       eq(blobs.hash, piMemoryStage1Candidates.sourceHistoryHash),
     )
-    .where(and(dueCondition(input.currentTime), scopeCondition(input.scope)))
+    .where(dueCondition(input.currentTime))
     .orderBy(
       asc(piMemoryStage1Candidates.eligibleAt),
       asc(piMemoryStage1Candidates.memoryStorageId),
       asc(piMemoryStage1Candidates.piSessionId),
     )
-    .limit(input.scope?.piSessionId ? 1 : PI_MEMORY_STAGE1_SCAN_LIMIT);
+    .limit(PI_MEMORY_STAGE1_SCAN_LIMIT);
 }
 
-export async function claimPiMemoryStage1Work(
+async function claimPiMemoryStage1Work(
   db: Db,
   input: PiMemoryStage1WorkerInput,
 ): Promise<ClaimResult> {
-  await consumePiMemoryStage1Days(
-    db,
-    input.currentTime,
-    input.scope?.memoryStorageIds,
-  );
+  await consumePiMemoryStage1Days(db, input.currentTime);
   const rows = await selectDueCandidateRows(db, input);
   let staleDiscarded = 0;
   let terminalFailure = 0;

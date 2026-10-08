@@ -6,6 +6,10 @@ CLERK_SECRET_KEY=op://Development/clerk/CLERK_SECRET_KEY
 CLERK_PUBLISHABLE_KEY=op://Development/clerk/CLERK_PUBLISHABLE_KEY
 CLERK_WEBHOOK_SIGNING_SECRET=op://Development/clerk/CLERK_WEBHOOK_SIGNING_SECRET
 
+# Optional: global Desktop compatibility admission. Leave unset during rollout.
+# Activate only after the supported ZIP/DMG and both updater feeds are live.
+# OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION=0.51.0
+
 # Optional: external MCP resource server.
 # See docs/mcp-server.md; use the exact resource and issuer configured in Clerk.
 # MCP_RESOURCE_URL=https://api.example.test/mcp

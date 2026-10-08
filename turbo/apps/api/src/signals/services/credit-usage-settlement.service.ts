@@ -1,4 +1,16 @@
 import { OrgCreditExpirationConflict } from "./org-credit-expiration";
+import {
+  usageCashQueries,
+  usageCashExpiryLotsQuery,
+  requireUsageCashWallet,
+  usageCashWork,
+} from "./usage-credit-deduction.service";
+import { usagePackOverdraftTransferSql as packDebtSql } from "@okouai/db/operations/usage-pack-overdraft-transfer";
+import {
+  requireUsagePackOverdraftTransfer as requirePackDebt,
+  usagePackOverdraftTransferOutcomeRow as debtRow,
+} from "./usage-pack-overdraft-transfer.service";
+import { parseRawRows as parseRows } from "../../lib/db-raw-rows";
 import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 import {
   prepareUsageFinancialPlan$,
@@ -24,9 +36,9 @@ import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { receiptQuery } from "./managed-usage-record";
 import {
-  managedAttributionQuery,
+  managedAttributionQuery as attributionQuery,
   managedAttributionWrite,
-  managedBillingRunQuery,
+  managedBillingRunQuery as runQuery,
 } from "./managed-usage-attribution";
 import {
   capturedManagedAttribution,
@@ -56,6 +68,8 @@ import {
   hasNoStandaloneUsage,
   settledEventsSql,
   memberGrantDeductionsSql,
+  planMemberGrantDeductions,
+  planExpiryLotDeductions,
   expiryLotDeductionsSql,
   requireConditionalDeductions,
   orgDebitPlan,
@@ -108,13 +122,14 @@ interface SettlementBatchArgs extends UsageSettlementArgs {
 
 /**
  * All financial rows commit together; only plain values leave this command.
- * The pending claim prevents duplicate charging. Prepared allowance and credit
- * splits use atomic arithmetic without old-version or balance checks; concurrent
- * overuse is accepted. No external I/O runs inside this transaction.
+ * The pending claim prevents duplicate charging. Prices and allowances stay
+ * prepared, but cash is re-read and locked before allocation.
+ * Member grants cannot overdraw; all remaining charges debit the organization.
+ * No external I/O runs inside this transaction.
  */
 const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
-    const { orgId, refresh, batch } = args;
+    const { orgId, refresh, batch, at } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
     const result = await set(writeDb$).transaction(async (tx) => {
       work.lockWaitMs = 0;
@@ -126,12 +141,9 @@ const commitUsageBatch$ = command(
       }
       const { usage: managed, processPending } = socialPlan(batch.social, job);
       if (managed) {
-        const [run] = await tx
-          .select()
-          .from(managedBillingRunQuery(managed.actor.runId));
-        let [attribution] = await tx
-          .select()
-          .from(managedAttributionQuery(managed.actor.runId));
+        const runId = managed.actor.runId;
+        const [run] = await tx.select().from(runQuery(runId));
+        let [attribution] = await tx.select().from(attributionQuery(runId));
         if (run && !attribution) {
           const capture = managedAttributionWrite(managed, run);
           const [captured] = await tx
@@ -144,7 +156,6 @@ const commitUsageBatch$ = command(
         await tx.execute(managedUsagePublicationSql(managed, run, attribution));
       }
       const key = managed?.idempotencyKey;
-      const at = args.at;
       const events = processPending
         ? await tx
             .update(usageEvent)
@@ -173,20 +184,33 @@ const commitUsageBatch$ = command(
           windows,
           entitlement,
         );
-        financial = usageFinancialPlan(batch, priced, allowance, at);
+        financial = usageFinancialPlan(priced, allowance, at);
       }
-      const { priced, allowance, charges, deduction, expiry } = financial;
+      const { priced, allowance, charges } = financial;
+      const cash = usageCashQueries(orgId, charges.byUser, at);
+      const [wallet] = await tx.select().from(cash.wallet);
+      requireUsageCashWallet(wallet);
+      const grants = await tx.select().from(cash.grants);
+      const deduction = planMemberGrantDeductions(charges.byUser, grants);
+      if (deduction.sharedCredits > 0) {
+        await expireOrgCreditsInTransaction(tx, orgId, at);
+      }
+      requirePackDebt(
+        parseRows(debtRow, await tx.execute(packDebtSql({ orgId }, at))),
+      );
+      const lots =
+        deduction.sharedCredits > 0
+          ? await tx.select().from(usageCashExpiryLotsQuery(orgId, at))
+          : [];
+      const expiry = planExpiryLotDeductions(lots, deduction.sharedCredits, at);
       if (allowance.refresh) {
         await tx.execute(allowance.refresh);
       }
       await tx.execute(insertWindowsSql(allowance.inserted));
-      const canonicalWindows = allowance.inserted.length
+      const issued = allowance.inserted.length
         ? await tx.select().from(issuedAllowanceWindowsQuery(allowance))
         : [];
-      for (const write of allowanceSettlementWrites(
-        allowance,
-        canonicalWindows,
-      )) {
+      for (const write of allowanceSettlementWrites(allowance, issued)) {
         const { rowCount } = await tx.execute(write.sql);
         requireAllowanceWrite(write.kind, write.planned, rowCount);
       }
@@ -195,17 +219,10 @@ const commitUsageBatch$ = command(
       const granted = (await tx.execute(grantSql)).rowCount;
       requireConditionalDeductions("grant", deduction.updates, granted);
       const amount = deduction.sharedCredits;
-      if (amount > 0) {
-        // Main's order: expire before the new deduction, in one statement.
-        await expireOrgCreditsInTransaction(tx, orgId, at);
-      }
       const lotSql = expiryLotDeductionsSql(expiry.updates);
       const lotted = (await tx.execute(lotSql)).rowCount;
       requireConditionalDeductions("expiry lot", expiry.updates, lotted);
-      Object.assign(work, deduction.work, {
-        expiredRows: expiry.expiredRows,
-        expiryRows: expiry.expiryRows,
-      });
+      Object.assign(work, usageCashWork(deduction, expiry));
       let afterCredits = 0;
       if (amount > 0) {
         const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
