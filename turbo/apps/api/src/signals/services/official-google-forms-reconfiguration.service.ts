@@ -19,7 +19,7 @@ import {
 import {
   ensureGoogleFormsWatchForUser$,
   reconcileGoogleFormsWatchesForUser$,
-} from "./google-forms-automation-event.service";
+} from "./google-forms-automation-watch.service";
 import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
