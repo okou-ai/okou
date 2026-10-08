@@ -4,11 +4,7 @@ import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
 import { createDiscordThreadPrompt } from "./thread-run-prompt/discord";
 import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
 import { renderThreadPrompt } from "./thread-run-prompt/render";
-import {
-  createRotatedPrompt,
-  resolveRotatedPromptSession,
-  type RotatedPromptInput,
-} from "./thread-run-prompt/rotated";
+import { createRotatedPrompt } from "./thread-run-prompt/rotated";
 import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
 import { createTeamsThreadPrompt } from "./thread-run-prompt/teams";
 import { createTelegramThreadPrompt } from "./thread-run-prompt/telegram";
@@ -298,12 +294,12 @@ import type {
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import {
   capturedChatThreadSessionSnapshot,
-  chatThreadConversationRun,
+  chatThreadSessionIdentity,
+  createChatThreadSessionRead,
   type ChatThreadExecutionSnapshot,
   type ChatThreadSessionResolution,
   type ChatThreadSessionResolutionAction,
   type ChatThreadSessionRoute,
-  chatThreadSessionSelection,
   resolveChatThreadSessionSnapshot,
 } from "./chat-session-continuity.service";
 import { agentRunSourceAnnotation } from "./chat-user-message.service";
@@ -487,7 +483,6 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { agentSessions } from "@okouai/db/schema/agent-session";
 
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { blobs } from "@okouai/db/schema/blob";
 
 import {
   chatEventRunlessInputPredicate,
@@ -498,7 +493,6 @@ import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-cap
 
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
-import { conversations } from "@okouai/db/schema/conversation";
 
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
@@ -1462,6 +1456,7 @@ function claimCommitArguments(
     threadSessionResolution: args.threadSessionResolution
       ? {
           action: args.threadSessionResolution.action,
+          previousAgentId: args.threadSessionResolution.previousAgentId,
           resetNativeSession: args.threadSessionResolution.resetNativeSession,
           expected: args.threadSessionResolution.expected,
         }
@@ -2045,38 +2040,15 @@ export function createThreadClaimRunObjects(
       .limit(1);
     return row ?? null;
   });
-  const sessionRead$ = computed(async (get) => {
-    const thread = await get(threadRow$);
-    if (!thread?.agentSessionId) {
-      return undefined;
-    }
-    const [row] = await get(db$)
-      .select(chatThreadSessionSelection())
-      .from(agentSessions)
-      .leftJoin(
-        conversations,
-        eq(conversations.id, agentSessions.conversationId),
-      )
-      .leftJoin(blobs, eq(blobs.hash, conversations.cliAgentSessionHistoryHash))
-      .leftJoin(
-        chatThreadConversationRun,
-        eq(chatThreadConversationRun.id, conversations.runId),
-      )
-      .leftJoin(
-        agentRuns,
-        thread.agentSessionRunId
-          ? eq(agentRuns.id, thread.agentSessionRunId)
-          : sql`FALSE`,
-      )
-      .where(
-        and(
-          eq(agentSessions.id, thread.agentSessionId),
-          eq(agentSessions.userId, context.userId),
-          eq(agentSessions.orgId, claim.orgId),
-        ),
-      )
-      .limit(1);
-    return row;
+  const sessionOrgId = claim.orgId;
+  const sessionUserId = context.userId;
+  const sessionRead$ = createChatThreadSessionRead(
+    threadRow$,
+    sessionOrgId,
+    sessionUserId,
+  );
+  const session$ = computed(async (get) => {
+    return chatThreadSessionIdentity(await get(sessionRead$));
   });
   const pickedEvent$ = computed(
     async (get): Promise<PickedThreadInputEvent | null> => {
@@ -2086,6 +2058,7 @@ export function createThreadClaimRunObjects(
         get(db$)
           .select({
             id: chatEvents.id,
+            chatThreadId: chatEvents.chatThreadId,
             createdAt: chatEvents.createdAt,
             seqId: chatEvents.seqId,
             eventType: chatEvents.eventType,
@@ -2933,14 +2906,13 @@ export function createThreadClaimRunObjects(
   const promptModelModel$ = computed(async (get) => {
     return await get(promptResolvePromptModelResolvePromptModel$);
   });
-  const rotatedPromptInput$ = computed(
-    async (get): Promise<RotatedPromptInput | null> => {
-      const [args, model, event] = await Promise.all([
+  const promptSessionSession$ = computed(
+    async (get): Promise<ChatThreadSessionResolution | null> => {
+      const [args, model] = await Promise.all([
         get(promptArgsArgs$),
         get(promptModelModel$),
-        get(pickedEvent$),
       ]);
-      if (!event || "error" in model) {
+      if ("error" in model) {
         return null;
       }
       const { routedModel } = routeQueuedMessagePiExecution({
@@ -2959,27 +2931,27 @@ export function createThreadClaimRunObjects(
         );
       }
       const agent = await get((await get(promptExecutionContext$)).agent$);
-      return {
-        event,
-        chatThreadId: args.threadId,
-        selectedAgentId: args.agent.id,
-        route: {
-          selectedModel: routedModel.modelPin.selectedModel,
-          cliAgentType: routedModel.cliAgentType,
-        },
-        sessionSnapshot: capturedChatThreadSessionSnapshot(
+      return resolveChatThreadSessionSnapshot(
+        capturedChatThreadSessionSnapshot(
           thread,
           await get(sessionRead$),
           agent,
         ),
-      };
+        {
+          route: {
+            selectedModel: routedModel.modelPin.selectedModel,
+            cliAgentType: routedModel.cliAgentType,
+          },
+        },
+      );
     },
   );
-  const promptSessionSession$ = computed(async (get) => {
-    const input = await get(rotatedPromptInput$);
-    return input ? resolveRotatedPromptSession(input) : null;
-  });
-  const rotatedPrompt$ = createRotatedPrompt(rotatedPromptInput$);
+  const rotatedPrompt$ = createRotatedPrompt(
+    pickedEvent$,
+    session$,
+    memberRoutes$,
+    claimCatalog$,
+  );
   const incompleteRoundAnchors$ = computed(async (get) => {
     const { db, threadId } = await get(promptArgsArgs$);
     const anchors = [undefined, sql`incomplete_frontier.seq_id`].map(
@@ -3419,7 +3391,7 @@ export function createThreadClaimRunObjects(
         model,
         templates,
         session,
-        incomplete: session.action === "rotated" ? "" : incomplete,
+        incomplete,
         prior,
         host,
         capture,
@@ -6330,7 +6302,6 @@ export function createThreadClaimRunObjects(
               agent,
             ),
             {
-              agentId: agent.id,
               route,
             },
           );
@@ -10445,7 +10416,7 @@ type CommittedAtomicLaunchResult = Exclude<
 
 type PendingThreadSessionResolution = Pick<
   ChatThreadSessionResolution,
-  "action" | "resetNativeSession" | "expected"
+  "action" | "previousAgentId" | "resetNativeSession" | "expected"
 >;
 /** Explicit facts the atomic launch persists; owners assemble them privately. */
 interface PendingRunArguments {
@@ -16456,22 +16427,33 @@ function pendingLaunchActiveRunValues(
   };
 }
 
-function preparedNativeSessionResetStatements(
+function preparedSessionUpdateStatements(
   commit: PreparedCommitPreparedLaunchArgs,
 ) {
-  return commit.createArgs.threadSessionResolution?.resetNativeSession
-    ? [
-        pendingLaunchUpdateSql(
-          agentSessions,
-          {
-            agentId: commit.context.resolved.agentId,
-            conversationId: null,
-            storageMounts: [...commit.launch.sessionStorageMounts],
-          },
-          eq(agentSessions.id, commit.identity.sessionId),
-        ),
-      ]
-    : [];
+  const resolution = commit.createArgs.threadSessionResolution;
+  if (
+    !resolution ||
+    resolution.expected.sessionId === null ||
+    (!resolution.resetNativeSession &&
+      resolution.previousAgentId === commit.context.resolved.agentId)
+  ) {
+    return [];
+  }
+  return [
+    pendingLaunchUpdateSql(
+      agentSessions,
+      {
+        agentId: commit.context.resolved.agentId,
+        ...(resolution.resetNativeSession
+          ? {
+              conversationId: null,
+              storageMounts: [...commit.launch.sessionStorageMounts],
+            }
+          : {}),
+      },
+      eq(agentSessions.id, commit.identity.sessionId),
+    ),
+  ];
 }
 
 const pendingLaunchRowSchema = z.object({
@@ -16666,8 +16648,8 @@ export const commitPreparedPendingLaunch$ = command(
             // account/session/queue authority is still checked by this writer.
             const capabilities = args.planCapabilities;
             signal.throwIfAborted();
-            for (const reset of preparedNativeSessionResetStatements(args)) {
-              await tx.execute(reset);
+            for (const update of preparedSessionUpdateStatements(args)) {
+              await tx.execute(update);
             }
             const prepared = pendingLaunchRowsPlan(
               args,

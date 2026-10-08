@@ -11,6 +11,7 @@ export type PickedThreadInputEvent = Readonly<
   Pick<
     typeof chatEvents.$inferSelect,
     | "id"
+    | "chatThreadId"
     | "createdAt"
     | "seqId"
     | "eventType"
