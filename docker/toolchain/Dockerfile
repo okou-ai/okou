@@ -1,3 +1,5 @@
+# (no-op Toolchain release marker refreshed for image publication on 2026-10-08)
+
 # Stage 1: Base toolchain for CI/CD and minimal development
 FROM ubuntu:24.04 AS toolchain
 
@@ -55,7 +57,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
     && rustup component add rustfmt clippy \
     && rm -rf /usr/local/rustup/toolchains/*/share/doc \
     && rm -rf /usr/local/rustup/toolchains/*/share/man \
-    && rustc --version && cargo --version # Refresh stable Rust: 2026-10-08
+    && rustc --version && cargo --version
 
 # Install musl compilers for runner Linux targets. Using a glibc
 # cross-gcc directly would make cc crate compile C sources with glibc
