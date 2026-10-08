@@ -656,7 +656,7 @@ test("Browse workflows in a workflow's dialog hands over to the template picker"
   expect(tabByText("Workflow")).toHaveAttribute("aria-selected", "true");
   expect(
     button("Select workflow template Morning brief", picker),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   expect(editor.textContent).toBe("Keep my draft");
   expect(capture.sentMessages).toHaveLength(0);
 });

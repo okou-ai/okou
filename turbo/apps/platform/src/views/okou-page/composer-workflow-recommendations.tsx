@@ -2,6 +2,7 @@ import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Clock3 } from "lucide-react";
 import {
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -32,10 +33,7 @@ import { WorkflowResultPreview } from "./workflow-result-preview.tsx";
 const DETAIL_ORDER = ["one", "two", "three"] as const;
 
 /* What the workflow reads and writes, then how often it runs: one row of
-   chips in place of a "Works with" section and a separate cadence line. */
-const WORKFLOW_FACT =
-  "inline-flex h-7 items-center gap-1.5 rounded-full bg-muted px-2.5 text-xs text-foreground";
-
+   badges in place of a "Works with" section and a separate cadence line. */
 function WorkflowFacts({ item }: { readonly item: WorkflowRecommendation }) {
   const { t } = useTranslation();
   const cadence = t(
@@ -52,16 +50,16 @@ function WorkflowFacts({ item }: { readonly item: WorkflowRecommendation }) {
           return candidate.slug === slug;
         });
         return connector ? (
-          <li key={slug} className={WORKFLOW_FACT}>
-            <ConnectorIcon icon={connector.icon} size={14} />
+          <Badge key={slug} render={<li />} className="text-xs text-foreground">
+            <ConnectorIcon icon={connector.icon} size={12} />
             {connector.label}
-          </li>
+          </Badge>
         ) : null;
       })}
-      <li className={WORKFLOW_FACT}>
-        <Clock3 className="size-3.5 text-muted-foreground" aria-hidden />
+      <Badge render={<li />} className="text-xs text-foreground">
+        <Clock3 className="text-muted-foreground" aria-hidden />
         {cadence}
-      </li>
+      </Badge>
     </ul>
   );
 }
@@ -200,7 +198,7 @@ function WorkflowDetail({
   const setContext = useSet(signals.taskChips.workflows.setContext$);
   const browse = useSet(signals.taskChips.workflows.browse$);
   return (
-    <div className="flex min-w-0 flex-col gap-6 p-6 md:p-8">
+    <div className="flex min-w-0 flex-col gap-6 p-6 lg:p-8">
       <div className="space-y-2 pr-8">
         <DialogTitle className="text-xl leading-7">{detail.name}</DialogTitle>
         <DialogDescription className="leading-5">
@@ -265,11 +263,13 @@ function WorkflowDialog({ signals }: { readonly signals: ComposerSignals }) {
       onOpenChangeComplete={onCloseComplete}
     >
       {/* The sample fills the left column to the dialog's own edges, so the
-          popup's radius and clipping frame it; the columns stack below md. */}
+          popup's radius and clipping frame it. The columns split only from lg,
+          where the popup always reaches its 4xl cap: narrower, the sample
+          column cannot hold the metrics preview's three figures side by side. */}
       <DialogContent
         maxWidth="4xl"
         closeLabel={copy.close}
-        contentClassName="gap-0 p-0 md:grid-cols-[minmax(0,9fr)_minmax(0,11fr)]"
+        contentClassName="gap-0 p-0 lg:grid-cols-[minmax(0,9fr)_minmax(0,11fr)]"
       >
         {item && (
           <>
