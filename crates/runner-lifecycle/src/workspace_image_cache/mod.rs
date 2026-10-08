@@ -93,9 +93,9 @@ mod tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use entry::CacheEntryPaths;
 pub use lifecycle::{
-    WorkspaceImageLease, WorkspaceImagePromotionContext, WorkspaceImagePromotionIdentityFailure,
-    WorkspaceImagePromotionOutcome, WorkspaceSessionHistorySidecarEntryGuard,
-    cap_held_workspace_states,
+    WorkspaceCacheInventory, WorkspaceImageLease, WorkspaceImagePromotionContext,
+    WorkspaceImagePromotionIdentityFailure, WorkspaceImagePromotionOutcome,
+    WorkspaceSessionHistorySidecarEntryGuard, cap_held_workspace_states,
 };
 use types::WorkspaceCacheLockOwner;
 pub use types::{

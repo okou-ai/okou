@@ -11,9 +11,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tracing::info;
 
 use crate::active_runs::ActiveRuns;
-use runner_types::types::{HeldWorkspaceState, MAX_WORKSPACE_CACHES_PER_REUSE_KEY};
+use runner_types::types::HeldWorkspaceState;
 
-use super::cap_held_workspace_states;
+use super::{WorkspaceCacheInventory, cap_held_workspace_states};
 
 /// In-memory cache state shared by heartbeat, discovery, and finalization.
 ///
@@ -28,6 +28,7 @@ pub struct WorkspaceCacheStateSnapshot {
 struct WorkspaceCacheStateSnapshotInner {
     workspace_cache_states: Vec<HeldWorkspaceState>,
     workspace_cache_loaded: bool,
+    workspace_cache_complete: bool,
     workspace_cache_revision: u64,
 }
 
@@ -66,22 +67,31 @@ impl WorkspaceCacheStateSnapshot {
     ///
     /// A scan with the same revision replaces the previous view. A concurrent
     /// promotion advances the revision, so its state survives the older scan.
-    /// Active-key filtering is deferred until a current view is assembled.
+    /// Only an untruncated scan without concurrent updates can restore complete
+    /// negative lookups after cap loss. Active-key filtering is deferred until
+    /// a current view is assembled.
     pub fn finish_workspace_cache_refresh(
         &self,
         refresh: WorkspaceCacheSnapshotRefresh,
-        states: Vec<HeldWorkspaceState>,
+        inventory: WorkspaceCacheInventory,
     ) -> WorkspaceCacheRefreshOutcome {
         let mut inner = self.lock_inner();
-        let mut next = if inner.workspace_cache_revision == refresh.revision {
-            states
+        let unchanged_revision = inner.workspace_cache_revision == refresh.revision;
+        let mut complete =
+            !inventory.truncated && (unchanged_revision || inner.workspace_cache_complete);
+        let mut next = if unchanged_revision {
+            inventory.states
         } else {
-            merge_workspace_cache_snapshot_states(inner.workspace_cache_states.clone(), states)
+            merge_workspace_cache_snapshot_states(
+                inner.workspace_cache_states.clone(),
+                inventory.states,
+            )
         };
-        cap_workspace_cache_snapshot_states(&mut next);
+        complete &= !cap_workspace_cache_snapshot_states(&mut next);
         let changed = inner.workspace_cache_states != next;
         inner.workspace_cache_states = next;
         inner.workspace_cache_loaded = true;
+        inner.workspace_cache_complete = complete;
         inner.workspace_cache_revision = inner.workspace_cache_revision.wrapping_add(1);
         WorkspaceCacheRefreshOutcome {
             changed,
@@ -102,14 +112,16 @@ impl WorkspaceCacheStateSnapshot {
             Some(existing) => merge_held_workspace_state(existing, state),
             None => inner.workspace_cache_states.push(state),
         }
-        cap_workspace_cache_snapshot_states(&mut inner.workspace_cache_states);
+        let truncated = cap_workspace_cache_snapshot_states(&mut inner.workspace_cache_states);
+        inner.workspace_cache_complete &= !truncated;
         inner.workspace_cache_revision = inner.workspace_cache_revision.wrapping_add(1);
     }
 
-    /// Before the first load, any reuse key might be present.
+    /// Only absence from a complete inventory proves a cache key unavailable.
+    /// Before a complete scan, or after cap loss, omitted keys remain possible.
     pub fn might_contain_workspace_cache_reuse_key(&self, reuse_key: &str) -> bool {
         let inner = self.lock_inner();
-        !inner.workspace_cache_loaded
+        !inner.workspace_cache_complete
             || inner
                 .workspace_cache_states
                 .iter()
@@ -209,9 +221,7 @@ fn merge_held_workspace_state(existing: &mut HeldWorkspaceState, mut incoming: H
     existing
         .workspace_caches
         .sort_unstable_by(|a, b| a.profile.cmp(&b.profile));
-    existing
-        .workspace_caches
-        .truncate(MAX_WORKSPACE_CACHES_PER_REUSE_KEY);
+    // The caller caps the merged inventory and records any profile loss.
 }
 
 fn merge_workspace_cache_snapshot_states(
@@ -230,13 +240,14 @@ fn merge_workspace_cache_snapshot_states(
     by_reuse_key.into_values().collect()
 }
 
-fn cap_workspace_cache_snapshot_states(states: &mut Vec<HeldWorkspaceState>) {
+fn cap_workspace_cache_snapshot_states(states: &mut Vec<HeldWorkspaceState>) -> bool {
     let observed_workspace_states = states.len();
     let observed_workspace_caches = states
         .iter()
         .map(|state| state.workspace_caches.len())
         .sum::<usize>();
-    *states = cap_held_workspace_states(std::mem::take(states));
+    let inventory = WorkspaceCacheInventory::bounded(std::mem::take(states));
+    *states = inventory.states;
     let retained_workspace_caches = states
         .iter()
         .map(|state| state.workspace_caches.len())
@@ -252,13 +263,15 @@ fn cap_workspace_cache_snapshot_states(states: &mut Vec<HeldWorkspaceState>) {
             "workspace cache snapshot truncated"
         );
     }
+    inventory.truncated
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use runner_types::types::{
-        MAX_HELD_WORKSPACE_STATES, WORKSPACE_AFFINITY_VERSION, WorkspaceCacheCapability,
+        MAX_HELD_WORKSPACE_STATES, MAX_WORKSPACE_CACHES_PER_HEARTBEAT,
+        MAX_WORKSPACE_CACHES_PER_REUSE_KEY, WORKSPACE_AFFINITY_VERSION, WorkspaceCacheCapability,
     };
 
     fn test_active_runs() -> ActiveRuns {
@@ -289,7 +302,7 @@ mod tests {
 
     fn refresh_snapshot(snapshot: &WorkspaceCacheStateSnapshot, states: Vec<HeldWorkspaceState>) {
         let refresh = snapshot.begin_workspace_cache_refresh();
-        snapshot.finish_workspace_cache_refresh(refresh, states);
+        snapshot.finish_workspace_cache_refresh(refresh, WorkspaceCacheInventory::bounded(states));
     }
 
     fn timestamp_for_index(index: usize) -> String {
@@ -359,6 +372,8 @@ mod tests {
     #[test]
     fn workspace_cache_snapshot_upsert_caps_states() {
         let snapshot = WorkspaceCacheStateSnapshot::new();
+        refresh_snapshot(&snapshot, Vec::new());
+        assert!(!snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
         for index in 0..=MAX_HELD_WORKSPACE_STATES {
             snapshot.upsert_workspace_cache_state(HeldWorkspaceState {
                 reuse_key: format!("sess-{index:04}"),
@@ -377,6 +392,178 @@ mod tests {
                 .iter()
                 .any(|state| state.reuse_key == format!("sess-{MAX_HELD_WORKSPACE_STATES:04}"))
         );
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+    }
+
+    #[test]
+    fn workspace_cache_snapshot_refresh_keeps_omitted_keys_possible() {
+        let snapshot = WorkspaceCacheStateSnapshot::new();
+        let states = (0..=MAX_HELD_WORKSPACE_STATES)
+            .map(|index| {
+                held_workspace_state(
+                    &format!("sess-{index:04}"),
+                    &timestamp_for_index(index),
+                    &["vm0/default"],
+                )
+            })
+            .collect();
+        refresh_snapshot(&snapshot, states);
+
+        assert_eq!(
+            snapshot.loaded_workspace_cache_states().len(),
+            MAX_HELD_WORKSPACE_STATES,
+        );
+        assert!(
+            !snapshot
+                .loaded_workspace_cache_states()
+                .iter()
+                .any(|state| state.reuse_key == "sess-0000"),
+        );
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+
+        refresh_snapshot(&snapshot, Vec::new());
+        assert!(!snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+    }
+
+    #[test]
+    fn workspace_cache_snapshot_promotion_alone_does_not_prove_absence() {
+        let snapshot = WorkspaceCacheStateSnapshot::new();
+        snapshot.upsert_workspace_cache_state(held_workspace_state(
+            "sess-promoted",
+            "2026-06-01T00:00:02.000Z",
+            &["vm0/default"],
+        ));
+        assert!(snapshot.workspace_cache_loaded());
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-on-disk"));
+    }
+
+    #[test]
+    fn workspace_cache_snapshot_complete_inventory_at_limit_proves_absence() {
+        let snapshot = WorkspaceCacheStateSnapshot::new();
+        let mut states: Vec<_> = (0..MAX_HELD_WORKSPACE_STATES)
+            .map(|index| {
+                held_workspace_state(
+                    &format!("sess-{index:04}"),
+                    &timestamp_for_index(index),
+                    &["vm0/default"],
+                )
+            })
+            .collect();
+        states.push(states[0].clone());
+        refresh_snapshot(&snapshot, states);
+
+        assert_eq!(
+            snapshot.loaded_workspace_cache_states().len(),
+            MAX_HELD_WORKSPACE_STATES,
+        );
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+        assert!(!snapshot.might_contain_workspace_cache_reuse_key("sess-absent"));
+    }
+
+    #[test]
+    fn workspace_cache_snapshot_global_cap_keeps_omitted_keys_possible() {
+        let snapshot = WorkspaceCacheStateSnapshot::new();
+        let profiles = ["vm0/default", "vm0/large"];
+        let states = (0..=MAX_WORKSPACE_CACHES_PER_HEARTBEAT / profiles.len())
+            .map(|index| {
+                held_workspace_state(
+                    &format!("sess-{index:04}"),
+                    &timestamp_for_index(index),
+                    &profiles,
+                )
+            })
+            .collect();
+        refresh_snapshot(&snapshot, states);
+        let states = snapshot.loaded_workspace_cache_states();
+        assert!(states.len() < MAX_HELD_WORKSPACE_STATES);
+        assert_eq!(
+            states
+                .iter()
+                .map(|state| state.workspace_caches.len())
+                .sum::<usize>(),
+            MAX_WORKSPACE_CACHES_PER_HEARTBEAT,
+        );
+        assert!(!states.iter().any(|state| state.reuse_key == "sess-0000"));
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+    }
+
+    #[test]
+    fn workspace_cache_snapshot_profile_upsert_loss_is_not_hidden_by_merge() {
+        let snapshot = WorkspaceCacheStateSnapshot::new();
+        refresh_snapshot(&snapshot, Vec::new());
+        for index in 0..=MAX_WORKSPACE_CACHES_PER_REUSE_KEY {
+            snapshot.upsert_workspace_cache_state(held_workspace_state(
+                "sess-shared",
+                &timestamp_for_index(index),
+                &[&format!("vm0/profile-{index}")],
+            ));
+        }
+
+        let states = snapshot.loaded_workspace_cache_states();
+        assert_eq!(states.len(), 1);
+        assert_eq!(
+            states[0].workspace_caches.len(),
+            MAX_WORKSPACE_CACHES_PER_REUSE_KEY
+        );
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-absent"));
+    }
+
+    #[test]
+    fn workspace_cache_snapshot_racing_refresh_cannot_clear_prior_truncation() {
+        let snapshot = WorkspaceCacheStateSnapshot::new();
+        let states = (0..MAX_HELD_WORKSPACE_STATES)
+            .map(|index| {
+                held_workspace_state(
+                    &format!("sess-{index:04}"),
+                    &timestamp_for_index(index),
+                    &["vm0/default"],
+                )
+            })
+            .collect();
+        refresh_snapshot(&snapshot, states);
+        let refresh = snapshot.begin_workspace_cache_refresh();
+        snapshot.upsert_workspace_cache_state(held_workspace_state(
+            "sess-new",
+            &timestamp_for_index(MAX_HELD_WORKSPACE_STATES),
+            &["vm0/default"],
+        ));
+        snapshot.finish_workspace_cache_refresh(refresh, WorkspaceCacheInventory::default());
+
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-new"));
+        refresh_snapshot(&snapshot, Vec::new());
+        assert!(!snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+    }
+
+    #[test]
+    fn workspace_cache_snapshot_concurrent_merge_records_new_truncation() {
+        let snapshot = WorkspaceCacheStateSnapshot::new();
+        refresh_snapshot(&snapshot, Vec::new());
+        let refresh = snapshot.begin_workspace_cache_refresh();
+        snapshot.upsert_workspace_cache_state(held_workspace_state(
+            "sess-new",
+            &timestamp_for_index(MAX_HELD_WORKSPACE_STATES),
+            &["vm0/default"],
+        ));
+        let inventory = WorkspaceCacheInventory::bounded(
+            (0..MAX_HELD_WORKSPACE_STATES)
+                .map(|index| {
+                    held_workspace_state(
+                        &format!("sess-{index:04}"),
+                        &timestamp_for_index(index),
+                        &["vm0/default"],
+                    )
+                })
+                .collect(),
+        );
+        assert!(!inventory.truncated);
+        snapshot.finish_workspace_cache_refresh(refresh, inventory);
+
+        let states = snapshot.loaded_workspace_cache_states();
+        assert_eq!(states.len(), MAX_HELD_WORKSPACE_STATES);
+        assert!(!states.iter().any(|state| state.reuse_key == "sess-0000"));
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-new"));
     }
 
     #[test]
@@ -390,7 +577,10 @@ mod tests {
 
         let refresh = snapshot.begin_workspace_cache_refresh();
         snapshot.upsert_workspace_cache_state(promoted);
-        let refreshed = snapshot.finish_workspace_cache_refresh(refresh, vec![original.clone()]);
+        let refreshed = snapshot.finish_workspace_cache_refresh(
+            refresh,
+            WorkspaceCacheInventory::bounded(vec![original.clone()]),
+        );
         let merged = held_workspace_state(
             "sess-shared",
             "2026-06-01T00:00:02.000Z",
@@ -406,7 +596,10 @@ mod tests {
         );
 
         let refresh = snapshot.begin_workspace_cache_refresh();
-        snapshot.finish_workspace_cache_refresh(refresh, vec![original.clone()]);
+        snapshot.finish_workspace_cache_refresh(
+            refresh,
+            WorkspaceCacheInventory::bounded(vec![original.clone()]),
+        );
         assert_eq!(
             snapshot.current_held_workspace_states(&active_runs, None),
             vec![original]

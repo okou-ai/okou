@@ -9,7 +9,7 @@ use super::blank_session_history::history_context;
 
 use crate::workspace_image_cache::WorkspaceImageCache;
 use runner_host::paths::RunnerPaths;
-use runner_types::types::{SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{MAX_HELD_WORKSPACE_STATES, SandboxReuseResult, WorkspaceReuseResult};
 
 #[tokio::test(start_paused = true)]
 async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution() {
@@ -629,6 +629,112 @@ async fn incompatible_profile_fresh_creates_without_consuming_blank_inventory() 
     assert_eq!(idle_pool.lock().await.blank_len(), 1);
 
     shutdown(&env, run_handle).await;
+}
+
+#[tokio::test]
+async fn truncated_workspace_cache_takes_priority_over_compatible_blank_inventory() {
+    assert_truncated_workspace_cache_priority(false).await;
+}
+
+#[tokio::test]
+async fn claimed_truncated_workspace_cache_takes_priority_over_reserved_blank() {
+    assert_truncated_workspace_cache_priority(true).await;
+}
+
+async fn assert_truncated_workspace_cache_priority(claim_only_reuse_key: bool) {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start_async().await;
+    let history = b"{\"type\":\"init\"}\n";
+    let history_mock = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/history");
+            then.status(200).body(history);
+        })
+        .await;
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
+    let (mut config, env) = mock_run_config(profiles, 16, 32_768, 8);
+    // Keep this valid over-limit inventory until checkout. Cache eviction is a
+    // separate maintenance policy, not part of the blank-selection decision.
+    let (_gc_tx, gc_rx) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_workspace_cache_gc_rx = Some(gc_rx);
+    let idle_pool = Arc::clone(&config.shared.idle_pool);
+    let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
+    let workspace_cache = WorkspaceImageCache::shared(
+        runner_paths.clone(),
+        &config.paths.home,
+        &config.runner.group,
+    );
+    // Promotions share a completion timestamp; the deterministic key ordering
+    // omits this key after 1024 lexicographically earlier entries are added.
+    let reuse_key = "thread:zz-blank-pool-omitted-workspace";
+    seed_workspace_cache_state(
+        &workspace_cache,
+        &runner_paths,
+        reuse_key,
+        "vm0/default",
+        16 * 1024 * 1024,
+    )
+    .await;
+    for index in 0..MAX_HELD_WORKSPACE_STATES {
+        seed_workspace_cache_state(
+            &workspace_cache,
+            &runner_paths,
+            &format!("thread:aa-workspace-{index:04}"),
+            "vm0/default",
+            16 * 1024 * 1024,
+        )
+        .await;
+    }
+    let inventory = workspace_cache
+        .held_workspace_states_for_profiles(&std::collections::BTreeMap::from([(
+            "vm0/default",
+            16 * 1024 * 1024,
+        )]))
+        .await;
+    assert!(inventory.truncated);
+    assert_eq!(inventory.states.len(), MAX_HELD_WORKSPACE_STATES);
+    assert!(
+        !inventory
+            .states
+            .iter()
+            .any(|state| state.reuse_key == reuse_key)
+    );
+    Arc::get_mut(&mut config.exec_config)
+        .unwrap()
+        .workspace_cache = Some(workspace_cache);
+    let run_handle = tokio::spawn(run(config));
+
+    wait_idle_pool_len(&idle_pool, 1, Duration::from_secs(5)).await;
+    let blank_sandbox_id = idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id;
+    let run_id = RunId::new_v4();
+    let mut context = history_context(run_id, server.url("/history"), history);
+    context.reuse_key = Some(reuse_key.into());
+    if claim_only_reuse_key {
+        env.provider.set_claim_result(run_id, Some(context));
+        env.handle
+            .discover_tx
+            .send(JobCandidate::new(run_id, "vm0/default".into()))
+            .unwrap();
+    } else {
+        push_job(&env, run_id, "vm0/default", Some(context));
+    }
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("omitted disk cache should take priority over the compatible blank");
+
+    assert_eq!(completion.exit_code, 0);
+    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
+    assert_eq!(
+        completion.workspace_reuse_result,
+        Some(WorkspaceReuseResult::Reused),
+    );
+    assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
+    shutdown(&env, run_handle).await;
+    history_mock.assert_calls_async(1).await;
 }
 
 #[tokio::test(start_paused = true)]

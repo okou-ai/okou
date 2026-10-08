@@ -14,7 +14,9 @@ use runner_lifecycle::resource_budget::ResourceBudget;
 use runner_lifecycle::workspace_image_cache::snapshot::{
     WorkspaceCacheRefreshOutcome, WorkspaceCacheStateSnapshot, filter_current_held_workspace_states,
 };
-use runner_lifecycle::workspace_image_cache::{WorkspaceCacheChange, WorkspaceImageCache};
+use runner_lifecycle::workspace_image_cache::{
+    WorkspaceCacheChange, WorkspaceCacheInventory, WorkspaceImageCache,
+};
 use runner_provider::JobProvider;
 use runner_types::types::{
     HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_ACTIVE_REUSE_PRODUCERS,
@@ -399,7 +401,8 @@ pub async fn refresh_initial_workspace_cache_snapshot(
 ) -> InitialWorkspaceCacheRefreshOutcome {
     let refresh = snapshot.begin_workspace_cache_refresh();
     let Some(cache) = workspace_cache else {
-        let outcome = snapshot.finish_workspace_cache_refresh(refresh, Vec::new());
+        let outcome =
+            snapshot.finish_workspace_cache_refresh(refresh, WorkspaceCacheInventory::default());
         return InitialWorkspaceCacheRefreshOutcome {
             states: outcome.states,
             locked_commit_keys: BTreeSet::new(),
@@ -443,9 +446,9 @@ async fn workspace_cache_states(
     workspace_cache: Option<&WorkspaceImageCache>,
     profiles: &BTreeMap<String, HeartbeatProfile>,
     commits: Option<(&BTreeSet<String>, tokio::time::Instant)>,
-) -> Vec<HeldWorkspaceState> {
+) -> WorkspaceCacheInventory {
     let Some(cache) = workspace_cache else {
-        return Vec::new();
+        return WorkspaceCacheInventory::default();
     };
 
     let profile_image_sizes_bytes = profile_image_sizes_bytes(profiles);
@@ -591,7 +594,9 @@ mod tests {
     use runner_lifecycle::workspace_image_cache::{
         WorkspaceCacheTerminalStatus, WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
     };
-    use runner_types::types::{ReusableSandboxState, WorkspaceCacheCapability};
+    use runner_types::types::{
+        MAX_HELD_WORKSPACE_STATES, ReusableSandboxState, WorkspaceCacheCapability,
+    };
     use sandbox::SandboxId;
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
@@ -668,7 +673,7 @@ mod tests {
 
     fn refresh_snapshot(snapshot: &WorkspaceCacheStateSnapshot, states: Vec<HeldWorkspaceState>) {
         let refresh = snapshot.begin_workspace_cache_refresh();
-        snapshot.finish_workspace_cache_refresh(refresh, states);
+        snapshot.finish_workspace_cache_refresh(refresh, WorkspaceCacheInventory::bounded(states));
     }
 
     fn test_active_runs() -> ActiveRuns {
@@ -1104,6 +1109,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workspace_cache_refreshes_preserve_producer_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunnerPaths::new(dir.path().join("runner"));
+        tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
+        let cache = WorkspaceImageCache::new(paths.clone());
+        for index in 0..=MAX_HELD_WORKSPACE_STATES {
+            seed_workspace_cache_state(
+                &cache,
+                &paths,
+                &format!("sess-{index:04}"),
+                &format!("2026-06-01T00:{:02}:{:02}.000Z", index / 60, index % 60),
+            )
+            .await;
+        }
+        let profiles = test_profiles();
+        let snapshot = WorkspaceCacheStateSnapshot::new();
+        let initial =
+            refresh_initial_workspace_cache_snapshot(&snapshot, Some(&cache), &profiles).await;
+        assert_eq!(initial.states.len(), MAX_HELD_WORKSPACE_STATES);
+        assert!(
+            !initial
+                .states
+                .iter()
+                .any(|state| state.reuse_key == "sess-0000")
+        );
+        assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+
+        let omitted_cache_key = runner_host::paths::scoped_workspace_image_cache_key(
+            "",
+            "vm0/default",
+            "sess-0000",
+            CANONICAL_WORKING_DIR,
+            1024 * 1024,
+        );
+        let change = workspace_cache_change(&omitted_cache_key);
+        for change in [None, Some(&change)] {
+            refresh_snapshot(&snapshot, Vec::new());
+            assert!(!snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+            let outcome = refresh_workspace_cache_snapshot_after_change(
+                &snapshot,
+                Some(&cache),
+                &profiles,
+                change,
+            )
+            .await;
+            assert_eq!(outcome.states.len(), MAX_HELD_WORKSPACE_STATES);
+            assert!(
+                !outcome
+                    .states
+                    .iter()
+                    .any(|state| state.reuse_key == "sess-0000")
+            );
+            assert!(snapshot.might_contain_workspace_cache_reuse_key("sess-0000"));
+        }
+    }
+
+    #[tokio::test]
     async fn workspace_cache_states_filter_claimed_reuse_key() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
@@ -1115,8 +1177,11 @@ mod tests {
         let active_runs = test_active_runs();
         let profiles = test_profiles();
         let cache_states = workspace_cache_states(Some(&cache), &profiles, None).await;
-        let states =
-            filter_current_held_workspace_states(cache_states, &active_runs, Some("sess-claimed"));
+        let states = filter_current_held_workspace_states(
+            cache_states.states,
+            &active_runs,
+            Some("sess-claimed"),
+        );
 
         assert!(
             states.iter().any(|state| state.reuse_key == "sess-cache"),

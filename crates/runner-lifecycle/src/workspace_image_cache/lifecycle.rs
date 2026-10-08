@@ -801,10 +801,10 @@ impl WorkspaceImageCache {
     pub async fn held_workspace_states_for_profiles(
         &self,
         profile_image_sizes_bytes: &BTreeMap<&str, u64>,
-    ) -> Vec<HeldWorkspaceState> {
+    ) -> WorkspaceCacheInventory {
         self.held_workspace_states_matching_profiles(Some(profile_image_sizes_bytes), None, false)
             .await
-            .states
+            .inventory
     }
 
     /// Performs the startup scan and returns the loaded and locked cache keys
@@ -812,13 +812,14 @@ impl WorkspaceImageCache {
     pub async fn initial_held_workspace_states_for_profiles(
         &self,
         profile_image_sizes_bytes: &BTreeMap<&str, u64>,
-    ) -> (Vec<HeldWorkspaceState>, BTreeSet<String>, BTreeSet<String>) {
+    ) -> (WorkspaceCacheInventory, BTreeSet<String>, BTreeSet<String>) {
         let scan = self
             .held_workspace_states_matching_profiles(Some(profile_image_sizes_bytes), None, true)
             .await;
         // The heartbeat projection omits cache keys, but startup needs the
         // deterministic keys for the watcher handoff before publishing it.
         let loaded_cache_keys = scan
+            .inventory
             .states
             .iter()
             .flat_map(|state| {
@@ -836,7 +837,7 @@ impl WorkspaceImageCache {
                 })
             })
             .collect();
-        (scan.states, scan.locked_commit_keys, loaded_cache_keys)
+        (scan.inventory, scan.locked_commit_keys, loaded_cache_keys)
     }
 
     /// Waits for metadata-commit entry locks before performing the complete scan.
@@ -849,14 +850,14 @@ impl WorkspaceImageCache {
         profile_image_sizes_bytes: &BTreeMap<&str, u64>,
         committed_cache_keys: &BTreeSet<String>,
         deadline: tokio::time::Instant,
-    ) -> Vec<HeldWorkspaceState> {
+    ) -> WorkspaceCacheInventory {
         self.held_workspace_states_matching_profiles(
             Some(profile_image_sizes_bytes),
             Some((committed_cache_keys, deadline)),
             false,
         )
         .await
-        .states
+        .inventory
     }
 
     /// Inspect cache state without a running profile configuration in tests.
@@ -864,6 +865,7 @@ impl WorkspaceImageCache {
     pub async fn held_workspace_states(&self) -> Vec<HeldWorkspaceState> {
         self.held_workspace_states_matching_profiles(None, None, false)
             .await
+            .inventory
             .states
     }
 
@@ -919,14 +921,14 @@ impl WorkspaceImageCache {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return HeldWorkspaceStateScan {
-                    states: cap_held_workspace_states(states),
+                    inventory: WorkspaceCacheInventory::bounded(states),
                     locked_commit_keys,
                 };
             }
             Err(e) => {
                 warn!(error = %e, "failed to scan workspace image cache");
                 return HeldWorkspaceStateScan {
-                    states: cap_held_workspace_states(states),
+                    inventory: WorkspaceCacheInventory::bounded(states),
                     locked_commit_keys,
                 };
             }
@@ -981,7 +983,8 @@ impl WorkspaceImageCache {
             .iter()
             .map(|state| state.workspace_caches.len())
             .sum::<usize>();
-        let states = cap_held_workspace_states(states);
+        let inventory = WorkspaceCacheInventory::bounded(states);
+        let states = &inventory.states;
         let retained_workspace_caches = states
             .iter()
             .map(|state| state.workspace_caches.len())
@@ -995,7 +998,7 @@ impl WorkspaceImageCache {
             );
         }
         HeldWorkspaceStateScan {
-            states,
+            inventory,
             locked_commit_keys,
         }
     }
@@ -1412,7 +1415,7 @@ impl WorkspaceImageCache {
 }
 
 struct HeldWorkspaceStateScan {
-    states: Vec<HeldWorkspaceState>,
+    inventory: WorkspaceCacheInventory,
     locked_commit_keys: BTreeSet<String>,
 }
 
@@ -1962,84 +1965,111 @@ impl WorkspaceSessionHistorySidecarEntryGuard {
     }
 }
 
-pub fn cap_held_workspace_states(states: Vec<HeldWorkspaceState>) -> Vec<HeldWorkspaceState> {
-    struct ObservedWorkspaceState {
-        last_completed_at: String,
-        workspace_caches: BTreeMap<String, (String, WorkspaceCacheCapability)>,
-    }
+/// Bounded projection of validated cache entries, before active-key filtering.
+///
+/// Cap loss must travel with the states: a missing reuse key in a truncated
+/// inventory does not prove that its image is absent from the disk cache.
+#[derive(Debug, Default)]
+pub struct WorkspaceCacheInventory {
+    pub states: Vec<HeldWorkspaceState>,
+    pub truncated: bool,
+}
 
-    let mut by_reuse_key = BTreeMap::<String, ObservedWorkspaceState>::new();
-    for state in states {
-        let reuse_key = state.reuse_key.clone();
-        let observed = by_reuse_key
-            .entry(reuse_key)
-            .or_insert_with(|| ObservedWorkspaceState {
-                last_completed_at: state.last_completed_at.clone(),
-                workspace_caches: BTreeMap::new(),
-            });
-        if state.last_completed_at > observed.last_completed_at {
-            observed.last_completed_at = state.last_completed_at.clone();
+impl WorkspaceCacheInventory {
+    /// Aggregates identities and caps the advertisement, recording actual loss.
+    pub fn bounded(states: Vec<HeldWorkspaceState>) -> Self {
+        struct ObservedWorkspaceState {
+            last_completed_at: String,
+            workspace_caches: BTreeMap<String, (String, WorkspaceCacheCapability)>,
         }
-        for workspace_cache in state.workspace_caches {
-            match observed
-                .workspace_caches
-                .entry(workspace_cache.profile.clone())
-            {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert((state.last_completed_at.clone(), workspace_cache));
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let (existing_completed_at, existing) = entry.get_mut();
-                    let capability_order = workspace_cache
-                        .workspace_affinity_version
-                        .cmp(&existing.workspace_affinity_version);
-                    if capability_order.is_gt()
-                        || (capability_order.is_eq()
-                            && state.last_completed_at > *existing_completed_at)
-                    {
-                        *existing_completed_at = state.last_completed_at.clone();
-                        *existing = workspace_cache;
+
+        let mut by_reuse_key = BTreeMap::<String, ObservedWorkspaceState>::new();
+        for state in states {
+            let reuse_key = state.reuse_key.clone();
+            let observed =
+                by_reuse_key
+                    .entry(reuse_key)
+                    .or_insert_with(|| ObservedWorkspaceState {
+                        last_completed_at: state.last_completed_at.clone(),
+                        workspace_caches: BTreeMap::new(),
+                    });
+            if state.last_completed_at > observed.last_completed_at {
+                observed.last_completed_at = state.last_completed_at.clone();
+            }
+            for workspace_cache in state.workspace_caches {
+                match observed
+                    .workspace_caches
+                    .entry(workspace_cache.profile.clone())
+                {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert((state.last_completed_at.clone(), workspace_cache));
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        let (existing_completed_at, existing) = entry.get_mut();
+                        let capability_order = workspace_cache
+                            .workspace_affinity_version
+                            .cmp(&existing.workspace_affinity_version);
+                        if capability_order.is_gt()
+                            || (capability_order.is_eq()
+                                && state.last_completed_at > *existing_completed_at)
+                        {
+                            *existing_completed_at = state.last_completed_at.clone();
+                            *existing = workspace_cache;
+                        }
                     }
                 }
             }
         }
-    }
 
-    let mut states: Vec<HeldWorkspaceState> = by_reuse_key
-        .into_iter()
-        .map(|(reuse_key, state)| HeldWorkspaceState {
-            reuse_key,
-            last_completed_at: state.last_completed_at,
-            workspace_caches: state
-                .workspace_caches
-                .into_values()
-                .map(|(_, workspace_cache)| workspace_cache)
-                .take(MAX_WORKSPACE_CACHES_PER_REUSE_KEY)
-                .collect(),
-        })
-        .collect();
-    states.sort_unstable_by(|a, b| {
-        b.last_completed_at
-            .cmp(&a.last_completed_at)
-            .then_with(|| a.reuse_key.cmp(&b.reuse_key))
-    });
+        let mut truncated = false;
+        let mut states: Vec<HeldWorkspaceState> = by_reuse_key
+            .into_iter()
+            .map(|(reuse_key, state)| {
+                truncated |= state.workspace_caches.len() > MAX_WORKSPACE_CACHES_PER_REUSE_KEY;
+                HeldWorkspaceState {
+                    reuse_key,
+                    last_completed_at: state.last_completed_at,
+                    workspace_caches: state
+                        .workspace_caches
+                        .into_values()
+                        .map(|(_, workspace_cache)| workspace_cache)
+                        .take(MAX_WORKSPACE_CACHES_PER_REUSE_KEY)
+                        .collect(),
+                }
+            })
+            .collect();
+        states.sort_unstable_by(|a, b| {
+            b.last_completed_at
+                .cmp(&a.last_completed_at)
+                .then_with(|| a.reuse_key.cmp(&b.reuse_key))
+        });
 
-    let mut retained = Vec::new();
-    let mut retained_workspace_caches = 0;
-    for mut state in states {
-        if retained.len() == MAX_HELD_WORKSPACE_STATES
-            || retained_workspace_caches == MAX_WORKSPACE_CACHES_PER_HEARTBEAT
-        {
-            break;
+        let mut retained = Vec::new();
+        let mut retained_workspace_caches = 0;
+        for mut state in states {
+            if retained.len() == MAX_HELD_WORKSPACE_STATES
+                || retained_workspace_caches == MAX_WORKSPACE_CACHES_PER_HEARTBEAT
+            {
+                truncated = true;
+                break;
+            }
+            let remaining = MAX_WORKSPACE_CACHES_PER_HEARTBEAT - retained_workspace_caches;
+            truncated |= state.workspace_caches.len() > remaining;
+            state.workspace_caches.truncate(remaining);
+            if state.workspace_caches.is_empty() {
+                continue;
+            }
+            retained_workspace_caches += state.workspace_caches.len();
+            retained.push(state);
         }
-        let remaining = MAX_WORKSPACE_CACHES_PER_HEARTBEAT - retained_workspace_caches;
-        state.workspace_caches.truncate(remaining);
-        if state.workspace_caches.is_empty() {
-            continue;
+        retained.sort_unstable_by(|a, b| a.reuse_key.cmp(&b.reuse_key));
+        Self {
+            states: retained,
+            truncated,
         }
-        retained_workspace_caches += state.workspace_caches.len();
-        retained.push(state);
     }
-    retained.sort_unstable_by(|a, b| a.reuse_key.cmp(&b.reuse_key));
-    retained
+}
+
+pub fn cap_held_workspace_states(states: Vec<HeldWorkspaceState>) -> Vec<HeldWorkspaceState> {
+    WorkspaceCacheInventory::bounded(states).states
 }

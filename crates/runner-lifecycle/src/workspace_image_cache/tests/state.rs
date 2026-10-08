@@ -15,8 +15,8 @@ use super::super::path_safety::{
 };
 use super::super::{
     CACHE_FORMAT_VERSION, WORKSPACE_DRIVE_LAYOUT, WorkspaceCacheCheckoutResult,
-    WorkspaceCacheTerminalStatus, WorkspaceImageCache, WorkspaceImageLeaseIdentity,
-    WorkspaceImagePrepareRequest,
+    WorkspaceCacheInventory, WorkspaceCacheTerminalStatus, WorkspaceImageCache,
+    WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
 };
 use super::support::{
     TEST_PROFILE_NAME, local_cache, timestamp_for_index, write_current_cache_entry_for_profile,
@@ -134,7 +134,9 @@ fn cap_held_workspace_states_dedupes_and_keeps_newest() {
         }],
     });
 
-    let capped = cap_held_workspace_states(states);
+    let inventory = WorkspaceCacheInventory::bounded(states);
+    assert!(inventory.truncated);
+    let capped = inventory.states;
 
     assert_eq!(capped.len(), MAX_HELD_WORKSPACE_STATES);
     assert!(
@@ -165,7 +167,9 @@ fn cap_held_workspace_states_bounds_nested_resources() {
         })
         .collect();
 
-    let capped = cap_held_workspace_states(per_reuse_key);
+    let inventory = WorkspaceCacheInventory::bounded(per_reuse_key);
+    assert!(inventory.truncated);
+    let capped = inventory.states;
 
     assert_eq!(capped.len(), 1);
     assert_eq!(
@@ -188,7 +192,9 @@ fn cap_held_workspace_states_bounds_nested_resources() {
         })
         .collect();
 
-    let capped = cap_held_workspace_states(global);
+    let inventory = WorkspaceCacheInventory::bounded(global);
+    assert!(inventory.truncated);
+    let capped = inventory.states;
 
     assert_eq!(
         capped
@@ -201,6 +207,96 @@ fn cap_held_workspace_states_bounds_nested_resources() {
         !capped.iter().any(|state| state.reuse_key == "sess-0000"),
         "oldest reuse key should be dropped at the global workspace cap"
     );
+}
+
+#[test]
+fn workspace_cache_inventory_deduplicates_profiles_without_cap_loss() {
+    let states: Vec<_> = (0..MAX_WORKSPACE_CACHES_PER_REUSE_KEY)
+        .flat_map(|index| {
+            let state = HeldWorkspaceState {
+                reuse_key: "sess-shared".into(),
+                last_completed_at: timestamp_for_index(index),
+                workspace_caches: vec![WorkspaceCacheCapability {
+                    profile: format!("vm0/profile-{index}"),
+                    workspace_affinity_version: WORKSPACE_AFFINITY_VERSION,
+                }],
+            };
+            [state.clone(), state]
+        })
+        .collect();
+    let expected = cap_held_workspace_states(states.clone());
+    let inventory = WorkspaceCacheInventory::bounded(states);
+
+    assert!(!inventory.truncated);
+    assert_eq!(inventory.states, expected);
+    assert_eq!(inventory.states.len(), 1);
+    assert_eq!(
+        inventory.states[0].workspace_caches.len(),
+        MAX_WORKSPACE_CACHES_PER_REUSE_KEY,
+    );
+}
+
+#[tokio::test]
+async fn profile_scans_preserve_truncation_and_omitted_disk_entry() {
+    let (_dir, _paths, cache) = local_cache().await;
+    let mut omitted_cache_key = String::new();
+    for index in 0..=MAX_HELD_WORKSPACE_STATES {
+        let reuse_key = format!("sess-{index:04}");
+        let cache_key = write_current_cache_entry_for_profile(
+            &cache,
+            RunId::new_v4(),
+            TEST_PROFILE_NAME,
+            &reuse_key,
+            CANONICAL_WORKING_DIR,
+            &timestamp_for_index(index),
+            &timestamp_for_index(index),
+        )
+        .await;
+        if index == 0 {
+            omitted_cache_key = cache_key;
+        }
+    }
+    let image_size = "image-sess-0000".len() as u64;
+    let configured = BTreeMap::from([(TEST_PROFILE_NAME, image_size)]);
+    let ordinary = cache.held_workspace_states_for_profiles(&configured).await;
+    let (initial, locked_commit_keys, loaded_cache_keys) = cache
+        .initial_held_workspace_states_for_profiles(&configured)
+        .await;
+    assert!(locked_commit_keys.is_empty());
+    assert_eq!(loaded_cache_keys.len(), MAX_HELD_WORKSPACE_STATES);
+    let committed_cache_keys = BTreeSet::from([omitted_cache_key]);
+    let after_commit = cache
+        .held_workspace_states_for_profiles_after_commits(
+            &configured,
+            &committed_cache_keys,
+            tokio::time::Instant::now() + Duration::from_secs(2),
+        )
+        .await;
+
+    for inventory in [ordinary, initial, after_commit] {
+        assert!(inventory.truncated);
+        assert_eq!(inventory.states.len(), MAX_HELD_WORKSPACE_STATES);
+        assert!(
+            !inventory
+                .states
+                .iter()
+                .any(|state| state.reuse_key == "sess-0000")
+        );
+    }
+    let lease = cache
+        .prepare(WorkspaceImagePrepareRequest {
+            identity: WorkspaceImageLeaseIdentity {
+                run_id: RunId::new_v4(),
+                sandbox_id: sandbox::SandboxId::new_v4(),
+                profile_name: TEST_PROFILE_NAME,
+                reuse_key: Some("sess-0000"),
+                working_dir: CANONICAL_WORKING_DIR,
+                image_size_bytes: image_size,
+            },
+            workspace_drive_required: false,
+        })
+        .await;
+    assert_eq!(lease.result(), WorkspaceCacheCheckoutResult::Hit);
 }
 
 #[tokio::test]
@@ -248,7 +344,9 @@ async fn held_workspace_states_for_profiles_filters_and_aggregates_current_ident
         ("vm0/large", image_size),
         ("vm0/noncanonical", image_size),
     ]);
-    let states = cache.held_workspace_states_for_profiles(&configured).await;
+    let inventory = cache.held_workspace_states_for_profiles(&configured).await;
+    assert!(!inventory.truncated);
+    let states = inventory.states;
 
     assert_eq!(
         states,
@@ -271,7 +369,8 @@ async fn held_workspace_states_for_profiles_filters_and_aggregates_current_ident
     let default_only = BTreeMap::from([("vm0/default", image_size)]);
     let states = cache
         .held_workspace_states_for_profiles(&default_only)
-        .await;
+        .await
+        .states;
     assert_eq!(states[0].workspace_caches.len(), 1);
     assert_eq!(states[0].workspace_caches[0].profile, "vm0/default");
 
@@ -280,6 +379,7 @@ async fn held_workspace_states_for_profiles_filters_and_aggregates_current_ident
         cache
             .held_workspace_states_for_profiles(&wrong_size)
             .await
+            .states
             .is_empty()
     );
 }
@@ -325,10 +425,12 @@ async fn commit_reconciliation_waits_for_entry_lock_before_validating() {
     );
 
     drop(held_lock);
-    let states = tokio::time::timeout(Duration::from_secs(2), refresh)
+    let inventory = tokio::time::timeout(Duration::from_secs(2), refresh)
         .await
         .unwrap()
         .unwrap();
+    assert!(!inventory.truncated);
+    let states = inventory.states;
     assert_eq!(states.len(), 1);
     assert_eq!(states[0].reuse_key, reuse_key);
 }
@@ -360,7 +462,8 @@ async fn initial_scan_returns_committed_entry_skipped_for_locking() {
         .initial_held_workspace_states_for_profiles(&configured)
         .await;
 
-    assert!(states.is_empty());
+    assert!(states.states.is_empty());
+    assert!(!states.truncated);
     assert_eq!(locked_commit_keys, BTreeSet::from([cache_key]));
     drop(held_lock);
 }
@@ -398,7 +501,8 @@ async fn initial_scan_ignores_locked_foreign_scope_commit() {
         .initial_held_workspace_states_for_profiles(&configured)
         .await;
 
-    assert!(states.is_empty());
+    assert!(states.states.is_empty());
+    assert!(!states.truncated);
     assert!(locked_commit_keys.is_empty());
     drop(held_lock);
 }
