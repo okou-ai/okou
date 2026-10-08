@@ -87,23 +87,19 @@ It verifies the delivered text while allowing that genuine attribution, rather
 than requiring the unattributed string produced by invented Runs. Read denial
 and cross-organization content privacy assertions remain unchanged.
 
-## Additional public export coverage
+## Final export-boundary correction
 
-`discord-oauth-export.test.ts` adds a separately constructed account-export case:
-real OAuth install and member connect, public DM selection, two owners' pending
-OAuth starts, `POST /api/user/export`, the production authenticated
-`GET /api/cron/process-background-jobs` wakeup, and the completed export's public
-status/download URL. Clerk, Discord and S3 are mocked only at their external
-provider boundaries. No private worker driver, email-outbox state endpoint,
-business-row seed, internal database inspection or fabricated Run is used.
-
-The downloaded ZIP proves the installer receives their installation, connection,
-DM preference and one owned OAuth attempt, excludes the peer's identity and
-attempt, and exposes only the declared non-capability attempt fields. Strict
-archive validation excludes state/completion/approval hashes and redirect URIs.
-The final integrated case passed 1/1 on 2026-10-08. This is additional binding and
-OAuth export coverage; it does **not** reclassify the deleted pre-route ingress,
-context, delivery or notice archive assertions above as covered.
+A subsequently attempted `discord-oauth-export.test.ts` requested export through
+the user API but completed it through `GET /api/cron/process-background-jobs`
+with `CRON_SECRET`. Current main's API and external-behavior guides explicitly
+exclude that operator interface from user-case construction. The attempted case
+and its claimed coverage were therefore withdrawn, not retained as an exception.
+Without that operator drive, the real POST's bounded initial work leaves the
+job `running`; the completed archive cannot be observed through this test's
+user-accessible chain. No worker call, private driver, enlarged product work
+budget, or endpoint added only for testing replaces it. The original archive
+coverage loss above remains genuine, including the unverified new OAuth-attempt
+projection; four unrelated durable-export cleanup passes do not resolve it.
 
 ## Retained suites and boundaries
 
