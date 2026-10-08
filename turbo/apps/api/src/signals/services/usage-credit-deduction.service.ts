@@ -13,7 +13,7 @@ import {
 } from "./credit-usage-settlement-plan";
 
 /** Re-read cash after acquiring financial locks, never spend a prepared balance twice. */
-export async function prepareUsageCreditDeductionsInTransaction(
+export async function prepareUsageCashInTransaction(
   tx: Tx,
   orgId: string,
   charges: ReadonlyMap<string, number>,

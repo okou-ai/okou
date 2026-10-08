@@ -510,11 +510,11 @@ describe("okou web-search route", () => {
       responses.every((response) => {
         return response.body.creditsCharged === 5;
       }),
-    ).toBe(true);
+    ).toBeTruthy();
     const after = (await accept(packages.get({ headers }), [200])).body;
     expect(after.totalCredits).toBe(0);
     expect(after.creditGrants).toStrictEqual([]);
-    expect(await credits(actor)).toBe(orgBefore - 10);
+    await expect(credits(actor)).resolves.toBe(orgBefore - 10);
     // A later request still pays the organization; depleted package rows cannot
     // be reused, and repeated check-in cannot issue another copy of the award.
     await accept(
@@ -527,7 +527,7 @@ describe("okou web-search route", () => {
     expect(
       (await accept(packages.get({ headers }), [200])).body.totalCredits,
     ).toBe(0);
-    expect(await credits(actor)).toBe(orgBefore - 15);
+    await expect(credits(actor)).resolves.toBe(orgBefore - 15);
   });
 
   it.each([

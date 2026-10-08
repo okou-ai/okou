@@ -1,5 +1,5 @@
 import { OrgCreditExpirationConflict } from "./org-credit-expiration";
-import { prepareUsageCreditDeductionsInTransaction } from "./usage-credit-deduction.service";
+import { prepareUsageCashInTransaction } from "./usage-credit-deduction.service";
 import {
   prepareUsageFinancialPlan$,
   usageFinancialPlan,
@@ -177,13 +177,12 @@ const commitUsageBatch$ = command(
         financial = usageFinancialPlan(priced, allowance, at);
       }
       const { priced, allowance, charges } = financial;
-      const { deduction, expiry } =
-        await prepareUsageCreditDeductionsInTransaction(
-          tx,
-          orgId,
-          charges.byUser,
-          at,
-        );
+      const { deduction, expiry } = await prepareUsageCashInTransaction(
+        tx,
+        orgId,
+        charges.byUser,
+        at,
+      );
       if (allowance.refresh) {
         await tx.execute(allowance.refresh);
       }
