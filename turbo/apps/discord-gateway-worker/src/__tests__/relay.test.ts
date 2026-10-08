@@ -88,11 +88,54 @@ describe("Discord Gateway relay", () => {
       .toMatchObject({ pending: 0, resumable: true, connected: true });
   });
 
-  it("relays only DMs and bot mentions while checkpointing past other guild chatter", async () => {
-    const relay = await createRelay();
-    const gateway = await relay.start();
+  it("relays only DMs and bot mentions while checkpointing past other guild chatter", async ({
+    onTestFailed,
+  }) => {
+    const startedAt = performance.now();
+    const phases: Array<{
+      name: string;
+      startedAtMs: number;
+      completedAtMs: number | null;
+    }> = [];
+    const wait = async <T>(name: string, task: () => Promise<T>) => {
+      const phase: (typeof phases)[number] = {
+        name,
+        startedAtMs: Math.round(performance.now() - startedAt),
+        completedAtMs: null,
+      };
+      phases.push(phase);
+      const result = await task();
+      phase.completedAtMs = Math.round(performance.now() - startedAt);
+      return result;
+    };
+    // Capture only phase timing and opcodes, never packets or signed bodies.
+    // Do not issue another Worker request from a hook when one may be stalled.
+    onTestFailed(() => {
+      console.error("Discord relay filtering/checkpoint failure", {
+        elapsedMs: Math.round(performance.now() - startedAt),
+        phases,
+      });
+    });
+    const relay = await wait("create relay", () => {
+      return createRelay();
+    });
+    onTestFailed(() => {
+      console.error("Discord relay observations", {
+        forwarded: relay.forwarded.length,
+        connections: relay.opened.map((connection) => {
+          return connection.packets.map((packet) => {
+            return packet.op;
+          });
+        }),
+      });
+    });
+    const gateway = await wait("start and first connection", () => {
+      return relay.start();
+    });
     gateway.hello();
-    await gateway.next(2);
+    await wait("Identify (op 2)", () => {
+      return gateway.next(2);
+    });
     gateway.ready("filter-session");
     const author = { id: "100000000000000005", username: "member", bot: false };
     const guildMessage = (id: string, mentions: object[]) => {
@@ -153,26 +196,40 @@ describe("Discord Gateway relay", () => {
     );
     gateway.send({ op: 0, t: "MESSAGE_CREATE", s: 6, d: withoutMentions });
 
-    const relayed = [
-      JSON.parse((await relay.deliveries.next()).rawBody).eventId,
-      JSON.parse((await relay.deliveries.next()).rawBody).eventId,
-      JSON.parse((await relay.deliveries.next()).rawBody).eventId,
-    ];
+    const relayed: unknown[] = [];
+    for (const name of [
+      "DM delivery",
+      "mention delivery",
+      "unparseable routing delivery",
+    ]) {
+      const delivery = await wait(name, () => {
+        return relay.deliveries.next();
+      });
+      relayed.push(JSON.parse(delivery.rawBody).eventId);
+    }
     expect(relayed).toEqual([
       "MESSAGE_CREATE:100000000000000012",
       "MESSAGE_CREATE:100000000000000013",
       "MESSAGE_CREATE:100000000000000015",
     ]);
-    await expect
-      .poll(() => {
-        return relay.health();
-      })
-      .toMatchObject({ pending: 0, connected: true });
+    await wait("outbox drained", () => {
+      return expect
+        .poll(() => {
+          return relay.health();
+        })
+        .toMatchObject({ pending: 0, connected: true });
+    });
 
     gateway.socket.close(4000, "Unknown error");
-    const resumed = await relay.connections.next();
+    const resumed = await wait("reconnection after close 4000", () => {
+      return relay.connections.next();
+    });
     resumed.hello();
-    expect(await resumed.next(6)).toEqual({
+    expect(
+      await wait("Resume (op 6)", () => {
+        return resumed.next(6);
+      }),
+    ).toEqual({
       op: 6,
       d: { token: BOT_TOKEN, session_id: "filter-session", seq: 6 },
     });
