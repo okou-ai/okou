@@ -148,7 +148,7 @@ export function createPublicDiscordBinding(
           args.flow === "install"
             ? ["identify", "guilds", "bot", "applications.commands"]
             : ["identify", "guilds"],
-        expires: new Date(now() + 3600_000).toISOString(),
+        expires: new Date(now() + 3_600_000).toISOString(),
         user: { id: identity.discordUserId, username: "member", bot: false },
       });
     }),
