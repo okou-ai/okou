@@ -1884,6 +1884,20 @@
       "when": 1791447960582,
       "tag": "1346_discord_account_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 1347,
+      "version": "7",
+      "when": 1791449677178,
+      "tag": "1347_discord_oauth_browser_approval",
+      "breakpoints": true
+    },
+    {
+      "idx": 1348,
+      "version": "7",
+      "when": 1791450186439,
+      "tag": "1348_discord_identity_release_restrict",
+      "breakpoints": true
     }
   ]
 }

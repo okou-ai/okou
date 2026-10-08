@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { discordSnowflakeSchema } from "./integrations-discord-read";
+
+const proofSchema = z
+  .string()
+  .length(43)
+  .regex(/^[A-Za-z0-9_-]+$/u);
 
 const c = initContract();
 
@@ -12,15 +18,12 @@ export const discordOauthContract = c.router({
     headers: authHeadersSchema,
     body: z.strictObject({
       flow: z.enum(["install", "connect"]),
-      guildId: z
-        .string()
-        .regex(/^[1-9]\d{0,19}$/u)
-        .optional(),
+      guildId: discordSnowflakeSchema.optional(),
     }),
     responses: {
       200: z.object({
-        authorizationUrl: z.url(),
-        completionToken: z.string().min(1),
+        authorizationUrl: z.url().max(8192),
+        completionToken: proofSchema,
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -35,7 +38,7 @@ export const discordOauthContract = c.router({
     method: "POST",
     path: "/api/integrations/discord/oauth/approve",
     headers: authHeadersSchema,
-    body: z.strictObject({ state: z.string(), approvalProof: z.string() }),
+    body: z.strictObject({ state: proofSchema, approvalProof: proofSchema }),
     responses: {
       200: z.object({ approved: z.literal(true) }),
       400: apiErrorSchema,
@@ -51,7 +54,7 @@ export const discordOauthContract = c.router({
     method: "POST",
     path: "/api/integrations/discord/oauth/complete",
     headers: authHeadersSchema,
-    body: z.strictObject({ state: z.string(), completionToken: z.string() }),
+    body: z.strictObject({ state: proofSchema, completionToken: proofSchema }),
     responses: {
       200: z.object({ status: z.enum(["installed", "connected"]) }),
       400: apiErrorSchema,
@@ -68,12 +71,12 @@ export const discordOauthContract = c.router({
     method: "GET",
     path: "/api/integrations/discord/oauth/callback",
     query: z.object({
-      code: z.string().optional(),
-      error: z.string().optional(),
-      state: z.string().optional(),
-      guild_id: z.string().optional(),
+      code: z.string().min(1).max(2048).optional(),
+      error: z.string().min(1).max(128).optional(),
+      state: proofSchema.optional(),
+      guild_id: discordSnowflakeSchema.optional(),
     }),
-    responses: { 307: c.noBody() },
+    responses: { 307: c.noBody(), 400: apiErrorSchema },
     summary:
       "Verify one-use Discord provider evidence without binding an Okou owner",
   },
