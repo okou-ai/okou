@@ -10,16 +10,12 @@ import {
   eq,
   inArray,
   isNull,
-  lt,
   max,
   ne,
   or,
   sql,
 } from "drizzle-orm";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -32,7 +28,6 @@ import {
   piMemoryStage1Selections,
   piMemoryStage1Watermarks,
 } from "@okouai/db/schema/pi-memory-stage1-schedule";
-import { storages } from "@okouai/db/schema/storage";
 import type { ApiDb, Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -87,104 +82,6 @@ function sourceArgs(run: Run) {
     completedAt: run.completedAt ?? run.createdAt,
     idleDelayMs: PI_MEMORY_STAGE1_IDLE_MS,
   };
-}
-
-/**
- * Same-transaction producer hook for a newly admitted chat-thread run. The run
- * row was inserted earlier in `tx`, so its persisted launch fields are the
- * Stage 1 source.
- */
-
-// Called only inside the successful pending admission transaction.
-// No history scan, Storage creation, blob read, or external call under its locks.
-export async function requestPiMemoryStage1Day(
-  tx: Tx,
-  run: Run,
-  capturedFeatures?: FeatureSwitchContext,
-): Promise<void> {
-  if (
-    capturedFeatures &&
-    (capturedFeatures.orgId !== run.orgId ||
-      capturedFeatures.userId !== run.userId)
-  ) {
-    throw new Error("Pi memory scheduling feature context identity mismatch");
-  }
-  const args = sourceArgs(run);
-  const reason = getPiMemoryStage1AdmissionPrerequisiteSkipReason({
-    ...args,
-    status: "completed",
-  });
-  if (reason || !run.chatThreadId || run.status !== "pending") {
-    return;
-  }
-  const featureSwitchContextRows0 = await tx
-    .select({
-      userId: userFeatureSwitches.userId,
-      switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(userFeatureSwitchRowCondition(run.orgId, run.userId));
-  const context = featureSwitchContextFromRows(
-    run.orgId,
-    run.userId,
-    featureSwitchContextRows0,
-  );
-  if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
-    log.debug("Pi memory Stage 1 startup", {
-      userId: run.userId,
-      outcome: "disabled",
-    });
-    return;
-  }
-  const [owned] = await tx
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        eq(chatThreads.id, run.chatThreadId),
-        eq(chatThreads.userId, run.userId),
-        eq(agents.orgId, run.orgId),
-      ),
-    )
-    .limit(1);
-  if (!owned) {
-    return;
-  }
-  const requestedAt = nowDate();
-  const day = piMemoryStage1UtcDay(requestedAt);
-  const [created] = await tx
-    .insert(piMemoryStage1Days)
-    .values({
-      userId: run.userId,
-      orgId: run.orgId,
-      triggerThreadId: run.chatThreadId,
-      day,
-      requestedAt,
-    })
-    .onConflictDoUpdate({
-      target: piMemoryStage1Days.userId,
-      set: {
-        orgId: run.orgId,
-        triggerThreadId: run.chatThreadId,
-        day,
-        requestedAt,
-        consumedAt: null,
-      },
-      setWhere: lt(piMemoryStage1Days.day, day),
-    })
-    .returning({ userId: piMemoryStage1Days.userId });
-  if (created) {
-    await tx
-      .delete(piMemoryStage1Selections)
-      .where(eq(piMemoryStage1Selections.userId, run.userId));
-  }
-  log.debug("Pi memory Stage 1 startup", {
-    userId: run.userId,
-    orgId: run.orgId,
-    day,
-    outcome: created ? "requested" : "already_consumed",
-  });
 }
 
 const runActivity = sql`greatest(${agentRuns.createdAt}, ${agentRuns.startedAt}, ${agentRuns.completedAt})`;
@@ -467,7 +364,6 @@ async function commitSelectedPiMemoryStage1Day(
 export async function consumePiMemoryStage1Days(
   db: ApiDb,
   currentTime: Date,
-  storageIds?: readonly string[],
 ): Promise<void> {
   const requests = await db
     .select()
@@ -476,15 +372,6 @@ export async function consumePiMemoryStage1Days(
       and(
         eq(piMemoryStage1Days.day, piMemoryStage1UtcDay(currentTime)),
         isNull(piMemoryStage1Days.consumedAt),
-        storageIds
-          ? inArray(
-              piMemoryStage1Days.userId,
-              db
-                .select({ userId: storages.userId })
-                .from(storages)
-                .where(inArray(storages.id, storageIds)),
-            )
-          : undefined,
       ),
     )
     .orderBy(asc(piMemoryStage1Days.userId))
