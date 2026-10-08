@@ -120,6 +120,8 @@ final class ConversationScrollAnchor {
     guard let scrollView, !isScrolling, !scrollView.isTracking, !scrollView.isDragging,
       !scrollView.isDecelerating
     else { return }
+    // Commit pending native self-sizing before measuring mounted row positions.
+    scrollView.layoutIfNeeded()
     if followsBottom {
       let y = max(
         -scrollView.adjustedContentInset.top,

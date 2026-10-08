@@ -137,7 +137,8 @@ records a message ID plus its offset from the usable viewport top. It restores
 that offset after layout and subsequent Markdown/image height changes. After a
 prepend, List may retain old cell measurements. ScrollViewReader first
 materializes the identified row and corrects its offset
-on the next display frame, then verifies two settling frames without polling
+on the next display frame after committing pending native self-sizing, then
+verifies two settling frames without polling
 while idle. Later row-height changes request another correction. If replay
 revokes a row before List reports its old geometry, the bridge uses the reading
 position accepted by the store rather than restoring the removed identity.

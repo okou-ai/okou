@@ -9,7 +9,7 @@ final class ConversationListTests: XCTestCase {
     let model = ListProbeModel()
     let anchor = ConversationScrollAnchor()
     let host = UIHostingController(rootView: ListProbe(model: model, anchor: anchor))
-    let window = try mount(host)
+    let window = try await mount(host)
     defer { unmount(window) }
     try await eventually { anchor.capture() != nil }
     let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
@@ -48,7 +48,7 @@ final class ConversationListTests: XCTestCase {
       messageID: ConversationHistoryFixture.id(95), offset: -42)
     conversation.rememberReadingPosition(position)
     let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
-    let window = try mount(host)
+    let window = try await mount(host)
     defer { unmount(window) }
     try await eventually(
       message: readingDescription(position.messageID, conversation: conversation, view: host.view)
@@ -76,7 +76,7 @@ final class ConversationListTests: XCTestCase {
     // Recreate the detail view as navigation does, while retaining its conversation store.
     unmount(window)
     let reopened = UIHostingController(rootView: ChatDetailView(conversation: conversation))
-    let reopenedWindow = try mount(reopened)
+    let reopenedWindow = try await mount(reopened)
     defer { unmount(reopenedWindow) }
     try await eventually(
       message: readingDescription(
@@ -122,13 +122,31 @@ final class ConversationListTests: XCTestCase {
 }
 
 @MainActor
-private func mount<V: View>(_ host: UIHostingController<V>) throws -> UIWindow {
+private func mount<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
   let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
   let window = UIWindow(windowScene: scene)
   window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
   window.rootViewController = host
   window.makeKeyAndVisible()
+  host.view.layoutIfNeeded()
+  // Cold CI renderers compile their first SwiftUI pipelines during presentation.
+  // Begin geometry assertions after the window has received a display frame.
+  await withCheckedContinuation { continuation in
+    let target = HostingDisplayFrame(continuation)
+    let link = CADisplayLink(target: target, selector: #selector(HostingDisplayFrame.display(_:)))
+    link.add(to: .main, forMode: .common)
+  }
   return window
+}
+
+@MainActor
+private final class HostingDisplayFrame: NSObject {
+  private let continuation: CheckedContinuation<Void, Never>
+  init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
+  @objc func display(_ link: CADisplayLink) {
+    link.invalidate()
+    continuation.resume()
+  }
 }
 
 @MainActor
@@ -156,10 +174,14 @@ private func readingDescription(_ id: String, conversation: ConversationStore, v
   -> String
 {
   let scroll = markers(in: view).first?.enclosingScrollView
+  let matching = markers(in: view).filter { $0.messageID == id }.map { row in
+    "\(row.bounds); window: \(row.window != nil); hidden: \(row.isHidden); "
+      + "rect: \(String(describing: scroll.map { row.convert(row.bounds, to: $0) }))"
+  }
   return "Reading position: \(String(describing: conversation.readingPosition)); "
     + "row offset: \(String(describing: offset(of: id, in: view))); "
     + "viewport: \(String(describing: scroll?.bounds)); "
-    + "content size: \(String(describing: scroll?.contentSize))"
+    + "content size: \(String(describing: scroll?.contentSize)); matches: \(matching)"
 }
 
 @MainActor
