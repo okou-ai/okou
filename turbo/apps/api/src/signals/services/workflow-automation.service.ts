@@ -4387,63 +4387,6 @@ export interface OfficialAutomationEventPreparation {
   readonly webhookCredentials?: PreparedWebhookCredentials;
 }
 
-type OfficialAutomationSubtypeTransitionAutomation = Pick<
-  AutomationRow,
-  "id" | "orgId" | "ownerUserId" | "eventType" | "enabled"
->;
-
-/**
- * Brings durable provider-specific rows into line with a structurally new
- * Official Automation configuration. The caller owns the surrounding
- * catalog/workflow/Automation locks and transaction.
- */
-export async function syncOfficialAutomationSubtypeRows(
-  db: Db,
-  args: {
-    readonly current: OfficialAutomationSubtypeTransitionAutomation;
-    readonly preparation: OfficialAutomationEventPreparation | undefined;
-    readonly webhookTierEligible: boolean;
-    readonly currentTime: Date;
-  },
-  signal: AbortSignal,
-): Promise<AutomationActionFailure | null> {
-  const [webhook] = await db
-    .select({ automationId: workflowWebhookAutomations.automationId })
-    .from(workflowWebhookAutomations)
-    .where(eq(workflowWebhookAutomations.automationId, args.current.id))
-    .limit(1);
-  signal.throwIfAborted();
-  if (args.current.eventType === "webhook-received") {
-    if (!args.webhookTierEligible) {
-      return workflowWebhookTeamRequiredResult();
-    }
-    if (!webhook) {
-      const credentials = args.preparation?.webhookCredentials;
-      if (!credentials) {
-        throw new Error("Missing prepared Official webhook credentials");
-      }
-      await db.insert(workflowWebhookAutomations).values({
-        automationId: args.current.id,
-        ...credentials,
-        createdAt: args.currentTime,
-        updatedAt: args.currentTime,
-      });
-    } else {
-      await db
-        .update(workflowWebhookAutomations)
-        .set({ disabledReason: null, updatedAt: args.currentTime })
-        .where(eq(workflowWebhookAutomations.automationId, args.current.id));
-    }
-  } else if (webhook) {
-    await db
-      .delete(workflowWebhookAutomations)
-      .where(eq(workflowWebhookAutomations.automationId, args.current.id));
-  }
-
-  signal.throwIfAborted();
-  return null;
-}
-
 export type OfficialAutomationEventPreparationResult =
   | {
       readonly kind: "ok";
