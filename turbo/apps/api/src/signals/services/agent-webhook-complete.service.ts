@@ -23,7 +23,7 @@ import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
-import { safeSync, tapError } from "../utils";
+import { tapError } from "../utils";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
