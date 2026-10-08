@@ -3,7 +3,6 @@ import {
   officialWorkflowAcceptedRevisionSchema,
   officialWorkflowCatalogReleasePayloadSchema,
   officialWorkflowDefinitionRevisionPayloadSchema,
-  type OfficialWorkflowAcceptedDefinition,
   type OfficialWorkflowAcceptedRevision,
   type OfficialWorkflowCatalogReleasePayload,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
@@ -15,10 +14,9 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, eq, or } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 
 export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
 
@@ -90,39 +88,6 @@ export function acceptedOfficialWorkflowCatalogReadPlan() {
   };
 }
 
-/** Keep the accepted pointer stable until the caller's transaction commits. */
-export async function lockAcceptedOfficialWorkflowCatalog(
-  tx: Tx,
-): Promise<void> {
-  // SHARE conflicts with the publisher's non-key pointer UPDATE. KEY SHARE
-  // would allow that update and would not preserve the accepted revision.
-  await tx
-    .select({ authority: officialWorkflowCatalogState.authority })
-    .from(officialWorkflowCatalogState)
-    .where(
-      eq(
-        officialWorkflowCatalogState.authority,
-        OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-      ),
-    )
-    .for("share");
-}
-
-export async function readAcceptedOfficialWorkflowCatalog(
-  db: ReadonlyDb,
-  signal?: AbortSignal,
-): Promise<AcceptedOfficialWorkflowCatalog | null> {
-  const plan = acceptedOfficialWorkflowCatalogReadPlan();
-  const [row] = await db
-    .select(plan.columns)
-    .from(officialWorkflowCatalogState)
-    .innerJoin(officialWorkflowCatalogReleases, plan.join)
-    .where(plan.condition)
-    .limit(1);
-  signal?.throwIfAborted();
-  return acceptedCatalogFromRow(row);
-}
-
 export function acceptedCatalogFromRow(
   row: { readonly releaseId: string; readonly payload: unknown } | undefined,
 ): AcceptedOfficialWorkflowCatalog | null {
@@ -159,6 +124,43 @@ export const readAcceptedOfficialWorkflowCatalog$ = command(
   },
 );
 
+/** Pure native-query inputs for an owner that reads an exact immutable revision. */
+export function acceptedOfficialWorkflowRevisionReadPlan(args: {
+  readonly name: string;
+  readonly revision: string;
+}) {
+  return {
+    columns: {
+      definitionName: officialWorkflowDefinitionRevisions.definitionName,
+      revision: officialWorkflowDefinitionRevisions.revision,
+      payload: officialWorkflowDefinitionRevisions.payload,
+      storageName: officialWorkflowDefinitionRevisions.storageName,
+      storageId: officialWorkflowDefinitionRevisions.storageId,
+      storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
+    },
+    storageJoin: and(
+      eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
+      eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
+      eq(storages.orgId, SYSTEM_ORG_ID),
+      eq(storages.userId, VOLUME_ORG_USER_ID),
+    ),
+    storageVersionJoin: and(
+      eq(
+        storageVersions.id,
+        officialWorkflowDefinitionRevisions.storageVersion,
+      ),
+      eq(
+        storageVersions.storageId,
+        officialWorkflowDefinitionRevisions.storageId,
+      ),
+    ),
+    condition: and(
+      eq(officialWorkflowDefinitionRevisions.definitionName, args.name),
+      eq(officialWorkflowDefinitionRevisions.revision, args.revision),
+    ),
+  };
+}
+
 export const readAcceptedOfficialWorkflowRevision$ = command(
   async (
     { get },
@@ -166,170 +168,18 @@ export const readAcceptedOfficialWorkflowRevision$ = command(
     signal: AbortSignal,
   ): Promise<OfficialWorkflowAcceptedRevision | null> => {
     const db = get(db$);
+    const plan = acceptedOfficialWorkflowRevisionReadPlan(args);
     const [row] = await db
-      .select({
-        definitionName: officialWorkflowDefinitionRevisions.definitionName,
-        revision: officialWorkflowDefinitionRevisions.revision,
-        payload: officialWorkflowDefinitionRevisions.payload,
-        storageName: officialWorkflowDefinitionRevisions.storageName,
-        storageId: officialWorkflowDefinitionRevisions.storageId,
-        storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
-      })
+      .select(plan.columns)
       .from(officialWorkflowDefinitionRevisions)
-      .innerJoin(
-        storages,
-        and(
-          eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
-          eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
-          eq(storages.orgId, SYSTEM_ORG_ID),
-          eq(storages.userId, VOLUME_ORG_USER_ID),
-        ),
-      )
-      .innerJoin(
-        storageVersions,
-        and(
-          eq(
-            storageVersions.id,
-            officialWorkflowDefinitionRevisions.storageVersion,
-          ),
-          eq(
-            storageVersions.storageId,
-            officialWorkflowDefinitionRevisions.storageId,
-          ),
-        ),
-      )
-      .where(
-        and(
-          eq(officialWorkflowDefinitionRevisions.definitionName, args.name),
-          eq(officialWorkflowDefinitionRevisions.revision, args.revision),
-        ),
-      )
+      .innerJoin(storages, plan.storageJoin)
+      .innerJoin(storageVersions, plan.storageVersionJoin)
+      .where(plan.condition)
       .limit(1);
     signal.throwIfAborted();
     return row ? acceptedRevisionFromRow(row) : null;
   },
 );
-
-export async function readAcceptedOfficialWorkflowDefinition(
-  db: ReadonlyDb,
-  name: string,
-  signal?: AbortSignal,
-): Promise<OfficialWorkflowAcceptedDefinition | null> {
-  const catalog = await readAcceptedOfficialWorkflowCatalog(db, signal);
-  return (
-    catalog?.payload.definitions.find((definition) => {
-      return definition.name === name;
-    }) ?? null
-  );
-}
-
-interface OfficialWorkflowRevisionIdentity {
-  readonly name: string;
-  readonly revision: string;
-}
-
-function officialWorkflowRevisionIdentityKey(
-  identity: OfficialWorkflowRevisionIdentity,
-): string {
-  return JSON.stringify([identity.name, identity.revision]);
-}
-
-/**
- * Read exact immutable revisions in one statement. The returned array preserves
- * the caller's order, duplicates and missing entries so callers retain their
- * existing fail-closed semantics.
- */
-export async function readAcceptedOfficialWorkflowRevisions(
-  db: ReadonlyDb,
-  identities: readonly OfficialWorkflowRevisionIdentity[],
-  signal?: AbortSignal,
-): Promise<readonly (OfficialWorkflowAcceptedRevision | null)[]> {
-  if (identities.length === 0) {
-    signal?.throwIfAborted();
-    return [];
-  }
-  const rows = await db
-    .select({
-      definitionName: officialWorkflowDefinitionRevisions.definitionName,
-      revision: officialWorkflowDefinitionRevisions.revision,
-      payload: officialWorkflowDefinitionRevisions.payload,
-      storageName: officialWorkflowDefinitionRevisions.storageName,
-      storageId: officialWorkflowDefinitionRevisions.storageId,
-      storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
-    })
-    .from(officialWorkflowDefinitionRevisions)
-    .innerJoin(
-      storages,
-      and(
-        eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
-        eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
-        eq(storages.orgId, SYSTEM_ORG_ID),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-      ),
-    )
-    .innerJoin(
-      storageVersions,
-      and(
-        eq(
-          storageVersions.id,
-          officialWorkflowDefinitionRevisions.storageVersion,
-        ),
-        eq(
-          storageVersions.storageId,
-          officialWorkflowDefinitionRevisions.storageId,
-        ),
-      ),
-    )
-    .where(
-      or(
-        ...identities.map((identity) => {
-          return and(
-            eq(
-              officialWorkflowDefinitionRevisions.definitionName,
-              identity.name,
-            ),
-            eq(officialWorkflowDefinitionRevisions.revision, identity.revision),
-          );
-        }),
-      ),
-    )
-    .orderBy(
-      asc(officialWorkflowDefinitionRevisions.definitionName),
-      asc(officialWorkflowDefinitionRevisions.revision),
-    );
-  signal?.throwIfAborted();
-  const revisionByIdentity = new Map(
-    rows.map((row) => {
-      const revision = acceptedRevisionFromRow(row);
-      return [
-        officialWorkflowRevisionIdentityKey({
-          name: row.definitionName,
-          revision: row.revision,
-        }),
-        revision,
-      ] as const;
-    }),
-  );
-  return identities.map((identity) => {
-    return (
-      revisionByIdentity.get(officialWorkflowRevisionIdentityKey(identity)) ??
-      null
-    );
-  });
-}
-
-export async function readAcceptedOfficialWorkflowRevision(
-  db: ReadonlyDb,
-  args: OfficialWorkflowRevisionIdentity,
-  signal?: AbortSignal,
-): Promise<OfficialWorkflowAcceptedRevision | null> {
-  const [revision] = await readAcceptedOfficialWorkflowRevisions(
-    db,
-    [args],
-    signal,
-  );
-  return revision ?? null;
-}
 
 export const readAllCurrentSchemaOfficialWorkflowRevisions$ = command(
   async (

@@ -1,3 +1,20 @@
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  readWorkflowCopySnapshot$,
+  commitWorkflowCopy$,
+} from "./workflow-copy-publication";
+import {
+  workflowCopyAgentQuery,
+  workflowCopyVisibleQuery,
+  workflowCopyStorageQuery,
+  type WorkflowCopySource,
+} from "./workflow-copy-source";
+import {
+  workflowCopySlugQuery,
+  copySlugConflict,
+  type PreparedCopiedWebhook,
+  type CopyWorkflowDatabaseResult,
+} from "./workflow-copy-publication-plans";
 import {
   ensurePublicationGenerations,
   publicationIsPending,
@@ -8,7 +25,6 @@ import {
 import { preparedVolumePublicationSql } from "../services/storage-volume-publication-sql";
 import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
 import { randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 
 import { command, computed } from "ccstate";
 import {
@@ -19,27 +35,22 @@ import {
   type WorkflowImportSource,
 } from "@okouai/api-contracts/contracts/workflows";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import {
-  getCustomSkillStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { storages } from "@okouai/db/schema/storage";
 import {
   workflowUserAutomationThreads,
-  workflowAutomations,
-  workflowWebhookAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, ne } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishChatThreadWorkflowsChangedSafely } from "../external/realtime";
 import {
   ApiDispatchTimingCollector,
@@ -67,10 +78,8 @@ import {
 import { loadWorkflowOwnerProfile } from "../services/workflow-owner-profile.service";
 import { workflowDetail$ } from "../services/workflow-detail.service";
 import {
-  ensureWorkflowUserAutomationThread,
   ensureWorkflowUserAutomationThread$,
   prepareWorkflowUserAutomationThread$,
-  type WorkflowThreadPreparation,
   loadWorkflowUserAutomationThreadId,
 } from "../services/workflow-user-automation-thread.service";
 import { updateWorkflow$ } from "../services/workflow-update.service";
@@ -83,26 +92,15 @@ import {
   mintWorkflowWebhookSecret,
   mintWorkflowWebhookToken,
 } from "../services/workflow-webhook-automation-config.service";
-import {
-  insertWorkflowAutomation,
-  workflowAutomationColumns,
-} from "../services/autonomy-budget-schema.service";
-import {
-  childAutonomyBudget,
-  loadOwnedRunAutonomyBudget,
-} from "../services/autonomy-budget.service";
+import { childAutonomyBudget } from "../services/autonomy-budget.service";
 import { awaitWithSignal, bestEffort, onRejection, settle } from "../utils";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-watch.service";
 import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-watch.service";
-import { reprojectWorkflowAutomationsForOwner } from "../services/workflow-automation-account-projection.service";
-import {
-  workflowAutomationAccountConnectorSlug,
-  type WorkflowAutomationAccountConnectorSlug,
-} from "../services/workflow-automation-account-classification.service";
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-watch.service";
 import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-watch.service";
 import {
   loadVisibleWorkflowById,
+  visibleWorkflowCondition,
   requireWorkflowPermission,
   workflowSummary,
   workflowList,
@@ -112,14 +110,7 @@ import {
 } from "../services/workflow-data.service";
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
-import type { Tx } from "../../lib/db-types";
 import { OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE } from "../services/official-workflow-constants";
-import {
-  lockAcceptedOfficialWorkflowCatalog,
-  readAcceptedOfficialWorkflowDefinition,
-  readAcceptedOfficialWorkflowRevision,
-} from "../services/official-workflow-catalog-read.service";
-import { resolveOfficialWorkflowBlueprintForReconciliation } from "../services/official-workflow-installation.service";
 import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
@@ -928,194 +919,6 @@ const deleteWorkflowInner$ = command(
   },
 );
 
-type WorkflowCopyTransaction = Tx;
-
-interface CopyWorkflowRuntimeArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly sourceWorkflow: WorkflowRow;
-  readonly targetAgentId: string;
-  readonly targetWorkflowId: string;
-  readonly currentTime: Date;
-  readonly inheritedAutonomyBudget?: number;
-  readonly sourceAutomations: readonly (typeof workflowAutomations.$inferSelect)[];
-  readonly preparedWebhooks: ReadonlyMap<string, PreparedCopiedWebhook>;
-}
-
-interface CopyWorkflowScopedRowsArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly targetWorkflowId: string;
-  readonly currentTime: Date;
-  readonly inheritedAutonomyBudget?: number;
-}
-
-interface CopyWorkflowAutomationRowsArgs extends CopyWorkflowScopedRowsArgs {
-  readonly sourceAutomations: readonly (typeof workflowAutomations.$inferSelect)[];
-  readonly preparedWebhooks: ReadonlyMap<string, PreparedCopiedWebhook>;
-}
-
-interface OfficialCopyMaterialization {
-  readonly revision: string;
-  readonly sourceWorkflow: WorkflowRow;
-  readonly sourceAutomations: readonly (typeof workflowAutomations.$inferSelect)[];
-  readonly files: readonly {
-    readonly path: string;
-    readonly content: string;
-  }[];
-}
-type OfficialCopyResolution =
-  | {
-      readonly kind: "ok";
-      readonly materialization: OfficialCopyMaterialization;
-    }
-  | {
-      readonly kind: "conflict";
-      readonly message: string;
-    };
-
-const OFFICIAL_COPY_RECONFIGURE_MESSAGE =
-  "Official Workflow cannot be copied from mixed or stale state; Reconfigure it and retry";
-
-async function resolveOfficialCopyMaterialization(
-  tx: WorkflowCopyTransaction,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly sourceWorkflow: WorkflowRow;
-  },
-): Promise<OfficialCopyResolution> {
-  const definitionName = args.sourceWorkflow.officialDefinitionName;
-  if (!definitionName) {
-    throw new Error(
-      "Official copy materialization requires an Official source",
-    );
-  }
-  const [sourceWorkflow] = await tx
-    .select()
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.id, args.sourceWorkflow.id),
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.ownerUserId, args.userId),
-        eq(workflows.officialDefinitionName, definitionName),
-        eq(workflows.officialInstallationState, "installed"),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  if (!sourceWorkflow) {
-    return { kind: "conflict", message: OFFICIAL_COPY_RECONFIGURE_MESSAGE };
-  }
-
-  const definition = await readAcceptedOfficialWorkflowDefinition(
-    tx,
-    definitionName,
-  );
-  if (!definition) {
-    return { kind: "conflict", message: OFFICIAL_COPY_RECONFIGURE_MESSAGE };
-  }
-  const revision = await readAcceptedOfficialWorkflowRevision(tx, {
-    name: definition.name,
-    revision: definition.revision,
-  });
-  if (!revision) {
-    return { kind: "conflict", message: OFFICIAL_COPY_RECONFIGURE_MESSAGE };
-  }
-  const rows = await tx
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.workflowId, sourceWorkflow.id),
-      ),
-    )
-    .orderBy(asc(workflowAutomations.officialBlueprintKey))
-    .for("update");
-  if (rows.length !== revision.definition.blueprints.length) {
-    return { kind: "conflict", message: OFFICIAL_COPY_RECONFIGURE_MESSAGE };
-  }
-  const rowsByBlueprint = new Map(
-    rows.map((row) => {
-      return [row.officialBlueprintKey, row] as const;
-    }),
-  );
-  const sourceAutomations: (typeof workflowAutomations.$inferSelect)[] = [];
-  for (const blueprint of revision.definition.blueprints) {
-    const row = rowsByBlueprint.get(blueprint.key);
-    if (
-      !row ||
-      row.officialAppliedFingerprint !== blueprint.fingerprint ||
-      row.officialReconciliationStatus !== "current" ||
-      row.officialParameterBindings === null
-    ) {
-      return { kind: "conflict", message: OFFICIAL_COPY_RECONFIGURE_MESSAGE };
-    }
-    const resolved = resolveOfficialWorkflowBlueprintForReconciliation(
-      blueprint,
-      row.officialParameterBindings,
-      [],
-      row.timezone,
-    );
-    if (!resolved.ok) {
-      return { kind: "conflict", message: OFFICIAL_COPY_RECONFIGURE_MESSAGE };
-    }
-    sourceAutomations.push(row);
-  }
-  return {
-    kind: "ok",
-    materialization: {
-      revision: definition.revision,
-      sourceWorkflow: {
-        ...sourceWorkflow,
-        instruction: revision.definition.workflow.instruction,
-        displayName: revision.definition.workflow.displayName,
-        description: revision.definition.workflow.description,
-        officialDefinitionName: null,
-        officialInstallationState: null,
-      },
-      sourceAutomations,
-      files: revision.definition.workflow.files,
-    },
-  };
-}
-async function insertCopiedWorkflowRow(
-  tx: WorkflowCopyTransaction,
-  args: CopyWorkflowRuntimeArgs,
-): Promise<
-  | {
-      readonly id: string;
-    }
-  | undefined
-> {
-  const [workflow] = await tx
-    .insert(workflows)
-    .values({
-      id: args.targetWorkflowId,
-      orgId: args.orgId,
-      agentId: args.targetAgentId,
-      name: args.sourceWorkflow.name,
-      visibility: "private",
-      instruction: args.sourceWorkflow.instruction,
-      ownerUserId: args.userId,
-      displayName: args.sourceWorkflow.displayName,
-      description: args.sourceWorkflow.description,
-      createdBy: args.userId,
-      updatedBy: args.userId,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    })
-    .returning({ id: workflows.id });
-  return workflow;
-}
-
-type PreparedCopiedWebhook = Pick<
-  typeof workflowWebhookAutomations.$inferInsert,
-  "tokenHash" | "encryptedToken" | "encryptedSecret" | "secretLastFour"
->;
 async function prepareCopiedWebhooks(
   args: {
     readonly orgId: string;
@@ -1159,436 +962,6 @@ async function prepareCopiedWebhooks(
   return prepared;
 }
 
-async function copyWorkflowAutomationRow(
-  tx: WorkflowCopyTransaction,
-  args: CopyWorkflowScopedRowsArgs & {
-    readonly automation: typeof workflowAutomations.$inferSelect;
-    readonly preparedWebhooks: ReadonlyMap<string, PreparedCopiedWebhook>;
-  },
-): Promise<void> {
-  const copiedAutomation = await insertWorkflowAutomation(tx, {
-    orgId: args.orgId,
-    workflowId: args.targetWorkflowId,
-    ownerUserId: args.userId,
-    kind: args.automation.kind,
-    eventType: args.automation.eventType,
-    eventConfig: args.automation.eventConfig,
-    scheduleType: args.automation.scheduleType,
-    cronExpression: args.automation.cronExpression,
-    intervalSeconds: args.automation.intervalSeconds,
-    atTime: args.automation.atTime,
-    timezone: args.automation.timezone,
-    enabled: args.automation.enabled,
-    nextRunAt: args.automation.nextRunAt,
-    lastRunAt: null,
-    lastRunId: null,
-    consecutiveFailures: 0,
-    autonomyBudget:
-      args.inheritedAutonomyBudget ?? args.automation.autonomyBudget,
-    createdAt: args.currentTime,
-    updatedAt: args.currentTime,
-  });
-  if (!copiedAutomation) {
-    throw new Error("Failed to copy workflow automation");
-  }
-
-  if (
-    args.automation.kind === "event" &&
-    args.automation.eventType === "webhook-received"
-  ) {
-    const webhook = args.preparedWebhooks.get(args.automation.id);
-    if (!webhook) {
-      throw new Error("Missing prepared webhook credentials");
-    }
-    await tx.insert(workflowWebhookAutomations).values({
-      ...webhook,
-      automationId: copiedAutomation.id,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    });
-  }
-}
-
-async function copyWorkflowUserAutomations(
-  tx: WorkflowCopyTransaction,
-  args: CopyWorkflowAutomationRowsArgs,
-): Promise<{
-  readonly accountConnectorSlugs: readonly WorkflowAutomationAccountConnectorSlug[];
-}> {
-  const rows = args.sourceAutomations;
-  if (rows.length === 0) {
-    return { accountConnectorSlugs: [] };
-  }
-  const accountConnectorSlugs = workflowCopyConnectorSlugs(rows);
-
-  for (const automation of rows) {
-    await copyWorkflowAutomationRow(tx, { ...args, automation });
-  }
-  return { accountConnectorSlugs };
-}
-async function copyWorkflowRuntimeConfiguration(
-  tx: WorkflowCopyTransaction,
-  args: CopyWorkflowRuntimeArgs,
-): Promise<
-  | {
-      readonly workflow: {
-        readonly id: string;
-      };
-      readonly accountConnectorSlugs: readonly WorkflowAutomationAccountConnectorSlug[];
-    }
-  | undefined
-> {
-  const workflow = await insertCopiedWorkflowRow(tx, args);
-  if (!workflow) {
-    return undefined;
-  }
-  const scopedRowsArgs = {
-    orgId: args.orgId,
-    userId: args.userId,
-    targetWorkflowId: workflow.id,
-    currentTime: args.currentTime,
-    ...(args.inheritedAutonomyBudget === undefined
-      ? {}
-      : { inheritedAutonomyBudget: args.inheritedAutonomyBudget }),
-  };
-  const automationProviders = await copyWorkflowUserAutomations(tx, {
-    ...scopedRowsArgs,
-    sourceAutomations: args.sourceAutomations,
-    preparedWebhooks: args.preparedWebhooks,
-  });
-  return { workflow, ...automationProviders };
-}
-interface WorkflowCopySource {
-  readonly revision: string | null;
-  readonly sourceWorkflow: WorkflowRow;
-  readonly sourceAutomations: readonly (typeof workflowAutomations.$inferSelect)[];
-  readonly webhooks: readonly {
-    readonly automationId: string;
-    readonly encryptedSecret: string;
-    readonly secretLastFour: string;
-  }[];
-  readonly files:
-    | readonly {
-        readonly path: string;
-        readonly content: string;
-      }[]
-    | null;
-  readonly storage: {
-    readonly id: string;
-    readonly headVersionId: string | null;
-  } | null;
-}
-
-interface WorkflowCopyInput {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly member: WorkflowMember;
-  readonly sourceWorkflow: WorkflowRow;
-  readonly targetAgentId: string;
-  readonly sourceFiles: WorkflowCopySource["files"];
-  readonly sourceStorage: WorkflowCopySource["storage"];
-}
-
-const WORKFLOW_COPY_CHANGED_MESSAGE =
-  "Workflow copy source or target changed during preparation; retry the copy";
-async function loadWorkflowCopyStorage(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly sourceWorkflow: WorkflowRow;
-  },
-  lock: boolean,
-): Promise<WorkflowCopySource["storage"]> {
-  const query = db
-    .select({ id: storages.id, headVersionId: storages.headVersionId })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        eq(storages.name, getCustomSkillStorageName(args.sourceWorkflow.id)),
-      ),
-    )
-    .limit(1);
-  const [storage] = await (lock ? query.for("share") : query);
-  return storage ?? null;
-}
-
-async function lockWorkflowCopyInputs(
-  tx: WorkflowCopyTransaction,
-  args: WorkflowCopyInput,
-): Promise<boolean> {
-  if (args.sourceWorkflow.officialDefinitionName !== null) {
-    await lockAcceptedOfficialWorkflowCatalog(tx);
-  }
-  // Agent deletion locks its parent before cascading to Workflows. Keep that
-  // order, including when source and target are the same Agent.
-  await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, args.orgId),
-        inArray(agents.id, [args.sourceWorkflow.agentId, args.targetAgentId]),
-      ),
-    )
-    .orderBy(asc(agents.id))
-    .for("share");
-  const target = await loadAgentForConfiguration(tx, {
-    orgId: args.orgId,
-    agentId: args.targetAgentId,
-  });
-  if (
-    !target ||
-    requireAgentWritePermission(
-      target,
-      args.member,
-      "copy workflows onto this agent",
-    )
-  ) {
-    return false;
-  }
-  return true;
-}
-
-async function readWorkflowCopyWebhooks(
-  tx: WorkflowCopyTransaction,
-  sourceAutomations: WorkflowCopySource["sourceAutomations"],
-): Promise<WorkflowCopySource["webhooks"]> {
-  if (sourceAutomations.length === 0) {
-    return [];
-  }
-  return await tx
-    .select({
-      automationId: workflowWebhookAutomations.automationId,
-      encryptedSecret: workflowWebhookAutomations.encryptedSecret,
-      secretLastFour: workflowWebhookAutomations.secretLastFour,
-    })
-    .from(workflowWebhookAutomations)
-    .where(
-      inArray(
-        workflowWebhookAutomations.automationId,
-        sourceAutomations.map((row) => {
-          return row.id;
-        }),
-      ),
-    )
-    .orderBy(asc(workflowWebhookAutomations.automationId))
-    .for("share");
-}
-async function readWorkflowCopySource(
-  tx: WorkflowCopyTransaction,
-  args: WorkflowCopyInput,
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly source: WorkflowCopySource;
-    }
-  | {
-      readonly kind: "conflict";
-      readonly message: string;
-    }
-> {
-  if (!(await lockWorkflowCopyInputs(tx, args))) {
-    return { kind: "conflict", message: WORKFLOW_COPY_CHANGED_MESSAGE };
-  }
-  const official =
-    args.sourceWorkflow.officialDefinitionName !== null
-      ? await resolveOfficialCopyMaterialization(tx, args)
-      : null;
-  if (official?.kind === "conflict") {
-    return official;
-  }
-  const materialization = official?.materialization;
-  if (!materialization) {
-    await tx
-      .select({ id: workflows.id })
-      .from(workflows)
-      .where(
-        and(
-          eq(workflows.id, args.sourceWorkflow.id),
-          eq(workflows.orgId, args.orgId),
-        ),
-      )
-      .for("update");
-  }
-  const visible = await loadVisibleWorkflowById(tx, {
-    orgId: args.orgId,
-    member: args.member,
-    workflowId: args.sourceWorkflow.id,
-  });
-  if (
-    !visible ||
-    (!materialization &&
-      !isDeepStrictEqual(visible.workflow, args.sourceWorkflow))
-  ) {
-    return { kind: "conflict", message: WORKFLOW_COPY_CHANGED_MESSAGE };
-  }
-  const sourceAutomations =
-    materialization?.sourceAutomations ??
-    (await tx
-      .select(workflowAutomationColumns())
-      .from(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.orgId, args.orgId),
-          eq(workflowAutomations.ownerUserId, args.userId),
-          eq(workflowAutomations.workflowId, args.sourceWorkflow.id),
-        ),
-      )
-      .orderBy(asc(workflowAutomations.id))
-      .for("update"));
-  const webhooks = await readWorkflowCopyWebhooks(tx, sourceAutomations);
-  const storage = materialization
-    ? null
-    : await loadWorkflowCopyStorage(tx, args, true);
-  if (!materialization && !isDeepStrictEqual(storage, args.sourceStorage)) {
-    return { kind: "conflict", message: WORKFLOW_COPY_CHANGED_MESSAGE };
-  }
-  return {
-    kind: "ok",
-    source: {
-      revision: materialization ? materialization.revision : null,
-      sourceWorkflow: materialization?.sourceWorkflow ?? visible.workflow,
-      sourceAutomations,
-      webhooks,
-      storage,
-      files: materialization?.files ?? args.sourceFiles,
-    },
-  };
-}
-
-function workflowCopyConnectorSlugs(
-  rows: readonly (typeof workflowAutomations.$inferSelect)[],
-) {
-  return [
-    ...new Set(
-      rows
-        .map((row) => {
-          return workflowAutomationAccountConnectorSlug(row.eventType);
-        })
-        .filter((slug): slug is WorkflowAutomationAccountConnectorSlug => {
-          return slug !== null;
-        }),
-    ),
-  ].sort();
-}
-type CopyWorkflowDatabaseResult =
-  | {
-      readonly kind: "conflict";
-      readonly message: string;
-    }
-  | {
-      readonly kind: "ok";
-      readonly inserted: {
-        readonly id: string;
-      };
-      readonly accountConnectorSlugs: readonly WorkflowAutomationAccountConnectorSlug[];
-    };
-
-async function copyWorkflowDatabaseRows(
-  db: Db,
-  args: WorkflowCopyInput & {
-    readonly targetWorkflowId: string;
-    readonly threadPreparation: WorkflowThreadPreparation;
-    readonly currentTime: Date;
-    readonly inheritedAutonomyBudget: number | undefined;
-    readonly source: WorkflowCopySource;
-    readonly volume: PreparedServerSideVolume;
-    readonly preparedWebhooks: ReadonlyMap<string, PreparedCopiedWebhook>;
-  },
-  signal: AbortSignal,
-): Promise<CopyWorkflowDatabaseResult> {
-  return await db.transaction(async (tx) => {
-    const current = await readWorkflowCopySource(tx, args);
-    if (current.kind === "conflict") {
-      return current;
-    }
-    if (!isDeepStrictEqual(current.source, args.source)) {
-      return { kind: "conflict", message: WORKFLOW_COPY_CHANGED_MESSAGE };
-    }
-    const { sourceWorkflow, sourceAutomations } = current.source;
-    const slugError = await requirePrivateWorkflowSlugAvailable(tx, {
-      orgId: args.orgId,
-      agentId: args.targetAgentId,
-      ownerUserId: args.userId,
-      name: sourceWorkflow.name,
-    });
-    if (slugError) {
-      return { kind: "conflict", message: slugError.body.error.message };
-    }
-    // Orphan cleanup takes this lock before checking Workflow absence.
-    const [storage] = await tx
-      .select({ id: storages.id })
-      .from(storages)
-      .where(eq(storages.id, args.volume.version.storageId))
-      .for("update");
-    if (!storage) {
-      throw new Error(
-        `Prepared workflow storage not found: ${args.targetWorkflowId}`,
-      );
-    }
-    const inserted = await copyWorkflowRuntimeConfiguration(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      sourceWorkflow,
-      targetAgentId: args.targetAgentId,
-      targetWorkflowId: args.targetWorkflowId,
-      currentTime: args.currentTime,
-      sourceAutomations,
-      preparedWebhooks: args.preparedWebhooks,
-      ...(args.inheritedAutonomyBudget === undefined
-        ? {}
-        : { inheritedAutonomyBudget: args.inheritedAutonomyBudget }),
-    });
-    if (!inserted) {
-      throw new Error("Failed to copy workflow");
-    }
-    for (const connectorSlug of inserted.accountConnectorSlugs) {
-      await reprojectWorkflowAutomationsForOwner(
-        tx,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          target: { kind: "builtin", connectorSlug },
-        },
-        signal,
-      );
-    }
-    const { rowCount: published } = await tx.execute(
-      preparedVolumePublicationSql(args.volume, nowDate()),
-    );
-    if (published !== 1) {
-      throw new StorageVersionIdentityConflictError(
-        args.volume.version.versionId,
-      );
-    }
-    signal.throwIfAborted();
-    // The shared user/org sequence is the final lock: all external work and
-    // unrelated row updates have finished before the thread event is appended.
-    if (
-      sourceAutomations.some((automation) => {
-        return automation.kind === "event";
-      })
-    ) {
-      await ensureWorkflowUserAutomationThread(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.targetWorkflowId,
-        preparation: args.threadPreparation,
-        agentId: args.targetAgentId,
-        workflowTitle: sourceWorkflow.displayName ?? sourceWorkflow.name,
-        currentTime: args.currentTime,
-      });
-    }
-    signal.throwIfAborted();
-    return {
-      kind: "ok",
-      inserted: inserted.workflow,
-      accountConnectorSlugs: inserted.accountConnectorSlugs,
-    };
-  });
-}
 function copiedWorkflowVolumeFiles(
   sourceWorkflow: Pick<WorkflowRow, "name" | "description" | "instruction">,
   sourceFiles:
@@ -1627,8 +1000,7 @@ const reconcileCopiedWorkflowAutomationWatches$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
-    const owner = { db: db, orgId: args.orgId, userId: args.userId };
+    const owner = { orgId: args.orgId, userId: args.userId };
     if (args.copied.accountConnectorSlugs.includes("gmail")) {
       await bestEffort(
         set(
@@ -1701,33 +1073,32 @@ function copiedWorkflowResponse(
   };
 }
 
+interface CopiedWorkflowPublicationInput {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly member: WorkflowMember;
+  readonly sourceWorkflow: WorkflowRow;
+  readonly sourceFiles:
+    | readonly {
+        readonly path: string;
+        readonly content: string;
+      }[]
+    | null;
+  readonly sourceStorage: WorkflowCopySource["storage"];
+  readonly targetAgentId: string;
+  readonly inheritedAutonomyBudget: number | undefined;
+  readonly currentTime: Date;
+}
+
 const publishCopiedWorkflow$ = command(
   async (
-    { set },
-    args: {
-      readonly db: Db;
-      readonly orgId: string;
-      readonly userId: string;
-      readonly member: WorkflowMember;
-      readonly sourceWorkflow: WorkflowRow;
-      readonly sourceFiles:
-        | readonly {
-            readonly path: string;
-            readonly content: string;
-          }[]
-        | null;
-      readonly sourceStorage: WorkflowCopySource["storage"];
-      readonly targetAgentId: string;
-      readonly inheritedAutonomyBudget: number | undefined;
-      readonly currentTime: Date;
-    },
+    { get, set },
+    args: CopiedWorkflowPublicationInput,
     signal: AbortSignal,
   ) => {
     // Read a coherent source in a short transaction, then release every lock
     // before KMS and object storage work. Publication rechecks that exact source.
-    const snapshot = await args.db.transaction(async (tx) => {
-      return await readWorkflowCopySource(tx, args);
-    });
+    const snapshot = await set(readWorkflowCopySnapshot$, args, signal);
     signal.throwIfAborted();
     if (snapshot.kind === "conflict") {
       return conflict(snapshot.message);
@@ -1763,8 +1134,8 @@ const publishCopiedWorkflow$ = command(
           signal,
         );
         const publication = await settle(
-          copyWorkflowDatabaseRows(
-            args.db,
+          set(
+            commitWorkflowCopy$,
             {
               orgId: args.orgId,
               userId: args.userId,
@@ -1816,13 +1187,34 @@ const publishCopiedWorkflow$ = command(
           },
           signal,
         );
-        const visible = await loadVisibleWorkflowById(args.db, {
-          orgId: args.orgId,
-          member: args.member,
-          workflowId: targetWorkflowId,
-        });
+        const [visible] = await get(db$)
+          .select({
+            workflow: workflows,
+            agent: {
+              id: agents.id,
+              orgId: agents.orgId,
+              owner: agents.owner,
+              visibility: agents.visibility,
+              name: agents.name,
+              displayName: agents.displayName,
+            },
+          })
+          .from(workflows)
+          .innerJoin(agents, eq(workflows.agentId, agents.id))
+          .where(
+            and(
+              eq(workflows.orgId, args.orgId),
+              eq(workflows.id, targetWorkflowId),
+              visibleWorkflowCondition(args.member),
+            ),
+          )
+          .limit(1);
         signal.throwIfAborted();
-        return copiedWorkflowResponse(visible, args.member, targetWorkflowId);
+        return copiedWorkflowResponse(
+          visible ?? null,
+          args.member,
+          targetWorkflowId,
+        );
       })(),
       async () => {
         await set(cleanupUnpublishedWorkflow$, cleanup);
@@ -1840,15 +1232,23 @@ const copyWorkflowInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const writeDb = set(writeDb$);
+    const db = get(db$);
     let inheritedAutonomyBudget: number | undefined;
     if (auth.tokenType === "agent") {
-      const sourceAutonomyBudget = await loadOwnedRunAutonomyBudget(writeDb, {
-        runId: auth.runId,
-        orgId: auth.orgId,
-        userId: auth.userId,
-      });
+      const [run] = await db
+        .select({ autonomyBudget: agentRuns.autonomyBudget })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, auth.runId),
+            eq(agentRuns.orgId, auth.orgId),
+            eq(agentRuns.userId, auth.userId),
+            isNotNull(agentRuns.triggerSource),
+          ),
+        )
+        .limit(1);
       signal.throwIfAborted();
+      const sourceAutonomyBudget = run?.autonomyBudget ?? null;
       if (sourceAutonomyBudget === null) {
         return notFound("Source run not found");
       }
@@ -1858,19 +1258,20 @@ const copyWorkflowInner$ = command(
       }
       inheritedAutonomyBudget = derived.autonomyBudget;
     }
-    const source = await loadVisibleWorkflowById(writeDb, {
-      orgId: auth.orgId,
-      member,
-      workflowId: params.workflowId,
-    });
+    const [sourceWorkflow] = await db.select().from(
+      workflowCopyVisibleQuery({
+        orgId: auth.orgId,
+        member,
+        workflowId: params.workflowId,
+      }),
+    );
     signal.throwIfAborted();
-    if (!source) {
+    if (!sourceWorkflow) {
       return workflowNotFound(params.workflowId);
     }
-    const targetAgent = await loadAgentForConfiguration(writeDb, {
-      orgId: auth.orgId,
-      agentId: bodyResult.data.toAgentId,
-    });
+    const [targetAgent] = await db
+      .select()
+      .from(workflowCopyAgentQuery(auth.orgId, bodyResult.data.toAgentId));
     signal.throwIfAborted();
     if (!targetAgent) {
       return notFound(`Agent not found: ${bodyResult.data.toAgentId}`);
@@ -1883,29 +1284,39 @@ const copyWorkflowInner$ = command(
     if (permissionError) {
       return permissionError;
     }
-    const slugError = await requirePrivateWorkflowSlugAvailable(writeDb, {
-      orgId: auth.orgId,
-      agentId: targetAgent.id,
-      ownerUserId: auth.userId,
-      name: source.workflow.name,
-    });
+    const [slug] = await db.select().from(
+      workflowCopySlugQuery({
+        orgId: auth.orgId,
+        userId: auth.userId,
+        targetAgentId: targetAgent.id,
+        sourceWorkflow,
+      }),
+    );
     signal.throwIfAborted();
+    const slugError = slug
+      ? conflict(copySlugConflict(sourceWorkflow.name))
+      : null;
     if (slugError) {
       return slugError;
     }
     const sourceStorage =
-      source.workflow.officialDefinitionName === null
-        ? await loadWorkflowCopyStorage(
-            writeDb,
-            { orgId: auth.orgId, sourceWorkflow: source.workflow },
-            false,
-          )
+      sourceWorkflow.officialDefinitionName === null
+        ? ((
+            await db
+              .select()
+              .from(
+                workflowCopyStorageQuery(
+                  { orgId: auth.orgId, sourceWorkflow },
+                  false,
+                ),
+              )
+          )[0] ?? null)
         : null;
     const sourceFiles = sourceStorage?.headVersionId
       ? await get(
           loadWorkflowVolumeFiles({
             orgId: auth.orgId,
-            workflowId: source.workflow.id,
+            workflowId: sourceWorkflow.id,
             version: {
               storageId: sourceStorage.id,
               versionId: sourceStorage.headVersionId,
@@ -1920,11 +1331,10 @@ const copyWorkflowInner$ = command(
     return await set(
       publishCopiedWorkflow$,
       {
-        db: writeDb,
         orgId: auth.orgId,
         userId: auth.userId,
         member,
-        sourceWorkflow: source.workflow,
+        sourceWorkflow: sourceWorkflow,
         sourceFiles,
         sourceStorage,
         targetAgentId: targetAgent.id,

@@ -2066,145 +2066,206 @@ describe("workflows", () => {
     );
   });
 
-  it("rebinds copied Stripe automations to the target thread default account", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error(
-        "Expected Stripe workflow copy actor to belong to an org",
+  it.each([true, false])(
+    "copies Stripe automations with default Live mode %s and preserves the source selection",
+    async (defaultLiveMode) => {
+      const actor = user();
+      if (!actor.orgId) {
+        throw new Error(
+          "Expected Stripe workflow copy actor to belong to an org",
+        );
+      }
+      await api.grantProEntitlement(actor, { tier: "team" });
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        {
+          [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
+        },
       );
-    }
-    await api.grantProEntitlement(actor, { tier: "team" });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
-      },
-    );
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Stripe Copy Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Stripe Copy Target Agent",
-      visibility: "private",
-    });
-    const workflow = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
-      name: `stripe-copy-${randomUUID().slice(0, 8)}`,
-      instruction: "# Stripe copy source",
-    });
+      const sourceAgent = await createAgent(actor, {
+        displayName: "Stripe Copy Source Agent",
+        visibility: "private",
+      });
+      const targetAgent = await createAgent(actor, {
+        displayName: "Stripe Copy Target Agent",
+        visibility: "private",
+      });
+      const workflow = await createWorkflow(actor, {
+        agentId: sourceAgent.agentId,
+        name: `stripe-copy-${randomUUID().slice(0, 8)}`,
+        instruction: "# Stripe copy source",
+      });
 
-    const defaultAccountId = `acct_stripe_copy_default_${randomUUID()}`;
-    mockStripeConnectorOAuth({ accountId: defaultAccountId, livemode: true });
-    const defaultStart = await connectorApi.startOauth(
-      actor,
-      "stripe",
-      "oauth",
-      sourceAgent.agentId,
-    );
-    const defaultState = new URL(
-      defaultStart.authorizationUrl,
-    ).searchParams.get("state");
-    if (!defaultState) {
-      throw new Error("Expected default Stripe OAuth state");
-    }
-    await connectorApi.completeOauthCallback("stripe", {
-      code: "stripe-copy-default-code",
-      state: defaultState,
-    });
-    const defaultAccount = await connectorApi.readConnectorBySlug(
-      actor,
-      "stripe",
-    );
+      const defaultAccountId = `acct_stripe_copy_default_${randomUUID()}`;
+      mockStripeConnectorOAuth({ accountId: defaultAccountId, livemode: true });
+      const defaultStart = await connectorApi.startOauth(
+        actor,
+        "stripe",
+        "oauth",
+        sourceAgent.agentId,
+      );
+      const defaultState = new URL(
+        defaultStart.authorizationUrl,
+      ).searchParams.get("state");
+      if (!defaultState) {
+        throw new Error("Expected default Stripe OAuth state");
+      }
+      await connectorApi.completeOauthCallback("stripe", {
+        code: "stripe-copy-default-code",
+        state: defaultState,
+      });
+      const defaultAccount = await connectorApi.readConnectorBySlug(
+        actor,
+        "stripe",
+      );
 
-    const selectedAccountId = `acct_stripe_copy_selected_${randomUUID()}`;
-    mockStripeConnectorOAuth({ accountId: selectedAccountId, livemode: true });
-    const selectedStart = await connectorApi.startOauth(
-      actor,
-      "stripe",
-      "oauth",
-      sourceAgent.agentId,
-      { intent: "add", displayName: "Stripe Copy Selected" },
-    );
-    const selectedState = new URL(
-      selectedStart.authorizationUrl,
-    ).searchParams.get("state");
-    if (!selectedState) {
-      throw new Error("Expected selected Stripe OAuth state");
-    }
-    await connectorApi.completeOauthCallback("stripe", {
-      code: "stripe-copy-selected-code",
-      state: selectedState,
-    });
-    const accounts = await connectorApi.listBuiltinConnectorAccounts(
-      actor,
-      "stripe",
-    );
-    const selectedAccount = accounts.find((account) => {
-      return account.externalId === selectedAccountId;
-    });
-    if (!selectedAccount) {
-      throw new Error("Expected selected Stripe account");
-    }
+      const selectedAccountId = `acct_stripe_copy_selected_${randomUUID()}`;
+      mockStripeConnectorOAuth({
+        accountId: selectedAccountId,
+        livemode: true,
+      });
+      const selectedStart = await connectorApi.startOauth(
+        actor,
+        "stripe",
+        "oauth",
+        sourceAgent.agentId,
+        { intent: "add", displayName: "Stripe Copy Selected" },
+      );
+      const selectedState = new URL(
+        selectedStart.authorizationUrl,
+      ).searchParams.get("state");
+      if (!selectedState) {
+        throw new Error("Expected selected Stripe OAuth state");
+      }
+      await connectorApi.completeOauthCallback("stripe", {
+        code: "stripe-copy-selected-code",
+        state: selectedState,
+      });
+      const accounts = await connectorApi.listBuiltinConnectorAccounts(
+        actor,
+        "stripe",
+      );
+      const selectedAccount = accounts.find((account) => {
+        return account.externalId === selectedAccountId;
+      });
+      if (!selectedAccount) {
+        throw new Error("Expected selected Stripe account");
+      }
 
-    const sourceAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "stripe-invoice-paid",
-          eventConfig: { provider: "stripe", event: "invoice_paid" },
-        },
-      }),
-      [201],
-    );
-    if (
-      sourceAutomation.body.kind !== "event" ||
-      sourceAutomation.body.eventType !== "stripe-invoice-paid" ||
-      !sourceAutomation.body.chatThreadId
-    ) {
-      throw new Error("Expected source Stripe automation thread");
-    }
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(actor),
-        params: { id: sourceAutomation.body.chatThreadId },
-        body: {
-          connectionId: selectedAccount.id,
-          target: { kind: "builtin", connectorSlug: "stripe" },
-        },
-      }),
-      [200],
-    );
-
-    const copied = await accept(
-      detailClient().copy({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: { toAgentId: targetAgent.agentId },
-      }),
-      [201],
-    );
-    const copiedAutomations = await accept(
-      automationsClient().list({
-        headers: authHeaders(actor),
-        params: { workflowId: copied.body.id },
-      }),
-      [200],
-    );
-    expect(copiedAutomations.body).toContainEqual(
-      expect.objectContaining({
-        eventType: "stripe-invoice-paid",
-        eventConfig: expect.objectContaining({
-          connectorId: defaultAccount.id,
-          stripeAccountId: defaultAccountId,
-          mode: "live",
+      const sourceAutomation = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+          body: {
+            kind: "event",
+            eventType: "stripe-invoice-paid",
+            eventConfig: { provider: "stripe", event: "invoice_paid" },
+          },
         }),
-      }),
-    );
-  });
+        [201],
+      );
+      if (
+        sourceAutomation.body.kind !== "event" ||
+        sourceAutomation.body.eventType !== "stripe-invoice-paid" ||
+        !sourceAutomation.body.chatThreadId
+      ) {
+        throw new Error("Expected source Stripe automation thread");
+      }
+      await accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: authHeaders(actor),
+          params: { id: sourceAutomation.body.chatThreadId },
+          body: {
+            connectionId: selectedAccount.id,
+            target: { kind: "builtin", connectorSlug: "stripe" },
+          },
+        }),
+        [200],
+      );
+
+      if (!defaultLiveMode) {
+        mockStripeConnectorOAuth({
+          accountId: defaultAccountId,
+          livemode: false,
+        });
+        const reconnect = await connectorApi.startOauth(
+          actor,
+          "stripe",
+          "oauth",
+          sourceAgent.agentId,
+          { intent: "reconnect", connectionId: defaultAccount.id },
+        );
+        const reconnectState = new URL(
+          reconnect.authorizationUrl,
+        ).searchParams.get("state");
+        if (!reconnectState) {
+          throw new Error("Expected Stripe reconnect state");
+        }
+        await connectorApi.completeOauthCallback("stripe", {
+          code: "stripe-copy-test-mode-code",
+          state: reconnectState,
+        });
+      }
+      const copied = await accept(
+        detailClient().copy({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+          body: { toAgentId: targetAgent.agentId },
+        }),
+        [201],
+      );
+      const copiedAutomations = await accept(
+        automationsClient().list({
+          headers: authHeaders(actor),
+          params: { workflowId: copied.body.id },
+        }),
+        [200],
+      );
+      expect(copiedAutomations.body).toContainEqual(
+        expect.objectContaining({
+          eventType: "stripe-invoice-paid",
+          eventConfig: expect.objectContaining({
+            connectorId: defaultLiveMode
+              ? defaultAccount.id
+              : selectedAccount.id,
+            stripeAccountId: defaultLiveMode
+              ? defaultAccountId
+              : selectedAccountId,
+            mode: "live",
+          }),
+        }),
+      );
+      const sourceSelection = await accept(
+        chatThreadConnectorSelectionsClient().get({
+          headers: authHeaders(actor),
+          params: { id: sourceAutomation.body.chatThreadId },
+        }),
+        [200],
+      );
+      expect(sourceSelection.body.selections).toContainEqual({
+        target: { kind: "builtin", connectorSlug: "stripe" },
+        connectionId: selectedAccount.id,
+      });
+      if (!defaultLiveMode) {
+        const automation = copiedAutomations.body[0];
+        if (!automation) {
+          throw new Error("Expected copied Stripe automation");
+        }
+        const rejected = await accept(
+          automationsClient().enable({
+            headers: authHeaders(actor),
+            params: { id: automation.id },
+            body: undefined,
+          }),
+          [400],
+        );
+        expect(rejected.body.error.message).toBe(
+          "Stripe invoice-paid automations require Live mode; reconnect Stripe in Live mode",
+        );
+      }
+    },
+  );
 
   it("rebinds copied Google Forms automations to the target thread default account", async () => {
     const actor = user();
