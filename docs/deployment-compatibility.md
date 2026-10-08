@@ -1,5 +1,30 @@
 # Deployment Compatibility
 
+## Desktop Computer Use plugins retired (2026-10-08)
+
+The Native Desktop replacement in #37889 removed the filesystem and MCP plugin
+runtimes and advertises only native Computer Use commands. The remaining
+`computerUseDesktopPlugins` switch, filesystem/MCP CLI commands, `plugin.call`
+contracts, plugin command/content endpoints, capability routing, result offload
+and plugin audit branches are now removed together.
+
+This feature was never generally released: its registry was default-off and
+staff-enabled, and the owner confirmed it is unused. Per [fallback policy](fallback.md#2-features-behind-a-feature-switch-need-no-fallback),
+no old-plugin-client compatibility branch or data migration is required. Old
+CLI plugin requests against the new API receive an unavailable endpoint; the new
+CLI exposes no plugin commands and makes no plugin requests to an older API.
+Command and screenshot reads select only supported native command kinds; audit
+lists do the same, so retired records cannot invalidate native responses.
+Historical staff plugin command IDs are unavailable after the cutover.
+
+This retirement leaves Native Desktop and older native-command hosts' command,
+permission, claim, completion, audit and screenshot contracts unchanged. The
+separate session-authentication rollout follows its own compatibility gates below.
+The existing capability-empty host behavior is preserved. Shared Computer Use tables
+and screenshot retention remain intact; this change performs no historical
+command or object-storage deletion. Retired switch overrides already pass through
+the general registry-key filtering.
+
 ## Pi turn-end stdout boundaries (2026-10-08)
 
 The CLI's Pi JSON/RPC serializer omits `turn_end.message` and
