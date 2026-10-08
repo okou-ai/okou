@@ -268,7 +268,13 @@ struct ChatDetailView: View {
   private func saveReadingPosition() {
     if let position = scrollAnchor.preservedPosition ?? scrollAnchor.capture() {
       conversation.rememberReadingPosition(position)
-      scrollAnchor.preserve(position)
+      // Replay can revoke a row before List finishes reporting its old geometry.
+      guard let accepted = conversation.readingPosition else { return }
+      if accepted.messageID != position.messageID {
+        scrollAnchor.restore(accepted)
+      } else {
+        scrollAnchor.preserve(accepted)
+      }
     }
   }
 

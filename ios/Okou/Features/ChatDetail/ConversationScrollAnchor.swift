@@ -9,6 +9,7 @@ final class ConversationScrollAnchor {
   private var viewportChanged = false
   private var position: ConversationReadingPosition?
   private var displayLink: CADisplayLink?
+  private var settlingFrames = 0
   private var needsReveal = false
   private var followsBottom = false
   var isScrolling = false {
@@ -60,9 +61,16 @@ final class ConversationScrollAnchor {
     viewportChanged = false
     displayLink?.invalidate()
     displayLink = nil
+    settlingFrames = 0
   }
 
   func layoutDidChange() {
+    // A correction can briefly match an estimate before the native cell transaction settles.
+    settlingFrames = 2
+    scheduleFrame()
+  }
+
+  private func scheduleFrame() {
     guard position != nil || followsBottom || viewportChanged, !isScrolling, displayLink == nil
     else { return }
     // A main-queue yield can precede List's native cell transaction. Correct on the next frame.
@@ -87,6 +95,10 @@ final class ConversationScrollAnchor {
       viewportDidChange?()
     }
     correctPosition()
+    if settlingFrames > 0 {
+      settlingFrames -= 1
+      scheduleFrame()
+    }
   }
 
   fileprivate func register(_ marker: ConversationRowMarker) {
@@ -150,6 +162,8 @@ final class ConversationScrollAnchor {
     let y = min(maximum, max(minimum, scrollView.contentOffset.y + offset - position.offset))
     guard abs(y - scrollView.contentOffset.y) > 0.5 else { return }
     scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: y), animated: false)
+    // Native List may adjust estimates in response to this move; verify the resulting frame.
+    layoutDidChange()
   }
 }
 

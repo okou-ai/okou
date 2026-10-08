@@ -137,7 +137,10 @@ records a message ID plus its offset from the usable viewport top. It restores
 that offset after layout and subsequent Markdown/image height changes. After a
 prepend, List may retain old cell measurements. ScrollViewReader first
 materializes the identified row and corrects its offset
-on the next display frame. Later row-height changes request another correction.
+on the next display frame, then verifies two settling frames without polling
+while idle. Later row-height changes request another correction. If replay
+revokes a row before List reports its old geometry, the bridge uses the reading
+position accepted by the store rather than restoring the removed identity.
 The bridge uses the public UIScrollView ancestor and contentOffset APIs;
 it does not replace the delegate or depend on private List class names. User
 tracking cancels restoration, including already scheduled layout corrections.

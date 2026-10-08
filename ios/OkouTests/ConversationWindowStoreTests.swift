@@ -65,6 +65,9 @@ final class ConversationWindowStoreTests: XCTestCase {
     await conversation.refresh()
     XCTAssertFalse(conversation.messages.contains { $0.id == position.messageID })
     XCTAssertEqual(conversation.readingPosition?.messageID, ConversationHistoryFixture.id(96))
+    let rebased = conversation.readingPosition
+    conversation.rememberReadingPosition(position)
+    XCTAssertEqual(conversation.readingPosition, rebased)
     conversation.resetRenderWindowToLatest()
     XCTAssertEqual(
       conversation.visibleMessages.map(\.id),

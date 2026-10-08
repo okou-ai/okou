@@ -50,17 +50,23 @@ final class ConversationListTests: XCTestCase {
     let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
     let window = try mount(host)
     defer { unmount(window) }
-    try await eventually {
+    try await eventually(
+      message: readingDescription(position.messageID, conversation: conversation, view: host.view)
+    ) {
       abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
     }
     await conversation.loadEarlierMessages()
-    try await eventually {
+    try await eventually(
+      message: readingDescription(position.messageID, conversation: conversation, view: host.view)
+    ) {
       conversation.visibleMessages.first?.id == ConversationHistoryFixture.id(81)
         && abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
     }
     fixture.appendMessage()
     await conversation.refresh()
-    try await eventually {
+    try await eventually(
+      message: readingDescription(position.messageID, conversation: conversation, view: host.view)
+    ) {
       abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
     }
     XCTAssertEqual(conversation.messages.count, 101)
@@ -72,14 +78,20 @@ final class ConversationListTests: XCTestCase {
     let reopened = UIHostingController(rootView: ChatDetailView(conversation: conversation))
     let reopenedWindow = try mount(reopened)
     defer { unmount(reopenedWindow) }
-    try await eventually {
+    try await eventually(
+      message: readingDescription(
+        position.messageID, conversation: conversation, view: reopened.view)
+    ) {
       abs((offset(of: position.messageID, in: reopened.view) ?? .infinity) - position.offset) < 1
     }
     XCTAssertEqual(conversation.visibleMessages.count, 21)
 
     fixture.revoke(95)
     await conversation.refresh()
-    try await eventually {
+    try await eventually(
+      message: readingDescription(
+        ConversationHistoryFixture.id(96), conversation: conversation, view: reopened.view)
+    ) {
       abs(
         (offset(of: ConversationHistoryFixture.id(96), in: reopened.view) ?? .infinity)
           - position.offset) < 1
@@ -140,14 +152,28 @@ private func offset(of id: String, in view: UIView) -> CGFloat? {
 }
 
 @MainActor
-private func eventually(file: StaticString = #filePath, line: UInt = #line, _ predicate: () -> Bool)
+private func readingDescription(_ id: String, conversation: ConversationStore, view: UIView)
+  -> String
+{
+  let scroll = markers(in: view).first?.enclosingScrollView
+  return "Reading position: \(String(describing: conversation.readingPosition)); "
+    + "row offset: \(String(describing: offset(of: id, in: view))); "
+    + "viewport: \(String(describing: scroll?.bounds)); "
+    + "content size: \(String(describing: scroll?.contentSize))"
+}
+
+@MainActor
+private func eventually(
+  file: StaticString = #filePath, line: UInt = #line, message: @autoclosure () -> String = "",
+  _ predicate: () -> Bool
+)
   async throws
 {
   let deadline = ContinuousClock.now + .seconds(3)
   while !predicate() && ContinuousClock.now < deadline {
     try await Task.sleep(for: .milliseconds(20))
   }
-  XCTAssertTrue(predicate(), file: file, line: line)
+  XCTAssertTrue(predicate(), message(), file: file, line: line)
 }
 
 @MainActor @Observable
