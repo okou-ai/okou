@@ -6,6 +6,7 @@ import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contra
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -253,7 +254,9 @@ test("Show the full agent name after granting the first connector access", async
   });
 });
 
-test("Make another connector account the default", async () => {
+async function openDefaultAccountManager(rejectFirst = false) {
+  const save = context.mocks.deferred<void>();
+  const savedIds: string[] = [];
   const [connector] = mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "work" },
   ]);
@@ -320,7 +323,14 @@ test("Make another connector account the default", async () => {
   });
   context.mocks.api(
     connectorAccountsContract.setDefault,
-    ({ params, respond }) => {
+    async ({ params, respond }) => {
+      savedIds.push(params.connectionId);
+      await save.promise;
+      if (rejectFirst && savedIds.length === 1) {
+        return respond(403, {
+          error: { message: "Permission denied", code: "FORBIDDEN" },
+        });
+      }
       defaultId = params.connectionId;
       const updated = accounts().find((account) => {
         return account.id === defaultId;
@@ -342,26 +352,95 @@ test("Make another connector account the default", async () => {
   const manager = await screen.findByRole("dialog", {
     name: "Manage GitHub accounts",
   });
-  const workRow = within(manager).getByRole("group", { name: "Work" });
-  expect(within(workRow).getByRole("radio", { name: "Default" })).toBeChecked();
+  return { manager, personal, save, savedIds };
+}
 
-  const personalRow = within(manager).getByRole("group", { name: "Personal" });
-  click(within(personalRow).getByRole("radio", { name: "Make default" }));
+function accountRadio(manager: HTMLElement, name: string): HTMLElement {
+  const row = within(manager).getByRole("group", { name });
+  const radio = queryAllByRoleFast("radio", row)[0];
+  if (!radio) {
+    throw new Error(`Expected default account radio for ${name}`);
+  }
+  return radio;
+}
 
-  await waitFor(() => {
-    const updatedPersonalRow = within(manager).getByRole("group", {
-      name: "Personal",
+test.each(["pointer", "Space", "ArrowDown"] as const)(
+  "Make another connector account the default with %s exactly once",
+  async (activation) => {
+    const { manager, personal, save, savedIds } =
+      await openDefaultAccountManager();
+    const user = userEvent.setup();
+    const workRadio = accountRadio(manager, "Work");
+    const personalRadio = accountRadio(manager, "Personal");
+    expect(workRadio).toBeChecked();
+
+    if (activation === "pointer") {
+      await user.click(personalRadio);
+    } else {
+      act(() => {
+        (activation === "Space" ? personalRadio : workRadio).focus();
+      });
+      await user.keyboard(activation === "Space" ? " " : "{ArrowDown}");
+    }
+
+    await waitFor(() => {
+      expect(personalRadio).toHaveAttribute("aria-disabled", "true");
     });
-    const updatedWorkRow = within(manager).getByRole("group", { name: "Work" });
-    expect(
-      within(updatedPersonalRow).getByRole("radio", { name: "Default" }),
-    ).toBeChecked();
-    expect(
-      within(updatedWorkRow).getByRole("radio", { name: "Make default" }),
-    ).not.toBeChecked();
+    expect(workRadio).toHaveAttribute("aria-disabled", "true");
+    expect(workRadio).toBeChecked();
+    expect(personalRadio).not.toBeChecked();
+    await user.click(workRadio);
+    await user.keyboard(" {ArrowDown}");
+    save.resolve();
+
+    await waitFor(() => {
+      expect(accountRadio(manager, "Personal")).toBeChecked();
+    });
+    expect(accountRadio(manager, "Work")).not.toBeChecked();
+    expect(accountRadio(manager, "Personal")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(savedIds).toStrictEqual([personal.id]);
     expect(within(manager).getAllByText("Work")).toHaveLength(1);
     expect(getConnectorCard("GitHub")).toHaveTextContent("2 accounts");
+
+    await user.click(accountRadio(manager, "Personal"));
+    await user.keyboard(" ");
+    expect(savedIds).toStrictEqual([personal.id]);
+  },
+);
+
+test("Keep the saved default account after a rejected change and allow retry", async () => {
+  const { manager, personal, save, savedIds } =
+    await openDefaultAccountManager(true);
+  const user = userEvent.setup();
+  const workRadio = accountRadio(manager, "Work");
+  const personalRadio = accountRadio(manager, "Personal");
+  act(() => {
+    workRadio.focus();
   });
+  await user.keyboard("{ArrowDown}");
+  await waitFor(() => {
+    expect(personalRadio).toHaveAttribute("aria-disabled", "true");
+  });
+  save.resolve();
+
+  await waitFor(() => {
+    expect(personalRadio).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(workRadio).toBeChecked();
+  expect(workRadio).toHaveAttribute("aria-label", "Default");
+  expect(personalRadio).not.toBeChecked();
+  expect(personalRadio).toHaveAttribute("aria-label", "Make default");
+  expect(savedIds).toStrictEqual([personal.id]);
+
+  await user.click(personalRadio);
+  await waitFor(() => {
+    expect(accountRadio(manager, "Personal")).toBeChecked();
+  });
+  expect(accountRadio(manager, "Work")).not.toBeChecked();
+  expect(savedIds).toStrictEqual([personal.id, personal.id]);
 });
 
 test("Grant and revoke connector access for agents", async () => {
