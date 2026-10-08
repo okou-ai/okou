@@ -57,7 +57,7 @@ import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
 import { sourceForRun$ } from "./run-uploaded-files.service";
 import {
   artifactStorageBucket,
-  privateArtifactCreationEnabled,
+  privateArtifactCreationEnabled$,
   allocatePrivateArtifactLocation$,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
@@ -71,7 +71,7 @@ type CanonicalArtifactLocation = ArtifactObjectLocation & {
 
 const allocateCanonicalArtifact$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly userId: string;
       readonly orgId: string;
@@ -79,8 +79,11 @@ const allocateCanonicalArtifact$ = command(
     },
     signal: AbortSignal,
   ): Promise<CanonicalArtifactLocation> => {
-    const enabled = await get(
-      privateArtifactCreationEnabled(args.orgId, args.userId),
+    const enabled = await set(
+      privateArtifactCreationEnabled$,
+      args.orgId,
+      args.userId,
+      signal,
     );
     signal.throwIfAborted();
     if (enabled) {

@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { z } from "zod";
 import { linkLayoutSegmentSchema } from "@okouai/api-contracts/contracts/link-layout";
 import {
@@ -60,11 +60,8 @@ function referenceKey(reference: string): string {
 }
 
 /** Immutable identity only; callers must authorize the recorded target. */
-export function artifactReferenceRecord(
-  reference: string,
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+export const artifactReferenceRecord$ = command(
+  async ({ get }, reference: string, signal: AbortSignal) => {
     const stored = await settle(
       get(
         readArtifactSharePolicyObject(
@@ -84,12 +81,12 @@ export function artifactReferenceRecord(
     return referenceRecordSchema.parse(
       JSON.parse(stored.value.buffer.toString("utf8")),
     );
-  });
-}
+  },
+);
 
 /** Deterministic candidates and conditional creation make retries stable. */
 export const allocateArtifactReference$ = command(
-  async ({ get }, target: ArtifactShareTarget, signal: AbortSignal) => {
+  async ({ get, set }, target: ArtifactShareTarget, signal: AbortSignal) => {
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const reference = artifactHash(target.id, `${target.kind}:${attempt}`);
       const written = await settle(
@@ -113,7 +110,7 @@ export const allocateArtifactReference$ = command(
       ) {
         throw written.error;
       }
-      const existing = await get(artifactReferenceRecord(reference, signal));
+      const existing = await set(artifactReferenceRecord$, reference, signal);
       signal.throwIfAborted();
       if (
         existing?.version === 2 &&
@@ -130,7 +127,7 @@ export const allocateArtifactReference$ = command(
 /** A snapshot reference is independent of the original artifact's grant. */
 export const allocateSharedThreadArtifactReference$ = command(
   async (
-    { get },
+    { get, set },
     snapshot: Omit<SharedThreadArtifactReference, "version">,
     signal: AbortSignal,
   ) => {
@@ -164,7 +161,7 @@ export const allocateSharedThreadArtifactReference$ = command(
       ) {
         throw written.error;
       }
-      const existing = await get(artifactReferenceRecord(reference, signal));
+      const existing = await set(artifactReferenceRecord$, reference, signal);
       signal.throwIfAborted();
       if (
         existing?.version === 3 &&

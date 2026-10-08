@@ -12,12 +12,12 @@ import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
 import { deleteS3Objects, putS3Object } from "../external/s3";
 import { onRejection } from "../utils";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
+import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 
 /** Keep both source bytes and the extraction result out of public URL caches. */
 export const extractPrivateVideoPoster$ = command(
   async (
-    { get },
+    { get, set },
     args: {
       readonly id: string;
       readonly userId: string;
@@ -25,7 +25,7 @@ export const extractPrivateVideoPoster$ = command(
     },
     signal: AbortSignal,
   ): Promise<Buffer | null> => {
-    const video = await get(uploadedArtifactObject(args));
+    const video = await set(uploadedArtifactObject$, args, signal);
     signal.throwIfAborted();
     if (
       !video?.isPrivate ||

@@ -127,7 +127,7 @@ import {
   dispatchCancelSideEffects$,
   shouldDispatchCancelSideEffects,
 } from "./run-cancel.service";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
+import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import { webChatContextId } from "./web-chat-queue-context.service";
 /** Canonical ChatEvent write commands. */
 type SendBody = z.infer<typeof chatEventsContract.send.body>;
@@ -514,7 +514,7 @@ function unwrapSettledResult<T>(result: PromiseSettledResult<T>): T {
  */
 const resolveIncomingAttachFileMetadata$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly userId: string;
       readonly orgId: string;
@@ -535,13 +535,15 @@ const resolveIncomingAttachFileMetadata$ = command(
       );
       const results = await Promise.allSettled(
         wave.map(async (file) => {
-          const object = await get(
-            uploadedArtifactObject({
+          const object = await set(
+            uploadedArtifactObject$,
+            {
               userId: args.userId,
               orgId: args.orgId,
               id: file.fileId,
               filenameHint: file.filenameSnapshot,
-            }),
+            },
+            signal,
           );
           return { file, object };
         }),

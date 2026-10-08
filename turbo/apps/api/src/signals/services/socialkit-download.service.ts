@@ -40,11 +40,11 @@ import {
   startUntrackedBestEffortCleanup,
 } from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
+import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import {
   allocatePrivateArtifact$,
   completePrivateArtifact$,
-  privateArtifactCreationEnabled,
+  privateArtifactCreationEnabled$,
 } from "./private-artifact-storage.service";
 import {
   checkManagedCredits$,
@@ -1030,7 +1030,7 @@ async function startAndPersistProviderJob(
 
 export const createSocialKitDownload$ = command(
   async (
-    { get, set },
+    { set },
     args: CreateSocialKitDownloadArgs,
     signal: AbortSignal,
   ): Promise<CreateSocialKitDownloadResponse> => {
@@ -1064,8 +1064,11 @@ export const createSocialKitDownload$ = command(
       return creditError;
     }
 
-    const privateArtifacts = await get(
-      privateArtifactCreationEnabled(args.auth.orgId, args.auth.userId),
+    const privateArtifacts = await set(
+      privateArtifactCreationEnabled$,
+      args.auth.orgId,
+      args.auth.userId,
+      signal,
     );
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
@@ -1432,7 +1435,7 @@ const allocateSocialKitArtifact$ = command(
 
 const materializeSocialKitArtifact$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly job: DownloadJob;
       readonly ready: ProviderReady;
@@ -1456,14 +1459,16 @@ const materializeSocialKitArtifact$ = command(
     // rather than depending on a link that has since expired.
     const stored = await onRejection(
       (async (): Promise<StoredArtifactObject> => {
-        const existing = await get(
-          uploadedArtifactObject({
+        const existing = await set(
+          uploadedArtifactObject$,
+          {
             userId: args.job.userId,
             orgId: args.job.orgId,
             id: args.job.id,
             filenameHint: filename,
             variant: "socialkit",
-          }),
+          },
+          signal,
         );
         if (existing) {
           // A previous attempt already stored this object, so drop the stream
