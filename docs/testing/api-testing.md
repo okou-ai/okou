@@ -189,6 +189,15 @@ would grant the test knowledge its caller does not have. Observe publication
 through the public shared response/catalog and revocation through access denial,
 not application-owned policy JSON stored behind those APIs.
 
+When a private writer test submits input the request contract rejects, preserve
+its actual client behavior at that earlier boundary. In
+[`agent-draft.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/agent-draft.test.ts),
+a normal PATCH saves a draft, an attachment-only PATCH returns 400, and GET
+confirms the saved draft is unchanged. This covers client validation and
+preservation; it does not claim the SQL 23514 rollback or selectable physical/view
+schema guarantees of the removed service case. The existing simultaneous PATCH
+case remains meaningful public concurrency without a private row-count probe.
+
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
 
