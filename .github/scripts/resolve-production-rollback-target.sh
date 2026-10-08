@@ -62,6 +62,7 @@ readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/
 readonly CONNECTOR_CATALOG_RELEASE_2_PATH=turbo/packages/db/src/migrations/1334_connector_catalog_release_2_contraction.sql
 readonly MODEL_ROUTE_STATE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1338_retire_model_route_state.sql
 readonly PI_STABLE_CONTEXT_RETIREMENT_PATH=turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql
+readonly PI_DEBUG_TRACE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1345_outstanding_the_hood.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -343,6 +344,17 @@ if [[ ! "$pi_stable_context_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$pi_stable_context_retirement_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Pi stable-context retirement: ${pi_stable_context_retirement_commit}."
+fi
+
+# Earlier APIs name the retired per-run trace column in launch, detail and
+# completion queries (including implicit Drizzle projections).
+pi_debug_trace_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PI_DEBUG_TRACE_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$pi_debug_trace_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Pi debug trace retirement on main."
+fi
+if ! git merge-base --is-ancestor "$pi_debug_trace_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Pi debug trace retirement: ${pi_debug_trace_retirement_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

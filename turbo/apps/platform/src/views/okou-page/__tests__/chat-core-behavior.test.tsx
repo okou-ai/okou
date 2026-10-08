@@ -148,7 +148,7 @@ test("A new message keeps its attachment, text, and selected model together", as
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await waitFor(() => {
-    expect(buttonsNamed("Attach").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Attach")).toBeInTheDocument();
   });
   await screen.findByText("GPT 6 Luna");
   const fileInput = document.querySelector('input[type="file"]');

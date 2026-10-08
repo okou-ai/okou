@@ -119,21 +119,6 @@ export const clearPendingLogo$ = command(({ set }) => {
   set(internalPendingLogoPreview$, null);
 });
 
-const internalFileInputEl$ = state<HTMLInputElement | null>(null);
-
-export const fileInputEl$ = computed((get) => {
-  return get(internalFileInputEl$);
-});
-
-export const setFileInputEl$ = onRef(
-  command(({ set }, el: HTMLInputElement, signal: AbortSignal) => {
-    signal.addEventListener("abort", () => {
-      set(internalFileInputEl$, null);
-    });
-    set(internalFileInputEl$, el);
-  }),
-);
-
 const internalLogoLoaded$ = state(false);
 
 export const logoLoaded$ = computed((get) => {
