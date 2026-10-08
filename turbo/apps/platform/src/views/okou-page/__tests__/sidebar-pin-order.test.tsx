@@ -1,12 +1,12 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadPinOrderContract,
   chatThreadPinContract,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -167,6 +167,96 @@ test("moving a pin between equal ranks preserves the requested order", async () 
   });
 });
 
+test.each([
+  ["Move up", "Last pin"],
+  ["Move down", "First pin"],
+])("%s skips a hidden archived pin", async (action, title) => {
+  const caseId = 66;
+  const pinnedAt = "2026-09-01T00:00:00Z";
+  const snapshot = [
+    chatListThread(3, "First pin", { pinnedAt, pinOrder: "a0" }),
+    chatListThread(2, "Archived pin", {
+      pinnedAt,
+      pinOrder: "a1",
+      archived: true,
+    }),
+    chatListThread(1, "Last pin", { pinnedAt, pinOrder: "a2" }),
+    chatListThread(4, "Regular thread"),
+  ];
+  installChatListAgent(context);
+  installChatListStream(context, { caseId, snapshot });
+  context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
+    return respond(204);
+  });
+  await setupPage({
+    context,
+    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    auth: chatListAuth(caseId),
+    cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+  await screen.findByText("First pin");
+  expect(sidebarThreadTitles()).toStrictEqual([
+    "First pin",
+    "Last pin",
+    "Regular thread",
+  ]);
+
+  click(menuButton(title));
+  await screen.findByRole("menu");
+  click(menuItem(action));
+  await waitFor(() => {
+    expect(sidebarThreadTitles()).toStrictEqual([
+      "Last pin",
+      "First pin",
+      "Regular thread",
+    ]);
+  });
+});
+
+test("an unconfirmed optimistic pin move cannot undo an agent reassignment", async () => {
+  context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
+    return respond(204);
+  });
+  const caseId = 65;
+  const { stream, snapshot } = await prepare(caseId);
+  click(menuButton("Last pin"));
+  await screen.findByRole("menu");
+  click(menuItem("Move up"));
+  await waitFor(() => {
+    expect(sidebarThreadTitles()).toStrictEqual([
+      "First pin",
+      "Last pin",
+      "Second pin",
+      "Regular thread",
+    ]);
+  });
+
+  const movedThread = snapshot.find((thread) => {
+    return thread.title === "Last pin";
+  });
+  if (!movedThread) {
+    throw new Error("Expected the moved thread");
+  }
+  const newAgentId = "c7000000-0000-4000-a000-000000000002";
+  // The canonical stream has not echoed the optimistic move's event ID.
+  // Its old agent must not put this thread back in the old agent's sidebar.
+  stream.setEvents([
+    chatListEvent(caseId, 2, "sort_touched", movedThread.id, {
+      agentId: newAgentId,
+      reassignedAgentId: newAgentId,
+    }),
+  ]);
+  changeChatThreadList();
+  await waitFor(() => {
+    expect(sidebarThreadTitles()).toStrictEqual([
+      "First pin",
+      "Second pin",
+      "Regular thread",
+    ]);
+  });
+});
+
 test("new pins receive a rank ahead of all existing pins", async () => {
   const pending = context.mocks.deferred<void>();
   const requested = context.mocks.deferred<string | undefined>();
@@ -200,84 +290,4 @@ test("new pins receive a rank ahead of all existing pins", async () => {
     ]);
   });
   pending.resolve();
-});
-
-test("touch users can move a pin up and down through the thread menu", async () => {
-  context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
-    return respond(204);
-  });
-  await prepare(66);
-  const user = userEvent.setup();
-  await user.pointer([
-    { keys: "[TouchA>]", target: menuButton("Last pin") },
-    { keys: "[/TouchA]" },
-  ]);
-  await screen.findByRole("menu");
-  click(menuItem("Move up"));
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "First pin",
-      "Last pin",
-      "Second pin",
-      "Regular thread",
-    ]);
-  });
-  await user.pointer([
-    { keys: "[TouchA>]", target: menuButton("Last pin") },
-    { keys: "[/TouchA]" },
-  ]);
-  await screen.findByRole("menu");
-  click(menuItem("Move down"));
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "First pin",
-      "Second pin",
-      "Last pin",
-      "Regular thread",
-    ]);
-  });
-});
-
-test("Hide pin move actions while filtering to archived chats", async () => {
-  const caseId = 67;
-  const auth = chatListAuth(caseId);
-  const pinnedAt = "2026-09-01T00:00:00Z";
-  const snapshot = [
-    chatListThread(3, "✅ First archived pin", {
-      pinnedAt,
-      pinOrder: "a0",
-    }),
-    chatListThread(2, "Visible pin", { pinnedAt, pinOrder: "a1" }),
-    chatListThread(1, "✅ Last archived pin", {
-      pinnedAt,
-      pinOrder: "a2",
-    }),
-  ];
-  installChatListAgent(context);
-  installChatListStream(context, { caseId, snapshot });
-  await setupPage({
-    context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
-  });
-  await screen.findByText("Visible pin");
-
-  click(screen.getByLabelText("Open chat list menu"));
-  click(menuItem("Archived"));
-  await screen.findByText("✅ First archived pin");
-  expect(sidebarThreadTitles()).toStrictEqual([
-    "✅ First archived pin",
-    "✅ Last archived pin",
-  ]);
-
-  click(menuButton("✅ First archived pin"));
-  await screen.findByRole("menu");
-  expect(
-    queryAllByRoleFast("menuitem").filter((item) => {
-      const label = item.textContent?.trim();
-      return label === "Move up" || label === "Move down";
-    }),
-  ).toHaveLength(0);
 });

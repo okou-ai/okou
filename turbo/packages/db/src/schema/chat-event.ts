@@ -1,4 +1,8 @@
 import { sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import type {
+  ChatEventPayload,
+  ChatInputModelSelection,
+} from "@okouai/db/jsonb-contracts/chat-event";
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
@@ -14,7 +18,6 @@ import {
   jsonb,
 } from "drizzle-orm/pg-core";
 import { chatThreads } from "./chat-thread";
-import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 export type {
   ChatEventAttachFileMetadata,
   ChatEventAttachFileMetadataList,
@@ -34,19 +37,29 @@ export function chatEventTerminalPredicate(eventType: SQLWrapper): SQL {
 }
 
 /**
+ * Shared literal predicate for the run-less input partial index. Pending-input
+ * reads must repeat it verbatim so the planner can prove the index applies;
+ * parameterized event types would hide that implication from generic plans.
+ */
+export function chatEventRunlessInputPredicate(
+  runId: SQLWrapper,
+  eventType: SQLWrapper,
+): SQL {
+  return sql`${runId} IS NULL AND ${eventType} IN ('input.prompt', 'input.automation', 'input.budget')`;
+}
+
+/**
  * Physical storage for the immutable ChatEvent stream.
  * Each row is one typed event belonging to a chat_thread.
  *
  * Current user, automation, and budget inputs are persisted immediately. A
  * run-less, unrevoked prompt or automation is pending thread queue state. A
  * run-scoped budget is pending active input. Their run-attributed replacements
- * are the immutable claims. Retained input.goal and goal.open/goal.close rows
- * describe historical work; they grant no queue or lifecycle authority.
+ * are the immutable claims.
  *
- * Assistant rows are appended after run output exists. Queue marker control
- * rows can also be appended for queued runs and later revoked when the run
- * leaves the queue. Event-backed rows are one row per assistant-visible agent
- * output event; result-only CLI output can be projected from a terminal
+ * Assistant rows are appended after run output exists. Event-backed rows are
+ * one row per assistant-visible agent output event; result-only CLI output can
+ * be projected from a terminal
  * "result" event. Failed runs append an assistant row carrying the terminal
  * error message. `run_event_sequence_number` is the upstream run-event
  * coordinate used for reconciliation and final-answer selection. The
@@ -74,6 +87,8 @@ export const chatEvents = pgTable(
     revokesEventId: uuid("revokes_event_id"),
     eventType: text("event_type").$type<ChatEventType>().notNull(),
     payload: jsonb("payload").$type<ChatEventPayload>(),
+    // Server-private enqueue decision; kept outside the strict public payload.
+    modelSelection: jsonb("model_selection").$type<ChatInputModelSelection>(),
     failureReason: text("failure_reason").$type<RunFailureReasonToken>(),
     /**
      * Server-owned authority for an Official Workflow prompt awaiting a Run.
@@ -86,36 +101,28 @@ export const chatEvents = pgTable(
     /**
      * Input source discriminator and optional polymorphic context pointer.
      *
-     * `web` identifies a source without a context row; current rows use reserved
-     * UUID sentinels for public-brand launch identity, while legacy rows are null.
-     * Historical `goal` retains its original ID as inert provenance; the Goal
-     * table no longer exists. For other values, contextId selects the row in the
-     * table named by contextType. contextId is not unique: when a pending event
-     * is claimed, the revoke + insert
-     * replacement reuses it. Legal
-     * (eventType, contextType) combinations are enforced by the NewChatEvent
+     * `web` and `automation` can identify an input without a context row.
+     * Web queue launch identity uses reserved UUID sentinels when present.
+     * For other values, contextId selects the row named by contextType.
+     * contextId is not unique: when a pending event is claimed, the revoke +
+     * insert replacement reuses it. Legal (eventType, contextType)
+     * combinations are enforced by the NewChatEvent
      * TypeScript write union, not by SQL.
      */
     contextType: text("context_type").$type<
       | "web"
       | "slack"
+      | "discord"
       | "feishu"
       | "teams"
       | "telegram"
-      | "github"
       | "agentphone"
       | "automation"
-      | "goal"
       | "agent_run"
     >(),
     contextId: uuid("context_id"),
     runEventSequenceNumber: integer("run_event_sequence_number"),
-    /**
-     * Upstream run-event ID or a deterministic seed for synthesized rows.
-     * `queue:queued`, `queue:dequeued`, and `thinking:initial` seed stable
-     * primary keys for non-agent rows. `thinking:initial` also distinguishes
-     * our placeholder from real agent thinking stored in the same leaf.
-     */
+    /** Upstream run-event ID or a deterministic seed for synthesized rows. */
     runEventId: text("run_event_id"),
     /** Strictly increasing thread position; it may start above 1 and have gaps. */
     seqId: bigint("seq_id", { mode: "number" }).notNull(),
@@ -131,18 +138,15 @@ export const chatEvents = pgTable(
       index("idx_chat_events_thread_run_terminal_created")
         .on(table.chatThreadId, table.createdAt.desc())
         .where(chatEventTerminalPredicate(table.eventType)),
-      index("idx_chat_events_run_id").on(table.runId),
+      index("chat_events_thread_runless_input_seq_idx")
+        .on(table.chatThreadId, table.seqId)
+        .where(chatEventRunlessInputPredicate(table.runId, table.eventType)),
       uniqueIndex("chat_events_revokes_event_id_not_null_unique")
         .on(table.revokesEventId)
         .where(sql`${table.revokesEventId} IS NOT NULL`),
       index("chat_events_input_automation_context_idx")
         .on(table.contextId)
         .where(sql`${table.eventType} = 'input.automation'`),
-      index("chat_events_pending_queue_idx")
-        .on(table.chatThreadId, table.createdAt, table.id)
-        .where(
-          sql`${table.runId} IS NULL AND ${table.eventType} IN ('input.prompt', 'input.automation', 'input.goal')`,
-        ),
       uniqueIndex("chat_events_run_event_seq_unique").on(
         table.runId,
         table.runEventSequenceNumber,
@@ -166,24 +170,16 @@ export const chatEvents = pgTable(
         sql`${table.eventType} IN (
           'input.prompt',
           'input.automation',
-          'input.goal',
           'input.budget',
           'input.rejected',
           'output.message',
           'output.error',
-          'output.thinking',
           'output.followups',
-          'run.queued',
-          'run.dequeued',
           'run.completed',
           'run.failed',
           'run.cancelled',
           'control.interrupt',
           'control.revoke',
-          'browser.open',
-          'browser.close',
-          'goal.open',
-          'goal.close',
           'usage.recorded'
         )`,
       ),
@@ -213,34 +209,6 @@ export const chatEvents = pgTable(
         )`,
       ),
       check(
-        "chat_events_goal_open_payload_check",
-        sql`${table.eventType} <> 'goal.open'
-          OR (
-            ${table.payload} IS NOT NULL
-            AND ${table.payload} ? 'content'
-            AND jsonb_typeof(${table.payload} -> 'content') = 'string'
-            AND ${table.payload} ->> 'content' = btrim(${table.payload} ->> 'content')
-            AND char_length(${table.payload} ->> 'content') > 0
-            AND ${table.payload} - 'content' = '{}'::jsonb
-          )`,
-      ),
-      check(
-        "chat_events_goal_close_payload_check",
-        sql`${table.eventType} <> 'goal.close' OR ${table.payload} IS NULL`,
-      ),
-      check(
-        "chat_events_goal_marker_payload_check",
-        sql`${table.eventType} NOT IN ('goal.open', 'goal.close')
-          OR (
-            ${table.runId} IS NULL
-            AND ${table.revokesEventId} IS NULL
-            AND ${table.contextType} IS NULL
-            AND ${table.contextId} IS NULL
-            AND ${table.runEventSequenceNumber} IS NULL
-            AND ${table.runEventId} IS NULL
-          )`,
-      ),
-      check(
         "chat_events_context_pair_check",
         sql`${table.contextId} IS NULL OR ${table.contextType} IS NOT NULL`,
       ),
@@ -249,19 +217,18 @@ export const chatEvents = pgTable(
         sql`${table.contextType} IN (
           'web',
           'slack',
+          'discord',
           'feishu',
           'teams',
           'telegram',
-          'github',
           'agentphone',
           'automation',
-          'goal',
           'agent_run'
         )`,
       ),
       check(
         "chat_events_input_context_type_check",
-        sql`${table.eventType} NOT IN ('input.prompt', 'input.automation', 'input.goal', 'input.budget')
+        sql`${table.eventType} NOT IN ('input.prompt', 'input.automation', 'input.budget', 'input.rejected')
           OR ${table.contextType} IS NOT NULL`,
       ),
     ];

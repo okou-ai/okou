@@ -4,6 +4,7 @@ import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/u
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { withCleanup } from "../utils.ts";
+import { reloadConnectorAgentAccess$ } from "./settings/connector-agent-access.ts";
 
 interface AgentConnectorAuthorizations {
   readonly agentId: string;
@@ -22,6 +23,7 @@ export const reloadAgentConnectorAuthorizations$ = command(({ set }) => {
   set(internalAgentConnectorAuthorizationsReload$, (x) => {
     return x + 1;
   });
+  set(reloadConnectorAgentAccess$);
 });
 
 function pendingRequestKey(params: {

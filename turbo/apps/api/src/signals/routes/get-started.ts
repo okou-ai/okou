@@ -10,91 +10,79 @@ import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  awardCompletedGetStartedQuest,
-  createGetStartedClaim,
+  completedGetStartedQuestSql,
+  unresolvedClaimWhere,
+} from "../services/get-started-member-reward";
+import { ensureGetStartedRewardWallet$ } from "../services/get-started-wallet.service";
+import {
+  createGetStartedClaim$,
   getStartedClaimResponse,
-  getStartedRewardsEnabled,
-  getStartedStatus,
+  getStartedStatus$,
   getStartedUtcDay,
 } from "../services/get-started-rewards.service";
 import {
   normalizeGetStartedPostUrl,
-  processGetStartedClaims,
+  processGetStartedClaims$,
 } from "../services/get-started-review.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
-const rewardsUnavailable = Object.freeze({
-  status: 403 as const,
-  body: {
-    error: {
-      code: "FORBIDDEN",
-      message: "Get started rewards are not available for this organization",
-    },
-  },
-});
-
-const status$ = command(async ({ get }, signal: AbortSignal) => {
+const status$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await getStartedRewardsEnabled(
-    get(db$),
-    auth.orgId,
-    auth.userId,
+  const body = await set(
+    getStartedStatus$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      isAdmin: auth.orgRole === "admin",
+    },
+    signal,
   );
-  signal.throwIfAborted();
-  if (!enabled) {
-    return rewardsUnavailable;
-  }
-  const body = await getStartedStatus(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    isAdmin: auth.orgRole === "admin",
-  });
-  signal.throwIfAborted();
   return { status: 200 as const, body };
 });
 
 const checkin$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await getStartedRewardsEnabled(
-    get(db$),
-    auth.orgId,
-    auth.userId,
+  await set(ensureGetStartedRewardWallet$, auth.orgId, signal);
+  const db = set(writeDb$);
+  const at = nowDate();
+  const sourceKey = getStartedUtcDay(at);
+  // Claim identity and credit publication are one statement; duplicate callers
+  // observe the winner without an outer wallet transaction.
+  await db.execute(
+    completedGetStartedQuestSql(
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        questKey: "checkin",
+        sourceKey,
+      },
+      at,
+    ),
   );
   signal.throwIfAborted();
-  if (!enabled) {
-    return rewardsUnavailable;
-  }
-  const claim = await set(writeDb$).transaction((tx) => {
-    return awardCompletedGetStartedQuest(tx, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      questKey: "checkin",
-      sourceKey: getStartedUtcDay(nowDate()),
-    });
-  });
+  const [current] = await db
+    .select()
+    .from(getStartedClaims)
+    .where(
+      and(
+        eq(getStartedClaims.actorUserId, auth.userId),
+        eq(getStartedClaims.questKey, "checkin"),
+        eq(getStartedClaims.sourceKey, sourceKey),
+      ),
+    );
   signal.throwIfAborted();
-  if (!claim) {
-    throw new Error("Authorized check-in did not create a claim");
+  if (!current) {
+    throw new Error("Get started check-in was not persisted");
   }
-  return { status: 200 as const, body: getStartedClaimResponse(claim) };
+  return { status: 200 as const, body: getStartedClaimResponse(current) };
 });
 
 const shareBody$ = bodyResultOf(getStartedContract.submitShare);
-
 const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await getStartedRewardsEnabled(
-    get(db$),
-    auth.orgId,
-    auth.userId,
-  );
-  signal.throwIfAborted();
-  if (!enabled) {
-    return rewardsUnavailable;
-  }
   const body = await get(shareBody$);
   signal.throwIfAborted();
   if (!body.ok) {
@@ -104,66 +92,82 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!post) {
     return badRequestMessage("Submit a valid public X post URL");
   }
-  const claim = await set(writeDb$).transaction(async (tx) => {
-    const [granted] = await tx
-      .select()
-      .from(getStartedClaims)
-      .where(
-        and(
-          eq(getStartedClaims.beneficiaryUserId, auth.userId),
-          eq(getStartedClaims.questKey, "share"),
-          eq(getStartedClaims.status, "granted"),
-        ),
-      )
-      .limit(1);
-    if (granted) {
-      return granted;
-    }
-    const pending = await createGetStartedClaim(tx, {
+  const db = set(writeDb$);
+  const [granted] = await db
+    .select()
+    .from(getStartedClaims)
+    .where(
+      and(
+        eq(getStartedClaims.beneficiaryUserId, auth.userId),
+        eq(getStartedClaims.questKey, "share"),
+        eq(getStartedClaims.status, "granted"),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (granted) {
+    return { status: 202 as const, body: getStartedClaimResponse(granted) };
+  }
+  const pending = await set(
+    createGetStartedClaim$,
+    {
       orgId: auth.orgId,
       userId: auth.userId,
       questKey: "share",
       sourceKey: post.id,
       postUrl: post.url,
-    });
-    if (!pending || pending.status !== "pending") {
-      return pending;
-    }
-    const [used] = await tx
-      .select({ id: getStartedClaims.id })
-      .from(getStartedClaims)
-      .where(eq(getStartedClaims.rewardKey, `share:${post.id}`))
-      .limit(1);
-    if (!used) {
-      return pending;
-    }
-    const [duplicate] = await tx
-      .update(getStartedClaims)
-      .set({
-        status: "ineligible",
-        reason: "already_redeemed",
-        updatedAt: nowDate(),
-      })
-      .where(eq(getStartedClaims.id, pending.id))
-      .returning();
-    if (!duplicate) {
-      throw new Error("Duplicate X claim disappeared");
-    }
-    return duplicate;
-  });
-  signal.throwIfAborted();
-  if (!claim) {
-    throw new Error("Authorized X submission did not create a claim");
+    },
+    signal,
+  );
+  if (pending.status !== "pending") {
+    return { status: 202 as const, body: getStartedClaimResponse(pending) };
   }
-  return { status: 202 as const, body: getStartedClaimResponse(claim) };
+  // Historical grants used post identities rather than author identities.
+  const [used] = await db
+    .select({ id: getStartedClaims.id })
+    .from(getStartedClaims)
+    .where(eq(getStartedClaims.rewardKey, `share:${post.id}`))
+    .limit(1);
+  signal.throwIfAborted();
+  if (!used) {
+    return { status: 202 as const, body: getStartedClaimResponse(pending) };
+  }
+  const [duplicate] = await db
+    .update(getStartedClaims)
+    .set({
+      status: "ineligible",
+      reason: "already_redeemed",
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        unresolvedClaimWhere(pending),
+        eq(getStartedClaims.status, "pending"),
+      ),
+    )
+    .returning();
+  signal.throwIfAborted();
+  if (duplicate) {
+    return { status: 202 as const, body: getStartedClaimResponse(duplicate) };
+  }
+  // A reviewer acquired or resolved the claim; serialize its current result.
+  const [current] = await db
+    .select()
+    .from(getStartedClaims)
+    .where(eq(getStartedClaims.id, pending.id));
+  signal.throwIfAborted();
+  if (!current) {
+    throw new Error("Duplicate X claim disappeared");
+  }
+  return { status: 202 as const, body: getStartedClaimResponse(current) };
 });
 
 const review$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!get(hasValidCronSecret$)) {
     return cronUnauthorized();
   }
-  const processed = await processGetStartedClaims(
-    set(writeDb$),
+  const processed = await set(
+    processGetStartedClaims$,
     {},
     AbortSignal.any([signal, AbortSignal.timeout(240_000)]),
   );

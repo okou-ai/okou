@@ -277,12 +277,17 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
         headers=[("Content-Type", "application/json")],
         body=json.dumps(
             {
-                "id": "msg_control",
-                "type": "message",
-                "role": "assistant",
-                "model": "claude-sonnet-4-6",
-                "content": [{"type": "text", "text": "synthetic response"}],
-                "stop_reason": "end_turn",
+                "id": "resp_control",
+                "object": "response",
+                "model": "gpt-5.5",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "synthetic response"}],
+                    }
+                ],
                 "usage": {"input_tokens": 5, "output_tokens": 3},
             }
         ).encode(),
@@ -298,27 +303,27 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
                     "sandboxes": {
                         "127.0.0.1": {
                             "runId": run_id,
-                            "cliAgentType": "claude-code",
+                            "cliAgentType": "codex",
                             "sandboxToken": "synthetic-run-token",
                             "encryptedSecrets": "synthetic-ciphertext",
-                            "modelUsageProvider": "claude-sonnet-4-6",
+                            "modelUsageProvider": "gpt-5.5",
                             "usageGeneration": "generation-1",
-                            "billableFirewalls": ["model-provider:anthropic-api-key"],
+                            "billableFirewalls": ["model-provider:openrouter-codex"],
                             "networkLogPath": str(log_path),
                             "proxyLogPath": str(directory / f"proxy-{run_id}.jsonl"),
                             "firewalls": [
                                 {
                                     "kind": "inline",
                                     "firewall": {
-                                        "name": "model-provider:anthropic-api-key",
+                                        "name": "model-provider:openrouter-codex",
                                         "apis": [
                                             {
                                                 "base": api.api_url,
                                                 "auth": {"headers": {}},
                                                 "permissions": [
                                                     {
-                                                        "name": "messages",
-                                                        "rules": ["POST /api/test/messages"],
+                                                        "name": "responses",
+                                                        "rules": ["POST /api/test/responses"],
                                                     }
                                                 ],
                                             }
@@ -336,7 +341,7 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
         try:
             proxy.request(
                 "POST",
-                f"{api.api_url}/api/test/messages",
+                f"{api.api_url}/api/test/responses",
                 body=b"{}",
                 headers={
                     "Content-Type": "application/json",
@@ -350,7 +355,7 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
             assert result_data(exchange(directory, flush))["state"] == "admitted"
             assert api.wait_for_request_count(3)
             assert api.requests[0].path == "/api/webhooks/agent/firewall/auth"
-            assert api.requests[1].path == "/api/test/messages"
+            assert api.requests[1].path == "/api/test/responses"
             assert api.requests[2].path == "/api/webhooks/agent/usage-event"
             assert api.requests[2].json_body()["runId"] == run_id
             state = result_data(

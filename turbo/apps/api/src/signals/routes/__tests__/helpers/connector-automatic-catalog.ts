@@ -8,17 +8,43 @@ import {
   installApiTestConnectorCatalog,
 } from "../../../../test-fixtures/connector-catalog";
 
-export async function installAutomaticMcpCatalog(
-  args: {
-    readonly slug?: string;
-    readonly methodId?: string;
-    readonly storageVersion?: number;
-    readonly endpoint?: string;
-    readonly isolateSource?: boolean;
-    readonly additionalAutomaticMethodId?: string;
-    readonly additionalNoAuthMethodId?: string;
-    readonly firewallAuth?: "none" | "oauth";
-  } = {},
+export function automaticMcpCatalogFixture(
+  firewallAuth: "none" | "oauth" = "oauth",
+) {
+  const slug = `automatic-mcp-${firewallAuth}`;
+  const connector = API_TEST_CONNECTOR_CATALOG.connectors.find((entry) => {
+    return entry.slug === slug;
+  });
+  if (!connector?.mcp) {
+    throw new Error("Expected the shared automatic MCP connector");
+  }
+  const firewallAuthHeaders: Record<string, string> =
+    firewallAuth === "none"
+      ? {}
+      : { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE };
+  return {
+    bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+    slug,
+    methodId: "smart-connect",
+    endpoint: connector.mcp.endpoint,
+    firewallAuthHeaders,
+    target: { kind: "builtin" as const, connectorSlug: slug },
+  };
+}
+
+export interface AutomaticMcpCatalogOptions {
+  readonly slug?: string;
+  readonly methodId?: string;
+  readonly storageVersion?: number;
+  readonly endpoint?: string;
+  readonly additionalAutomaticMethodId?: string;
+  readonly additionalNoAuthMethodId?: string;
+  readonly firewallAuth?: "none" | "oauth";
+}
+
+/** External descriptor bytes shared by legacy inputs and real publications. */
+export function buildAutomaticMcpCatalog(
+  args: AutomaticMcpCatalogOptions = {},
 ) {
   const slug = args.slug ?? `builtin-${randomUUID().slice(0, 8)}`;
   const methodId = args.methodId ?? "smart-connect";
@@ -32,9 +58,6 @@ export async function installAutomaticMcpCatalog(
   });
   if (!template) {
     throw new Error("Expected builtin MCP fixture connector");
-  }
-  if (args.isolateSource !== false) {
-    mockEnv("R2_USER_STORAGES_BUCKET_NAME", `automatic-${randomUUID()}`);
   }
   const method = {
     id: methodId,
@@ -59,7 +82,12 @@ export async function installAutomaticMcpCatalog(
     catalogVersion: `automatic-${randomUUID()}`,
     connectors: [
       ...API_TEST_CONNECTOR_CATALOG.connectors.filter((connector) => {
-        return connector.slug !== slug;
+        // Case generations replace the shared Automatic secret owners; the
+        // ordinary startup catalog and descriptor lookup remain unchanged.
+        return (
+          connector.slug !== slug &&
+          !connector.slug.startsWith("automatic-mcp-")
+        );
       }),
       {
         ...template,
@@ -109,13 +137,23 @@ export async function installAutomaticMcpCatalog(
       },
     ],
   });
-  await installApiTestConnectorCatalog({ catalog });
   return {
-    bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+    catalog,
     slug,
     methodId,
     endpoint,
     firewallAuthHeaders,
     target: { kind: "builtin" as const, connectorSlug: slug },
   };
+}
+
+export async function installAutomaticMcpCatalog(
+  args: AutomaticMcpCatalogOptions & { readonly isolateSource?: boolean } = {},
+) {
+  const { catalog, ...descriptor } = buildAutomaticMcpCatalog(args);
+  if (args.isolateSource !== false) {
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", `automatic-${randomUUID()}`);
+  }
+  await installApiTestConnectorCatalog({ catalog });
+  return { bucket: env("R2_USER_STORAGES_BUCKET_NAME"), ...descriptor };
 }

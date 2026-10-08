@@ -1,5 +1,5 @@
+import { chatThreadUsageRoutes } from "./chat-threads-usage";
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
-import { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command, computed } from "ccstate";
 import {
   chatSearchContract,
@@ -13,9 +13,10 @@ import { z } from "zod";
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { request$, setResHeader$ } from "../context/hono";
-import { db$ } from "../external/db";
+import { generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
+import { env } from "../../lib/env";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import {
   applyGoogleDriveArtifactSyncStatuses,
   googleDriveArtifactStatusLookup,
@@ -32,11 +33,11 @@ import {
   chatThreadEventRows,
   chatThreadEventSnapshot,
 } from "../services/chat-event-snapshot.service";
-import { resolveChatEventSchemaVersion } from "../services/chat-event-schema-version.service";
 import {
   getChatThreadEventsSince,
   getChatThreadSnapshot,
 } from "../services/chat-thread-event.service";
+import { isOwnedChatThreadSnapshotObjectKey } from "../services/chat-thread-snapshot-object";
 import type { RouteEntry } from "../route-entry";
 import { chatThreadsArtifactsSyncRoutes } from "./chat-threads-artifacts-sync";
 import { chatThreadComputerUseHostRoutes } from "./chat-threads-computer-use-host";
@@ -45,17 +46,17 @@ import { chatThreadCreateRoutes } from "./chat-threads-create";
 import { chatThreadDeleteRoutes } from "./chat-threads-delete";
 import { chatThreadDraftGetRoutes } from "./chat-threads-draft-get";
 import { chatThreadGetRoutes } from "./chat-threads-get";
-import { chatThreadImageModelRoutes } from "./chat-threads-image-model";
 import { chatThreadMarkAgentReadRoutes } from "./chat-threads-mark-agent-read";
 import { chatThreadMarkReadRoutes } from "./chat-threads-mark-read";
 import { chatThreadMarkUnreadRoutes } from "./chat-threads-mark-unread";
 import { chatThreadModelSelectionRoutes } from "./chat-threads-model-selection";
-import { chatThreadVideoModelRoutes } from "./chat-threads-video-model";
 import { chatThreadPatchRoutes } from "./chat-threads-patch";
 import { chatThreadPinRoutes } from "./chat-threads-pin";
 import { chatThreadPinOrderRoutes } from "./chat-threads-pin-order";
 import { chatThreadRenameRoutes } from "./chat-threads-rename";
 import { chatThreadUnpinRoutes } from "./chat-threads-unpin";
+import { chatThreadArchiveRoutes } from "./chat-threads-archive";
+import { chatThreadMuteRoutes } from "./chat-threads-mute";
 
 const chatThreadIdSchema = z.string().uuid();
 const catchUpChatEventsBody$ = bodyResultOf(chatThreadEventsContract.catchUp);
@@ -88,16 +89,44 @@ const getChatThreadInner$ = computed(async (get) => {
 
 const getChatThreadSnapshotInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const db = get(db$);
-  const snapshot = await getChatThreadSnapshot(db, {
-    userId: auth.userId,
-    orgId: auth.orgId,
-  });
+  const snapshot = await get(
+    getChatThreadSnapshot({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    }),
+  );
 
+  if (!snapshot) {
+    // No snapshot row is a permanent state, not a rollout fallback: every App,
+    // CLI, iOS, and rollback-window API agrees on this empty shape.
+    return {
+      status: 200 as const,
+      body: { chatThreads: [], latestEventId: null, latestSeqId: null },
+    };
+  }
+
+  if (
+    !isOwnedChatThreadSnapshotObjectKey(
+      snapshot.objectKey,
+      auth.userId,
+      auth.orgId,
+      snapshot.latestSeqId,
+    )
+  ) {
+    throw new Error("Invalid chat thread snapshot object key");
+  }
+
+  const url = await get(
+    generatePresignedGetUrl(
+      env("R2_USER_STORAGES_BUCKET_NAME"),
+      snapshot.objectKey,
+    ),
+  );
   return {
     status: 200 as const,
     body: {
-      chatThreads: [...snapshot.chatThreads],
+      url,
+      expiresInSeconds: PRESIGNED_URL_TTL_SECONDS,
       latestEventId: snapshot.latestEventId,
       latestSeqId: snapshot.latestSeqId,
     },
@@ -107,12 +136,13 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
 const listChatThreadLifecycleEventsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(chatThreadsContract.events));
-  const db = get(db$);
-  const result = await getChatThreadEventsSince(db, {
-    userId: auth.userId,
-    orgId: auth.orgId,
-    sinceSeqId: query.sinceSeqId,
-  });
+  const result = await get(
+    getChatThreadEventsSince({
+      userId: auth.userId,
+      orgId: auth.orgId,
+      sinceSeqId: query.sinceSeqId,
+    }),
+  );
 
   if (result.kind === "expired") {
     return {
@@ -148,19 +178,8 @@ const listChatIndicatorsInner$ = computed(async (get) => {
 });
 
 const catchUpChatEventsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const version = resolveChatEventSchemaVersion(
-      get(request$).header(CHAT_EVENT_SCHEMA_VERSION_HEADER),
-    );
-    if (version.kind === "error") {
-      return version.response;
-    }
-    set(
-      setResHeader$,
-      CHAT_EVENT_SCHEMA_VERSION_HEADER,
-      version.version.toString(),
-    );
     const body = await get(catchUpChatEventsBody$);
     signal.throwIfAborted();
     if (!body.ok) {
@@ -192,17 +211,6 @@ const getChatEventSnapshotInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
     const params = get(pathParamsOf(chatThreadEventsContract.snapshot));
-    const version = resolveChatEventSchemaVersion(
-      get(request$).header(CHAT_EVENT_SCHEMA_VERSION_HEADER),
-    );
-    if (version.kind === "error") {
-      return version.response;
-    }
-    set(
-      setResHeader$,
-      CHAT_EVENT_SCHEMA_VERSION_HEADER,
-      version.version.toString(),
-    );
     const snapshot = await set(
       chatThreadEventSnapshot({
         threadId: params.threadId,
@@ -238,21 +246,10 @@ const getChatEventSnapshotInner$ = command(
 );
 
 const listChatEventRowsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get }, signal: AbortSignal) => {
     const auth = get(authContext$);
     const params = get(pathParamsOf(chatThreadEventsContract.rows));
     const query = get(queryOf(chatThreadEventsContract.rows));
-    const version = resolveChatEventSchemaVersion(
-      get(request$).header(CHAT_EVENT_SCHEMA_VERSION_HEADER),
-    );
-    if (version.kind === "error") {
-      return version.response;
-    }
-    set(
-      setResHeader$,
-      CHAT_EVENT_SCHEMA_VERSION_HEADER,
-      version.version.toString(),
-    );
     const page = await get(
       chatThreadEventRows({
         threadId: params.threadId,
@@ -441,7 +438,10 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
       searchChatInner$,
     ),
   },
+  ...chatThreadUsageRoutes,
   ...chatThreadActivitySummaryRoutes,
+  ...chatThreadArchiveRoutes,
+  ...chatThreadMuteRoutes,
   ...chatThreadsArtifactsSyncRoutes,
   ...chatThreadComputerUseHostRoutes,
   ...chatThreadConnectorSelectionRoutes,
@@ -449,7 +449,6 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   ...chatThreadDeleteRoutes,
   ...chatThreadDraftGetRoutes,
   ...chatThreadGetRoutes,
-  ...chatThreadImageModelRoutes,
   ...chatThreadMarkAgentReadRoutes,
   ...chatThreadMarkReadRoutes,
   ...chatThreadMarkUnreadRoutes,
@@ -459,5 +458,4 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   ...chatThreadPinOrderRoutes,
   ...chatThreadRenameRoutes,
   ...chatThreadUnpinRoutes,
-  ...chatThreadVideoModelRoutes,
 ];

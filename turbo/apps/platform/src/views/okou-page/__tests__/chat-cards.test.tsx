@@ -1,9 +1,16 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
 import {
+  click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -15,6 +22,163 @@ const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
 const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?agentId=${AGENT_ID}`;
 const PERMISSION_URL = `https://app.okou.ai/agents/${AGENT_ID}/permissions?connectorSlug=slack&permission=files:read`;
+const EXACT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000911";
+const DEFAULT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000912";
+
+function exactReconnectUrl(connectionId = EXACT_CONNECTION_ID): URL {
+  const url = new URL(
+    `https://app.okou.ai/connectors/github/reconnect/${connectionId}`,
+  );
+  url.searchParams.set("agentId", AGENT_ID);
+  url.searchParams.set("threadId", THREAD_ID);
+  url.searchParams.set("callbackPrompt", "Continue the account-specific task");
+  return url;
+}
+
+function mockExactReconnectAccount(
+  accountStatus: "connected" | "reconnect-required" | "missing",
+  options?: {
+    catalogUnavailableOnce?: boolean;
+    unnamedManualAccount?: boolean;
+    accountMissingOnActivate?: boolean;
+    unsupportedAuthMethod?: boolean;
+    mismatchedResponse?: "id" | "target";
+    accountAuthMethod?: "oauth" | "api-token";
+  },
+): void {
+  let catalogUnavailable = options?.catalogUnavailableOnce ?? false;
+  let accountLookups = 0;
+  const github = connectorSlugSchema.parse("github");
+  const catalogItem = {
+    slug: github,
+    label: "GitHub",
+    description: "GitHub connector",
+    icon: {
+      url: "https://icons.example.test/github.svg",
+      invertInDarkMode: false,
+    },
+    category: "productivity" as const,
+    generation: [],
+    tags: [],
+    authMethods: [
+      ...(!options?.unsupportedAuthMethod
+        ? [
+            {
+              id: "api-token",
+              label: "API token",
+              description: null,
+              grantKind: "manual" as const,
+              manualFields: [
+                {
+                  id: "apiToken",
+                  label: "API token",
+                  required: true,
+                  placeholder: "work-github-token",
+                  inputType: "password" as const,
+                },
+              ],
+              startOptions: [],
+            },
+          ]
+        : []),
+      {
+        id: "oauth",
+        label: "OAuth",
+        description: null,
+        grantKind: "auth-code" as const,
+        manualFields: [],
+        startOptions: [],
+      },
+    ],
+    permissionSummary: {
+      hasPermissions: false,
+      permissionCount: 0,
+      hasCategories: false,
+      hasDefaultPolicyOverrides: false,
+    },
+    connection: {
+      id: DEFAULT_CONNECTION_ID,
+      authMethod: "oauth",
+      externalUsername: "default-user",
+      externalEmail: null,
+      reconnectReason: null,
+    },
+    connected: true,
+    connectionStatus: "connected" as const,
+    scopeMismatch: false,
+    authMethodSupportsRefresh: true,
+    tokenExpiresAt: null,
+    singleAuthCodeAuthMethodId: null,
+    connectNotice: null,
+  };
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    if (catalogUnavailable) {
+      catalogUnavailable = false;
+      return respond(503, {
+        error: { code: "PROVIDER_UNAVAILABLE", message: "Catalog unavailable" },
+      });
+    }
+    return params.connectorSlug === github
+      ? respond(200, { connector: catalogItem })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
+  });
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    return respond(200, { connectors: [catalogItem] });
+  });
+  context.mocks.api(connectorOverviewContract.agent, ({ respond }) => {
+    return respond(200, {
+      enabledConnectorSlugs: [github],
+      customConnectorIds: [],
+    });
+  });
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, query, respond }) => {
+      accountLookups += 1;
+      if (
+        accountStatus === "missing" ||
+        (options?.accountMissingOnActivate && accountLookups > 1) ||
+        params.connectionId !== EXACT_CONNECTION_ID ||
+        query.kind !== "builtin" ||
+        query.connectorSlug !== github
+      ) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Account not found" },
+        });
+      }
+      return respond(200, {
+        id:
+          options?.mismatchedResponse === "id"
+            ? DEFAULT_CONNECTION_ID
+            : EXACT_CONNECTION_ID,
+        target: {
+          kind: "builtin",
+          connectorSlug:
+            options?.mismatchedResponse === "target"
+              ? connectorSlugSchema.parse("slack")
+              : github,
+        },
+        authMethod: options?.accountAuthMethod ?? "api-token",
+        displayName: options?.unnamedManualAccount ? null : "Work GitHub",
+        isDefault: false,
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: options?.accountAuthMethod === "oauth" ? [] : null,
+        connectionStatus: accountStatus,
+        reconnectReason:
+          accountStatus === "reconnect-required"
+            ? "authorization_expired_or_revoked"
+            : null,
+        tokenExpiresAt: null,
+        createdAt: "2026-08-01T12:00:00.000Z",
+        updatedAt: "2026-08-01T12:00:00.000Z",
+      });
+    },
+  );
+}
 
 function assistantMessage(id: string, content: string) {
   return {
@@ -26,11 +190,61 @@ function assistantMessage(id: string, content: string) {
   };
 }
 
-function setupChat(content: string): Promise<void> {
+function mockManualReconnect(
+  onReconnect: (account: unknown) => void,
+  options?: { completion?: Promise<void>; responseId?: string },
+): void {
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    async ({ params, body, respond, withSignal }) => {
+      expect(params.connectorSlug).toBe("github");
+      expect(body.authMethod).toBe("api-token");
+      onReconnect(body.account);
+      if (options?.completion) {
+        await withSignal(options.completion);
+      }
+      return respond(200, {
+        id: options?.responseId ?? EXACT_CONNECTION_ID,
+        slug: "github",
+        authMethod: "api-token",
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: null,
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        createdAt: "2026-08-01T12:00:00.000Z",
+        updatedAt: "2026-08-01T12:00:00.000Z",
+      });
+    },
+  );
+}
+
+function buttonIn(container: ParentNode, name: string): HTMLElement {
+  const button = queryAllByRoleFast("button", container).find((candidate) => {
+    return (
+      candidate.textContent?.trim() === name ||
+      candidate.getAttribute("aria-label") === name
+    );
+  });
+  if (!button) {
+    throw new Error(`Expected button named "${name}"`);
+  }
+  return button;
+}
+
+function setupChat(
+  content: string,
+  onSend?: (prompt: string) => void,
+): Promise<void> {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Action requests",
     chatEvents: [assistantMessage("action-request", content)],
+    onSendRequest: ({ prompt }) => {
+      onSend?.(prompt);
+    },
   });
   return setupPage({
     context,
@@ -578,6 +792,480 @@ test("Keep the connector slot when delayed metadata is unavailable", async () =>
   const unavailable = await screen.findByTestId("unavailable-action-card");
   expect(unavailable).toHaveTextContent("Action unavailable");
   expectNodeBefore(unavailable, screen.getByText("After the request"));
+});
+
+test("An exact reconnect card opens the non-default account dialog and continues only after success", async () => {
+  mockExactReconnectAccount("reconnect-required");
+  let submittedAccount: unknown = null;
+  let continuationPrompt: string | null = null;
+  mockManualReconnect((account) => {
+    submittedAccount = account;
+  });
+  const url = exactReconnectUrl();
+  await setupChat(`Reconnect this account:\n\n${url.toString()}`, (prompt) => {
+    continuationPrompt = prompt;
+  });
+
+  const card = await screen.findByTestId("connector-action-card");
+  expect(card).toHaveTextContent("GitHub · Work GitHub");
+  const reconnect = queryAllByRoleFast("button", card).find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  expect(reconnect).toBeEnabled();
+  expect(screen.queryByText(url.toString())).toBeNull();
+
+  click(reconnect!);
+  const dialog = await screen.findByRole("dialog", {
+    name: "GitHub · Work GitHub",
+  });
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+  expect(
+    queryAllByRoleFast("button", dialog).some((button) => {
+      return button.textContent?.trim() === "Reconnect";
+    }),
+  ).toBeFalsy();
+  expect(continuationPrompt).toBeNull();
+  await fill(
+    within(dialog).getByPlaceholderText("work-github-token"),
+    "synthetic-token",
+  );
+  expect(continuationPrompt).toBeNull();
+  click(buttonIn(dialog, "Save"));
+
+  await waitFor(() => {
+    expect(submittedAccount).toStrictEqual({
+      intent: "reconnect",
+      connectionId: EXACT_CONNECTION_ID,
+    });
+    expect(continuationPrompt).toBe("Continue the account-specific task");
+  });
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test("A reconnect completion for another account never continues the chat", async () => {
+  mockExactReconnectAccount("reconnect-required");
+  let continuationPrompt: string | null = null;
+  let submittedAccount: unknown = null;
+  mockManualReconnect(
+    (account) => {
+      submittedAccount = account;
+    },
+    { responseId: DEFAULT_CONNECTION_ID },
+  );
+  await setupChat(exactReconnectUrl().toString(), (prompt) => {
+    continuationPrompt = prompt;
+  });
+
+  const card = await screen.findByTestId("connector-action-card");
+  click(buttonIn(card, "Reconnect"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "GitHub · Work GitHub",
+  });
+  await fill(
+    within(dialog).getByPlaceholderText("work-github-token"),
+    "synthetic-token",
+  );
+  click(buttonIn(dialog, "Save"));
+
+  await waitFor(() => {
+    expect(submittedAccount).toStrictEqual({
+      intent: "reconnect",
+      connectionId: EXACT_CONNECTION_ID,
+    });
+    expect(buttonIn(dialog, "Save")).toBeEnabled();
+  });
+  expect(dialog).toBeInTheDocument();
+  expect(continuationPrompt).toBeNull();
+});
+
+test("Closing an in-flight reconnect dialog never continues after a late success", async () => {
+  mockExactReconnectAccount("reconnect-required");
+  const gate = context.mocks.deferred<void>();
+  let submittedAccount: unknown = null;
+  let continuationPrompt: string | null = null;
+  mockManualReconnect(
+    (account) => {
+      submittedAccount = account;
+    },
+    { completion: gate.promise },
+  );
+  await setupChat(exactReconnectUrl().toString(), (prompt) => {
+    continuationPrompt = prompt;
+  });
+
+  const card = await screen.findByTestId("connector-action-card");
+  click(buttonIn(card, "Reconnect"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "GitHub · Work GitHub",
+  });
+  await fill(
+    within(dialog).getByPlaceholderText("work-github-token"),
+    "synthetic-token",
+  );
+  const save = buttonIn(dialog, "Save");
+  click(save);
+  await waitFor(() => {
+    expect(submittedAccount).toStrictEqual({
+      intent: "reconnect",
+      connectionId: EXACT_CONNECTION_ID,
+    });
+    expect(save).toBeDisabled();
+  });
+  click(buttonIn(dialog, "Close"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  gate.resolve();
+  await screen.findByText("GitHub connected successfully");
+  expect(continuationPrompt).toBeNull();
+});
+
+test("An unnamed manual reconnect account uses its account label in the card and dialog", async () => {
+  mockExactReconnectAccount("reconnect-required", {
+    unnamedManualAccount: true,
+  });
+  await setupChat(exactReconnectUrl().toString());
+
+  const card = await screen.findByTestId("connector-action-card");
+  expect(card).toHaveTextContent("GitHub · API token");
+  expect(card).toHaveTextContent("Reconnect required");
+  const reconnect = queryAllByRoleFast("button", card)[0]!;
+  expect(reconnect).toHaveTextContent("Reconnect");
+  click(reconnect);
+  await expect(
+    screen.findByRole("dialog", { name: "GitHub · API token" }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("An exact OAuth account opens the in-chat dialog with only its stored auth method", async () => {
+  mockExactReconnectAccount("reconnect-required", {
+    accountAuthMethod: "oauth",
+  });
+  await setupChat(exactReconnectUrl().toString());
+
+  const card = await screen.findByTestId("connector-action-card");
+  click(queryAllByRoleFast("button", card)[0]!);
+  const dialog = await screen.findByRole("dialog", {
+    name: "GitHub · Work GitHub",
+  });
+  expect(within(dialog).queryByPlaceholderText("work-github-token")).toBeNull();
+  expect(buttonIn(dialog, "Reconnect")).toBeEnabled();
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test("A bare relative exact reconnect link opens the dialog and retains its callback", async () => {
+  mockExactReconnectAccount("reconnect-required");
+  let continuationPrompt: string | null = null;
+  let submittedAccount: unknown = null;
+  mockManualReconnect((account) => {
+    submittedAccount = account;
+  });
+  const url = exactReconnectUrl();
+  const relativeUrl = url.pathname + url.search;
+  await setupChat(`Reconnect this work account: ${relativeUrl}。`, (prompt) => {
+    continuationPrompt = prompt;
+  });
+
+  const card = await screen.findByTestId("connector-action-card");
+  expect(card).toHaveTextContent("GitHub · Work GitHub");
+  expect(
+    screen.getByText("Reconnect this work account: 。"),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(relativeUrl)).toBeNull();
+  const reconnect = queryAllByRoleFast("button", card).find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  expect(reconnect).toBeEnabled();
+
+  click(reconnect!);
+  const dialog = await screen.findByRole("dialog", {
+    name: "GitHub · Work GitHub",
+  });
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+  expect(continuationPrompt).toBeNull();
+  await fill(
+    within(dialog).getByPlaceholderText("work-github-token"),
+    "synthetic-token",
+  );
+  click(buttonIn(dialog, "Save"));
+  await waitFor(() => {
+    expect(submittedAccount).toStrictEqual({
+      intent: "reconnect",
+      connectionId: EXACT_CONNECTION_ID,
+    });
+    expect(continuationPrompt).toBe("Continue the account-specific task");
+  });
+});
+
+test("A connected exact account still allows explicit reconnection instead of using the default", async () => {
+  mockExactReconnectAccount("connected");
+  await setupChat(
+    `[Reconnect the work account](${exactReconnectUrl().toString()})`,
+  );
+
+  const card = await screen.findByTestId("connector-action-card");
+  expect(card).toHaveTextContent("GitHub · Work GitHub");
+  expect(card).toHaveTextContent("Connected");
+  const reconnect = queryAllByRoleFast("button", card).find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  expect(reconnect).toBeEnabled();
+  click(reconnect!);
+  await expect(
+    screen.findByRole("dialog", { name: "GitHub · Work GitHub" }),
+  ).resolves.toBeInTheDocument();
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test("A reconnect card rechecks an account that disappears before activation", async () => {
+  mockExactReconnectAccount("reconnect-required", {
+    accountMissingOnActivate: true,
+  });
+  await setupChat(exactReconnectUrl().toString());
+  const card = await screen.findByTestId("connector-action-card");
+  click(queryAllByRoleFast("button", card)[0]!);
+
+  await expect(
+    screen.findByTestId("unavailable-action-card"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test("A reconnect card stays unavailable if its stored authentication method is no longer offered", async () => {
+  mockExactReconnectAccount("reconnect-required", {
+    unsupportedAuthMethod: true,
+  });
+  await setupChat(exactReconnectUrl().toString());
+
+  await expect(
+    screen.findByTestId("unavailable-action-card"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test.each(["id", "target"] as const)(
+  "A lookup that returns a different account %s cannot open a reconnect dialog",
+  async (mismatchedResponse) => {
+    mockExactReconnectAccount("reconnect-required", { mismatchedResponse });
+    await setupChat(exactReconnectUrl().toString());
+
+    await expect(
+      screen.findByTestId("unavailable-action-card"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+  },
+);
+
+test("Closing the exact reconnect dialog does not send the callback", async () => {
+  mockExactReconnectAccount("reconnect-required");
+  let continuationPrompt: string | null = null;
+  await setupChat(exactReconnectUrl().toString(), (prompt) => {
+    continuationPrompt = prompt;
+  });
+  const card = await screen.findByTestId("connector-action-card");
+  click(queryAllByRoleFast("button", card)[0]!);
+  const dialog = await screen.findByRole("dialog", {
+    name: "GitHub · Work GitHub",
+  });
+  click(buttonIn(dialog, "Close"));
+
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(continuationPrompt).toBeNull();
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test("A failed exact reconnect leaves the callback unsent", async () => {
+  mockExactReconnectAccount("reconnect-required");
+  let attempts = 0;
+  let continuationPrompt: string | null = null;
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    ({ respond }) => {
+      attempts += 1;
+      return respond(400, {
+        error: { code: "BAD_REQUEST", message: "Synthetic grant failed" },
+      });
+    },
+  );
+  await setupChat(exactReconnectUrl().toString(), (prompt) => {
+    continuationPrompt = prompt;
+  });
+  const card = await screen.findByTestId("connector-action-card");
+  click(queryAllByRoleFast("button", card)[0]!);
+  const dialog = await screen.findByRole("dialog", {
+    name: "GitHub · Work GitHub",
+  });
+  await fill(
+    within(dialog).getByPlaceholderText("work-github-token"),
+    "synthetic-token",
+  );
+  click(buttonIn(dialog, "Save"));
+
+  await waitFor(() => {
+    expect(attempts).toBe(1);
+    expect(buttonIn(dialog, "Save")).toBeEnabled();
+  });
+  expect(continuationPrompt).toBeNull();
+  expect(dialog).toBeInTheDocument();
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test("Malformed or context-mismatched exact reconnect links are inert", async () => {
+  const wrongAgent = exactReconnectUrl();
+  wrongAgent.searchParams.set(
+    "agentId",
+    "c0000000-0000-4000-a000-000000000099",
+  );
+  const wrongThread = exactReconnectUrl();
+  wrongThread.searchParams.set(
+    "threadId",
+    "b0000000-0000-4000-a000-000000000099",
+  );
+  const malformedId = exactReconnectUrl("not-an-account-id");
+  await setupChat(
+    [wrongAgent, wrongThread, malformedId]
+      .map((url) => {
+        return url.toString();
+      })
+      .join("\n\n"),
+  );
+
+  await waitFor(() => {
+    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(3);
+  });
+  expect(screen.queryByTestId("connector-action-card")).toBeNull();
+  expect(
+    queryAllByRoleFast("link").some((link) => {
+      return [wrongAgent, wrongThread, malformedId].some((url) => {
+        return link.getAttribute("href") === url.toString();
+      });
+    }),
+  ).toBeFalsy();
+});
+
+test("A missing exact reconnect account never falls back to the default", async () => {
+  mockExactReconnectAccount("missing");
+  await setupChat(exactReconnectUrl().toString());
+
+  const card = await screen.findByTestId("unavailable-action-card");
+  expect(card).toHaveTextContent("Action unavailable");
+  expect(screen.queryByTestId("connector-action-card")).toBeNull();
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test("Retrying an exact reconnect card reloads unavailable catalog data", async () => {
+  mockExactReconnectAccount("reconnect-required", {
+    catalogUnavailableOnce: true,
+  });
+  await setupChat(exactReconnectUrl().toString());
+
+  const retry = await screen.findByText("Retry", { selector: "button" });
+  expect(screen.queryByTestId("connector-action-card")).toBeNull();
+  click(retry);
+
+  const card = await screen.findByTestId("connector-action-card");
+  expect(card).toHaveTextContent("GitHub · Work GitHub");
+  expect(card).toHaveTextContent("Reconnect");
+});
+
+test("A connector account switch shows its connector icon from that connector's catalog entry", async () => {
+  const github = connectorSlugSchema.parse("github");
+  const connectionId = "f0000000-0000-4000-a000-000000000901";
+  const iconUrl = "https://icons.example.test/account-switch-github.svg";
+  const switchUrl = new URL(
+    `https://app.okou.ai/agents/${AGENT_ID}/connector-accounts/${connectionId}/select`,
+  );
+  switchUrl.searchParams.set("kind", "builtin");
+  switchUrl.searchParams.set("connectorSlug", github);
+  switchUrl.searchParams.set("threadId", THREAD_ID);
+  switchUrl.searchParams.set("callbackPrompt", "Continue");
+  context.mocks.api(connectorOverviewContract.agent, ({ params, respond }) => {
+    return respond(200, {
+      enabledConnectorSlugs: params.id === AGENT_ID ? [github] : [],
+      customConnectorIds: [],
+    });
+  });
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      return respond(200, {
+        id: params.connectionId,
+        target: { kind: "builtin", connectorSlug: github },
+        authMethod: "oauth",
+        displayName: "Work GitHub",
+        isDefault: false,
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: [],
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        createdAt: "2026-08-01T12:00:00.000Z",
+        updatedAt: "2026-08-01T12:00:00.000Z",
+      });
+    },
+  );
+  context.mocks.api(chatThreadConnectorSelectionContract.get, ({ respond }) => {
+    return respond(200, { selections: [], selectedConnections: [] });
+  });
+  // The slug route also matches the catalog's static paths, so the status
+  // route is registered after it to keep answering its own path.
+  const itemReads: string[] = [];
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    itemReads.push(params.connectorSlug);
+    return params.connectorSlug === github
+      ? respond(200, {
+          connector: {
+            slug: github,
+            label: "GitHub",
+            description: "GitHub connector",
+            icon: { url: iconUrl, invertInDarkMode: false },
+            category: "productivity",
+            generation: [],
+            tags: [],
+            authMethods: [],
+            permissionSummary: {
+              hasPermissions: false,
+              permissionCount: 0,
+              hasCategories: false,
+              hasDefaultPolicyOverrides: false,
+            },
+            connection: null,
+            connected: true,
+            connectionStatus: "connected",
+            scopeMismatch: false,
+            authMethodSupportsRefresh: true,
+            tokenExpiresAt: null,
+            singleAuthCodeAuthMethodId: null,
+            connectNotice: null,
+          },
+        })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
+  });
+  let statusReads = 0;
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    statusReads += 1;
+    return respond(200, { connectors: [] });
+  });
+
+  await setupChat(`Use the work account\n\n${switchUrl.toString()}`);
+
+  const card = await screen.findByTestId("connector-account-action-card");
+  expect(card).toHaveTextContent("Switch to Work GitHub?");
+  await waitFor(() => {
+    expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
+  });
+  expect(itemReads).toStrictEqual([github]);
+  expect(statusReads).toBe(0);
 });
 
 test("Ordinary or code links remain message content", async () => {

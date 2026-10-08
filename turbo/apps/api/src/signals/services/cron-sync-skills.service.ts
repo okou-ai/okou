@@ -25,7 +25,7 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { skills } from "@okouai/db/schema/skill";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command, computed, type Computed } from "ccstate";
-import { asc, eq, inArray, like } from "drizzle-orm";
+import { and, asc, eq, inArray, like } from "drizzle-orm";
 import { create as createTar, Parser } from "tar";
 
 import { env } from "../../lib/env";
@@ -38,11 +38,9 @@ import {
   putS3Object,
 } from "../external/s3";
 import { createDeferredPromise, safeSync, tapError } from "../utils";
-import {
-  enqueuePiStableContextStorageDemands,
-  retirePiStableContextStorageDemands,
-} from "./pi-stable-context-generation.service";
+
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
+import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 
 import { preparePiResourceIndex } from "../../lib/pi-resource-index";
 import {
@@ -57,11 +55,6 @@ interface SyncSkillsResult {
   readonly failed: number;
   readonly removed: number;
   readonly total: number;
-}
-
-interface SyncSkillsScope {
-  readonly skillNamePrefix: string | null;
-  readonly requiredSkillNames: readonly string[];
 }
 
 interface ExtractedFile {
@@ -89,7 +82,6 @@ interface SkillSyncContext {
 
 interface SkillArchiveUpload {
   readonly archiveBuffer: Buffer;
-  readonly manifestBuffer: Buffer;
   readonly s3Key: string;
 }
 
@@ -327,7 +319,7 @@ async function createSkillArchive(
   return { archiveBuffer, manifestBuffer };
 }
 
-async function hasCurrentSkillVersion(
+function hasCurrentSkillVersion(
   args: {
     readonly db: Db;
     readonly url: string;
@@ -335,47 +327,58 @@ async function hasCurrentSkillVersion(
     readonly files: readonly ExtractedFile[];
   },
   signal: AbortSignal,
-): Promise<boolean> {
-  const [existingSkill] = await args.db
-    .select({ versionHash: skills.versionHash })
-    .from(skills)
-    .where(eq(skills.url, args.url))
-    .limit(1);
-  signal.throwIfAborted();
+): Computed<Promise<boolean>> {
+  return computed(async (): Promise<boolean> => {
+    const [existingSkill] = await args.db
+      .select({ versionHash: skills.versionHash, storageId: skills.storageId })
+      .from(skills)
+      .where(eq(skills.url, args.url))
+      .limit(1);
+    signal.throwIfAborted();
 
-  if (existingSkill?.versionHash !== args.versionHash) {
-    return false;
-  }
+    if (existingSkill?.versionHash !== args.versionHash) {
+      return false;
+    }
 
-  const { indexes } = await readPiResourceVersionIndexes(
-    args.db,
-    [args.versionHash],
-    signal,
-  );
-  if (!indexes.has(args.versionHash)) {
     const [version] = await args.db
-      .select({ archiveSize: storageVersions.archiveSize })
+      .select({
+        storageId: storageVersions.storageId,
+        fileCount: storageVersions.fileCount,
+        archiveSize: storageVersions.archiveSize,
+      })
       .from(storageVersions)
       .where(eq(storageVersions.id, args.versionHash))
       .limit(1);
-    if (!version) {
-      throw new Error("Current skill references a missing Storage version");
-    }
-    // Reuse the publisher's archive encoding and bounded parser even when the
-    // logical version is unchanged. Raw files would bypass the expansion limit.
-    const { archiveBuffer } = await createSkillArchive(args.files);
     signal.throwIfAborted();
-    await publishPiResourceVersionIndex(
-      {
-        db: args.db,
-        versionId: args.versionHash,
-        projection: preparePiResourceIndex(archiveBuffer),
-        archiveSize: version.archiveSize,
-      },
+    if (
+      !version ||
+      version.storageId !== existingSkill.storageId ||
+      version.fileCount !== args.files.length
+    ) {
+      throw new Error("Current skill references an invalid Storage version");
+    }
+    const { indexes } = await readPiResourceVersionIndexes(
+      args.db,
+      [args.versionHash],
       signal,
     );
-  }
-  return true;
+    if (!indexes.has(args.versionHash)) {
+      // Reuse the publisher's archive encoding and bounded parser even when the
+      // logical version is unchanged. Raw files would bypass the expansion limit.
+      const { archiveBuffer } = await createSkillArchive(args.files);
+      signal.throwIfAborted();
+      await publishPiResourceVersionIndex(
+        {
+          db: args.db,
+          versionId: args.versionHash,
+          projection: preparePiResourceIndex(archiveBuffer),
+          archiveSize: version.archiveSize,
+        },
+        signal,
+      );
+    }
+    return true;
+  });
 }
 
 function uploadSkillArchive(
@@ -412,20 +415,19 @@ function uploadSkillArchive(
     ]);
     signal.throwIfAborted();
 
-    return { archiveBuffer, manifestBuffer, s3Key };
+    return { archiveBuffer, s3Key };
   });
 }
 
-async function upsertSkillStorage(
+async function resolveSkillStorage(
   args: {
     readonly db: Db;
     readonly context: SkillSyncContext;
-    readonly timestamp: Date;
   },
   signal: AbortSignal,
 ): Promise<{ readonly id: string; readonly s3Prefix: string }> {
   const location = newStorageS3Location(SYSTEM_ORG_ID);
-  const [storage] = await args.db
+  await args.db
     .insert(storages)
     .values({
       id: location.storageId,
@@ -436,17 +438,22 @@ async function upsertSkillStorage(
       size: args.context.totalSize,
       fileCount: args.context.files.length,
     })
-    .onConflictDoUpdate({
-      target: [storages.orgId, storages.userId, storages.name],
-      set: {
-        size: args.context.totalSize,
-        fileCount: args.context.files.length,
-        updatedAt: args.timestamp,
-      },
-    })
-    .returning({ id: storages.id, s3Prefix: storages.s3Prefix });
+    .onConflictDoNothing();
   signal.throwIfAborted();
-
+  // Existing HEAD metadata belongs to the publication transaction. Reading
+  // the canonical prefix needs no row update or lock across R2 I/O.
+  const [storage] = await args.db
+    .select({ id: storages.id, s3Prefix: storages.s3Prefix })
+    .from(storages)
+    .where(
+      and(
+        eq(storages.orgId, SYSTEM_ORG_ID),
+        eq(storages.userId, VOLUME_ORG_USER_ID),
+        eq(storages.name, args.context.storageName),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
   if (!storage) {
     throw new Error(
       `Failed to create storage for skill ${args.context.skillName}`,
@@ -465,8 +472,8 @@ async function insertSkillStorageVersion(
     readonly commitSha: string;
   },
   signal: AbortSignal,
-): Promise<void> {
-  await args.db
+): Promise<number> {
+  const [inserted] = await args.db
     .insert(storageVersions)
     .values({
       id: args.context.versionHash,
@@ -478,11 +485,34 @@ async function insertSkillStorageVersion(
       message: `Synced from ${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}@${args.commitSha.slice(0, 7)}`,
       createdBy: "system",
     })
-    .onConflictDoUpdate({
-      target: storageVersions.id,
-      set: { archiveSize: args.upload.archiveBuffer.length },
-    });
+    .onConflictDoNothing()
+    .returning({ archiveSize: storageVersions.archiveSize });
   signal.throwIfAborted();
+  if (inserted) {
+    return inserted.archiveSize;
+  }
+  const [stored] = await args.db
+    .select({
+      storageId: storageVersions.storageId,
+      s3Key: storageVersions.s3Key,
+      size: storageVersions.size,
+      archiveSize: storageVersions.archiveSize,
+      fileCount: storageVersions.fileCount,
+    })
+    .from(storageVersions)
+    .where(eq(storageVersions.id, args.context.versionHash))
+    .limit(1);
+  signal.throwIfAborted();
+  if (
+    !stored ||
+    stored.storageId !== args.storageId ||
+    stored.s3Key !== args.upload.s3Key ||
+    Number(stored.size) !== args.context.totalSize ||
+    stored.fileCount !== args.context.files.length
+  ) {
+    throw new StorageVersionIdentityConflictError(args.context.versionHash);
+  }
+  return stored.archiveSize;
 }
 
 async function updateSkillStorageHead(
@@ -561,37 +591,64 @@ function syncSingleSkill(
     const context = buildSkillSyncContext(extracted);
 
     if (
-      await hasCurrentSkillVersion(
-        {
-          db,
-          url: context.url,
-          versionHash: context.versionHash,
-          files: context.files,
-        },
-        signal,
+      await get(
+        hasCurrentSkillVersion(
+          {
+            db,
+            url: context.url,
+            versionHash: context.versionHash,
+            files: context.files,
+          },
+          signal,
+        ),
       )
     ) {
       return false;
     }
 
     const timestamp = nowDate();
-    // Upsert the storage row first: objects must land under the row's stored
+    // Resolve the storage row first: objects must land under its canonical
     // prefix, which an existing row keeps from its creation time.
-    const storage = await upsertSkillStorage(
+    const storage = await resolveSkillStorage(
       {
         db,
         context,
-        timestamp,
       },
       signal,
     );
     const storageId = storage.id;
-    const upload = await get(
-      uploadSkillArchive(context, storage.s3Prefix, signal),
-    );
+    const [existing] = await db
+      .select({
+        storageId: storageVersions.storageId,
+        s3Key: storageVersions.s3Key,
+        size: storageVersions.size,
+        fileCount: storageVersions.fileCount,
+      })
+      .from(storageVersions)
+      .where(eq(storageVersions.id, context.versionHash))
+      .limit(1);
+    signal.throwIfAborted();
+    const s3Key = `${storage.s3Prefix}/${context.versionHash}`;
+    if (
+      existing &&
+      (existing.storageId !== storageId ||
+        existing.s3Key !== s3Key ||
+        Number(existing.size) !== context.totalSize ||
+        existing.fileCount !== context.files.length)
+    ) {
+      throw new StorageVersionIdentityConflictError(context.versionHash);
+    }
+    const upload = existing
+      ? {
+          archiveBuffer: (await createSkillArchive(context.files))
+            .archiveBuffer,
+          s3Key,
+        }
+      : await get(uploadSkillArchive(context, storage.s3Prefix, signal));
+    signal.throwIfAborted();
     const projection = preparePiResourceIndex(upload.archiveBuffer);
     await db.transaction(async (tx) => {
-      await insertSkillStorageVersion(
+      const archiveSize = await insertSkillStorageVersion(
         { db: tx, storageId, context, upload, commitSha },
         signal,
       );
@@ -608,16 +665,10 @@ function syncSingleSkill(
           db: tx,
           versionId: context.versionHash,
           projection,
-          archiveSize: upload.archiveBuffer.length,
+          archiveSize,
         },
         signal,
       );
-      await enqueuePiStableContextStorageDemands(tx, {
-        storageId,
-        versionId: context.versionHash,
-        archiveSize: upload.archiveBuffer.length,
-        fileCount: context.files.length,
-      });
     });
 
     log.debug("Synced skill", {
@@ -675,12 +726,6 @@ function removeOrphanedSkills(
               .for("update")
           : [];
       signal.throwIfAborted();
-      await retirePiStableContextStorageDemands(
-        tx,
-        lockedStorages.map((storage) => {
-          return storage.id;
-        }),
-      );
       await tx.delete(skills).where(inArray(skills.id, orphanIds));
       if (lockedStorages.length > 0) {
         await tx.delete(storages).where(
@@ -757,17 +802,13 @@ function validateSeedSkills(
   }
 }
 
-export const syncSkillsForScope$ = command(
-  async (
-    { get, set },
-    scope: SyncSkillsScope,
-    signal: AbortSignal,
-  ): Promise<SyncSkillsResult> => {
+export const syncSkills$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<SyncSkillsResult> => {
     const db = set(writeDb$);
     const headSha = await fetchHeadCommitSha(signal);
     signal.throwIfAborted();
 
-    const urlPrefix = `${OFFICIAL_SKILL_URL_ROOT}${scope.skillNamePrefix ?? ""}`;
+    const urlPrefix = OFFICIAL_SKILL_URL_ROOT;
     // commitSha is a batch completion marker. A failed or interrupted attempt
     // leaves the set incomplete so the next cron run downloads the same commit
     // and retries its missing work.
@@ -793,14 +834,7 @@ export const syncSkillsForScope$ = command(
       };
     }
 
-    const extractedSkills = (await downloadAndExtractSkills(signal)).filter(
-      (skill) => {
-        return (
-          scope.skillNamePrefix === null ||
-          skill.skillName.startsWith(scope.skillNamePrefix)
-        );
-      },
-    );
+    const extractedSkills = await downloadAndExtractSkills(signal);
     signal.throwIfAborted();
 
     let synced = 0;
@@ -845,7 +879,7 @@ export const syncSkillsForScope$ = command(
       removeOrphanedSkills(db, extractedSkills, urlPrefix, signal),
     );
     signal.throwIfAborted();
-    validateSeedSkills(extractedSkills, scope.requiredSkillNames);
+    validateSeedSkills(extractedSkills, SEED_SKILLS);
 
     if (failed === 0) {
       // Advance the marker only after every extracted skill completed. Updating
@@ -874,15 +908,5 @@ export const syncSkillsForScope$ = command(
       removed,
       total: extractedSkills.length,
     };
-  },
-);
-
-export const syncSkills$ = command(
-  async ({ set }, signal: AbortSignal): Promise<SyncSkillsResult> => {
-    return await set(
-      syncSkillsForScope$,
-      { skillNamePrefix: null, requiredSkillNames: SEED_SKILLS },
-      signal,
-    );
   },
 );

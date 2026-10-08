@@ -8,12 +8,14 @@ type ClerkSessionAuthContext =
   | {
       readonly tokenType: "session";
       readonly userId: string;
+      readonly sessionId?: string;
       readonly orgId: string;
       readonly orgRole: ApiOrgRole;
     }
   | {
       readonly tokenType: "session";
       readonly userId: string;
+      readonly sessionId?: string;
       readonly orgId?: undefined;
       readonly orgRole?: undefined;
     };
@@ -31,21 +33,27 @@ const requestState$ = computed((get) => {
   return authenticateClerkSession(request.raw);
 });
 
+export const clerkSessionFailureReason$ = computed(async (get) => {
+  return (await get(requestState$)).failureReason;
+});
+
 export const clerkSessionAuth$: Computed<
   Promise<ClerkSessionAuthContext | null>
 > = computed(async (get): Promise<ClerkSessionAuthContext | null> => {
-  const identity = await get(requestState$);
+  const { identity } = await get(requestState$);
 
   if (!identity) {
     return null;
   }
 
   const orgRole = mapClerkOrgRole(identity.orgRole);
+  const session = identity.sessionId ? { sessionId: identity.sessionId } : {};
 
   if (identity.orgId && orgRole) {
     return {
       tokenType: "session",
       userId: identity.userId,
+      ...session,
       orgId: identity.orgId,
       orgRole,
     };
@@ -54,5 +62,6 @@ export const clerkSessionAuth$: Computed<
   return {
     tokenType: "session",
     userId: identity.userId,
+    ...session,
   };
 });

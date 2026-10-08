@@ -1,4 +1,4 @@
-import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
+import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 
 export function findWorkflowQueryMatches(
   workflows: readonly ComposerSlashWorkflow[],
@@ -156,27 +156,20 @@ export function buildComposerSlashWorkflows({
   workflows,
 }: {
   readonly agentId: string | null | undefined;
-  readonly workflows: readonly WorkflowSummary[];
+  readonly workflows: readonly ComposerWorkflow[];
 }): readonly ComposerSlashWorkflow[] {
   if (!agentId) {
     return [];
   }
 
-  return workflows
-    .filter((workflow) => {
-      return (
-        workflow.agentId === agentId &&
-        (workflow.shadowedBy === null || workflow.shadowedBy === undefined)
-      );
-    })
-    .map((workflow) => {
-      const name = workflow.name;
-      return {
-        id: workflow.id,
-        name,
-        displayName: workflow.displayName,
-        description: workflow.description,
-        token: `/${name}`,
-      };
-    });
+  return workflows.map((workflow) => {
+    const name = workflow.name;
+    return {
+      id: workflow.id,
+      name,
+      displayName: workflow.displayName,
+      description: workflow.description,
+      token: `/${name}`,
+    };
+  });
 }

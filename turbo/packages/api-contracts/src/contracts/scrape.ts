@@ -32,7 +32,7 @@ const scrapeResponseBaseSchema = z.object({
   requestedUrl: z.string().url(),
   finalUrl: z.string().url().optional(),
   provider: z.literal("firecrawl"),
-  creditsCharged: z.number().int().nonnegative(),
+  creditsCharged: z.number().int().nonnegative().nullable(),
   billingQuantity: z.number().int().positive(),
   metadata: scrapeMetadataSchema.optional(),
 });

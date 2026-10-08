@@ -37,6 +37,32 @@ credential-free `api_allow` behavior and therefore may receive the MCP service's
 OAuth challenge until replaced. Production-entrypoint coverage is in
 `tests/test_request_handler_api_admission.py`.
 
+## Ordinary connector firewall owner selection
+
+Outside the platform API admission path, the addon matches active firewall URLs
+and applies route precedence before using connector intent. One eligible owner
+governs the request regardless of whether intent is absent, malformed, mismatched,
+or names a connector omitted from the run. Its permission, network-policy, and
+destination checks still apply. Multiple eligible owners require a valid intent
+that selects one of them; otherwise the route is ambiguous and blocked. A URL
+without an active firewall match keeps the ordinary network fallback. The private
+intent header is always stripped before upstream forwarding. Shared-base
+diagnostics also do not use intent to override a sole active owner.
+
+Firewall matching governs when managed connector credentials may be attached;
+it is not a blanket outbound deny rule. An inline API whose base cannot compile
+is omitted from matching. If no compiled API remains, the sandbox stays
+registered and requests use the ordinary `allow` path without resolving or
+injecting managed connector credentials. This differs from a structurally
+invalid registry entry, which is rejected. Independent request restrictions
+still apply, and a matched firewall may block a request under its permissions
+or network policy before any credentials are attached.
+
+For a shared base with a unique inactive route owner, a request that already
+carries that route's authentication material receives HTTP 409
+`connector_auth_owner_conflict` before the active base-only owner's credentials
+are injected. This guard does not consult intent.
+
 ## Gmail send restriction
 
 For registered sandbox requests, trusted authority validation and the existing
@@ -199,8 +225,8 @@ the retained run; missing provider evidence can therefore never become an
 unqualified complete result. The read copies small totals under a short lock,
 without file, parser or delivery I/O. Blocked billing does not block it.
 
-This is an in-memory source measurement, not durable accounting, API-first-turn
-usage or a combined CLI query. Runner and its addon ship together; the optional
+This is an in-memory source measurement, not durable accounting or a combined
+CLI query. Runner and its addon ship together; the optional
 registry field keeps older entries readable with explicit incomplete coverage.
 There is no new listener, guest-selected identity or automatic protocol fallback.
 
@@ -248,7 +274,7 @@ stops automatic requests because execution is unknown.
 After control stops, `done()` closes delivery admission and joins the actual
 flush worker before shutting down the usage executor. It then retries retained
 billing and diagnostics synchronously under their existing retry/idempotency
-owners. The separate model-failure reporter keeps its bounded shutdown window.
+owners.
 Runner's existing outer SIGTERM/SIGKILL process stop remains the ultimate bound
 for a stuck kernel/network call; no caller deadline safely cancels that call.
 
@@ -424,27 +450,28 @@ unchanged, and old Runner instances keep their previous behavior until replaced.
 `test_mitmproxy_header_auth_failure_framing.py` covers incomplete Content-Length,
 chunked, and HTTP/2 uploads, including body data queued during the headers hook.
 
-## Model-provider failure reporting shutdown
+## Model usage provider and long-context tier
 
-Failure reports are best-effort diagnostics with four reporter-owned daemon
-workers and at most 16 admitted reports. Shutdown closes admission, cancels
-queued reports, and gives running deliveries one shared 10-second drain window.
-Unlike standard thread-pool workers, these workers are not registered for an
-interpreter-exit join. A stalled DNS lookup or network operation can therefore
-leave a report undelivered without keeping the process alive after the drain.
+A registry sandbox entry carries `modelUsageProvider` (the `usage_pricing`
+provider every billable model usage event reports, which may be a pricing
+alias of the run's model) and optionally
+`modelUsageLongContextMinTotalInputTokens`, the threshold the API captured
+from the run's Built-in route. Request handling copies both into flow metadata
+when a firewall matches (`MODEL_USAGE_PROVIDER`,
+`MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`) and clears both for
+passthrough flows. Billing classifies a source as long-context when its total
+input (`tokens.input` + `tokens.cache_read` + `tokens.cache_creation`) reaches
+the threshold. The API captures this value from the assigned catalog route:
 
-Running calls are not forcibly interrupted: if the process remains alive, they
-retain their worker and admission slot until completion. Normal completion and
-queued cancellation keep the same callback-owned cleanup. All workers start
-before any report payload is admitted, and failed startup joins the empty
-candidate workers. Usage webhook and SigV4 workers retain their independent
-joined-shutdown contracts.
+| Registry value   | Classification                          |
+| ---------------- | --------------------------------------- |
+| Positive integer | Long-context at or above the threshold. |
+| `0`              | Single-tier pricing.                    |
 
-`test_model_provider_failure_shutdown.py` exercises the real addon response and
-shutdown hooks in a fresh interpreter. It requires successful process exit
-while DNS remains blocked, with the production drain budget unchanged. Old
-runners retain their previous shutdown behavior until updated; no reporting
-API or persisted format changes.
+See [deployment requirements](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
+The `.fast` suffix follows the observed service tier; `.ultrafast` is retired and
+remains only in historical usage categories.
+See [model catalog](model-catalog.md#billing-and-history).
 
 ## Managed credential method boundary
 
@@ -644,8 +671,8 @@ model responses and registered connector response parsers therefore use the
 existing empty 502 response and discard upstream body bytes. The fixed
 `content encoding header inspection limit exceeded` diagnostic contains no raw
 header data. Upstream errors, non-billable flows, and bodyless responses retain
-their existing pass-through policy; status-level provider failure reports remain
-available. Accepted and pass-through responses preserve wire headers and bytes.
+their existing pass-through policy. Accepted and pass-through responses
+preserve wire headers and bytes.
 
 Direct terminal JSON decoding returns an error for exhaustion, strict capture
 decoders hide the body, and best-effort capture decompression retains wire bytes

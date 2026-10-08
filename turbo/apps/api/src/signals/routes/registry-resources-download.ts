@@ -8,11 +8,8 @@ import {
   findPresentationRunbookResource,
   findSkill,
   findTemplate,
-  findTool,
-  findVideoTemplate,
   findWebsiteTemplateResource,
   type RegistryEntry,
-  type VideoTemplateRegistryEntry,
 } from "@okouai/core/resource-registry";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { and, eq } from "drizzle-orm";
@@ -26,8 +23,6 @@ import { db$ } from "../external/db";
 import { generatePresignedGetUrl } from "../external/s3";
 import type { RouteEntry } from "../route-entry";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
-
-type PullableRegistryEntry = RegistryEntry | VideoTemplateRegistryEntry;
 
 interface PrivateRegistryResourceArchive {
   readonly storageName: string;
@@ -208,7 +203,7 @@ const PRIVATE_REGISTRY_RESOURCE_ARCHIVE_VERSION_IDS = {
     "6e845f03b79a1c4683f9b9bfe8f018eb9808642d6cadbef9ab505d6892ab5adb",
 } as const satisfies Record<string, string>;
 
-export function resolvePrivateRegistryResourceArchive(
+function resolvePrivateRegistryResourceArchive(
   id: string,
   expectedSha256: string,
   defaultSha256: string,
@@ -245,15 +240,13 @@ export function resolvePrivateRegistryResourceArchive(
   };
 }
 
-function findRegistryResource(id: string): PullableRegistryEntry | undefined {
+function findRegistryResource(id: string): RegistryEntry | undefined {
   return (
     findSkill(id) ??
-    findTool(id) ??
     findTemplate(id) ??
     findDesignSystem(id) ??
     findColorSystem(id) ??
     findImageStyle(id) ??
-    findVideoTemplate(id) ??
     findPresentationReverseTemplateResource(id) ??
     findPresentationRunbookResource(id) ??
     findWebsiteTemplateResource(id)

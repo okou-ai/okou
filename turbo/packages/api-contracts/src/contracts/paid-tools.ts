@@ -2,7 +2,7 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
-export const PAID_TOOL_IDS = [
+export const AVAILABLE_PAID_TOOL_IDS = [
   "web-search",
   "people-search",
   "scrape",
@@ -10,8 +10,14 @@ export const PAID_TOOL_IDS = [
   "maps",
   "seo",
   "social",
-  "image-recognition",
   "image-generation",
+] as const;
+
+// Keep retired IDs parseable for saved preferences and installed older clients.
+// Discovery and settings controls use only AVAILABLE_PAID_TOOL_IDS.
+export const PAID_TOOL_IDS = [
+  ...AVAILABLE_PAID_TOOL_IDS,
+  "image-recognition",
   "video-generation",
   "voice-generation",
   "avatar-video-generation",

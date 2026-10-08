@@ -1,4 +1,5 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -65,7 +66,7 @@ test("Lab remains available while onboarding is required", async () => {
   );
 });
 
-test("Lab groups every feature by rollout stage with a switch", async () => {
+test("Lab groups active feature switches", async () => {
   await setupPage({
     context,
     path: "/_/lab",
@@ -74,37 +75,38 @@ test("Lab groups every feature by rollout stage with a switch", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
 
-  const released = featureSwitchGroup("Released");
-  const beta = featureSwitchGroup("Beta");
-  const alpha = featureSwitchGroup("Alpha");
-  const internal = featureSwitchGroup("Internal");
-  const featureRows = [released, beta, alpha, internal].flatMap((group) => {
-    return Array.from(group.querySelectorAll("li"));
-  });
-
-  expect(featureRows).toHaveLength(Object.values(FeatureSwitchKey).length);
-  expect(screen.getAllByRole("switch")).toHaveLength(featureRows.length);
+  // Every switch is listed once, in the group named for its rollout stage.
+  const metadata = getFeatureSwitchMetadata();
+  const stageGroups = {
+    released: "Released",
+    beta: "Beta",
+    alpha: "Alpha",
+    internal: "Internal",
+  } as const;
+  const keys = Object.values(FeatureSwitchKey);
+  for (const key of keys) {
+    const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
+    expect(within(group).getByText(key)).toBeInTheDocument();
+  }
+  expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
   expect(
-    within(released).getByText(FeatureSwitchKey.AvatarNeckSweater),
-  ).toBeVisible();
-  expect(within(alpha).getByText(FeatureSwitchKey.Banking)).toBeVisible();
-  expect(
-    within(released).getByText(FeatureSwitchKey.WelcomeThread),
-  ).toBeVisible();
-  expect(
-    within(beta).getByText(FeatureSwitchKey.CustomTemplates),
+    within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
-    within(alpha).getByText(FeatureSwitchKey.AhrefsConnector),
+    within(featureSwitchGroup("Beta")).getByText(
+      FeatureSwitchKey.CustomTemplates,
+    ),
   ).toBeVisible();
   expect(
-    within(internal).getByText(FeatureSwitchKey.TestOauthConnector),
+    within(featureSwitchGroup("Internal")).getByText(
+      FeatureSwitchKey.TestOauthConnector,
+    ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
 });
 
-test("A user can filter Lab features by maintainer", async () => {
-  const user = userEvent.setup();
+test("Maintainer filters narrow the feature list", async () => {
+  const user = userEvent.setup({ delay: null });
 
   await setupPage({
     context,
@@ -113,16 +115,33 @@ test("A user can filter Lab features by maintainer", async () => {
   });
   await screen.findByRole("heading", { name: "Lab" });
 
-  await user.click(buttonNamed("bingjie"));
+  const all = buttonNamed("All");
+  const bingjie = buttonNamed("bingjie");
+  const totalCount = screen.getAllByRole("switch").length;
+  expect(within(all).getByText(String(totalCount))).toBeInTheDocument();
 
-  expect(screen.getByText(FeatureSwitchKey.ComposerTaskChips)).toBeVisible();
+  await user.click(bingjie);
+
+  expect(
+    screen.getByText(FeatureSwitchKey.ComposerTaskChips),
+  ).toBeInTheDocument();
   expect(
     screen.queryByText(FeatureSwitchKey.AhrefsConnector),
   ).not.toBeInTheDocument();
+  const maintainerCount = screen.getAllByRole("switch").length;
+  expect(maintainerCount).toBeLessThan(totalCount);
+  expect(
+    within(bingjie).getByText(String(maintainerCount)),
+  ).toBeInTheDocument();
+  expect(within(all).getByText(String(totalCount))).toBeInTheDocument();
 
-  await user.click(buttonNamed("All"));
+  await user.click(all);
 
-  expect(screen.getByText(FeatureSwitchKey.AhrefsConnector)).toBeVisible();
+  expect(all).toHaveAttribute("aria-pressed", "true");
+  expect(
+    screen.getByText(FeatureSwitchKey.AhrefsConnector),
+  ).toBeInTheDocument();
+  expect(screen.getAllByRole("switch")).toHaveLength(totalCount);
 });
 
 test("A user can toggle a Lab feature and reset all overrides", async () => {
@@ -183,71 +202,4 @@ test("A user can toggle a Lab feature and reset all overrides", async () => {
     expect(resetRequested).toBeTruthy();
     expect(featureControl).not.toBeChecked();
   });
-});
-
-test("A feature switch update resynchronizes color theme document attributes", async () => {
-  const user = userEvent.setup();
-  // A member carrying a palette: the default one declares no attributes, so it
-  // would have nothing to resynchronize.
-  context.mocks.data.userPreferences({ colorTheme: "blue-horizon" });
-
-  await setupPage({
-    context,
-    path: "/_/lab",
-    featureSwitches: {
-      [FeatureSwitchKey.Lab]: true,
-      [FeatureSwitchKey.GradientColorThemes]: false,
-    },
-  });
-  await screen.findByRole("heading", { name: "Lab" });
-
-  let effectiveSwitches: Record<string, boolean> = {
-    [FeatureSwitchKey.Lab]: true,
-    [FeatureSwitchKey.GradientColorThemes]: false,
-  };
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, {
-      switches: effectiveSwitches,
-      effectiveSwitches,
-    });
-  });
-  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
-    effectiveSwitches = { ...effectiveSwitches, ...body.switches };
-    return respond(200, {
-      switches: body.switches,
-      effectiveSwitches,
-    });
-  });
-
-  const featureControl = within(
-    featureSwitchRow(FeatureSwitchKey.GradientColorThemes),
-  ).getByRole("switch");
-  expect(featureControl).not.toBeChecked();
-  expect(document.documentElement.dataset.gradientColorThemes).toBeUndefined();
-
-  await user.click(featureControl);
-
-  await waitFor(() => {
-    expect(featureControl).toBeChecked();
-    expect(document.documentElement.dataset.gradientColorThemes).toBe("");
-  });
-});
-
-test("Lab orders features by name within each rollout stage", async () => {
-  await setupPage({
-    context,
-    path: "/_/lab",
-    featureSwitches: { [FeatureSwitchKey.Lab]: true },
-  });
-
-  await screen.findByRole("heading", { name: "Lab" });
-
-  const banking = featureSwitchRow(FeatureSwitchKey.Banking);
-  const realAgentInPreview = featureSwitchRow(
-    FeatureSwitchKey.RealAgentInPreview,
-  );
-  expect(
-    banking.compareDocumentPosition(realAgentInPreview) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
 });

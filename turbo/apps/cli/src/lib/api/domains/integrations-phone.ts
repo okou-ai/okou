@@ -3,6 +3,10 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
+  integrationsAgentPhoneContract,
+  type AgentPhoneGroupHistoryQuery,
+} from "@okouai/api-contracts/contracts/integrations-agentphone";
+import {
   integrationsPhoneMessageContract,
   integrationsPhoneUploadCompleteContract,
   integrationsPhoneUploadInitContract,
@@ -28,6 +32,20 @@ interface DownloadPhoneFileResult {
   size: number;
 }
 
+export async function readAgentPhoneGroupHistory(
+  query: AgentPhoneGroupHistoryQuery,
+) {
+  const config = await getClientConfig();
+  const client = initClient(integrationsAgentPhoneContract, config);
+  const result = await client.groupHistory({ query, headers: {} });
+
+  if (result.status === 200) {
+    return result.body;
+  }
+
+  handleError(result, "Failed to read iMessage group history");
+}
+
 export async function sendPhoneMessage(
   body: SendPhoneMessageBody,
 ): Promise<SendPhoneMessageResponse> {
@@ -40,7 +58,7 @@ export async function sendPhoneMessage(
     return result.body;
   }
 
-  handleError(result, "Failed to send AgentPhone message");
+  handleError(result, "Failed to send phone message");
 }
 
 export async function initPhoneFileUpload(
@@ -55,7 +73,7 @@ export async function initPhoneFileUpload(
     return result.body;
   }
 
-  handleError(result, "Failed to initialize AgentPhone file upload");
+  handleError(result, "Failed to initialize phone file upload");
 }
 
 export async function completePhoneFileUpload(
@@ -70,7 +88,7 @@ export async function completePhoneFileUpload(
     return result.body;
   }
 
-  handleError(result, "Failed to complete AgentPhone file upload");
+  handleError(result, "Failed to complete phone file upload");
 }
 
 /**
@@ -98,7 +116,7 @@ export async function downloadPhoneFile(
   });
 
   if (!response.ok) {
-    let message = `Failed to download AgentPhone file (HTTP ${response.status})`;
+    let message = `Failed to download phone file (HTTP ${response.status})`;
     let code = "UNKNOWN";
     try {
       const body = (await response.json()) as {
@@ -114,7 +132,7 @@ export async function downloadPhoneFile(
 
   if (!response.body) {
     throw new ApiRequestError(
-      "AgentPhone download response has no body",
+      "Phone file download response has no body",
       "EMPTY_BODY",
       502,
     );

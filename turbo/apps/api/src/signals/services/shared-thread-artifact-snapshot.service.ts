@@ -1,4 +1,8 @@
-import { command, computed } from "ccstate";
+import {
+  CURRENT_LINK_LAYOUT,
+  linkLayoutSegment,
+} from "@okouai/api-contracts/contracts/link-layout";
+import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
@@ -14,6 +18,7 @@ import {
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import { artifactHash } from "../../lib/file-url";
 import { db$ } from "../external/db";
 import {
@@ -88,11 +93,7 @@ export function sharedThreadArtifactsBucket(): string {
   return bucket;
 }
 
-function resourceUrl(
-  publicBrand: SharedThreadArtifactPolicy["publicBrand"],
-  token: string,
-  target: SnapshotTarget,
-): string {
+function resourceUrl(token: string, target: SnapshotTarget): string {
   if (target.kind === "file") {
     const origin = env("PUBLIC_ARTIFACT_SHARES_BASE_URL");
     if (!origin) {
@@ -103,16 +104,7 @@ function resourceUrl(
       origin,
     ).href;
   }
-  const domain = env(
-    publicBrand === "okou" ? "OKOU_PUBLIC_HOST_DOMAIN" : "ZERO_HOST_DOMAIN",
-  );
-  const scheme = env(
-    publicBrand === "okou" ? "OKOU_HOST_SCHEME" : "ZERO_HOST_SCHEME",
-  );
-  if (!domain || !scheme) {
-    throw new Error("Public site delivery is not configured");
-  }
-  return `${scheme}://${token}.${domain}/`;
+  return `${hostedLinkOrigin(CURRENT_LINK_LAYOUT, token)}/`;
 }
 
 interface ResourceReference {
@@ -138,14 +130,19 @@ function signedFileReference(url: URL): ResourceReference {
   return { id, key, suffix: url.hash };
 }
 
-function resourceReference(value: string, signal: AbortSignal) {
-  return computed(async (get): Promise<SnapshotSource | null> => {
+const resourceReference$ = command(
+  async (
+    { get },
+    value: string,
+    signal: AbortSignal,
+  ): Promise<SnapshotSource | null> => {
     const reference = parseArtifactReference(value, env("APP_URL"));
     if (reference) {
       if (reference.id) {
         return { id: reference.id, suffix: reference.fragment };
       }
       const record = await get(artifactReferenceRecord(reference.hash, signal));
+      signal.throwIfAborted();
       if (record?.version === 3) {
         // Existing public snapshot links retain their original parent grant.
         return { kind: "snapshot", url: new URL(value, env("APP_URL")).href };
@@ -188,15 +185,22 @@ function resourceReference(value: string, signal: AbortSignal) {
       throw new SharedThreadArtifactUnavailable();
     }
     return null;
-  });
-}
+  },
+);
 
 interface SnapshotOwner {
   readonly threadId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly publicBrand: SharedThreadArtifactPolicy["publicBrand"];
 }
+
+/**
+ * New shared conversations and their artifact snapshots are written only in
+ * the current layout. The shared thread row stores this same segment, which
+ * addresses the snapshot's policy and copies.
+ */
+export const SHARED_THREAD_LINK_LAYOUT_SEGMENT =
+  linkLayoutSegment(CURRENT_LINK_LAYOUT);
 
 const allocateSnapshotReference$ = command(
   async (
@@ -233,7 +237,7 @@ const allocateSnapshotReference$ = command(
             record: {
               version: 1,
               kind: "thread-resource",
-              publicBrand: args.publicBrand,
+              publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
               threadId: args.threadId,
               publicToken: token,
               targetKind: args.kind,
@@ -249,7 +253,7 @@ const allocateSnapshotReference$ = command(
           allocateSharedThreadArtifactReference$,
           {
             threadId: args.threadId,
-            publicBrand: args.publicBrand,
+            publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
             publicToken: token,
             target: { kind: args.kind, id: args.id },
           },
@@ -323,10 +327,12 @@ const privateFileSnapshot$ = command(
         target,
         url,
         sourceKey: file.key,
-        previewImageUrl: await get(
-          privateFileSnapshotPreviewImage(file, signal),
+        previewImageUrl: await set(
+          privateFileSnapshotPreviewImage$,
+          file,
+          signal,
         ),
-        deliveryUrl: resourceUrl(args.publicBrand, token, target),
+        deliveryUrl: resourceUrl(token, target),
       };
       signal.throwIfAborted();
       const copy: SnapshotCopy = {
@@ -341,18 +347,19 @@ const privateFileSnapshot$ = command(
   },
 );
 
-function privateFileSnapshotPreviewImage(
-  file: Pick<
-    typeof runUploadedFiles.$inferSelect,
-    "id" | "userId" | "metadata" | "previewImageUrl"
-  > & {
-    readonly orgId: string;
-    readonly filename: string;
-    readonly contentType: string;
-  },
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+const privateFileSnapshotPreviewImage$ = command(
+  async (
+    { get },
+    file: Pick<
+      typeof runUploadedFiles.$inferSelect,
+      "id" | "userId" | "metadata" | "previewImageUrl"
+    > & {
+      readonly orgId: string;
+      readonly filename: string;
+      readonly contentType: string;
+    },
+    signal: AbortSignal,
+  ) => {
     if (file.previewImageUrl || !file.contentType.startsWith("video/")) {
       return file.previewImageUrl;
     }
@@ -385,34 +392,8 @@ function privateFileSnapshotPreviewImage(
       .limit(1);
     signal.throwIfAborted();
     return row?.previewImageUrl ?? null;
-  });
-}
-
-async function rewriteSnapshotMessages(
-  sourceMessages: readonly SharedMessage[],
-  rewrite: (content: string) => Promise<string>,
-  signal: AbortSignal,
-): Promise<SharedMessage[]> {
-  const messages: SharedMessage[] = [];
-  for (const message of sourceMessages) {
-    const attachments:
-      | NonNullable<SharedMessage["attachments"]>[number][]
-      | undefined = message.attachments === undefined ? undefined : [];
-    for (const attachment of message.attachments ?? []) {
-      attachments?.push({
-        ...attachment,
-        url: await rewrite(attachment.url),
-      });
-    }
-    messages.push({
-      ...message,
-      content: await rewrite(message.content),
-      ...(attachments === undefined ? {} : { attachments }),
-    });
-  }
-  signal.throwIfAborted();
-  return messages;
-}
+  },
+);
 
 function snapshotPolicy(
   args: SnapshotOwner,
@@ -424,7 +405,7 @@ function snapshotPolicy(
     threadId: args.threadId,
     ownerId: args.userId,
     orgId: args.orgId,
-    publicBrand: args.publicBrand,
+    publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
     status: "preparing",
     resources: Object.fromEntries(
       [...resources.values()].map((resource) => {
@@ -445,66 +426,27 @@ function replaceSnapshotReferences(
   });
 }
 
-const rewriteSnapshotContent$ = command(
-  async (
-    { get },
-    args: SnapshotOwner & {
-      readonly content: string;
-      readonly delivery: "reference" | "bytes";
-      readonly resolve: (
-        reference: ResourceReference,
-      ) => Promise<SnapshotResource>;
-    },
-    signal: AbortSignal,
-  ): Promise<string> => {
-    const { content, delivery, resolve } = args;
-    const replacements = new Map(
-      await mapConcurrent(
-        artifactTextReferences(content),
-        10,
-        async (value) => {
-          const source = value.replaceAll("&amp;", "&");
-          const reference = await get(resourceReference(source, signal));
-          signal.throwIfAborted();
-          if (!reference) {
-            return [value, value] as const;
-          }
-          if (reference.kind === "snapshot") {
-            return [value, reference.url] as const;
-          }
-          const resource = await resolve(reference);
-          signal.throwIfAborted();
-          if (delivery === "bytes") {
-            return [
-              value,
-              `${resource.deliveryUrl}${reference.suffix}`,
-            ] as const;
-          }
-          const fragmentIndex = reference.suffix.indexOf("#");
-          const path =
-            fragmentIndex === -1
-              ? reference.suffix
-              : reference.suffix.slice(0, fragmentIndex);
-          const fragment =
-            fragmentIndex === -1 ? "" : reference.suffix.slice(fragmentIndex);
-          if (path) {
-            // Only a site could address a path below an artifact, and sites
-            // are no longer copied into a snapshot.
-            throw new SharedThreadArtifactUnavailable();
-          }
-          return [value, `${resource.url}${fragment}`] as const;
-        },
-      ),
-    );
-    signal.throwIfAborted();
-    return replaceSnapshotReferences(content, replacements);
-  },
-);
+function snapshotReferenceUrl(
+  reference: ResourceReference,
+  resource: SnapshotResource,
+): string {
+  const fragmentIndex = reference.suffix.indexOf("#");
+  const path =
+    fragmentIndex === -1
+      ? reference.suffix
+      : reference.suffix.slice(0, fragmentIndex);
+  const fragment =
+    fragmentIndex === -1 ? "" : reference.suffix.slice(fragmentIndex);
+  if (path) {
+    throw new SharedThreadArtifactUnavailable();
+  }
+  return `${resource.url}${fragment}`;
+}
 
 /** Discover only the selected messages and their managed static dependencies. */
 export const prepareSharedThreadArtifacts$ = command(
   async (
-    { get, set },
+    { set },
     args: SnapshotOwner & { readonly messages: readonly SharedMessage[] },
     signal: AbortSignal,
   ): Promise<{
@@ -553,24 +495,49 @@ export const prepareSharedThreadArtifacts$ = command(
       return resource;
     }
 
-    function rewrite(
-      content: string,
-      delivery: "reference" | "bytes",
-    ): Promise<string> {
-      return set(
-        rewriteSnapshotContent$,
-        { ...args, content, delivery, resolve },
-        signal,
+    // Resolution stays inside the owning action; no reactive capability is
+    // passed through a command argument or escaping callback.
+    async function rewrite(content: string): Promise<string> {
+      const replacements = new Map(
+        await mapConcurrent(
+          artifactTextReferences(content),
+          10,
+          async (value) => {
+            const source = value.replaceAll("&amp;", "&");
+            const reference = await set(resourceReference$, source, signal);
+            signal.throwIfAborted();
+            if (!reference) {
+              return [value, value] as const;
+            }
+            if (reference.kind === "snapshot") {
+              return [value, reference.url] as const;
+            }
+            const resource = await resolve(reference);
+            signal.throwIfAborted();
+            return [value, snapshotReferenceUrl(reference, resource)] as const;
+          },
+        ),
       );
+      signal.throwIfAborted();
+      return replaceSnapshotReferences(content, replacements);
     }
-
-    const messages = await rewriteSnapshotMessages(
-      args.messages,
-      (content) => {
-        return rewrite(content, "reference");
-      },
-      signal,
-    );
+    const messages: SharedMessage[] = [];
+    for (const message of args.messages) {
+      const attachments:
+        | NonNullable<SharedMessage["attachments"]>[number][]
+        | undefined = message.attachments === undefined ? undefined : [];
+      for (const attachment of message.attachments ?? []) {
+        attachments?.push({
+          ...attachment,
+          url: await rewrite(attachment.url),
+        });
+      }
+      messages.push({
+        ...message,
+        content: await rewrite(message.content),
+        ...(attachments === undefined ? {} : { attachments }),
+      });
+    }
     if (resources.size === 0) {
       return { messages, plan: null };
     }
@@ -579,8 +546,10 @@ export const prepareSharedThreadArtifacts$ = command(
       if (!resource.previewImageUrl) {
         continue;
       }
-      const reference = await get(
-        resourceReference(resource.previewImageUrl, signal),
+      const reference = await set(
+        resourceReference$,
+        resource.previewImageUrl,
+        signal,
       );
       signal.throwIfAborted();
       if (!reference || reference.kind === "snapshot") {

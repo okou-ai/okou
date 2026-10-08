@@ -1,0 +1,45 @@
+[package]
+name = "runner-supervisor"
+version = "0.2.24"
+edition.workspace = true
+description = "Runner start-loop idle, finalization, heartbeat, and orphan orchestration"
+
+[features]
+test-support = []
+
+[dependencies]
+api-contracts.workspace = true
+chrono = { workspace = true, features = ["now"] }
+runner-executor.workspace = true
+runner-host.workspace = true
+runner-lifecycle.workspace = true
+runner-network.workspace = true
+runner-provider.workspace = true
+runner-storage.workspace = true
+runner-types.workspace = true
+sandbox.workspace = true
+serde_json = { workspace = true, features = ["std"] }
+futures-util = { workspace = true, features = ["async-await", "std"] }
+thiserror = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio-util = { workspace = true, features = ["rt"] }
+tracing = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+guest-contracts.workspace = true
+hex.workspace = true
+runner-executor = { workspace = true, features = ["test-support"] }
+runner-lifecycle = { workspace = true, features = ["test-support"] }
+runner-network = { workspace = true, features = ["test-support"] }
+runner-storage = { workspace = true, features = ["test-support"] }
+sandbox-mock.workspace = true
+sha2 = { workspace = true, features = ["alloc", "oid"] }
+async-trait.workspace = true
+tempfile = { workspace = true, features = ["getrandom"] }
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
+tracing-test-support.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+
+[lints]
+workspace = true

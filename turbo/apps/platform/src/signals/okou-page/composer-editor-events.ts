@@ -12,7 +12,7 @@ interface ComposerEditorHandlers {
 function needsNativeEnterEvent(): boolean {
   const { userAgent, vendor, maxTouchPoints } = navigator;
   // Match ProseMirror 1.42.3's Android Chrome and iOS/iPadOS input paths.
-  // See src/browser.ts in the locked prosemirror-view package.
+  // https://github.com/ProseMirror/prosemirror-view/blob/1.42.3/src/browser.ts
   return (
     (/Android \d/.test(userAgent) && /Chrome\/\d/.test(userAgent)) ||
     (/Apple Computer/.test(vendor) &&
@@ -68,7 +68,7 @@ export function createComposerEditorEvents(editor: Editor) {
             // Safari can end composition before dispatching its confirmation
             // key. Preserve ProseMirror's one-key, 500ms composition guard
             // before handling an Enter through the earlier DOM hook.
-            // See inOrNearComposition in prosemirror-view's src/input.ts.
+            // https://github.com/ProseMirror/prosemirror-view/blob/1.42.3/src/input.ts#L495-L512
             const nearComposition = consumeRecentComposition(currentView);
             // ProseMirror skips Android Enter and replays iOS Enter without
             // modifiers. Handle the original event so Shift-Enter splits once

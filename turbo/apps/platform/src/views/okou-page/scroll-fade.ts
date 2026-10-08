@@ -68,3 +68,22 @@ export const SCROLL_FADE_Y_START_WHEN_OVERFLOWING = [
 /** Hides the native scrollbar; the fade is what states there is more to see. */
 export const SCROLLBAR_HIDDEN =
   "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+
+/**
+ * Both vertical edges, each drawn only while the scroller has content past it:
+ * for a short list in a popover that can sit at rest, mid-scroll, or at the
+ * end. Reads Base UI's `data-overflow-y-start` / `data-overflow-y-end` off the
+ * `ScrollArea.Root`, which has to carry `group`, as
+ * `SCROLL_FADE_Y_START_WHEN_OVERFLOWING` does. The stacked variant is more
+ * specific than either single one, so it wins while both edges overflow.
+ *
+ * The 20px matches the other vertical fades; change them together.
+ */
+export const SCROLL_FADE_Y_WHEN_OVERFLOWING = [
+  "group-data-[overflow-y-start]:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_20px)]",
+  "group-data-[overflow-y-start]:[mask-image:linear-gradient(to_bottom,transparent_0,#000_20px)]",
+  "group-data-[overflow-y-end]:[-webkit-mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
+  "group-data-[overflow-y-end]:[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
+  "group-data-[overflow-y-start]:group-data-[overflow-y-end]:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_20px,#000_calc(100%_-_20px),transparent_100%)]",
+  "group-data-[overflow-y-start]:group-data-[overflow-y-end]:[mask-image:linear-gradient(to_bottom,transparent_0,#000_20px,#000_calc(100%_-_20px),transparent_100%)]",
+].join(" ");

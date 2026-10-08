@@ -4,19 +4,18 @@ import {
   getStartedContract,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   connectorCatalogContract,
+  isOneClickConnectorGrantKind,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import {
   integrationsSlackContract,
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -24,8 +23,8 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
 import { pathname } from "../../../signals/location.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   testContext,
   type TestContext,
@@ -59,12 +58,6 @@ function slackInstalled(): SlackOrgStatus {
     workspaceName: "Quest Workspace",
     installUrl: null,
     connectUrl: null,
-    environment: {
-      requiredSecrets: [],
-      requiredVars: [],
-      missingSecrets: [],
-      missingVars: [],
-    },
   };
 }
 
@@ -119,22 +112,51 @@ function catalogItem(
   };
 }
 
-function mockQuestCatalog(): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+/**
+ * The one-click catalog the picker reads. Like the API, it only carries the
+ * connectors that connect in one browser step, projected to their connect
+ * items.
+ */
+function mockOneClickCatalog(
+  items: readonly PublicConnectorCatalogStatusItem[],
+  onRead?: () => void,
+): void {
+  context.mocks.api(connectorCatalogContract.oneClick, ({ respond }) => {
+    onRead?.();
     return respond(200, {
-      connectors: [
-        catalogItem("gmail", "Gmail", "auth-code"),
-        catalogItem("notion", "Notion", "auth-code"),
-        catalogItem("openai", "OpenAI", "manual"),
-      ],
+      connectors: items.flatMap((item) => {
+        return item.authMethods.some((method) => {
+          return isOneClickConnectorGrantKind(method.grantKind);
+        })
+          ? [connectorCatalogConnectItem(item)]
+          : [];
+      }),
     });
   });
+}
+
+function mockQuestCatalog(): void {
+  mockOneClickCatalog([
+    catalogItem("gmail", "Gmail", "auth-code"),
+    catalogItem("notion", "Notion", "auth-code"),
+    catalogItem("openai", "OpenAI", "manual"),
+  ]);
 }
 
 function configureQuestPage(
   context: TestContext,
   role: "admin" | "member",
-  { claimedToday = true }: { claimedToday?: boolean } = {},
+  {
+    claimedToday = true,
+    imessage = false,
+    slackClaimed = true,
+  }: {
+    claimedToday?: boolean;
+    /** Whether the status lists the iMessage quest. */
+    imessage?: boolean;
+    /** Whether the org already holds a claim for the Slack quest. */
+    slackClaimed?: boolean;
+  } = {},
 ): GetStartedStatus {
   context.mocks.data.org({
     id: "org_default",
@@ -149,16 +171,13 @@ function configureQuestPage(
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "private",
     },
   ]);
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(200, slackInstalled());
   });
-  const keys =
+  const roleKeys =
     role === "admin"
       ? ([
           "connector",
@@ -169,6 +188,9 @@ function configureQuestPage(
           "checkin",
         ] as const)
       : (["connector", "workflow", "share", "checkin"] as const);
+  const keys = imessage
+    ? [...roleKeys.slice(0, 1), "imessage" as const, ...roleKeys.slice(1)]
+    : roleKeys;
   const data: GetStartedStatus = {
     serverNow: "2026-09-15T12:00:00.000Z",
     nextResetAt: "2026-09-16T00:00:00.000Z",
@@ -179,7 +201,8 @@ function configureQuestPage(
       const claimedCount =
         key === "connector"
           ? 3
-          : key === "slack" || (key === "checkin" && claimedToday)
+          : (key === "slack" && slackClaimed) ||
+              (key === "checkin" && claimedToday)
             ? 1
             : 0;
       return {
@@ -190,7 +213,8 @@ function configureQuestPage(
         limit: reward.limit,
         earnedCredits: claimedCount * reward.amount,
         pendingCount: 0,
-        canEarnMore: key !== "slack" && (key !== "checkin" || !claimedToday),
+        canEarnMore:
+          key === "slack" ? !slackClaimed : key !== "checkin" || !claimedToday,
       };
     }),
     shareClaim: null,
@@ -262,35 +286,11 @@ async function openQuestPanel(): Promise<HTMLElement> {
   return await screen.findByRole("menu");
 }
 
-test("Get more credits is the only control in the corner", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
-  });
-
-  await expect(
-    screen.findByTestId("get-started-entry"),
-  ).resolves.toBeInTheDocument();
-
-  // Get more credits already carries inviting and Slack as its own rows, so the
-  // split control that used to sit beside it is gone.
-  expect(screen.queryByTestId("growth-entry")).toBeNull();
-  expect(screen.queryByTestId("growth-entry-menu")).toBeNull();
-  expect(
-    queryAllByRoleFast("button").find((candidate) => {
-      return normalizedText(candidate) === "Invite humans 🤝";
-    }),
-  ).toBeUndefined();
-});
-
 test("An admin sees every step and what each one pays", async () => {
   configureQuestPage(context, "admin");
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const entry = await waitFor(() => {
@@ -320,9 +320,6 @@ test("An admin sees every step and what each one pays", async () => {
   // affordance instead of collapsing to the completion check.
   const connectorRow = screen.getByTestId("get-started-quest-connector");
   expect(normalizedText(connectorRow)).toContain("100");
-
-  // Personal earnings exclude Slack; another OAuth connector can still earn a reward.
-  expect(within(panel).getByText("400 earned")).toBeInTheDocument();
 });
 
 test("A member is only offered the steps they can finish themselves", async () => {
@@ -330,7 +327,6 @@ test("A member is only offered the steps they can finish themselves", async () =
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const entry = await waitFor(() => {
@@ -343,24 +339,6 @@ test("A member is only offered the steps they can finish themselves", async () =
   expect(screen.getByTestId("get-started-quest-share")).toBeInTheDocument();
   expect(within(panel).queryByText("Invite your team")).not.toBeInTheDocument();
   expect(within(panel).queryByText("Add to Slack")).not.toBeInTheDocument();
-  // The earned total counts only the quests this role was offered.
-  expect(within(panel).getByText("400 earned")).toBeInTheDocument();
-});
-
-test("Building a workflow opens the workflows page", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
-  });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-workflow"));
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-  });
 });
 
 test("A workflow reward still with the reviewer stops offering the step again", async () => {
@@ -377,7 +355,6 @@ test("A workflow reward still with the reviewer stops offering the step again", 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   await openQuestPanel();
@@ -389,12 +366,40 @@ test("A workflow reward still with the reviewer stops offering the step again", 
   expect(row.getAttribute("role")).not.toBe("menuitem");
 });
 
+test("The X step opens a blank composer for an original post", async () => {
+  configureQuestPage(context, "member");
+  const open = vi.spyOn(window, "open").mockReturnValue(null);
+  await setupPage({
+    context,
+    path: questChatPath(),
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-share"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Share Okou on X",
+  });
+  expect(
+    within(dialog).getByText(
+      "Write about something you actually tried with Okou, in your own words.",
+    ),
+  ).toBeInTheDocument();
+  // The only editable field in the dialog is still the post link.
+  expect(within(dialog).getAllByRole("textbox")).toHaveLength(1);
+
+  click(buttonNamed("Open X", dialog));
+  expect(open).toHaveBeenCalledWith(
+    "https://x.com/intent/post",
+    "okou-share-post",
+  );
+  expect(buttonNamed("Submit", dialog)).toBeDisabled();
+});
+
 test("Sharing on X restores pending state and an Ably review notification updates the open panel", async () => {
   const data = configureQuestPage(context, "admin");
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   await openQuestPanel();
@@ -468,160 +473,221 @@ test("Sharing on X restores pending state and an Ably review notification update
     canEarnMore: false,
   });
   context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
-  await expect(
-    within(afterReview).findByText("2,400 earned"),
-  ).resolves.toBeInTheDocument();
+  // The granted post leaves a finished row, with nothing left to open.
+  await waitFor(() => {
+    expect(screen.getByTestId("get-started-quest-share")).not.toHaveAttribute(
+      "role",
+      "menuitem",
+    );
+  });
   expect(within(afterReview).queryByText("In review")).not.toBeInTheDocument();
 });
 
-test("Reward notifications refresh quests without disconnecting shared chat history", async () => {
-  const data = configureQuestPage(context, "member", { claimedToday: false });
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 640px)";
+function mockPhoneLinkCode(code: string): void {
+  context.mocks.api(
+    integrationsAgentPhoneContract.createLinkCode,
+    ({ respond }) => {
+      return respond(200, {
+        code,
+        expiresAt: "2026-09-15T12:10:00.000Z",
+      });
+    },
+  );
+}
+
+async function openImessageQuestDialog(): Promise<HTMLElement> {
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-imessage"));
+  return await screen.findByRole("dialog", {
+    name: "Text Okou from your iPhone",
   });
-  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+}
+
+test("Adding iMessage opens the phone connect dialog with its reward", async () => {
+  configureQuestPage(context, "member", { imessage: true });
+  const code = "31415926";
+  mockPhoneLinkCode(code);
+  await setupPage({
+    context,
+    path: questChatPath(),
+  });
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  expect(normalizedText(entry)).toBe("Get more credits2/5");
+  await openQuestPanel();
+  const row = screen.getByTestId("get-started-quest-imessage");
+  expect(normalizedText(row)).toBe("Add to iMessage+1,000Add");
+  click(row);
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Text Okou from your iPhone",
+  });
+  expect(dialog).toHaveAccessibleDescription(
+    "Scan with your camera, then send the prefilled code.",
+  );
+  await expect(within(dialog).findByText("+1,000")).resolves.toBeVisible();
+  await expect(
+    within(dialog).findByTestId("agentphone-link-qr"),
+  ).resolves.toHaveAttribute("data-sms-href", `sms:+19039853128?body=${code}`);
+  expect(within(dialog).queryByText("Later")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button", dialog).map((button) => {
+      return button.getAttribute("aria-label") ?? normalizedText(button);
+    }),
+  ).toStrictEqual([
+    `Copy connection code ${code}`,
+    "Copy +1 (903) 985-3128",
+    "Close",
+  ]);
+});
+
+test("Linking the phone closes the Get started dialog and completes the quest", async () => {
+  const data = configureQuestPage(context, "member", { imessage: true });
+  mockPhoneLinkCode("27182818");
+  await setupPage({
+    context,
+    path: questChatPath(),
+  });
+
+  const dialog = await openImessageQuestDialog();
+  await expect(
+    within(dialog).findByTestId("agentphone-link-qr"),
+  ).resolves.toBeInTheDocument();
+
+  // The code arrives from the phone: the API links it, grants the quest, and
+  // announces both.
+  const imessage = data.quests.find((quest) => {
+    return quest.key === "imessage";
+  });
+  if (!imessage) {
+    throw new Error("Missing iMessage fixture");
+  }
+  Object.assign(imessage, {
+    claimedCount: 1,
+    earnedCredits: 1000,
+    canEarnMore: false,
+  });
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    phoneHandle: "+15555550123",
+    agentPhoneNumber: "+19039853128",
+    configured: true,
+  });
+  context.mocks.ably.trigger("agentphone:changed");
+  context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
+
+  await expect(
+    screen.findByText("Phone number connected"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Text Okou from your iPhone" }),
+    ).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
+      "Get more credits3/5",
+    );
+  });
+});
+
+test("A phone linked before the quest existed reads as done, without credits", async () => {
+  configureQuestPage(context, "member", { imessage: true });
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    phoneHandle: "+15555550123",
+    agentPhoneNumber: "+19039853128",
+    configured: true,
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+  });
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  expect(normalizedText(entry)).toBe("Get more credits3/5");
+  await openQuestPanel();
+  const row = screen.getByTestId("get-started-quest-imessage");
+  // Finished: a status line with the completion check, nothing to press.
+  expect(row.getAttribute("role")).not.toBe("menuitem");
+  expect(within(row).queryByText("Add")).not.toBeInTheDocument();
+});
+
+test("Slack installed before the quest existed reads as done, without credits", async () => {
+  configureQuestPage(context, "admin", { slackClaimed: false });
+  await setupPage({
+    context,
+    path: questChatPath(),
+  });
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  // The installed Slack counts toward the finished steps.
+  expect(normalizedText(entry)).toBe("Get more credits3/6");
+  const panel = await openQuestPanel();
+  // The Slack reward is not among what is still claimable.
+  expect(within(panel).getByText("3,200 to go")).toBeInTheDocument();
+  const row = screen.getByTestId("get-started-quest-slack");
+  expect(row.getAttribute("role")).not.toBe("menuitem");
+  expect(within(row).queryByText("Add")).not.toBeInTheDocument();
+});
+
+test("Slack not yet installed keeps the step and its reward on offer", async () => {
+  configureQuestPage(context, "admin", { slackClaimed: false });
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(200, {
-      chatThreads: [
-        {
-          id: "b0000000-0000-4000-a000-000000000001",
-          agentId: QUEST_AGENT_ID,
-          title: "Existing reward conversation",
-          sortAt: data.serverNow,
-          createdAt: data.serverNow,
-          updatedAt: data.serverNow,
-          pinnedAt: null,
-          renamedAt: null,
-          selectedModel: null,
-          serviceTier: null,
-          computerUseHostId: null,
-          selectedVideoModel: null,
-        },
-      ],
-      latestEventId: null,
-      latestSeqId: null,
+      ...slackInstalled(),
+      isConnected: false,
+      isInstalled: false,
+      workspaceName: null,
+      installUrl: "https://slack.com/oauth/v2/authorize?client_id=quest",
     });
   });
-  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
-    return respond(200, { events: [], hasMore: false });
-  });
-  data.shareClaim = {
-    id: "33333333-3333-4333-a333-333333333333",
-    questKey: "share",
-    status: "pending",
-    rewardAmount: 2000,
-    rewardTarget: "user",
-    reason: null,
-    postUrl: "https://x.com/molly/status/1873",
-    submittedAt: data.serverNow,
-    grantedAt: null,
-    expiresAt: null,
-  };
   await setupPage({
     context,
     path: questChatPath(),
-    sharedWorkerTestTransport: "message-port",
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
-  await expect(
-    screen.findByText("Existing reward conversation"),
-  ).resolves.toBeInTheDocument();
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  expect(normalizedText(entry)).toBe("Get more credits2/6");
   const panel = await openQuestPanel();
-  expect(within(panel).getByText("In review")).toBeInTheDocument();
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscriptionOnChannel(
-        "user:test-user-123",
-        GET_STARTED_REWARDS_CHANGED_EVENT,
-      ),
-    ).toBeTruthy();
+  expect(within(panel).getByText("5,200 to go")).toBeInTheDocument();
+  const row = screen.getByTestId("get-started-quest-slack");
+  expect(row.getAttribute("role")).toBe("menuitem");
+  expect(within(row).getByText("+2,000")).toBeInTheDocument();
+});
+
+test("A failed Slack status read leaves the Slack step as the rewards report it", async () => {
+  configureQuestPage(context, "admin", { slackClaimed: false });
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Slack status is temporarily unavailable.",
+      },
+    });
   });
-  data.shareClaim.status = "rejected";
-  data.shareClaim.reason = "post_must_mention_okou";
-  context.mocks.ably.triggerOnChannel(
-    "user:test-user-123",
-    GET_STARTED_REWARDS_CHANGED_EVENT,
-    null,
-  );
-  // The reward shares the description line, so the rejection reason is read
-  // off the row rather than as a standalone text node.
-  await waitFor(() => {
-    expect(
-      normalizedText(screen.getByTestId("get-started-quest-share")),
-    ).toContain("Must mention Okou");
+  await setupPage({
+    context,
+    path: questChatPath(),
   });
-  expect(within(panel).getByText("300 earned")).toBeInTheDocument();
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  expect(normalizedText(entry)).toBe("Get more credits2/6");
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("5,200 to go")).toBeInTheDocument();
   expect(
-    within(screen.getByTestId("get-started-quest-checkin")).getByText(
-      "Check in",
-    ),
+    within(screen.getByTestId("get-started-quest-slack")).getByText("+2,000"),
   ).toBeInTheDocument();
-});
-
-test("The entry stays hidden while the switch is off", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({ context, path: questChatPath() });
-
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByTestId("get-started-entry")).not.toBeInTheDocument();
-});
-
-test("The invite quest opens usable People settings from the keyboard", async () => {
-  const user = userEvent.setup();
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
-  });
-
-  await openQuestPanel();
-  await user.keyboard("{Home}{ArrowDown}{ArrowDown}");
-  expect(screen.getByTestId("get-started-quest-invite")).toHaveFocus();
-  await user.keyboard("{Enter}");
-
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  await expect(
-    within(settings).findByRole("heading", { name: "People" }),
-  ).resolves.toBeInTheDocument();
-  expect(buttonNamed("Add member", settings)).toBeEnabled();
-  await waitFor(() => {
-    expect(settings).toContainElement(document.activeElement as HTMLElement);
-  });
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-});
-
-test("Cancelling a share draft clears the link without consuming a reward", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
-  });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-share"));
-  const dialog = await screen.findByRole("dialog", { name: "Share Okou on X" });
-  const input = within(dialog).getByRole("textbox", { name: "Post link" });
-  fireEvent.change(input, {
-    target: { value: "https://x.com/molly/status/1873" },
-  });
-  expect(buttonNamed("Submit", dialog)).toBeEnabled();
-  click(buttonNamed("Later", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-share"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "Share Okou on X",
-  });
-  expect(
-    within(reopened).getByRole("textbox", { name: "Post link" }),
-  ).toHaveValue("");
-  expect(buttonNamed("Submit", reopened)).toBeDisabled();
 });
 
 test("Invitation progress separates successful rewards from pending members and remains actionable below 15", async () => {
@@ -640,7 +706,6 @@ test("Invitation progress separates successful rewards from pending members and 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
   const panel = await openQuestPanel();
   expect(within(panel).getByText("8/15", { exact: false })).toBeInTheDocument();
@@ -648,7 +713,6 @@ test("Invitation progress separates successful rewards from pending members and 
     within(panel).getByText("3 pending", { exact: false }),
   ).toBeInTheDocument();
   expect(screen.getByTestId("get-started-quest-invite")).toBeInTheDocument();
-  expect(within(panel).getByText("1,200 earned")).toBeInTheDocument();
 });
 
 test("A rejected X claim can be replaced and survives opening the task panel", async () => {
@@ -668,7 +732,6 @@ test("A rejected X claim can be replaced and survives opening the task panel", a
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
   await openQuestPanel();
   // The reviewer's own reason, not a bare refusal: a reader told only that the
@@ -682,146 +745,33 @@ test("A rejected X claim can be replaced and survives opening the task panel", a
   ).resolves.toBeInTheDocument();
 });
 
-test("Daily rewards are claimed by selecting check in and menu reopening refreshes the UTC day", async () => {
-  const data = configureQuestPage(context, "member", { claimedToday: false });
+test("Daily rewards are claimed by selecting check in", async () => {
+  configureQuestPage(context, "member", { claimedToday: false });
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
-  const panel = await openQuestPanel();
-  await expect(
-    within(panel).findByText("300 earned"),
-  ).resolves.toBeInTheDocument();
+  await openQuestPanel();
   const checkinRow = screen.getByTestId("get-started-quest-checkin");
   expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
   expect(normalizedText(checkinRow)).toContain("Check in daily+100Check in");
 
   click(checkinRow);
-  await expect(
-    within(panel).findByText("400 earned"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByTestId("get-started-quest-checkin")).not.toHaveAttribute(
-    "role",
-    "menuitem",
-  );
-  expect(within(panel).queryByText("Check in")).not.toBeInTheDocument();
+  const dialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(dialog).getByText("1-day streak")).toBeInTheDocument();
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
+  click(buttonNamed("Back to work", dialog));
 
-  await userEvent.keyboard("{Escape}");
+  const updatedPanel = await openQuestPanel();
   await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByTestId("get-started-quest-checkin")).not.toHaveAttribute(
+      "role",
+      "menuitem",
+    );
   });
-  const sameDayPanel = await openQuestPanel();
-  expect(within(sameDayPanel).getByText("400 earned")).toBeInTheDocument();
-  expect(within(sameDayPanel).queryByText("Check in")).not.toBeInTheDocument();
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  });
-
-  data.serverNow = "2026-09-16T00:00:00.000Z";
-  data.nextResetAt = "2026-09-17T00:00:00.000Z";
-  data.claimedToday = false;
-  const checkin = data.quests.find((quest) => {
-    return quest.key === "checkin";
-  });
-  if (!checkin) {
-    throw new Error("Missing check-in fixture");
-  }
-  checkin.canEarnMore = true;
-  const nextDayPanel = await openQuestPanel();
-  await expect(
-    within(nextDayPanel).findByText("Check in"),
-  ).resolves.toBeInTheDocument();
-  expect(within(nextDayPanel).getByText("400 earned")).toBeInTheDocument();
-
-  const nextDayCheckin = screen.getByTestId("get-started-quest-checkin");
-  nextDayCheckin.focus();
-  await userEvent.keyboard("{Enter}");
-  await expect(
-    within(nextDayPanel).findByText("500 earned"),
-  ).resolves.toBeInTheDocument();
-  expect(within(nextDayPanel).queryByText("Check in")).not.toBeInTheDocument();
-});
-
-test("The daily step leads the list on the same grammar as every other step", async () => {
-  const data = configureQuestPage(context, "member", { claimedToday: false });
-  data.checkinStreak = 6;
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
-  });
-  const panel = await openQuestPanel();
-
-  // The totals describe the whole list, so they are stated once above it
-  // rather than inside the first step.
-  await expect(
-    within(panel).findByText("300 earned"),
-  ).resolves.toBeInTheDocument();
-  expect(within(panel).getByText("3,200 to go")).toBeInTheDocument();
-
-  // The daily step leads, and what is finished sinks below what still pays.
-  const rows = within(panel).getAllByTestId(/^get-started-quest-/u);
-  expect(
-    rows.map((row) => {
-      return row.dataset.testid;
-    }),
-  ).toStrictEqual([
-    "get-started-quest-checkin",
-    "get-started-quest-connector",
-    "get-started-quest-workflow",
-    "get-started-quest-share",
-  ]);
-
-  // It says what it is, what it pays, how far the streak has run and what
-  // pressing it does -- the four parts every other row carries.
-  const checkin = within(screen.getByTestId("get-started-quest-checkin"));
-  expect(checkin.getByText("Check in daily")).toBeInTheDocument();
-  expect(checkin.getByText("+100")).toBeInTheDocument();
-  expect(
-    checkin.getByText("6-day streak", { exact: false }),
-  ).toBeInTheDocument();
-  expect(checkin.getByText("Check in")).toBeInTheDocument();
-});
-
-test("A pending check-in disables the action and a failed request leaves it available", async () => {
-  configureQuestPage(context, "member", { claimedToday: false });
-  const responseReady = createDeferredPromise<void>(context.signal);
-  context.mocks.api(getStartedContract.checkin, async ({ respond }) => {
-    await responseReady.promise;
-    return respond(403, {
-      error: {
-        code: "FORBIDDEN",
-        message: "Check-in is temporarily unavailable",
-      },
-    });
-  });
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
-  });
-  const panel = await openQuestPanel();
-  await expect(
-    within(panel).findByText("300 earned"),
-  ).resolves.toBeInTheDocument();
-  const checkinRow = screen.getByTestId("get-started-quest-checkin");
-
-  click(checkinRow);
-  await waitFor(() => {
-    expect(checkinRow).toHaveAttribute("aria-disabled", "true");
-    expect(checkinRow).toHaveAttribute("aria-busy", "true");
-  });
-  responseReady.resolve();
-  await expect(
-    screen.findByText("Check-in is temporarily unavailable"),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(checkinRow).not.toHaveAttribute("aria-disabled", "true");
-  });
-  expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
-  expect(within(panel).getByText("300 earned")).toBeInTheDocument();
+  expect(within(updatedPanel).queryByText("Check in")).not.toBeInTheDocument();
 });
 
 test("The connector step says what it costs the user before it hands them off", async () => {
@@ -830,10 +780,6 @@ test("The connector step says what it costs the user before it hands them off", 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -873,10 +819,6 @@ test("Picking a connector in the dialog starts its authorization", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -891,46 +833,6 @@ test("Picking a connector in the dialog starts its authorization", async () => {
     expect(opened.join(" ")).toContain("gmail");
   });
   expect(pathname()).toBe(questChatPath());
-});
-
-test("The dialog leads with the connectors the step can still be completed with", async () => {
-  configureQuestPage(context, "admin");
-  // Slack is the better-ranked connector and is already connected, so the
-  // catalog order alone would put it first. The step can only be finished on
-  // Notion, so Notion is what the reader meets first in spite of that rank.
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [
-        catalogItem("slack", "Slack", "auth-code", true, 1),
-        catalogItem("notion", "Notion", "auth-code", false, 2),
-      ],
-    });
-  });
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
-  });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-connector"));
-  const picker = await screen.findByTestId("quest-connector-picker");
-
-  const notConnected = within(picker).getByRole("region", {
-    name: "Not connected",
-  });
-  const connected = within(picker).getByRole("region", { name: "Connected" });
-  expect(within(notConnected).getByText("Notion")).toBeInTheDocument();
-  expect(within(connected).getByText("Slack")).toBeInTheDocument();
-
-  // Reading order, not just membership: the unfinished half comes first.
-  expect(
-    notConnected.compareDocumentPosition(connected) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
 });
 
 test("The Slack step starts the install instead of handing over a list", async () => {
@@ -963,10 +865,6 @@ test("The Slack step starts the install instead of handing over a list", async (
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -985,42 +883,11 @@ test("The Slack step starts the install instead of handing over a list", async (
   expect(pathname()).toBe(questChatPath());
 });
 
-test("Declining an introduced step costs the user nothing", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
-  });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-invite"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "What one person knows, everyone can run",
-  });
-  expect(
-    within(dialog).getByText("Invite your teammates to this workspace."),
-  ).toBeInTheDocument();
-
-  click(buttonNamed("Later", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  expect(pathname()).toBe(questChatPath());
-});
-
 test("The workflow step offers the recommendations rather than one sentence", async () => {
   configureQuestPage(context, "admin");
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -1051,10 +918,6 @@ test("Picking a workflow hands its sentence to the composer", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -1080,26 +943,48 @@ test("Picking a workflow hands its sentence to the composer", async () => {
   });
 });
 
-test("An ordinary day's check-in reports the streak without taking the screen", async () => {
+test("An ordinary day's check-in confirms the reward and streak in a dialog", async () => {
   const data = configureQuestPage(context, "member", { claimedToday: false });
-  // Mid-streak: the next check-in is day four, which is neither the first nor
-  // a full week, so it is the case that should stay out of the way.
-  data.checkinStreak = 3;
+  // Day nine is neither the first nor a weekly milestone.
+  data.checkinStreak = 8;
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-checkin"));
 
-  // The streak is the part worth saying, and it is said without a modal.
-  await expect(screen.findByText("4-day streak")).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  const dialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(dialog).getByText("9-day streak")).toBeInTheDocument();
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
+});
+
+test("A failed check-in does not show a success dialog", async () => {
+  configureQuestPage(context, "member", { claimedToday: false });
+  context.mocks.api(getStartedContract.checkin, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Check-in unavailable" },
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-checkin"));
+  await expect(
+    screen.findByText("Check-in unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "Checked in for today" }),
+  ).toBeNull();
+
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("Check in")).toBeInTheDocument();
 });
 
 test("Checking in confirms the reward instead of closing silently", async () => {
@@ -1107,10 +992,6 @@ test("Checking in confirms the reward instead of closing silently", async () => 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -1126,4 +1007,88 @@ test("Checking in confirms the reward instead of closing silently", async () => 
       "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
     ),
   ).toBeInTheDocument();
+});
+
+test("The quest entry leaves the connector catalog unread until the connector step opens", async () => {
+  configureQuestPage(context, "admin");
+  let statusReads = 0;
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    statusReads += 1;
+    return respond(200, {
+      connectors: [catalogItem("gmail", "Gmail", "auth-code")],
+    });
+  });
+  let oneClickReads = 0;
+  mockOneClickCatalog([catalogItem("gmail", "Gmail", "auth-code")], () => {
+    oneClickReads += 1;
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+  });
+
+  // The intro dialog and its connect flow are mounted beside the entry, but
+  // nothing is picked yet, so nothing asks for the catalog.
+  await openQuestPanel();
+  expect(oneClickReads).toBe(0);
+
+  click(screen.getByTestId("get-started-quest-connector"));
+  const picker = await screen.findByTestId("quest-connector-picker");
+  expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  expect(oneClickReads).toBe(1);
+  // The picker lists what the one-click catalog returns; the full catalog
+  // status is never read for it.
+  expect(statusReads).toBe(0);
+});
+
+test("A connector that needs a choice opens its connect dialog from its own catalog entry", async () => {
+  configureQuestPage(context, "admin");
+  // The landing page can independently read a random workflow card's
+  // connectors. Use a fixture slug no other surface reads, so this count
+  // belongs only to the quest's choice flow.
+  const oauth = catalogItem("quest-choice", "Choice connector", "auth-code");
+  const firstMethod = oauth.authMethods[0];
+  if (!firstMethod) {
+    throw new Error("Missing auth method");
+  }
+  // Two browser methods leave nothing to start in one press.
+  const choice: PublicConnectorCatalogStatusItem = {
+    ...oauth,
+    authMethods: [
+      firstMethod,
+      { ...firstMethod, id: "workspace-oauth", label: "Workspace OAuth" },
+    ],
+    singleAuthCodeAuthMethodId: null,
+  };
+  // The slug route would also match the catalog's static paths, so it is
+  // installed before the one-click mock, which then takes precedence there.
+  let choiceReads = 0;
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    if (params.connectorSlug !== choice.slug) {
+      return respond(404, {
+        error: { message: "Connector not found", code: "NOT_FOUND" },
+      });
+    }
+    choiceReads += 1;
+    return respond(200, { connector: choice });
+  });
+  mockOneClickCatalog([choice]);
+  await setupPage({
+    context,
+    path: questChatPath(),
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const tile = await screen.findByTestId("quest-connector-quest-choice");
+  expect(choiceReads).toBe(0);
+  click(tile);
+
+  // The dialog offers both methods, which only the connector's own full entry
+  // carries.
+  const dialog = await screen.findByRole("dialog", {
+    name: "Choice connector",
+  });
+  expect(within(dialog).getByText("Workspace OAuth")).toBeInTheDocument();
+  expect(choiceReads).toBe(1);
 });

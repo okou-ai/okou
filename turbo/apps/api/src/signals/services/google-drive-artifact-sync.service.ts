@@ -1,4 +1,3 @@
-import { command, computed, type Command, type Computed } from "ccstate";
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
   ChatThreadArtifactGoogleDriveSync,
@@ -13,23 +12,24 @@ import {
   GOOGLE_SLIDES_MIME_TYPE,
   convertsToGoogleSlides,
 } from "@okouai/core/google-slides-conversion";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   hostedDeployments,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
+import { agents } from "@okouai/db/schema/agent";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { connectors } from "@okouai/db/schema/connector";
 import {
   CANONICAL_ASSET_VERSION,
   runUploadedFiles,
 } from "@okouai/db/schema/run-uploaded-file";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-import { and, eq, exists, isNotNull, or } from "drizzle-orm";
-import { z } from "zod";
 import { ZipArchive } from "archiver";
+import { command, computed, type Command, type Computed } from "ccstate";
+import { and, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
+import { z } from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -37,7 +37,7 @@ import {
   artifactKeyFromShortOkouUrl,
   isArtifactKeyV2,
 } from "../../lib/file-url";
-import { db$, type Db, type ReadonlyDb, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { downloadHostedSitesS3Buffer, downloadS3Buffer } from "../external/s3";
 import {
   createDeferredPromise,
@@ -47,19 +47,18 @@ import {
   tapError,
 } from "../utils";
 import {
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
-import { resolveConnectorAccount } from "./connector-account-resolution.service";
+  loadBuiltinConnectorCredentialConnection$,
+  loadBuiltinConnectorCredentialValues$,
+  refreshBuiltinConnectorCredentialAccess$,
+} from "./builtin-connector-credential-command.service";
 import {
   builtinConnectorCredentialRuntimeValueRef,
-  loadBuiltinConnectorCredentialConnection,
-  loadBuiltinConnectorCredentialValues,
-  refreshBuiltinConnectorCredentialAccess,
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
+import type { ConnectorRuntimeAuthLookup } from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
+import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { resolveArtifactFileReference } from "./private-artifact-storage.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
 
@@ -133,191 +132,210 @@ function escapeQuery(value: string): string {
   return value.replace(/\\/g, String.raw`\\`).replace(/'/g, String.raw`\'`);
 }
 
-async function threadAllowsGoogleDriveArtifactSync(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly threadId: string;
-  },
-): Promise<boolean> {
-  const [authorization] = await db
-    .select({ id: userBuiltinConnectors.id })
-    .from(chatThreads)
-    .innerJoin(
-      userBuiltinConnectors,
-      and(
-        eq(userBuiltinConnectors.orgId, args.orgId),
-        eq(userBuiltinConnectors.userId, args.userId),
-        eq(userBuiltinConnectors.agentId, chatThreads.agentId),
-        eq(userBuiltinConnectors.connectorSlug, "google-drive"),
-      ),
-    )
-    .where(
-      and(
-        eq(chatThreads.id, args.threadId),
-        eq(chatThreads.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return authorization !== undefined;
-}
-
-async function resolveDriveConnectorAccount(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly threadId: string;
-  },
-): Promise<DriveConnectorAccountResolution> {
-  const [selection] = await db
-    .select({ connectorId: chatThreadConnectorSelections.connectorId })
-    .from(chatThreads)
-    .innerJoin(
-      agents,
-      and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-    )
-    .innerJoin(
-      chatThreadConnectorSelections,
-      and(
-        eq(chatThreadConnectorSelections.chatThreadId, chatThreads.id),
-        eq(chatThreadConnectorSelections.connectorSlug, "google-drive"),
-      ),
-    )
-    .where(
-      and(
-        eq(chatThreads.id, args.threadId),
-        eq(chatThreads.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  const resolution = await resolveConnectorAccount(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    request: {
-      target: { kind: "builtin", connectorSlug: "google-drive" },
-      selection: selection
-        ? { kind: "exact", sourceId: selection.connectorId }
-        : { kind: "default" },
+const threadAllowsGoogleDriveArtifactSync$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly threadId: string;
     },
-  });
-  if (resolution.kind === "resolved") {
-    return {
-      type: "resolved",
-      connectorId: resolution.account.connectorId,
-    };
-  }
-  return !selection && resolution.kind === "missing-default"
-    ? { type: "connect" }
-    : { type: "unavailable" };
-}
-
-async function loadDriveConnection(args: {
-  readonly db: ReadonlyDb;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly orgId: string;
-  readonly snapshot: ConnectorRuntimeSnapshot;
-  readonly threadId: string;
-  readonly userId: string;
-}): Promise<DriveConnectionLoadResult> {
-  const resolution = await resolveDriveConnectorAccount(args.db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    threadId: args.threadId,
-  });
-  if (resolution.type !== "resolved") {
-    return {
-      type: "disconnected",
-      recovery: { action: resolution.type },
-    };
-  }
-  const loaded = await loadBuiltinConnectorCredentialConnection({
-    db: args.db,
-    snapshot: args.snapshot,
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorSlug: "google-drive",
-    connectorId: resolution.connectorId,
-  });
-  if (loaded.kind !== "ok") {
-    return {
-      type: "disconnected",
-      recovery: { action: "unavailable" },
-    };
-  }
-  const connection = loaded.connection;
-  if (connection.needsReconnect) {
-    return {
-      type: "disconnected",
-      recovery: {
-        action: "reconnect",
-        connectionId: connection.connectorId,
-      },
-    };
-  }
-  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
-    connection,
-    GOOGLE_DRIVE_ACCESS_TOKEN_ENVIRONMENT_NAME,
-  );
-  if (accessTokenValueRef === null) {
-    return {
-      type: "disconnected",
-      recovery: { action: "unavailable" },
-    };
-  }
-  const values = await loadBuiltinConnectorCredentialValues({
-    connection,
-    db: args.db,
-    featureSwitchContext: args.featureSwitchContext,
-    valueRefs: [accessTokenValueRef],
-  });
-  const accessToken = values.get(accessTokenValueRef);
-  if (!accessToken) {
-    return {
-      type: "disconnected",
-      recovery: { action: "unavailable" },
-    };
-  }
-  return {
-    type: "ready",
-    tokens: {
-      accessToken,
-      connection,
-    },
-  };
-}
-
-async function refreshDriveAccessToken(
-  args: {
-    readonly connection: BuiltinConnectorCredentialConnection;
-    readonly db: ReadonlyDb;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly writeDb?: Db;
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [authorization] = await db
+      .select({ id: userBuiltinConnectors.id })
+      .from(chatThreads)
+      .innerJoin(
+        userBuiltinConnectors,
+        and(
+          eq(userBuiltinConnectors.orgId, args.orgId),
+          eq(userBuiltinConnectors.userId, args.userId),
+          eq(userBuiltinConnectors.agentId, chatThreads.agentId),
+          eq(userBuiltinConnectors.connectorSlug, "google-drive"),
+        ),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, args.threadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    return authorization !== undefined;
   },
-  signal: AbortSignal,
-): Promise<DriveRefreshResult> {
-  const refreshed = await refreshBuiltinConnectorCredentialAccess(
-    {
-      connection: args.connection,
-      db: args.db,
-      featureSwitchContext: args.featureSwitchContext,
+);
+
+const resolveDriveConnectorAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly threadId: string;
+    },
+  ): Promise<DriveConnectorAccountResolution> => {
+    const db = set(writeDb$);
+    const [selection] = await db
+      .select({ connectorId: chatThreadConnectorSelections.connectorId })
+      .from(chatThreads)
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+      )
+      .innerJoin(
+        chatThreadConnectorSelections,
+        and(
+          eq(chatThreadConnectorSelections.chatThreadId, chatThreads.id),
+          eq(chatThreadConnectorSelections.connectorSlug, "google-drive"),
+        ),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, args.threadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    const rows = await db
+      .select({ connectorId: connectors.id })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          eq(connectors.connectorSlug, "google-drive"),
+          isNull(connectors.customConnectorId),
+          selection
+            ? eq(connectors.id, selection.connectorId)
+            : eq(connectors.isDefault, true),
+        ),
+      )
+      .limit(2);
+    const [row] = rows;
+    if (rows.length === 1 && row) {
+      return { type: "resolved", connectorId: row.connectorId };
+    }
+    return !selection && rows.length === 0
+      ? { type: "connect" }
+      : { type: "unavailable" };
+  },
+);
+
+const loadDriveConnection$ = command(
+  async (
+    { set },
+    args: {
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly orgId: string;
+      readonly snapshot: ConnectorRuntimeAuthLookup;
+      readonly threadId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<DriveConnectionLoadResult> => {
+    const resolution = await set(resolveDriveConnectorAccount$, {
       orgId: args.orgId,
       userId: args.userId,
-      runtimeEnvironmentName: GOOGLE_DRIVE_ACCESS_TOKEN_ENVIRONMENT_NAME,
-      ...(args.writeDb === undefined ? {} : { persist: { db: args.writeDb } }),
+      threadId: args.threadId,
+    });
+    signal.throwIfAborted();
+    if (resolution.type !== "resolved") {
+      return {
+        type: "disconnected",
+        recovery: { action: resolution.type },
+      };
+    }
+    const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
+      snapshot: args.snapshot,
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorSlug: "google-drive",
+      connectorId: resolution.connectorId,
+    });
+    signal.throwIfAborted();
+    if (loaded.kind !== "ok") {
+      return {
+        type: "disconnected",
+        recovery: { action: "unavailable" },
+      };
+    }
+    const connection = loaded.connection;
+    if (connection.needsReconnect) {
+      return {
+        type: "disconnected",
+        recovery: {
+          action: "reconnect",
+          connectionId: connection.connectorId,
+        },
+      };
+    }
+    const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
+      connection,
+      GOOGLE_DRIVE_ACCESS_TOKEN_ENVIRONMENT_NAME,
+    );
+    if (accessTokenValueRef === null) {
+      return {
+        type: "disconnected",
+        recovery: { action: "unavailable" },
+      };
+    }
+    const values = await set(
+      loadBuiltinConnectorCredentialValues$,
+      {
+        connection,
+        featureSwitchContext: args.featureSwitchContext,
+        valueRefs: [accessTokenValueRef],
+      },
+      signal,
+    );
+    const accessToken = values.get(accessTokenValueRef);
+    if (!accessToken) {
+      return {
+        type: "disconnected",
+        recovery: { action: "unavailable" },
+      };
+    }
+    return {
+      type: "ready",
+      tokens: {
+        accessToken,
+        connection,
+      },
+    };
+  },
+);
+
+const refreshDriveAccessToken$ = command(
+  async (
+    { set },
+    args: {
+      readonly connection: BuiltinConnectorCredentialConnection;
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly orgId: string;
+      readonly userId: string;
     },
-    signal,
-  );
-  if (refreshed.kind === "ok") {
-    return { type: "ok", accessToken: refreshed.accessToken };
-  }
-  return refreshed.kind === "reconnect-required"
-    ? { type: "reconnect-required" }
-    : { type: "unavailable" };
-}
+    signal: AbortSignal,
+  ): Promise<DriveRefreshResult> => {
+    const refreshed = await set(
+      refreshBuiltinConnectorCredentialAccess$,
+      {
+        connection: args.connection,
+        featureSwitchContext: args.featureSwitchContext,
+        orgId: args.orgId,
+        userId: args.userId,
+        runtimeEnvironmentName: GOOGLE_DRIVE_ACCESS_TOKEN_ENVIRONMENT_NAME,
+        persist: {},
+      },
+      signal,
+    );
+    if (refreshed.kind === "ok") {
+      return { type: "ok", accessToken: refreshed.accessToken };
+    }
+    return refreshed.kind === "reconnect-required"
+      ? { type: "reconnect-required" }
+      : { type: "unavailable" };
+  },
+);
 
 type DriveListResult =
   | { readonly type: "ok"; readonly files: z.infer<typeof driveFileSchema>[] }
@@ -358,59 +376,59 @@ async function listArtifactFiles(
   return { type: "ok", files: parsed.files };
 }
 
-async function listArtifactFilesWithRefresh(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly orgId: string;
-    readonly tokens: ConnectorTokens;
-    readonly threadId: string;
-    readonly userId: string;
-    readonly writeDb: Db;
+const listArtifactFilesWithRefresh$ = command(
+  async (
+    { set },
+    args: {
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly orgId: string;
+      readonly tokens: ConnectorTokens;
+      readonly threadId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    z.infer<typeof driveFileSchema>[] | "reconnect-required" | "unauthorized"
+  > => {
+    const first = await listArtifactFiles(
+      {
+        accessToken: args.tokens.accessToken,
+        threadId: args.threadId,
+      },
+      signal,
+    );
+    if (first.type === "ok") {
+      return first.files;
+    }
+    const refreshed = await set(
+      refreshDriveAccessToken$,
+      {
+        connection: args.tokens.connection,
+        featureSwitchContext: args.featureSwitchContext,
+        orgId: args.orgId,
+        userId: args.userId,
+      },
+      signal,
+    );
+    if (refreshed.type === "reconnect-required") {
+      return "reconnect-required";
+    }
+    if (refreshed.type === "unavailable") {
+      return "unauthorized";
+    }
+    const second = await listArtifactFiles(
+      {
+        accessToken: refreshed.accessToken,
+        threadId: args.threadId,
+      },
+      signal,
+    );
+    if (second.type === "unauthorized") {
+      return "unauthorized";
+    }
+    return second.files;
   },
-  signal: AbortSignal,
-): Promise<
-  z.infer<typeof driveFileSchema>[] | "reconnect-required" | "unauthorized"
-> {
-  const first = await listArtifactFiles(
-    {
-      accessToken: args.tokens.accessToken,
-      threadId: args.threadId,
-    },
-    signal,
-  );
-  if (first.type === "ok") {
-    return first.files;
-  }
-  const refreshed = await refreshDriveAccessToken(
-    {
-      connection: args.tokens.connection,
-      db: args.db,
-      featureSwitchContext: args.featureSwitchContext,
-      orgId: args.orgId,
-      userId: args.userId,
-      writeDb: args.writeDb,
-    },
-    signal,
-  );
-  if (refreshed.type === "reconnect-required") {
-    return "reconnect-required";
-  }
-  if (refreshed.type === "unavailable") {
-    return "unauthorized";
-  }
-  const second = await listArtifactFiles(
-    {
-      accessToken: refreshed.accessToken,
-      threadId: args.threadId,
-    },
-    signal,
-  );
-  if (second.type === "unauthorized") {
-    return "unauthorized";
-  }
-  return second.files;
-}
+);
 
 function buildStatusMap(
   files: readonly z.infer<typeof driveFileSchema>[],
@@ -488,8 +506,6 @@ export function googleDriveArtifactStatusLookup(args: {
         recovery: { action: "unavailable" },
       };
     }
-    const db = get(db$);
-    const writeDb = set(writeDb$);
     const featureSwitchOverrides = await get(
       userFeatureSwitchOverrides(args.orgId, args.userId),
     );
@@ -499,21 +515,26 @@ export function googleDriveArtifactStatusLookup(args: {
       userId: args.userId,
       overrides: featureSwitchOverrides,
     };
-    const snapshot = await loadConnectorRuntimeSnapshot(db);
-    signal.throwIfAborted();
-    const connection = await loadDriveConnection({
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      threadId: args.threadId,
-      featureSwitchContext,
-      snapshot,
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["google-drive"],
     });
+    signal.throwIfAborted();
+    const connection = await set(
+      loadDriveConnection$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        threadId: args.threadId,
+        featureSwitchContext,
+        snapshot,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (connection.type === "disconnected") {
       return connection;
     }
-    const authorized = await threadAllowsGoogleDriveArtifactSync(db, {
+    const authorized = await set(threadAllowsGoogleDriveArtifactSync$, {
       orgId: args.orgId,
       userId: args.userId,
       threadId: args.threadId,
@@ -534,15 +555,14 @@ export function googleDriveArtifactStatusLookup(args: {
       AbortSignal.timeout(GOOGLE_DRIVE_STATUS_TIMEOUT_MS),
     ]);
     const files = await tapError(
-      listArtifactFilesWithRefresh(
+      set(
+        listArtifactFilesWithRefresh$,
         {
-          db,
           featureSwitchContext,
           orgId: args.orgId,
           tokens,
           threadId: args.threadId,
           userId: args.userId,
-          writeDb,
         },
         providerSignal,
       ),
@@ -723,77 +743,79 @@ async function assembleZip(
   return await Promise.race([done.promise, finalized]);
 }
 
-async function loadArtifactFile(
-  db: ReadonlyDb,
-  args: {
-    readonly threadId: string;
-    readonly runId: string;
-    readonly fileId: string;
-    readonly userId: string;
-  },
-): Promise<ArtifactFileRow | null> {
-  const [thread] = await db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, args.threadId),
-        eq(chatThreads.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  if (!thread) {
-    return null;
-  }
+const loadArtifactFile$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly runId: string;
+      readonly fileId: string;
+      readonly userId: string;
+    },
+  ): Promise<ArtifactFileRow | null> => {
+    const db = set(writeDb$);
+    const [thread] = await db
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, args.threadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    if (!thread) {
+      return null;
+    }
 
-  const [row] = await db
-    .select({
-      runId: runUploadedFiles.runId,
-      source: runUploadedFiles.source,
-      externalId: runUploadedFiles.externalId,
-      filename: runUploadedFiles.filename,
-      contentType: runUploadedFiles.contentType,
-      url: runUploadedFiles.url,
-      metadata: runUploadedFiles.metadata,
-    })
-    .from(runUploadedFiles)
-    .innerJoin(agentRuns, eq(agentRuns.id, runUploadedFiles.runId))
-    .where(
-      and(
-        isNotNull(agentRuns.triggerSource),
-        eq(runUploadedFiles.userId, args.userId),
-        eq(runUploadedFiles.runId, args.runId),
-        or(
-          eq(runUploadedFiles.externalId, args.fileId),
-          and(
-            eq(runUploadedFiles.id, args.fileId),
-            eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-            eq(runUploadedFiles.classification, "published-output"),
-            eq(runUploadedFiles.accessLevel, "published"),
+    const [row] = await db
+      .select({
+        runId: runUploadedFiles.runId,
+        source: runUploadedFiles.source,
+        externalId: runUploadedFiles.externalId,
+        filename: runUploadedFiles.filename,
+        contentType: runUploadedFiles.contentType,
+        url: runUploadedFiles.url,
+        metadata: runUploadedFiles.metadata,
+      })
+      .from(runUploadedFiles)
+      .where(
+        and(
+          isNotNull(runUploadedFiles.runId),
+          eq(runUploadedFiles.userId, args.userId),
+          eq(runUploadedFiles.runId, args.runId),
+          or(
+            eq(runUploadedFiles.externalId, args.fileId),
+            and(
+              eq(runUploadedFiles.id, args.fileId),
+              eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+              eq(runUploadedFiles.classification, "published-output"),
+              eq(runUploadedFiles.accessLevel, "published"),
+            ),
+          ),
+          or(
+            eq(runUploadedFiles.chatThreadId, args.threadId),
+            exists(
+              db
+                .select({ one: chatEvents.id })
+                .from(chatEvents)
+                .where(
+                  runOwnedChatEventForRunCondition({
+                    runId: runUploadedFiles.runId,
+                    chatThreadId: args.threadId,
+                  }),
+                ),
+            ),
           ),
         ),
-        or(
-          eq(agentRuns.chatThreadId, args.threadId),
-          exists(
-            db
-              .select({ one: chatEvents.id })
-              .from(chatEvents)
-              .where(
-                runOwnedChatEventForRunCondition({
-                  runId: runUploadedFiles.runId,
-                  chatThreadId: args.threadId,
-                }),
-              ),
-          ),
-        ),
-      ),
-    )
-    .limit(1);
-  if (!row?.runId) {
-    return null;
-  }
-  return { ...row, runId: row.runId };
-}
+      )
+      .limit(1);
+    if (!row?.runId) {
+      return null;
+    }
+    return { ...row, runId: row.runId };
+  },
+);
 
 function resolveArtifactS3ObjectFromKey(
   value: string,
@@ -876,13 +898,14 @@ function resolveArtifactS3Object(
   });
 }
 
-function resolveHostedArtifactContent(
-  db: ReadonlyDb,
-  artifact: ArtifactFileRow,
-  owner: { readonly userId: string; readonly orgId: string },
-  signal: AbortSignal,
-): Computed<Promise<ResolvedArtifactContent | null>> {
-  return computed(async (get): Promise<ResolvedArtifactContent | null> => {
+const resolveHostedArtifactContent$ = command(
+  async (
+    { get, set },
+    artifact: ArtifactFileRow,
+    owner: { readonly userId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<ResolvedArtifactContent | null> => {
+    const db = set(writeDb$);
     const metadata = hostedArtifactMetadata(artifact.metadata);
     if (!metadata) {
       return null;
@@ -963,8 +986,8 @@ function resolveHostedArtifactContent(
       ),
       filename,
     };
-  });
-}
+  },
+);
 
 function resolveS3ArtifactContent(
   artifact: ArtifactFileRow,
@@ -1365,55 +1388,57 @@ interface DriveUploadAttempt {
 }
 
 /** Upload once, then retry under a refreshed token when Drive rejects it. */
-async function uploadArtifactRefreshingToken(
-  params: {
-    readonly args: SyncArtifactArgs;
-    readonly content: ResolvedArtifactContent;
-    readonly db: ReadonlyDb;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly targetMimeType: string | undefined;
-    readonly tokens: ConnectorTokens;
-  },
-  signal: AbortSignal,
-): Promise<DriveUploadAttempt> {
-  const upload = async (accessToken: string) => {
-    return await uploadArtifactWithToken({
-      accessToken,
-      threadId: params.args.threadId,
-      runId: params.args.runId,
-      fileId: params.args.fileId,
-      filename: params.content.filename,
-      contentType: params.content.contentType,
-      targetMimeType: params.targetMimeType,
-      file: params.content.file,
-    });
-  };
-
-  const accessToken = params.tokens.accessToken;
-  const result = await upload(accessToken);
-  signal.throwIfAborted();
-  if (result.type !== "unauthorized") {
-    return { accessToken, result };
-  }
-
-  const refreshed = await refreshDriveAccessToken(
-    {
-      connection: params.tokens.connection,
-      db: params.db,
-      featureSwitchContext: params.featureSwitchContext,
-      orgId: params.args.orgId,
-      userId: params.args.userId,
+const uploadArtifactRefreshingToken$ = command(
+  async (
+    { set },
+    params: {
+      readonly args: SyncArtifactArgs;
+      readonly content: ResolvedArtifactContent;
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly targetMimeType: string | undefined;
+      readonly tokens: ConnectorTokens;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (refreshed.type !== "ok") {
-    return { accessToken, result };
-  }
-  const retried = await upload(refreshed.accessToken);
-  signal.throwIfAborted();
-  return { accessToken: refreshed.accessToken, result: retried };
-}
+    signal: AbortSignal,
+  ): Promise<DriveUploadAttempt> => {
+    const upload = async (accessToken: string) => {
+      return await uploadArtifactWithToken({
+        accessToken,
+        threadId: params.args.threadId,
+        runId: params.args.runId,
+        fileId: params.args.fileId,
+        filename: params.content.filename,
+        contentType: params.content.contentType,
+        targetMimeType: params.targetMimeType,
+        file: params.content.file,
+      });
+    };
+
+    const accessToken = params.tokens.accessToken;
+    const result = await upload(accessToken);
+    signal.throwIfAborted();
+    if (result.type !== "unauthorized") {
+      return { accessToken, result };
+    }
+
+    const refreshed = await set(
+      refreshDriveAccessToken$,
+      {
+        connection: params.tokens.connection,
+        featureSwitchContext: params.featureSwitchContext,
+        orgId: params.args.orgId,
+        userId: params.args.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (refreshed.type !== "ok") {
+      return { accessToken, result };
+    }
+    const retried = await upload(refreshed.accessToken);
+    signal.throwIfAborted();
+    return { accessToken: refreshed.accessToken, result: retried };
+  },
+);
 
 type NotFoundResponse = ReturnType<typeof notFound>;
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
@@ -1433,7 +1458,7 @@ type BadRequestResponse = ReturnType<typeof badRequestMessage>;
  */
 export const syncArtifactToGoogleDrive$ = command(
   async (
-    { get },
+    { get, set },
     args: SyncArtifactArgs,
     signal: AbortSignal,
   ): Promise<
@@ -1441,8 +1466,6 @@ export const syncArtifactToGoogleDrive$ = command(
     | BadRequestResponse
     | { readonly status: 200; readonly body: DriveSyncResult }
   > => {
-    const db = get(db$);
-
     const featureSwitchOverrides = await get(
       userFeatureSwitchOverrides(args.orgId, args.userId),
     );
@@ -1452,23 +1475,28 @@ export const syncArtifactToGoogleDrive$ = command(
       userId: args.userId,
       overrides: featureSwitchOverrides,
     };
-    const snapshot = await loadConnectorRuntimeSnapshot(db);
-    signal.throwIfAborted();
-    const connection = await loadDriveConnection({
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      threadId: args.threadId,
-      featureSwitchContext,
-      snapshot,
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["google-drive"],
     });
+    signal.throwIfAborted();
+    const connection = await set(
+      loadDriveConnection$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        threadId: args.threadId,
+        featureSwitchContext,
+        snapshot,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (connection.type === "disconnected") {
       return badRequestMessage("Connect Google Drive before syncing artifacts");
     }
     const { tokens } = connection;
 
-    const artifact = await loadArtifactFile(db, {
+    const artifact = await set(loadArtifactFile$, {
       threadId: args.threadId,
       runId: args.runId,
       fileId: args.fileId,
@@ -1479,7 +1507,7 @@ export const syncArtifactToGoogleDrive$ = command(
       return notFound("Artifact file not found");
     }
 
-    const authorized = await threadAllowsGoogleDriveArtifactSync(db, {
+    const authorized = await set(threadAllowsGoogleDriveArtifactSync$, {
       orgId: args.orgId,
       userId: args.userId,
       threadId: args.threadId,
@@ -1489,8 +1517,11 @@ export const syncArtifactToGoogleDrive$ = command(
       return badRequestMessage("Connect Google Drive before syncing artifacts");
     }
 
-    const hostedContent = await get(
-      resolveHostedArtifactContent(db, artifact, args, signal),
+    const hostedContent = await set(
+      resolveHostedArtifactContent$,
+      artifact,
+      args,
+      signal,
     );
     signal.throwIfAborted();
     const s3Object =
@@ -1518,11 +1549,11 @@ export const syncArtifactToGoogleDrive$ = command(
     }
     const targetMimeType = target.mimeType;
 
-    const upload = await uploadArtifactRefreshingToken(
+    const upload = await set(
+      uploadArtifactRefreshingToken$,
       {
         args,
         content,
-        db,
         featureSwitchContext,
         targetMimeType,
         tokens,

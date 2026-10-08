@@ -4,6 +4,8 @@ import { expect, vi } from "vitest";
 
 import {
   chatThreadByIdContract,
+  chatThreadArchiveContract,
+  chatThreadMuteContract,
   chatThreadPinContract,
   chatThreadRenameContract,
   chatThreadUnpinContract,
@@ -15,27 +17,16 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import { avatarComposerUrl } from "@okouai/core/agent-avatar";
 import {
   click,
   setupPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
-// The composer editor is mounted on first paint and mounted again once page
-// bootstrap settles, so an element captured too early is detached before a test
-// can drive it. Keyboard events on a detached editor are silently dropped.
-export function mountedComposer(): HTMLElement {
-  const composer = document.querySelector(
-    '[data-slot="chat-composer-card"] [contenteditable="true"]',
-  );
-  if (!(composer instanceof HTMLElement)) {
-    throw new Error("Composer editor is not mounted");
-  }
-  return composer;
-}
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 export const context = testContext();
 
@@ -47,14 +38,6 @@ export const INCIDENT_THREAD_ID = "b0000000-0000-4000-a000-000000000002";
 export const AUTOMATION_THREAD_ID = "b0000000-0000-4000-a000-000000000003";
 export const ARCHIVED_THREAD_ID = "b0000000-0000-4000-a000-000000000004";
 export const RESEARCH_THREAD_ID = "b0000000-0000-4000-a000-000000000005";
-export const LAYERED_AVATAR_URL = avatarComposerUrl({
-  face: "round",
-  hair: "curly-cap",
-  expression: "calm",
-  skin: "light",
-  hairColor: "blue",
-  sweater: "lime",
-});
 
 export interface SidebarThread {
   readonly id: string;
@@ -63,6 +46,8 @@ export interface SidebarThread {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly pinnedAt?: string | null;
+  readonly archived?: boolean;
+  readonly muted?: boolean;
   readonly renamedAt?: string | null;
   /** Overrides the ordering-derived `sortAt` when a test asserts on its age. */
   readonly sortAt?: string;
@@ -95,9 +80,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     },
     {
@@ -108,9 +90,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     },
     {
@@ -121,9 +100,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     },
   ];
@@ -142,9 +118,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       displayName: displayNameById[params.id] ?? null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     });
   });
@@ -237,11 +210,12 @@ function sidebarThreadSnapshot(
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
         pinnedAt: thread.pinnedAt ?? null,
+        archived: thread.archived ?? false,
+        muted: thread.muted ?? false,
         renamedAt: thread.renamedAt ?? null,
         selectedModel: null,
         serviceTier: null,
         computerUseHostId: null,
-        selectedVideoModel: null,
       };
     }),
     latestEventId: null,
@@ -259,7 +233,13 @@ export function mockChatThreadSnapshot(
 ): void {
   targetContext.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await remoteGate;
-    return respond(200, sidebarThreadSnapshot(threads()));
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(
+        targetContext,
+        sidebarThreadSnapshot(threads()),
+      ),
+    );
   });
   targetContext.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -343,19 +323,6 @@ export function buttonByText(
   });
   if (!button) {
     throw new Error(`${text} button not found`);
-  }
-  return button;
-}
-
-export function buttonByLabel(
-  label: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
-  });
-  if (!button) {
-    throw new Error(`${label} button not found`);
   }
   return button;
 }
@@ -674,15 +641,6 @@ export function openChatListMenu(): void {
   click(within(sidebar()).getByLabelText("Open chat list menu"));
 }
 
-export function chatListNewChatButton(): HTMLElement {
-  const menuButton = within(sidebar()).getByLabelText("Open chat list menu");
-  const actions = menuButton.parentElement;
-  if (!actions) {
-    throw new Error("Chat list actions not found");
-  }
-  return within(actions).getByLabelText("New chat");
-}
-
 export function mockSidebarViewport(
   height: number,
   scrollHeight: number,
@@ -738,6 +696,44 @@ export function mockSidebarThreadStory(
     ({ params, respond }) => {
       threads = threads.map((thread) => {
         return thread.id === params.id ? { ...thread, pinnedAt: null } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadMuteContract.mute,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id ? { ...thread, muted: true } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadMuteContract.unmute,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id ? { ...thread, muted: false } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadArchiveContract.archive,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id ? { ...thread, archived: true } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadArchiveContract.unarchive,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id
+          ? { ...thread, archived: false }
+          : thread;
       });
       return respond(204);
     },

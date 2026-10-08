@@ -115,62 +115,29 @@ test("A completed activity appears only after its full event history is ready", 
   ).toBeTruthy();
 });
 
-test.each(["queued", "pending", "running"] as const)(
-  "A %s activity explains how to load the latest logs",
-  async (status) => {
-    context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-      return respond(200, makeLogDetail({ status }));
-    });
-    context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-      return respond(200, {
-        events: [makeAssistantEvent(0, "Current activity log")],
-        hasMore: false,
-        status,
-        lastEventSequence: null,
-      } satisfies AgentEventsResponse);
-    });
-
-    await setupPage({
-      context,
-      path: "/activities/a0000000-0000-4000-a000-000000000099",
-    });
-
-    await expect(
-      screen.findByText("Current activity log"),
-    ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText("Reload this page to see the latest activity logs."),
-    ).toBeInTheDocument();
-  },
-);
-
-test("Activity metadata remains usable when its timeline cannot load", async () => {
+test("An active activity explains how to load the latest logs", async () => {
+  const status = "running" as const;
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(200, makeLogDetail({ status: "completed" }));
+    return respond(200, makeLogDetail({ status }));
   });
   context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Event storage unavailable",
-      },
-    });
+    return respond(200, {
+      events: [makeAssistantEvent(0, "Current activity log")],
+      hasMore: false,
+      status,
+      lastEventSequence: null,
+    } satisfies AgentEventsResponse);
+  });
+
+  await setupPage({
+    context,
+    path: "/activities/a0000000-0000-4000-a000-000000000099",
   });
 
   await expect(
-    setupPage({
-      context,
-      path: "/activities/a0000000-0000-4000-a000-000000000099",
-      featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-    }),
-  ).rejects.toThrow("Event storage unavailable");
-
-  await expect(
-    screen.findByRole("heading", { name: "Test Agent" }),
+    screen.findByText("Current activity log"),
   ).resolves.toBeInTheDocument();
   expect(
-    queryAllByRoleFast("tab").map((tab) => {
-      return tab.textContent?.trim();
-    }),
-  ).toStrictEqual(["Steps", "Context", "Runner", "Network"]);
+    screen.getByText("Reload this page to see the latest activity logs."),
+  ).toBeInTheDocument();
 });

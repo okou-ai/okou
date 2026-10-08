@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 
 import { buildFeishuWelcomeMessage } from "../../lib/feishu-message-card";
@@ -35,7 +36,8 @@ export async function notifyFeishuConnect(
       feishuOrgInstallations,
       eq(feishuOrgInstallations.id, feishuOrgConnections.installationId),
     )
-    .leftJoin(agents, eq(agents.id, feishuOrgInstallations.defaultAgentId))
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
+    .leftJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
     .where(
       and(
         eq(feishuOrgConnections.id, args.connectionId),

@@ -5,13 +5,14 @@ import StripeSDK from "stripe";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import { billingAutoRechargeRoutes } from "../billing-auto-recharge";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -45,18 +46,6 @@ function createActor(
     throw new Error("Expected auto-recharge test actor to have an org");
   }
   return { ...user, orgId: user.orgId };
-}
-
-async function createOnboardedActor(): Promise<AutoRechargeActor> {
-  const admin = createActor();
-  const completed = await bdd.completeOnboarding(admin);
-  expect(completed.status).toBe(200);
-  await seedOrgMetadata({
-    orgId: admin.orgId,
-    tier: "limited-free-1",
-    credits: 0,
-  });
-  return admin;
 }
 
 async function createProActor(
@@ -154,10 +143,15 @@ describe("GET /api/billing/auto-recharge", () => {
   });
 
   it("returns default config for a new org metadata row", async () => {
-    const admin = await createOnboardedActor();
-    const response = await billingApi.readAutoRecharge(admin);
+    const admin = createActor();
+    const owner = createPublicBillingZeroFixture(context, admin);
+    await owner.run(async () => {
+      await owner.initialize();
 
-    expect(response).toStrictEqual(defaultAutoRechargeConfig);
+      const response = await billingApi.readAutoRecharge(admin);
+
+      expect(response).toStrictEqual(defaultAutoRechargeConfig);
+    });
   });
 
   it("returns the legacy default when the org metadata row does not exist", async () => {
@@ -208,23 +202,30 @@ describe("PUT /api/billing/auto-recharge", () => {
   });
 
   it("enables auto-recharge for custom tier org", async () => {
-    const admin = await createOnboardedActor();
-    await seedOrgMetadata({
-      orgId: admin.orgId,
-      tier: "custom",
-      credits: 0,
+    const admin = createActor();
+    const owner = createPublicBillingZeroFixture(context, admin, {
+      foreverCustom: {
+        priceId: `price_custom_${randomUUID()}`,
+        webhookSecret: `whsec_custom_${randomUUID()}`,
+      },
     });
+    await owner.run(async () => {
+      await owner.initialize();
+      context.mocks.stripe.paymentMethods.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      const response = await billingApi.updateAutoRecharge(
+        admin,
+        { enabled: true, threshold: 1000, amount: 5000 },
+        [200],
+      );
 
-    const response = await billingApi.updateAutoRecharge(
-      admin,
-      { enabled: true, threshold: 1000, amount: 5000 },
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      enabled: true,
-      threshold: 1000,
-      amount: 5000,
+      expect(response.body).toStrictEqual({
+        enabled: true,
+        threshold: 1000,
+        amount: 5000,
+      });
     });
   });
 
@@ -504,6 +505,51 @@ describe("PUT /api/billing/auto-recharge", () => {
     },
   );
 
+  it("clears a failed recharge after its organization row is rewritten", async () => {
+    const { admin, entitlement } = await createProActor();
+    const before = await billingApi.readBillingStatus(admin);
+    const config = {
+      enabled: true,
+      threshold: before.credits + 1000,
+      amount: before.credits + 6000,
+    };
+    const invoiceId = acceptAutoRechargeStripeInvoice(entitlement.customerId);
+    const started = createDeferredPromise<void>(context.signal);
+    const failedResponse = createDeferredPromise<void>(context.signal);
+    context.mocks.stripe.customers.retrieve.mockImplementationOnce(async () => {
+      started.resolve();
+      await failedResponse.promise;
+      throw new Error("Stripe temporarily unavailable");
+    });
+    const failing = billingApi.updateAutoRecharge(admin, config, [200]);
+    onTestFinished(async () => {
+      if (!failedResponse.settled()) {
+        failedResponse.resolve();
+      }
+      if (!started.settled()) {
+        started.resolve();
+      }
+      await Promise.allSettled([failing]);
+    });
+    await started.promise;
+
+    // Another organization write (here a config save; settlement debits
+    // rewrite the same row) lands while the recharge is still pending.
+    await billingApi.updateAutoRecharge(admin, config, [200]);
+    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+    failedResponse.resolve();
+    await failing;
+    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+
+    await billingApi.updateAutoRecharge(admin, config, [200]);
+
+    expect(context.mocks.stripe.invoices.create).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.invoices.pay).toHaveBeenCalledWith(invoiceId);
+    expect((await billingApi.readBillingStatus(admin)).credits).toBe(
+      before.credits,
+    );
+  });
+
   it("disables auto-recharge after a public recharge trigger", async () => {
     const { admin, entitlement } = await createProActor();
     const status = await billingApi.readBillingStatus(admin);
@@ -530,21 +576,25 @@ describe("PUT /api/billing/auto-recharge", () => {
     expect(readBack).toStrictEqual(response.body);
   });
 
-  it("returns 400 when enabling on a suspended org", async () => {
-    const admin = await createOnboardedActor();
+  it("returns 400 when enabling for a Limited Free workspace", async () => {
+    const admin = createActor();
+    const owner = createPublicBillingZeroFixture(context, admin);
+    await owner.run(async () => {
+      await owner.initialize();
 
-    const response = await billingApi.updateAutoRecharge(
-      admin,
-      { enabled: true, threshold: 1000, amount: 5000 },
-      [400],
-    );
+      const response = await billingApi.updateAutoRecharge(
+        admin,
+        { enabled: true, threshold: 1000, amount: 5000 },
+        [400],
+      );
 
-    expect(response.body).toStrictEqual({
-      error: {
-        message:
-          "Auto-recharge is only available for Pro, Team, or Custom workspaces",
-        code: "BAD_REQUEST",
-      },
+      expect(response.body).toStrictEqual({
+        error: {
+          message:
+            "Auto-recharge is only available for Pro, Team, or Custom workspaces",
+          code: "BAD_REQUEST",
+        },
+      });
     });
   });
 

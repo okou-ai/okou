@@ -7,7 +7,6 @@ import {
   type PhoneUploadCompleteBody,
   type PhoneUploadInitBody,
 } from "@okouai/api-contracts/contracts/integrations";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { HttpResponse, http } from "msw";
 
@@ -48,6 +47,7 @@ export interface AgentPhoneProviderSend {
   readonly replyToMessageId: string | undefined;
   readonly body: string | undefined;
   readonly mediaUrl: string | undefined;
+  readonly mediaUrls: readonly string[];
 }
 
 export interface AgentPhoneSendCapture {
@@ -59,10 +59,16 @@ interface AgentPhoneInboundMessage {
   readonly channel: "imessage" | "sms" | "mms";
   readonly from: string;
   readonly body: string;
-  readonly messageId?: string;
+  readonly messageId?: string | null;
   readonly conversationId?: string;
   readonly isGroup?: boolean;
   readonly groupId?: string | null;
+  readonly participants?: readonly {
+    readonly identifier: string;
+    readonly name?: string | null;
+  }[];
+  readonly senderIdentifier?: string | null;
+  readonly receivedAt?: string | null;
   readonly mediaUrl?: string;
   readonly mentions?: readonly Readonly<Record<string, unknown>>[];
   readonly recentHistory?: readonly Readonly<Record<string, unknown>>[];
@@ -131,6 +137,50 @@ export function bddGroupId(conversationId: string): string {
     .slice(0, 16)}`;
 }
 
+function buildAgentPhoneInboundWebhookBody(args: {
+  readonly message: AgentPhoneInboundMessage;
+  readonly messageId: string | undefined;
+  readonly groupId: string | null;
+  readonly receivedAt: string | undefined;
+}): string {
+  const { message, messageId, groupId, receivedAt } = args;
+  const senderIdentifier =
+    message.senderIdentifier === null
+      ? undefined
+      : (message.senderIdentifier ??
+        (message.isGroup ? message.from : undefined));
+  return JSON.stringify({
+    event: "agent.message",
+    channel: message.channel,
+    agentId: AGENTPHONE_BDD_AGENT_ID,
+    ...(message.recentHistory ? { recentHistory: message.recentHistory } : {}),
+    data: {
+      ...(messageId === undefined ? {} : { messageId }),
+      from: message.from,
+      to: AGENTPHONE_BDD_PHONE_NUMBER,
+      message: message.body,
+      ...(receivedAt ? { receivedAt } : {}),
+      ...(message.conversationId
+        ? { conversationId: message.conversationId }
+        : {}),
+      ...(message.isGroup
+        ? {
+            group: {
+              isGroup: true,
+              ...(groupId === null ? {} : { groupId }),
+              ...(message.participants === undefined
+                ? {}
+                : { participants: message.participants }),
+            },
+            ...(senderIdentifier === undefined ? {} : { senderIdentifier }),
+          }
+        : {}),
+      ...(message.mediaUrl ? { mediaUrl: message.mediaUrl } : {}),
+      ...(message.mentions ? { mentions: message.mentions } : {}),
+    },
+  });
+}
+
 function authenticate(
   context: TestContext,
   actor: ApiTestUser,
@@ -155,6 +205,7 @@ function authenticate(
 
 export function createAgentPhoneBddApi(context: TestContext) {
   const integrations = createBddIntegrationApi(context);
+  const conversationParticipants = new Map<string, readonly string[]>();
 
   function harvestConnectBody(capture: AgentPhoneSendCapture): {
     readonly phoneHandle: string;
@@ -162,8 +213,6 @@ export function createAgentPhoneBddApi(context: TestContext) {
     readonly timestamp: number;
     readonly signature: string;
     readonly channel: string | undefined;
-    readonly publicBrand: PublicBrand | undefined;
-    readonly publicBrandSignature: string | undefined;
   } {
     const prompt = [...capture.messages].reverse().find((message) => {
       return message.body?.includes("/agentphone/connect?") ?? false;
@@ -185,58 +234,64 @@ export function createAgentPhoneBddApi(context: TestContext) {
       timestamp,
       signature: params.get("sig") ?? "",
       channel: params.get("channel") ?? undefined,
-      publicBrand:
-        params.get("publicBrand") === "okou"
-          ? "okou"
-          : params.get("publicBrand") === "vm0"
-            ? "vm0"
-            : undefined,
-      publicBrandSignature: params.get("brandSig") ?? undefined,
     };
+  }
+
+  async function postRawAgentPhoneInboundWebhook(
+    rawBody: string,
+    statuses: readonly (200 | 400 | 401 | 404 | 500)[] = [200],
+  ) {
+    const response = await integrations.requestAgentPhoneWebhook(
+      rawBody,
+      agentPhoneWebhookHeaders(rawBody, `evt-bdd-agentphone-${randomUUID()}`),
+      statuses,
+    );
+    if (response.status === 200) {
+      await flushWaitUntilForTest();
+    }
+    return response;
   }
 
   async function postAgentPhoneInboundMessage(
     message: AgentPhoneInboundMessage,
+    statuses: readonly (200 | 400 | 401 | 404 | 500)[] = [200],
   ): Promise<string> {
     const messageId = message.messageId ?? `ap-msg-${randomUUID()}`;
+    const providerMessageId =
+      message.messageId === null ? undefined : messageId;
     const groupId =
       message.isGroup && message.groupId !== null
         ? (message.groupId ?? bddGroupId(message.conversationId ?? messageId))
         : null;
-    const rawBody = JSON.stringify({
-      event: "agent.message",
-      channel: message.channel,
-      ...(message.recentHistory
-        ? { recentHistory: message.recentHistory }
-        : {}),
-      data: {
-        id: messageId,
-        agentId: AGENTPHONE_BDD_AGENT_ID,
-        from: message.from,
-        to: AGENTPHONE_BDD_PHONE_NUMBER,
-        body: message.body,
-        ...(message.conversationId
-          ? { conversationId: message.conversationId }
-          : {}),
-        ...(message.isGroup === undefined ? {} : { isGroup: message.isGroup }),
-        ...(groupId ? { group: { isGroup: true, groupId } } : {}),
-        ...(message.mediaUrl ? { mediaUrl: message.mediaUrl } : {}),
-        ...(message.mentions ? { mentions: message.mentions } : {}),
-      },
+    const providerRoster = message.participants ?? [
+      { identifier: message.senderIdentifier ?? message.from },
+    ];
+    const receivedAt =
+      message.receivedAt === null
+        ? undefined
+        : (message.receivedAt ??
+          (message.isGroup ? new Date(now()).toISOString() : undefined));
+    if (groupId && message.conversationId) {
+      conversationParticipants.set(
+        message.conversationId,
+        providerRoster.map((participant) => {
+          return participant.identifier;
+        }),
+      );
+    }
+    const rawBody = buildAgentPhoneInboundWebhookBody({
+      message,
+      messageId: providerMessageId,
+      groupId,
+      receivedAt,
     });
-    await integrations.requestAgentPhoneWebhook(
-      rawBody,
-      agentPhoneWebhookHeaders(rawBody, `evt-bdd-agentphone-${randomUUID()}`),
-      [200],
-    );
-    // Webhook handling is waitUntil-detached; drain it so follow-up steps
-    // cannot observe provider sends before thread/session state is persisted.
-    await flushWaitUntilForTest();
+    await postRawAgentPhoneInboundWebhook(rawBody, statuses);
     return messageId;
   }
 
   return {
     postAgentPhoneInboundMessage,
+    postRawAgentPhoneInboundWebhook,
 
     captureAgentPhoneSends(): AgentPhoneSendCapture {
       const messages: AgentPhoneProviderSend[] = [];
@@ -254,6 +309,11 @@ export function createAgentPhoneBddApi(context: TestContext) {
               replyToMessageId: stringField(record, "reply_to_message_id"),
               body: stringField(record, "body"),
               mediaUrl: stringField(record, "media_url"),
+              mediaUrls: Array.isArray(record.media_urls)
+                ? record.media_urls.filter((url): url is string => {
+                    return typeof url === "string";
+                  })
+                : [],
             };
             if (!send.toNumber) {
               return HttpResponse.json(
@@ -268,7 +328,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
               channel: "sms",
               from_number: AGENTPHONE_BDD_PHONE_NUMBER,
               to_number: send.toNumber ?? null,
-              media_urls: send.mediaUrl ? [send.mediaUrl] : [],
+              media_urls: send.mediaUrl ? [send.mediaUrl] : send.mediaUrls,
             });
           },
         ),
@@ -277,6 +337,20 @@ export function createAgentPhoneBddApi(context: TestContext) {
           ({ params }) => {
             typing.push(typeof params.id === "string" ? params.id : "");
             return HttpResponse.json({ status: "typing indicator sent" });
+          },
+        ),
+        http.get(
+          `${AGENTPHONE_API_BASE_URL}/v1/conversations/:id`,
+          ({ params }) => {
+            const conversationId =
+              typeof params.id === "string" ? params.id : "";
+            return HttpResponse.json({
+              participants: (
+                conversationParticipants.get(conversationId) ?? []
+              ).map((identifier) => {
+                return { identifier, name: null };
+              }),
+            });
           },
         ),
       );

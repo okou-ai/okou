@@ -3,11 +3,13 @@ import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   projectPublicSocialResponse,
   SOCIALKIT_MAX_INPUT_VALUE_CHARS,
+  socialKitInstagramCommentsOutcomeSchema,
   type ManagedSocialKitPagination,
   type ManagedSocialKitReportedTotalField,
   type ManagedSocialKitTool,
   type SocialErrorReason,
   type SocialKitCollectionProviderLimitedReason,
+  type SocialKitInstagramCommentsOutcome,
   type SocialKitRequest,
   type SocialKitResponse,
   socialKitResponseSchema,
@@ -18,10 +20,15 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import type { AuthContext } from "../../types/auth";
 import { requestSignal$ } from "../context/hono";
-import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
+import {
+  readBoundedResponseText,
+  safeJsonParse,
+  safeUrlParse,
+  settle,
+} from "../utils";
 import {
   checkManagedCredits$,
-  recordManagedUsage$,
+  recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 import { normalizeSocialKitError } from "./socialkit-error";
@@ -32,12 +39,44 @@ const SOCIALKIT_API_BASE = "https://api.socialkit.dev";
 const SOCIALKIT_TIMEOUT_MS = 240_000;
 const MAX_SOCIALKIT_RESPONSE_BYTES = 4 * 1024 * 1024;
 
+/**
+ * The lowercased X handle in a SocialKit author profile URL, or null when the
+ * URL is not a single-segment x.com/twitter.com profile path.
+ *
+ * SocialKit exposes no stable numeric author id for a post, only this URL, so
+ * the handle is the best available author identity. Handles can be renamed and
+ * later reused by another account.
+ */
+function parseXProfileHandle(profileUrl: string): string | null {
+  const url = safeUrlParse(profileUrl);
+  if (
+    !url ||
+    url.protocol !== "https:" ||
+    !["x.com", "www.x.com", "twitter.com", "www.twitter.com"].includes(
+      url.hostname,
+    )
+  ) {
+    return null;
+  }
+  const handle = /^\/([A-Za-z0-9_]{1,15})\/?$/.exec(url.pathname)?.[1];
+  if (!handle || handle.toLowerCase() === "i") {
+    return null;
+  }
+  return handle.toLowerCase();
+}
+
 /** Internal acquisition verification is paid by the platform, not the claimant. */
 export async function readGetStartedRewardPost(
   url: string,
   signal: AbortSignal,
 ): Promise<
-  | { readonly kind: "post"; readonly id: string; readonly text: string }
+  | {
+      readonly kind: "post";
+      readonly id: string;
+      readonly text: string;
+      /** Lowercased author handle, or null when SocialKit gave no usable profile URL. */
+      readonly authorHandle: string | null;
+    }
   | { readonly kind: "retry"; readonly reason: string }
 > {
   const accessKey = env("OKOU_SOCIAL_SOCIALKIT_TOKEN");
@@ -76,12 +115,27 @@ export async function readGetStartedRewardPost(
     return { kind: "retry", reason: "incomplete_response" };
   }
   const tweet = z
-    .object({ id: z.string().min(1), text: z.string().min(1) })
+    .object({
+      id: z.string().min(1),
+      text: z.string().min(1),
+      author: z.unknown(),
+    })
     .safeParse(result.result.tweet);
   if (!tweet.success || !tweet.data.text.trim()) {
     return { kind: "retry", reason: "incomplete_response" };
   }
-  return { kind: "post", id: tweet.data.id, text: tweet.data.text };
+  // A malformed author must not turn a readable post into a retry; the review
+  // rejects a post whose author cannot be identified.
+  const author = z
+    .object({ profileUrl: z.string() })
+    .safeParse(tweet.data.author);
+  const profileUrl = author.success ? author.data.profileUrl : null;
+  return {
+    kind: "post",
+    id: tweet.data.id,
+    text: tweet.data.text,
+    authorHandle: profileUrl ? parseXProfileHandle(profileUrl) : null,
+  };
 }
 
 type ErrorStatus = 400 | 404 | 422 | 429 | 502 | 503;
@@ -125,7 +179,7 @@ interface CompleteSocialKitArgs {
   readonly accessKey: string;
   readonly request: SocialKitRequest;
   readonly tool: ManagedSocialKitTool;
-  readonly recordUsage: (quantity: number) => Promise<number>;
+  readonly recordUsage: (quantity: number) => Promise<number | null>;
 }
 
 type SocialKitCommandResponse =
@@ -412,6 +466,7 @@ function validatedReportedTotal(
   result: Record<string, unknown>,
   field: ManagedSocialKitReportedTotalField | undefined,
   itemsReturned: number,
+  advisory = false,
 ): ReportedTotalValidation {
   if (
     field === undefined ||
@@ -420,9 +475,13 @@ function validatedReportedTotal(
     return { ok: true };
   }
   const value = result[field];
+  if (advisory && value === null) {
+    return { ok: true };
+  }
   return typeof value === "number" &&
     Number.isSafeInteger(value) &&
-    value >= itemsReturned
+    value >= 0 &&
+    (advisory || value >= itemsReturned)
     ? { ok: true, reportedTotal: value }
     : { ok: false };
 }
@@ -479,6 +538,85 @@ function validatedCursorPagination(
         ...reportedTotalFields(reportedTotal),
         nextInput: { cursor },
       };
+}
+
+function validatedInstagramCommentsOutcome(
+  result: Record<string, unknown>,
+): SocialKitInstagramCommentsOutcome | undefined {
+  const collectionStatus = result.collectionStatus;
+  const stopReason = result.stopReason;
+  if (collectionStatus === undefined && stopReason === undefined) {
+    // Older SocialKit workers omitted outcome evidence. Remove after SocialKit
+    // guarantees both fields on every successful response and they drain (#36339).
+    return { collectionStatus: "unknown", stopReason: "unknown" };
+  }
+  const parsed = socialKitInstagramCommentsOutcomeSchema.safeParse({
+    collectionStatus,
+    stopReason,
+  });
+  if (!parsed.success) {
+    return undefined;
+  }
+  const outcome = parsed.data;
+  const validPair =
+    (outcome.collectionStatus === "partial" &&
+      outcome.stopReason !== "upstream_exhausted" &&
+      outcome.stopReason !== "unknown") ||
+    (outcome.collectionStatus === "exhausted" &&
+      outcome.stopReason === "upstream_exhausted") ||
+    (outcome.collectionStatus === "unknown" &&
+      outcome.stopReason === "unknown");
+  return validPair ? outcome : undefined;
+}
+
+function validatedInstagramCommentsPagination(
+  result: Record<string, unknown>,
+  itemsReturned: number,
+  reportedTotal?: number,
+): ValidatedCollection | undefined {
+  const providerOutcome = validatedInstagramCommentsOutcome(result);
+  if (!providerOutcome || typeof result.hasMore !== "boolean") {
+    return undefined;
+  }
+  if (result.hasMore) {
+    if (
+      providerOutcome.collectionStatus === "exhausted" ||
+      (providerOutcome.collectionStatus === "partial" &&
+        providerOutcome.stopReason !== "requested_limit")
+    ) {
+      return undefined;
+    }
+    const cursor = paginationCursorValue(result.cursor);
+    return cursor === undefined
+      ? undefined
+      : {
+          state: "more",
+          itemsReturned,
+          ...reportedTotalFields(reportedTotal),
+          nextInput: { cursor },
+          providerOutcome,
+        };
+  }
+  if (providerOutcome.collectionStatus !== "exhausted") {
+    return {
+      ...providerLimitedCollection(
+        itemsReturned,
+        providerOutcome.collectionStatus === "partial"
+          ? "provider_partial"
+          : "provider_outcome_unknown",
+        reportedTotal,
+      ),
+      providerOutcome,
+    };
+  }
+  // The post total can include comments outside Instagram's available pages.
+  // Exhausted describes those pages, not a comparison with this one page.
+  return {
+    state: "complete",
+    itemsReturned,
+    ...reportedTotalFields(reportedTotal),
+    providerOutcome,
+  };
 }
 
 function validatedNextCursorPagination(
@@ -621,6 +759,7 @@ function validatedCollection(
     result,
     collection.reportedTotalField,
     items.length,
+    tool.name === "instagram_comments",
   );
   if (!reportedTotal.ok) {
     return undefined;
@@ -632,6 +771,13 @@ function validatedCollection(
       reason: "provider_ceiling",
       sourceLimit: collection.sourceLimit,
     };
+  }
+  if (tool.name === "instagram_comments") {
+    return validatedInstagramCommentsPagination(
+      result,
+      items.length,
+      reportedTotal.reportedTotal,
+    );
   }
   return validatedPagination(
     result,
@@ -760,7 +906,7 @@ export const socialKitRequest$ = command(
         tool,
         recordUsage: (quantity) => {
           return set(
-            recordManagedUsage$,
+            recordSuccessfulManagedUsage$,
             {
               actor: {
                 orgId: args.auth.orgId,

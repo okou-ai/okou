@@ -17,7 +17,7 @@ import { resolveArtifactShareDownload$ } from "./artifact-shares.service";
 import { getHostedSiteFiles$ } from "./host.service";
 import {
   resolveSharedThreadArtifactReference$,
-  sharedThreadArtifactTarget,
+  sharedThreadArtifactTarget$,
 } from "./shared-thread-artifact-reference.service";
 import { signSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
 import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
@@ -50,7 +50,7 @@ const resolveSharedThreadArtifactDownload$ = command(
           }
         : null;
     }
-    const target = await get(sharedThreadArtifactTarget(reference, signal));
+    const target = await set(sharedThreadArtifactTarget$, reference, signal);
     signal.throwIfAborted();
     if (target?.kind !== "html") {
       return null;
@@ -83,7 +83,7 @@ const resolveSharedThreadArtifactDownload$ = command(
       signSharedThreadHostedDownload$,
       {
         publicSlug: reference.publicToken,
-        publicBrand: reference.publicBrand,
+        layoutSegment: reference.publicBrand,
         target,
       },
       signal,

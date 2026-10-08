@@ -44,7 +44,11 @@ function renderScrapeMetadata(response: ScrapeResponse): void {
   console.log(chalk.dim(`  Provider: ${response.provider}`));
   console.log(chalk.dim(`  Billing category: ${response.billingCategory}`));
   console.log(chalk.dim(`  Billing quantity: ${response.billingQuantity}`));
-  console.log(chalk.dim(`  Credits charged: ${response.creditsCharged}`));
+  console.log(
+    chalk.dim(
+      `  Credits charged: ${response.creditsCharged === null ? "pending" : response.creditsCharged}`,
+    ),
+  );
 }
 
 function renderScrapeResult(response: ScrapeResponse): void {

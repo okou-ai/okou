@@ -13,17 +13,17 @@ import type {
   McpMessageReadResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-messages";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
-import { computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
-import type { Db } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import { projectUserMessage } from "./chat-user-message.service";
 import {
   McpMessageHistoryError,
-  readMcpChatMessageHistory,
+  readMcpChatMessageHistory$,
+  createMcpChatHistoryBudget,
 } from "./mcp-chat-message-history.service";
 
 interface Principal {
@@ -155,7 +155,7 @@ export function projectMcpChatMessages(
       messages.push({
         ref: {
           threadId: event.threadId,
-          eventId: event.id,
+          eventId: state.inputOriginId ?? event.id,
           seqId: event.seqId,
         },
         role: event.eventType === "output.message" ? "assistant" : "user",
@@ -328,7 +328,7 @@ function messageWindow(
       return {
         kind: "reference_unavailable",
         message:
-          "The reference is absent, replaced, hidden, or outside this run filter. Find a current visible message reference.",
+          "The input or output reference is absent, hidden, outside this run filter, or its sequence revision changed. Use a visible message's eventId to locate its current representation.",
       };
     }
     start = Math.max(0, index - Math.floor((input.limit - 1) / 2));
@@ -484,32 +484,13 @@ function readPreparedMcpChatMessagePage(
   });
 }
 
-/** Build a message page from one already-authorized canonical history view. */
-export function readMcpChatMessagePage(
-  messages: readonly McpCompleteChatMessage[],
-  principal: Principal,
-  input: McpGetChatMessagesInput,
-  checkBudget: () => void,
-): McpMessageReadResult {
-  const prepared = prepareMessagePage(principal, input);
-  return prepared
-    ? readPreparedMcpChatMessagePage(
-        messages,
-        principal,
-        input,
-        checkBudget,
-        prepared,
-      )
-    : invalidMessageCursor();
-}
-
-export function getMcpChatMessages(
-  runtime: { readonly db: Db; readonly bucket: string },
-  principal: Principal,
-  input: McpGetChatMessagesInput,
-  signal: AbortSignal,
-): Computed<Promise<McpMessageReadResult>> {
-  return computed(async (get): Promise<McpMessageReadResult> => {
+export const getMcpChatMessages$ = command(
+  async (
+    { set },
+    principal: Principal,
+    input: McpGetChatMessagesInput,
+    signal: AbortSignal,
+  ): Promise<McpMessageReadResult> => {
     const startedAt = performance.now();
     const operationSignal = AbortSignal.any([
       signal,
@@ -530,13 +511,12 @@ export function getMcpChatMessages(
     }
     const result = await settle(
       (async (): Promise<McpMessageReadResult> => {
-        const rows = await get(
-          readMcpChatMessageHistory(
-            runtime,
-            principal,
-            input.threadId,
-            operationSignal,
-          ),
+        const rows = await set(
+          readMcpChatMessageHistory$,
+          principal,
+          input.threadId,
+          createMcpChatHistoryBudget(operationSignal),
+          operationSignal,
         );
         checkBudget();
         if (rows === null) {
@@ -573,5 +553,5 @@ export function getMcpChatMessages(
       message:
         "Conversation history is temporarily unavailable or its archive could not be verified. Retry later.",
     };
-  });
-}
+  },
+);

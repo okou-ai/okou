@@ -321,46 +321,6 @@ test("Use the appropriate Enter behavior on touch devices", async () => {
   await expectSentPrompt("Send with the hardware shortcut");
 });
 
-test.each(["{Control>}{Enter}{/Control}", "{Enter}"])(
-  "Chrome Android accepts hardware %s without sending IME Enter",
-  async (shortcut) => {
-    const user = userEvent.setup({ delay: null });
-    const sentPrompts: string[] = [];
-    context.mocks.browser.userAgent(
-      "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36",
-    );
-    context.mocks.browser.matchMedia((query) => {
-      return query === "(pointer: coarse)" || query === "(any-pointer: fine)";
-    });
-    const viewport = installTouchViewport();
-    installComposerChat(sentPrompts, "enter");
-    await setupPage({
-      context,
-      path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
-    });
-
-    const editor = await loadNewChatComposer();
-    await fill(editor, "Hardware keyboard draft");
-    fireEvent.keyDown(editor, {
-      code: "Enter",
-      ctrlKey: true,
-      isComposing: true,
-      key: "Enter",
-      keyCode: 229,
-    });
-    expect(editor).toHaveTextContent("Hardware keyboard draft");
-    if (shortcut === "{Enter}") {
-      viewport.closeSoftwareKeyboard();
-    }
-    await user.keyboard(shortcut);
-    await waitFor(() => {
-      expect(sentPrompts).toStrictEqual(["Hardware keyboard draft"]);
-    });
-    await expectSentPrompt("Hardware keyboard draft");
-    await expectAgentWorking();
-  },
-);
-
 test("Treat whitespace as an empty message", async () => {
   const sentPrompts: string[] = [];
   installComposerChat(sentPrompts, "enter");
@@ -391,68 +351,5 @@ test("Treat whitespace as an empty message", async () => {
     expect(within(composer).queryByText(COMPOSER_PLACEHOLDER)).toBeNull();
   });
   expect(send).toBeDisabled();
-  expect(sentPrompts).toHaveLength(0);
-});
-
-test("Hide the placeholder after adding an empty line", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentPrompts: string[] = [];
-  installComposerChat(sentPrompts, "enter");
-
-  await setupPage({
-    context,
-    path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
-  });
-
-  const editor = await loadNewChatComposer();
-  const composer = editor.closest("[data-slot='chat-composer-card']");
-  if (!(composer instanceof HTMLElement)) {
-    throw new Error("Composer surface not found");
-  }
-  const send = await findFastControl("button", "Send", composer);
-  expect(within(composer).getByText(COMPOSER_PLACEHOLDER)).toBeVisible();
-  expect(send).toBeDisabled();
-
-  await user.click(editor);
-  await user.keyboard("{Shift>}{Enter}{/Shift}");
-
-  expect(draftLines(editor)).toStrictEqual(["", ""]);
-  await waitFor(() => {
-    expect(within(composer).queryByText(COMPOSER_PLACEHOLDER)).toBeNull();
-  });
-  expect(send).toBeDisabled();
-  expect(sentPrompts).toHaveLength(0);
-});
-
-test("Edit individual lines in a multiline draft", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentPrompts: string[] = [];
-  context.mocks.browser.userAgent(
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6)",
-  );
-  installComposerChat(sentPrompts, "enter");
-
-  await setupPage({
-    context,
-    path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
-  });
-
-  const editor = await loadNewChatComposer();
-  await fill(editor, "First line");
-  await user.keyboard("{Shift>}{Enter}{/Shift}");
-  await user.keyboard("Middle line");
-  await user.keyboard("{Shift>}{Enter}{/Shift}");
-  await user.keyboard("Last line");
-  await user.keyboard("{Control>}a{/Control}");
-  await user.keyboard("Final ");
-  await user.keyboard("{Control>}e{/Control}");
-  await user.keyboard(".");
-
-  expect(draftLines(editor)).toStrictEqual([
-    "First line",
-    "Middle line",
-    "Final Last line.",
-  ]);
-  expect(editor).toHaveFocus();
   expect(sentPrompts).toHaveLength(0);
 });

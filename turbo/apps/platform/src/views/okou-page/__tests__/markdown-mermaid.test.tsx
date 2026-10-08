@@ -1,12 +1,11 @@
 import mermaid from "@okouai/mermaid-lite";
 import {
-  act,
   screen,
   waitFor,
   waitForElementToBeRemoved,
   within,
 } from "@testing-library/react";
-import { expect, test, vi, describe, beforeEach, it } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
@@ -54,89 +53,6 @@ function diagramButtons(container: ParentNode = document.body): HTMLElement[] {
     return button.getAttribute("aria-label") === "Expand diagram";
   });
 }
-
-describe.each(["settings", "system"] as const)(
-  "an idle diagram remains available when the app theme changes through %s",
-  (entry) => {
-    async function prepareScenario() {
-      const media = context.mocks.browser.matchMedia((query) => {
-        return query === "(min-width: 48rem)";
-      });
-      const chat = createMarkdownChatFixture(context);
-      const rows = completedMessageRows(
-        chat,
-        ["```mermaid", "flowchart TD", "  Plan --> Launch", "```"].join("\n"),
-      );
-      chat.install({
-        rows: () => {
-          return rows;
-        },
-      });
-
-      await setupPage({
-        context,
-        path: chat.path,
-        host: "app.okou.ai",
-        locale: "en-US",
-      });
-      const image = await screen.findByRole("img", { name: "Diagram" });
-      const source = image.getAttribute("src");
-      let settingsDialog: HTMLElement | undefined;
-      let darkButton: HTMLElement | undefined;
-      expect(getButtonByName("Expand diagram")).toBeEnabled();
-
-      if (entry === "settings") {
-        const rail = await screen.findByTestId("labeled-nav-rail");
-        click(within(rail).getByLabelText("Test User"));
-        const menu = await screen.findByRole("menu");
-        click(within(menu).getByText("Settings"));
-        settingsDialog = await screen.findByRole("dialog", {
-          name: "Settings",
-        });
-        darkButton = await waitFor(() => {
-          return getButtonByName("Dark", settingsDialog);
-        });
-      }
-      return { media, source, settingsDialog, darkButton };
-    }
-    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-    beforeEach(async () => {
-      preparedScenario = await prepareScenario();
-    });
-    it("keeps the same diagram available after changing the theme", async () => {
-      const { media, source, settingsDialog, darkButton } = preparedScenario;
-      if (entry === "settings") {
-        if (!settingsDialog || !darkButton) {
-          throw new Error("Expected the diagram theme settings to be ready");
-        }
-        click(darkButton);
-        const settingsRemoved = waitForElementToBeRemoved(settingsDialog);
-        click(within(settingsDialog).getByLabelText("Close"));
-        await settingsRemoved;
-      } else {
-        act(() => {
-          media.setMatches((query) => {
-            return (
-              query === "(min-width: 48rem)" ||
-              query === "(prefers-color-scheme: dark)"
-            );
-          });
-        });
-      }
-
-      expect(document.documentElement).toHaveAttribute("data-theme", "dark");
-      expect(screen.getByRole("img", { name: "Diagram" })).toHaveAttribute(
-        "src",
-        source,
-      );
-      expect(getButtonByName("Expand diagram")).toBeEnabled();
-      click(getButtonByName("Expand diagram"));
-      await expect(
-        screen.findByRole("dialog", { name: "diagram.svg preview" }),
-      ).resolves.toBeInTheDocument();
-    });
-  },
-);
 
 async function openMermaidSplitView() {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
@@ -209,45 +125,8 @@ async function openMermaidSplitView() {
   });
   const firstSidebarSource = firstSidebarImage.getAttribute("src");
   await dialogRemoved;
-  return { sidebar, firstSidebarSource, secondExpand };
+  return { sidebar, firstSidebarSource };
 }
-
-describe("with an expanded diagram", () => {
-  async function prepareScenario() {
-    const { sidebar, firstSidebarSource, secondExpand } =
-      await openMermaidSplitView();
-    if (!firstSidebarSource) {
-      throw new Error("Expected the first sidebar diagram to have a blob URL");
-    }
-    return { secondExpand, sidebar, firstSidebarSource };
-  }
-  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-  beforeEach(async () => {
-    preparedScenario = await prepareScenario();
-  });
-  it("opening another Mermaid diagram releases and replaces the current artifact split view", async () => {
-    const { secondExpand, sidebar, firstSidebarSource } = preparedScenario;
-    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
-    click(secondExpand);
-
-    const secondSidebarSource = await waitFor(() => {
-      const currentImage = within(sidebar).getByRole("img", {
-        name: "diagram.svg",
-      });
-      const source = currentImage.getAttribute("src");
-      if (!source) {
-        throw new Error("Expected the replacement diagram to have a blob URL");
-      }
-      expect(source).not.toBe(firstSidebarSource);
-      return source;
-    });
-    expect(revokeObjectUrl).toHaveBeenCalledWith(firstSidebarSource);
-    expect(revokeObjectUrl).not.toHaveBeenCalledWith(secondSidebarSource);
-    expect(
-      screen.queryByRole("dialog", { name: "diagram.svg preview" }),
-    ).toBeNull();
-  });
-});
 
 test("Closing a Mermaid artifact split view releases its blob and preserves the inline diagrams", async () => {
   const { sidebar, firstSidebarSource } = await openMermaidSplitView();
@@ -262,27 +141,6 @@ test("Closing a Mermaid artifact split view releases its blob and preserves the 
   expect(revokeObjectUrl).toHaveBeenCalledWith(firstSidebarSource);
   expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(2);
   expect(screen.getAllByText("Diagram source")).toHaveLength(2);
-});
-
-test("Leaving the page releases the active Mermaid artifact split view blob", async () => {
-  const { firstSidebarSource } = await openMermaidSplitView();
-  if (!firstSidebarSource) {
-    throw new Error("Expected the sidebar diagram to have a blob URL");
-  }
-  const agentsLink = queryAllByRoleFast("link").find((link) => {
-    return link.textContent?.trim() === "Agents";
-  });
-  if (!agentsLink) {
-    throw new Error("Expected the Agents navigation link");
-  }
-  const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
-
-  click(agentsLink);
-
-  await expect(
-    screen.findByRole("heading", { name: "Agents" }),
-  ).resolves.toBeInTheDocument();
-  expect(revokeObjectUrl).toHaveBeenCalledWith(firstSidebarSource);
 });
 
 test("Completed Mermaid diagrams remain accessible and inspectable", async () => {

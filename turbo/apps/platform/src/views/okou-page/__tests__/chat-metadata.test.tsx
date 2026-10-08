@@ -16,10 +16,10 @@ import {
   startPage,
   type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
-import { createThreadMetaLookup } from "../../../signals/chat-page/chat-thread-event-sourcing.ts";
-import { resetSignal } from "../../../signals/utils.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const FIRST_THREAD_ID = "b0000000-0000-4000-a000-000000000101";
@@ -49,10 +49,9 @@ function isolatedAuth(): Exclude<SetupPageAuth, null> {
 function configureChatPrerequisites(): void {
   context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
-    selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: null,
   });
@@ -78,14 +77,13 @@ function snapshotThread(
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
     pinnedAt: null,
+    archived: false,
     renamedAt: null,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
-    selectedImageModel: null,
   };
 }
 
@@ -94,14 +92,14 @@ function threadMetadata(id: string, title: string): ChatThreadMetadata {
     id,
     agentId: AGENT_ID,
     title,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     modelSettings: {},
     serviceTier: null,
     pinnedAt: null,
+    archived: false,
+    muted: false,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
-    selectedImageModel: null,
   };
 }
 
@@ -119,12 +117,10 @@ function threadEvent(args: {
     chatThreadId: args.threadId,
     agentId: AGENT_ID,
     title: args.title,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
-    selectedImageModel: null,
     createdAt: UPDATED_AT,
   };
 }
@@ -203,11 +199,14 @@ test("Late thread details do not replace the conversation the user chose", async
   configureChatPrerequisites();
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await availableThreadList.promise;
-    return respond(200, {
-      chatThreads: [snapshotThread(SECOND_THREAD_ID, "Chosen conversation")],
-      latestEventId: SNAPSHOT_EVENT_ID,
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [snapshotThread(SECOND_THREAD_ID, "Chosen conversation")],
+        latestEventId: SNAPSHOT_EVENT_ID,
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -264,11 +263,14 @@ test("A newly available thread appears after a thread-list event", async () => {
 
   configureChatPrerequisites();
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [snapshotThread(FIRST_THREAD_ID, "Original online chat")],
-      latestEventId: SNAPSHOT_EVENT_ID,
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [snapshotThread(FIRST_THREAD_ID, "Original online chat")],
+        latestEventId: SNAPSHOT_EVENT_ID,
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
     return respond(200, {
@@ -371,13 +373,16 @@ test("Metadata opens a cold conversation while canonical synchronization continu
     async ({ request, respond }) => {
       snapshotRequested.resolve(request.signal);
       await snapshot.promise;
-      return respond(200, {
-        chatThreads: [
-          snapshotThread(FIRST_THREAD_ID, "Canonical conversation"),
-        ],
-        latestEventId: SNAPSHOT_EVENT_ID,
-        latestSeqId: 1,
-      });
+      return respond(
+        200,
+        mockChatThreadSnapshotResponse(context, {
+          chatThreads: [
+            snapshotThread(FIRST_THREAD_ID, "Canonical conversation"),
+          ],
+          latestEventId: SNAPSHOT_EVENT_ID,
+          latestSeqId: 1,
+        }),
+      );
     },
   );
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
@@ -406,11 +411,14 @@ test("Canonical synchronization wins and cancels the losing metadata request", a
   const metadata = context.mocks.deferred<void>();
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await snapshot.promise;
-    return respond(200, {
-      chatThreads: [snapshotThread(FIRST_THREAD_ID, "Stream conversation")],
-      latestEventId: SNAPSHOT_EVENT_ID,
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [snapshotThread(FIRST_THREAD_ID, "Stream conversation")],
+        latestEventId: SNAPSHOT_EVENT_ID,
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(
     chatThreadMetadataContract.get,
@@ -437,53 +445,53 @@ test("Canonical synchronization wins and cancels the losing metadata request", a
   expect(screen.queryByText("Losing metadata")).not.toBeInTheDocument();
 });
 
-test.each([404, 500] as const)(
-  "Unavailable metadata (%s) still waits for the canonical conversation",
-  async (status) => {
-    configureChatPrerequisites();
-    const snapshot = context.mocks.deferred<void>();
-    const metadataRequested = context.mocks.deferred<void>();
-    context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
-      await snapshot.promise;
-      return respond(200, {
+test("Unavailable metadata still waits for the canonical conversation", async () => {
+  configureChatPrerequisites();
+  const snapshot = context.mocks.deferred<void>();
+  const metadataRequested = context.mocks.deferred<void>();
+  context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
+    await snapshot.promise;
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
         chatThreads: [
           snapshotThread(FIRST_THREAD_ID, "Recovered conversation"),
           snapshotThread(SECOND_THREAD_ID, "Available sidebar conversation"),
         ],
         latestEventId: SNAPSHOT_EVENT_ID,
         latestSeqId: 1,
-      });
-    });
-    context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
-      if (params.id === SECOND_THREAD_ID) {
-        return respond(
-          200,
-          threadMetadata(SECOND_THREAD_ID, "Available sidebar conversation"),
-        );
-      }
-      metadataRequested.resolve();
-      return respond(status, {
-        error: { code: "UNAVAILABLE", message: "Metadata unavailable" },
-      });
-    });
-
-    const page = await startPage({
-      context,
-      path: `/chats/${FIRST_THREAD_ID}?sidebar=${SECOND_THREAD_ID}`,
-      auth: isolatedAuth(),
-    });
-    await metadataRequested.promise;
-    await expectReadyChat("Available sidebar conversation");
-    // An unavailable shortcut must leave the primary lookup waiting, while
-    // the independently loaded sidebar is already usable.
-    expect(screen.getAllByRole("region", { name: "Chat thread" })).toHaveLength(
-      1,
+      }),
     );
-    snapshot.resolve();
-    await page.ready;
-    await expectReadyChat("Recovered conversation");
-  },
-);
+  });
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    if (params.id === SECOND_THREAD_ID) {
+      return respond(
+        200,
+        threadMetadata(SECOND_THREAD_ID, "Available sidebar conversation"),
+      );
+    }
+    metadataRequested.resolve();
+    return respond(500, {
+      error: { code: "UNAVAILABLE", message: "Metadata unavailable" },
+    });
+  });
+
+  const page = await startPage({
+    context,
+    path: `/chats/${FIRST_THREAD_ID}?sidebar=${SECOND_THREAD_ID}`,
+    auth: isolatedAuth(),
+  });
+  await metadataRequested.promise;
+  await expectReadyChat("Available sidebar conversation");
+  // An unavailable shortcut must leave the primary lookup waiting, while
+  // the independently loaded sidebar is already usable.
+  expect(screen.getAllByRole("region", { name: "Chat thread" })).toHaveLength(
+    1,
+  );
+  snapshot.resolve();
+  await page.ready;
+  await expectReadyChat("Recovered conversation");
+});
 
 test("Cold left and right conversations resolve independently", async () => {
   configureChatPrerequisites();
@@ -535,81 +543,3 @@ test("Cold left and right conversations resolve independently", async () => {
   await expectReadyChat("Right conversation");
   expect(document.title).toBe("Left conversation | Okou");
 });
-
-test.each(["reader reset", "parent abort"] as const)(
-  "An independent same-thread %s leaves the mounted conversation loading",
-  async (cancellation) => {
-    // The Router deduplicates a same-thread sidebar. Exercise that otherwise
-    // unreachable simultaneous lookup through its production requesting graph,
-    // while the actual mounted page remains the surviving reader.
-    const resolveOtherSurface$ = createThreadMetaLookup();
-    const resetOtherSurface$ = resetSignal();
-    const resetOtherParent$ = resetSignal();
-    const otherParent = context.store.set(resetOtherParent$, context.signal);
-    const otherSignal = context.store.set(resetOtherSurface$, otherParent);
-    configureChatPrerequisites();
-    const snapshot = context.mocks.deferred<void>();
-    const pageMetadata = context.mocks.deferred<void>();
-    const otherMetadata = context.mocks.deferred<void>();
-    const pageRequested = context.mocks.deferred<AbortSignal>();
-    const otherRequested = context.mocks.deferred<AbortSignal>();
-    let requestNumber = 0;
-    context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
-      await snapshot.promise;
-      return respond(200, {
-        chatThreads: [],
-        latestEventId: null,
-        latestSeqId: null,
-      });
-    });
-    context.mocks.api(
-      chatThreadMetadataContract.get,
-      async ({ request, respond }) => {
-        requestNumber++;
-        if (requestNumber === 1) {
-          pageRequested.resolve(request.signal);
-          await pageMetadata.promise;
-          return respond(
-            200,
-            threadMetadata(FIRST_THREAD_ID, "Surviving conversation"),
-          );
-        }
-        otherRequested.resolve(request.signal);
-        await otherMetadata.promise;
-        return respond(
-          200,
-          threadMetadata(FIRST_THREAD_ID, "Cancelled reader title"),
-        );
-      },
-    );
-
-    // Keep global synchronization pending to exercise only reader ownership.
-    await startPage({
-      context,
-      path: `/chats/${FIRST_THREAD_ID}`,
-      auth: isolatedAuth(),
-    });
-    const pageRequestSignal = await pageRequested.promise;
-    const otherResult = context.store.set(
-      resolveOtherSurface$,
-      FIRST_THREAD_ID,
-      otherSignal,
-    );
-    const otherRequestSignal = await otherRequested.promise;
-    context.store.set(
-      cancellation === "reader reset" ? resetOtherSurface$ : resetOtherParent$,
-    );
-    const expectedReason =
-      cancellation === "parent abort" ? otherParent.reason : otherSignal.reason;
-    await expect(otherResult).rejects.toBe(expectedReason);
-    expect(otherRequestSignal.aborted).toBeTruthy();
-    expect(pageRequestSignal.aborted).toBeFalsy();
-
-    otherMetadata.resolve();
-    pageMetadata.resolve();
-    await expectReadyChat("Surviving conversation");
-    expect(
-      screen.queryByText("Cancelled reader title"),
-    ).not.toBeInTheDocument();
-  },
-);

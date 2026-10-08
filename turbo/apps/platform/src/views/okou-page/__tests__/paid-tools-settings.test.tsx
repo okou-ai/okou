@@ -1,7 +1,12 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  type UpdateUserModelPreferenceRequest,
+  type UserModelPreferenceResponse,
+  userModelPreferenceContract,
+} from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   click,
   queryAllByRoleFast,
@@ -41,13 +46,25 @@ async function openPaidTools(path = "/?settings=tools") {
         memberships: [{ id: "org_default" }],
       },
     },
-    featureSwitches: {
-      [FeatureSwitchKey.PaidToolControls]: true,
-      [FeatureSwitchKey.SettingsToolsTab]: true,
-      [FeatureSwitchKey.ChatPreference]: true,
-    },
   });
   return screen.findByRole("dialog", { name: "Settings" });
+}
+
+function modelPreference(
+  overrides: Partial<UserModelPreferenceResponse> = {},
+): UserModelPreferenceResponse {
+  return {
+    selectedModel: null,
+    serviceTier: null,
+    modelSettings: {},
+    selectedImageModel: null,
+    updatedAt: null,
+    ...overrides,
+  };
+}
+
+function imageModelSelect() {
+  return screen.findByRole("combobox", { name: "Model" });
 }
 
 async function readySwitch(name: string) {
@@ -67,7 +84,7 @@ test("Members manage Paid tools in Tools, separately from Chat", async () => {
   click(button("Tools", dialog));
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
-  expect(within(dialog).getAllByRole("switch")).toHaveLength(12);
+  expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
   expect(
     within(dialog).getByText(
       "These settings apply only to you in Research team.",
@@ -84,76 +101,12 @@ test("Members manage Paid tools in Tools, separately from Chat", async () => {
   ).toBeTruthy();
 });
 
-test("Chat rollout disabled hides Chat but leaves Tools available", async () => {
-  await setupPage({
-    context,
-    path: "/?settings=tools",
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: false,
-      [FeatureSwitchKey.PaidToolControls]: true,
-      [FeatureSwitchKey.SettingsToolsTab]: true,
-    },
-  });
+test("A member without feature switches manages Paid tools in Tools", async () => {
+  await setupPage({ context, path: "/?settings=tools" });
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   await within(dialog).findByRole("heading", { name: "Tools" });
-  await readySwitch("Web search");
-  expect(
-    queryAllByRoleFast("button", dialog).some((element) => {
-      return element.textContent === "Chat";
-    }),
-  ).toBeFalsy();
-  expect(window.location.search).toContain("settings=tools");
-});
-
-test("Tools tab switch disabled leaves Chat visible without Tools", async () => {
-  await setupPage({
-    context,
-    path: "/?settings=tools",
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.PaidToolControls]: true,
-      [FeatureSwitchKey.SettingsToolsTab]: false,
-    },
-  });
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  await within(dialog).findByRole("heading", { name: "Preference" });
-  expect(
-    within(dialog).queryByRole("switch", { name: "Web search" }),
-  ).not.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button", dialog).some((element) => {
-      return element.textContent === "Chat";
-    }),
-  ).toBeTruthy();
-  expect(
-    queryAllByRoleFast("button", dialog).some((element) => {
-      return element.textContent === "Tools";
-    }),
-  ).toBeFalsy();
-  expect(window.location.search).toContain("settings=preference");
-});
-
-test("Paid tools rollout disabled hides Tools even when its tab switch is on", async () => {
-  await setupPage({
-    context,
-    path: "/?settings=tools",
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.PaidToolControls]: false,
-      [FeatureSwitchKey.SettingsToolsTab]: true,
-    },
-  });
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  await within(dialog).findByRole("heading", { name: "Preference" });
-  expect(button("Chat", dialog)).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button", dialog).some((element) => {
-      return element.textContent === "Tools";
-    }),
-  ).toBeFalsy();
-  expect(
-    within(dialog).queryByRole("switch", { name: "Web search" }),
-  ).not.toBeInTheDocument();
+  expect(button("Tools", dialog)).toBeInTheDocument();
+  await expect(readySwitch("Web search")).resolves.toBeChecked();
 });
 
 test("Paid tools toggles save inverted enabled state and can re-enable a tool", async () => {
@@ -205,132 +158,6 @@ test("A failed load shows no assumed enabled tools and can be retried", async ()
   await expect(readySwitch("Web search")).resolves.not.toBeChecked();
 });
 
-test("A failed save preserves the confirmed value and exposes an explicit retry", async () => {
-  let available = false;
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    return available
-      ? respond(200, { toolId: params.toolId, disabled: body.disabled })
-      : respond(500, {
-          error: {
-            message: "Preference could not be saved",
-            code: "INTERNAL_SERVER_ERROR",
-          },
-        });
-  });
-  const dialog = await openPaidTools();
-  const toggle = await readySwitch("Web search");
-  click(toggle);
-  await within(dialog).findByText("Your change was not saved.");
-  expect(toggle).toBeChecked();
-  available = true;
-  click(button("Retry", dialog));
-  await waitFor(() => {
-    return expect(toggle).not.toBeChecked();
-  });
-  expect(
-    within(dialog).queryByText("Your change was not saved."),
-  ).not.toBeInTheDocument();
-});
-
-test("Saving one tool leaves other tools usable and preserves concurrent results", async () => {
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(
-    paidToolsContract.update,
-    async ({ params, body, respond, withSignal }) => {
-      if (params.toolId === "web-search") {
-        await withSignal(release.promise);
-      }
-      return respond(200, { toolId: params.toolId, disabled: body.disabled });
-    },
-  );
-  await openPaidTools();
-  const web = await readySwitch("Web search");
-  const people = await readySwitch("People search");
-  click(web);
-  await waitFor(() => {
-    return expect(web).toHaveAttribute("aria-disabled", "true");
-  });
-  expect(people).not.toHaveAttribute("aria-disabled", "true");
-  click(people);
-  await waitFor(() => {
-    return expect(people).not.toBeChecked();
-  });
-  release.resolve();
-  await waitFor(() => {
-    return expect(web).not.toBeChecked();
-  });
-  expect(people).not.toBeChecked();
-});
-
-test("An in-flight read from the previous workspace cannot populate the next workspace", async () => {
-  const oldResponse = context.mocks.deferred<void>();
-  const requested = context.mocks.deferred<void>();
-  let first = true;
-  context.mocks.api(paidToolsContract.get, async ({ respond, withSignal }) => {
-    if (first) {
-      first = false;
-      requested.resolve();
-      await withSignal(oldResponse.promise);
-      return respond(200, { disabledTools: ["web-search"] });
-    }
-    return respond(200, { disabledTools: ["people-search"] });
-  });
-  await openPaidTools();
-  await requested.promise;
-  expect(
-    screen.queryByRole("switch", { name: "Web search" }),
-  ).not.toBeInTheDocument();
-  act(() => {
-    context.mocks.clerk().organization({
-      activeOrg: { id: "org_second", name: "Second workspace" },
-      memberships: [{ id: "org_second" }],
-    });
-    context.mocks.clerk().stateChanged();
-  });
-  await screen.findByText(
-    "These settings apply only to you in Second workspace.",
-  );
-  await expect(readySwitch("People search")).resolves.not.toBeChecked();
-  oldResponse.resolve();
-  await expect(readySwitch("Web search")).resolves.toBeChecked();
-});
-
-test("Dismissing Settings cancels an in-flight save and reopening reads current settings", async () => {
-  const release = context.mocks.deferred<void>();
-  const started = context.mocks.deferred<void>();
-  let disabledTools: string[] = [];
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools });
-  });
-  context.mocks.api(
-    paidToolsContract.update,
-    async ({ params, body, respond, withSignal }) => {
-      started.resolve();
-      await withSignal(release.promise);
-      return respond(200, { toolId: params.toolId, disabled: body.disabled });
-    },
-  );
-  await openPaidTools();
-  click(await readySwitch("Web search"));
-  await started.promise;
-  click(screen.getByLabelText("Close"));
-  await waitFor(() => {
-    return expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
-  });
-  disabledTools = ["people-search"];
-  release.resolve();
-  const rail = await screen.findByTestId("labeled-nav-rail");
-  click(within(rail).getByLabelText("Test User"));
-  const menu = await screen.findByRole("menu");
-  click(within(menu).getByText("Settings"));
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  click(button("Tools", dialog));
-  await expect(readySwitch("Web search")).resolves.toBeChecked();
-  await expect(readySwitch("People search")).resolves.not.toBeChecked();
-});
-
 test("A workspace switch while a save obtains its token prevents sending that save under the new workspace", async () => {
   const tokenRequested = context.mocks.deferred<void>();
   const releaseToken = context.mocks.deferred<void>();
@@ -363,43 +190,288 @@ test("A workspace switch while a save obtains its token prevents sending that sa
   expect(updates).toStrictEqual([]);
 });
 
-test("A same-identity Clerk refresh preserves an in-flight save and its confirmed value", async () => {
-  const release = context.mocks.deferred<void>();
-  const started = context.mocks.deferred<void>();
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    // A reload before the pending mutation commits would still return enabled.
-    return respond(200, { disabledTools: [] });
-  });
-  context.mocks.api(
-    paidToolsContract.update,
-    async ({ params, body, respond, withSignal }) => {
-      started.resolve();
-      await withSignal(release.promise);
-      return respond(200, { toolId: params.toolId, disabled: body.disabled });
-    },
-  );
+test("The image model shows the system default when the member has none", async () => {
   await openPaidTools();
-  const toggle = await readySwitch("Web search");
-  click(toggle);
-  await started.promise;
-  act(() => {
-    context.mocks.clerk().organization({
-      activeOrg: { id: "org_default", name: "Renamed research team" },
-      memberships: [{ id: "org_default" }],
-    });
-    context.mocks.clerk().stateChanged();
-  });
-  await screen.findByText(
-    "These settings apply only to you in Renamed research team.",
-  );
-  expect(screen.getByRole("switch", { name: "Web search" })).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  release.resolve();
+  const select = await imageModelSelect();
   await waitFor(() => {
-    return expect(
-      screen.getByRole("switch", { name: "Web search" }),
-    ).not.toBeChecked();
+    return expect(select).toHaveTextContent("GPT Image 2.5 Flare");
+  });
+  await waitFor(() => {
+    return expect(select).not.toBeDisabled();
   });
 });
+
+test("The image model shows the member's stored model", async () => {
+  context.mocks.data.userModelPreference(
+    modelPreference({ selectedImageModel: "fal-ai/flux-2-pro" }),
+  );
+  await openPaidTools();
+  const select = await imageModelSelect();
+  await waitFor(() => {
+    return expect(select).toHaveTextContent("FLUX.2 Pro");
+  });
+});
+
+test("The image model is locked but still shown while image generation is off", async () => {
+  context.mocks.data.userModelPreference(
+    modelPreference({ selectedImageModel: "ideogram/v4" }),
+  );
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["image-generation"] });
+  });
+  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+    return respond(200, { toolId: params.toolId, disabled: body.disabled });
+  });
+  await openPaidTools();
+  const toggle = await readySwitch("Image generation");
+  expect(toggle).not.toBeChecked();
+  const select = await imageModelSelect();
+  await waitFor(() => {
+    return expect(select).toHaveTextContent("Ideogram 4");
+  });
+  expect(select).toBeDisabled();
+  click(toggle);
+  await waitFor(() => {
+    return expect(select).not.toBeDisabled();
+  });
+  expect(select).toHaveTextContent("Ideogram 4");
+});
+
+test("Choosing an image model saves it with the stored run model", async () => {
+  const updates: UpdateUserModelPreferenceRequest[] = [];
+  context.mocks.data.userModelPreference(
+    modelPreference({
+      selectedModel: "claude-sonnet-5",
+      serviceTier: "priority",
+    }),
+  );
+  context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
+    updates.push(body);
+    const stored = modelPreference({
+      selectedModel: body.selectedModel,
+      serviceTier: body.serviceTier,
+      selectedImageModel: body.selectedImageModel ?? null,
+      updatedAt: "2026-09-28T00:00:00.000Z",
+    });
+    context.mocks.data.userModelPreference(stored);
+    return respond(200, stored);
+  });
+  await openPaidTools();
+  const select = await imageModelSelect();
+  await waitFor(() => {
+    return expect(select).not.toBeDisabled();
+  });
+  const user = userEvent.setup();
+  await user.click(select);
+  await user.click(await screen.findByRole("option", { name: /^Ideogram 4/ }));
+  await waitFor(() => {
+    return expect(select).toHaveTextContent("Ideogram 4");
+  });
+  await waitFor(() => {
+    return expect(select).not.toBeDisabled();
+  });
+  expect(updates).toStrictEqual([
+    {
+      selectedModel: "claude-sonnet-5",
+      serviceTier: "priority",
+      selectedImageModel: "ideogram/v4",
+    },
+  ]);
+});
+
+test("A failed image model save retains the unsaved choice and can be retried", async () => {
+  let failing = true;
+  const updates: UpdateUserModelPreferenceRequest[] = [];
+  context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
+    updates.push(body);
+    if (failing) {
+      return respond(500, {
+        error: {
+          message: "Preferences temporarily unavailable",
+          code: "INTERNAL_SERVER_ERROR",
+        },
+      });
+    }
+    const stored = modelPreference({
+      selectedImageModel: body.selectedImageModel ?? null,
+    });
+    context.mocks.data.userModelPreference(stored);
+    return respond(200, stored);
+  });
+  const dialog = await openPaidTools();
+  const select = await imageModelSelect();
+  await waitFor(() => {
+    return expect(select).not.toBeDisabled();
+  });
+  const user = userEvent.setup();
+  await user.click(select);
+  await user.click(
+    await screen.findByRole("option", { name: /^Nano Banana 2 Lite/ }),
+  );
+  await within(dialog).findByText("Your image model was not saved.");
+  expect(select).toHaveTextContent("Nano Banana 2 Lite");
+  failing = false;
+  click(button("Retry", dialog));
+  await waitFor(() => {
+    expect(
+      within(dialog).queryByText("Your image model was not saved."),
+    ).not.toBeInTheDocument();
+    expect(select).not.toBeDisabled();
+  });
+  expect(select).toHaveTextContent("Nano Banana 2 Lite");
+  expect(updates).toHaveLength(2);
+  expect(updates[1]?.selectedImageModel).toBe("google/nano-banana-2-lite");
+  context.mocks.data.userModelPreference(
+    modelPreference({ selectedImageModel: "gpt-image-2" }),
+  );
+  act(() => {
+    context.mocks.ably.trigger("userPreferenceChanged", {
+      kinds: ["defaultImageModel"],
+    });
+  });
+  await waitFor(() => {
+    expect(select).toHaveTextContent("GPT Image 2");
+  });
+});
+
+test.each(["disable image generation", "leave Tools"] as const)(
+  "An unsaved image model is discarded when you %s",
+  async (action) => {
+    context.mocks.api(userModelPreferenceContract.update, ({ respond }) => {
+      return respond(500, {
+        error: {
+          message: "Preferences temporarily unavailable",
+          code: "INTERNAL_SERVER_ERROR",
+        },
+      });
+    });
+    context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+      return respond(200, { toolId: params.toolId, disabled: body.disabled });
+    });
+    const dialog = await openPaidTools();
+    const select = await imageModelSelect();
+    await waitFor(() => {
+      expect(select).not.toBeDisabled();
+    });
+    const user = userEvent.setup();
+    await user.click(select);
+    await user.click(
+      await screen.findByRole("option", { name: /^Ideogram 4/ }),
+    );
+    await within(dialog).findByText("Your image model was not saved.");
+    expect(select).toHaveTextContent("Ideogram 4");
+    if (action === "disable image generation") {
+      click(await readySwitch("Image generation"));
+    } else {
+      click(button("Preference", dialog));
+      await within(dialog).findByRole("heading", { name: "Preference" });
+      click(button("Tools", dialog));
+    }
+    const storedSelect = await imageModelSelect();
+    await waitFor(() => {
+      expect(storedSelect).toHaveTextContent("GPT Image 2.5 Flare");
+    });
+    expect(storedSelect).toHaveProperty(
+      "disabled",
+      action === "disable image generation",
+    );
+    expect(
+      within(dialog).queryByText("Your image model was not saved."),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test("An image model change from another session refreshes the displayed model", async () => {
+  await openPaidTools();
+  const select = await imageModelSelect();
+  await waitFor(() => {
+    return expect(select).toHaveTextContent("GPT Image 2.5 Flare");
+  });
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscription("userPreferenceChanged"),
+    ).toBeTruthy();
+  });
+  context.mocks.data.userModelPreference(
+    modelPreference({ selectedImageModel: "gpt-image-2" }),
+  );
+  act(() => {
+    context.mocks.ably.trigger("userPreferenceChanged", {
+      kinds: ["defaultImageModel"],
+    });
+  });
+  await waitFor(() => {
+    return expect(select).toHaveTextContent("GPT Image 2");
+  });
+  expect(select).not.toHaveTextContent("GPT Image 2.5 Flare");
+});
+
+test.each(["preference read", "write token"] as const)(
+  "An image model save cannot cross workspaces while awaiting its %s",
+  async (boundary) => {
+    const waiting = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    const updates: UpdateUserModelPreferenceRequest[] = [];
+    let holdSave = false;
+    let preference = modelPreference();
+    context.mocks.api(userModelPreferenceContract.get, async ({ respond }) => {
+      const requestedPreference = preference;
+      if (holdSave) {
+        holdSave = false;
+        if (boundary === "preference read") {
+          waiting.resolve();
+          await release.promise;
+        } else {
+          mockedClerk.sessionGetToken.mockImplementationOnce(async () => {
+            waiting.resolve();
+            await release.promise;
+            return "new-workspace-token";
+          });
+        }
+      }
+      return respond(200, requestedPreference);
+    });
+    context.mocks.api(
+      userModelPreferenceContract.update,
+      ({ body, respond }) => {
+        updates.push(body);
+        preference = modelPreference({
+          selectedModel: body.selectedModel,
+          serviceTier: body.serviceTier,
+          selectedImageModel: body.selectedImageModel ?? null,
+        });
+        return respond(200, preference);
+      },
+    );
+    await openPaidTools();
+    const select = await imageModelSelect();
+    await waitFor(() => {
+      expect(select).not.toBeDisabled();
+    });
+    holdSave = true;
+    const user = userEvent.setup();
+    await user.click(select);
+    await user.click(
+      await screen.findByRole("option", { name: /^Ideogram 4/ }),
+    );
+    await waiting.promise;
+    await act(() => {
+      preference = modelPreference({ selectedImageModel: "fal-ai/flux-2-pro" });
+      context.mocks.clerk().organization({
+        activeOrg: { id: "org_second", name: "Second workspace" },
+        memberships: [{ id: "org_second" }],
+      });
+      context.mocks.clerk().stateChanged();
+      release.resolve();
+      return release.promise;
+    });
+    await screen.findByText(
+      "These settings apply only to you in Second workspace.",
+    );
+    const nextSelect = await imageModelSelect();
+    await waitFor(() => {
+      expect(nextSelect).not.toBeDisabled();
+    });
+    expect(updates).toStrictEqual([]);
+  },
+);

@@ -202,7 +202,6 @@ pub async fn run_benchmark(
             client_session_id: uuid::Uuid::new_v4().to_string(),
             client_version: env!("CARGO_PKG_VERSION"),
             system_ca_bundle: crate::deps::SYSTEM_CA_BUNDLE,
-            runner_token: None,
         },
         crate::ADDON_FILES,
     )
@@ -226,7 +225,7 @@ pub async fn run_benchmark(
         Err(e) => {
             drop(resource_locks);
             stop_benchmark_proxy(&mut mitm, "live_runner_publish").await;
-            return Err(e);
+            return Err(e.into());
         }
     };
 
@@ -464,6 +463,7 @@ async fn run_sandbox(
         capture_network_bodies: false,
         billable_firewalls: &[],
         model_usage_provider: None,
+        model_usage_long_context_min_total_input_tokens: None,
     };
     if let Err(e) = mitm.register_sandbox(&source_ip, &registration).await {
         warn!(error = %e, "failed to register sandbox in proxy");
@@ -509,7 +509,7 @@ async fn run_in_sandbox(
     let mount_result = ensure_workspace_drive_mounted(sandbox, sandbox.id()).await;
     timing.workspace_mount_ms = Some(t_mount.elapsed().as_millis());
     if let Err(e) = mount_result {
-        return (Err(e.error), timing);
+        return (Err(e.error.into()), timing);
     }
 
     let t_guest_restore = Instant::now();
@@ -826,7 +826,6 @@ mod tests {
                     client_session_id: "benchmark-lifecycle-test".to_string(),
                     client_version: env!("CARGO_PKG_VERSION"),
                     system_ca_bundle: crate::deps::SYSTEM_CA_BUNDLE,
-                    runner_token: None,
                 },
                 crate::ADDON_FILES,
             )

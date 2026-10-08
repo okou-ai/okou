@@ -1,11 +1,11 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type {
   ChatRunOptionsRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
@@ -13,15 +13,15 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   AGENT_ID,
   context,
   findComposerEditor,
   mockAgent,
   mockBillingCapabilities,
-  mockOrgModelRoutes,
+  mockPersonalModelRoutes,
 } from "./chat-composer-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 interface SubmittedMessage {
   readonly userMessage?: UserMessageDocument;
@@ -50,9 +50,8 @@ function setupModels(): void {
     });
   });
   mockAgent();
-  mockOrgModelRoutes("claude-fable-5-1");
+  mockPersonalModelRoutes();
   mockBillingCapabilities({
-    supportByok: true,
     restrictedBuiltInModels: false,
   });
 }
@@ -62,7 +61,6 @@ async function setupComposer(): Promise<HTMLElement> {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });
@@ -95,55 +93,7 @@ function visibleText(message: SubmittedMessage | undefined): string {
   );
 }
 
-test("Presentation defaults to 8-12 slides", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposer();
-  expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
-  const picker = await enterPresentation(editor);
-  expect(picker).toHaveTextContent("8–12 slides");
-});
-
-test("Presentation offers every documented slide count", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposer();
-  const picker = await enterPresentation(editor);
-  click(picker);
-  const menu = await screen.findByRole("listbox");
-  expect(
-    within(menu)
-      .getAllByRole("option")
-      .map((item) => {
-        return item.textContent?.trim();
-      }),
-  ).toStrictEqual([
-    "Auto",
-    "4–8 slides",
-    "8–12 slides",
-    "12–16 slides",
-    "16–20 slides",
-    "20–24 slides",
-  ]);
-  expect(
-    within(menu).getByRole("option", { name: "8–12 slides" }),
-  ).toHaveAttribute("aria-selected", "true");
-});
-
-test("Presentation selects Auto", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposer();
-  const picker = await enterPresentation(editor);
-  click(picker);
-  const menu = await screen.findByRole("listbox");
-  click(within(menu).getByRole("option", { name: "Auto" }));
-  await waitFor(() => {
-    return expect(picker).toHaveTextContent("Auto");
-  });
-});
-
-test("Presentation sends Auto as hidden additional info while keeping the message unchanged", async () => {
+test("Presentation sends Auto as additional info without changing the message", async () => {
   setupModels();
   const submissions: SubmittedMessage[] = [];
   mockChatLifecycle(context, {
@@ -175,20 +125,26 @@ test("Presentation sends Auto as hidden additional info while keeping the messag
     ),
   });
   expect(visibleText(submissions[0])).toBe("Our launch");
-  const text = await screen.findByText("Our launch");
-  const message = text.closest<HTMLElement>('[data-role="user"]');
-  expect(message).toBeVisible();
-  expect(message).not.toHaveTextContent("Slide count");
-  expect(message).not.toHaveTextContent("Create a presentation.");
 });
 
-test.each([
-  ["8–12 slides", "8-12"],
-  ["4–8 slides", "4-8"],
-  ["12–16 slides", "12-16"],
-  ["16–20 slides", "16-20"],
-  ["20–24 slides", "20-24"],
-])("Presentation sends %s in additional info", async (label, range) => {
+test("Presentation instructions stay out of the sent message bubble", async () => {
+  setupModels();
+  mockChatLifecycle(context);
+  const editor = await setupComposer();
+  await enterPresentation(editor);
+  click(button("Send"));
+  await waitFor(() => {
+    const message = document.querySelector<HTMLElement>('[data-role="user"]');
+    expect(message).toBeVisible();
+    expect(message).toHaveTextContent("Our launch");
+    expect(message).not.toHaveTextContent("Slide count");
+    expect(message).not.toHaveTextContent("Create a presentation.");
+  });
+});
+
+test("Presentation sends the chosen slide count in additional info", async () => {
+  const label = "20–24 slides";
+  const range = "20-24";
   setupModels();
   const submissions: SubmittedMessage[] = [];
   mockChatLifecycle(context, {
@@ -198,10 +154,8 @@ test.each([
   });
   const editor = await setupComposer();
   const picker = await enterPresentation(editor);
-  if (range !== "8-12") {
-    click(picker);
-    click(await screen.findByRole("option", { name: label }));
-  }
+  click(picker);
+  click(await screen.findByRole("option", { name: label }));
   await waitFor(() => {
     expect(picker).toHaveTextContent(label);
   });
@@ -222,7 +176,7 @@ test.each([
   expect(visibleText(submissions[0])).toBe("Our launch");
 });
 
-test("Leaving presentation hides its picker and resets its length", async () => {
+test("Leaving presentation hides its picker and drops its settings", async () => {
   setupModels();
   const submissions: SubmittedMessage[] = [];
   mockChatLifecycle(context, {
@@ -242,22 +196,6 @@ test("Leaving presentation hides its picker and resets its length", async () => 
     expect(screen.queryByLabelText("Remove Presentation")).toBeNull();
   });
   expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
-  // Coming back starts the length over rather than restoring the last one.
-  click(
-    button(
-      "Presentation",
-      await screen.findByRole("group", {
-        name: "Choose a task",
-      }),
-    ),
-  );
-  await expect(
-    screen.findByRole("combobox", { name: "Slide count" }),
-  ).resolves.toHaveTextContent("8–12 slides");
-  click(button("Remove Presentation"));
-  await waitFor(() => {
-    expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
-  });
   click(button("Send"));
   await waitFor(() => {
     expect(submissions).toHaveLength(1);

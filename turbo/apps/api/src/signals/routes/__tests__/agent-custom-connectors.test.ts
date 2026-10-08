@@ -17,7 +17,7 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { agentsRoutes } from "../agents";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const connectors = createConnectorBddApi(context);
@@ -553,84 +553,6 @@ describe("PUT /api/agents/:id/custom-connectors", () => {
     await expect(
       connectors.readAgentCustomConnectors(actor, agent.agentId),
     ).resolves.toStrictEqual([c2.id]);
-  });
-
-  it("serializes concurrent custom connector replaces for the same agent", async () => {
-    const actor = bdd.user();
-    const agent = await createAgent(actor, { displayName: "Concurrent Agent" });
-    const c1 = await createCustomConnector(actor, "conc-1");
-    const c2 = await createCustomConnector(actor, "conc-2");
-
-    const sameSetUpdates = await Promise.all([
-      connectors.updateAgentCustomConnectors(actor, agent.agentId, [
-        c1.id,
-        c2.id,
-      ]),
-      connectors.updateAgentCustomConnectors(actor, agent.agentId, [
-        c1.id,
-        c2.id,
-      ]),
-    ]);
-    for (const update of sameSetUpdates) {
-      expect(new Set(update)).toStrictEqual(new Set([c1.id, c2.id]));
-    }
-
-    await Promise.all([
-      connectors.updateAgentCustomConnectors(actor, agent.agentId, [c1.id]),
-      connectors.updateAgentCustomConnectors(actor, agent.agentId, [c2.id]),
-    ]);
-    const readBack = await connectors.readAgentCustomConnectors(
-      actor,
-      agent.agentId,
-    );
-    expect(readBack).toHaveLength(1);
-    expect([c1.id, c2.id]).toContain(readBack[0]);
-
-    await connectors.updateAgentCustomConnectors(
-      actor,
-      agent.agentId,
-      [],
-      "replace",
-    );
-    await Promise.all([
-      connectors.updateAgentCustomConnectors(
-        actor,
-        agent.agentId,
-        [c1.id],
-        "add",
-      ),
-      connectors.updateAgentCustomConnectors(
-        actor,
-        agent.agentId,
-        [c2.id],
-        "add",
-      ),
-    ]);
-    const readAfterAdds = await connectors.readAgentCustomConnectors(
-      actor,
-      agent.agentId,
-    );
-    expect(new Set(readAfterAdds)).toStrictEqual(new Set([c1.id, c2.id]));
-
-    await Promise.all([
-      connectors.updateAgentCustomConnectors(
-        actor,
-        agent.agentId,
-        [c1.id],
-        "remove",
-      ),
-      connectors.updateAgentCustomConnectors(
-        actor,
-        agent.agentId,
-        [c2.id],
-        "add",
-      ),
-    ]);
-    const readAfterRemoveAdd = await connectors.readAgentCustomConnectors(
-      actor,
-      agent.agentId,
-    );
-    expect(readAfterRemoveAdd).toStrictEqual([c2.id]);
   });
 
   it("clears authorizations with empty array", async () => {

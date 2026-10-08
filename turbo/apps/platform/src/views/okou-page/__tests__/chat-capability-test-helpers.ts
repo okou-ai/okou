@@ -214,19 +214,6 @@ export async function selectPassage(
   await findButton("Quote");
 }
 
-export async function selectPassageWithoutActions(
-  passage: string,
-  occurrence = 0,
-): Promise<void> {
-  const existingQuoteAction = await findButton("Quote");
-  setPassageSelection(passage, occurrence, "native");
-  await waitFor(() => {
-    if (existingQuoteAction.isConnected) {
-      throw new Error("The invalid selection still exposes passage actions");
-    }
-  });
-}
-
 export async function selectAcrossPassages(
   startPassage: string,
   endPassage: string,

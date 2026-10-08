@@ -2137,10 +2137,11 @@ mod tests {
 
     fn api_client_for_url(api_url: String) -> ApiClient {
         ApiClient::new(
-            HttpClient::create(HttpClientConfig {
+            HttpClient::new(HttpClientConfig {
                 api_url,
                 vercel_bypass: None,
                 client_session_id: "runner-session-test".to_string(),
+                runner_version: env!("CARGO_PKG_VERSION"),
             })
             .expect("test API URL should be valid"),
             "runner-token".to_string(),
@@ -2440,6 +2441,7 @@ mod tests {
                         capture_network_bodies: false,
                         billable_firewalls: &billable_firewalls,
                         model_usage_provider: None,
+                        model_usage_long_context_min_total_input_tokens: None,
                     },
                 )
                 .await
@@ -2814,6 +2816,7 @@ mod tests {
                     capture_network_bodies: false,
                     billable_firewalls: &[],
                     model_usage_provider: None,
+                    model_usage_long_context_min_total_input_tokens: None,
                 },
             )
             .await
@@ -2912,6 +2915,7 @@ mod tests {
                     capture_network_bodies: false,
                     billable_firewalls: &[],
                     model_usage_provider: None,
+                    model_usage_long_context_min_total_input_tokens: None,
                 },
             )
             .await

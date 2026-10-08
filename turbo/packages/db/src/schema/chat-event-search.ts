@@ -46,13 +46,13 @@ export const chatEventSearchMessages = pgTable(
         table.orgId,
         table.createdAt.desc(),
       ),
-      index("chat_event_search_messages_user_org_agent_id_created_idx").on(
-        table.userId,
-        table.orgId,
-        table.agentId,
-        table.createdAt.desc(),
-      ),
-      index("chat_event_search_messages_tsv_idx").using("gin", table.tsv),
+      // btree_gin: intersect the user's postings with keyword postings inside
+      // one GIN scan, so common keywords do not fall back to a table scan.
+      // fastupdate is off: each projector INSERT updates the index directly,
+      // so there is no pending list to flush, drain or scan on search.
+      index("chat_event_search_messages_user_tsv_gin_idx")
+        .using("gin", table.userId, table.tsv)
+        .with({ fastupdate: false }),
     ];
   },
 );

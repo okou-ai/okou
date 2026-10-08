@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { linkLayoutSegmentSchema } from "./link-layout";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -19,7 +20,8 @@ export const artifactSharePolicySchema = z
     shareId: z.uuid(),
     ownerId: z.string().min(1),
     orgId: z.string().min(1),
-    publicBrand: z.enum(["vm0", "okou"]),
+    // Persisted link-layout marker (see link-layout.ts), not product identity.
+    publicBrand: linkLayoutSegmentSchema,
     // Absent only on persisted shares from before the delivery registry.
     delivery: z.literal("artifact-registry-v1").optional(),
     // Existing shared links/policies remain valid until an explicit owner
@@ -56,7 +58,7 @@ export const artifactSharePolicySchema = z
         manifest: z.object({
           version: z.literal(1),
           access: z.literal("owner-private-v1"),
-          publicBrand: z.enum(["vm0", "okou"]),
+          publicBrand: linkLayoutSegmentSchema,
           deploymentId: z.uuid(),
           siteId: z.uuid(),
           publicSlug: z.string(),

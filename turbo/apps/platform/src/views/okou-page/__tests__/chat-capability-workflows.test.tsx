@@ -31,9 +31,6 @@ const WORKFLOW_ID = "e0000000-0000-4000-a000-000000000861";
 const AUTOMATION_ID = "e0000000-0000-4000-a000-000000000862";
 const WORKFLOW_AGENT_ID = "e0000000-0000-4000-a000-000000000863";
 const OWNER_USER_ID = "test-user-123";
-const CREATE_WORKFLOW_PROMPT =
-  "Help me create a workflow for this agent. Use the workflow-setup skill, then ask me for the desired outcome, automation, and action before creating the workflow and automation.";
-
 type ScheduleAutomation = Extract<
   ChatThreadWorkflowAutomation,
   { readonly kind: "schedule" }
@@ -42,11 +39,6 @@ type GmailMatchAutomation = Extract<
   ChatThreadWorkflowAutomation,
   { readonly eventType: "gmail-new-message" }
 >;
-type GmailLabelAutomation = Extract<
-  ChatThreadWorkflowAutomation,
-  { readonly eventType: "gmail-label-applied" }
->;
-
 const WORKFLOW = {
   id: WORKFLOW_ID,
   agentId: WORKFLOW_AGENT_ID,
@@ -91,21 +83,6 @@ function gmailMatchAutomation(
   };
 }
 
-function gmailLabelAutomation(labelName: string): GmailLabelAutomation {
-  return {
-    ...automationBase(),
-    kind: "event",
-    eventType: "gmail-label-applied",
-    eventConfig: {
-      provider: "gmail",
-      event: "label_applied",
-      labelName,
-    },
-    schedule: null,
-    scheduleSummary: null,
-  };
-}
-
 function scheduleSummary(
   automation: ScheduleAutomation,
 ): WorkflowAutomationSummary {
@@ -125,25 +102,6 @@ function scheduleSummary(
 
 function gmailMatchSummary(
   automation: GmailMatchAutomation,
-): WorkflowAutomationSummary {
-  return {
-    id: automation.id,
-    ownerUserId: automation.ownerUserId,
-    enabled: automation.enabled,
-    chatThreadId: automation.chatThreadId,
-    nextRunAt: automation.nextRunAt,
-    lastRunAt: automation.lastRunAt,
-    official: automation.official,
-    kind: automation.kind,
-    eventType: automation.eventType,
-    eventConfig: automation.eventConfig,
-    schedule: null,
-    scheduleSummary: null,
-  };
-}
-
-function gmailLabelSummary(
-  automation: GmailLabelAutomation,
 ): WorkflowAutomationSummary {
   return {
     id: automation.id,
@@ -219,14 +177,6 @@ async function openAutomationEditor(): Promise<HTMLElement> {
   });
   click(await findButton("Edit", sidebar));
   return await screen.findByRole("dialog", { name: "Edit automation" });
-}
-
-function currentComposer(): HTMLElement {
-  return screen.getByRole("textbox", { name: "Message" });
-}
-
-function composerText(): string {
-  return normalizedText(currentComposer());
 }
 
 test("Edit schedule and Gmail workflow triggers", async () => {
@@ -319,48 +269,6 @@ test("Edit Gmail match workflow trigger filters", async () => {
   });
   const sidebar = screen.getByRole("complementary", { name: "Automations" });
   expect(within(sidebar).queryByText("Next run")).not.toBeInTheDocument();
-});
-
-test("Edit a Gmail label workflow trigger", async () => {
-  const updates: WorkflowAutomationUpdateRequest[] = [];
-  let current = gmailLabelAutomation("Inbox");
-  installAutomationConversation();
-  installAutomationList(() => {
-    return current;
-  });
-  context.mocks.api(workflowAutomationsContract.update, ({ body, respond }) => {
-    updates.push(body);
-    if (
-      !("eventConfig" in body) ||
-      body.eventConfig.event !== "label_applied"
-    ) {
-      throw new Error("Expected a Gmail label update");
-    }
-    current = gmailLabelAutomation(body.eventConfig.labelName);
-    return respond(200, gmailLabelSummary(current));
-  });
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  const dialog = await openAutomationEditor();
-  await fill(
-    within(dialog).getByRole("textbox", { name: "Label name" }),
-    "Customer Escalations",
-  );
-  click(await findButton("Save automation", dialog));
-
-  await waitFor(() => {
-    expect(updates).toStrictEqual([
-      {
-        eventConfig: {
-          provider: "gmail",
-          event: "label_applied",
-          labelName: "Customer Escalations",
-        },
-      },
-    ]);
-    expect(screen.getByText('Label "Customer Escalations"')).toBeVisible();
-  });
 });
 
 function automationInput(args: {
@@ -474,46 +382,4 @@ test("Present workflow trigger events as meaningful chat history", async () => {
   expect(
     screen.queryByRole("listitem", { name: "Queued message" }),
   ).not.toBeInTheDocument();
-});
-
-test("Start creating a workflow from the chat composer", async () => {
-  const originalDraft = "Keep this unsent customer follow-up.";
-  installCapabilityChat({
-    events: completedConversation("The composer is ready."),
-  });
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  await readyChat();
-  click(await findButton("Create workflow"));
-  await waitFor(() => {
-    expect(composerText()).toBe(CREATE_WORKFLOW_PROMPT);
-  });
-
-  await fill(currentComposer(), originalDraft);
-  click(await findButton("Create workflow"));
-  let dialog = await screen.findByRole("dialog", {
-    name: "Replace composer draft?",
-  });
-  expect(dialog).toHaveTextContent(
-    "Continuing will clear your current composer draft and start a workflow prompt.",
-  );
-  click(await findButton("Cancel", dialog));
-
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Replace composer draft?" }),
-    ).not.toBeInTheDocument();
-    expect(composerText()).toBe(originalDraft);
-  });
-
-  click(await findButton("Create workflow"));
-  dialog = await screen.findByRole("dialog", {
-    name: "Replace composer draft?",
-  });
-  click(await findButton("Continue", dialog));
-
-  await waitFor(() => {
-    expect(composerText()).toBe(CREATE_WORKFLOW_PROMPT);
-  });
 });

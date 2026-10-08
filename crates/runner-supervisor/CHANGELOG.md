@@ -1,0 +1,154 @@
+# Changelog
+
+## [0.2.24](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.23...runner-supervisor-v0.2.24) (2026-10-07)
+
+## [0.2.23](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.22...runner-supervisor-v0.2.23) (2026-10-07)
+
+## [0.2.22](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.21...runner-supervisor-v0.2.22) (2026-10-07)
+
+## [0.2.21](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.20...runner-supervisor-v0.2.21) (2026-10-04)
+
+## [0.2.20](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.19...runner-supervisor-v0.2.20) (2026-10-03)
+
+## [0.2.19](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.18...runner-supervisor-v0.2.19) (2026-10-03)
+
+## [0.2.18](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.17...runner-supervisor-v0.2.18) (2026-10-02)
+
+## [0.2.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.16...runner-supervisor-v0.2.17) (2026-10-02)
+
+## [0.2.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.15...runner-supervisor-v0.2.16) (2026-10-01)
+
+## [0.2.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.14...runner-supervisor-v0.2.15) (2026-10-01)
+
+## [0.2.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.13...runner-supervisor-v0.2.14) (2026-10-01)
+
+## [0.2.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.12...runner-supervisor-v0.2.13) (2026-10-01)
+
+## [0.2.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.11...runner-supervisor-v0.2.12) (2026-10-01)
+
+## [0.2.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.10...runner-supervisor-v0.2.11) (2026-10-01)
+
+## [0.2.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.9...runner-supervisor-v0.2.10) (2026-09-30)
+
+## [0.2.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.8...runner-supervisor-v0.2.9) (2026-09-30)
+
+## [0.2.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.7...runner-supervisor-v0.2.8) (2026-09-30)
+
+## [0.2.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.6...runner-supervisor-v0.2.7) (2026-09-30)
+
+## [0.2.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.5...runner-supervisor-v0.2.6) (2026-09-30)
+
+## [0.2.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.4...runner-supervisor-v0.2.5) (2026-09-30)
+
+## [0.2.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.3...runner-supervisor-v0.2.4) (2026-09-29)
+
+## [0.2.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.2...runner-supervisor-v0.2.3) (2026-09-29)
+
+## [0.2.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.1...runner-supervisor-v0.2.2) (2026-09-29)
+
+## [0.2.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.0...runner-supervisor-v0.2.1) (2026-09-28)
+
+## [0.2.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.18...runner-supervisor-v0.2.0) (2026-09-28)
+
+
+### Features
+
+* **runner:** gate wss tickets on host ingress heartbeat ([#37192](https://github.com/okou-ai/okou/issues/37192)) ([00b5a33](https://github.com/okou-ai/okou/commit/00b5a334dceacc63b97978c57108d736822fd230))
+
+## [0.1.18](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.17...runner-supervisor-v0.1.18) (2026-09-28)
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
+## [0.1.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.16...runner-supervisor-v0.1.17) (2026-09-28)
+
+## [0.1.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.15...runner-supervisor-v0.1.16) (2026-09-27)
+
+## [0.1.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.14...runner-supervisor-v0.1.15) (2026-09-26)
+
+## [0.1.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.13...runner-supervisor-v0.1.14) (2026-09-26)
+
+
+### Refactoring
+
+* **runner:** move finalizing fallback lock policy to supervisor ([#36973](https://github.com/okou-ai/okou/issues/36973)) ([d7c10ee](https://github.com/okou-ai/okou/commit/d7c10eeaabd5380dd397b213a0481d3f5ed4dbe2))
+
+## [0.1.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.12...runner-supervisor-v0.1.13) (2026-09-25)
+
+## [0.1.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.11...runner-supervisor-v0.1.12) (2026-09-25)
+
+
+### Bug Fixes
+
+* retain runner affinity for active predecessor producers ([#36866](https://github.com/okou-ai/okou/issues/36866)) ([d90ba1e](https://github.com/okou-ai/okou/commit/d90ba1e7d4a7bc36c2c5f1abf168c1b1e83e657a))
+
+
+### Refactoring
+
+* **runner:** move exact idle pruning into supervisor ([#36882](https://github.com/okou-ai/okou/issues/36882)) ([12b4033](https://github.com/okou-ai/okou/commit/12b403370158b154381722841dd2de5dd531db5f))
+
+## [0.1.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.10...runner-supervisor-v0.1.11) (2026-09-25)
+
+
+### Refactoring
+
+* **runner:** move pending candidate state to supervisor ([#36868](https://github.com/okou-ai/okou/issues/36868)) ([6efbff4](https://github.com/okou-ai/okou/commit/6efbff4941ee52d9fc2018806968ddaf3578b7ae))
+
+## [0.1.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.9...runner-supervisor-v0.1.10) (2026-09-25)
+
+## [0.1.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.8...runner-supervisor-v0.1.9) (2026-09-25)
+
+
+### Refactoring
+
+* **runner:** move post-executor completion coordination into supervisor ([#36820](https://github.com/okou-ai/okou/issues/36820)) ([e1cda49](https://github.com/okou-ai/okou/commit/e1cda4991d15e49f3b02af9d4c4980dff5e89be4))
+
+## [0.1.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.7...runner-supervisor-v0.1.8) (2026-09-25)
+
+
+### Refactoring
+
+* **runner:** move pre-claim admission into supervisor ([#36759](https://github.com/okou-ai/okou/issues/36759)) ([7e6034c](https://github.com/okou-ai/okou/commit/7e6034cebc78a7ae296aaf0bd387ffac760c7f48))
+
+## [0.1.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.6...runner-supervisor-v0.1.7) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move claimed activation recovery into supervisor ([#36749](https://github.com/okou-ai/okou/issues/36749)) ([79d7840](https://github.com/okou-ai/okou/commit/79d7840392ad9bea2b092c1f5b7b1efb4cfd4016))
+* **runner:** move claimed idle reservation into supervisor ([#36735](https://github.com/okou-ai/okou/issues/36735)) ([8e2e530](https://github.com/okou-ai/okou/commit/8e2e530700737a0439b36099d875c16c907ccbd1))
+* **runner:** move finalizing arbitration into supervisor ([#36744](https://github.com/okou-ai/okou/issues/36744)) ([759a2a0](https://github.com/okou-ai/okou/commit/759a2a0e73c611059630b8eb147b53cafc6d1d18))
+
+## [0.1.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.5...runner-supervisor-v0.1.6) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move sandbox finalization into supervisor ([#36716](https://github.com/okou-ai/okou/issues/36716)) ([ad6aabe](https://github.com/okou-ai/okou/commit/ad6aabea7501cd2af5942027bf3387c262277cf1))
+
+## [0.1.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.4...runner-supervisor-v0.1.5) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move orphan ownership to supervisor ([#36668](https://github.com/okou-ai/okou/issues/36668)) ([f170598](https://github.com/okou-ai/okou/commit/f1705989c5e591f2c5ce1f7f26dafd245919b4c5))
+
+## [0.1.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.3...runner-supervisor-v0.1.4) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move heartbeat orchestration into supervisor ([#36588](https://github.com/okou-ai/okou/issues/36588)) ([ad07eb7](https://github.com/okou-ai/okou/commit/ad07eb72e7a1d5de3b3c308337f572262ce1b138))
+
+## [0.1.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.2...runner-supervisor-v0.1.3) (2026-09-24)
+
+## [0.1.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.1...runner-supervisor-v0.1.2) (2026-09-24)
+
+## [0.1.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.0...runner-supervisor-v0.1.1) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** extract idle orchestration supervisor ([#36548](https://github.com/okou-ai/okou/issues/36548)) ([52040cf](https://github.com/okou-ai/okou/commit/52040cf8ee4c98111707c2f2f742bbb295ec2951))

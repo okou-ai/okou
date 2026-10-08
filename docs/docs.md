@@ -7,6 +7,13 @@ surface; the index does not replace their detailed rules.
 ## Code Review
 
 - [Bad code smells](./bad-smell.md): production-code quality rules.
+- [Retiring PostgreSQL advisory locks](./advisory-locks.md): the 2026-09-26
+  retirement policy, constraint and SQL alternatives, testing boundaries, and
+  lint enforcement.
+- [Advisory lock terminal state](./advisory-lock-terminal-state.md): binding
+  no-new-fields design, local transaction ownership, and two release waves.
+- [Advisory lock Release 1](./advisory-lock-release-1.md): writer preparation,
+  transaction inventory, implementation status, and removal gates.
 - [Fallbacks to avoid](./fallback.md): fallback slop, negative tests against
   removed code, feature-switched features that need no compatibility, and the
   narrow cases where a time-boxed fallback is required.
@@ -19,15 +26,24 @@ surface; the index does not replace their detailed rules.
   command triggers, stable card geometry, and measurement ownership.
 - [React and ccstate cache and lifecycle practices](./cache.md): render purity,
   state ownership, cache retention, refs, and resource teardown.
+- [API ccstate design](./api-ccstate.md): factory inputs, derived computeds,
+  write-result-only state, entry-owned orchestration, and no production test
+  hooks for API signal graphs.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
+- [Run models and subscription metadata](./model-catalog.md): fixed Auto,
+  personal subscription metadata, selection and billing.
+- [Run models API](./run-models-api.md): the `GET /api/run-models` response
+  for Auto and the caller's connected personal subscriptions.
+- [Retired model route cleanup](./retired-model-route-cleanup.md): the
+  data-only pruning of obsolete execution routes.
+- [Personal subscription CLI and Reset Cards](./subscription-controls.md):
+  exact-account usage reads, subsequent-run switching, user-confirmed reset
+  links and run capabilities.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
-  concrete account ownership, bounded disconnect retention and activation gates.
-- [Subscription decryption experiment](./subscription-decryption-experiment.md):
-  bounded KMS concurrency, provider-lock measurements and failure trade-offs.
-- [Subscription equivalence experiment](./subscription-equivalence-experiment.md):
-  paired canonical/mirror proof decryption and complete caller measurements.
+  concrete account ownership, bounded disconnect retention and credential
+  storage/locking.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.
@@ -38,18 +54,24 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Discord integration](./discord-integration.md): default-off settings, shared
+  provider contracts, Slack parity, and fixture/real-guild acceptance evidence.
+
 - [Personal paid-tool controls](./paid-tool-controls.md): workspace-member
   preferences, run snapshots, CLI enforcement and the disabled rollout boundary.
 - [External MCP server](./mcp-server.md): OAuth resource setup, organization
   authority, Streamable HTTP behavior and hosted-client acceptance gates.
 
+- [Tailscale reader preparation](./tailscale-reader-preparation.md): response-only
+  SSH/VNC readers and the separate live-App release prerequisite before producers.
 - [VNC configuration and authority](./vnc-access.md): encrypted credentials, saved
   hosts, TLS trust, membership fences, and the disabled rollout boundary.
 - [OpenSSH plus TigerVNC interoperability](../crates/runner/tests/VNC_SSH_INTEROPERABILITY.md):
-  disposable pinned outer-SSH and inner-VNC production-path acceptance.
+  disposable installed-version OpenSSH and pinned TigerVNC production-path
+  acceptance.
 - [X509Plain VNC acceptance](./vnc-x509plain-acceptance.md): head-specific owner,
   Agent, current-Runner, real-server and cleanup evidence.
-- [Runner VNC authority](./runner-vnc-authority.md): explicit Agent grants,
+- [Runner VNC authority](./runner-vnc-authority.md): chat host permissions,
   private typed handoff, current authorization and native sharing modes.
 - [Runner VNC execution](./runner-vnc-execution.md): Run-owned sessions, guest
   RPC, streamed captures, input outcomes and resource cleanup.
@@ -68,49 +90,15 @@ surface; the index does not replace their detailed rules.
 - [Hosted publication version retirement](./database/hosted-publication-retirement.md):
   immutable content identity, historical inventory, preserved links/permissions,
   and the consumer/data/rollback gates before schema contraction.
-- [Account telemetry and recovery erasure](./account-erasure-evidence.md):
-  dated sink/copy inventory, provider capability gaps, and the parent-worker
-  design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
 - [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
   scope, canonical chat history, checksum semantics, and download compatibility.
-- [Browser authorization request creation](./account-erasure-browser-authorization-creation.md):
-  account-erasure admission, retained thread/run identity, SQL cost inventory
-  and failure boundaries for minting cloud-browser authorization links.
-- [Computer Use authorization request creation](./account-erasure-computer-use-authorization-creation.md):
-  account-erasure admission, retained canonical identity, compatibility source
-  semantics and failure boundaries for Computer Use authorization links.
-- [Computer Use authorization Apply](./account-erasure-computer-use-authorization-apply.md):
-  canonical chat admission, retained request and thread identity, atomic sidebar
-  completion, bounded SQL inventory and explicit host/legacy residuals.
-- [Canonical authorization reads](./account-erasure-authorization-read.md):
-  deadlock-free Browser and Computer Use GET admission, same-thread concurrency,
-  exact SQL counts and complete unbounded host projection.
-- [Single-thread chat metadata](./account-erasure-chat-thread-metadata.md):
-  exact user authorization, canonical ownership admission, SQL counts, response
-  measurement and failure-path lifecycle evidence.
-- [Standalone Computer Use host directory](./account-erasure-computer-use-host-directory.md):
-  exact host-owner admission, complete online/offline projection, Agent-bound
-  narrowing and unbounded host-cardinality evidence.
-- [Computer Use host START](./account-erasure-computer-use-host-start.md):
-  shared user/organization producer admission for legacy creation and stable
-  installation reactivation, including credential and cancellation boundaries.
-- [Standalone Computer Use audit events](./account-erasure-computer-use-audit-events.md):
-  exact owner admission, retained selector/redaction semantics and bounded output
-  with explicit physical-scan evidence.
-- [Computer Use command GET](./account-erasure-computer-use-command-get.md):
-  canonical owner admission around the complete timeout-maintenance sweep,
-  response/auth compatibility, abort boundaries and exact SQL sequences.
-- [Computer Use command creation](./account-erasure-computer-use-command-creation.md):
-  canonical owner admission around complete host selection and insertion,
-  fixed closed response, fresh liveness clock and exact SQL sequences.
-- [Computer Use binary content reads](./account-erasure-computer-use-content-read.md):
-  canonical owner admission through complete screenshot/plugin byte acquisition,
-  provider cancellation ownership and the SQL-versus-S3 duration boundary.
+- [Storage version publication](./storage-version-publication.md): R2-first
+  version registration, DB-only reuse, and durable reference-first Clerk cleanup.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
-  validation reasons, cached rejection records, retained snapshots and recovered
-  publication-order evidence.
-- [Connector catalog v4 consumption](./connector-catalog-v4.md): v4 sync, the
-  v4-only accepted-snapshot reader, capability filtering and rollback boundaries.
+  validation reasons, rejection log records, retained serving generations and
+  recovered publication-order evidence.
+- [Slug-first projection-reader retirement](./connector-catalog-projection-reader-retirement.md):
+  eight-site reader closure, transaction ownership, physical retirement and test mapping.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the
@@ -148,6 +136,8 @@ surface; the index does not replace their detailed rules.
 - [Google Cloud LLM voice and Maps Grounding routing](./google-llm-voice.md):
   shared Vercel workload identities, native provider contracts, billing,
   compliance boundaries, and rollout gates.
+- [Gemini auxiliary generation on Vertex AI](./gemini-auxiliary-vertex.md): text
+  models, native output contracts, retained OpenRouter consumers and rollout boundaries.
 - [Retired App browser attribution](./google-ads-browser-routing.md): the
   Marketing-owned boundary, App cleanup, rollout compatibility, and historical
   field inventory.
@@ -168,8 +158,6 @@ surface; the index does not replace their detailed rules.
   ranking and writing pipeline, its first-party evidence, and the refresh claim.
 - [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
   ordering, delayed events, visibility, and the newest-20 boundary.
-- [Pi native provider preparation](./pi-native-provider-preparation.md): additive
-  native readers, transport/auth ownership, accounting and activation gates.
 - [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):
   explicit API ownership, guarded trigger retirement, parent cleanup, audit
   receipts and the B rollback floor.
@@ -180,14 +168,24 @@ surface; the index does not replace their detailed rules.
   reference releases, lifecycle locks, cascade inventory and bounded SQL costs.
 - [Pi runtime architecture](./pi-runtime-architecture.md): launch, SDK/session,
   memory, accounting, retained compatibility, and patch ownership boundaries.
+- [Guest/Runner transport placement](./runner-rpc-transport.md#choosing-a-guestrunner-transport-for-new-work):
+  decide between the control vsock, Guest-to-Runner RPC, and no cross-VM
+  transport for a new operation.
 - [Runner host configuration](./runner-host-configuration.md): configure and
   verify host-local concurrency and I/O capacity overrides.
+- [Runner WSS target resolution](./runner-wss-target-resolution.md): internal
+  hostname-derived origin, claimed Runner/liveness checks and separate fleet and ingress gates.
+- [Private run-scoped Guest duplex](./runner-guest-duplex.md): exact live executor assignment,
+  bounded opaque framing, cancellation and the #37027 attachment contract.
 - [Guest memory policy](./runner-memory-policy.md): shared workload capacity,
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
   local source and restored payload sizes, representation and timing semantics.
 - [Admission-lock timing](./admission-lock-timing.md): attempt-scoped API launch
   critical-section attribution, retry identity and production readout limits.
+- [Shared Connector context observations](./connector-context-observations.md):
+  preloaded shared query/pool/materialization attribution, bounded coverage and
+  same-Run critical-path decision limits.
 - [Host archive phase diagnostics](./host-archive-phase-diagnostics.md): bounded
   early download, apply-gate and publication timing with cancellation semantics.
 - [Guest archive connection observation](./guest-archive-connection-observation.md):

@@ -1,8 +1,13 @@
 import { hostedSiteDeliveryManifest } from "./hosted-site-dependencies.service";
 import { nowDate } from "../../lib/time";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  linkLayoutFromSegment,
+  linkLayoutSegment,
+  type LinkLayout,
+} from "@okouai/api-contracts/contracts/link-layout";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { command, computed } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
@@ -20,8 +25,10 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { settle } from "../utils";
 import { env } from "../../lib/env";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import { artifactHash } from "../../lib/file-url";
 import { legacyPrivateHostedDeploymentVersion } from "../../lib/hosted-publication";
+import { badRequestMessage } from "../../lib/error";
 import { db$, writeDb$ } from "../external/db";
 import {
   clerk$,
@@ -32,7 +39,6 @@ import {
   copyArtifactShareObject,
   readArtifactSharePolicyObject,
   writeArtifactSharePolicyObject,
-  putHostedSitesS3Object,
 } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import {
@@ -46,7 +52,7 @@ import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.se
 
 interface ShareCandidate {
   readonly targetId: string;
-  readonly publicBrand: "vm0" | "okou";
+  readonly layout: LinkLayout;
   readonly candidateVersion: number | null;
   readonly target:
     | Exclude<ArtifactSharePolicy["target"], { kind: "html" }>
@@ -69,7 +75,7 @@ function policyBucket(): string {
 }
 
 function policyKey(row: ShareIdentity): string {
-  return `artifact-shares/${row.publicBrand}/${row.id}.json`;
+  return `artifact-shares/${row.linkLayoutSegment}/${row.id}.json`;
 }
 
 function policyFor(row: ShareIdentity, signal: AbortSignal) {
@@ -98,7 +104,7 @@ function policyFor(row: ShareIdentity, signal: AbortSignal) {
       policy.shareId !== row.id ||
       policy.ownerId !== row.userId ||
       policy.orgId !== row.orgId ||
-      policy.publicBrand !== row.publicBrand ||
+      policy.publicBrand !== row.linkLayoutSegment ||
       policy.target.kind !== row.targetKind ||
       targetId !== row.targetId
     ) {
@@ -130,7 +136,7 @@ function ownedShareTarget(
           privateArtifactUrl(file.id, file.filename, file.metadata),
           env("APP_URL"),
         ).href,
-        publicBrand: file.publicBrand,
+        layout: file.layout,
         candidateVersion: null,
         target: {
           kind: "file" as const,
@@ -168,7 +174,7 @@ function ownedShareTarget(
     return {
       targetId: deployment.siteId,
       ownerUrl: new URL(deployment.artifactUrl, env("APP_URL")).href,
-      publicBrand: deployment.publicBrand,
+      layout: linkLayoutFromSegment(deployment.linkLayoutSegment),
       candidateVersion: deploymentVersion,
       target: {
         kind: "html" as const,
@@ -206,19 +212,9 @@ function publicShareUrl(policy: ArtifactSharePolicy): string {
   }
   // Persisted pre-registry grants keep their working URL without a read-time
   // write. Retain until #32492 accounts for every durable old share link.
+  const layout = linkLayoutFromSegment(policy.publicBrand);
   if (!policy.delivery) {
-    const domain =
-      policy.publicBrand === "okou"
-        ? env("OKOU_PUBLIC_HOST_DOMAIN")
-        : env("ZERO_HOST_DOMAIN");
-    const scheme =
-      policy.publicBrand === "okou"
-        ? env("OKOU_HOST_SCHEME")
-        : env("ZERO_HOST_SCHEME");
-    if (!domain || !scheme) {
-      throw new Error("Legacy public artifact delivery is not configured");
-    }
-    return `${scheme}://sh-${policy.shareId.replaceAll("-", "")}-${policy.publicToken}.${domain}/`;
+    return `${hostedLinkOrigin(layout, `sh-${policy.shareId.replaceAll("-", "")}-${policy.publicToken}`)}/`;
   }
   if (policy.target.kind === "file") {
     const origin = env("PUBLIC_ARTIFACT_SHARES_BASE_URL");
@@ -232,20 +228,9 @@ function publicShareUrl(policy: ArtifactSharePolicy): string {
       origin,
     ).href;
   }
-  const domain =
-    policy.publicBrand === "okou"
-      ? env("OKOU_PUBLIC_HOST_DOMAIN")
-      : env("ZERO_HOST_DOMAIN");
-  const scheme =
-    policy.publicBrand === "okou"
-      ? env("OKOU_HOST_SCHEME")
-      : env("ZERO_HOST_SCHEME");
-  if (!domain || !scheme) {
-    throw new Error("Public HTML delivery is not configured");
-  }
   // Preserve requested durable token links without publishing during reads.
   // Retire only after #32492 accounts for the remaining old share policies.
-  return `${scheme}://${policy.publicSlug ?? policy.publicToken}.${domain}/`;
+  return `${hostedLinkOrigin(layout, policy.publicSlug ?? policy.publicToken)}/`;
 }
 
 function publicSharePreview(policy: ArtifactSharePolicy) {
@@ -381,62 +366,32 @@ export const readArtifactShare$ = command(
   },
 );
 
-const snapshotTarget$ = command(
-  async ({ get }, candidate: ShareCandidate, signal: AbortSignal) => {
-    const target = candidate.target;
+const snapshotFileTarget$ = command(
+  async (
+    { get },
+    target: Extract<ShareCandidate["target"], { kind: "file" }>,
+    signal: AbortSignal,
+  ) => {
     const snapshotId = randomUUID();
-    if (target.kind === "file") {
-      const file = await get(privateArtifactRecord(target.id));
-      signal.throwIfAborted();
-      if (!file) {
-        throw new Error("Shared artifact disappeared");
-      }
-      const key = `private-artifacts/${target.id}/shares/${snapshotId}/${encodeURIComponent(target.filename)}`;
-      await get(
-        copyArtifactShareObject(
-          {
-            bucket: file.bucket,
-            sourceKey: target.key,
-            targetKey: key,
-            hosted: false,
-          },
-          signal,
-        ),
-      );
-      signal.throwIfAborted();
-      return { ...target, key };
+    const file = await get(privateArtifactRecord(target.id));
+    signal.throwIfAborted();
+    if (!file) {
+      throw new Error("Shared artifact disappeared");
     }
-    const prefix = `shared-artifacts/${candidate.publicBrand}/${snapshotId}/${target.id}`;
-    const files = Object.keys(target.manifest.files);
-    // Bound storage concurrency; publish no policy until every object is copied.
-    for (let start = 0; start < files.length; start += 10) {
-      await Promise.all(
-        files.slice(start, start + 10).map((path) => {
-          return get(
-            copyArtifactShareObject(
-              {
-                bucket: policyBucket(),
-                sourceKey: `private-sites/${candidate.publicBrand}/${target.id}${path}`,
-                targetKey: `${prefix}${path}`,
-                hosted: true,
-              },
-              signal,
-            ),
-          );
-        }),
-      );
-      signal.throwIfAborted();
-    }
+    const key = `private-artifacts/${target.id}/shares/${snapshotId}/${encodeURIComponent(target.filename)}`;
     await get(
-      putHostedSitesS3Object(
-        policyBucket(),
-        `${prefix}/manifest.json`,
-        JSON.stringify(target.manifest),
-        "application/json",
+      copyArtifactShareObject(
+        {
+          bucket: file.bucket,
+          sourceKey: target.key,
+          targetKey: key,
+          hosted: false,
+        },
+        signal,
       ),
     );
     signal.throwIfAborted();
-    return { ...target, snapshotId };
+    return { ...target, key };
   },
 );
 
@@ -451,6 +406,11 @@ export const updateArtifactShare$ = command(
     },
     signal: AbortSignal,
   ) => {
+    if (args.target.kind === "html" && args.audience !== "private") {
+      return badRequestMessage(
+        "Hosted sites are public. Publish a new deployment to update the site.",
+      );
+    }
     const candidate = await get(
       ownedShareTarget(args.target, args.userId, args.orgId),
     );
@@ -475,7 +435,7 @@ export const updateArtifactShare$ = command(
       .values({
         userId: args.userId,
         orgId: args.orgId,
-        publicBrand: candidate.publicBrand,
+        linkLayoutSegment: linkLayoutSegment(candidate.layout),
         targetKind: args.target.kind,
         targetId: candidate.targetId,
       })
@@ -503,12 +463,19 @@ export const updateArtifactShare$ = command(
       if (args.audience === "private" && !previous) {
         return null;
       }
-      const target =
+      let target: ArtifactSharePolicy["target"];
+      if (
         previous &&
         (args.audience === "private" ||
           previous.target.id === candidate.target.id)
-          ? previous.target
-          : await set(snapshotTarget$, candidate, signal);
+      ) {
+        target = previous.target;
+      } else {
+        if (candidate.target.kind !== "file") {
+          throw new Error("HTML snapshot creation is no longer supported");
+        }
+        target = await set(snapshotFileTarget$, candidate.target, signal);
+      }
       const next = artifactSharePolicySchema.parse({
         version: 1,
         delivery: "artifact-registry-v1",
@@ -516,15 +483,12 @@ export const updateArtifactShare$ = command(
         shareId: row.id,
         ownerId: row.userId,
         orgId: row.orgId,
-        publicBrand: row.publicBrand,
+        publicBrand: row.linkLayoutSegment,
         audience: args.audience,
         status: args.audience === "private" ? "revoked" : "active",
         publicToken:
           args.audience === "public"
-            ? (previous?.publicToken ??
-              (target.kind === "file"
-                ? artifactHash(randomUUID())
-                : randomBytes(12).toString("hex")))
+            ? (previous?.publicToken ?? artifactHash(randomUUID()))
             : null,
         target,
       });
@@ -573,7 +537,7 @@ const authorizedArtifactSharePolicy$ = command(
       readonly allowPrivateOwner?: boolean;
       readonly allowPublic?: boolean;
       readonly publicToken?: string;
-      readonly publicBrand?: "vm0" | "okou";
+      readonly layout?: LinkLayout;
     },
     signal: AbortSignal,
   ) => {
@@ -599,8 +563,8 @@ const authorizedArtifactSharePolicy$ = command(
       (args.publicToken !== undefined &&
         (policy.audience !== "public" ||
           policy.publicToken !== args.publicToken)) ||
-      (args.publicBrand !== undefined &&
-        policy.publicBrand !== args.publicBrand)
+      (args.layout !== undefined &&
+        policy.publicBrand !== linkLayoutSegment(args.layout))
     ) {
       return null;
     }
@@ -684,7 +648,7 @@ export const resolveArtifactShareDownload$ = command(
         | { readonly kind: "site"; readonly id: string };
       readonly allowPrivateOwner?: boolean;
       readonly publicToken?: string;
-      readonly publicBrand?: "vm0" | "okou";
+      readonly layout?: LinkLayout;
       readonly expectedKind?: "html";
     },
     signal: AbortSignal,
@@ -713,7 +677,7 @@ export const resolveArtifactShareDownload$ = command(
         allowPublic: true,
         allowPrivateOwner: args.allowPrivateOwner,
         publicToken: args.publicToken,
-        publicBrand: args.publicBrand,
+        layout: args.layout,
         expectedTarget:
           selector.kind === "target" ? selector.target : undefined,
       },
@@ -789,7 +753,7 @@ export const resolveHostedSitePublicationDownload$ = command(
     { get, set },
     args: {
       readonly publicSlug: string;
-      readonly publicBrand: "vm0" | "okou";
+      readonly layout: LinkLayout;
       readonly userId: string;
     },
     signal: AbortSignal,
@@ -807,7 +771,7 @@ export const resolveHostedSitePublicationDownload$ = command(
           }
         : await get(
             artifactDeliveryRecord(
-              args.publicBrand,
+              args.layout,
               "html",
               args.publicSlug,
               signal,
@@ -838,7 +802,7 @@ export const resolveHostedSitePublicationDownload$ = command(
       {
         selector: { kind: "share", id: record.shareId },
         userId: args.userId,
-        publicBrand: args.publicBrand,
+        layout: args.layout,
         publicToken: record.publicToken,
         expectedKind: "html",
       },

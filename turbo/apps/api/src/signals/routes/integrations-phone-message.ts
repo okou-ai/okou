@@ -11,11 +11,10 @@ import {
   sendAgentPhoneMessage,
 } from "../external/agentphone-client";
 import {
-  normalizeAgentPhoneHandle,
+  agentPhoneChannelForLinkedHandle,
   resolveAgentPhoneAgentIdForUserLink,
-  resolveAgentPhoneUserLinkForOwner,
+  resolveAgentPhoneUserLinkForMember,
   storeOutboundAgentPhoneMessage,
-  type AgentPhoneChannel,
 } from "../services/agentphone.service";
 import { settle } from "../utils";
 
@@ -33,7 +32,7 @@ function agentPhoneRouteError(error: unknown) {
   }
   return routeError(
     error.status >= 500 ? 502 : 400,
-    `AgentPhone API error: ${error.body || `HTTP ${error.status}`}`,
+    `Phone provider error: ${error.body || `HTTP ${error.status}`}`,
     "AGENTPHONE_ERROR",
   );
 }
@@ -49,19 +48,21 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const body = bodyResult.data;
-  const userChannel: AgentPhoneChannel = "sms";
-  const phoneHandle = normalizeAgentPhoneHandle(body.toNumber, userChannel);
   const db = set(writeDb$);
-  const userLink = await resolveAgentPhoneUserLinkForOwner(db, {
-    phoneHandle,
-    channel: userChannel,
+  const userLink = await resolveAgentPhoneUserLinkForMember(db, {
     userId: auth.userId,
     orgId: auth.orgId,
   });
   signal.throwIfAborted();
   if (!userLink) {
-    return routeError(404, "Connected phone handle not found", "NOT_FOUND");
+    return routeError(
+      404,
+      "No phone is connected to this Okou account",
+      "NOT_FOUND",
+    );
   }
+  const phoneHandle = userLink.phoneHandle;
+  const userChannel = agentPhoneChannelForLinkedHandle(phoneHandle);
 
   const agentphoneAgentId = await resolveAgentPhoneAgentIdForUserLink(db, {
     userLinkId: userLink.id,
@@ -71,7 +72,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
   signal.throwIfAborted();
   if (!agentphoneAgentId) {
-    return routeError(404, "AgentPhone agent not found", "NOT_FOUND");
+    return routeError(404, "Phone agent not found", "NOT_FOUND");
   }
 
   const sendResult = await settle(
@@ -98,7 +99,6 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     agentphoneMessageId: sent.id,
     conversationId: null,
     agentphoneAgentId,
-    publicBrand: userLink.publicBrand,
     userLinkId: userLink.id,
     phoneHandle,
     fromNumber: sent.fromNumber ?? "",
@@ -106,6 +106,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: body.text,
     channel: sent.channel,
     userChannel,
+    visibilityRecipients: [],
   });
   signal.throwIfAborted();
 

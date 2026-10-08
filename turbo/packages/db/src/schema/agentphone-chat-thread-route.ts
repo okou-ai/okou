@@ -40,6 +40,7 @@ export const agentphoneChatThreadRoutes = pgTable(
   },
   (table) => {
     return [
+      index("idx_agentphone_chat_thread_routes_thread").on(table.chatThreadId),
       uniqueIndex("idx_agentphone_chat_thread_routes_link_root").on(
         table.agentphoneUserLinkId,
         table.rootMessageId,

@@ -10,20 +10,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import type { ApiDb, Tx } from "../../../lib/db-types";
-import {
-  pgBooleanDecoder,
-  pgIntegerDecoder,
-} from "../../../lib/db-structured-result";
 import { env } from "../../../lib/env";
-import { createDeferredPromise, settle } from "../../utils";
+import { settle } from "../../utils";
 import {
   ensureOrgMetadataPlanEntitlement,
   upsertOrgPlanEntitlement,
   writeOrgMetadataWithDefaultPlanEntitlement,
 } from "../org-plan-entitlements.service";
 import { loadOrgPlanCapabilities } from "../org-plan-entitlement-read.service";
-
-const context = testContext();
+testContext();
 
 // These infrastructure cases inject constraints, historical corrupt rows and
 // a blocked transaction interleaving that production APIs cannot construct.
@@ -139,7 +134,7 @@ describe("entitlement transaction integrity", () => {
     });
     const before = await entitlement(harness.db, orgId);
     await harness.db.transaction(async (tx) => {
-      await createMetadata(tx, orgId, "free");
+      await createMetadata(tx, orgId, "limited-free-1");
     });
     await expect(entitlement(harness.db, orgId)).resolves.toStrictEqual(before);
   });
@@ -156,7 +151,7 @@ describe("entitlement transaction integrity", () => {
   it("keeps a pre-existing missing entitlement visible during an ordinary metadata update", async () => {
     const orgId = `org_${randomUUID()}`;
     await harness.db.transaction(async (tx) => {
-      await createMetadata(tx, orgId, "free");
+      await createMetadata(tx, orgId, "limited-free-1");
     });
     // A historical corrupt state is not constructible through a product API.
     await harness.db
@@ -224,72 +219,5 @@ describe("entitlement transaction integrity", () => {
       }),
     ).rejects.toThrow("later operation failed");
     await expect(entitlement(harness.db, orgId)).resolves.toStrictEqual(before);
-  });
-
-  it("preserves a concurrently committed paid entitlement during metadata creation", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const locked = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const contenderPid = createDeferredPromise<number>(context.signal);
-    const paid = harness.db.transaction(async (tx) => {
-      await upsertOrgPlanEntitlement(tx, {
-        orgId,
-        tier: "pro",
-        source: "stripe_subscription",
-      });
-      locked.resolve();
-      await release.promise;
-    });
-    await Promise.race([locked.promise, paid]);
-    const metadata = harness.db.transaction(async (tx) => {
-      const [backend] = await tx
-        .select({
-          pid: sql`pg_backend_pid()`.mapWith(pgIntegerDecoder),
-        })
-        .from(sql`(SELECT 1) AS backend`);
-      if (!backend) {
-        throw new Error("Expected transaction backend");
-      }
-      contenderPid.resolve(backend.pid);
-      await createMetadata(tx, orgId, "free");
-    });
-    const completed = Promise.all([paid, metadata]);
-    const verification = await settle(
-      Promise.race([
-        contenderPid.promise,
-        metadata.then(() => {
-          throw new Error("Expected contender backend before completion");
-        }),
-      ]).then(async (pid) => {
-        await expect
-          .poll(async () => {
-            const [state] = await harness.db
-              .select({
-                blocked: sql`cardinality(pg_blocking_pids(${pid})) > 0`.mapWith(
-                  pgBooleanDecoder,
-                ),
-              })
-              .from(sql`(SELECT 1) AS blocking_state`);
-            return state?.blocked;
-          })
-          .toBe(true);
-      }),
-    );
-    release.resolve();
-    const completion = await settle(completed);
-    if (!verification.ok) {
-      throw verification.error;
-    }
-    if (!completion.ok) {
-      throw completion.error;
-    }
-    expect((await entitlement(harness.db, orgId))[0]).toMatchObject({
-      planKey: "pro",
-      source: "stripe_subscription",
-      canBuyCredits: true,
-    });
-    await expect(
-      harness.db.select({ orgId: orgMetadata.orgId }).from(orgMetadata),
-    ).resolves.toStrictEqual([{ orgId }]);
   });
 });

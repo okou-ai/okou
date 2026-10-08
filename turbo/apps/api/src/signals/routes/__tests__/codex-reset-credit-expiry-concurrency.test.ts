@@ -23,40 +23,37 @@ function controller() {
 }
 
 describe("Codex expiry concurrent readers and cancellation", () => {
-  it.each([false, true])(
-    "shares a concurrent 503 attempt and its cooldown while refreshing each count, accounts=%s",
-    async (accounts) => {
-      mockNow(Date.UTC(2030, 0, 1));
-      const remote = upstream();
-      const user = await fixture({ accounts });
-      const started = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<Response>(context.signal);
-      const bothUsage = createDeferredPromise<void>(context.signal);
-      remote.details = () => {
-        started.resolve();
-        return release.promise;
-      };
-      remote.usage = () => {
-        if (remote.usageCalls === 3) {
-          bothUsage.resolve();
-        }
-        return HttpResponse.json({
-          rate_limit_reset_credits: { available_count: remote.usageCalls },
-        });
-      };
-      const first = user.list();
-      await started.promise;
-      const second = user.list();
-      await bothUsage.promise;
-      release.resolve(new HttpResponse(null, { status: 503 }));
-      const results = await Promise.all([first, second]);
-      expectExpiry(results[0], null, 2);
-      expectExpiry(results[1], null, 3);
-      expectExpiry(await user.list(), null, 4);
-      expect(remote.detailsCalls).toBe(2);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-    },
-  );
+  it("shares a concurrent 503 attempt and its cooldown while refreshing each count", async () => {
+    mockNow(Date.UTC(2030, 0, 1));
+    const remote = upstream();
+    const user = await fixture();
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<Response>(context.signal);
+    const bothUsage = createDeferredPromise<void>(context.signal);
+    remote.details = () => {
+      started.resolve();
+      return release.promise;
+    };
+    remote.usage = () => {
+      if (remote.usageCalls === 3) {
+        bothUsage.resolve();
+      }
+      return HttpResponse.json({
+        rate_limit_reset_credits: { available_count: remote.usageCalls },
+      });
+    };
+    const first = user.list();
+    await started.promise;
+    const second = user.list();
+    await bothUsage.promise;
+    release.resolve(new HttpResponse(null, { status: 503 }));
+    const results = await Promise.all([first, second]);
+    expectExpiry(results[0], null, 2);
+    expectExpiry(results[1], null, 3);
+    expectExpiry(await user.list(), null, 4);
+    expect(remote.detailsCalls).toBe(2);
+    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+  });
 
   it("coalesces readers and isolates one caller's TimeoutError cancellation", async () => {
     const remote = upstream();

@@ -11,7 +11,6 @@ import {
   createReadToolDefinition,
   createWriteToolDefinition,
   SettingsManager,
-  type AgentSessionServices,
   type CreateAgentSessionFromServicesOptions,
   type ExtensionAPI,
   type ExtensionFactory,
@@ -26,7 +25,7 @@ import type {
 } from "./api-types";
 import {
   loadPiSandboxMemoryRecall,
-  resolvePiApiMemoryRecall,
+  resolvePiPreheatedMemoryRecall,
 } from "./memory-recall-node";
 import { createPiMemoryTools } from "./memory-tools-node";
 import { resolvePiAgentModel } from "./model";
@@ -34,10 +33,7 @@ import {
   buildOkouHarnessSystemPrompt,
   type OkouHarnessToolPrompt,
 } from "./okou-harness-prompt";
-import {
-  createPiPreheatedResourceLoader,
-  piPreheatedResourceLoaderOptions,
-} from "./resources";
+import { piPreheatedResourceLoaderOptions } from "./resources";
 import {
   createPiModelRuntime,
   initializePiSessionResourceRegistry,
@@ -114,7 +110,7 @@ function configuredThinkingLevel(
   sessionManager: SessionManager,
   configured: ModelThinkingLevel | undefined,
 ): ModelThinkingLevel | undefined {
-  // A run captures its current effort before either API-first or Sandbox execution.
+  // A run captures its current effort before Sandbox execution.
   if (configured !== undefined) return configured;
   const hasThinkingEntry = sessionManager.getBranch().some((entry) => {
     return entry.type === "thinking_level_change";
@@ -170,31 +166,8 @@ interface PiAgentSessionRuntimeArgs {
   readonly enableLangfuseObservability?: boolean;
 }
 
-type PiApiFirstAgentSessionRuntimeArgs = Omit<
-  PiAgentSessionRuntimeArgs,
-  "enableLangfuseObservability" | "memoryRecall" | "memoryRoot"
-> & {
-  readonly resourceSnapshot: PiPreheatedResourceSnapshot;
-};
-
 export async function createPiAgentSessionForRuntime(
   args: PiAgentSessionRuntimeArgs,
-  signal?: AbortSignal,
-) {
-  return await createPiAgentSession(args, "generic", signal);
-}
-
-/** API-only entry: use frozen inputs without generic package discovery. */
-export async function createPiApiFirstAgentSessionForRuntime(
-  args: PiApiFirstAgentSessionRuntimeArgs,
-  signal?: AbortSignal,
-) {
-  return await createPiAgentSession(args, "api-first", signal);
-}
-
-async function createPiAgentSession(
-  args: PiAgentSessionRuntimeArgs,
-  mode: "api-first" | "generic",
   signal?: AbortSignal,
 ) {
   const finishResources = startPiPreparationObservation(
@@ -203,13 +176,13 @@ async function createPiAgentSession(
     signal,
   );
   let resourcesOutcome: "success" | "error" = "error";
-  // Keep the existing synchronous/API and asynchronous/Sandbox preparation order.
+  // Resolve frozen inputs before constructing the model and tool registry.
   let prepared: ReturnType<typeof prepareModelAndPrompt>;
   let memoryRecall: Awaited<ReturnType<typeof loadPiSandboxMemoryRecall>>;
   try {
     initializePiSessionResourceRegistry();
     memoryRecall = args.resourceSnapshot
-      ? resolvePiApiMemoryRecall(args.resourceSnapshot)
+      ? resolvePiPreheatedMemoryRecall(args.resourceSnapshot)
       : await loadPiSandboxMemoryRecall(args.memoryRecall, args.memoryRoot);
     args.onMemoryRecallOutcome?.(memoryRecall.outcome);
     prepared = prepareModelAndPrompt(args, memoryRecall);
@@ -232,10 +205,7 @@ async function createPiAgentSession(
       return createPiModelRuntime({
         model,
         config: args.model,
-        ...(args.resourceSnapshot ||
-        ["anthropic-messages", "bedrock-converse-stream"].includes(
-          args.model.dialect,
-        )
+        ...(args.resourceSnapshot
           ? { credentials: new InMemoryCredentialStore() }
           : {}),
       });
@@ -250,36 +220,6 @@ async function createPiAgentSession(
     args.onPreparationTiming,
     "session_services",
     () => {
-      if (mode === "api-first") {
-        if (!resourceSnapshot) {
-          throw new Error("Pi API preparation requires a resource snapshot");
-        }
-        const settingsManager = SettingsManager.inMemory(
-          {},
-          { projectTrusted: true },
-        );
-        const resourceLoader = measurePiPreparationSync(
-          args.onPreparationTiming,
-          "resource_loader",
-          () => {
-            return createPiPreheatedResourceLoader({
-              snapshot: resourceSnapshot,
-              appendSystemPrompt,
-              systemPrompt,
-            });
-          },
-          signal,
-        );
-        const apiServices: AgentSessionServices = {
-          cwd: args.cwd,
-          agentDir: args.agentDir,
-          modelRuntime,
-          settingsManager,
-          resourceLoader,
-          diagnostics: [],
-        };
-        return apiServices;
-      }
       return createAgentSessionServices({
         cwd: args.cwd,
         agentDir: args.agentDir,
@@ -374,7 +314,6 @@ function prepareModelAndPrompt(
     (memoryRecall.outcome.parity === "frozen-match" ||
       memoryRecall.outcome.parity === "frozen-no-content")
       ? createPiMemoryTools({
-          mode: args.resourceSnapshot ? "api-first" : "sandbox",
           selection: memorySelection,
           ...(args.memoryRoot === undefined
             ? {}

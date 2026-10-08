@@ -192,26 +192,18 @@ describe("okou generate source-backed artifact commands", () => {
     ).candidates.skills.map((skill) => {
       return skill.id;
     });
-    const videoSkillIds = selectResourceCandidates(
-      "video",
-    ).candidates.skills.map((skill) => {
-      return skill.id;
-    });
 
     expect(websiteSkillIds).toHaveLength(23);
     expect(reportSkillIds).toHaveLength(23);
     expect(posterSkillIds).toHaveLength(28);
     expect(presentationSkillIds).toHaveLength(6);
     expect(imageSkillIds).toHaveLength(5);
-    expect(videoSkillIds).toHaveLength(18);
 
     expect(websiteSkillIds).toContain("skill:article-magazine");
     expect(reportSkillIds).toContain("skill:article-magazine");
     expect(reportSkillIds).not.toContain("skill:design-brief");
     expect(reportSkillIds).not.toContain("skill:algorithmic-art");
     expect(reportSkillIds).not.toContain("skill:slides");
-    expect(reportSkillIds).not.toContain("skill:video-hyperframes");
-    expect(reportSkillIds).not.toContain("skill:8-bit-orbit-video-template");
 
     expect(posterSkillIds).toContain("skill:article-magazine");
     expect(posterSkillIds).toContain("skill:algorithmic-art");
@@ -220,8 +212,6 @@ describe("okou generate source-backed artifact commands", () => {
       "skill:presentation-reverse-template",
     );
     expect(imageSkillIds).toContain("skill:algorithmic-art");
-    expect(videoSkillIds).toContain("skill:video-hyperframes");
-    expect(videoSkillIds).toContain("skill:8-bit-orbit-video-template");
   });
 
   it("returns every registered template and design system", () => {
@@ -264,11 +254,6 @@ describe("okou generate source-backed artifact commands", () => {
       expect.arrayContaining([
         expect.objectContaining({ id: "template:saas-landing" }),
         expect.objectContaining({ id: "template:web-prototype" }),
-      ]),
-    );
-    expect(websiteSelection.candidates.templates).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "template:html-ppt-pitch-deck" }),
       ]),
     );
     expect(presentationSelection.candidates.templates).toHaveLength(0);

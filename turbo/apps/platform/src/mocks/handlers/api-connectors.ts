@@ -11,12 +11,19 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   connectorCatalogContract,
+  isOneClickConnectorGrantKind,
+  publicConnectorCatalogConnectItemSchema,
   type PublicConnectorCatalogAuthMethodDetail,
+  type PublicConnectorCatalogConnectItem,
   type PublicConnectorCatalogConnection,
   type PublicConnectorCatalogConnectionStatus,
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
+  onboardingSourcesContract,
+} from "@okouai/api-contracts/contracts/onboarding";
 import {
   builtinConnectorExternalCodeSessionContract,
   builtinConnectorManualGrantContract,
@@ -31,13 +38,12 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { mockApi } from "../msw-contract.ts";
 import {
-  testConnectorCatalogCategoryMetadata,
   testConnectorCatalogDefinitions,
   testConnectorPermissionDetails,
   type TestConnectorCatalogDefinition,
@@ -413,7 +419,50 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
   });
 }
 
+/** The connect-surface projection of a status item, as the API builds it. */
+export function connectorCatalogConnectItem(
+  connector: PublicConnectorCatalogStatusItem,
+): PublicConnectorCatalogConnectItem {
+  return publicConnectorCatalogConnectItemSchema.parse(connector);
+}
+
 export const apiConnectorsHandlers = [
+  mockApi(connectorOverviewContract.overview, ({ respond }) => {
+    const connected = mockConnectorCatalogStatus().filter((connector) => {
+      return connector.connected;
+    });
+    return respond(200, {
+      builtinConnectors: connected.map((connector) => {
+        return {
+          slug: connector.slug,
+          label: connector.label,
+          icon: connector.icon,
+          hasPermissions: connector.permissionSummary.hasPermissions,
+        };
+      }),
+      customConnectors: [],
+      accountSummaries: mockConnectors.map((connector) => {
+        const account = mockAccountForConnector(connector);
+        return {
+          target: account.target,
+          accountCount: 1,
+          attentionCount:
+            account.connectionStatus === "reconnect-required" ? 1 : 0,
+          defaultConnection: {
+            id: account.id,
+            authMethod: account.authMethod,
+            displayName: account.displayName,
+            externalId: account.externalId,
+            externalUsername: account.externalUsername,
+            externalEmail: account.externalEmail,
+            connectionStatus: account.connectionStatus,
+          },
+        };
+      }),
+      computerUseHosts: [],
+      cloudBrowserEnabledByDefault: true,
+    });
+  }),
   mockApi(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
   }),
@@ -425,9 +474,6 @@ export const apiConnectorsHandlers = [
   }),
   mockApi(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [] });
-  }),
-  mockApi(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: false });
   }),
   mockApi(sshConnectionsContract.observations, ({ respond }) => {
     return respond(200, { observations: [] });
@@ -441,9 +487,31 @@ export const apiConnectorsHandlers = [
 
   mockApi(connectorCatalogContract.status, ({ respond }) => {
     const connectors = mockConnectorCatalogStatus();
+    return respond(200, { connectors });
+  }),
+
+  mockApi(connectorCatalogContract.oneClick, ({ respond }) => {
     return respond(200, {
-      connectors,
-      categoryMetadata: testConnectorCatalogCategoryMetadata,
+      connectors: mockConnectorCatalogStatus().flatMap((connector) => {
+        return connector.authMethods.some((method) => {
+          return isOneClickConnectorGrantKind(method.grantKind);
+        })
+          ? [connectorCatalogConnectItem(connector)]
+          : [];
+      }),
+    });
+  }),
+
+  mockApi(onboardingSourcesContract.list, ({ respond }) => {
+    const onboardingSlugs = new Set<string>(
+      ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
+    );
+    return respond(200, {
+      connectors: mockConnectorCatalogStatus().flatMap((connector) => {
+        return onboardingSlugs.has(connector.slug)
+          ? [connectorCatalogConnectItem(connector)]
+          : [];
+      }),
     });
   }),
 
@@ -462,7 +530,6 @@ export const apiConnectorsHandlers = [
       : allConnectors.slice(0, 100);
     return respond(200, {
       connectors,
-      categoryMetadata: testConnectorCatalogCategoryMetadata,
       totalConnectorCount: allConnectors.length,
     });
   }),
@@ -471,51 +538,6 @@ export const apiConnectorsHandlers = [
     return respond(200, { connectors: [] });
   }),
 
-  mockApi(connectorCatalogContract.diagnostics, ({ respond }) => {
-    return respond(200, {
-      schemaVersion: 4,
-      state: "stale",
-      active: {
-        catalogVersion: "2026-07-25.1",
-        catalogDigest: `sha256:${"a".repeat(64)}`,
-        activatedAt: "2026-07-25T01:00:00.000Z",
-      },
-      lastAttempt: {
-        at: "2026-07-25T02:00:00.000Z",
-        outcome: "rejected",
-        failureCode: "invalid-artifact",
-        reusedCachedRejection: true,
-      },
-      lastSuccessAt: "2026-07-25T02:00:00.000Z",
-      rejectedCandidate: {
-        catalogVersion: "2026-07-25.2",
-        catalogDigest: `sha256:${"c".repeat(64)}`,
-        failureCode: "invalid-artifact",
-        backendVersion: "1.319.0",
-      },
-      filtering: {
-        capabilityDigest: `sha256:${"b".repeat(64)}`,
-        evaluatedAt: "2026-07-25T01:00:00.000Z",
-        stale: false,
-        filteredAuthMethods: [
-          {
-            connectorSlug: "github",
-            authMethodId: "oauth",
-            reasons: ["missing-revoke-provider"],
-          },
-        ],
-      },
-      credentialStorage: {
-        missingConnectorVersions: 1,
-        unownedConnectorSecrets: 2,
-        unownedConnectorVariables: 3,
-        unresolvedBridgeCredentials: 5,
-      },
-    });
-  }),
-
-  // Keep this parameterized route after the static /diagnostics route so the
-  // mock server does not interpret "diagnostics" as a connector slug.
   mockApi(connectorCatalogContract.get, ({ params, respond }) => {
     const connector = mockConnectorCatalogStatus().find((candidate) => {
       return candidate.slug === params.connectorSlug;

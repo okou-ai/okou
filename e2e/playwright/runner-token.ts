@@ -50,8 +50,7 @@ async function main(): Promise<void> {
   }
 
   const accounts = runnerTestAccounts();
-  // Paid upgrades dominate each fixed batch. Pair them first so the shorter
-  // free credential owns the singleton batch without raising provider load.
+  // Paid upgrades dominate each fixed batch; every runner account is paid.
   const targets: readonly RunnerCredentialTarget[] = [
     {
       email: accounts.codex,
@@ -89,7 +88,9 @@ async function main(): Promise<void> {
       email: accounts.runner,
       fileName: "e2e-api-credentials-runner.json",
       organizationId: requiredEnvironmentVariable("E2E_RUNNER_ORGANIZATION_ID"),
-      upgradeToPro: false,
+      // Free plans admit Built-in runs against the limited free credit
+      // allowance; the runner suites launch many runs across parallel shards.
+      upgradeToPro: true,
     },
   ];
   const vercelAutomationBypassSecret =
@@ -248,7 +249,7 @@ async function preparePaidRunner(
       activeOrganizationId: target.organizationId,
     });
     // Observe the public entitlement after Stripe/webhook settlement before
-    // exposing credentials to shards that require paid models and BYOK.
+    // exposing credentials to shards that require paid models.
     await expect
       .poll(
         async () => {

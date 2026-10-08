@@ -97,84 +97,6 @@ pub mod runners {
     pub mod runs {
         /// Generated route bindings under `runners::runs::by_run_id`.
         pub mod by_run_id {
-            /// Generated route bindings under `runners::runs::by_run_id::active_inputs`.
-            pub mod active_inputs {
-                /// Generated route bindings under `runners::runs::by_run_id::active_inputs::deliveries`.
-                pub mod deliveries {
-                    /// Generated route bindings under `runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id`.
-                    pub mod by_delivery_id {
-                        /// Generated route bindings under `runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt`.
-                        pub mod receipt {
-                            /// Record acceptance of an active-input delivery.
-                            /// Route contract: `POST /api/runners/runs/:runId/active-inputs/deliveries/:deliveryId/receipt`.
-                            pub const RECEIPT: crate::RouteTemplate = crate::RouteTemplate {
-                                method: crate::Method::Post,
-                                path: "/api/runners/runs/:runId/active-inputs/deliveries/:deliveryId/receipt",
-                            };
-
-                            /// Path parameters for `POST /api/runners/runs/:runId/active-inputs/deliveries/:deliveryId/receipt`.
-                            #[derive(Debug, Clone, Copy)]
-                            pub struct Params<'a> {
-                                /// Value for the `:runId` path parameter.
-                                pub run_id: &'a str,
-                                /// Value for the `:deliveryId` path parameter.
-                                pub delivery_id: &'a str,
-                            }
-
-                            /// Build the concrete path for `POST /api/runners/runs/:runId/active-inputs/deliveries/:deliveryId/receipt`.
-                            /// Percent-encodes each path parameter as a URL path segment.
-                            #[must_use]
-                            pub fn path(params: Params<'_>) -> String {
-                                format!(
-                                    "/api/runners/runs/{}/active-inputs/deliveries/{}/receipt",
-                                    crate::route::encode_path_segment(params.run_id),
-                                    crate::route::encode_path_segment(params.delivery_id),
-                                )
-                            }
-
-                            /// Build a resolved route for `POST /api/runners/runs/:runId/active-inputs/deliveries/:deliveryId/receipt`.
-                            #[must_use]
-                            pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
-                                crate::ResolvedRoute::new(RECEIPT.method, path(params))
-                            }
-                        }
-                    }
-                }
-
-                /// Generated route bindings under `runners::runs::by_run_id::active_inputs::reserve`.
-                pub mod reserve {
-                    /// Reserve or retrieve pending active input for a run.
-                    /// Route contract: `POST /api/runners/runs/:runId/active-inputs/reserve`.
-                    pub const RESERVE: crate::RouteTemplate = crate::RouteTemplate {
-                        method: crate::Method::Post,
-                        path: "/api/runners/runs/:runId/active-inputs/reserve",
-                    };
-
-                    /// Path parameters for `POST /api/runners/runs/:runId/active-inputs/reserve`.
-                    #[derive(Debug, Clone, Copy)]
-                    pub struct Params<'a> {
-                        /// Value for the `:runId` path parameter.
-                        pub run_id: &'a str,
-                    }
-
-                    /// Build the concrete path for `POST /api/runners/runs/:runId/active-inputs/reserve`.
-                    /// Percent-encodes each path parameter as a URL path segment.
-                    #[must_use]
-                    pub fn path(params: Params<'_>) -> String {
-                        format!(
-                            "/api/runners/runs/{}/active-inputs/reserve",
-                            crate::route::encode_path_segment(params.run_id),
-                        )
-                    }
-
-                    /// Build a resolved route for `POST /api/runners/runs/:runId/active-inputs/reserve`.
-                    #[must_use]
-                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
-                        crate::ResolvedRoute::new(RESERVE.method, path(params))
-                    }
-                }
-            }
-
             /// Generated route bindings under `runners::runs::by_run_id::cancellation`.
             pub mod cancellation {
                 /// Read the stop intent or confirmed absence of a claimed Run.
@@ -375,6 +297,81 @@ pub mod runners {
                     #[must_use]
                     pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
                         crate::ResolvedRoute::new(RESOLVE.method, path(params))
+                    }
+                }
+            }
+
+            /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs`.
+            pub mod steerable_inputs {
+                /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs::by_event_id`.
+                pub mod by_event_id {
+                    /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs::by_event_id::steered`.
+                    pub mod steered {
+                        /// Declare a prompt or run-targeted budget steered into a run.
+                        /// Route contract: `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`.
+                        pub const STEERED: crate::RouteTemplate = crate::RouteTemplate {
+                            method: crate::Method::Post,
+                            path: "/api/runners/runs/:runId/steerable-inputs/:eventId/steered",
+                        };
+
+                        /// Path parameters for `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`.
+                        #[derive(Debug, Clone, Copy)]
+                        pub struct Params<'a> {
+                            /// Value for the `:runId` path parameter.
+                            pub run_id: &'a str,
+                            /// Value for the `:eventId` path parameter.
+                            pub event_id: &'a str,
+                        }
+
+                        /// Build the concrete path for `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`.
+                        /// Percent-encodes each path parameter as a URL path segment.
+                        #[must_use]
+                        pub fn path(params: Params<'_>) -> String {
+                            format!(
+                                "/api/runners/runs/{}/steerable-inputs/{}/steered",
+                                crate::route::encode_path_segment(params.run_id),
+                                crate::route::encode_path_segment(params.event_id),
+                            )
+                        }
+
+                        /// Build a resolved route for `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`.
+                        #[must_use]
+                        pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                            crate::ResolvedRoute::new(STEERED.method, path(params))
+                        }
+                    }
+                }
+
+                /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs::next`.
+                pub mod next {
+                    /// Read the next prompt or run-targeted budget a running run may steer.
+                    /// Route contract: `GET /api/runners/runs/:runId/steerable-inputs/next`.
+                    pub const NEXT: crate::RouteTemplate = crate::RouteTemplate {
+                        method: crate::Method::Get,
+                        path: "/api/runners/runs/:runId/steerable-inputs/next",
+                    };
+
+                    /// Path parameters for `GET /api/runners/runs/:runId/steerable-inputs/next`.
+                    #[derive(Debug, Clone, Copy)]
+                    pub struct Params<'a> {
+                        /// Value for the `:runId` path parameter.
+                        pub run_id: &'a str,
+                    }
+
+                    /// Build the concrete path for `GET /api/runners/runs/:runId/steerable-inputs/next`.
+                    /// Percent-encodes each path parameter as a URL path segment.
+                    #[must_use]
+                    pub fn path(params: Params<'_>) -> String {
+                        format!(
+                            "/api/runners/runs/{}/steerable-inputs/next",
+                            crate::route::encode_path_segment(params.run_id),
+                        )
+                    }
+
+                    /// Build a resolved route for `GET /api/runners/runs/:runId/steerable-inputs/next`.
+                    #[must_use]
+                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                        crate::ResolvedRoute::new(NEXT.method, path(params))
                     }
                 }
             }

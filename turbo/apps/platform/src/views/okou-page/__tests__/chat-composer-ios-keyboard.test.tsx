@@ -1,23 +1,19 @@
-import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import {
-  context,
-  findComposer,
-  installMessageExperienceChat,
-  MESSAGE_EXPERIENCE_AGENT_ID,
-} from "./chat-message-experience-test-helpers.ts";
+  draftLines,
+  openDraft,
+  pressNativeEnter,
+} from "./composer-native-keyboard-test-helpers.ts";
 
 const { appleBrowsers } = vi.hoisted(() => {
   const appleBrowsers = [
     {
       name: "iPhone",
+      vendor: "Apple Computer, Inc.",
       userAgent:
         "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) " +
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 " +
@@ -26,6 +22,7 @@ const { appleBrowsers } = vi.hoisted(() => {
     },
     {
       name: "iPad desktop mode",
+      vendor: "Apple Computer, Inc.",
       userAgent:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) " +
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
@@ -43,103 +40,6 @@ const { appleBrowsers } = vi.hoisted(() => {
   return { appleBrowsers };
 });
 
-async function openDraft(
-  browser: (typeof appleBrowsers)[number],
-  text: string,
-  sentPrompts: string[],
-  coarsePointer = true,
-): Promise<HTMLElement> {
-  // restoreMocks resets the import-time spies before each test.
-  vi.spyOn(navigator, "vendor", "get").mockReturnValue("Apple Computer, Inc.");
-  context.mocks.browser.userAgent(browser.userAgent);
-  context.mocks.browser.platform(browser.platform);
-  context.mocks.browser.maxTouchPoints(5);
-  context.mocks.browser.matchMedia((query) => {
-    return (
-      (coarsePointer && query === "(pointer: coarse)") ||
-      query === "(any-pointer: fine)"
-    );
-  });
-  context.mocks.data.userPreferences({ sendMode: "enter" });
-  installMessageExperienceChat({
-    onSendRequest: ({ prompt }) => {
-      sentPrompts.push(prompt);
-    },
-  });
-  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
-    return respond(200, [
-      {
-        id: "c0000000-0000-4000-a000-000000000072",
-        agentId: MESSAGE_EXPERIENCE_AGENT_ID,
-        agentName: null,
-        agentDisplayName: "Message Agent",
-        name: "regression-workflow",
-        displayName: "Regression workflow",
-        description: "A selectable slash suggestion",
-        visibility: "public",
-        ownerUserId: "user-1",
-        createdAt: "2026-09-23T00:00:00.000Z",
-        canManage: true,
-        canPublish: false,
-        official: null,
-        shadowedBy: null,
-      },
-    ]);
-  });
-  await setupPage({
-    context,
-    path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
-  });
-  await screen.findByTestId("start-cards");
-  const editor = await findComposer();
-  const user = userEvent.setup({ delay: null });
-  const paragraph = editor.querySelector("p");
-  if (!paragraph) {
-    throw new Error("Expected an empty composer paragraph");
-  }
-  // Happy DOM has no caret hit-testing. A root click places the caret after
-  // the empty paragraph, so place this user click inside its first text line.
-  await user.pointer({
-    target: editor,
-    node: paragraph,
-    offset: 0,
-    keys: "[MouseLeft]",
-  });
-  await user.keyboard(text);
-  await waitFor(() => {
-    expect(draftLines(editor)).toStrictEqual([text]);
-  });
-  return editor;
-}
-
-function draftLines(editor: HTMLElement): string[] {
-  return Array.from(editor.children)
-    .filter((child): child is HTMLParagraphElement => {
-      return child instanceof HTMLParagraphElement;
-    })
-    .map((paragraph) => {
-      return paragraph.textContent ?? "";
-    });
-}
-
-function pressNativeEnter(
-  editor: HTMLElement,
-  options: {
-    readonly shiftKey?: boolean;
-    readonly isComposing?: boolean;
-    readonly keyCode?: number;
-  } = {},
-): void {
-  // userEvent leaves keyCode at zero. This exact Safari keydown must carry 13
-  // to enter ProseMirror's iOS replay path (or 229 for IME confirmation).
-  fireEvent.keyDown(editor, {
-    key: "Enter",
-    code: "Enter",
-    keyCode: 13,
-    ...options,
-  });
-}
-
 describe.each(appleBrowsers)("$name", (browser) => {
   it.each(["First line", "/"])(
     "keeps %s on two lines after Shift+Enter without selecting or sending",
@@ -149,7 +49,7 @@ describe.each(appleBrowsers)("$name", (browser) => {
       const editor = await openDraft(browser, firstLine, sentPrompts);
       if (firstLine === "/") {
         const menu = await screen.findByTestId("slash-workflow-menu");
-        await within(menu).findByText("A selectable slash suggestion");
+        await within(menu).findByText("regression-workflow");
       }
 
       pressNativeEnter(editor, { shiftKey: true });

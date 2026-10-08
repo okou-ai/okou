@@ -15,20 +15,20 @@ credentials or command. The shared fleet secret authenticates the fleet, not an
 individual machine: the process identity is checked against the Run's immutable
 winning claim. Protecting the fleet secret remains a trust assumption.
 
+Each call requires the Run's current chat thread and that thread's effective permission for the exact SSH host. The host default applies when no override row exists. Explicit `false` denies even when the default is enabled; an explicit `true` allows even when the default is disabled. A Run without a chat thread is denied.
+
 Each call joins the current running Run, session, currently visible Agent,
-the Run user's SSH grant, exact user-owned connection and its credential.
-Run, session, grant and host user/workspace identities must agree. The Agent
+exact user-owned connection and its credential.
+Run, session, chat thread and host user/workspace identities must agree. The Agent
 must belong to that workspace and be public or owned by the Run user; its
 creator need not own the host. Shared Agents never use their creator's hosts
 on another user's Run. SSH is generally available, without a rollout switch or
 staff-org gate.
-SSH access depends on the user's current configuration and the Agent's current
-grant, not how the Run started. All chat channels, workflow schedule/event
-automations, delegated Agents, webhooks, SDK/non-chat and test Runs use the same
-authority path. A chat thread or trigger metadata is not required; workflow
-associations and retained historical Goal provenance add no eligibility gate.
-The Goal lifecycle is retired; that provenance cannot create or resume work.
-The session identifies the Agent without using chat-thread state as an authorization gate.
+SSH access depends on the user's current configuration and the Run's current
+chat-thread host selection, not how the Run started. All chat channels use the
+same authority path. Runs without a valid chat thread, including non-chat
+runs, are denied remote host access. The session identifies the Agent and
+the thread must remain bound to that Agent and user.
 General availability does not replace authorization or expose credentials to
 local/PAT Runners.
 
@@ -76,7 +76,7 @@ After a successful connection edit, deletion or
 explicit host-key reset, the API sends identifier-only `ssh-authority-invalidated`
 messages on `runner-group:<group>` for affected running owner Runs. Payloads are
 `{runId, connectionId}`; null `connectionId` means the whole Run. Recipient discovery
-must not require a grant or connection row that the mutation may have deleted.
+must not require a connection row that the mutation may have deleted.
 Changing a shared credential's username, secret or authentication method advances
 all referencing host generations in one transaction, then sends a Run-wide
 invalidation with null `connectionId`. Renaming a credential changes its revision
@@ -85,11 +85,10 @@ owner advisory lock; shared rotation locks referencing hosts in stable ID order
 before the credential, matching the connection-first pin/observation lock order.
 Encryption occurs before row locks; the credential revision is rechecked after
 locking. Invalidation is best-effort after commit, not part of that transaction.
-The Run-wide hook accepts an Agent scope. Explicit per-user Agent grant changes
-use that scope; automatic visible-Agent authorization when creating the first
-host invalidates the current user's active Runs. Discovery does not depend on
-a surviving grant. Current Agent visibility is rechecked on live inventory and
-actual resolve/pin calls; the accepted cache lifetime below remains unchanged.
+The Run-wide hook remains available for shared credential rotation. Creating
+a host targets its own connection ID. Current Agent visibility is
+rechecked on live inventory and actual resolve/pin calls; the accepted cache
+lifetime below remains unchanged.
 
 Notices are sent after commit and before the request observes cancellation. A
 failed publish is logged, not reported as failure of the already-committed edit.
@@ -103,11 +102,11 @@ eviction, exact Run replacement and Run/sandbox teardown retain their cleanup be
 Cache-overflow operations remain tracked for invalidation without owning cache cells.
 
 There is no fixed TTL or periodic authorization poll. Missed publication or a
-dropped subscriber message, including during an observed outage, may leave previous
-configuration/credentials/grants
-usable for the remainder of the Run, including after deletion/revocation. This
-Run-lifetime stale-authority window is explicitly accepted; Ably is not a reliable
-revocation protocol. Reconnection neither requires reauthorization nor revives
+dropped subscriber message, including during an observed outage, may leave
+previously authorized host access and configuration/credentials usable for the
+remainder of the Run, including after a chat permission is revoked or a host is
+deleted. This Run-lifetime stale-authority window is explicitly accepted; Ably
+is not a reliable revocation protocol. Reconnection neither requires reauthorization nor revives
 invalidated authority. Cached parsed keys remain bounded in process memory and are
 retired on invalidation or Run teardown. Per-connection public-destination and
 cryptographic proof/pin checks remain mandatory, and invalidation never authorizes
@@ -158,7 +157,7 @@ Null means host-key verification and SSH authentication succeeded, not command
 success. No command, output, peer diagnostic, credential or arbitrary error text
 is accepted. The strict guest/CLI outcome and inventory DTOs are unchanged.
 
-The API applies the current Run, owner, Agent visibility/grant and
+The API applies the current Run, owner, Agent visibility, chat host access and
 winning-claim checks before locking the owned connection. It rechecks authority
 under the same lock used by edits and pinning, then records only the exact current
 generation. TOFU reporters use the post-pin generation. A single child row in
@@ -199,8 +198,8 @@ URL, wildcard, alternate recipient list or Direct fallback exists.
 
 SSH has one canonical contract, without a version/profile selector or duplicate
 legacy DTO. Protected authority requires the existing SSH authorization checks, plus a
-bound same-owner configuration. The existing SSH grant is
-the only Agent permission for either transport; configuration creation or edits
+bound same-owner configuration. The current chat SSH host selection governs runtime access for either transport;
+configuration creation or edits
 never grant SSH. Direct handoffs retain their actual key/password variants.
 
 The protected `resolved_access` outcome contains the saved host, port, username,
@@ -216,20 +215,18 @@ An S1-only Runner still rejects protected handoffs as unavailable; the feature
 must not be activated on that Runner. See the activation gate below.
 
 Pin and observation retain host-first locking and recheck protected authority
-through the non-null configuration with a share lock, while retaining the
-existing SSH-grant lock. Owner mutations use the
+through the non-null configuration with a share lock. Owner mutations use the
 owner advisory lock, ordered affected-host locks, then configuration locks.
-SSH-grant edits retain their existing Agent-lock boundary. Token replacement
-advances both config generation and every referencing host generation atomically.
+Token replacement advances both config generation and every referencing host
+generation atomically.
 Metadata rename advances only config revision. Configurations have no separate
 enabled state. Host pins survive rotation, rebinding and every transition
 involving Access; explicit reset clears protected trust. Direct-to-Direct endpoint edits retain their
 existing behavior.
 
 Access mutations publish identifier-only invalidations for captured affected
-connection IDs, scoped to owner Runs. SSH-grant changes invalidate both transport
-modes for that owner's affected Agent Runs, including after revocation. Direct
-hosts are not evicted by Access configuration changes. Browser notifications use
+connection IDs, scoped to owner Runs. Direct hosts are not evicted by Access
+configuration changes. Browser notifications use
 the existing owner `ssh:changed` topic with `{orgId}`, including for unreferenced
 configurations and metadata-only edits.
 Rename does not interrupt runtime sessions. Notifications remain best effort;

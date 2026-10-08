@@ -1,10 +1,6 @@
-import type { IDBPDatabase } from "idb";
-import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import {
-  computerUseHostsContract,
-  type ComputerUseHost,
-} from "@okouai/api-contracts/contracts/computer-use";
+import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   chatThreadEventsContract,
   chatThreadMetadataContract,
@@ -12,16 +8,23 @@ import {
   type ChatThreadEvent,
   type ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  computerUseHostsContract,
+  type ComputerUseHost,
+} from "@okouai/api-contracts/contracts/computer-use";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 
 import {
   queryAllByRoleFast,
   type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
-import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockSubscriptionRunModel } from "../../../mocks/handlers/api-run-models.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
-import { createChatIdbOpener } from "../../../signals/external/chat-idb-opener.ts";
-import { createStrictIdbChatThreadEventStores } from "../../../signals/external/idb-chat-thread-event-store.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  type TestContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 export const CHAT_LIST_AGENT_ID = "c7000000-0000-4000-a000-000000000001";
 
@@ -61,13 +64,12 @@ export function chatListThread(
     createdAt: timestamp,
     updatedAt: timestamp,
     pinnedAt: null,
+    archived: false,
     renamedAt: null,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
-    selectedImageModel: null,
     ...overrides,
   };
 }
@@ -91,22 +93,9 @@ export function chatListEvent(
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
-    selectedImageModel: null,
     createdAt: `2026-08-01T01:00:${seconds}.000Z`,
     ...overrides,
   };
-}
-
-function authIdentity(auth: Exclude<SetupPageAuth, null>): {
-  readonly userId: string;
-  readonly orgId: string;
-} {
-  const orgId = auth.organization?.activeOrg?.id;
-  if (!orgId) {
-    throw new Error("Chat list cache fixture requires an active organization");
-  }
-  return { userId: auth.user.id, orgId };
 }
 
 export function cachedChatListEvents(
@@ -122,33 +111,6 @@ export function cachedChatListEvents(
     },
     events: [...events],
   };
-}
-
-/** Seed IndexedDB only when the page story exercises persistence across reloads. */
-export async function seedPersistentChatListCache(
-  caseId: number,
-  auth: Exclude<SetupPageAuth, null>,
-  chatThreads: readonly ChatThreadSnapshotProjection[],
-  events: readonly ChatThreadEvent[] = [],
-): Promise<void> {
-  const identity = authIdentity(auth);
-  const opener = createChatIdbOpener({ onVersionChange: () => {} });
-  const database: IDBPDatabase = await opener.openChatIdb(
-    identity.userId,
-    identity.orgId,
-  );
-  const stores = createStrictIdbChatThreadEventStores(() => {
-    return Promise.resolve(database);
-  });
-  await stores.writeStore.replaceFromSnapshot(
-    {
-      chatThreads,
-      latestEventId: chatListEventId(caseId, 1),
-      latestSeqId: 1,
-    },
-    events,
-  );
-  database.close();
 }
 
 interface ChatListStreamOptions {
@@ -167,11 +129,14 @@ export function installChatListStream(
   let currentEvents = [...(options.events ?? [])];
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await options.remoteGate;
-    return respond(200, {
-      chatThreads: [...options.snapshot],
-      latestEventId: chatListEventId(options.caseId, 1),
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [...options.snapshot],
+        latestEventId: chatListEventId(options.caseId, 1),
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, async ({ query, respond }) => {
     await options.remoteGate;
@@ -215,47 +180,26 @@ export function installChatListAgent(
         description: null,
         sound: null,
         avatarUrl: null,
-        modelProviderId: null,
-        selectedModel: null,
-        preferPersonalProvider: false,
         visibility: "private",
       },
     ]);
   });
 }
 
-export function installChatListModelPolicies(
-  context: TestContext,
-  defaultModel: OrgModelPolicy["model"] = "deepseek-v4-flash",
-): void {
-  const models = [
-    ["claude-sonnet-4-6", "Claude Sonnet 4.6"],
-    ["deepseek-v4-flash", "DeepSeek V4 Flash"],
+export function installChatListRunModels(context: TestContext): void {
+  installConnectedPersonalSubscriptions(context);
+  const modelEntries = [
+    ["claude-sonnet-5", "Claude Sonnet 5"],
+    ["gpt-6-sol", "GPT 6 Sol"],
     ["gpt-5.6-sol", "GPT 5.6 Sol"],
     ["gpt-5.6-luna", "GPT 5.6 Luna"],
   ] as const;
-  const timestamp = "2026-08-01T00:00:00.000Z";
-  const policies: OrgModelPolicy[] = models.map(
-    ([model, modelLabel], index) => {
-      return {
-        id: `e7000000-0000-4000-a000-${(index + 1)
-          .toString()
-          .padStart(12, "0")}`,
-        model,
-        modelLabel,
-        isDefault: model === defaultModel,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-        modelProviderSurfaceId: null,
-        routeStatus: "valid",
-        routeStatusReason: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
+  const models: AvailableRunModel[] = modelEntries.map(
+    ([model, modelLabel]) => {
+      return mockSubscriptionRunModel(model, { modelLabel });
     },
   );
-  context.mocks.data.orgModelPolicies(policies);
+  context.mocks.data.availableRunModels(models);
 }
 
 interface ActiveChatBoundaryOptions {
@@ -285,10 +229,10 @@ export function installActiveChatBoundaries(
       modelSettings: thread.modelSettings ?? {},
       serviceTier: thread.serviceTier ?? null,
       pinnedAt: thread.pinnedAt,
+      archived: thread.archived,
+      muted: thread.muted ?? false,
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-      selectedVideoModel: thread.selectedVideoModel ?? null,
-      selectedImageModel: thread.selectedImageModel ?? null,
     });
   });
   context.mocks.api(browserContract.get, ({ respond }) => {
@@ -298,6 +242,23 @@ export function installActiveChatBoundaries(
   });
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [...(options.hosts ?? [])] });
+  });
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+    return respond(200, {
+      builtinConnectors: [],
+      customConnectors: [],
+      accountSummaries: [],
+      computerUseHosts: (options.hosts ?? []).map((host) => {
+        return {
+          id: host.id,
+          hostName: host.hostName ?? host.displayName,
+          displayName: host.displayName,
+          lastSeenAt: host.lastSeenAt,
+          status: host.status,
+        };
+      }),
+      cloudBrowserEnabledByDefault: true,
+    });
   });
   context.mocks.api(chatThreadEventsContract.snapshot, ({ respond }) => {
     return respond(404, {

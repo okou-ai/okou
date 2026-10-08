@@ -1,6 +1,5 @@
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { waitFor } from "@testing-library/react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import {
@@ -161,26 +160,6 @@ test("Text that only looks like a link stays plain text", async () => {
   installPrompt(prompt);
 
   await setupPage({ context, path: `/chats/${context.resourceId}` });
-
-  const message = await waitFor(() => {
-    const element = userMessage();
-    expect(element).toHaveTextContent(prompt);
-    return element;
-  });
-  expect(queryAllByRoleFast("link", message)).toHaveLength(0);
-});
-
-test("A reader who opted out reads a link as plain text", async () => {
-  const prompt = "Start from https://example.com/brief and keep reading.";
-  installPrompt(prompt);
-
-  // The switch is on for everyone now, so an override is the only way back to
-  // the single span the message used to render.
-  await setupPage({
-    context,
-    path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: false },
-  });
 
   const message = await waitFor(() => {
     const element = userMessage();

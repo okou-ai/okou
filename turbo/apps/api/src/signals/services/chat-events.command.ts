@@ -1,122 +1,111 @@
-import { recordGetStartedWorkflow } from "./get-started-workflow.service";
+import type { Tx } from "../../lib/db-types";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import {
+  chatThreadRequestSelection,
+  type ChatThreadRequestFacts,
+} from "./chat-thread-request-facts";
+
+import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
+import {
+  chatEventsContract,
+  resolveChatEventRecommendedFollowups,
+  type CodexServiceTier,
+  type UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
   modelSettingsSchema,
+  withModelReasoningEffort,
   type ModelSettings,
   type ModelSettingsPatch,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  resolveChatReasoningEffort,
-  resolveReasoningEffortForDispatch,
-} from "./chat-reasoning-effort.service";
-/** Canonical ChatEvent write commands. */
-import { randomBytes } from "node:crypto";
-import { command } from "ccstate";
-import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
-import {
-  chatEventsContract,
-  resolveChatEventRecommendedFollowups,
-  type ChatRunVideoOptionsRequest,
-  type ChatThreadServiceTier,
-  type CodexServiceTier,
-  type GenerationTemplateRequest,
-  type UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  isBuiltInModelProviderType,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   chatEvents,
   type ChatEventAttachFileMetadata,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agents } from "@okouai/db/schema/agent";
-import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { command } from "ccstate";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import type { z } from "zod";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
+import { now, nowDate } from "../../lib/time";
+import type { AuthContext } from "../../types/auth";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
-  publishThreadListChanged,
+  publishThreadListChangedSafely,
 } from "../external/realtime";
-import { now, nowDate } from "../../lib/time";
+import { bestEffort, settle, settleIncludingAbort } from "../utils";
 import {
-  autonomyBudgetExhausted,
-  badRequestMessage,
-  conflict,
-  insufficientCredits,
-  modelProviderUnavailable,
-  notFound,
-  providerUnavailable,
-} from "../../lib/error";
-import { env } from "../../lib/env";
-import type { AuthContext } from "../../types/auth";
+  createAgentRunContextSignals,
+  preloadAgentRunContext$,
+  type AgentRunContextSignals,
+} from "./agent-run-context.signals";
+import type {
+  AgentRunPreCreateSource,
+  AgentRunRequestAgent,
+} from "./agent-run-contracts";
 import {
-  createQueueFirstAgentRun$,
-  type AgentRunPreCreateSource,
-  type AgentRunRequestAgent,
-  type AuthorizedAgentRunRequestObservation,
-} from "./agent-runs-create.service";
-import { isQueueFirstRunClaimLost } from "./agent-run-create.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { childAutonomyBudget } from "./autonomy-budget.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
-import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
-import {
-  ApiDispatchTimingCollector,
-  measureApiDispatchTiming,
-} from "./api-dispatch-timing.service";
+  resolveDefaultModelFirstPin$,
+  resolveRunSelectionModel,
+  type ModelSelectionBootstrap,
+} from "./model-selection.service";
+import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
+
 import {
   cancelRun$,
-  dispatchCancelSideEffects$,
-  shouldDispatchCancelSideEffects,
   type CancelRunResult,
-} from "./run-cancel.service";
-import { scheduleChatThreadTitleGeneration } from "./chat-title.service";
-import { generateAndPersistInitialThinkingMessage } from "./chat-initial-thinking.service";
+} from "./agent-run-terminal-transition.service";
+import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
 import {
-  isCodexFastServiceTierSupported,
-  MODEL_FIRST_SELECTION_PROVIDER_ID,
-  modelProviderWriteTypeForLaunch,
-  type ModelFirstPin,
-  resolveModelFirstProviderAdmission,
-  resolveModelSelectionPin,
-} from "./model-selection.service";
+  canonicalChatEventContent,
+  canonicalChatEventError,
+  canonicalChatInputModelSelection,
+} from "./canonical-chat-event-read.service";
+import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
+import { touchSentChatThreadSort$ } from "./chat-event-shared.service";
+import { chatEventTypeIn } from "./chat-event-type.service";
+import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
-  chatThreadModelPinColumns,
-  persistedChatThreadModelSnapshotColumns,
-  resolvePersistedChatThreadModel,
-  type PersistedChatThreadModelResolutionPath,
-} from "./chat-thread-model.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
-import {
-  ORDINARY_CHAT_THREAD_PROVENANCE,
-  recordOfficialWorkflowThreadProvenance,
-} from "./morning-brief-thread-provenance.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
-import {
-  revokeChatEvent,
-  insertChatEvent,
-  insertChatEventWithReservedSequence,
-  type ChatEventSequenceReservation,
+  chatEventContextInsertSql,
+  chatEventInsertSql,
+  chatEventReplacementInsertSql,
+  chatEventReplacementTargetSchema,
+  chatEventReplacementTargetSql,
+  requireChatEventReplacementTarget,
   type NewChatEvent,
-  replaceChatEvent,
 } from "./chat-event.service";
+import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import {
-  officialWorkflowQueueContextId,
-  webChatPublicBrandContextId,
-} from "./web-chat-public-brand-context.service";
-import { chatThreadAdmissionBlocked } from "./chat-active-run.service";
+  capturedModelReplacement,
+  resolveChatInputModelSelection$,
+} from "./chat-input-model.service";
+import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
+import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
+import {
+  chatThreadCreatedEventSql,
+  createdChatThreadFromRow,
+  prepareChatThreadInsert,
+} from "./chat-thread-create.service";
+import {
+  chatThreadEventInsertSql,
+  chatThreadServiceTierFromCodex,
+} from "./chat-thread-event.service";
+import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+import {
+  notifyRunningChatRunOfPendingInput$,
+  pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
 import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
@@ -125,77 +114,22 @@ import {
   withAgentRunSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
-import { appendQueuedRunAssistantMarker } from "./chat-queue-marker.service";
+import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
+import type { ModelCatalog } from "./model-catalog.service";
+import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import {
-  discardUnclaimedUserMessage,
-  loadNextUnclaimedQueuedUserMessage,
-  lockUserMessageQueueThread,
-  type QueuedUserMessage,
-} from "./chat-queued-event.service";
-import {
-  appendChatThreadEvent,
-  chatThreadServiceTierFromCodex,
-  type ChatThreadEventTransaction,
-} from "./chat-thread-event.service";
-import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
+  dispatchCancelSideEffects$,
+  shouldDispatchCancelSideEffects,
+} from "./run-cancel.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
-  resolveBuiltInModelRuntimeRoute,
-  type BuiltInModelRuntimeRoute,
-} from "./built-in-model-runtime-route.service";
-import {
-  chatEventTypeIn,
-  runOwnedChatEventCondition,
-} from "./chat-event-type.service";
-import {
-  canonicalChatEventContent,
-  canonicalChatEventError,
-  canonicalChatEventUserMessage,
-} from "./canonical-chat-event-read.service";
-import { shouldUsePiExecution } from "./pi-sandbox-config";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
-import {
-  buildWebChatAppendSystemPrompt,
-  type WebChatSessionPromptContext,
-} from "./web-chat-session-prompt.service";
-import { bestEffort, settle } from "../utils";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
-import { buildVideoRunOptionsPrompt } from "@okouai/core/video-run-options-prompt";
-import {
-  additionalVolumesForRun,
-  authorizedUserPresentationTemplateIds,
-  selectedUserPresentationTemplateIds,
-  userPresentationTemplateVolumes,
-  type PresentationTemplateVolume,
-} from "./presentation-template-data.service";
-import {
-  authorizedUserTemplates,
-  selectedUserTemplateIds,
-  userTemplateVolumes,
-  type MountedUserTemplate,
-} from "./user-template-data.service";
-import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
-import {
-  logTemplateUsage,
-  type TemplateUsageLogContext,
-} from "../../lib/template-usage-log";
-import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
-import {
-  resolveMcpSubmission,
-  type McpSubmissionIdentity,
-} from "./mcp-chat-submission.service";
-
+  officialWorkflowQueueContextId,
+  webChatContextId,
+} from "./web-chat-queue-context.service";
+/** Canonical ChatEvent write commands. */
 type SendBody = z.infer<typeof chatEventsContract.send.body>;
-
 interface NormalSendBody {
   readonly agentId: string;
   readonly prompt: string;
@@ -204,292 +138,282 @@ interface NormalSendBody {
   readonly chatThreadEventId?: string;
   readonly chatThreadSortEventId?: string;
   readonly sourceRunId?: string;
-  readonly model?: SupportedRunModel;
-  readonly modelSelection?: {
-    readonly modelProviderId: string;
-    readonly selectedModel: string;
-  } | null;
+  /** Null selects Auto; omission keeps the thread selection. */
+  readonly model?: string | null;
   readonly runOptions?: {
     readonly codexServiceTier?: CodexServiceTier;
     readonly reasoningEffort?: ReasoningEffort;
-    readonly video?: ChatRunVideoOptionsRequest;
   };
   readonly userMessage: UserMessageDocument;
   readonly hasTextContent: boolean;
   readonly computerUseHostId?: string | null;
   readonly cloudBrowserEnabled?: boolean;
   readonly clientEventId?: string;
-  readonly realAgentInPreview?: boolean;
-  readonly captureNetworkBodies?: boolean;
   readonly revokesEventId?: string;
+  /** Ask the input's run to capture network bodies; gated at run creation. */
+  readonly captureNetworkBodies?: boolean;
 }
-
 interface RecallSendBody {
   readonly agentId: string;
   readonly threadId: string;
   readonly revokesEventId: string;
   readonly clientEventId?: string;
 }
-
 interface InterruptSendBody {
   readonly agentId: string;
   readonly threadId: string;
   readonly interruptsRunId: string;
   readonly clientEventId?: string;
 }
-
 type AgentForChatSend = Pick<
   AgentRunRequestAgent,
   "id" | "orgId" | "owner" | "visibility"
-> &
-  Partial<
-    Pick<
-      AgentRunRequestAgent,
-      | "name"
-      | "defaultAgentId"
-      | "displayName"
-      | "description"
-      | "sound"
-      | "modelProviderId"
-      | "selectedModel"
-    >
-  >;
-
-type ThreadModelPin = ModelFirstPin;
-
-interface ResolvedThread {
-  readonly threadId: string;
-  readonly computerUseHostId: string | null;
-  readonly cloudBrowserEnabled: boolean;
-  readonly isNewThread: boolean;
-  readonly isClientThreadRetry: boolean;
-}
-
-type ModelFirstProviderAdmission = Awaited<
-  ReturnType<typeof resolveModelFirstProviderAdmission>
 >;
-
-interface ResolvedRunConfiguration {
-  readonly reasoningEffort?: ReasoningEffort;
-  readonly modelSettings: ModelSettings;
-  readonly modelPin: ThreadModelPin;
-  readonly providerAdmission: ModelFirstProviderAdmission;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly codexServiceTier: "fast" | undefined;
-}
-
-interface ResolvedThreadAndRunConfiguration {
-  readonly thread: ResolvedThread;
-  readonly runConfiguration: ResolvedRunConfiguration;
-  readonly modelResolutionPath?: PersistedChatThreadModelResolutionPath;
-}
-
-type IncomingModelSelection = NormalSendBody["modelSelection"];
-type OrganizationAuthContext = AuthContext & { readonly orgId: string };
-
-type CanonicalNormalSendBody = NormalSendBody;
-
+type OrganizationAuthContext = AuthContext & {
+  readonly orgId: string;
+};
 interface NormalSendArgs {
-  readonly mcpSubmission?: McpSubmissionIdentity;
-  readonly body: CanonicalNormalSendBody;
+  readonly body: NormalSendBody;
   readonly auth: OrganizationAuthContext;
+  /** Only the verified /mcp service supplies this; never read it from the send body. */
+  readonly mcpSource?: Extract<
+    UserMessageDocument["parts"][number],
+    {
+      type: "source";
+      kind: "mcp";
+    }
+  >;
   readonly userId: string;
   readonly orgId: string;
-  readonly apiStartTime: number;
-  readonly publicBrand: PublicBrand;
   readonly preloadedAgent?: AgentForChatSend;
-  readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
-}
-
-interface PreparedNormalSend {
-  readonly db: Db;
-  readonly agent: AgentForChatSend;
-  readonly thread: ResolvedThread;
-  readonly body: RuntimeNormalSendBody;
-  readonly generationTemplatePrompt: string;
   /**
-   * The selections behind that guidance, reported once the run is created.
-   * Carried through preparation rather than reported during it: preparation can
-   * still fail afterwards, and a queue-first send that stays queued is reported
-   * by the claim path instead.
+   * The request-scoped plan of the authenticated organization, supplied by a
+   * caller inside an auth route whose `orgId` is that organization, so the
+   * send and its model selection share one read.
    */
-  readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
-  /**
-   * Guidance packages to mount for this run, one per uploaded template the
-   * message selected and this caller was authorised for.
-   */
-  readonly presentationTemplateVolumes: readonly PresentationTemplateVolume[];
-  readonly videoRunOptions: ChatRunVideoOptionsRequest | null;
-  readonly computerUseHostGrant: ResolvedComputerUseHostGrant | null;
-  readonly persistedExplicitSelection: boolean;
-  readonly initialThinkingEnabled: boolean;
-  readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
-  readonly runConfiguration: ResolvedRunConfiguration;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly clientEventPrechecked: boolean;
-  readonly preflightClientEventConflict:
-    | ReturnType<typeof duplicateClientEventIdResponse>
-    | undefined;
-  readonly triggerSource: "web" | "agent";
-  readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
-  readonly piExecution: boolean;
+  readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
 }
-
+type NormalSendFailure =
+  | ReturnType<typeof notFound>
+  | ReturnType<typeof forbidden>
+  | ReturnType<typeof conflict>
+  | ReturnType<typeof badRequestMessage>;
+/**
+ * The send response. A send only enqueues its input and never waits for a
+ * run, so `runId` is always null; the key stays for clients that require it.
+ * The run, or an `input.rejected` explaining why none started, appears in the
+ * thread's event stream.
+ */
+interface CreatedChatEventResponse {
+  /** Server-side only: whether an earlier send already stored this input. */
+  readonly replayed?: boolean;
+  readonly status: 201;
+  readonly body: {
+    readonly runId: null;
+    readonly threadId: string;
+    readonly createdAt: string;
+  };
+}
+type AppendEventResult =
+  | {
+      readonly ok: true;
+      readonly createdAt: Date;
+    }
+  | {
+      readonly ok: false;
+      readonly message: string;
+    };
+type ClientEventIdResolution =
+  | {
+      readonly kind: "available";
+    }
+  | {
+      readonly kind: "accepted";
+      readonly createdAt: Date;
+    }
+  | {
+      readonly kind: "conflict";
+    };
+const INSUFFICIENT_CREDITS_MARKER = "insufficient_credits";
+function forbidden(message: string) {
+  return {
+    status: 403 as const,
+    body: { error: { message, code: "FORBIDDEN" as const } },
+  };
+}
+function duplicateClientEventIdResponse() {
+  return conflict("clientEventId is already in use");
+}
+function acceptedSendResponse(
+  threadId: string,
+  createdAt: Date,
+  replayed: boolean,
+): CreatedChatEventResponse {
+  return {
+    replayed,
+    status: 201,
+    body: { runId: null, threadId, createdAt: createdAt.toISOString() },
+  };
+}
 function normalSendTriggerSource(
   auth: OrganizationAuthContext,
 ): "web" | "agent" {
   return auth.tokenType === "agent" ? "agent" : "web";
 }
-
-async function resolveChatAgentRunSourceById(
-  db: Db,
-  auth: OrganizationAuthContext,
-  sourceRunId: string,
-): Promise<{
-  readonly annotation: ChatAgentRunSourceAnnotation | null;
-  readonly autonomyBudget: number;
-} | null> {
-  const [source] = await db
-    .select({
-      runId: agentRuns.id,
-      threadId: chatThreads.id,
-      agentId: chatThreads.agentId,
-      title: chatThreads.title,
-      autonomyBudget: agentRuns.autonomyBudget,
-    })
-    .from(agentRuns)
-    .leftJoin(
-      chatThreads,
-      and(
-        eq(chatThreads.id, agentRuns.chatThreadId),
-        eq(chatThreads.userId, auth.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(agentRuns.id, sourceRunId),
-        eq(agentRuns.userId, auth.userId),
-        eq(agentRuns.orgId, auth.orgId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  if (!source || source.autonomyBudget === null) {
-    return null;
-  }
-  const annotation =
-    source.threadId === null || source.agentId === null
-      ? null
-      : {
-          runId: source.runId,
-          threadId: source.threadId,
-          agentId: source.agentId,
-          titleSnapshot: agentRunSourceTitleSnapshot(source.title),
-        };
-  return {
-    annotation,
-    autonomyBudget: source.autonomyBudget,
-  };
-}
-
-async function resolveChatAgentRunSource(
-  db: Db,
-  auth: OrganizationAuthContext,
-): Promise<{
-  readonly annotation: ChatAgentRunSourceAnnotation | null;
-  readonly autonomyBudget: number;
-} | null> {
-  if (auth.tokenType !== "agent") {
-    return null;
-  }
-  return await resolveChatAgentRunSourceById(db, auth, auth.runId);
-}
-
-async function resolveNormalSendAgentRunSource(params: {
-  readonly db: Db;
-  readonly auth: OrganizationAuthContext;
-  readonly userMessage: UserMessageDocument;
-  readonly sourceRunId: string | undefined;
-}): Promise<
-  | {
-      readonly source: ChatAgentRunSourceAnnotation | null;
+const resolveChatAgentRunSourceById$ = command(
+  async (
+    { get },
+    auth: OrganizationAuthContext,
+    sourceRunId: string,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly annotation: ChatAgentRunSourceAnnotation | null;
+  } | null> => {
+    const db = get(db$);
+    const [source] = await db
+      .select({
+        runId: agentRuns.id,
+        threadId: chatThreads.id,
+        agentId: chatThreads.agentId,
+        title: chatThreads.title,
+        autonomyBudget: agentRuns.autonomyBudget,
+      })
+      .from(agentRuns)
+      .leftJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, agentRuns.chatThreadId),
+          eq(chatThreads.userId, auth.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(agentRuns.id, sourceRunId),
+          eq(agentRuns.userId, auth.userId),
+          eq(agentRuns.orgId, auth.orgId),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!source || source.autonomyBudget === null) {
+      return null;
     }
-  | {
-      readonly response:
-        | ReturnType<typeof badRequestMessage>
-        | ReturnType<typeof autonomyBudgetExhausted>;
-    }
-> {
-  if (hasAgentRunSourceAnnotation(params.userMessage)) {
-    return {
-      response: badRequestMessage(
-        "Agent source annotations are server-managed",
-      ),
-    };
-  }
-  if (params.sourceRunId !== undefined) {
-    if (
-      params.auth.tokenType === "agent" ||
-      params.auth.tokenType === "sandbox"
-    ) {
+    const annotation =
+      source.threadId === null || source.agentId === null
+        ? null
+        : {
+            runId: source.runId,
+            threadId: source.threadId,
+            agentId: source.agentId,
+            titleSnapshot: agentRunSourceTitleSnapshot(source.title),
+          };
+    return { annotation };
+  },
+);
+const resolveNormalSendAgentRunSource$ = command(
+  async (
+    { set },
+    params: {
+      readonly auth: OrganizationAuthContext;
+      readonly userMessage: UserMessageDocument;
+      readonly sourceRunId: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly source: ChatAgentRunSourceAnnotation | null;
+      }
+    | {
+        readonly response: ReturnType<typeof badRequestMessage>;
+      }
+  > => {
+    if (hasAgentRunSourceAnnotation(params.userMessage)) {
       return {
         response: badRequestMessage(
-          "Forward source runs are only accepted from user-authenticated sessions",
+          "Agent source annotations are server-managed",
         ),
       };
     }
-    const resolved = await resolveChatAgentRunSourceById(
-      params.db,
+    if (params.sourceRunId !== undefined) {
+      if (
+        params.auth.tokenType === "agent" ||
+        params.auth.tokenType === "sandbox"
+      ) {
+        return {
+          response: badRequestMessage(
+            "Forward source runs are only accepted from user-authenticated sessions",
+          ),
+        };
+      }
+      const resolved = await set(
+        resolveChatAgentRunSourceById$,
+        params.auth,
+        params.sourceRunId,
+        signal,
+      );
+      if (resolved === null) {
+        return { response: badRequestMessage("Forward source run not found") };
+      }
+      if (resolved.annotation === null) {
+        return {
+          response: badRequestMessage(
+            "Forward source run is not linked to a chat thread",
+          ),
+        };
+      }
+      return { source: resolved.annotation };
+    }
+    if (params.auth.tokenType !== "agent") {
+      return { source: null };
+    }
+    const resolved = await set(
+      resolveChatAgentRunSourceById$,
       params.auth,
-      params.sourceRunId,
+      params.auth.runId,
+      signal,
     );
     if (resolved === null) {
-      return { response: badRequestMessage("Forward source run not found") };
+      return { response: badRequestMessage("Agent source run not found") };
     }
     if (resolved.annotation === null) {
       return {
         response: badRequestMessage(
-          "Forward source run is not linked to a chat thread",
+          "Agent source run is not linked to a chat thread",
         ),
       };
     }
     return { source: resolved.annotation };
+  },
+);
+/**
+ * Reject a template selection that can never resolve. Only the selection's
+ * own syntax is checked here; whether the caller may use an uploaded
+ * template is decided when the input is picked, which mounts only the
+ * templates the caller may read.
+ */
+function invalidGenerationTemplateSelection(
+  userMessage: UserMessageDocument,
+): ReturnType<typeof badRequestMessage> | undefined {
+  const { templates } = projectUserMessage(userMessage);
+  const mountedUserPresentationTemplateIds =
+    selectedUserPresentationTemplateIds(templates);
+  for (const template of templates) {
+    if (template.type === "custom") {
+      continue;
+    }
+    const validation = buildGenerationTemplatePrompt(template, {
+      mountedUserPresentationTemplateIds,
+    });
+    if (validation.status === "invalid") {
+      return badRequestMessage(validation.message);
+    }
   }
-  const resolved = await resolveChatAgentRunSource(params.db, params.auth);
-  if (resolved === null) {
-    return params.auth.tokenType === "agent"
-      ? { response: badRequestMessage("Agent source run not found") }
-      : { source: null };
-  }
-  if (childAutonomyBudget(resolved.autonomyBudget).kind === "exhausted") {
-    return { response: autonomyBudgetExhausted() };
-  }
-  if (resolved.annotation === null) {
-    return {
-      response: badRequestMessage(
-        "Agent source run is not linked to a chat thread",
-      ),
-    };
-  }
-  return { source: resolved.annotation };
+  return undefined;
 }
-
-function normalSendBodyWithAgentRunSource(
-  body: CanonicalNormalSendBody,
-  source: ChatAgentRunSourceAnnotation | null,
-): CanonicalNormalSendBody {
-  if (source === null) {
-    return body;
-  }
-  return {
-    ...body,
-    userMessage: withAgentRunSourceAnnotation(body.userMessage, source),
-  };
-}
-
 function shouldTouchThreadSortFromNormalSend(
   source: AgentRunPreCreateSource | undefined,
   isNewThread: boolean,
@@ -500,262 +424,48 @@ function shouldTouchThreadSortFromNormalSend(
     source !== "workflow_slash_command"
   );
 }
-
-interface NormalSendFeatureSwitches {
-  /**
-   * Carried whole so downstream checks can read it without reloading the
-   * switches this request already read.
-   */
-  readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-function initialThinkingForSend(
-  args: NormalSendArgs,
-  switches: NormalSendFeatureSwitches,
-): boolean {
-  return (
-    args.agentRunPreCreateSource === undefined &&
-    !isFeatureEnabled(
-      FeatureSwitchKey.ThreadActivitySummary,
-      switches.featureSwitchContext,
-    )
-  );
-}
-
-interface RuntimeNormalSendBody extends Omit<
-  CanonicalNormalSendBody,
-  "userMessage"
-> {
-  readonly userMessage: UserMessageDocument;
-  readonly agentPrompt: string;
-  readonly primaryTemplate: GenerationTemplateRequest | undefined;
-  readonly templates: readonly GenerationTemplateRequest[];
-  readonly hasTextContent: boolean;
-}
-
-interface ResolvedComputerUseHostGrant {
-  readonly hostId: string;
-  readonly displayName: string;
-}
-
-type NormalSendFailure =
-  | ReturnType<typeof notFound>
-  | ReturnType<typeof forbidden>
-  | ReturnType<typeof conflict>
-  | ReturnType<typeof autonomyBudgetExhausted>
-  | ReturnType<typeof insufficientCredits>
-  | ReturnType<typeof providerUnavailable>
-  | ReturnType<typeof modelProviderUnavailable>
-  | ReturnType<typeof badRequestMessage>;
-
-interface CreatedChatEventResponse {
-  readonly mcpReplayed?: boolean;
-  readonly status: 201;
-  readonly body: {
-    readonly runId: string | null;
-    readonly threadId: string;
-    readonly status?: string;
-    readonly createdAt: string;
-  };
-}
-
-type ClientSendResolution =
-  | CreatedChatEventResponse
-  | ReturnType<typeof conflict>;
-
-type CreateChatThreadResult =
-  | {
-      readonly id: string;
-      readonly clientThreadAlreadyExisted: boolean;
+const resolveClientEventId$ = command(
+  async (
+    { get },
+    params: {
+      readonly clientEventId: string;
+      readonly orgId: string;
+      readonly threadId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ClientEventIdResolution> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        chatThreadId: chatEvents.chatThreadId,
+        threadUserId: chatThreads.userId,
+        eventType: chatEvents.eventType,
+        eventCreatedAt: chatEvents.createdAt,
+      })
+      .from(chatEvents)
+      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+      .where(
+        and(
+          eq(chatEvents.id, params.clientEventId),
+          chatThreadOrganizationCondition(params.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row) {
+      return { kind: "available" };
     }
-  | ReturnType<typeof notFound>;
-
-type AppendEventResult =
-  | {
-      readonly ok: true;
-      readonly createdAt: Date;
+    if (
+      row.chatThreadId !== params.threadId ||
+      row.threadUserId !== params.userId ||
+      row.eventType !== "input.prompt"
+    ) {
+      return { kind: "conflict" };
     }
-  | {
-      readonly ok: false;
-      readonly message: string;
-    };
-
-type ClientEventIdResolution =
-  | {
-      readonly kind: "available";
-    }
-  | {
-      readonly kind: "queued";
-      readonly createdAt: Date;
-      readonly inserted: boolean;
-      /** Set only when this call inserted the message (queue-first sends). */
-      readonly messageId?: string;
-    }
-  | {
-      readonly kind: "associated";
-      readonly runId: string;
-      readonly status: string;
-      readonly createdAt: Date;
-    }
-  | {
-      readonly kind: "conflict";
-    };
-
-interface ExistingClientEventIdRow {
-  readonly chatThreadId: string;
-  readonly threadUserId: string;
-  readonly eventType: ChatEventType;
-  readonly content: string | null;
-  readonly userMessage: UserMessageDocument | null;
-  readonly runId: string | null;
-  readonly revokesEventId: string | null;
-  readonly error: string | null;
-  readonly eventCreatedAt: Date;
-  readonly runStatus: string | null;
-  readonly runCreatedAt: Date | null;
-  readonly replacementEventId: string | null;
-  readonly replacementRunId: string | null;
-  readonly replacementError: string | null;
-  readonly replacementRunStatus: string | null;
-  readonly replacementRunCreatedAt: Date | null;
-}
-
-const INSUFFICIENT_CREDITS_MARKER = "insufficient_credits";
-const replacementChatEvent = alias(chatEvents, "replacement_chat_event");
-const replacementAgentRun = alias(agentRuns, "replacement_agent_run");
-
-function forbidden(message: string) {
-  return {
-    status: 403 as const,
-    body: { error: { message, code: "FORBIDDEN" as const } },
-  };
-}
-
-function duplicateClientEventIdResponse() {
-  return conflict("clientEventId is already in use");
-}
-
-function resolveExistingClientEventIdRow(
-  row: ExistingClientEventIdRow | undefined,
-  params: {
-    readonly threadId: string;
-    readonly userId: string;
+    return { kind: "accepted", createdAt: row.eventCreatedAt };
   },
-): ClientEventIdResolution {
-  if (!row) {
-    return { kind: "available" };
-  }
-  if (
-    row.chatThreadId !== params.threadId ||
-    row.threadUserId !== params.userId ||
-    (row.eventType !== "input.prompt" && row.eventType !== "input.rejected")
-  ) {
-    return { kind: "conflict" };
-  }
-  if (
-    row.revokesEventId !== null &&
-    row.content === null &&
-    row.userMessage === null &&
-    row.error === null
-  ) {
-    return { kind: "conflict" };
-  }
-  if (
-    row.eventType === "input.prompt" &&
-    row.runId === null &&
-    row.replacementEventId === null
-  ) {
-    return {
-      kind: "queued",
-      createdAt: row.eventCreatedAt,
-      inserted: false,
-    };
-  }
-  if (row.runId !== null && row.runCreatedAt && row.runStatus) {
-    return {
-      kind: "associated",
-      runId: row.runId,
-      status: row.runStatus,
-      createdAt: row.runCreatedAt,
-    };
-  }
-  if (
-    row.replacementRunId !== null &&
-    row.replacementRunCreatedAt &&
-    row.replacementRunStatus
-  ) {
-    return {
-      kind: "associated",
-      runId: row.replacementRunId,
-      status: row.replacementRunStatus,
-      createdAt: row.replacementRunCreatedAt,
-    };
-  }
-  if (row.replacementError === INSUFFICIENT_CREDITS_MARKER) {
-    return {
-      kind: "queued",
-      createdAt: row.eventCreatedAt,
-      inserted: false,
-    };
-  }
-  return { kind: "conflict" };
-}
-
-async function resolveClientEventId(
-  db: Db,
-  params: {
-    readonly clientEventId: string;
-    readonly orgId: string;
-    readonly threadId: string;
-    readonly userId: string;
-  },
-): Promise<ClientEventIdResolution> {
-  const [event] = await db
-    .select({
-      chatThreadId: chatEvents.chatThreadId,
-      threadUserId: chatThreads.userId,
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventContent(),
-      userMessage: canonicalChatEventUserMessage(),
-      runId: chatEvents.runId,
-      revokesEventId: chatEvents.revokesEventId,
-      error: canonicalChatEventError(),
-      eventCreatedAt: chatEvents.createdAt,
-      runStatus: agentRuns.status,
-      runCreatedAt: agentRuns.createdAt,
-      replacementEventId: replacementChatEvent.id,
-      replacementRunId: replacementChatEvent.runId,
-      replacementError: canonicalChatEventError(replacementChatEvent.payload),
-      replacementRunStatus: replacementAgentRun.status,
-      replacementRunCreatedAt: replacementAgentRun.createdAt,
-    })
-    .from(chatEvents)
-    .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-    .leftJoin(
-      agentRuns,
-      and(eq(agentRuns.id, chatEvents.runId), runOwnedChatEventCondition()),
-    )
-    .leftJoin(
-      replacementChatEvent,
-      eq(replacementChatEvent.revokesEventId, chatEvents.id),
-    )
-    .leftJoin(
-      replacementAgentRun,
-      and(
-        eq(replacementAgentRun.id, replacementChatEvent.runId),
-        ne(replacementChatEvent.eventType, "control.interrupt"),
-      ),
-    )
-    .where(
-      and(
-        eq(chatEvents.id, params.clientEventId),
-        chatThreadOrganizationCondition(db, params.orgId),
-      ),
-    )
-    .limit(1);
-  return resolveExistingClientEventIdRow(event, params);
-}
-
+);
 function clientEventIdResolutionResponse(
   resolution: ClientEventIdResolution,
   threadId: string,
@@ -769,33 +479,13 @@ function clientEventIdResolutionResponse(
   if (resolution.kind === "conflict") {
     return duplicateClientEventIdResponse();
   }
-  if (resolution.kind === "associated") {
-    return {
-      status: 201,
-      body: {
-        runId: resolution.runId,
-        threadId,
-        status: resolution.status,
-        createdAt: resolution.createdAt.toISOString(),
-      },
-    };
-  }
-  return {
-    status: 201,
-    body: {
-      runId: null,
-      threadId,
-      createdAt: resolution.createdAt.toISOString(),
-    },
-  };
+  return acceptedSendResponse(threadId, resolution.createdAt, true);
 }
-
 function isCancelResult(value: unknown): value is CancelRunResult {
   return (
     typeof value === "object" && value !== null && "alreadyCancelled" in value
   );
 }
-
 function isRecallSendBody(body: SendBody): body is RecallSendBody {
   return (
     "revokesEventId" in body &&
@@ -803,79 +493,24 @@ function isRecallSendBody(body: SendBody): body is RecallSendBody {
     !("prompt" in body && body.prompt !== undefined)
   );
 }
-
 function isInterruptSendBody(body: SendBody): body is InterruptSendBody {
   return "interruptsRunId" in body && body.interruptsRunId !== undefined;
 }
-
 function isNormalSendBody(body: SendBody): body is NormalSendBody {
   return "prompt" in body && body.prompt !== undefined;
 }
-
-function modelFirstSelection(
-  selectedModel: string,
-): NonNullable<NormalSendBody["modelSelection"]> {
-  return {
-    modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
-    selectedModel,
-  };
-}
-
-function canonicalNormalSendBody(
-  body: NormalSendBody,
-): CanonicalNormalSendBody {
-  return {
-    ...body,
-    ...(body.model === undefined
-      ? {}
-      : { modelSelection: modelFirstSelection(body.model) }),
-  };
-}
-
-function generateCallbackSecret(): string {
-  return randomBytes(32).toString("hex");
-}
-
-function resolveRuntimeNormalSendBody(
-  body: CanonicalNormalSendBody,
-): RuntimeNormalSendBody {
-  const projection = projectUserMessage(body.userMessage);
-  return {
-    ...body,
-    userMessage: body.userMessage,
-    primaryTemplate: projection.primaryTemplate,
-    templates: projection.templates,
-    agentPrompt: projection.agentPrompt,
-    hasTextContent: projection.hasTextContent,
-  };
-}
-
-type NormalSendAttachmentCountBucket = "0" | "1" | "2_4" | "5_plus";
-
-const NORMAL_SEND_ATTACHMENT_METADATA_CONCURRENCY = 4;
-
-function normalSendAttachmentCountBucket(
-  count: number,
-): NormalSendAttachmentCountBucket {
-  if (count === 0) {
-    return "0";
-  }
-  if (count === 1) {
-    return "1";
-  }
-  if (count <= 4) {
-    return "2_4";
-  }
-  return "5_plus";
-}
-
+const ATTACHMENT_METADATA_CONCURRENCY = 4;
 function unwrapSettledResult<T>(result: PromiseSettledResult<T>): T {
   if (result.status === "rejected") {
     throw result.reason;
   }
   return result.value;
 }
-
+/**
+ * Resolve the stored object behind each attached file. The canonical input
+ * asset rows recorded with the input need its key and size, and the lookup is
+ * also the ownership check for the file ids the client sent.
+ */
 const resolveIncomingAttachFileMetadata$ = command(
   async (
     { get },
@@ -883,1327 +518,695 @@ const resolveIncomingAttachFileMetadata$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly userMessage: UserMessageDocument;
-      readonly timing?: ApiDispatchTimingCollector;
     },
     signal: AbortSignal,
-  ): Promise<ChatEventAttachFileMetadata[] | null> => {
+  ): Promise<ChatEventAttachFileMetadata[]> => {
     const files = userMessagePhysicalFiles(args.userMessage);
-    return await measureApiDispatchTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_attachment_metadata",
-      "nested",
-      async () => {
-        if (files.length === 0) {
-          return null;
-        }
-        const metadata: ChatEventAttachFileMetadata[] = [];
-        for (
-          let offset = 0;
-          offset < files.length;
-          offset += NORMAL_SEND_ATTACHMENT_METADATA_CONCURRENCY
-        ) {
-          const wave = files.slice(
-            offset,
-            offset + NORMAL_SEND_ATTACHMENT_METADATA_CONCURRENCY,
-          );
-          const results = await Promise.allSettled(
-            wave.map(async (file) => {
-              const object = await get(
-                uploadedArtifactObject({
-                  userId: args.userId,
-                  orgId: args.orgId,
-                  id: file.fileId,
-                  filenameHint: file.filenameSnapshot,
-                }),
-              );
-              return { file, object };
+    const metadata: ChatEventAttachFileMetadata[] = [];
+    for (
+      let offset = 0;
+      offset < files.length;
+      offset += ATTACHMENT_METADATA_CONCURRENCY
+    ) {
+      const wave = files.slice(
+        offset,
+        offset + ATTACHMENT_METADATA_CONCURRENCY,
+      );
+      const results = await Promise.allSettled(
+        wave.map(async (file) => {
+          const object = await get(
+            uploadedArtifactObject({
+              userId: args.userId,
+              orgId: args.orgId,
+              id: file.fileId,
+              filenameHint: file.filenameSnapshot,
             }),
           );
-          for (const result of results) {
-            const { file, object } = unwrapSettledResult(result);
-            signal.throwIfAborted();
-            if (!object) {
-              throw new Error(
-                `User-message attachment not found: ${file.fileId}`,
-              );
-            }
-            metadata.push({
-              id: file.fileId,
-              filename: file.filenameSnapshot,
-              contentType: file.contentType,
-              size: object.size,
-              objectKey: object.key,
-              publicBrand: object.publicBrand,
-            });
-          }
+          return { file, object };
+        }),
+      );
+      signal.throwIfAborted();
+      for (const result of results) {
+        const { file, object } = unwrapSettledResult(result);
+        signal.throwIfAborted();
+        if (!object) {
+          throw new Error(`User-message attachment not found: ${file.fileId}`);
         }
-        return metadata;
-      },
-      {
-        normal_send_attachment_count_bucket: normalSendAttachmentCountBucket(
-          files.length,
-        ),
-      },
-    );
+        metadata.push({
+          id: file.fileId,
+          filename: file.filenameSnapshot,
+          contentType: file.contentType,
+          size: object.size,
+          objectKey: object.key,
+          publicBrand: linkLayoutSegment(object.layout),
+        });
+      }
+    }
+    return metadata;
   },
 );
-
-async function loadAgentForChatSend(
-  db: Db,
-  agentId: string,
-): Promise<AgentForChatSend | undefined> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      orgId: agents.orgId,
-      defaultAgentId: orgMetadata.defaultAgentId,
-      owner: agents.owner,
-      visibility: agents.visibility,
-      displayName: agents.displayName,
-      description: agents.description,
-      sound: agents.sound,
-      modelProviderId: agents.modelProviderId,
-      selectedModel: agents.selectedModel,
-    })
-    .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-    .where(eq(agents.id, agentId))
-    .limit(1);
+function authorizeSendAgent(
+  args: NormalSendArgs,
+  agent: AgentForChatSend | undefined,
+): AgentForChatSend | NormalSendFailure {
+  if (!agent || agent.id !== args.body.agentId || agent.orgId !== args.orgId) {
+    return notFound("Agent not found");
+  }
+  if (agent.visibility === "private" && agent.owner !== args.userId) {
+    return forbidden("Only the private agent owner can run this agent");
+  }
   return agent;
 }
-
-async function resolveClientEventSend(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly threadId: string;
-  readonly clientEventId: string | undefined;
-  readonly mcpSubmission?: McpSubmissionIdentity;
-}): Promise<ClientSendResolution | undefined> {
-  if (params.mcpSubmission) {
-    const existing = await resolveMcpSubmission(
-      params.db,
-      params.mcpSubmission,
-      params,
-    );
-    if (existing.kind === "accepted") {
-      return {
-        status: 201,
-        mcpReplayed: true,
-        body: {
-          threadId: params.threadId,
-          runId: null,
-          createdAt: existing.receipt.acceptedAt.toISOString(),
-        },
-      };
+const loadAuthorizedAgent$ = command(
+  async (
+    { get },
+    args: NormalSendArgs & { readonly context: AgentRunContextSignals },
+    signal: AbortSignal,
+  ): Promise<AgentForChatSend | NormalSendFailure> => {
+    const agent = await get(args.context.agent$);
+    signal.throwIfAborted();
+    return authorizeSendAgent(args, agent ?? undefined);
+  },
+);
+const loadExistingSendThreadRow$ = command(
+  async (
+    { get },
+    args: NormalSendArgs,
+    threadId: string,
+    signal: AbortSignal,
+  ) => {
+    const db = get(db$);
+    const [thread] = await db
+      .select(chatThreadRequestSelection())
+      .from(chatThreads)
+      .where(
+        and(eq(chatThreads.id, threadId), eq(chatThreads.userId, args.userId)),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return thread;
+  },
+);
+type ExistingSendThreadRow = NonNullable<
+  Awaited<ReturnType<(typeof loadExistingSendThreadRow$)["write"]>>
+>;
+const loadAuthorizedExistingSendThread$ = command(
+  async (
+    { get, set },
+    args: NormalSendArgs & { readonly context: AgentRunContextSignals },
+    threadId: string,
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly agent: AgentForChatSend;
+        readonly thread: ExistingSendThreadRow;
+      }
+    | NormalSendFailure
+  > => {
+    const [thread, loadedAgent] = await Promise.all([
+      set(loadExistingSendThreadRow$, args, threadId, signal),
+      get(args.context.agent$),
+    ]);
+    signal.throwIfAborted();
+    const agent = authorizeSendAgent(args, loadedAgent ?? undefined);
+    if ("status" in agent) {
+      return agent;
     }
-    if (existing.kind !== "missing") {
-      return conflict(
-        existing.kind === "expired"
-          ? "Submission retry window has expired; inspect the original input before submitting new work"
-          : "requestId is already in use for a different submission",
-      );
+    if (!thread || thread.agentId !== agent.id) {
+      return notFound("Chat thread not found");
     }
-    return undefined;
-  }
-  if (!params.clientEventId) {
-    return undefined;
-  }
-  const resolution = await resolveClientEventId(params.db, {
-    clientEventId: params.clientEventId,
-    orgId: params.orgId,
-    threadId: params.threadId,
-    userId: params.userId,
-  });
-  return clientEventIdResolutionResponse(resolution, params.threadId);
+    return { agent, thread };
+  },
+);
+/**
+ * The thread's requested settings. The input captures its effective model at
+ * enqueue; the pick launches that model after its credit admission.
+ */
+interface ThreadRunSettings {
+  readonly selectedModel: string | null;
+  readonly modelSettings: ModelSettings;
+  readonly modelSettingsPatch: ModelSettingsPatch | undefined;
+  readonly codexServiceTier: CodexServiceTier | null;
 }
-
-async function resolveClientThreadRetryRun(
-  db: Db,
-  threadId: string,
-): Promise<CreatedChatEventResponse | undefined> {
-  const [run] = await db
-    .select({
-      runId: agentRuns.id,
-      status: agentRuns.status,
-      createdAt: agentRuns.createdAt,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, threadId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .orderBy(asc(agentRuns.createdAt))
-    .limit(1);
-  if (!run) {
-    return undefined;
-  }
-
-  return {
-    status: 201,
-    body: {
-      runId: run.runId,
-      threadId,
-      status: run.status,
-      createdAt: run.createdAt.toISOString(),
-    },
-  };
+interface ThreadComputerAccess {
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled: boolean;
 }
-
-function emptyModelFirstThreadPin(): ThreadModelPin {
-  return {
-    modelProviderId: null,
-    modelProviderType: null,
-    modelProviderCredentialScope: null,
-    selectedModel: null,
-  };
-}
-
-async function withBuiltInModelRuntimeRoute(
-  db: Db,
-  configuration: ResolvedRunConfiguration,
-  featureSwitchContext: FeatureSwitchContext,
-): Promise<ResolvedRunConfiguration | NormalSendFailure> {
-  if (
-    configuration.providerAdmission.error ||
-    !isBuiltInModelProviderType(
-      configuration.providerAdmission.effectiveModelProvider,
-    )
-  ) {
-    return configuration;
-  }
-  const selectedModel = configuration.modelPin.selectedModel;
-  if (!selectedModel) {
-    return providerUnavailable(
-      "No model provider configured: no built-in model is selected",
-    );
-  }
-  const builtInModelRuntimeRoute = await resolveBuiltInModelRuntimeRoute(
-    db,
-    selectedModel,
-    featureSwitchContext,
-  );
-  return builtInModelRuntimeRoute
-    ? { ...configuration, builtInModelRuntimeRoute }
-    : modelProviderUnavailable(
-        "Every built-in model route for this model is temporarily unavailable",
-      );
-}
-
-async function resolveExplicitRunConfiguration(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly body: NormalSendBody;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly timing?: ApiDispatchTimingCollector;
-}): Promise<ResolvedRunConfiguration | NormalSendFailure | undefined> {
-  const modelSelection = params.body.modelSelection;
-  if (!modelSelection) {
-    return undefined;
-  }
-  const modelPin = await measureApiDispatchTiming(
-    params.timing,
-    "api_dispatch_pre_create_agent_web_chat_resolve_model_pin",
-    "nested",
-    () => {
-      return resolveModelSelectionPin({
-        db: params.db,
-        orgId: params.orgId,
-        userId: params.userId,
-        modelSelection,
-      });
-    },
-  );
-  if ("status" in modelPin) {
-    return modelPin;
-  }
-  const modelSettings = await loadNewChatThreadModelSettings(params.db, {
-    orgId: params.orgId,
-    userId: params.userId,
-  });
+function requestedThreadRunSettings(
+  catalog: ModelCatalog,
+  body: NormalSendBody,
+  current: {
+    readonly selectedModel: string | null;
+    readonly modelSettings: ModelSettings;
+    readonly codexServiceTier: CodexServiceTier | null;
+  },
+): ThreadRunSettings | ReturnType<typeof badRequestMessage> {
+  // An explicit null selects Auto; omission keeps the current selection.
+  const selectedModel =
+    body.model === undefined ? current.selectedModel : body.model;
   const effort = resolveChatReasoningEffort({
-    selectedModel: modelPin.selectedModel,
-    modelSettings,
-    requested: params.body.runOptions?.reasoningEffort,
+    catalog,
+    selectedModel,
+    modelSettings: current.modelSettings,
+    requested: body.runOptions?.reasoningEffort,
   });
   if ("status" in effort) {
     return effort;
   }
-  const providerAdmission = await measureApiDispatchTiming(
-    params.timing,
-    "api_dispatch_pre_create_agent_web_chat_resolve_provider_admission",
-    "nested",
-    () => {
-      return resolveModelFirstProviderAdmission({
-        db: params.db,
-        orgId: params.orgId,
-        userId: params.userId,
-        modelPin,
-        requestedModelProvider: undefined,
-        externalPlanCapabilities: { kind: "load-current" },
-      });
-    },
-  );
-  if (providerAdmission.error && providerAdmission.error.status !== 402) {
-    return providerAdmission.error;
+  const requestedTier = body.runOptions?.codexServiceTier;
+  if (
+    requestedTier === "fast" &&
+    !isCatalogFastServiceTierSupported(catalog, selectedModel)
+  ) {
+    return badRequestMessage(
+      "Codex fast mode is only available for GPT 5.6 runs",
+    );
   }
-  const codexServiceTierError = await measureApiDispatchTiming(
-    params.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_validate_codex_service_tier",
-    "nested",
-    () => {
-      return validateCodexServiceTier({
-        body: params.body,
-        modelPin,
-      });
-    },
-  );
-  if (codexServiceTierError) {
-    return codexServiceTierError;
-  }
-  return await withBuiltInModelRuntimeRoute(
-    params.db,
-    {
-      modelPin,
-      providerAdmission,
-      reasoningEffort: effort.reasoningEffort,
-      modelSettings: effort.modelSettings,
-      codexServiceTier: codexServiceTierForRun({
-        body: params.body,
-        modelPin,
-      }),
-    },
-    params.featureSwitchContext,
-  );
-}
-
-async function resolveNormalSendFeatureSwitches(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<NormalSendFeatureSwitches> {
-  const context = await loadUserFeatureSwitchContext(db, orgId, userId);
+  // A model or run-option selection carries its tier; an effort-only change
+  // or a send without selections keeps the thread's stored tier.
+  const keepsStoredTier =
+    requestedTier === undefined &&
+    (body.runOptions?.reasoningEffort !== undefined ||
+      (body.model === undefined && body.runOptions === undefined));
+  const codexServiceTier = keepsStoredTier
+    ? current.codexServiceTier
+    : (requestedTier ?? null);
   return {
-    featureSwitchContext: context,
+    selectedModel,
+    modelSettings: effort.modelSettings,
+    modelSettingsPatch: effort.modelSettingsPatch,
+    codexServiceTier,
   };
 }
-
 /**
- * The two things this message's own selections contribute to its run: the
- * template guidance block and the video options the composer sent with it.
+ * Apply the send's explicit Computer Use or cloud browser selection. Only an
+ * explicitly selected host is looked up: it is written to the thread, so it
+ * must belong to the caller. The pick re-checks the thread's host.
  */
-/**
- * The packages this run carries, from both catalogs.
- *
- * Both can be selected in one message while the tables are separate, and the
- * run mounts whichever it was actually given. The two directories differ, so
- * neither can overwrite the other.
- */
-function templateVolumesFor(
-  authorized: AuthorizedGenerationTemplates,
-): readonly PresentationTemplateVolume[] {
-  return [
-    ...userPresentationTemplateVolumes(authorized.userPresentationTemplateIds),
-    ...userTemplateVolumes(authorized.userTemplates),
-  ];
+const requestedThreadComputerAccess$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly body: NormalSendBody;
+      readonly current: ThreadComputerAccess;
+    },
+    signal: AbortSignal,
+  ): Promise<ThreadComputerAccess | ReturnType<typeof notFound>> => {
+    const db = set(writeDb$);
+    const explicitHost = Object.prototype.hasOwnProperty.call(
+      params.body,
+      "computerUseHostId",
+    );
+    const explicitCloudBrowser = Object.prototype.hasOwnProperty.call(
+      params.body,
+      "cloudBrowserEnabled",
+    );
+    if (!explicitHost && !explicitCloudBrowser) {
+      return {
+        computerUseHostId: params.current.computerUseHostId,
+        cloudBrowserEnabled: params.current.cloudBrowserEnabled,
+      };
+    }
+    const cloudBrowserEnabled = explicitCloudBrowser
+      ? (params.body.cloudBrowserEnabled ?? false)
+      : params.current.cloudBrowserEnabled;
+    const requestedHostId = explicitHost
+      ? (params.body.computerUseHostId ?? null)
+      : params.current.computerUseHostId;
+    if (explicitCloudBrowser && cloudBrowserEnabled) {
+      return { computerUseHostId: null, cloudBrowserEnabled: true };
+    }
+    if (!requestedHostId) {
+      return { computerUseHostId: null, cloudBrowserEnabled };
+    }
+    if (!explicitHost) {
+      return { computerUseHostId: requestedHostId, cloudBrowserEnabled: false };
+    }
+    const [host] = await db
+      .select({ id: computerUseHosts.id })
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.id, requestedHostId),
+          eq(computerUseHosts.orgId, params.orgId),
+          eq(computerUseHosts.userId, params.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!host) {
+      return notFound("Computer-use host not found");
+    }
+    return { computerUseHostId: host.id, cloudBrowserEnabled: false };
+  },
+);
+interface ExistingSendThread {
+  readonly kind: "existing";
+  readonly threadId: string;
+  readonly agentId: string;
+  readonly runSettings: ThreadRunSettings;
+  readonly computerAccess: ThreadComputerAccess;
+  readonly current: ThreadRunSettings & ThreadComputerAccess;
+  /** The replaced model the input's captured successor rewrites. */
+  readonly replacedModel?: string;
 }
+interface NewSendThread {
+  readonly kind: "new";
+  readonly threadId: string;
+  readonly clientThreadId: string | undefined;
+  readonly runSettings: ThreadRunSettings;
+  readonly computerAccess: ThreadComputerAccess;
+}
+type SendThread = ExistingSendThread | NewSendThread;
 
-function resolveSelectedTemplateContext(
-  runtimeBody: RuntimeNormalSendBody,
-  featureSwitches: NormalSendFeatureSwitches,
-  mountedUserPresentationTemplateIds: readonly string[],
-  mountedUserTemplates: readonly MountedUserTemplate[],
-): {
-  readonly generationTemplatePrompt: string;
-  readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
-  readonly videoRunOptions: ChatRunVideoOptionsRequest | null;
-} {
-  const resolved = resolveThreadGenerationTemplatePrompt({
-    explicit: runtimeBody.primaryTemplate,
-    explicitTemplates: runtimeBody.templates,
-    mountedUserPresentationTemplateIds,
-    mountedUserTemplates,
-  });
+function normalSendRequestFacts(
+  args: NormalSendArgs,
+  thread: SendThread,
+  previousBinding:
+    | Pick<
+        ChatThreadRequestFacts["thread"],
+        "agentSessionId" | "agentSessionRunId"
+      >
+    | undefined,
+  event: Pick<
+    ChatThreadRequestFacts["input"],
+    "id" | "userMessage" | "modelSelection"
+  >,
+): ChatThreadRequestFacts {
   return {
-    generationTemplatePrompt: resolved.prompt,
-    generationTemplateIdentities: resolved.identities,
-    videoRunOptions: runtimeBody.runOptions?.video ?? null,
-  };
-}
-
-/**
- * Row ids for the uploaded templates a message selected, in selection order.
- *
- * Authorised here rather than at dispatch: the run mounts one storage volume
- * per id, and a volume the caller may not read must never be assembled at all.
- */
-interface AuthorizedGenerationTemplates {
-  readonly userPresentationTemplateIds: readonly string[];
-  readonly userTemplates: readonly MountedUserTemplate[];
-}
-
-async function validateGenerationTemplatePrompt(
-  db: Db,
-  args: { readonly orgId: string; readonly userId: string },
-  generationTemplates: readonly GenerationTemplateRequest[],
-  featureSwitches: NormalSendFeatureSwitches,
-): Promise<NormalSendFailure | AuthorizedGenerationTemplates> {
-  if (generationTemplates.length === 0) {
-    return { userPresentationTemplateIds: [], userTemplates: [] };
-  }
-  // Syntax first: every selection this message names is a candidate mount, so
-  // the builder can reject a malformed private id before consulting the database.
-  const selectedIds = selectedUserPresentationTemplateIds(generationTemplates);
-  const selectedCustomIds = selectedUserTemplateIds(generationTemplates);
-  // The kind decides the framing sentence, so validation needs the rows even
-  // though authorization is checked again below. Reading them once and passing
-  // the result to both keeps the two from disagreeing.
-  const authorizedCustom = await authorizedUserTemplates(db, {
     orgId: args.orgId,
-    userId: args.userId,
-    templateIds: selectedCustomIds,
-    enabled: isFeatureEnabled(
-      FeatureSwitchKey.CustomTemplates,
-      featureSwitches.featureSwitchContext,
-    ),
-  });
-  if (authorizedCustom.length !== selectedCustomIds.length) {
-    return badRequestMessage("Custom template not found");
-  }
-  for (const template of generationTemplates) {
-    const validation = buildGenerationTemplatePrompt(template, {
-      mountedUserPresentationTemplateIds: selectedIds,
-      mountedUserTemplates: authorizedCustom,
+    thread: {
+      id: thread.threadId,
+      userId: args.userId,
+      agentId: args.body.agentId,
+      ...thread.runSettings,
+      ...thread.computerAccess,
+      agentSessionId: previousBinding?.agentSessionId ?? null,
+      agentSessionRunId: previousBinding?.agentSessionRunId ?? null,
+    },
+    input: {
+      id: event.id,
+      userMessage: event.userMessage,
+      modelSelection: event.modelSelection,
+      requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
+      captureNetworkBodies: Boolean(args.body.captureNetworkBodies),
+    },
+  };
+}
+const resolveSendThread$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly body: NormalSendBody;
+      readonly catalog: ModelCatalog;
+      readonly existing?: {
+        readonly thread: ExistingSendThreadRow;
+        readonly agentId: string;
+      };
+      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+      readonly modelBootstrap: ModelSelectionBootstrap;
+      readonly context: AgentRunContextSignals;
+    },
+    signal: AbortSignal,
+  ): Promise<SendThread | NormalSendFailure> => {
+    const member = { orgId: args.orgId, userId: args.userId };
+    if (args.existing) {
+      const current = {
+        ...args.existing.thread,
+        modelSettings: modelSettingsSchema.parse(
+          args.existing.thread.modelSettings,
+        ),
+        modelSettingsPatch: undefined,
+      };
+      const runSettings = requestedThreadRunSettings(
+        args.catalog,
+        args.body,
+        current,
+      );
+      if ("status" in runSettings) {
+        return runSettings;
+      }
+      const computerAccess = await set(
+        requestedThreadComputerAccess$,
+        { ...member, body: args.body, current },
+        signal,
+      );
+      if ("status" in computerAccess) {
+        return computerAccess;
+      }
+      return {
+        kind: "existing",
+        threadId: args.existing.thread.id,
+        agentId: args.existing.agentId,
+        runSettings,
+        computerAccess,
+        current,
+      };
+    }
+    if (args.body.revokesEventId !== undefined) {
+      return badRequestMessage("Recommended follow-up is no longer available");
+    }
+    const initialModel =
+      args.body.model === undefined
+        ? await set(
+            resolveDefaultModelFirstPin$,
+            {
+              ...member,
+              orgPlanCapabilities: args.orgPlanCapabilities,
+              modelBootstrap: args.modelBootstrap,
+            },
+            signal,
+          )
+        : null;
+    const memberMetadata = await get(args.context.memberMetadata$);
+    signal.throwIfAborted();
+    const defaults = {
+      modelSettings: modelSettingsSchema.parse(
+        memberMetadata.preferences?.modelSettings ?? {},
+      ),
+      cloudBrowserEnabled:
+        memberMetadata.preferences?.cloudBrowserEnabledByDefault ?? true,
+    };
+    const runSettings = requestedThreadRunSettings(args.catalog, args.body, {
+      selectedModel: initialModel?.selectedModel ?? null,
+      modelSettings: defaults.modelSettings,
+      codexServiceTier:
+        initialModel?.serviceTier === "priority" ? "fast" : null,
     });
-    if (validation.status === "invalid") {
-      return badRequestMessage(validation.message);
+    if ("status" in runSettings) {
+      return runSettings;
+    }
+    const computerAccess = await set(
+      requestedThreadComputerAccess$,
+      {
+        ...member,
+        body: args.body,
+        current: {
+          computerUseHostId: null,
+          cloudBrowserEnabled:
+            args.body.computerUseHostId === undefined &&
+            defaults.cloudBrowserEnabled,
+        },
+      },
+      signal,
+    );
+    if ("status" in computerAccess) {
+      return computerAccess;
+    }
+    return {
+      kind: "new",
+      threadId: args.body.clientThreadId ?? randomUUID(),
+      clientThreadId: args.body.clientThreadId,
+      runSettings,
+      computerAccess,
+    };
+  },
+);
+/**
+ * A stored or requested selection of a replaced model is written as the
+ * successor its input captured, so the thread, its event and the run agree.
+ */
+function withCapturedModelReplacement(
+  catalog: ModelCatalog,
+  thread: SendThread,
+  modelSelection: ChatInputModelSelection,
+): SendThread {
+  const { runSettings } = thread;
+  const successor = capturedModelReplacement(
+    catalog,
+    runSettings.selectedModel,
+    modelSelection,
+  );
+  if (successor === null || runSettings.selectedModel === null) {
+    return thread;
+  }
+  const replacedModel = runSettings.selectedModel;
+  const patch = runSettings.modelSettingsPatch;
+  const modelSettingsPatch =
+    patch === undefined ? undefined : { ...patch, model: successor };
+  return {
+    ...thread,
+    ...(thread.kind === "existing" ? { replacedModel } : {}),
+    runSettings: {
+      selectedModel: successor,
+      modelSettings: modelSettingsPatch
+        ? withModelReasoningEffort(
+            runSettings.modelSettings,
+            modelSettingsPatch,
+          )
+        : runSettings.modelSettings,
+      modelSettingsPatch,
+      codexServiceTier: modelSelection.codexServiceTier,
+    },
+  };
+}
+/**
+ * Prepare the send's changed thread selections and their projection events.
+ * A send without `model` that rewrites a replaced stored selection writes its
+ * model, effort and tier only while the thread still stores the replaced
+ * model (`replacement`), so a concurrent model change wins and keeps its own
+ * events; the send's other selections are written regardless.
+ */
+function existingSendThreadUpdatePlan(
+  args: NormalSendArgs,
+  thread: SendThread,
+) {
+  if (thread.kind === "new") {
+    return null;
+  }
+  const { runSettings, computerAccess, current } = thread;
+  const selectedModel = runSettings.selectedModel;
+  const codexServiceTier = runSettings.codexServiceTier;
+  const patch = runSettings.modelSettingsPatch;
+  const modelChanged =
+    selectedModel !== current.selectedModel ||
+    (patch !== undefined &&
+      current.modelSettings[patch.model]?.effort !== patch.effort);
+  const tierChanged = codexServiceTier !== current.codexServiceTier;
+  const accessChanged =
+    computerAccess.computerUseHostId !== current.computerUseHostId ||
+    computerAccess.cloudBrowserEnabled !== current.cloudBrowserEnabled;
+  if (!modelChanged && !tierChanged && !accessChanged) {
+    return null;
+  }
+  const updatedAt = nowDate();
+  const event = {
+    userId: args.userId,
+    orgId: args.orgId,
+    chatThreadId: thread.threadId,
+    agentId: thread.agentId,
+    createdAt: updatedAt,
+  };
+  const modelEvents: Parameters<typeof chatThreadEventInsertSql>[0][] = [];
+  if (modelChanged) {
+    modelEvents.push({
+      ...event,
+      kind: "model_selection_updated",
+      selectedModel,
+      modelSettingsPatch: runSettings.modelSettingsPatch,
+    });
+  }
+  if (tierChanged) {
+    modelEvents.push({
+      ...event,
+      kind: "service_tier_updated",
+      serviceTier: chatThreadServiceTierFromCodex(codexServiceTier),
+    });
+  }
+  const modelValues = {
+    ...(modelChanged ? { selectedModel } : {}),
+    // Merge the effort into the stored settings rather than writing the
+    // snapshot back, so a concurrent send's effort for another model stays.
+    ...(patch === undefined
+      ? {}
+      : {
+          modelSettings: sql`${chatThreads.modelSettings} || jsonb_build_object(
+            cast(${patch.model} as text),
+            COALESCE(${chatThreads.modelSettings} -> cast(${patch.model} as text), '{}'::jsonb)
+              || jsonb_build_object('effort', cast(${patch.effort} as text))
+          )`,
+        }),
+    ...(tierChanged ? { codexServiceTier } : {}),
+  };
+  const accessEvents: Parameters<typeof chatThreadEventInsertSql>[0][] =
+    accessChanged
+      ? [{ ...event, kind: "computer_use_host_updated", ...computerAccess }]
+      : [];
+  const replacedModel =
+    args.body.model === undefined ? thread.replacedModel : undefined;
+  if (replacedModel !== undefined) {
+    return {
+      replacement: {
+        replacedModel,
+        values: { ...modelValues, updatedAt },
+        events: modelEvents,
+      },
+      values: accessChanged ? { ...computerAccess, updatedAt } : null,
+      events: accessEvents,
+    };
+  }
+  return {
+    replacement: null,
+    values: {
+      ...modelValues,
+      ...(accessChanged ? computerAccess : {}),
+      updatedAt,
+    },
+    events: [...modelEvents, ...accessEvents],
+  };
+}
+/**
+ * Write the send's thread update plan. A replacement is a compare-and-set, as
+ * the enqueue rewrite: a concurrent model change wins and the replacement
+ * writes no events.
+ */
+async function applyExistingSendThreadUpdate(
+  tx: Tx,
+  args: NormalSendArgs,
+  thread: SendThread,
+  plan: NonNullable<ReturnType<typeof existingSendThreadUpdatePlan>>,
+): Promise<void> {
+  const threadCondition = and(
+    eq(chatThreads.id, thread.threadId),
+    eq(chatThreads.userId, args.userId),
+  );
+  const { replacement } = plan;
+  if (replacement) {
+    const [replaced] = await tx
+      .update(chatThreads)
+      .set(replacement.values)
+      .where(
+        and(
+          threadCondition,
+          eq(chatThreads.selectedModel, replacement.replacedModel),
+        ),
+      )
+      .returning({ id: chatThreads.id });
+    if (replaced) {
+      for (const event of replacement.events) {
+        await tx.execute(chatThreadEventInsertSql(event));
+      }
     }
   }
-  const authorizedIds = await authorizedUserPresentationTemplateIds(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    templateIds: selectedIds,
-  });
-  if (authorizedIds.length !== selectedIds.length) {
-    return badRequestMessage("Presentation template not found");
+  if (plan.values) {
+    await tx.update(chatThreads).set(plan.values).where(threadCondition);
   }
-  return {
-    userPresentationTemplateIds: authorizedIds,
-    userTemplates: authorizedCustom,
-  };
+  for (const event of plan.events) {
+    await tx.execute(chatThreadEventInsertSql(event));
+  }
 }
-
-async function updateUserModelPreference(
-  db: Db,
-  params: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly selectedModel: string;
-    readonly serviceTier: ChatThreadServiceTier | null;
-    readonly modelSettingsPatch?: ModelSettingsPatch;
-  },
-): Promise<void> {
+/** An explicit model selection also becomes the member's default for new chats. */
+function userModelPreferencePlan(
+  args: NormalSendArgs,
+  runSettings: ThreadRunSettings,
+) {
+  if (args.body.model === undefined) {
+    return null;
+  }
+  // The captured selection: a replaced model is stored as its successor.
+  const selectedModel = runSettings.selectedModel;
+  const serviceTier = chatThreadServiceTierFromCodex(
+    runSettings.codexServiceTier,
+  );
+  const patch = runSettings.modelSettingsPatch;
   const nowValue = nowDate();
-  await db
-    .insert(orgMembersMetadata)
-    .values({
-      orgId: params.orgId,
-      userId: params.userId,
-      selectedModel: params.selectedModel,
-      serviceTier: params.serviceTier,
-      ...(params.modelSettingsPatch === undefined
+  return {
+    values: {
+      orgId: args.orgId,
+      userId: args.userId,
+      selectedModel,
+      serviceTier,
+      ...(patch === undefined
         ? {}
-        : {
-            modelSettings: {
-              [params.modelSettingsPatch.model]: {
-                effort: params.modelSettingsPatch.effort,
-              },
-            },
-          }),
+        : { modelSettings: { [patch.model]: { effort: patch.effort } } }),
       createdAt: nowValue,
       updatedAt: nowValue,
-    })
-    .onConflictDoUpdate({
+    },
+    conflict: {
       target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
       set: {
-        selectedModel: params.selectedModel,
-        serviceTier: params.serviceTier,
-        ...(params.modelSettingsPatch === undefined
+        selectedModel,
+        serviceTier,
+        ...(patch === undefined
           ? {}
           : {
               modelSettings: sql`${orgMembersMetadata.modelSettings} || jsonb_build_object(
-                cast(${params.modelSettingsPatch.model} as text),
-                COALESCE(${orgMembersMetadata.modelSettings} -> cast(${params.modelSettingsPatch.model} as text), '{}'::jsonb)
-                  || jsonb_build_object('effort', cast(${params.modelSettingsPatch.effort} as text))
+                cast(${patch.model} as text),
+                COALESCE(${orgMembersMetadata.modelSettings} -> cast(${patch.model} as text), '{}'::jsonb)
+                  || jsonb_build_object('effort', cast(${patch.effort} as text))
               )`,
             }),
         updatedAt: nowValue,
       },
-    });
-}
-
-async function maybePersistExplicitModelFirstSelection(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelSelection: IncomingModelSelection;
-  readonly serviceTier: ChatThreadServiceTier | null;
-  readonly modelSettingsPatch?: ModelSettingsPatch;
-}): Promise<boolean> {
-  if (!params.modelSelection) {
-    return false;
-  }
-  if (
-    params.modelSelection.modelProviderId !== MODEL_FIRST_SELECTION_PROVIDER_ID
-  ) {
-    return false;
-  }
-  await updateUserModelPreference(params.db, {
-    orgId: params.orgId,
-    userId: params.userId,
-    selectedModel: params.modelSelection.selectedModel,
-    serviceTier: params.serviceTier,
-    modelSettingsPatch: params.modelSettingsPatch,
-  });
-  return true;
-}
-
-async function maybePersistExplicitRunSettings(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly body: NormalSendBody;
-  readonly codexServiceTier: CodexServiceTier | undefined;
-  readonly modelPin: ThreadModelPin;
-}): Promise<void> {
-  if (params.body.modelSelection === undefined) {
-    return;
-  }
-  const codexServiceTier = params.codexServiceTier ?? null;
-  const reasoningEffort = params.body.runOptions?.reasoningEffort;
-  const modelSettingsPatch =
-    reasoningEffort !== undefined &&
-    isSupportedRunModel(params.modelPin.selectedModel)
-      ? { model: params.modelPin.selectedModel, effort: reasoningEffort }
-      : undefined;
-  await params.db.transaction(async (tx) => {
-    const updatedAt = nowDate();
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        codexServiceTier,
-        ...(modelSettingsPatch === undefined
-          ? {}
-          : {
-              ...chatThreadModelPinColumns(params.modelPin),
-              modelSettings: sql`${chatThreads.modelSettings} || jsonb_build_object(
-                cast(${modelSettingsPatch.model} as text),
-                COALESCE(${chatThreads.modelSettings} -> cast(${modelSettingsPatch.model} as text), '{}'::jsonb)
-                  || jsonb_build_object('effort', cast(${modelSettingsPatch.effort} as text))
-              )`,
-            }),
-        updatedAt,
-      })
-      .where(
-        and(
-          eq(chatThreads.id, params.threadId),
-          eq(chatThreads.userId, params.userId),
-          chatThreadOrganizationCondition(tx, params.orgId),
-          isNotNull(chatThreads.agentId),
-        ),
-      )
-      .returning({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-        selectedModel: chatThreads.selectedModel,
-      });
-    if (!thread?.agentId) {
-      return;
-    }
-    if (modelSettingsPatch !== undefined) {
-      await appendChatThreadEvent(tx, {
-        kind: "model_selection_updated",
-        userId: params.userId,
-        orgId: params.orgId,
-        chatThreadId: thread.id,
-        agentId: thread.agentId,
-        selectedModel: thread.selectedModel,
-        modelSettingsPatch,
-        createdAt: updatedAt,
-      });
-    }
-    await appendChatThreadEvent(tx, {
-      kind: "service_tier_updated",
-      userId: params.userId,
-      orgId: params.orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      serviceTier: chatThreadServiceTierFromCodex(codexServiceTier),
-      createdAt: updatedAt,
-    });
-  });
-}
-
-function hasComputerUseHostSelection(body: NormalSendBody): boolean {
-  return Object.prototype.hasOwnProperty.call(body, "computerUseHostId");
-}
-
-function hasCloudBrowserSelection(body: NormalSendBody): boolean {
-  return Object.prototype.hasOwnProperty.call(body, "cloudBrowserEnabled");
-}
-
-async function updateThreadComputerAccess(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly hostId: string | null;
-  readonly cloudBrowserEnabled: boolean;
-}): Promise<void> {
-  await params.db.transaction(async (tx) => {
-    const updatedAt = nowDate();
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        computerUseHostId: params.hostId,
-        cloudBrowserEnabled: params.cloudBrowserEnabled,
-        updatedAt,
-      })
-      .where(
-        and(
-          eq(chatThreads.id, params.threadId),
-          eq(chatThreads.userId, params.userId),
-          chatThreadOrganizationCondition(tx, params.orgId),
-          isNotNull(chatThreads.agentId),
-        ),
-      )
-      .returning({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-      });
-    if (!thread?.agentId) {
-      return;
-    }
-    await appendChatThreadEvent(tx, {
-      kind: "computer_use_host_updated",
-      userId: params.userId,
-      orgId: params.orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      computerUseHostId: params.hostId,
-      cloudBrowserEnabled: params.cloudBrowserEnabled,
-      createdAt: updatedAt,
-    });
-  });
-}
-
-async function selectedComputerUseHostGrant(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly hostId: string;
-}): Promise<ResolvedComputerUseHostGrant | "missing"> {
-  const [host] = await params.db
-    .select({
-      id: computerUseHosts.id,
-      displayName: computerUseHosts.displayName,
-    })
-    .from(computerUseHosts)
-    .where(
-      and(
-        eq(computerUseHosts.id, params.hostId),
-        eq(computerUseHosts.orgId, params.orgId),
-        eq(computerUseHosts.userId, params.userId),
-        isNull(computerUseHosts.revokedAt),
-      ),
-    )
-    .limit(1);
-  if (!host) {
-    return "missing";
-  }
-  return {
-    hostId: host.id,
-    displayName: host.displayName,
-  };
-}
-
-async function resolveComputerAccess(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly body: NormalSendBody;
-  readonly thread: ResolvedThread;
-}): Promise<
-  | {
-      readonly computerUseHostGrant: ResolvedComputerUseHostGrant | null;
-    }
-  | NormalSendFailure
-> {
-  const explicitHostSelection = hasComputerUseHostSelection(params.body);
-  const explicitCloudBrowserSelection = hasCloudBrowserSelection(params.body);
-  let requestedHostId = explicitHostSelection
-    ? params.body.computerUseHostId
-    : params.thread.computerUseHostId;
-  let cloudBrowserEnabled = explicitCloudBrowserSelection
-    ? (params.body.cloudBrowserEnabled ?? false)
-    : params.thread.cloudBrowserEnabled;
-
-  if (explicitCloudBrowserSelection && cloudBrowserEnabled) {
-    requestedHostId = null;
-  } else if (requestedHostId) {
-    cloudBrowserEnabled = false;
-  }
-
-  if (!requestedHostId) {
-    if (
-      requestedHostId !== params.thread.computerUseHostId ||
-      cloudBrowserEnabled !== params.thread.cloudBrowserEnabled
-    ) {
-      await updateThreadComputerAccess({
-        db: params.db,
-        orgId: params.orgId,
-        threadId: params.thread.threadId,
-        userId: params.userId,
-        hostId: null,
-        cloudBrowserEnabled,
-      });
-    }
-    return { computerUseHostGrant: null };
-  }
-
-  const hostGrant = await selectedComputerUseHostGrant({
-    db: params.db,
-    orgId: params.orgId,
-    userId: params.userId,
-    hostId: requestedHostId,
-  });
-  if (hostGrant === "missing") {
-    if (explicitHostSelection) {
-      return notFound("Computer-use host not found");
-    }
-    await updateThreadComputerAccess({
-      db: params.db,
-      orgId: params.orgId,
-      threadId: params.thread.threadId,
-      userId: params.userId,
-      hostId: null,
-      cloudBrowserEnabled: false,
-    });
-    return {
-      computerUseHostGrant: null,
-    };
-  }
-
-  if (
-    requestedHostId !== params.thread.computerUseHostId ||
-    cloudBrowserEnabled !== params.thread.cloudBrowserEnabled
-  ) {
-    await updateThreadComputerAccess({
-      db: params.db,
-      orgId: params.orgId,
-      threadId: params.thread.threadId,
-      userId: params.userId,
-      hostId: requestedHostId,
-      cloudBrowserEnabled,
-    });
-  }
-  return {
-    computerUseHostGrant: hostGrant,
-  };
-}
-
-async function createChatThread(
-  db: Db,
-  args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly clientThreadId: string | undefined;
-    readonly chatThreadEventId: string | undefined;
-    readonly pin: ThreadModelPin;
-    readonly modelSettings: ModelSettings;
-    readonly codexServiceTier: CodexServiceTier | null;
-  },
-): Promise<CreateChatThreadResult> {
-  return await db.transaction(async (tx) => {
-    const mediaModels = await loadNewChatThreadMediaModels(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-    });
-    const pinColumns = chatThreadModelPinColumns(args.pin);
-    if (args.clientThreadId) {
-      const [thread] = await tx
-        .insert(chatThreads)
-        .values({
-          id: args.clientThreadId,
-          userId: args.userId,
-          agentId: args.agentId,
-          title: null,
-          // Only this successful INSERT may classify the thread. A conflicting
-          // client id resolves to the existing row below and keeps whatever
-          // classification that row already carries.
-          provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
-          modelProviderId: pinColumns.modelProviderId,
-          modelProviderType: pinColumns.modelProviderType,
-          modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
-          selectedModel: pinColumns.selectedModel,
-          codexServiceTier: args.codexServiceTier,
-          modelSettings: args.modelSettings,
-          selectedVideoModel: mediaModels.selectedVideoModel,
-          selectedImageModel: mediaModels.selectedImageModel,
-        })
-        .onConflictDoNothing({ target: chatThreads.id })
-        .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
-      if (thread) {
-        await appendChatThreadEvent(tx, {
-          kind: "created",
-          userId: args.userId,
-          orgId: args.orgId,
-          chatThreadId: thread.id,
-          agentId: args.agentId,
-          eventId: args.chatThreadEventId,
-          title: null,
-          selectedModel: args.pin.selectedModel,
-          modelSettings: args.modelSettings,
-          serviceTier: chatThreadServiceTierFromCodex(args.codexServiceTier),
-          computerUseHostId: null,
-          cloudBrowserEnabled: false,
-          ...mediaModels,
-          createdAt: thread.createdAt,
-        });
-        return { id: thread.id, clientThreadAlreadyExisted: false };
-      }
-
-      const [existingThread] = await tx
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .where(
-          and(
-            eq(chatThreads.id, args.clientThreadId),
-            eq(chatThreads.userId, args.userId),
-            eq(chatThreads.agentId, args.agentId),
-          ),
-        )
-        .limit(1);
-      if (!existingThread) {
-        return notFound("Chat thread not found");
-      }
-      return { id: existingThread.id, clientThreadAlreadyExisted: true };
-    }
-
-    const [thread] = await tx
-      .insert(chatThreads)
-      .values({
-        userId: args.userId,
-        agentId: args.agentId,
-        title: null,
-        provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
-        modelProviderId: pinColumns.modelProviderId,
-        modelProviderType: pinColumns.modelProviderType,
-        modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
-        selectedModel: pinColumns.selectedModel,
-        codexServiceTier: args.codexServiceTier,
-        modelSettings: args.modelSettings,
-        selectedVideoModel: mediaModels.selectedVideoModel,
-        selectedImageModel: mediaModels.selectedImageModel,
-      })
-      .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
-    if (!thread) {
-      throw new Error("Failed to create chat thread");
-    }
-    await appendChatThreadEvent(tx, {
-      kind: "created",
-      userId: args.userId,
-      orgId: args.orgId,
-      chatThreadId: thread.id,
-      agentId: args.agentId,
-      eventId: args.chatThreadEventId,
-      title: null,
-      selectedModel: args.pin.selectedModel,
-      modelSettings: args.modelSettings,
-      serviceTier: chatThreadServiceTierFromCodex(args.codexServiceTier),
-      computerUseHostId: null,
-      cloudBrowserEnabled: false,
-      ...mediaModels,
-      createdAt: thread.createdAt,
-    });
-    return { id: thread.id, clientThreadAlreadyExisted: false };
-  });
-}
-
-function resolveInitialThreadModelPin(params: {
-  readonly existingThreadId: string | undefined;
-  readonly explicitRunConfiguration: ResolvedRunConfiguration | undefined;
-}): ThreadModelPin | ReturnType<typeof badRequestMessage> {
-  if (params.existingThreadId) {
-    return emptyModelFirstThreadPin();
-  }
-  if (!params.explicitRunConfiguration?.modelPin.selectedModel) {
-    return badRequestMessage("A model selection is required");
-  }
-  return params.explicitRunConfiguration.modelPin;
-}
-
-function loadTimedExistingThreadSnapshot(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly threadId: string;
-  readonly timing?: ApiDispatchTimingCollector;
-}) {
-  return measureApiDispatchTiming(
-    params.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_existing_thread_load_snapshot",
-    "nested",
-    () => {
-      return params.db
-        .select({
-          id: chatThreads.id,
-          computerUseHostId: chatThreads.computerUseHostId,
-          cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-          ...persistedChatThreadModelSnapshotColumns(),
-          agentId: agents.id,
-        })
-        .from(chatThreads)
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-        .where(
-          and(
-            eq(chatThreads.id, params.threadId),
-            eq(chatThreads.userId, params.userId),
-            eq(agents.orgId, params.orgId),
-          ),
-        )
-        .limit(1);
     },
-  );
-}
-
-function resolveExplicitThreadRunConfiguration(
-  configuration: ResolvedRunConfiguration,
-  thread: {
-    readonly modelSettings: ModelSettings;
-    readonly codexServiceTier: CodexServiceTier | null;
-  },
-  settings: {
-    readonly requestedReasoningEffort?: ReasoningEffort;
-    readonly requestedCodexServiceTier: CodexServiceTier | undefined;
-    readonly featureSwitches: NormalSendFeatureSwitches;
-  },
-): ResolvedRunConfiguration | NormalSendFailure {
-  const effort = resolveChatReasoningEffort({
-    selectedModel: configuration.modelPin.selectedModel,
-    modelSettings: thread.modelSettings,
-    requested: settings.requestedReasoningEffort,
-  });
-  if ("status" in effort) {
-    return effort;
-  }
-  return {
-    ...configuration,
-    reasoningEffort: effort.reasoningEffort,
-    modelSettings: effort.modelSettings,
-    ...(settings.requestedReasoningEffort !== undefined &&
-    settings.requestedCodexServiceTier === undefined
-      ? {
-          codexServiceTier:
-            thread.codexServiceTier === "fast" &&
-            isCodexFastServiceTierSupported({
-              selectedModel: configuration.modelPin.selectedModel,
-            })
-              ? "fast"
-              : undefined,
-        }
-      : {}),
   };
 }
-
-async function resolveThread(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly existingThreadId: string | undefined;
-  readonly clientThreadId: string | undefined;
-  readonly chatThreadEventId: string | undefined;
-  readonly initialPin: ThreadModelPin;
-  readonly explicitRunConfiguration: ResolvedRunConfiguration | undefined;
-  readonly requestedReasoningEffort?: ReasoningEffort;
-  readonly requestedCodexServiceTier: CodexServiceTier | undefined;
-  readonly persistRequestedCodexServiceTier: boolean;
-  readonly featureSwitches: NormalSendFeatureSwitches;
-  readonly timing?: ApiDispatchTimingCollector;
-}): Promise<ResolvedThreadAndRunConfiguration | NormalSendFailure> {
-  if (!params.existingThreadId) {
-    if (!params.explicitRunConfiguration) {
-      return badRequestMessage("A model selection is required");
-    }
-    const thread = await createChatThread(params.db, {
-      userId: params.userId,
-      orgId: params.orgId,
-      agentId: params.agentId,
-      clientThreadId: params.clientThreadId,
-      chatThreadEventId: params.chatThreadEventId,
-      pin: params.initialPin,
-      modelSettings: params.explicitRunConfiguration.modelSettings,
-      codexServiceTier:
-        params.explicitRunConfiguration.codexServiceTier ?? null,
-    });
-    if ("status" in thread) {
-      return thread;
-    }
-    return {
-      thread: {
-        threadId: thread.id,
-        computerUseHostId: null,
-        cloudBrowserEnabled: false,
-        isNewThread: !thread.clientThreadAlreadyExisted,
-        isClientThreadRetry: thread.clientThreadAlreadyExisted,
-      },
-      runConfiguration: params.explicitRunConfiguration,
-    };
-  }
-  const [thread] = await loadTimedExistingThreadSnapshot({
-    db: params.db,
-    orgId: params.orgId,
-    userId: params.userId,
-    threadId: params.existingThreadId,
-    timing: params.timing,
-  });
-  if (!thread?.agentId) {
-    return notFound("Chat thread not found");
-  }
-  const threadModelSettings = modelSettingsSchema.parse(thread.modelSettings);
-
-  let runConfiguration = params.explicitRunConfiguration;
-  let persistedModelResolutionPath:
-    | PersistedChatThreadModelResolutionPath
-    | undefined;
-  if (!runConfiguration) {
-    const persisted = await measureApiDispatchTiming(
-      params.timing,
-      "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_existing_thread_resolve_persisted_model",
-      "nested",
-      () => {
-        return resolvePersistedChatThreadModel({
-          db: params.db,
-          orgId: params.orgId,
-          userId: params.userId,
-          threadId: thread.id,
-          threadSnapshot: thread,
-          requestedReasoningEffort: params.requestedReasoningEffort,
-          requestedCodexServiceTier: params.requestedCodexServiceTier,
-          persistRequestedCodexServiceTier:
-            params.persistRequestedCodexServiceTier,
-        });
-      },
-    );
-    if (!persisted) {
-      return notFound("Chat thread not found");
-    }
-    if ("status" in persisted) {
-      return persisted;
-    }
-    const resolvedRunConfiguration = await withBuiltInModelRuntimeRoute(
-      params.db,
-      {
-        modelPin: persisted.pin,
-        providerAdmission: persisted.providerAdmission,
-        codexServiceTier: persisted.runCodexServiceTier,
-        reasoningEffort: persisted.reasoningEffort,
-        modelSettings: persisted.modelSettings,
-      },
-      params.featureSwitches.featureSwitchContext,
-    );
-    if ("status" in resolvedRunConfiguration) {
-      return resolvedRunConfiguration;
-    }
-    runConfiguration = resolvedRunConfiguration;
-    persistedModelResolutionPath = persisted.resolutionPath;
-  } else {
-    const explicit = resolveExplicitThreadRunConfiguration(
-      runConfiguration,
-      { ...thread, modelSettings: threadModelSettings },
-      params,
-    );
-    if ("status" in explicit) {
-      return explicit;
-    }
-    runConfiguration = explicit;
-  }
-
-  return {
-    thread: {
-      threadId: thread.id,
-      computerUseHostId: thread.computerUseHostId,
-      cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      isNewThread: false,
-      isClientThreadRetry: false,
-    },
-    runConfiguration,
-    ...(persistedModelResolutionPath
-      ? { modelResolutionPath: persistedModelResolutionPath }
-      : {}),
-  };
-}
-
-interface AppendUnassociatedUserMessageParams {
-  readonly mcpSubmission?: McpSubmissionIdentity;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly prompt: string;
-  readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
-  readonly clientEventId: string | undefined;
-  readonly chatThreadSortEventId: string | undefined;
-  readonly touchThreadSort: boolean;
-  readonly userMessage: UserMessageDocument;
-  readonly revokesEventId: string | undefined;
-  readonly triggerSource: "web" | "agent";
-  readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
-  readonly publicBrand: PublicBrand;
-  readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly getStartedWorkflowId?: string;
-}
-
-async function resolveExistingUnassociatedClientEventId(
-  tx: ChatThreadEventTransaction,
-  params: AppendUnassociatedUserMessageParams,
-  explicitId: string,
-): Promise<ClientEventIdResolution> {
-  if (params.mcpSubmission) {
-    const existing = await resolveMcpSubmission(
-      tx,
-      params.mcpSubmission,
-      params,
-    );
-    // Roll back writes preceding a cross-thread or first-party UUID collision.
-    throw new McpEnqueueCollision(
-      existing.kind === "accepted"
-        ? {
-            kind: "queued",
-            createdAt: existing.receipt.acceptedAt,
-            inserted: false,
-          }
-        : { kind: "conflict" },
-    );
-  }
-  const [existing] = await tx
-    .select({
-      chatThreadId: chatEvents.chatThreadId,
-      threadUserId: chatThreads.userId,
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventContent(),
-      userMessage: canonicalChatEventUserMessage(),
-      runId: chatEvents.runId,
-      revokesEventId: chatEvents.revokesEventId,
-      error: canonicalChatEventError(),
-      eventCreatedAt: chatEvents.createdAt,
-      runStatus: agentRuns.status,
-      runCreatedAt: agentRuns.createdAt,
-      replacementEventId: replacementChatEvent.id,
-      replacementRunId: replacementChatEvent.runId,
-      replacementError: canonicalChatEventError(replacementChatEvent.payload),
-      replacementRunStatus: replacementAgentRun.status,
-      replacementRunCreatedAt: replacementAgentRun.createdAt,
-    })
-    .from(chatEvents)
-    .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-    .leftJoin(
-      agentRuns,
-      and(eq(agentRuns.id, chatEvents.runId), runOwnedChatEventCondition()),
-    )
-    .leftJoin(
-      replacementChatEvent,
-      eq(replacementChatEvent.revokesEventId, chatEvents.id),
-    )
-    .leftJoin(
-      replacementAgentRun,
-      and(
-        eq(replacementAgentRun.id, replacementChatEvent.runId),
-        ne(replacementChatEvent.eventType, "control.interrupt"),
-      ),
-    )
-    .where(eq(chatEvents.id, explicitId))
-    .limit(1);
-  const resolution = resolveExistingClientEventIdRow(existing, {
-    threadId: params.threadId,
-    userId: params.userId,
-  });
-  return resolution.kind === "available" ? { kind: "conflict" } : resolution;
-}
-
 /** Reject a server-owned Official Workflow claim that cannot be authoritative. */
 function assertOfficialSourceClaim(
-  params: AppendUnassociatedUserMessageParams,
+  args: NormalSendArgs,
+  agentRunSource: ChatAgentRunSourceAnnotation | null,
 ): void {
-  if (params.requiredOfficialWorkflowIds?.length === 0) {
+  if (args.requiredOfficialWorkflowIds?.length === 0) {
     throw new Error("Official Workflow source claim cannot be empty");
   }
   if (
-    params.requiredOfficialWorkflowIds !== undefined &&
-    params.triggerSource === "agent" &&
-    params.agentRunSource === null
+    args.requiredOfficialWorkflowIds !== undefined &&
+    normalSendTriggerSource(args.auth) === "agent" &&
+    agentRunSource === null
   ) {
     throw new Error("Official agent queue source is missing its source Run");
   }
 }
-
 /**
- * Record what a server-owned Official Workflow claim means for this thread.
- *
- * The claim is the authority for what the input is, so classifying it here
- * commits the thread's Morning Brief exclusion in the same transaction as the
- * input that carries the brief. A duplicate client event id inserts nothing and
- * therefore classifies nothing.
+ * The stored prompt: an agent-sourced send carries its source Run annotation;
+ * an MCP send carries its source part.
  */
-async function recordOfficialSourceThreadProvenance(
-  tx: ChatThreadEventTransaction,
-  params: AppendUnassociatedUserMessageParams,
-): Promise<void> {
-  if (params.requiredOfficialWorkflowIds === undefined) {
-    return;
+function normalSendUserMessage(
+  args: NormalSendArgs,
+  agentRunSource: ChatAgentRunSourceAnnotation | null,
+): UserMessageDocument {
+  if (agentRunSource !== null) {
+    return withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource);
   }
-  await recordOfficialWorkflowThreadProvenance(tx, {
-    chatThreadId: params.threadId,
-    userId: params.userId,
-    orgId: params.orgId,
-    workflowIds: params.requiredOfficialWorkflowIds,
-  });
-}
-
-async function resolveLockedMcpSubmission(
-  tx: ChatThreadEventTransaction,
-  params: AppendUnassociatedUserMessageParams,
-): Promise<ClientEventIdResolution | undefined> {
-  if (params.mcpSubmission) {
-    const [thread] = await tx
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, params.threadId),
-          eq(chatThreads.userId, params.userId),
-          chatThreadOrganizationCondition(tx, params.orgId),
-        ),
-      )
-      .for("update");
-    if (!thread) {
-      return { kind: "conflict" };
-    }
-    const existing = await resolveMcpSubmission(
-      tx,
-      params.mcpSubmission,
-      params,
-    );
-    if (existing.kind === "accepted") {
-      return {
-        kind: "queued",
-        createdAt: existing.receipt.acceptedAt,
-        inserted: false,
+  return args.mcpSource === undefined
+    ? args.body.userMessage
+    : {
+        ...args.body.userMessage,
+        parts: [...args.body.userMessage.parts, args.mcpSource],
       };
-    }
-    if (existing.kind !== "missing") {
-      return { kind: "conflict" };
-    }
-  }
-  return undefined;
 }
-
 /**
- * Clears the draft and re-proves, inside the event transaction, the same
- * user/organization scope the request already authorized. The predicates must
- * not narrow which threads the caller could already enqueue into; the thread's
- * Agent is fixed at creation, so it is not re-checked here.
+ * A conflict on the insert is accepted as a duplicate without a lookup. Only
+ * a follow-up with a server-generated id cannot have collided on its id, so
+ * its conflict is the revoke edge taken concurrently.
  */
-interface AuthorizedChatThreadForEnqueue {
-  readonly eventSequenceReservation?: ChatEventSequenceReservation;
-}
-
-function shouldReserveEventSequence(
-  params: AppendUnassociatedUserMessageParams,
-): boolean {
-  return (
-    params.triggerSource === "web" &&
-    params.mcpSubmission === undefined &&
-    params.revokesEventId === undefined
-  );
-}
-
-async function authorizeChatThreadForEnqueue(
-  tx: ChatThreadEventTransaction,
-  params: AppendUnassociatedUserMessageParams,
-  reserveEventSequence: boolean,
-): Promise<AuthorizedChatThreadForEnqueue | undefined> {
-  const [thread] = await tx
-    .update(chatThreads)
-    .set({
-      draftUserMessage: null,
-      draftAttachments: null,
-      ...(reserveEventSequence
-        ? {
-            lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1`,
-          }
-        : {}),
-    })
-    .where(
-      and(
-        eq(chatThreads.id, params.threadId),
-        eq(chatThreads.userId, params.userId),
-        chatThreadOrganizationCondition(tx, params.orgId),
-      ),
-    )
-    .returning({
-      id: chatThreads.id,
-      lastChatEventSeqId: chatThreads.lastChatEventSeqId,
-    });
-  if (!thread) {
-    return undefined;
+function normalSendEvent(params: {
+  readonly modelSelection: ChatInputModelSelection;
+  readonly id: string;
+  readonly threadId: string;
+  readonly userMessage: UserMessageDocument;
+  readonly triggerSource: "web" | "agent";
+  readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+  readonly requiredOfficialWorkflowIds: readonly string[] | undefined;
+}): Extract<
+  NewChatEvent,
+  {
+    readonly eventType: "input.prompt";
   }
-  return reserveEventSequence
-    ? {
-        eventSequenceReservation: {
-          chatThreadId: thread.id,
-          seqId: thread.lastChatEventSeqId,
-        },
-      }
-    : {};
-}
-
-async function appendUnassociatedUserMessageTransaction(
-  tx: ChatThreadEventTransaction,
-  params: AppendUnassociatedUserMessageParams,
-): Promise<ClientEventIdResolution> {
-  const existing = await resolveLockedMcpSubmission(tx, params);
-  if (existing) {
-    return existing;
-  }
-  const reserveEventSequence = shouldReserveEventSequence(params);
-  const authorizedThread = await measureApiDispatchTiming(
-    params.timing,
-    "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_clear_draft",
-    "nested",
-    () => {
-      return authorizeChatThreadForEnqueue(tx, params, reserveEventSequence);
-    },
-  );
-  if (!authorizedThread) {
-    // `conflict` is the duplicate-clientEventId answer. The request already
-    // authorized this thread, so losing it here is a broken invariant.
-    throw new Error("Authorized chat thread changed before enqueue");
-  }
-
-  const explicitId = params.clientEventId ?? undefined;
-  assertOfficialSourceClaim(params);
-  const event: NewChatEvent = {
-    ...(explicitId ? { id: explicitId } : {}),
+> & {
+  readonly id: string;
+  readonly modelSelection: ChatInputModelSelection;
+} {
+  return {
+    id: params.id,
     chatThreadId: params.threadId,
     eventType: "input.prompt",
+    modelSelection: params.modelSelection,
     userMessage: params.userMessage,
     runId: null,
     ...(params.requiredOfficialWorkflowIds === undefined
@@ -2216,8 +1219,8 @@ async function appendUnassociatedUserMessageTransaction(
           contextType: "web",
           contextId:
             params.requiredOfficialWorkflowIds === undefined
-              ? webChatPublicBrandContextId(params.publicBrand)
-              : officialWorkflowQueueContextId(params.publicBrand),
+              ? webChatContextId()
+              : officialWorkflowQueueContextId(),
         }
       : {}),
     ...(params.triggerSource === "agent" && params.agentRunSource
@@ -2231,241 +1234,732 @@ async function appendUnassociatedUserMessageTransaction(
           }
         : {
             contextType: "agent_run",
-            contextId: officialWorkflowQueueContextId(params.publicBrand),
+            contextId: officialWorkflowQueueContextId(),
           }
       : {}),
   };
-  const inserted = await measureApiDispatchTiming(
-    params.timing,
-    "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_persist_event",
-    "nested",
-    () => {
-      return params.revokesEventId
-        ? replaceChatEvent(tx, params.revokesEventId, event)
-        : authorizedThread.eventSequenceReservation
-          ? insertChatEventWithReservedSequence(
-              tx,
-              event,
-              authorizedThread.eventSequenceReservation,
-              "id",
-            )
-          : insertChatEvent(tx, event, "id");
-    },
-  );
-  if (inserted) {
-    await recordOfficialSourceThreadProvenance(tx, params);
-    if (params.getStartedWorkflowId) {
-      await recordGetStartedWorkflow(tx, {
-        orgId: params.orgId,
-        userId: params.userId,
-        workflowId: params.getStartedWorkflowId,
-        sourceEventId: inserted.id,
-      });
-    }
-
-    await measureApiDispatchTiming(
-      params.timing,
-      "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_register_input_assets",
-      "nested",
-      () => {
-        return registerCanonicalWebInputAssets(tx, {
-          chatThreadId: params.threadId,
-          userId: params.userId,
-          orgId: params.orgId,
-          files: params.attachFileMetadata ?? [],
-        });
-      },
-    );
-    if (params.touchThreadSort) {
-      await measureApiDispatchTiming(
-        params.timing,
-        "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_touch_thread_sort",
-        "nested",
-        () => {
-          return touchChatThreadLastMessageAt(
-            tx,
-            params.threadId,
-            inserted.createdAt,
-            params.chatThreadSortEventId,
-            {
-              userId: params.userId,
-              orgId: params.orgId,
-            },
-          );
-        },
+}
+/**
+ * Rolls back a new thread's enqueue transaction when its row or its first
+ * input already exists, so a lost race never leaves an empty thread.
+ */
+class NewThreadSendCollision extends Error {
+  constructor(readonly collision: "thread" | "input") {
+    super("A new-thread send collided with an existing thread or input");
+  }
+}
+const resolveNewThreadSendCollision$ = command(
+  async (
+    { get, set },
+    args: NormalSendArgs,
+    thread: NewSendThread,
+    collision: "thread" | "input",
+    signal: AbortSignal,
+  ): Promise<CreatedChatEventResponse | NormalSendFailure> => {
+    const db = get(db$);
+    if (args.body.clientEventId !== undefined) {
+      const prior = clientEventIdResolutionResponse(
+        await set(
+          resolveClientEventId$,
+          {
+            clientEventId: args.body.clientEventId,
+            orgId: args.orgId,
+            threadId: thread.threadId,
+            userId: args.userId,
+          },
+          signal,
+        ),
+        thread.threadId,
       );
+      if (prior) {
+        return prior;
+      }
+    }
+    if (collision === "input") {
+      return duplicateClientEventIdResponse();
+    }
+    const [existing] = await db
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, thread.threadId),
+          eq(chatThreads.userId, args.userId),
+          eq(chatThreads.agentId, args.body.agentId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!existing) {
+      return notFound("Chat thread not found");
+    }
+    // A client that retries its first send without a client event id is
+    // settled by the thread's first input.
+    const [firstInput] = await db
+      .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, thread.threadId),
+          chatEventTypeIn(["input.prompt"]),
+          isNull(chatEvents.revokesEventId),
+        ),
+      )
+      .orderBy(asc(chatEvents.seqId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!firstInput) {
+      return badRequestMessage("Client thread id is already in use");
+    }
+    return acceptedSendResponse(thread.threadId, firstInput.createdAt, true);
+  },
+);
+/**
+ * The enqueue transaction's input write: a new thread's minimal row, the
+ * entry-owned context row, the run-less `input.prompt`, the thread and member
+ * selections it carries, and its attachment references. Returns null when an
+ * existing thread already has this input.
+ */
+function newSendThreadInsertPlan(args: NormalSendArgs, thread: NewSendThread) {
+  return prepareChatThreadInsert({
+    orgId: args.orgId,
+    id: thread.threadId,
+    userId: args.userId,
+    agentId: args.body.agentId,
+    title: null,
+    selectedModel: thread.runSettings.selectedModel,
+    codexServiceTier: thread.runSettings.codexServiceTier,
+    modelSettings: thread.runSettings.modelSettings,
+    computerUseHostId: thread.computerAccess.computerUseHostId,
+    cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
+  });
+}
+
+const createdSendThreadSelection = Object.freeze({
+  id: chatThreads.id,
+  userId: chatThreads.userId,
+  title: chatThreads.title,
+  selectedModel: chatThreads.selectedModel,
+  modelSettings: chatThreads.modelSettings,
+  codexServiceTier: chatThreads.codexServiceTier,
+  computerUseHostId: chatThreads.computerUseHostId,
+  cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+  createdAt: chatThreads.createdAt,
+});
+
+const appendNormalSendInput$ = command(
+  async (
+    { set },
+    args: NormalSendArgs,
+    input: {
+      readonly thread: SendThread;
+      readonly event: ReturnType<typeof normalSendEvent>;
+      readonly attachFileMetadata: readonly ChatEventAttachFileMetadata[];
+    },
+    signal: AbortSignal,
+  ) => {
+    const { thread, event } = input;
+    const existingPlan = existingSendThreadUpdatePlan(args, thread);
+    const preferencePlan = userModelPreferencePlan(args, thread.runSettings);
+    const inserted = await set(writeDb$).transaction(async (tx) => {
+      if (thread.kind === "new") {
+        const createdPlan = newSendThreadInsertPlan(args, thread);
+        const [createdRow] = await tx
+          .with(...createdPlan.defaults)
+          .insert(chatThreads)
+          .values(createdPlan.values)
+          .onConflictDoNothing()
+          .returning(createdSendThreadSelection);
+        if (!createdRow) {
+          throw new NewThreadSendCollision("thread");
+        }
+        await tx.execute(
+          chatThreadCreatedEventSql({
+            orgId: args.orgId,
+            eventId: args.body.chatThreadEventId,
+            thread: createdChatThreadFromRow(
+              createdRow,
+              createdPlan.values.agentId,
+            ),
+          }),
+        );
+      }
+      const insert = args.body.revokesEventId
+        ? chatEventReplacementInsertSql(
+            requireChatEventReplacementTarget(
+              parseRawRows(
+                chatEventReplacementTargetSchema,
+                await tx.execute(
+                  chatEventReplacementTargetSql(args.body.revokesEventId),
+                ),
+              ),
+            ),
+            event,
+          )
+        : chatEventInsertSql(event, "id");
+      const [inserted] = parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(insert),
+      );
+      if (!inserted) {
+        if (thread.kind === "new") {
+          throw new NewThreadSendCollision("input");
+        }
+        return null;
+      }
+      const contextInsert = chatEventContextInsertSql(event);
+      if (contextInsert) {
+        await tx.execute(contextInsert);
+      }
+      if (existingPlan) {
+        await applyExistingSendThreadUpdate(tx, args, thread, existingPlan);
+      }
+      if (args.body.captureNetworkBodies) {
+        await recordChatNetworkBodyCapture(tx, {
+          chatEventId: inserted.id,
+          chatThreadId: thread.threadId,
+        });
+      }
+      if (preferencePlan) {
+        await tx
+          .insert(orgMembersMetadata)
+          .values(preferencePlan.values)
+          .onConflictDoUpdate(preferencePlan.conflict);
+      }
+      await registerCanonicalWebInputAssets(tx, {
+        chatThreadId: thread.threadId,
+        userId: args.userId,
+        orgId: args.orgId,
+        files: input.attachFileMetadata,
+      });
+      if (args.getStartedWorkflowId) {
+        await tx.execute(
+          recordGetStartedWorkflowSql(
+            {
+              orgId: args.orgId,
+              userId: args.userId,
+              workflowId: args.getStartedWorkflowId,
+              sourceEventId: inserted.id,
+            },
+            nowDate(),
+          ),
+        );
+      }
+      const plan = queuedChatThreadEnqueuePlan({
+        chatThreadId: thread.threadId,
+        orgId: args.orgId,
+      });
+      await tx
+        .insert(queuedChatThreads)
+        .values(plan.values)
+        .onConflictDoUpdate(plan.conflict);
+      return inserted;
+    });
+    signal.throwIfAborted();
+    return inserted === null
+      ? null
+      : {
+          inserted,
+          enqueueCommit: { eventId: inserted.id, committedAt: now() },
+        };
+  },
+);
+const prepareNormalSend$ = command(
+  async (
+    { get, set },
+    args: NormalSendArgs & { readonly context: AgentRunContextSignals },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly authorized:
+          | Awaited<ReturnType<(typeof loadAuthorizedAgent$)["write"]>>
+          | Awaited<
+              ReturnType<(typeof loadAuthorizedExistingSendThread$)["write"]>
+            >;
+        readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+        readonly catalog: ModelCatalog;
+      }
+    | NormalSendFailure
+    | CreatedChatEventResponse
+  > => {
+    // MCP attribution is server-owned. Reject a forged source even on an
+    // idempotent retry.
+    if (
+      args.body.userMessage.parts.some((part) => {
+        return part.type === "source" && part.kind === "mcp";
+      })
+    ) {
+      return badRequestMessage("MCP source annotations are server-managed");
+    }
+    if (
+      args.mcpSource !== undefined &&
+      (args.auth.tokenType !== "oauth" ||
+        !("clientId" in args.auth) ||
+        args.auth.clientId !== args.mcpSource.clientId ||
+        args.body.userMessage.parts.some((part) => {
+          return part.type !== "text";
+        }))
+    ) {
+      return badRequestMessage("MCP source requires a verified OAuth client");
+    }
+    const existingThreadId = args.body.threadId;
+    const authorized =
+      existingThreadId === undefined
+        ? await set(loadAuthorizedAgent$, args, signal)
+        : await set(
+            loadAuthorizedExistingSendThread$,
+            args,
+            existingThreadId,
+            signal,
+          );
+    signal.throwIfAborted();
+    if ("status" in authorized) {
+      return authorized;
+    }
+    const source = await set(
+      resolveNormalSendAgentRunSource$,
+      {
+        auth: args.auth,
+        userMessage: args.body.userMessage,
+        sourceRunId: args.body.sourceRunId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if ("response" in source) {
+      return source.response;
+    }
+    assertOfficialSourceClaim(args, source.source);
+    const invalidTemplate = invalidGenerationTemplateSelection(
+      args.body.userMessage,
+    );
+    if (invalidTemplate) {
+      return invalidTemplate;
+    }
+    const catalog = (await get(args.context.modelFacts$)).catalog;
+    signal.throwIfAborted();
+    if (
+      typeof args.body.model === "string" &&
+      resolveRunSelectionModel(catalog, args.body.model) === null
+    ) {
+      return badRequestMessage(`Unknown model "${args.body.model}"`);
+    }
+    return { authorized, agentRunSource: source.source, catalog };
+  },
+);
+const normalSendThreadTouch$ = command(
+  async (
+    { set },
+    args: NormalSendArgs,
+    thread: SendThread,
+    touchedAt: Date,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (
+      thread.kind === "new" ||
+      !shouldTouchThreadSortFromNormalSend(args.agentRunPreCreateSource, false)
+    ) {
+      return;
+    }
+    const startedAt = performance.now();
+    const result = await settleIncludingAbort(
+      set(
+        touchSentChatThreadSort$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          threadId: thread.threadId,
+          agentId: thread.agentId,
+          touchedAt,
+          eventId: args.body.chatThreadSortEventId,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "thread_touch",
+      thread.threadId,
+      startedAt,
+      result,
+    );
+  },
+);
+const publishEnqueuedNormalSend$ = command(
+  async (
+    { set },
+    input: {
+      readonly args: NormalSendArgs;
+      readonly thread: SendThread;
+      readonly touchedAt: Date;
+      readonly enqueueCommit?: ChatInputEnqueueCommit;
+      readonly context: AgentRunContextSignals;
+      readonly requestFacts: ChatThreadRequestFacts;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { args, thread, touchedAt, enqueueCommit, context, requestFacts } =
+      input;
+    const picked = await settle(
+      set(
+        pickEnqueuedChatThread$,
+        {
+          orgId: args.orgId,
+          chatThreadId: thread.threadId,
+          ...(enqueueCommit ? { enqueueCommit } : {}),
+          context,
+          requestFacts,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    await set(normalSendThreadTouch$, args, thread, touchedAt, signal);
+    signal.throwIfAborted();
+    await publishChatEventCreated({
+      userId: args.userId,
+      orgId: args.orgId,
+      threadId: thread.threadId,
+    });
+    signal.throwIfAborted();
+    await publishThreadListChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+    if (!picked.ok) {
+      throw picked.error;
+    }
+  },
+);
+const prepareNormalSendInput$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly body: NormalSendBody;
+      readonly thread: SendThread;
+      readonly catalog: ModelCatalog;
+      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+      readonly modelBootstrap: ModelSelectionBootstrap;
+    },
+    signal: AbortSignal,
+  ) => {
+    const attachFileMetadata = await set(
+      resolveIncomingAttachFileMetadata$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        userMessage: args.body.userMessage,
+      },
+      signal,
+    );
+    const modelSelection = await set(
+      resolveChatInputModelSelection$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        ...args.thread.runSettings,
+        reasoningEffort: args.body.runOptions?.reasoningEffort,
+        orgPlanCapabilities: args.orgPlanCapabilities,
+        catalog: args.catalog,
+        modelBootstrap: args.modelBootstrap,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if ("status" in modelSelection) {
+      return modelSelection;
     }
     return {
-      kind: "queued",
-      createdAt: inserted.createdAt,
-      inserted: true,
-      messageId: inserted.id,
+      attachFileMetadata,
+      modelSelection,
+      thread: withCapturedModelReplacement(
+        args.catalog,
+        args.thread,
+        modelSelection,
+      ),
     };
-  }
-  if (!explicitId) {
-    throw new Error("Failed to insert unassociated user message");
-  }
-  return await resolveExistingUnassociatedClientEventId(tx, params, explicitId);
-}
-
-/** Compose one canonical MCP queue input inside a caller-owned transaction. */
-export async function appendMcpQueuedUserMessageInTransaction(
-  tx: ChatThreadEventTransaction,
-  params: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly threadId: string;
-    readonly inputId: string;
-    readonly text: string;
-    readonly publicBrand: PublicBrand;
   },
-): Promise<boolean> {
-  const resolution = await appendUnassociatedUserMessageTransaction(tx, {
-    mcpSubmission: { requestId: params.inputId, text: params.text },
-    threadId: params.threadId,
-    userId: params.userId,
-    orgId: params.orgId,
-    prompt: params.text,
-    attachFileMetadata: null,
-    clientEventId: params.inputId,
-    chatThreadSortEventId: undefined,
-    touchThreadSort: false,
-    userMessage: {
-      version: 1,
-      parts: [{ type: "text", text: params.text }],
-    },
-    revokesEventId: undefined,
-    triggerSource: "web",
-    agentRunSource: null,
-    publicBrand: params.publicBrand,
-  });
-  return resolution.kind === "queued" && resolution.inserted;
-}
-
-class McpEnqueueCollision extends Error {
-  constructor(readonly resolution: ClientEventIdResolution) {
-    super("MCP input identity was committed concurrently");
-  }
-}
-
-function appendUnassociatedUserMessage(
-  params: AppendUnassociatedUserMessageParams & { readonly db: Db },
-): Promise<ClientEventIdResolution> {
-  return measureApiDispatchTiming(
-    params.timing,
-    "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_transaction",
-    "nested",
-    async () => {
-      const result = await settle(
-        params.db.transaction((tx) => {
-          return appendUnassociatedUserMessageTransaction(tx, params);
-        }),
-      );
-      if (result.ok) {
-        return result.value;
-      }
-      if (result.error instanceof McpEnqueueCollision) {
-        return result.error.resolution;
-      }
-      throw result.error;
-    },
-  );
-}
-
-async function clearThreadDraft(
-  tx: Pick<Db, "update">,
+);
+function preparedNormalSendEvent(
+  args: NormalSendArgs,
   threadId: string,
-  userId: string,
-): Promise<void> {
-  await tx
-    .update(chatThreads)
-    .set({
-      draftUserMessage: null,
-      draftAttachments: null,
-    })
-    .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)));
-}
-
-async function appendAssociatedUserMessage(params: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly prompt: string;
-  readonly runId: string;
-  readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
-  readonly clientEventId: string | undefined;
-  readonly chatThreadSortEventId: string | undefined;
-  readonly touchThreadSort: boolean;
-  readonly revokesEventId: string | undefined;
-  readonly userMessage: UserMessageDocument;
-  readonly appendQueueMarker: boolean;
-  readonly triggerSource: "web" | "agent";
-  // When false, the thread's in-progress draft is preserved. Automation posts
-  // are not user-initiated typing, so they must not clear the user's draft.
-  readonly clearDraft: boolean;
-}): Promise<boolean> {
-  return await params.db.transaction(async (tx) => {
-    if (params.clearDraft) {
-      await clearThreadDraft(tx, params.threadId, params.userId);
-    }
-    const explicitId = params.clientEventId ?? undefined;
-    const fileMetadata = params.attachFileMetadata;
-    const event: NewChatEvent = {
-      ...(explicitId ? { id: explicitId } : {}),
-      chatThreadId: params.threadId,
-      eventType: "input.prompt",
-      userMessage: params.userMessage,
-      runId: params.runId,
-      ...(params.triggerSource === "web" ? { contextType: "web" } : {}),
-    };
-    const inserted = params.revokesEventId
-      ? await replaceChatEvent(tx, params.revokesEventId, event)
-      : await insertChatEvent(tx, event, "id");
-    if (inserted) {
-      await registerCanonicalWebInputAssets(tx, {
-        chatThreadId: params.threadId,
-        userId: params.userId,
-        orgId: params.orgId,
-        files: fileMetadata ?? [],
-      });
-    }
-    if (inserted && params.touchThreadSort) {
-      await touchChatThreadLastMessageAt(
-        tx,
-        params.threadId,
-        inserted.createdAt,
-        params.chatThreadSortEventId,
-      );
-    }
-    if (params.appendQueueMarker) {
-      await appendQueuedRunAssistantMarker(tx, {
-        chatThreadId: params.threadId,
-        runId: params.runId,
-        createdAfter: inserted?.createdAt ?? nowDate(),
-      });
-    }
-    return inserted !== null;
+  modelSelection: Parameters<typeof normalSendEvent>[0]["modelSelection"],
+  agentRunSource: ChatAgentRunSourceAnnotation | null,
+) {
+  return normalSendEvent({
+    modelSelection,
+    id: args.body.clientEventId ?? randomUUID(),
+    threadId: threadId,
+    userMessage: normalSendUserMessage(args, agentRunSource),
+    triggerSource: normalSendTriggerSource(args.auth),
+    agentRunSource,
+    requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
   });
 }
+/**
+ * Direct send, shared by the web, the CLI, and MCP: authorize the agent and
+ * thread, validate a follow-up revocation, record attachment references, then
+ * enqueue the input (creating a new thread's minimal row in the same
+ * transaction) and schedule its pick without waiting for it. A retried client
+ * event id conflicts on the input's insert and is accepted again without
+ * enqueueing anything. The model is captured at enqueue. Credit admission,
+ * the autonomy budget, templates, session, and context are resolved by the
+ * pick; a rejection appears in the thread as `input.rejected`. A direct
+ * message's sidebar touch runs after the pick.
+ */
+function settledNormalSendResponse(
+  body: NormalSendBody,
+  threadId: string,
+  createdAt: Date | null,
+) {
+  if (createdAt === null) {
+    // A conflict on the insert is accepted as a duplicate without a
+    // lookup. Only a follow-up with a server-generated id cannot have
+    // collided on its id, so its conflict is the revoke edge taken
+    // concurrently.
+    return body.revokesEventId && body.clientEventId === undefined
+      ? conflict("Recommended follow-up has already been used")
+      : acceptedSendResponse(threadId, nowDate(), true);
+  }
+  return acceptedSendResponse(threadId, createdAt, false);
+}
+const validateSendThreadRevocation$ = command(
+  async (
+    { set },
+    args: NormalSendArgs,
+    thread: SendThread,
+    signal: AbortSignal,
+  ) => {
+    if (thread.kind !== "existing") {
+      return null;
+    }
+    const revocation = await set(
+      validateNormalRevocationTarget$,
+      {
+        threadId: thread.threadId,
+        revokesEventId: args.body.revokesEventId,
+        clientEventId: args.body.clientEventId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return revocation;
+  },
+);
 
-function appendRecallChatEvent(params: {
-  readonly db: Db;
+const prepareNormalSendModels$ = command(
+  async ({ get }, context: AgentRunContextSignals, signal: AbortSignal) => {
+    const [orgModels, memberModels, memberMetadata] = await Promise.all([
+      get(context.modelFacts$),
+      get(context.memberModels$),
+      get(context.memberMetadata$),
+    ]);
+    signal.throwIfAborted();
+    return {
+      orgModels,
+      modelBootstrap: {
+        org: orgModels,
+        member: memberModels,
+        memberMetadata,
+      },
+    };
+  },
+);
+
+const prepareNormalSendContext$ = command(
+  async ({ set }, args: NormalSendArgs, signal: AbortSignal) => {
+    const context = createAgentRunContextSignals(
+      args.userId,
+      args.orgId,
+      args.body.agentId,
+    );
+    // Start authenticated org/member reads immediately; authorization consumes
+    // the same promises. Settled waitUntil work stays owned on rejection/abort.
+    set(preloadAgentRunContext$, context, signal);
+    const prepared = await set(
+      prepareNormalSend$,
+      { ...args, context },
+      signal,
+    );
+    if ("status" in prepared) {
+      return prepared;
+    }
+    const models = await set(prepareNormalSendModels$, context, signal);
+    return { ...prepared, ...models, context };
+  },
+);
+
+export const sendNormalEvent$ = command(
+  async (
+    { set },
+    args: NormalSendArgs,
+    signal: AbortSignal,
+  ): Promise<CreatedChatEventResponse | NormalSendFailure> => {
+    signal.throwIfAborted();
+    const prepared = await set(prepareNormalSendContext$, args, signal);
+    if ("status" in prepared) {
+      return prepared;
+    }
+    const {
+      authorized,
+      agentRunSource,
+      catalog,
+      orgModels,
+      modelBootstrap,
+      context,
+    } = prepared;
+    const resolvedThread = await set(
+      resolveSendThread$,
+      {
+        ...args,
+        orgPlanCapabilities: orgModels.capabilities,
+        catalog,
+        modelBootstrap,
+        context,
+        existing:
+          "thread" in authorized
+            ? { thread: authorized.thread, agentId: authorized.agent.id }
+            : undefined,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if ("status" in resolvedThread) {
+      return resolvedThread;
+    }
+    const revocation = await set(
+      validateSendThreadRevocation$,
+      args,
+      resolvedThread,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (revocation) {
+      return revocation;
+    }
+    const input = await set(
+      prepareNormalSendInput$,
+      {
+        ...args,
+        thread: resolvedThread,
+        orgPlanCapabilities: orgModels.capabilities,
+        catalog,
+        modelBootstrap,
+      },
+      signal,
+    );
+    if ("status" in input) {
+      return input;
+    }
+    const { attachFileMetadata, modelSelection, thread } = input;
+    const event = preparedNormalSendEvent(
+      args,
+      thread.threadId,
+      modelSelection,
+      agentRunSource,
+    );
+    const enqueued = await settle(
+      (async () => {
+        const committed = await set(
+          appendNormalSendInput$,
+          args,
+          { thread, event, attachFileMetadata },
+          signal,
+        );
+        if (committed === null) {
+          return null;
+        }
+        const {
+          inserted: { createdAt },
+          enqueueCommit,
+        } = committed;
+        // Schedule before observing abort; touch/realtime follow this pick's outcome.
+        waitUntil(
+          set(
+            publishEnqueuedNormalSend$,
+            {
+              args,
+              thread,
+              touchedAt: createdAt,
+              ...(enqueueCommit ? { enqueueCommit } : {}),
+              context,
+              requestFacts: normalSendRequestFacts(
+                args,
+                thread,
+                "thread" in authorized ? authorized.thread : undefined,
+                event,
+              ),
+            },
+            signal,
+          ),
+        );
+        waitUntil(
+          set(notifyRunningChatRunOfPendingInput$, thread.threadId, signal),
+        );
+        return createdAt;
+      })(),
+      signal,
+    );
+    if (!enqueued.ok) {
+      if (
+        thread.kind === "new" &&
+        enqueued.error instanceof NewThreadSendCollision
+      ) {
+        return await set(
+          resolveNewThreadSendCollision$,
+          args,
+          thread,
+          enqueued.error.collision,
+          signal,
+        );
+      }
+      throw enqueued.error;
+    }
+    const acceptedAt = enqueued.value;
+    return settledNormalSendResponse(args.body, thread.threadId, acceptedAt);
+  },
+);
+function recallChatEventValues(params: {
   readonly threadId: string;
-  readonly revokesEventId: string;
   readonly clientEventId: string | undefined;
-}): Promise<AppendEventResult> {
-  return params.db.transaction(async (tx) => {
-    await lockUserMessageQueueThread(tx, params.threadId);
-    const pendingTarget = await loadPendingChatQueueEvent(tx, {
+}): Extract<NewChatEvent, { readonly eventType: "control.revoke" }> {
+  return {
+    ...(params.clientEventId ? { id: params.clientEventId } : {}),
+    chatThreadId: params.threadId,
+    eventType: "control.revoke",
+    runId: null,
+    content: null,
+  };
+}
+
+const recallRejected = Object.freeze({
+  ok: false,
+  message: "Only queued user messages can be recalled",
+} satisfies Extract<AppendEventResult, { readonly ok: false }>);
+
+const appendRecallChatEvent$ = command(
+  async (
+    { set },
+    params: {
+      readonly threadId: string;
+      readonly revokesEventId: string;
+      readonly clientEventId: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<AppendEventResult> => {
+    const db = set(writeDb$);
+    const pendingTarget = await loadPendingChatQueueEvent(db, {
       chatThreadId: params.threadId,
       eventId: params.revokesEventId,
     });
+    signal.throwIfAborted();
     const wasPending =
       pendingTarget?.eventType === "input.prompt" ||
       pendingTarget?.eventType === "input.automation";
-
-    const [existingRevoker] = await tx
+    const [existingRevoker] = await db
       .select({
         eventType: chatEvents.eventType,
         content: canonicalChatEventContent(),
@@ -2479,6 +1973,7 @@ function appendRecallChatEvent(params: {
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (existingRevoker) {
       if (
         existingRevoker.eventType === "control.revoke" &&
@@ -2486,14 +1981,17 @@ function appendRecallChatEvent(params: {
       ) {
         return { ok: true, createdAt: existingRevoker.createdAt };
       }
-      return {
-        ok: false,
-        message: "Only queued user messages can be recalled",
-      };
+      return recallRejected;
     }
-
-    const [target] = await tx
+    const [target] = await db
       .select({
+        id: chatEvents.id,
+        chatThreadId: chatEvents.chatThreadId,
+        createdAt: chatEvents.createdAt,
+        eventType: chatEvents.eventType,
+        contextType: chatEvents.contextType,
+        contextId: chatEvents.contextId,
+        modelSelection: canonicalChatInputModelSelection(),
         error: canonicalChatEventError(),
         revokesEventId: chatEvents.revokesEventId,
       })
@@ -2510,6 +2008,7 @@ function appendRecallChatEvent(params: {
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (
       !target ||
       (!wasPending && target.error !== INSUFFICIENT_CREDITS_MARKER) ||
@@ -2519,7 +2018,7 @@ function appendRecallChatEvent(params: {
       if (wasPending) {
         throw new Error("Queued message is not recallable");
       }
-      const [exists] = await tx
+      const [exists] = await db
         .select({ id: chatEvents.id })
         .from(chatEvents)
         .where(
@@ -2529,27 +2028,25 @@ function appendRecallChatEvent(params: {
           ),
         )
         .limit(1);
+      signal.throwIfAborted();
       if (!exists) {
         // Older queue-first recalls deleted the message row, so a repeated
         // request can still find nothing during rollout.
         return { ok: true, createdAt: nowDate() };
       }
-      return {
-        ok: false,
-        message: "Only queued user messages can be recalled",
-      };
+      return recallRejected;
     }
-
-    const inserted = await revokeChatEvent(tx, params.revokesEventId, {
-      ...(params.clientEventId ? { id: params.clientEventId } : {}),
-      chatThreadId: params.threadId,
-      eventType: "control.revoke",
-      runId: null,
-    });
+    const [inserted] = parseRawRows(
+      chatEventCommandResultSchema,
+      await db.execute(
+        chatEventReplacementInsertSql(target, recallChatEventValues(params)),
+      ),
+    );
+    signal.throwIfAborted();
     if (inserted) {
       return { ok: true, createdAt: inserted.createdAt };
     }
-    const [resolved] = await tx
+    const [resolved] = await db
       .select({ createdAt: chatEvents.createdAt })
       .from(chatEvents)
       .where(
@@ -2562,68 +2059,78 @@ function appendRecallChatEvent(params: {
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (!resolved) {
-      if (wasPending) {
-        throw new Error("Failed to append recall user message");
-      }
-      return { ok: false, message: "Failed to insert recall user message" };
+      // A concurrent claim or rejection won the revoke edge.
+      return recallRejected;
     }
     return { ok: true, createdAt: resolved.createdAt };
-  });
-}
-
-async function validateNormalRevocationTarget(params: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly revokesEventId: string | undefined;
-}): Promise<NormalSendFailure | undefined> {
-  if (!params.revokesEventId) {
+  },
+);
+const validateNormalRevocationTarget$ = command(
+  async (
+    { get },
+    params: {
+      readonly threadId: string;
+      readonly revokesEventId: string | undefined;
+      readonly clientEventId: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<NormalSendFailure | CreatedChatEventResponse | undefined> => {
+    const db = get(db$);
+    if (!params.revokesEventId) {
+      return undefined;
+    }
+    const [target] = await db
+      .select({
+        id: chatEvents.id,
+        content: canonicalChatEventContent(),
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.id, params.revokesEventId),
+          eq(chatEvents.chatThreadId, params.threadId),
+          chatEventTypeIn(["output.followups"]),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!target || resolveChatEventRecommendedFollowups(target).length === 0) {
+      return badRequestMessage("Recommended follow-up is no longer available");
+    }
+    const [existingRevoker] = await db
+      .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, params.threadId),
+          eq(chatEvents.revokesEventId, params.revokesEventId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (existingRevoker) {
+      // Postgres returns the uuid lowercase; the request may use any case.
+      return existingRevoker.id === params.clientEventId?.toLowerCase()
+        ? acceptedSendResponse(params.threadId, existingRevoker.createdAt, true)
+        : conflict("Recommended follow-up has already been used");
+    }
     return undefined;
-  }
-
-  const [target] = await params.db
-    .select({
-      id: chatEvents.id,
-      content: canonicalChatEventContent(),
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, params.revokesEventId),
-        eq(chatEvents.chatThreadId, params.threadId),
-        chatEventTypeIn(["output.followups"]),
-      ),
-    )
-    .limit(1);
-  if (!target || resolveChatEventRecommendedFollowups(target).length === 0) {
-    return badRequestMessage("Recommended follow-up is no longer available");
-  }
-
-  const [existingRevoker] = await params.db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, params.threadId),
-        eq(chatEvents.revokesEventId, params.revokesEventId),
-      ),
-    )
-    .limit(1);
-  if (existingRevoker) {
-    return conflict("Recommended follow-up has already been used");
-  }
-
-  return undefined;
-}
-
-function appendInterruptUserMessage(params: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly interruptsRunId: string;
-  readonly clientEventId: string | undefined;
-}): Promise<AppendEventResult> {
-  return params.db.transaction(async (tx) => {
-    const [existingInterrupter] = await tx
+  },
+);
+const appendInterruptUserMessage$ = command(
+  async (
+    { set },
+    params: {
+      readonly threadId: string;
+      readonly interruptsRunId: string;
+      readonly clientEventId: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<AppendEventResult> => {
+    const db = set(writeDb$);
+    const [existingInterrupter] = await db
       .select({
         eventType: chatEvents.eventType,
         content: canonicalChatEventContent(),
@@ -2638,6 +2145,7 @@ function appendInterruptUserMessage(params: {
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (existingInterrupter) {
       if (
         existingInterrupter.eventType === "control.interrupt" &&
@@ -2650,41 +2158,46 @@ function appendInterruptUserMessage(params: {
         message: "Only active chat runs can be interrupted",
       };
     }
-
-    const [targetRun] = await tx
+    const [targetRun] = await db
       .select({ id: agentRuns.id })
       .from(agentRuns)
       .where(
         and(
           eq(agentRuns.id, params.interruptsRunId),
           eq(agentRuns.chatThreadId, params.threadId),
-          inArray(agentRuns.status, ["queued", "pending", "running"]),
+          inArray(agentRuns.status, ["pending", "running"]),
           isNotNull(agentRuns.triggerSource),
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (!targetRun) {
       return {
         ok: false,
         message: "Only active chat runs can be interrupted",
       };
     }
-
-    const inserted = await insertChatEvent(
-      tx,
-      {
-        ...(params.clientEventId ? { id: params.clientEventId } : {}),
-        chatThreadId: params.threadId,
-        eventType: "control.interrupt",
-        content: null,
-        interruptsRunId: params.interruptsRunId,
-      },
-      "any",
-    );
+    const inserted =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await db.execute(
+          chatEventInsertSql(
+            {
+              ...(params.clientEventId ? { id: params.clientEventId } : {}),
+              chatThreadId: params.threadId,
+              eventType: "control.interrupt",
+              content: null,
+              interruptsRunId: params.interruptsRunId,
+            },
+            "any",
+          ),
+        ),
+      )[0] ?? null;
+    signal.throwIfAborted();
     if (inserted) {
       return { ok: true, createdAt: inserted.createdAt };
     }
-    const [resolved] = await tx
+    const [resolved] = await db
       .select({ createdAt: chatEvents.createdAt })
       .from(chatEvents)
       .where(
@@ -2696,13 +2209,13 @@ function appendInterruptUserMessage(params: {
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (!resolved) {
       return { ok: false, message: "Failed to insert interrupt user message" };
     }
     return { ok: true, createdAt: resolved.createdAt };
-  });
-}
-
+  },
+);
 async function publishChatEventCreated(args: {
   readonly userId: string;
   readonly orgId: string;
@@ -2710,27 +2223,30 @@ async function publishChatEventCreated(args: {
 }): Promise<void> {
   await publishChatThreadMessageCreatedSafely(args);
 }
-
-async function assertOwnedThread(
-  db: Db,
-  threadId: string,
-  userId: string,
-  orgId: string,
-): Promise<ReturnType<typeof notFound> | undefined> {
-  const [thread] = await db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, threadId),
-        eq(chatThreads.userId, userId),
-        chatThreadOrganizationCondition(db, orgId),
-      ),
-    )
-    .limit(1);
-  return thread ? undefined : notFound("Chat thread not found");
-}
-
+const assertOwnedThread$ = command(
+  async (
+    { get },
+    threadId: string,
+    userId: string,
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<ReturnType<typeof notFound> | undefined> => {
+    const db = get(db$);
+    const [thread] = await db
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, userId),
+          chatThreadOrganizationCondition(orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return thread ? undefined : notFound("Chat thread not found");
+  },
+);
 const handleRecallSend$ = command(
   async (
     { set },
@@ -2741,29 +2257,30 @@ const handleRecallSend$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    const ownership = await assertOwnedThread(
-      db,
+    const ownership = await set(
+      assertOwnedThread$,
       args.body.threadId,
       args.userId,
       args.orgId,
+      signal,
     );
     signal.throwIfAborted();
     if (ownership) {
       return ownership;
     }
-
-    const result = await appendRecallChatEvent({
-      db,
-      threadId: args.body.threadId,
-      revokesEventId: args.body.revokesEventId,
-      clientEventId: args.body.clientEventId,
-    });
+    const result = await set(
+      appendRecallChatEvent$,
+      {
+        threadId: args.body.threadId,
+        revokesEventId: args.body.revokesEventId,
+        clientEventId: args.body.clientEventId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!result.ok) {
       return badRequestMessage(result.message);
     }
-
     await publishChatEventCreated({
       userId: args.userId,
       orgId: args.orgId,
@@ -2780,7 +2297,6 @@ const handleRecallSend$ = command(
     };
   },
 );
-
 const handleInterruptSend$ = command(
   async (
     { set },
@@ -2791,36 +2307,36 @@ const handleInterruptSend$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    const ownership = await assertOwnedThread(
-      db,
+    const ownership = await set(
+      assertOwnedThread$,
       args.body.threadId,
       args.userId,
       args.orgId,
+      signal,
     );
     signal.throwIfAborted();
     if (ownership) {
       return ownership;
     }
-
-    const result = await appendInterruptUserMessage({
-      db,
-      threadId: args.body.threadId,
-      interruptsRunId: args.body.interruptsRunId,
-      clientEventId: args.body.clientEventId,
-    });
+    const result = await set(
+      appendInterruptUserMessage$,
+      {
+        threadId: args.body.threadId,
+        interruptsRunId: args.body.interruptsRunId,
+        clientEventId: args.body.clientEventId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!result.ok) {
       return badRequestMessage(result.message);
     }
-
     await publishChatEventCreated({
       userId: args.userId,
       orgId: args.orgId,
       threadId: args.body.threadId,
     });
     signal.throwIfAborted();
-
     const cancelResult = await set(
       cancelRun$,
       {
@@ -2843,7 +2359,6 @@ const handleInterruptSend$ = command(
         ),
       );
     }
-
     return {
       status: 201 as const,
       body: {
@@ -2854,1633 +2369,6 @@ const handleInterruptSend$ = command(
     };
   },
 );
-
-function loadTimedAuthorizedAgent(
-  args: NormalSendArgs,
-  db: Db,
-  signal: AbortSignal,
-): Promise<AgentForChatSend | NormalSendFailure> {
-  return measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_load_and_authorize_agent",
-    "nested",
-    async () => {
-      const agent =
-        args.preloadedAgent ??
-        (await loadAgentForChatSend(db, args.body.agentId));
-      signal.throwIfAborted();
-      if (
-        !agent ||
-        agent.id !== args.body.agentId ||
-        agent.orgId !== args.orgId
-      ) {
-        return notFound("Agent not found");
-      }
-      if (agent.visibility === "private" && agent.owner !== args.userId) {
-        return forbidden("Only the private agent owner can run this agent");
-      }
-      return agent;
-    },
-  );
-}
-
-function resolveTimedExplicitRunConfiguration(
-  args: NormalSendArgs,
-  db: Db,
-  featureSwitches: NormalSendFeatureSwitches,
-): ReturnType<typeof resolveExplicitRunConfiguration> {
-  return measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_validate_model_selection",
-    "nested",
-    () => {
-      return resolveExplicitRunConfiguration({
-        db,
-        orgId: args.orgId,
-        userId: args.userId,
-        body: args.body,
-        featureSwitchContext: featureSwitches.featureSwitchContext,
-        timing: args.timing,
-      });
-    },
-  );
-}
-
-function resolveTimedNormalSendFeatureSwitches(
-  args: NormalSendArgs,
-  db: Db,
-): ReturnType<typeof resolveNormalSendFeatureSwitches> {
-  return measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_feature_switches",
-    "nested",
-    () => {
-      return resolveNormalSendFeatureSwitches(db, args.orgId, args.userId);
-    },
-  );
-}
-
-function resolveTimedInitialThreadModelPin(
-  args: NormalSendArgs,
-  explicitRunConfiguration: ResolvedRunConfiguration | undefined,
-): Promise<ReturnType<typeof resolveInitialThreadModelPin>> {
-  return measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_initial_thread_model_pin",
-    "nested",
-    () => {
-      return resolveInitialThreadModelPin({
-        existingThreadId: args.body.threadId,
-        explicitRunConfiguration,
-      });
-    },
-  );
-}
-
-function resolveTimedThread(
-  args: NormalSendArgs,
-  db: Db,
-  initialPin: ThreadModelPin,
-  explicitRunConfiguration: ResolvedRunConfiguration | undefined,
-  featureSwitches: NormalSendFeatureSwitches,
-): ReturnType<typeof resolveThread> {
-  let modelResolutionPath: PersistedChatThreadModelResolutionPath | undefined;
-  return measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_thread",
-    "nested",
-    async () => {
-      const resolved = await resolveThread({
-        db,
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: args.body.agentId,
-        existingThreadId: args.body.threadId,
-        clientThreadId: args.body.clientThreadId,
-        chatThreadEventId: args.body.chatThreadEventId,
-        initialPin,
-        explicitRunConfiguration,
-        requestedReasoningEffort: args.body.runOptions?.reasoningEffort,
-        requestedCodexServiceTier: args.body.runOptions?.codexServiceTier,
-        persistRequestedCodexServiceTier:
-          (args.body.modelSelection !== undefined &&
-            args.body.runOptions?.reasoningEffort === undefined) ||
-          (args.body.runOptions !== undefined &&
-            args.body.runOptions.reasoningEffort === undefined) ||
-          args.body.runOptions?.codexServiceTier !== undefined,
-        featureSwitches,
-        timing: args.timing,
-      });
-      if ("status" in resolved) {
-        return resolved;
-      }
-      modelResolutionPath = resolved.modelResolutionPath;
-      return {
-        ...resolved,
-        runConfiguration: {
-          ...resolved.runConfiguration,
-          reasoningEffort: resolveReasoningEffortForDispatch({
-            selectedModel: resolved.runConfiguration.modelPin.selectedModel,
-            effort: resolved.runConfiguration.reasoningEffort,
-            runtimeProviderType:
-              resolved.runConfiguration.builtInModelRuntimeRoute
-                ?.providerType ??
-              resolved.runConfiguration.providerAdmission
-                .effectiveModelProvider,
-            piExecution: usesPi(
-              args,
-              resolved.thread,
-              resolved.runConfiguration,
-              featureSwitches,
-            ),
-          }),
-        },
-      };
-    },
-    () => {
-      return modelResolutionPath
-        ? { model_resolution_path: modelResolutionPath }
-        : undefined;
-    },
-  );
-}
-
-function maybePersistTimedExplicitModelFirstSelection(
-  args: NormalSendArgs,
-  db: Db,
-  codexServiceTier: CodexServiceTier | undefined,
-): ReturnType<typeof maybePersistExplicitModelFirstSelection> {
-  const requestedEffort = args.body.runOptions?.reasoningEffort;
-  const requestedModel = args.body.modelSelection?.selectedModel;
-  const modelSettingsPatch =
-    requestedEffort !== undefined && isSupportedRunModel(requestedModel)
-      ? { model: requestedModel, effort: requestedEffort }
-      : undefined;
-  return measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_persist_explicit_model_selection",
-    "nested",
-    () => {
-      return maybePersistExplicitModelFirstSelection({
-        db,
-        orgId: args.orgId,
-        userId: args.userId,
-        modelSelection: args.body.modelSelection,
-        serviceTier: chatThreadServiceTierFromCodex(codexServiceTier ?? null),
-        modelSettingsPatch,
-      });
-    },
-  );
-}
-
-function maybePersistTimedExplicitRunSettings(
-  args: NormalSendArgs,
-  db: Db,
-  threadId: string,
-  runConfiguration: ResolvedRunConfiguration,
-): ReturnType<typeof maybePersistExplicitRunSettings> {
-  return measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_persist_explicit_codex_service_tier",
-    "nested",
-    () => {
-      return maybePersistExplicitRunSettings({
-        db,
-        orgId: args.orgId,
-        threadId,
-        userId: args.userId,
-        body: args.body,
-        codexServiceTier: runConfiguration.codexServiceTier,
-        modelPin: runConfiguration.modelPin,
-      });
-    },
-  );
-}
-
-function resolveTimedComputerAccess(
-  args: NormalSendArgs,
-  db: Db,
-  thread: ResolvedThread,
-): ReturnType<typeof resolveComputerAccess> {
-  return measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_computer_use_host_grant",
-    "nested",
-    () => {
-      return resolveComputerAccess({
-        db,
-        orgId: args.orgId,
-        userId: args.userId,
-        body: args.body,
-        thread,
-      });
-    },
-  );
-}
-
-async function resolveTimedPreflightClientEvent(
-  args: NormalSendArgs,
-  db: Db,
-): Promise<{
-  readonly prechecked: boolean;
-  readonly response: ClientSendResolution | undefined;
-}> {
-  const threadId = args.body.threadId ?? args.body.clientThreadId;
-  const prechecked = Boolean(threadId && args.body.clientEventId);
-  const response = threadId
-    ? await measureApiDispatchTiming(
-        args.timing,
-        "api_dispatch_pre_create_agent_web_chat_resolve_client_message",
-        "nested",
-        () => {
-          return resolveClientEventSend({
-            db,
-            orgId: args.orgId,
-            userId: args.userId,
-            threadId,
-            clientEventId: args.body.clientEventId,
-            mcpSubmission: args.mcpSubmission,
-          });
-        },
-      )
-    : undefined;
-  return { prechecked, response };
-}
-
-function resolveTimedNormalSendAgentRunSource(
-  args: NormalSendArgs,
-  db: Db,
-): ReturnType<typeof resolveNormalSendAgentRunSource> {
-  return measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_agent_run_source",
-    "nested",
-    () => {
-      return resolveNormalSendAgentRunSource({
-        db,
-        auth: args.auth,
-        userMessage: args.body.userMessage,
-        sourceRunId: args.body.sourceRunId,
-      });
-    },
-    {
-      normal_send_agent_run_source_kind:
-        args.body.sourceRunId !== undefined
-          ? "forward"
-          : args.auth.tokenType === "agent"
-            ? "agent"
-            : "none",
-    },
-  );
-}
-
-function normalSendTemplateUsageContext(
-  args: NormalSendArgs,
-  thread: PreparedNormalSend["thread"],
-): TemplateUsageLogContext {
-  return {
-    dispatchPath: "normal-send",
-    orgId: args.orgId,
-    userId: args.userId,
-    chatThreadId: thread.threadId,
-    triggerSource: normalSendTriggerSource(args.auth),
-  };
-}
-
-/**
- * Persist the member model preference alongside the thread run settings carried
- * by this send. Queued runs resolve the current thread settings at launch.
- */
-async function persistTimedExplicitSelections(
-  args: NormalSendArgs,
-  db: Db,
-  thread: PreparedNormalSend["thread"],
-  runConfiguration: PreparedNormalSend["runConfiguration"],
-  signal: AbortSignal,
-) {
-  const persistedExplicitSelection =
-    await maybePersistTimedExplicitModelFirstSelection(
-      args,
-      db,
-      runConfiguration.codexServiceTier,
-    );
-  signal.throwIfAborted();
-  await maybePersistTimedExplicitRunSettings(
-    args,
-    db,
-    thread.threadId,
-    runConfiguration,
-  );
-  signal.throwIfAborted();
-  return persistedExplicitSelection;
-}
-
-function usesPi(
-  args: NormalSendArgs,
-  thread: PreparedNormalSend["thread"],
-  runConfiguration: PreparedNormalSend["runConfiguration"],
-  featureSwitches: NormalSendFeatureSwitches,
-): boolean {
-  return shouldUsePiExecution({
-    chatThreadId: thread.threadId,
-    modelProviderType:
-      runConfiguration.providerAdmission.effectiveModelProvider,
-    selectedModel: runConfiguration.modelPin.selectedModel ?? undefined,
-    codexServiceTier: runConfiguration.codexServiceTier,
-    builtInModelRuntimeRoute: runConfiguration.builtInModelRuntimeRoute,
-    featureSwitchContext: featureSwitches.featureSwitchContext,
-  });
-}
-
-const prepareNormalSend$ = command(
-  async (
-    { set },
-    args: NormalSendArgs,
-    signal: AbortSignal,
-  ): Promise<
-    PreparedNormalSend | NormalSendFailure | CreatedChatEventResponse
-  > => {
-    const db = set(writeDb$);
-    const agent = await loadTimedAuthorizedAgent(args, db, signal);
-    if ("status" in agent) {
-      return agent;
-    }
-    const preflight = await resolveTimedPreflightClientEvent(args, db);
-    signal.throwIfAborted();
-    const prior = preflight.response;
-    if (prior && (prior.status === 201 || args.mcpSubmission)) {
-      return prior;
-    }
-    const featureSwitches = await resolveTimedNormalSendFeatureSwitches(
-      args,
-      db,
-    );
-    signal.throwIfAborted();
-    const agentRunSourceResult = await resolveTimedNormalSendAgentRunSource(
-      args,
-      db,
-    );
-    signal.throwIfAborted();
-    if ("response" in agentRunSourceResult) {
-      return agentRunSourceResult.response;
-    }
-    const agentRunSource = agentRunSourceResult.source;
-    const runtimeBody = resolveRuntimeNormalSendBody(
-      normalSendBodyWithAgentRunSource(args.body, agentRunSource),
-    );
-    const authorizedTemplates = await validateGenerationTemplatePrompt(
-      db,
-      args,
-      runtimeBody.templates,
-      featureSwitches,
-    );
-    signal.throwIfAborted();
-    if ("status" in authorizedTemplates) {
-      return authorizedTemplates;
-    }
-    const explicitRunConfiguration = await resolveTimedExplicitRunConfiguration(
-      args,
-      db,
-      featureSwitches,
-    );
-    signal.throwIfAborted();
-    if (explicitRunConfiguration && "status" in explicitRunConfiguration) {
-      return explicitRunConfiguration;
-    }
-
-    const initialPin = await resolveTimedInitialThreadModelPin(
-      args,
-      explicitRunConfiguration,
-    );
-    signal.throwIfAborted();
-    if ("status" in initialPin) {
-      return initialPin;
-    }
-
-    const attachFileMetadataArgs = {
-      userId: args.userId,
-      orgId: args.orgId,
-      userMessage: runtimeBody.userMessage,
-      timing: args.timing,
-    };
-    const attachFileMetadataResultPromise = Promise.allSettled([
-      set(resolveIncomingAttachFileMetadata$, attachFileMetadataArgs, signal),
-    ]);
-
-    const threadAndRunConfiguration = await resolveTimedThread(
-      args,
-      db,
-      initialPin,
-      explicitRunConfiguration,
-      featureSwitches,
-    );
-    signal.throwIfAborted();
-    if ("status" in threadAndRunConfiguration) {
-      return threadAndRunConfiguration;
-    }
-    const { thread, runConfiguration } = threadAndRunConfiguration;
-
-    const templateContext = resolveSelectedTemplateContext(
-      runtimeBody,
-      featureSwitches,
-      authorizedTemplates.userPresentationTemplateIds,
-      authorizedTemplates.userTemplates,
-    );
-    const persistedExplicitSelection = await persistTimedExplicitSelections(
-      args,
-      db,
-      thread,
-      runConfiguration,
-      signal,
-    );
-    const computerAccess = await resolveTimedComputerAccess(args, db, thread);
-    signal.throwIfAborted();
-    if ("status" in computerAccess) {
-      return computerAccess;
-    }
-    const [attachFileMetadataResult] = await attachFileMetadataResultPromise;
-    signal.throwIfAborted();
-    const attachFileMetadata = unwrapSettledResult(attachFileMetadataResult);
-    const piExecution = usesPi(args, thread, runConfiguration, featureSwitches);
-
-    return {
-      db,
-      agent,
-      thread,
-      body: runtimeBody,
-      generationTemplatePrompt: templateContext.generationTemplatePrompt,
-      generationTemplateIdentities:
-        templateContext.generationTemplateIdentities,
-      presentationTemplateVolumes: templateVolumesFor(authorizedTemplates),
-      videoRunOptions: templateContext.videoRunOptions,
-      computerUseHostGrant: computerAccess.computerUseHostGrant,
-      persistedExplicitSelection,
-      initialThinkingEnabled: initialThinkingForSend(args, featureSwitches),
-      attachFileMetadata,
-      runConfiguration,
-      featureSwitchContext: featureSwitches.featureSwitchContext,
-      clientEventPrechecked: preflight.prechecked,
-      preflightClientEventConflict: prior,
-      triggerSource: normalSendTriggerSource(args.auth),
-      agentRunSource,
-      piExecution,
-    };
-  },
-);
-
-async function queueUnassociatedNormalEvent(params: {
-  readonly mcpSubmission?: McpSubmissionIdentity;
-  readonly prepared: PreparedNormalSend;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly body: RuntimeNormalSendBody;
-  readonly userId: string;
-  readonly touchThreadSort: boolean;
-  readonly orgId: string;
-  readonly publicBrand: PublicBrand;
-  readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly getStartedWorkflowId?: string;
-}): Promise<{
-  readonly response:
-    | CreatedChatEventResponse
-    | ReturnType<typeof duplicateClientEventIdResponse>;
-  /** Set when this call inserted a queue-first message. */
-  readonly queuedEventId: string | undefined;
-}> {
-  const resolution = await appendUnassociatedUserMessage({
-    mcpSubmission: params.mcpSubmission,
-    db: params.prepared.db,
-    timing: params.timing,
-    threadId: params.prepared.thread.threadId,
-    userId: params.userId,
-    orgId: params.orgId,
-    prompt: params.body.prompt,
-    attachFileMetadata: params.prepared.attachFileMetadata,
-    clientEventId: params.body.clientEventId,
-    chatThreadSortEventId: params.body.chatThreadSortEventId,
-    touchThreadSort: params.touchThreadSort,
-    userMessage: params.body.userMessage,
-    revokesEventId: params.body.revokesEventId,
-    triggerSource: params.prepared.triggerSource,
-    agentRunSource: params.prepared.agentRunSource,
-    publicBrand: params.publicBrand,
-    getStartedWorkflowId: params.getStartedWorkflowId,
-    ...(params.requiredOfficialWorkflowIds === undefined
-      ? {}
-      : {
-          requiredOfficialWorkflowIds: params.requiredOfficialWorkflowIds,
-        }),
-  });
-  if (resolution.kind === "queued" && resolution.inserted) {
-    await publishThreadListChanged({
-      userId: params.userId,
-      orgId: params.orgId,
-    });
-  }
-  const response = clientEventIdResolutionResponse(
-    resolution,
-    params.prepared.thread.threadId,
-  );
-  const queuedEventId =
-    resolution.kind === "queued" && resolution.inserted
-      ? resolution.messageId
-      : undefined;
-  if (!response) {
-    return {
-      response: duplicateClientEventIdResponse(),
-      queuedEventId,
-    };
-  }
-  return {
-    response:
-      params.mcpSubmission && response.status === 201
-        ? { ...response, mcpReplayed: queuedEventId === undefined }
-        : response,
-    queuedEventId,
-  };
-}
-
-function scheduleChatTitleGeneration(params: {
-  readonly db: Db;
-  readonly body: RuntimeNormalSendBody;
-  readonly thread: ResolvedThread;
-  readonly userId: string;
-  readonly orgId: string;
-}): void {
-  if (params.body.hasTextContent === false) {
-    return;
-  }
-
-  scheduleChatThreadTitleGeneration({
-    db: params.db,
-    threadId: params.thread.threadId,
-    userId: params.userId,
-    orgId: params.orgId,
-    prompt: params.body.agentPrompt,
-    includePriorRounds: !params.thread.isNewThread,
-  });
-}
-
-function scheduleAssociatedUserMessage(params: {
-  readonly db: Db;
-  readonly body: RuntimeNormalSendBody;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-  readonly appendQueueMarker: boolean;
-  readonly appendInitialThinking: boolean;
-  readonly touchThreadSort: boolean;
-  readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
-  readonly triggerSource: "web" | "agent";
-}): void {
-  waitUntil(
-    (async () => {
-      const inserted = await appendAssociatedUserMessage({
-        db: params.db,
-        threadId: params.threadId,
-        userId: params.userId,
-        orgId: params.orgId,
-        prompt: params.body.prompt,
-        runId: params.runId,
-        attachFileMetadata: params.attachFileMetadata,
-        clientEventId: params.body.clientEventId,
-        chatThreadSortEventId: params.body.chatThreadSortEventId,
-        touchThreadSort: params.touchThreadSort,
-        revokesEventId: params.body.revokesEventId,
-        userMessage: params.body.userMessage,
-        appendQueueMarker: params.appendQueueMarker,
-        triggerSource: params.triggerSource,
-        clearDraft: true,
-      });
-      if (inserted) {
-        await publishChatEventCreated({
-          userId: params.userId,
-          orgId: params.orgId,
-          threadId: params.threadId,
-        });
-        await publishThreadListChanged({
-          userId: params.userId,
-          orgId: params.orgId,
-        });
-      }
-      if (params.appendInitialThinking) {
-        await bestEffort(
-          generateAndPersistInitialThinkingMessage({
-            db: params.db,
-            threadId: params.threadId,
-            userId: params.userId,
-            orgId: params.orgId,
-            runId: params.runId,
-            currentPrompt: params.body.prompt,
-          }),
-        );
-      }
-      // Direct user messages move sidebar recency; the terminal callback will
-      // publish again when the run-finished marker lands.
-    })(),
-  );
-}
-
-function scheduleCreatedChatRunSideEffects(params: {
-  readonly db: Db;
-  readonly body: RuntimeNormalSendBody;
-  readonly thread: ResolvedThread;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-  readonly runStatus: string;
-  readonly initialThinkingEnabled: boolean;
-  readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
-  readonly touchThreadSort: boolean;
-  readonly triggerSource: "web" | "agent";
-  readonly queueFirstClaim:
-    | {
-        readonly createdAt: Date;
-      }
-    | undefined;
-}): void {
-  scheduleChatTitleGeneration({
-    db: params.db,
-    body: params.body,
-    thread: params.thread,
-    userId: params.userId,
-    orgId: params.orgId,
-  });
-  const appendInitialThinking =
-    params.initialThinkingEnabled &&
-    params.runStatus !== "queued" &&
-    params.body.hasTextContent !== false &&
-    params.body.prompt.trim().length > 0;
-  if (params.queueFirstClaim) {
-    scheduleClaimedQueueFirstEventSideEffects({
-      db: params.db,
-      body: params.body,
-      threadId: params.thread.threadId,
-      userId: params.userId,
-      orgId: params.orgId,
-      runId: params.runId,
-      createdAt: params.queueFirstClaim.createdAt,
-      appendQueueMarker: params.runStatus === "queued",
-      appendInitialThinking,
-    });
-    return;
-  }
-  scheduleAssociatedUserMessage({
-    db: params.db,
-    body: params.body,
-    threadId: params.thread.threadId,
-    userId: params.userId,
-    orgId: params.orgId,
-    runId: params.runId,
-    appendQueueMarker: params.runStatus === "queued",
-    appendInitialThinking,
-    touchThreadSort: params.touchThreadSort,
-    attachFileMetadata: params.attachFileMetadata,
-    triggerSource: params.triggerSource,
-  });
-}
-
-/**
- * Queue-first counterpart of `scheduleAssociatedUserMessage`: the launch
- * transaction already appended the run-associated replacement, so only
- * publish the append and add the optional run markers here.
- */
-function scheduleClaimedQueueFirstEventSideEffects(params: {
-  readonly db: Db;
-  readonly body: RuntimeNormalSendBody;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-  readonly createdAt: Date;
-  readonly appendQueueMarker: boolean;
-  readonly appendInitialThinking: boolean;
-}): void {
-  waitUntil(
-    (async () => {
-      if (params.appendQueueMarker) {
-        await params.db.transaction(async (tx) => {
-          await appendQueuedRunAssistantMarker(tx, {
-            chatThreadId: params.threadId,
-            runId: params.runId,
-            createdAfter: params.createdAt,
-          });
-        });
-      }
-      await publishChatEventCreated({
-        userId: params.userId,
-        orgId: params.orgId,
-        threadId: params.threadId,
-      });
-      if (params.appendInitialThinking) {
-        await bestEffort(
-          generateAndPersistInitialThinkingMessage({
-            db: params.db,
-            threadId: params.threadId,
-            userId: params.userId,
-            orgId: params.orgId,
-            runId: params.runId,
-            currentPrompt: params.body.prompt,
-          }),
-        );
-      }
-    })(),
-  );
-}
-
-async function buildInsufficientCreditsAssistantMessage(params: {
-  readonly db: Db;
-  readonly orgId: string;
-}): Promise<string> {
-  const capabilities = await loadOrgPlanCapabilities(params.db, params.orgId);
-  const appUrl = env("APP_URL");
-  const usageUrl = `${appUrl}/?settings=usage`;
-  const billingUrl = `${appUrl}/?settings=billing&billingView=plans`;
-  if (capabilities?.canBuyCredits !== true) {
-    return [
-      "Insufficient credits. This workspace has no spendable credits right now.",
-      "",
-      `Upgrade to Pro to get more credits: ${billingUrl}`,
-    ].join("\n");
-  }
-  return [
-    "Insufficient credits. This workspace has no spendable credits right now.",
-    "",
-    `Buy more credits or adjust auto-recharge: ${usageUrl}`,
-  ].join("\n");
-}
-
-async function appendQueueFirstInsufficientCreditsEvents(params: {
-  readonly prepared: PreparedNormalSend;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly eventId: string;
-  readonly assistantContent: string;
-}): Promise<CreatedChatEventResponse> {
-  // The queue-first send already persisted the pending input. Its rejected
-  // replacement is the atomic claim that makes it non-runnable.
-  const userCreatedAt = nowDate();
-  const createdAt = await params.prepared.db.transaction(async (tx) => {
-    await lockUserMessageQueueThread(tx, params.prepared.thread.threadId);
-    const pending = await loadPendingChatQueueEvent(tx, {
-      chatThreadId: params.prepared.thread.threadId,
-      eventId: params.eventId,
-    });
-    if (pending?.eventType !== "input.prompt") {
-      throw new Error("Queue-first message is no longer available");
-    }
-    const [queuedMessage] = await tx
-      .select({
-        userMessage: canonicalChatEventUserMessage(),
-        createdAt: chatEvents.createdAt,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, params.eventId),
-          eq(chatEvents.chatThreadId, params.prepared.thread.threadId),
-          chatEventTypeIn(["input.prompt"]),
-          isNull(chatEvents.runId),
-        ),
-      )
-      .for("update", { of: chatEvents })
-      .limit(1);
-    if (!queuedMessage) {
-      throw new Error("Queue-first message is no longer available");
-    }
-    if (!queuedMessage.userMessage) {
-      throw new Error("Queue-first message is missing userMessage");
-    }
-    const rejectedCreatedAt = new Date(
-      Math.max(userCreatedAt.getTime(), queuedMessage.createdAt.getTime() + 1),
-    );
-    const assistantCreatedAt = new Date(rejectedCreatedAt.getTime() + 1);
-
-    const replacement = await replaceChatEvent(tx, params.eventId, {
-      chatThreadId: params.prepared.thread.threadId,
-      eventType: "input.rejected",
-      userMessage: queuedMessage.userMessage,
-      runId: null,
-      error: INSUFFICIENT_CREDITS_MARKER,
-      runEventSequenceNumber: 0,
-      createdAt: rejectedCreatedAt,
-    });
-    if (replacement) {
-      await insertChatEvent(tx, {
-        chatThreadId: params.prepared.thread.threadId,
-        eventType: "output.error",
-        content: params.assistantContent,
-        error: INSUFFICIENT_CREDITS_MARKER,
-        runEventSequenceNumber: 1,
-        createdAt: assistantCreatedAt,
-        runId: null,
-      });
-    } else {
-      throw new Error("Failed to append insufficient-credits replacement");
-    }
-    return queuedMessage.createdAt;
-  });
-  await publishChatEventCreated({
-    userId: params.userId,
-    orgId: params.orgId,
-    threadId: params.prepared.thread.threadId,
-  });
-  return {
-    status: 201,
-    body: {
-      runId: null,
-      threadId: params.prepared.thread.threadId,
-      createdAt: createdAt.toISOString(),
-    },
-  };
-}
-
-async function appendInsufficientCreditsEvents(params: {
-  readonly prepared: PreparedNormalSend;
-  readonly body: RuntimeNormalSendBody;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly touchThreadSort: boolean;
-  readonly queueFirstEventId?: string;
-}): Promise<CreatedChatEventResponse> {
-  const assistantContent = await buildInsufficientCreditsAssistantMessage({
-    db: params.prepared.db,
-    orgId: params.orgId,
-  });
-  if (params.queueFirstEventId) {
-    return appendQueueFirstInsufficientCreditsEvents({
-      prepared: params.prepared,
-      userId: params.userId,
-      orgId: params.orgId,
-      eventId: params.queueFirstEventId,
-      assistantContent,
-    });
-  }
-  const userCreatedAt = nowDate();
-  const assistantCreatedAt = new Date(userCreatedAt.getTime() + 1);
-  const result = await params.prepared.db.transaction(async (tx) => {
-    await tx
-      .update(chatThreads)
-      .set({
-        draftUserMessage: null,
-        draftAttachments: null,
-      })
-      .where(
-        and(
-          eq(chatThreads.id, params.prepared.thread.threadId),
-          eq(chatThreads.userId, params.userId),
-        ),
-      );
-
-    const explicitId = params.body.clientEventId ?? undefined;
-    const fileMetadata = params.prepared.attachFileMetadata;
-    const userValues: NewChatEvent = {
-      ...(explicitId ? { id: explicitId } : {}),
-      chatThreadId: params.prepared.thread.threadId,
-      eventType: "input.rejected",
-      userMessage: params.body.userMessage,
-      runId: null,
-      error: INSUFFICIENT_CREDITS_MARKER,
-      runEventSequenceNumber: 0,
-      createdAt: userCreatedAt,
-    };
-    const userMessage = params.body.revokesEventId
-      ? await replaceChatEvent(tx, params.body.revokesEventId, userValues)
-      : await insertChatEvent(tx, userValues, "id");
-
-    const createdAt = userMessage?.createdAt ?? userCreatedAt;
-    if (userMessage) {
-      await registerCanonicalWebInputAssets(tx, {
-        chatThreadId: params.prepared.thread.threadId,
-        userId: params.userId,
-        orgId: params.orgId,
-        files: fileMetadata ?? [],
-      });
-    }
-    if (userMessage && params.touchThreadSort) {
-      await touchChatThreadLastMessageAt(
-        tx,
-        params.prepared.thread.threadId,
-        createdAt,
-        params.body.chatThreadSortEventId,
-      );
-    }
-    await insertChatEvent(tx, {
-      chatThreadId: params.prepared.thread.threadId,
-      eventType: "output.error",
-      content: assistantContent,
-      error: INSUFFICIENT_CREDITS_MARKER,
-      runEventSequenceNumber: 1,
-      createdAt: assistantCreatedAt,
-      runId: null,
-    });
-    return { createdAt, inserted: userMessage !== null };
-  });
-
-  await publishChatEventCreated({
-    userId: params.userId,
-    orgId: params.orgId,
-    threadId: params.prepared.thread.threadId,
-  });
-  if (result.inserted) {
-    await publishThreadListChanged({
-      userId: params.userId,
-      orgId: params.orgId,
-    });
-  }
-
-  return {
-    status: 201,
-    body: {
-      runId: null,
-      threadId: params.prepared.thread.threadId,
-      createdAt: result.createdAt.toISOString(),
-    },
-  };
-}
-
-function codexFastServiceTierRequested(body: NormalSendBody): boolean {
-  return body.runOptions?.codexServiceTier === "fast";
-}
-
-function validateCodexServiceTier(params: {
-  readonly body: NormalSendBody;
-  readonly modelPin: ThreadModelPin;
-}): ReturnType<typeof badRequestMessage> | undefined {
-  if (!codexFastServiceTierRequested(params.body)) {
-    return undefined;
-  }
-  if (
-    isCodexFastServiceTierSupported({
-      selectedModel: params.modelPin.selectedModel,
-    })
-  ) {
-    return undefined;
-  }
-  return badRequestMessage(
-    "Codex fast mode is only available for GPT 5.6 runs",
-  );
-}
-
-function codexServiceTierForRun(params: {
-  readonly body: NormalSendBody;
-  readonly modelPin: ThreadModelPin;
-}): "fast" | undefined {
-  return codexFastServiceTierRequested(params.body) &&
-    isCodexFastServiceTierSupported({
-      selectedModel: params.modelPin.selectedModel,
-    })
-    ? "fast"
-    : undefined;
-}
-
-function cliAgentTypeForRun(prepared: PreparedNormalSend) {
-  return prepared.piExecution
-    ? ("pi" as const)
-    : prepared.runConfiguration.providerAdmission.cliAgentType;
-}
-
-function requiredOfficialWorkflowRunArgs(
-  workflowIds: readonly string[] | undefined,
-) {
-  return workflowIds === undefined
-    ? {}
-    : { requiredOfficialWorkflowIds: workflowIds };
-}
-
-function isFullyLoadedAgentRunRequest(
-  agent: AgentForChatSend,
-): agent is AgentRunRequestAgent {
-  return (
-    agent.name !== undefined &&
-    agent.defaultAgentId !== undefined &&
-    agent.displayName !== undefined &&
-    agent.description !== undefined &&
-    agent.sound !== undefined &&
-    agent.modelProviderId !== undefined &&
-    agent.selectedModel !== undefined
-  );
-}
-
-function authorizedAgentRunRequestObservation(params: {
-  readonly args: NormalSendArgs;
-  readonly prepared: PreparedNormalSend;
-}): AuthorizedAgentRunRequestObservation | undefined {
-  return isFullyLoadedAgentRunRequest(params.prepared.agent)
-    ? {
-        userId: params.args.userId,
-        orgId: params.args.orgId,
-        agent: params.prepared.agent,
-        featureSwitchContext: params.prepared.featureSwitchContext,
-      }
-    : undefined;
-}
-
-function buildCreateAgentRunArgs(params: {
-  readonly args: NormalSendArgs;
-  readonly prepared: PreparedNormalSend;
-  readonly realAgentInPreviewEnabled: boolean;
-}) {
-  const { args, prepared } = params;
-  const {
-    modelPin,
-    providerAdmission,
-    builtInModelRuntimeRoute,
-    codexServiceTier,
-    reasoningEffort,
-  } = prepared.runConfiguration;
-  const videoRunOptionsPrompt = buildVideoRunOptionsPrompt(
-    prepared.videoRunOptions,
-  );
-  const agentPrompt = videoRunOptionsPrompt
-    ? `${videoRunOptionsPrompt}\n\n${prepared.body.agentPrompt}`
-    : prepared.body.agentPrompt;
-  const webChatSessionPromptContext: WebChatSessionPromptContext = {
-    generationTemplatePrompt: prepared.generationTemplatePrompt,
-    computerUseHostDisplayName:
-      prepared.computerUseHostGrant?.displayName ?? null,
-    triggerSource: prepared.triggerSource,
-    agentRunSource: prepared.agentRunSource,
-    integrationNote: resolveIntegrationNotePrompt({
-      triggerSource: prepared.triggerSource,
-      featureSwitchContext: prepared.featureSwitchContext,
-    }),
-  };
-  const authorizedRequestObservation =
-    authorizedAgentRunRequestObservation(params);
-  return {
-    auth: args.auth,
-    apiStartTime: args.apiStartTime,
-    preloadedFeatureSwitchContext: prepared.featureSwitchContext,
-    ...(authorizedRequestObservation ? { authorizedRequestObservation } : {}),
-    chatThreadId: prepared.thread.threadId,
-    computerUseHostId: prepared.computerUseHostGrant?.hostId,
-    modelProviderId: modelPin.modelProviderId ?? undefined,
-    modelProviderCredentialScope:
-      modelPin.modelProviderCredentialScope ?? undefined,
-    selectedModelOverride: modelPin.selectedModel ?? undefined,
-    ...(builtInModelRuntimeRoute ? { builtInModelRuntimeRoute } : {}),
-    agentRunModelPin: {
-      modelProvider: providerAdmission.effectiveModelProvider ?? null,
-      modelProviderId: modelPin.modelProviderId,
-      modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
-      selectedModel: modelPin.selectedModel,
-    },
-    piExecution: prepared.piExecution,
-    threadSessionRoute: {
-      selectedModel: modelPin.selectedModel,
-      cliAgentType: cliAgentTypeForRun(prepared),
-    },
-    codexServiceTier,
-    reasoningEffort,
-    callbacks: [
-      {
-        internalKind: "chat" as const,
-        secret: generateCallbackSecret(),
-        payload: {
-          threadId: prepared.thread.threadId,
-          agentId: args.body.agentId,
-          publicBrand: args.publicBrand,
-        },
-      },
-    ],
-    body: {
-      prompt: agentPrompt,
-      agentId: args.body.agentId,
-      ...(providerAdmission.effectiveModelProvider
-        ? {
-            modelProvider: modelProviderWriteTypeForLaunch(
-              providerAdmission.effectiveModelProvider,
-            ),
-          }
-        : {}),
-      ...(params.realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
-      ...(args.body.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
-      ...additionalVolumesForRun(prepared.presentationTemplateVolumes),
-    },
-    triggerSource: prepared.triggerSource,
-    dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-    ...(prepared.thread.isNewThread
-      ? {
-          appendSystemPrompt: buildWebChatAppendSystemPrompt({
-            threadId: prepared.thread.threadId,
-            incompleteContext: "",
-            priorContext: "",
-            context: webChatSessionPromptContext,
-          }),
-        }
-      : { webChatSessionPromptContext }),
-    ...(args.timing ? { timing: args.timing } : {}),
-    ...(args.agentRunPreCreateSource
-      ? { agentRunPreCreateSource: args.agentRunPreCreateSource }
-      : {}),
-    ...requiredOfficialWorkflowRunArgs(args.requiredOfficialWorkflowIds),
-  };
-}
-
-async function buildTimedCreateAgentRunArgs(params: {
-  readonly args: NormalSendArgs;
-  readonly prepared: PreparedNormalSend;
-  readonly realAgentInPreviewEnabled: boolean;
-}): Promise<ReturnType<typeof buildCreateAgentRunArgs>> {
-  return await measureApiDispatchTiming(
-    params.args.timing,
-    "api_dispatch_pre_create_agent_web_chat_build_create_run_args",
-    "nested",
-    () => {
-      return buildCreateAgentRunArgs(params);
-    },
-  );
-}
-
-async function resolveQueueFirstEventAfterLostClaim(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly eventId: string;
-}) {
-  const resolution = await resolveClientEventId(params.db, {
-    clientEventId: params.eventId,
-    orgId: params.orgId,
-    threadId: params.threadId,
-    userId: params.userId,
-  });
-  return (
-    clientEventIdResolutionResponse(resolution, params.threadId) ??
-    notFound("Chat thread not found")
-  );
-}
-
-function resolveNormalQueueFirstLostClaim(
-  args: NormalSendArgs,
-  prepared: PreparedNormalSend,
-  eventId: string,
-) {
-  return resolveQueueFirstEventAfterLostClaim({
-    db: prepared.db,
-    orgId: args.orgId,
-    threadId: prepared.thread.threadId,
-    userId: args.userId,
-    eventId,
-  });
-}
-
-function createdNormalChatRunResponse(params: {
-  readonly runId: string;
-  readonly threadId: string;
-  readonly status: string;
-  readonly createdAt: string | undefined;
-}): CreatedChatEventResponse {
-  if (!params.createdAt) {
-    throw new Error("Created chat run response is missing createdAt");
-  }
-  return {
-    status: 201,
-    body: {
-      ...params,
-      createdAt: params.createdAt,
-    },
-  };
-}
-
-function scheduleNormalChatRunSideEffects(params: {
-  readonly args: NormalSendArgs;
-  readonly prepared: PreparedNormalSend;
-  readonly runId: string;
-  readonly runStatus: string;
-  readonly queueFirstClaimedAt: Date;
-}): void {
-  scheduleCreatedChatRunSideEffects({
-    db: params.prepared.db,
-    body: params.prepared.body,
-    thread: params.prepared.thread,
-    userId: params.args.userId,
-    orgId: params.args.orgId,
-    runId: params.runId,
-    runStatus: params.runStatus,
-    initialThinkingEnabled: params.prepared.initialThinkingEnabled,
-    attachFileMetadata: params.prepared.attachFileMetadata,
-    touchThreadSort: shouldTouchThreadSortFromNormalSend(
-      params.args.agentRunPreCreateSource,
-      params.prepared.thread.isNewThread,
-    ),
-    triggerSource: params.prepared.triggerSource,
-    queueFirstClaim: {
-      createdAt: params.queueFirstClaimedAt,
-    },
-  });
-}
-
-async function buildNormalChatRunArgs(
-  args: NormalSendArgs,
-  prepared: PreparedNormalSend,
-  signal: AbortSignal,
-) {
-  const createRunArgs = await buildTimedCreateAgentRunArgs({
-    args,
-    prepared,
-    realAgentInPreviewEnabled: isFeatureEnabled(
-      FeatureSwitchKey.RealAgentInPreview,
-      prepared.featureSwitchContext,
-    ),
-  });
-  signal.throwIfAborted();
-  return createRunArgs;
-}
-
-function optimisticQueuedMessage(
-  db: Db,
-  threadId: string,
-  preloaded: QueuedUserMessage | undefined,
-): Promise<QueuedUserMessage | null> {
-  return preloaded
-    ? Promise.resolve(preloaded)
-    : loadNextUnclaimedQueuedUserMessage(db, threadId);
-}
-
-async function rejectUnavailableQueuedMessage(
-  params: {
-    readonly args: NormalSendArgs;
-    readonly prepared: PreparedNormalSend;
-    readonly autonomyBudget: Exclude<
-      QueuedUserMessage["autonomyBudget"],
-      { readonly kind: "ok" }
-    >;
-    readonly queueFirstEventId: string;
-  },
-  signal: AbortSignal,
-) {
-  const discarded = await discardUnclaimedUserMessage(params.prepared.db, {
-    threadId: params.prepared.thread.threadId,
-    eventId: params.queueFirstEventId,
-  });
-  signal.throwIfAborted();
-  if (!discarded) {
-    return await resolveNormalQueueFirstLostClaim(
-      params.args,
-      params.prepared,
-      params.queueFirstEventId,
-    );
-  }
-  return params.autonomyBudget.kind === "exhausted"
-    ? autonomyBudgetExhausted()
-    : badRequestMessage(params.autonomyBudget.message);
-}
-
-const createNormalChatRun$ = command(
-  async (
-    { set },
-    params: {
-      readonly args: NormalSendArgs;
-      readonly prepared: PreparedNormalSend;
-      /** Queue-first sends replace this queued message at dispatch time. */
-      readonly queueFirstEventId: string;
-      /** Optimistic preparation only; final queue authority remains locked. */
-      readonly preloadedQueuedMessage?: QueuedUserMessage;
-    },
-    signal: AbortSignal,
-  ) => {
-    const { args, prepared, queueFirstEventId } = params;
-    const createNormalRunStartedAt = now();
-    const { modelPin, providerAdmission } = prepared.runConfiguration;
-    if (providerAdmission.error) {
-      if (providerAdmission.error.status !== 402) {
-        return providerAdmission.error;
-      }
-      return await appendInsufficientCreditsEvents({
-        prepared,
-        body: prepared.body,
-        userId: args.userId,
-        orgId: args.orgId,
-        touchThreadSort: shouldTouchThreadSortFromNormalSend(
-          args.agentRunPreCreateSource,
-          prepared.thread.isNewThread,
-        ),
-        queueFirstEventId,
-      });
-    }
-
-    const queuedMessage = await optimisticQueuedMessage(
-      prepared.db,
-      prepared.thread.threadId,
-      params.preloadedQueuedMessage,
-    );
-    signal.throwIfAborted();
-    if (!queuedMessage || queuedMessage.id !== queueFirstEventId) {
-      return await resolveNormalQueueFirstLostClaim(
-        args,
-        prepared,
-        queueFirstEventId,
-      );
-    }
-    if (queuedMessage.autonomyBudget.kind !== "ok") {
-      return await rejectUnavailableQueuedMessage(
-        {
-          args,
-          prepared,
-          autonomyBudget: queuedMessage.autonomyBudget,
-          queueFirstEventId,
-        },
-        signal,
-      );
-    }
-    const createRunArgs = await buildNormalChatRunArgs(args, prepared, signal);
-
-    if (args.timing) {
-      args.timing.recordElapsed(
-        "api_dispatch_pre_create_agent_web_chat_create_normal_run",
-        "nested",
-        createNormalRunStartedAt,
-      );
-    }
-    const runResult = await set(
-      createQueueFirstAgentRun$,
-      {
-        ...createRunArgs,
-        agentRunMetadata: {
-          autonomyBudget: queuedMessage.autonomyBudget.autonomyBudget,
-        },
-        queueFirstAssociation: {
-          kind: "user_message",
-          threadId: prepared.thread.threadId,
-          eventId: queueFirstEventId,
-          admissionTime: args.apiStartTime,
-        },
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (isQueueFirstRunClaimLost(runResult)) {
-      return await resolveNormalQueueFirstLostClaim(
-        args,
-        prepared,
-        queueFirstEventId,
-      );
-    }
-    if (runResult.status !== 201) {
-      return runResult;
-    }
-    // The run now exists, which is what makes this a use. Reporting any earlier
-    // counts sends that never produced one: a lost claim hands the message to
-    // another dispatcher that reports it through `queued-claim`, and a non-201
-    // result leaves no run at all.
-    logTemplateUsage(
-      normalSendTemplateUsageContext(args, prepared.thread),
-      prepared.generationTemplateIdentities,
-    );
-    const response = createdNormalChatRunResponse({
-      runId: runResult.body.runId,
-      threadId: prepared.thread.threadId,
-      status: runResult.body.status,
-      createdAt: runResult.body.createdAt,
-    });
-    const queueFirstClaimedAt = runResult.queueFirstClaim.createdAt;
-
-    scheduleNormalChatRunSideEffects({
-      args,
-      prepared,
-      runId: runResult.body.runId,
-      runStatus: runResult.body.status,
-      queueFirstClaimedAt,
-    });
-
-    if (prepared.persistedExplicitSelection && modelPin.selectedModel) {
-      const requestedEffort = args.body.runOptions?.reasoningEffort;
-      await updateUserModelPreference(prepared.db, {
-        orgId: args.orgId,
-        userId: args.userId,
-        selectedModel: modelPin.selectedModel,
-        serviceTier: chatThreadServiceTierFromCodex(
-          prepared.runConfiguration.codexServiceTier ?? null,
-        ),
-        modelSettingsPatch:
-          requestedEffort !== undefined &&
-          isSupportedRunModel(modelPin.selectedModel)
-            ? { model: modelPin.selectedModel, effort: requestedEffort }
-            : undefined,
-      });
-      signal.throwIfAborted();
-    }
-
-    return response;
-  },
-);
-
-export const sendNormalEvent$ = command(
-  async ({ set }, args: NormalSendArgs, signal: AbortSignal) => {
-    const prepared = await measureApiDispatchTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_web_chat_prepare_normal_send",
-      "nested",
-      async () => {
-        return await set(prepareNormalSend$, args, signal);
-      },
-    );
-    signal.throwIfAborted();
-    if ("status" in prepared) {
-      return prepared;
-    }
-
-    const clientEventResolution =
-      prepared.preflightClientEventConflict ??
-      (!prepared.clientEventPrechecked ||
-      args.body.revokesEventId !== undefined ||
-      prepared.thread.isClientThreadRetry
-        ? await measureApiDispatchTiming(
-            args.timing,
-            "api_dispatch_pre_create_agent_web_chat_resolve_client_message",
-            "nested",
-            async () => {
-              return await resolveClientEventSend({
-                db: prepared.db,
-                orgId: args.orgId,
-                userId: args.userId,
-                threadId: prepared.thread.threadId,
-                clientEventId: args.body.clientEventId,
-                mcpSubmission: args.mcpSubmission,
-              });
-            },
-          )
-        : undefined);
-    signal.throwIfAborted();
-    if (clientEventResolution) {
-      return clientEventResolution;
-    }
-
-    const revocationError = await measureApiDispatchTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_web_chat_validate_revocation",
-      "nested",
-      async () => {
-        return await validateNormalRevocationTarget({
-          db: prepared.db,
-          threadId: prepared.thread.threadId,
-          revokesEventId: args.body.revokesEventId,
-        });
-      },
-    );
-    signal.throwIfAborted();
-    if (revocationError) {
-      return revocationError;
-    }
-
-    if (prepared.thread.isClientThreadRetry) {
-      const existingRun = await resolveClientThreadRetryRun(
-        prepared.db,
-        prepared.thread.threadId,
-      );
-      signal.throwIfAborted();
-      if (existingRun) {
-        return existingRun;
-      }
-      return badRequestMessage("Client thread id is already in use");
-    }
-
-    // Every web chat send persists its input before the inline drain attempts
-    // an atomic queue claim, including recommended follow-up replacements.
-    return await set(sendQueueFirstNormalEvent$, { args, prepared }, signal);
-  },
-);
-
-/**
- * Queue-first send: persist the message and its queue item, then inline-drain
- * — create the run and append a replacement message when the thread is idle
- * and this message is the oldest unclaimed one. Response shapes match the
- * legacy path: `runId` when dispatched, `{runId: null}` when left queued.
- */
-const sendQueueFirstNormalEvent$ = command(
-  async (
-    { set },
-    params: {
-      readonly args: NormalSendArgs;
-      readonly prepared: PreparedNormalSend;
-    },
-    signal: AbortSignal,
-  ) => {
-    const { args, prepared } = params;
-    const threadId = prepared.thread.threadId;
-    const { response, queuedEventId } = await measureApiDispatchTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue",
-      "nested",
-      async () => {
-        return await queueUnassociatedNormalEvent({
-          mcpSubmission: args.mcpSubmission,
-          prepared,
-          timing: args.timing,
-          body: prepared.body,
-          userId: args.userId,
-          touchThreadSort: shouldTouchThreadSortFromNormalSend(
-            args.agentRunPreCreateSource,
-            prepared.thread.isNewThread,
-          ),
-          orgId: args.orgId,
-          publicBrand: args.publicBrand,
-          getStartedWorkflowId: args.getStartedWorkflowId,
-          ...(args.requiredOfficialWorkflowIds === undefined
-            ? {}
-            : {
-                requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
-              }),
-        });
-      },
-    );
-    signal.throwIfAborted();
-    if (!queuedEventId) {
-      // Duplicate clientEventId or an already-existing resolution — the
-      // enqueue inserted nothing, so there is nothing to dispatch.
-      return response;
-    }
-
-    const dispatch = await measureApiDispatchTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_web_chat_queue_first_check_dispatchable",
-      "nested",
-      async (): Promise<
-        | { readonly kind: "self"; readonly queuedMessage: QueuedUserMessage }
-        | { readonly kind: "wait" }
-        | { readonly kind: "drain" }
-      > => {
-        if (await chatThreadAdmissionBlocked(prepared.db, { threadId })) {
-          return { kind: "wait" };
-        }
-        const queuedMessage = await loadNextUnclaimedQueuedUserMessage(
-          prepared.db,
-          threadId,
-        );
-        return queuedMessage?.id === queuedEventId
-          ? { kind: "self", queuedMessage }
-          : { kind: "drain" };
-      },
-    );
-    signal.throwIfAborted();
-    if (dispatch.kind === "wait") {
-      await publishChatEventCreated({
-        userId: args.userId,
-        orgId: args.orgId,
-        threadId,
-      });
-      signal.throwIfAborted();
-      await set(
-        drainChatThreadQueueForThread$,
-        {
-          chatThreadId: threadId,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      return response;
-    }
-    if (dispatch.kind === "drain") {
-      // The thread is idle but an older unclaimed message holds the queue
-      // head (e.g. left behind by a cancelled run). Dispatch the head so the
-      // thread keeps draining; this message stays queued behind it (#21392).
-      await publishChatEventCreated({
-        userId: args.userId,
-        orgId: args.orgId,
-        threadId,
-      });
-      signal.throwIfAborted();
-      await set(
-        drainChatThreadQueueForThread$,
-        {
-          chatThreadId: threadId,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      return response;
-    }
-
-    const result = await set(
-      createNormalChatRun$,
-      {
-        args,
-        prepared,
-        queueFirstEventId: queuedEventId,
-        preloadedQueuedMessage: dispatch.queuedMessage,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (result.status === 201) {
-      return result;
-    }
-    // Run creation failed validation before it could consume the queue item.
-    // Discard the queued message so history matches the legacy direct-send
-    // failure.
-    await discardUnclaimedUserMessage(prepared.db, {
-      threadId,
-      eventId: queuedEventId,
-    });
-    signal.throwIfAborted();
-    return result;
-  },
-);
-
 export const handleSendChatEvent$ = command(
   async ({ get, set }, body: SendBody, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -4501,18 +2389,13 @@ export const handleSendChatEvent$ = command(
     if (!isNormalSendBody(body)) {
       return badRequestMessage("Prompt is required");
     }
-    const apiStartTime = now();
-    const timing = new ApiDispatchTimingCollector();
     return await set(
       sendNormalEvent$,
       {
-        body: canonicalNormalSendBody(body),
+        body,
         auth,
         userId: auth.userId,
         orgId: auth.orgId,
-        apiStartTime,
-        publicBrand: PUBLIC_BRAND,
-        timing,
       },
       signal,
     );

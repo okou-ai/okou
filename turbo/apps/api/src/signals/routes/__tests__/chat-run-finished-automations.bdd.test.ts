@@ -1,11 +1,3 @@
-import {
-  setHistoricalGoalStatusFixture,
-  historicalGoalStatusFixture,
-  readGoalQueueStateFixture,
-  seedGoalForRunFixture,
-  setLegacyGoalRunOriginFixture,
-} from "../../../test-fixtures/goal-queue";
-
 import { createHash, randomUUID } from "node:crypto";
 
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -20,12 +12,10 @@ import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   readLatestWorkflowAutomationRunFixture,
   readWorkflowAutomationAutonomyFixture,
@@ -44,7 +34,6 @@ const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
-const misc = createMiscRoutesApi(context);
 const wf = createWorkflowsBddApi(context);
 const WATCHED_THREAD_TITLE = "Watched chat run";
 
@@ -78,7 +67,11 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   chatCallbacks.disableVapid();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
+  // Completion and queue fixtures use the retained native Claude route.
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Chat run finished automation agent",
     description: "Exercises chat-run-finished automation dispatch.",
@@ -104,7 +97,7 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
  * would not record `lastRunAt` until the prior automation run completes.
  */
 async function createChatRunFinishedAutomation(
-  fixture: ChatAutomationFixture,
+  fixture: Pick<ChatAutomationFixture, "actor" | "agentId">,
   eventConfig: {
     readonly chatThreadId: string;
     readonly runStatuses?: readonly ("completed" | "failed" | "cancelled")[];
@@ -170,11 +163,24 @@ async function startWatchedChatRun(
       agentId: fixture.agentId,
       prompt,
       clientEventId: randomUUID(),
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     },
     [201],
   );
-  if (sent.status !== 201 || sent.body.runId === null) {
+  if (sent.status !== 201) {
+    throw new Error("Expected the chat send to be accepted");
+  }
+  // The send only enqueues; its background pick launches the run.
+  await flushWaitUntilForTest();
+  const page = await chat.listThreadEvents(fixture.actor, sent.body.threadId);
+  const runId = page.events
+    .flatMap((event) => {
+      return event.eventType === "input.prompt" && event.runId
+        ? [event.runId]
+        : [];
+    })
+    .at(-1);
+  if (!runId) {
     throw new Error("Expected the chat send to create a run");
   }
   await chat.renameThread(
@@ -182,40 +188,7 @@ async function startWatchedChatRun(
     sent.body.threadId,
     WATCHED_THREAD_TITLE,
   );
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
-}
-
-async function createGoalForRun(
-  actor: ApiTestUser,
-  runId: string,
-  objective: string,
-): Promise<string> {
-  if (!actor.orgId) {
-    throw new Error("Expected an org-scoped actor for goal workflows");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    {
-      userId: actor.userId,
-      orgId: actor.orgId,
-      orgRole: actor.orgRole,
-    },
-    {},
-  );
-  const goal = await seedGoalForRunFixture(runId, objective);
-  return goal.objectiveBrief;
-}
-
-async function expectGoalStatus(
-  actor: ApiTestUser,
-  runId: string,
-  status: "active" | "paused" | "blocked" | "complete",
-): Promise<void> {
-  await expect
-    .poll(async () => {
-      return await historicalGoalStatusFixture(runId);
-    })
-    .toBe(status);
+  return { runId, threadId: sent.body.threadId };
 }
 
 async function claimChatRun(
@@ -224,15 +197,13 @@ async function claimChatRun(
 ): Promise<{ readonly authorization: string }> {
   await api.heartbeatRunner(runnerGroup);
   let claim: Awaited<ReturnType<typeof api.requestClaimRunnerJob>> | undefined;
-  await expect
-    .poll(
-      async () => {
-        claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);
-        return claim.status;
-      },
-      { interval: 100, timeout: 10_000 },
-    )
-    .toBe(200);
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
+      claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);
+      return claim.status;
+    })(),
+  ).resolves.toBe(200);
   if (!claim || claim.status !== 200) {
     throw new Error("Expected the chat run to be claimable");
   }
@@ -282,14 +253,12 @@ async function completeChatRunOk(
 }
 
 async function expectAutomationFired(automationId: string): Promise<void> {
-  await expect
-    .poll(
-      () => {
-        return automationLastRunAt(automationId);
-      },
-      { interval: 100, timeout: 10_000 },
-    )
-    .toBeTruthy();
+  await flushWaitUntilForTest();
+  await expect(
+    (() => {
+      return automationLastRunAt(automationId);
+    })(),
+  ).resolves.toBeTruthy();
 }
 
 async function expectAutomationSourceAnnotation(
@@ -308,32 +277,31 @@ async function expectAutomationSourceAnnotation(
   if (!automationThreadId) {
     throw new Error("Expected the automation chat thread");
   }
-  const automationRun = await readLatestWorkflowAutomationRunFixture(
-    context,
-    automationId,
-  );
-  if (!automationRun) {
-    throw new Error("Expected the triggered automation run");
-  }
   const automationEvents = await chat.listThreadEvents(
     fixture.actor,
     automationThreadId,
   );
-  const automationInput = automationEvents.events.find((event) => {
+  const automationInputs = automationEvents.events.filter((event) => {
     return (
-      event.eventType === "input.prompt" && event.runId === automationRun.runId
+      event.eventType === "input.prompt" &&
+      event.runId !== undefined &&
+      event.userMessage.parts.some((part) => {
+        return (
+          part.type === "source" &&
+          part.kind === "agent" &&
+          part.runId === sourceRun.runId
+        );
+      })
     );
   });
+  expect(automationInputs).toHaveLength(1);
+  const [automationInput] = automationInputs;
   if (!automationInput || automationInput.eventType !== "input.prompt") {
     throw new Error("Expected the triggered automation input");
   }
   expect(
     automationInput.userMessage.parts.filter((part) => {
-      return (
-        part.type === "source" ||
-        part.type === "automation" ||
-        part.type === "goal"
-      );
+      return part.type === "source" || part.type === "automation";
     }),
   ).toStrictEqual([
     {
@@ -381,7 +349,7 @@ describe("chat-run-finished workflow automations", () => {
     });
     const otherThread = await chat.createThread(otherUser, {
       agentId: otherAgent.agentId,
-      model: "claude-sonnet-5",
+      model: null,
     });
     // Restore the fixture actor's session after acting as the other member.
     await bdd.readMe(fixture.actor);
@@ -408,7 +376,7 @@ describe("chat-run-finished workflow automations", () => {
     const fixture = await setupChatAutomationFixture();
     const workflowThread = await chat.createThread(fixture.actor, {
       agentId: fixture.agentId,
-      model: "claude-sonnet-5",
+      model: null,
     });
     const workflowId = await wf.createWorkflow(fixture.actor, {
       agentId: fixture.agentId,
@@ -495,7 +463,7 @@ describe("chat-run-finished workflow automations", () => {
         context,
         patternMatch,
       );
-      expect(fireAlwaysState).toMatchObject({ autonomyBudget: 10 });
+      expect(fireAlwaysState).toMatchObject({ autonomyBudget: 32 });
       expect(patternMatchState).toMatchObject({ autonomyBudget: 0 });
       await expect(
         readLatestWorkflowAutomationRunFixture(context, fireAlways),
@@ -523,231 +491,6 @@ describe("chat-run-finished workflow automations", () => {
         throw new Error("Expected a triggered automation run");
       }
       await claimChatRun(fixture.runnerGroup, automationRunId);
-    },
-  );
-
-  it("dispatches one real Goal completion automation without a successor", async () => {
-    const fixture = await setupChatAutomationFixture();
-    const run = await startWatchedChatRun(fixture, "finish existing Goal work");
-    const automationId = await createChatRunFinishedAutomation(fixture, {
-      chatThreadId: run.threadId,
-      runStatuses: ["completed"],
-    });
-    const goal = await seedGoalForRunFixture(
-      run.runId,
-      "remaining historical Goal",
-    );
-    const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-    await setLegacyGoalRunOriginFixture(run.runId, goal.id);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-    await expectAutomationFired(automationId);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-    await flushWaitUntilForTest();
-    await expectAutomationSourceAnnotation(fixture, automationId, run);
-    const history = await readGoalQueueStateFixture(run.threadId);
-    expect(history.eventIds).toStrictEqual([]);
-    expect(history.runIds).toStrictEqual([run.runId]);
-  }, 60_000);
-
-  it(
-    "fires a completed-run automation when the goal is blocked",
-    { timeout: 30_000 },
-    async () => {
-      const fixture = await setupChatAutomationFixture();
-      const run = await startWatchedChatRun(
-        fixture,
-        "finish after blocking the goal",
-      );
-      const automationId = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: ["completed"],
-      });
-      await createGoalForRun(
-        fixture.actor,
-        run.runId,
-        "Block the watched thread goal",
-      );
-      const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-      await setHistoricalGoalStatusFixture(run.runId, "blocked");
-      await expect(historicalGoalStatusFixture(run.runId)).resolves.toBe(
-        "blocked",
-      );
-
-      await completeChatRunOk(run.runId, sandboxHeaders);
-
-      await expectAutomationFired(automationId);
-      await expectAutomationSourceAnnotation(fixture, automationId, run);
-    },
-  );
-
-  it.each(["failed", "cancelled"] as const)(
-    "fires a %s-run automation while the historical Goal remains active",
-    { timeout: 30_000 },
-    async (terminalStatus) => {
-      expect.hasAssertions();
-      const fixture = await setupChatAutomationFixture();
-      const run = await startWatchedChatRun(
-        fixture,
-        `${terminalStatus} run pauses the goal`,
-      );
-      const automationId = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: [terminalStatus],
-      });
-      await createGoalForRun(
-        fixture.actor,
-        run.runId,
-        "Pause the watched thread goal",
-      );
-      const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-
-      if (terminalStatus === "failed") {
-        await webhooks.requestAgentComplete(
-          { runId: run.runId, exitCode: 1, error: "goal iteration failed" },
-          sandboxHeaders,
-          [200],
-        );
-      } else {
-        await api.requestCancelRun(fixture.actor, run.runId, [200]);
-      }
-
-      await expectGoalStatus(fixture.actor, run.runId, "active");
-      await expectAutomationFired(automationId);
-      await expectAutomationSourceAnnotation(fixture, automationId, run);
-    },
-  );
-
-  it(
-    "fires completion despite an unavailable historical Goal model",
-    { timeout: 60_000 },
-    async () => {
-      expect.hasAssertions();
-      const fixture = await setupChatAutomationFixture();
-      const firstRun = await startWatchedChatRun(
-        fixture,
-        "continue into a failed goal launch",
-      );
-      await createGoalForRun(
-        fixture.actor,
-        firstRun.runId,
-        "Pause after the continuation fails to launch",
-      );
-      const automationProvider = await misc.upsertOrgModelProvider(
-        fixture.actor,
-        {
-          type: "openai-api-key",
-          secret: "goal-stop-automation-openai-key",
-        },
-        [201],
-      );
-      if (automationProvider.status !== 201) {
-        throw new Error("Expected the automation model provider to be created");
-      }
-      await api.updateOrgModelPolicies(fixture.actor, [
-        {
-          model: "claude-sonnet-5",
-          isDefault: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: fixture.providerId,
-        },
-        {
-          model: "gpt-5.6-terra",
-          isDefault: false,
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: automationProvider.body.provider.id,
-        },
-      ]);
-      const automationThread = await chat.createThread(fixture.actor, {
-        agentId: fixture.agentId,
-        model: "gpt-5.6-terra",
-      });
-      const automationId = await createChatRunFinishedAutomation(
-        fixture,
-        {
-          chatThreadId: firstRun.threadId,
-          runStatuses: ["completed"],
-        },
-        { workflowChatThreadId: automationThread.id },
-      );
-      await misc.deleteOrgModelProvider(
-        fixture.actor,
-        "anthropic-api-key",
-        [204],
-      );
-
-      const sandboxHeaders = await claimChatRun(
-        fixture.runnerGroup,
-        firstRun.runId,
-      );
-      await completeChatRunOk(firstRun.runId, sandboxHeaders);
-      await flushWaitUntilForTest();
-
-      await expectGoalStatus(fixture.actor, firstRun.runId, "active");
-      await expectAutomationFired(automationId);
-      await expectAutomationSourceAnnotation(fixture, automationId, {
-        runId: firstRun.runId,
-        threadId: firstRun.threadId,
-      });
-    },
-  );
-
-  it(
-    "shows an error instead of firing when the watched run exhausts its budget",
-    { timeout: 30_000 },
-    async () => {
-      const fixture = await setupChatAutomationFixture();
-      const run = await startWatchedChatRun(fixture, "exhausted watched run");
-      const automationId = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-      });
-      await setRunAutonomyBudgetFixture(context, run.runId, 0);
-
-      const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-      await completeChatRunOk(run.runId, sandboxHeaders);
-
-      let automationThreadId: string | null = null;
-      await expect
-        .poll(async () => {
-          const automation = await accept(
-            automationsClient().get({
-              headers: authHeaders(),
-              params: { id: automationId },
-            }),
-            [200],
-          );
-          automationThreadId = automation.body.chatThreadId;
-          return automationThreadId;
-        })
-        .toStrictEqual(expect.any(String));
-      const exhaustedAutomationThreadId = automationThreadId;
-      if (!exhaustedAutomationThreadId) {
-        throw new Error("Expected the automation chat thread");
-      }
-
-      await expect
-        .poll(async () => {
-          const messages = await chat.listThreadEvents(
-            fixture.actor,
-            exhaustedAutomationThreadId,
-          );
-          return messages.events.find((event) => {
-            return event.eventType === "output.error";
-          });
-        })
-        .toMatchObject({
-          eventType: "output.error",
-          error: "AUTONOMY_BUDGET_EXHAUSTED",
-        });
-      await expect(
-        readWorkflowAutomationAutonomyFixture(context, automationId),
-      ).resolves.toMatchObject({
-        autonomyBudget: 10,
-        enabled: true,
-        lastRunId: null,
-      });
-      await expect(automationLastRunAt(automationId)).resolves.toBeNull();
     },
   );
 

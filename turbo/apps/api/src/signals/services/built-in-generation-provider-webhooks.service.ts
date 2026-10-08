@@ -5,7 +5,7 @@ import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
 import { webUrl } from "../../lib/web-url";
 
-type BuiltInGenerationProviderWebhookProvider = "fal" | "byteplus" | "minimax";
+type BuiltInGenerationProviderWebhookProvider = "fal";
 
 function webhookTokenPayload(args: {
   readonly provider: BuiltInGenerationProviderWebhookProvider;
@@ -50,18 +50,6 @@ export function verifyBuiltInGenerationProviderWebhookToken(args: {
   return timingSafeEqual(actual, expectedBuffer);
 }
 
-export function verifyJoggAiWebhookSignature(args: {
-  readonly body: string;
-  readonly secret: string;
-  readonly signature: string;
-}): boolean {
-  const expected = Buffer.from(
-    createHmac("sha256", args.secret).update(args.body).digest("hex"),
-  );
-  const actual = Buffer.from(args.signature);
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-
 export function falBuiltInGenerationWebhookUrl(args: {
   readonly generationId: string;
   readonly visualKey?: string;
@@ -74,50 +62,6 @@ export function falBuiltInGenerationWebhookUrl(args: {
     "token",
     signBuiltInGenerationProviderWebhookToken({
       provider: "fal",
-      generationId: args.generationId,
-      visualKey: args.visualKey,
-    }),
-  );
-  if (args.visualKey) {
-    baseUrl.searchParams.set("visualKey", args.visualKey);
-  }
-  return baseUrl.toString();
-}
-
-export function bytePlusBuiltInGenerationWebhookUrl(args: {
-  readonly generationId: string;
-  readonly visualKey?: string;
-}): string {
-  const baseUrl = new URL(
-    `/api/webhooks/built-in-generations/byteplus/${args.generationId}`,
-    apiBackendUrl() ?? webUrl(),
-  );
-  baseUrl.searchParams.set(
-    "token",
-    signBuiltInGenerationProviderWebhookToken({
-      provider: "byteplus",
-      generationId: args.generationId,
-      visualKey: args.visualKey,
-    }),
-  );
-  if (args.visualKey) {
-    baseUrl.searchParams.set("visualKey", args.visualKey);
-  }
-  return baseUrl.toString();
-}
-
-export function miniMaxBuiltInGenerationWebhookUrl(args: {
-  readonly generationId: string;
-  readonly visualKey?: string;
-}): string {
-  const baseUrl = new URL(
-    `/api/webhooks/built-in-generations/minimax/${args.generationId}`,
-    apiBackendUrl() ?? webUrl(),
-  );
-  baseUrl.searchParams.set(
-    "token",
-    signBuiltInGenerationProviderWebhookToken({
-      provider: "minimax",
       generationId: args.generationId,
       visualKey: args.visualKey,
     }),

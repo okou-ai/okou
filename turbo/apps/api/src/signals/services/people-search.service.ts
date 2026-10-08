@@ -27,7 +27,7 @@ import {
 } from "../utils";
 import {
   checkManagedCredits$,
-  recordManagedUsage$,
+  recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 
@@ -220,7 +220,7 @@ interface AuthedPeopleSearchArgs {
 interface CompletePeopleSearchArgs {
   readonly apiKey: string;
   readonly request: PeopleSearchRequest;
-  readonly recordUsage: () => Promise<number>;
+  readonly recordUsage: () => Promise<number | null>;
 }
 
 type NormalizedProfilesResult =
@@ -657,7 +657,7 @@ function runIdForUsage(auth: AuthContext): string | undefined {
 function successBody(
   request: PeopleSearchRequest,
   profiles: readonly PeopleSearchProfile[],
-  creditsCharged: number,
+  creditsCharged: number | null,
 ): PeopleSearchResponse {
   return {
     query: request.query,
@@ -738,7 +738,7 @@ export const peopleSearch$ = command(
         recordUsage: () => {
           // Provider work has completed, so client disconnect must not skip billing.
           return set(
-            recordManagedUsage$,
+            recordSuccessfulManagedUsage$,
             {
               actor: {
                 orgId: args.auth.orgId,

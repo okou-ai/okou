@@ -109,7 +109,7 @@ function normalizeResultEvent(event: AgentEvent): {
 
 /**
  * Remove supplied private citation metadata from an admitted event batch.
- * Pi Guest and API-first producers normalize hidden text before admission.
+ * Pi Guest producers normalize hidden text before admission.
  */
 export function normalizeRunOutputEvents(
   payload: EventConsumerPayload,

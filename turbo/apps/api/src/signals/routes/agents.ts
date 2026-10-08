@@ -18,8 +18,11 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
-import { publishHomeTaskRecommendationsChangedSafely } from "../external/realtime";
+import { db$, writeDb$, type Db } from "../external/db";
+import {
+  publishHomeTaskRecommendationsChangedSafely,
+  publishUserSignal,
+} from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
@@ -34,26 +37,19 @@ import {
   visibleJoinedAgentCondition,
 } from "../services/agent-data.service";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
-import {
-  lockCanonicalAgentMutation,
-  lockCanonicalAgentPublicLimit,
-} from "../services/agent-mutation-lock.service";
-import { buildAgentIdentityPrompt } from "../services/agent-identity-prompt.service";
-import {
-  invalidatePiStableContext,
-  type PiStableContextInvalidationOptions,
-} from "../services/pi-stable-context-generation.service";
+
 import {
   deleteAgentInstructionsStorage$,
   writeAgentInstructionsStorage$,
 } from "../services/agent-instructions-storage.service";
 import {
-  updateUserBuiltinConnectors,
+  updateUserBuiltinConnectors$,
   updateUserCustomConnectors,
 } from "../services/user-connectors.service";
 import { onRejection } from "../utils";
 import type { RouteEntry } from "../route-entry";
 
+// This is a soft limit: concurrent requests may both observe an available slot.
 const PUBLIC_AGENT_LIMIT = 7;
 
 interface AgentUpdateBody {
@@ -132,9 +128,6 @@ function buildAgentUpsertConflictSet(body: AgentUpdateBody, updatedAt: Date) {
     ...(body.description !== undefined && { description: body.description }),
     ...(body.sound !== undefined && { sound: body.sound }),
     ...(body.avatarUrl !== undefined && { avatarUrl: body.avatarUrl }),
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     ...(body.visibility !== undefined && { visibility: body.visibility }),
   };
 }
@@ -256,31 +249,6 @@ function validateAgentVisibilityUpdate(
   );
 }
 
-function agentIdentityInvalidationOptions(agent: {
-  readonly agentId: string;
-  readonly defaultAgentId: string | null;
-  readonly displayName: string | null;
-  readonly description: string | null;
-  readonly sound: string | null;
-}): PiStableContextInvalidationOptions {
-  const agentIdentity =
-    buildAgentIdentityPrompt({
-      id: agent.agentId,
-      defaultAgentId: agent.defaultAgentId,
-      displayName: agent.displayName,
-      description: agent.description,
-      sound: agent.sound,
-    }) ?? "";
-  return {
-    transformInput(input) {
-      return {
-        ...input,
-        prompt: { ...input.prompt, agentIdentity },
-      };
-    },
-  };
-}
-
 async function readAgentForResponse(
   writeDb: Pick<Db, "select">,
   orgId: string,
@@ -295,9 +263,6 @@ async function readAgentForResponse(
       description: agents.description,
       sound: agents.sound,
       avatarUrl: agents.avatarUrl,
-      modelProviderId: agents.modelProviderId,
-      selectedModel: agents.selectedModel,
-      preferPersonalProvider: agents.preferPersonalProvider,
       visibility: agents.visibility,
     })
     .from(agents)
@@ -318,7 +283,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const writeDb = set(writeDb$);
-  const visibility = body.data.visibility ?? "public";
+  const visibility = body.data.visibility ?? "private";
 
   const limitError =
     visibility === "public"
@@ -345,9 +310,6 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     description: body.data.description ?? null,
     sound: body.data.sound ?? null,
     avatarUrl,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility,
   };
 
@@ -364,10 +326,6 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
 
     const transactionResult = await writeDb.transaction(async (tx) => {
-      await lockCanonicalAgentMutation(tx, agentId);
-      await lockCanonicalAgentPublicLimit(tx, auth.orgId);
-      signal.throwIfAborted();
-
       if (visibility === "public") {
         const [publicAgentCount] = await tx
           .select({ value: count() })
@@ -466,7 +424,7 @@ const getAgentUserConnectorsInner$ = computed(async (get) => {
       agentId: params.id,
     }),
   );
-  const resolver = await get(connectorActionResolver());
+  const resolver = await get(connectorActionResolver(enabledConnectorSlugs));
   const availableEnabledConnectorSlugs: (typeof enabledConnectorSlugs)[number][] =
     [];
   for (const connectorSlug of enabledConnectorSlugs) {
@@ -533,9 +491,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const writeDb = set(writeDb$);
   const result = await writeDb.transaction(async (tx) => {
-    await lockCanonicalAgentMutation(tx, params.id);
-    await lockCanonicalAgentPublicLimit(tx, auth.orgId);
-
     await tx
       .select({ id: agents.id })
       .from(agents)
@@ -590,11 +545,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (!agent) {
       throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
-    await invalidatePiStableContext(
-      tx,
-      { orgId: auth.orgId, agentId: params.id },
-      agentIdentityInvalidationOptions(agent),
-    );
     return { agent };
   });
   signal.throwIfAborted();
@@ -626,9 +576,6 @@ const updateAgentMetadataInner$ = command(
 
     const writeDb = set(writeDb$);
     const result = await writeDb.transaction(async (tx) => {
-      await lockCanonicalAgentMutation(tx, params.id);
-      await lockCanonicalAgentPublicLimit(tx, auth.orgId);
-
       await tx
         .select({ id: agents.id })
         .from(agents)
@@ -692,11 +639,6 @@ const updateAgentMetadataInner$ = command(
       if (!agent) {
         throw new Error(`Canonical Agent missing after update: ${params.id}`);
       }
-      await invalidatePiStableContext(
-        tx,
-        { orgId: auth.orgId, agentId: params.id },
-        agentIdentityInvalidationOptions(agent),
-      );
       return { agent };
     });
     signal.throwIfAborted();
@@ -712,13 +654,11 @@ const updateAgentMetadataInner$ = command(
   },
 );
 
-const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+const initialDeleteAgent$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const member = { userId: auth.userId, role: auth.orgRole ?? "member" };
   const params = get(pathParamsOf(agentsByIdContract.delete));
-
-  const writeDb = set(writeDb$);
-  const [agent] = await writeDb
+  const db = get(db$);
+  const [agent] = await db
     .select({
       id: agents.id,
       owner: agents.owner,
@@ -727,6 +667,15 @@ const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .from(agents)
     .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
     .limit(1);
+  return agent;
+});
+
+const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const member = { userId: auth.userId, role: auth.orgRole ?? "member" };
+  const params = get(pathParamsOf(agentsByIdContract.delete));
+
+  const agent = await get(initialDeleteAgent$);
   signal.throwIfAborted();
 
   if (!agent) {
@@ -814,6 +763,11 @@ const updateAgentCustomConnectorsInner$ = command(
       return validationError(updated.message);
     }
 
+    await publishUserSignal([auth.userId], "composerAgentConnectorsChanged", {
+      agentId: params.id,
+    });
+    signal.throwIfAborted();
+
     return {
       status: 200 as const,
       body: {
@@ -866,7 +820,7 @@ const updateAgentUserConnectorsInner$ = command(
       // discovery surface. Validate that each connector can execute, but do
       // not consult feature switches or authored visibility: rollout changes
       // must not invalidate direct API updates or an existing agent config.
-      const resolver = await get(connectorActionResolver());
+      const resolver = await get(connectorActionResolver(uniqueConnectorSlugs));
       signal.throwIfAborted();
       const resolved = await resolver.resolveSlugs({
         connectorSlugs: uniqueConnectorSlugs,
@@ -880,7 +834,7 @@ const updateAgentUserConnectorsInner$ = command(
       }
     }
 
-    const updated = await updateUserBuiltinConnectors(writeDb, {
+    const updated = await set(updateUserBuiltinConnectors$, {
       orgId: auth.orgId,
       userId: auth.userId,
       agentId: params.id,
@@ -893,6 +847,10 @@ const updateAgentUserConnectorsInner$ = command(
     }
 
     const enabledConnectorSlugs = [...updated.enabledConnectorSlugs];
+    await publishUserSignal([auth.userId], "composerAgentConnectorsChanged", {
+      agentId: params.id,
+    });
+    signal.throwIfAborted();
     await publishHomeTaskRecommendationsChangedSafely(
       { userId: auth.userId, orgId: auth.orgId },
       { agentId: params.id },

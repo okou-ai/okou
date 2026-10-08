@@ -11,6 +11,8 @@ import {
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { VNC_RSA_AES_SECURITY_TYPES } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   act,
   fireEvent,
@@ -37,7 +39,11 @@ const auth = Object.freeze({
     memberships: [{ id: "org_vnc_settings" }],
   },
 });
-const host = Object.freeze<VncConnectionResponse>({
+type CredentialedVncConnection = Extract<
+  VncConnectionResponse,
+  { credentialId: string }
+>;
+const host = Object.freeze<CredentialedVncConnection>({
   id: "b0000000-0000-4000-8000-000000000001",
   displayName: "Design workstation",
   host: "desktop.example.com",
@@ -62,7 +68,7 @@ type PlainCredential = Extract<
   VncCredentialResponse,
   { authMethod: "username_password" }
 >;
-const plainHost = Object.freeze<VncConnectionResponse>({
+const plainHost = Object.freeze<CredentialedVncConnection>({
   ...host,
   id: "b0000000-0000-4000-8000-000000000002",
   displayName: "Plain workstation",
@@ -81,6 +87,28 @@ const plainCredential = Object.freeze<PlainCredential>({
   createdAt: plainHost.createdAt,
   updatedAt: plainHost.updatedAt,
 });
+type QemuScramCredential = Extract<
+  VncCredentialResponse,
+  { authMethod: "qemu_scram_sha256" }
+>;
+const qemuHost = Object.freeze<CredentialedVncConnection>({
+  ...plainHost,
+  id: "b0000000-0000-4000-8000-000000000009",
+  displayName: "QEMU workstation",
+  credentialId: "d0000000-0000-4000-8000-000000000009",
+  credentialName: "QEMU SCRAM login",
+  security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
+});
+const qemuCredential = Object.freeze<QemuScramCredential>({
+  id: qemuHost.credentialId,
+  name: qemuHost.credentialName,
+  authMethod: "qemu_scram_sha256",
+  username: "operator",
+  revision: 1,
+  hosts: [{ id: qemuHost.id, displayName: qemuHost.displayName }],
+  createdAt: qemuHost.createdAt,
+  updatedAt: qemuHost.updatedAt,
+});
 const caBundle =
   "-----BEGIN CERTIFICATE-----\nTEST-CA-CERTIFICATE\n-----END CERTIFICATE-----\n";
 const sshHost = Object.freeze<SshConnectionResponse>({
@@ -96,7 +124,7 @@ const sshHost = Object.freeze<SshConnectionResponse>({
   createdAt: host.createdAt,
   updatedAt: host.updatedAt,
 });
-const tunneledHost = Object.freeze<VncConnectionResponse>({
+const tunneledHost = Object.freeze<CredentialedVncConnection>({
   ...host,
   id: "b0000000-0000-4000-8000-000000000003",
   displayName: "Private desktop",
@@ -134,11 +162,26 @@ function mockSettings(
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: data.sshConnections });
   });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [],
+        vnc: data.connections.map((connection) => {
+          return {
+            connectionId: connection.id,
+            displayName: connection.displayName,
+            defaultEnabled: false,
+          };
+        }),
+      });
+    },
+  );
   return data;
 }
 
-function page(path = "/connectors/vnc") {
-  return setupPage({
+async function page(path = "/connectors?scope=remote-control&type=vnc") {
+  await setupPage({
     context,
     path,
     auth,
@@ -146,8 +189,81 @@ function page(path = "/connectors/vnc") {
   });
 }
 
+async function openAddHostPage() {
+  await page();
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add host");
+    }),
+  );
+}
+
+test("VNC host settings update the chat remote access default", async () => {
+  mockSettings();
+  let enabled = false;
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [],
+        vnc: [
+          {
+            connectionId: host.id,
+            displayName: host.displayName,
+            defaultEnabled: enabled,
+          },
+        ],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.updateHostDefault,
+    ({ params, body, respond }) => {
+      expect(params.protocol).toBe("vnc");
+      expect(params.connectionId).toBe(host.id);
+      enabled = body.enabled;
+      return respond(200, {
+        connectionId: host.id,
+        displayName: host.displayName,
+        defaultEnabled: enabled,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=vnc",
+    auth,
+    featureSwitches: {
+      [FeatureSwitchKey.VncAccess]: true,
+    },
+  });
+  const toggle = await screen.findByRole("switch", {
+    name: "Enabled by default for chats",
+  });
+  await waitFor(() => {
+    expect(toggle).not.toBeDisabled();
+  });
+  await userEvent.click(toggle);
+  await waitFor(() => {
+    expect(enabled).toBeTruthy();
+    expect(
+      screen.getByRole("switch", { name: "Enabled by default for chats" }),
+    ).toBeChecked();
+  });
+});
+
 async function choose(dialog: HTMLElement, label: string, name: string) {
-  await userEvent.click(within(dialog).getByLabelText(label));
+  if (label === "Connection route") {
+    click(
+      getAction(
+        "radio",
+        name,
+        within(dialog).getByRole("radiogroup", { name: label }),
+      ),
+    );
+    return;
+  }
+  await userEvent.click(await within(dialog).findByLabelText(label));
   await userEvent.click(await screen.findByRole("option", { name }));
 }
 
@@ -168,56 +284,58 @@ async function fillHost(dialog: HTMLElement) {
   );
 }
 
-test("The VNC connector page omits the redundant refresh action", async () => {
+test("VNC management omits the redundant refresh action", async () => {
   mockSettings();
   await page();
   await screen.findByText(host.displayName);
-  expect(
-    screen.getByRole("heading", { name: "VNC remote access" }),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByText("Let your agents view and control remote desktops."),
-  ).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "VNC" })).toBeInTheDocument();
   expect(queryAction("button", "Refresh")).toBeNull();
-  expect(getAction("radio", "Hosts")).toHaveAttribute("aria-checked", "true");
+  expect(getAction("radio", "Connections")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
   expect(getAction("radio", "Credentials")).toBeInTheDocument();
 });
 
-test("The VNC hosts tab shows only its configured count above the host list", async () => {
-  mockSettings();
+test("Returning to Connectors refreshes VNC hosts changed elsewhere", async () => {
+  const data = mockSettings();
   await page();
-  await screen.findByText("1 host configured");
-  expect(
-    screen.queryByText(
-      "Saving a host does not test its connection. Agents choose shared or exclusive mode when starting a session; the VNC server controls admission.",
+  await screen.findByText(host.displayName);
+
+  data.connections = [{ ...host, displayName: "Updated workstation" }];
+  click(
+    getAction(
+      "link",
+      "Connectors",
+      screen.getByRole("navigation", { name: "Sidebar" }),
     ),
-  ).toBeNull();
+  );
+  await waitFor(() => {
+    expect(window.location.search).toBe("");
+  });
+  click(screen.getByTestId("connectors-scope-remote-control"));
+  await screen.findByText("Updated workstation");
+  expect(screen.queryByText(host.displayName)).toBeNull();
 });
 
-test.each([
-  { count: 0, label: "0 credentials configured" },
-  { count: 1, label: "1 credential configured" },
-  { count: 2, label: "2 credentials configured" },
-])(
-  "Shows the configured credential count independently of hosts for $count credentials",
-  async ({ count, label }) => {
-    const credentials = Array.from({ length: count }, (_, index) => {
-      return {
-        ...credential,
-        id: `d0000000-0000-4000-8000-00000000000${index}`,
-        name: `Login ${index}`,
-        hosts: [],
-      };
-    });
-    mockSettings({ connections: [], credentials });
-    await page();
-    await screen.findByText("0 hosts configured");
-    click(getAction("radio", "Credentials"));
-    await expect(screen.findByText(label)).resolves.toBeInTheDocument();
-    expect(getAction("button", "Add credential")).toBeEnabled();
-    expect(screen.queryByText("0 hosts configured")).toBeNull();
-  },
-);
+test("Returning to Remote control does not reopen an abandoned VNC dialog", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  await page("/connectors");
+  click(screen.getByTestId("connectors-scope-remote-control"));
+  const section = await screen.findByRole("region", { name: "VNC" });
+  click(getAction("button", "Add host", section));
+  await screen.findByRole("dialog", { name: "Add host" });
+
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.search).toBe("");
+  });
+  click(screen.getByTestId("connectors-scope-remote-control"));
+  await waitFor(() => {
+    expect(window.location.search).toBe("?scope=remote-control");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
 
 test("An owner reuses a VNC credential without exposing its password", async () => {
   mockSettings({ connections: [] });
@@ -226,7 +344,7 @@ test("An owner reuses a VNC credential without exposing its password", async () 
     requests.push(body);
     return respond(201, host);
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
@@ -251,6 +369,134 @@ test("An owner reuses a VNC credential without exposing its password", async () 
   ]);
 });
 
+test("X509None is an explicit credentialless choice with persistent client-authentication warning", async () => {
+  const noneHost: VncConnectionResponse = {
+    id: "b0000000-0000-4000-8000-000000000010",
+    displayName: "Owner selected no VNC password",
+    host: "desktop.example.com",
+    port: 5900,
+    security: { type: "x509_none", trust: { mode: "system" } },
+    credential: { type: "none" },
+    generation: 1,
+    createdAt: host.createdAt,
+    updatedAt: host.updatedAt,
+  };
+  mockSettings({ connections: [noneHost], credentials: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, { ...noneHost, id: body.id });
+  });
+  await page();
+  await screen.findByText(noneHost.displayName);
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "does not authenticate you to the VNC server",
+  );
+  click(getAction("button", "Add host"));
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await choose(
+    dialog,
+    "Security profile",
+    "Encrypted without a VNC password (X509None)",
+  );
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "Anyone else who can reach that server",
+  );
+  expect(within(dialog).queryByLabelText("Credential")).toBeNull();
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Second desktop",
+      host: "second.example.com",
+      port: 5900,
+      transport: { type: "direct" },
+      credential: { type: "none" },
+      security: { type: "x509_none", trust: { mode: "system" } },
+    },
+  ]);
+});
+
+test.each([
+  [
+    "Client certificate without VNC password (X509None)",
+    "client_certificate",
+    "x509_none",
+    false,
+  ],
+  [
+    "Client certificate with VNC password (X509Vnc)",
+    "client_certificate_vnc_password",
+    "x509_vnc",
+    true,
+  ],
+] as const)(
+  "Owner explicitly selects %s without leaking the key to metadata",
+  async (label, method, type, passwordRequired) => {
+    mockSettings({ connections: [], credentials: [] });
+    const requests: unknown[] = [];
+    const certHost: CredentialedVncConnection = {
+      ...host,
+      credentialId: "d0000000-0000-4000-8000-000000000050",
+      credentialName: "QEMU identity",
+      security: { type, trust: { mode: "system" } },
+      clientCertificateAuthentication: method,
+    };
+    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+      requests.push(body);
+      return respond(201, { ...certHost, id: body.id });
+    });
+    await openAddHostPage();
+    const dialog = await screen.findByRole("dialog", { name: "Add host" });
+    await fillHost(dialog);
+    await choose(dialog, "Security profile", label);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "does not prove that the VNC server checks it",
+    );
+    await choose(dialog, "Credential", "Create new credential");
+    await fill(
+      within(dialog).getByLabelText("Credential name"),
+      "QEMU identity",
+    );
+    await fill(
+      within(dialog).getByLabelText("Client certificate chain (PEM)"),
+      "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----",
+    );
+    await fill(
+      within(dialog).getByLabelText("Unencrypted PKCS#8 private key (PEM)"),
+      "-----BEGIN PRIVATE KEY-----\nTEST\n-----END PRIVATE KEY-----",
+    );
+    expect(within(dialog).queryByLabelText("VNC password") === null).toBe(
+      !passwordRequired,
+    );
+    if (passwordRequired) {
+      await fill(within(dialog).getByLabelText("VNC password"), "secret");
+    }
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      expect(requests).toHaveLength(1);
+    });
+    expect(requests[0]).toMatchObject({
+      credential: {
+        create: {
+          authentication: {
+            method,
+            certificateChain: expect.stringContaining("BEGIN CERTIFICATE"),
+            privateKey: expect.stringContaining("BEGIN PRIVATE KEY"),
+            ...(passwordRequired ? { password: "secret" } : {}),
+          },
+        },
+      },
+      security: { type },
+    });
+  },
+);
+
 test("An owner creates an SSH-backed route with a distinct RFB destination and certificate identity", async () => {
   mockSettings({ connections: [], sshConnections: [sshHost] });
   const requests: unknown[] = [];
@@ -258,7 +504,7 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
     requests.push(body);
     return respond(201, tunneledHost);
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   await choose(dialog, "Connection route", "Through saved SSH host");
@@ -277,8 +523,12 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
     "desktop.internal.example.com",
   );
   await choose(dialog, "Connection route", "Through saved SSH host");
-  expect(within(dialog).getByLabelText("SSH host")).toHaveTextContent(
-    "Desktop gateway",
+  await expect(
+    within(dialog).findByLabelText("SSH host"),
+  ).resolves.toHaveTextContent("Desktop gateway");
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Second desktop",
   );
 
   click(getAction("button", "Save", dialog));
@@ -302,6 +552,101 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
   ]);
 });
 
+test.each<{
+  type: "cloudflare_access" | "tailscale";
+  port: number;
+  destination: string;
+  warning: string;
+}>([
+  {
+    type: "cloudflare_access",
+    port: 443,
+    destination: "gateway.example.com",
+    warning: "Rebind it or explicitly choose Direct in SSH settings",
+  },
+  {
+    type: "tailscale",
+    port: 22,
+    destination: "100.100.10.2",
+    warning:
+      "The SSH host for this VNC connection needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
+  },
+])(
+  "A VNC host explains its retained $type SSH carrier and recovers after SSH refresh",
+  async ({ type, port, destination, warning }) => {
+    const retained: SshConnectionResponse = {
+      ...sshHost,
+      host: destination,
+      port,
+      learnedHostKey: {
+        algorithm: "ssh-ed25519",
+        fingerprint: "SHA256:retained",
+      },
+      transport:
+        type === "tailscale"
+          ? { type: "tailscale", needsRebind: true }
+          : { type: "cloudflare_access", needsRebind: true },
+    };
+    const settings = mockSettings({
+      connections: [host, tunneledHost],
+      sshConnections: [retained],
+    });
+    await page();
+    const card = await screen.findByRole("heading", {
+      name: tunneledHost.displayName,
+    });
+    const blocked = card.closest("article");
+    expect(blocked).not.toBeNull();
+    const details = within(blocked!);
+    expect(details.getByText("SSH needs rebind")).toBeInTheDocument();
+    expect(details.getByRole("alert")).toHaveTextContent(warning);
+    expect(details.getByText(/SSH host: Desktop gateway/u)).toBeInTheDocument();
+    expect(
+      details.getByText("RFB destination: 127.0.0.1:5901"),
+    ).toBeInTheDocument();
+    expect(details.getByText("Desktop login")).toBeInTheDocument();
+    expect(
+      details.getByText(
+        "TLS certificate identity: desktop.internal.example.com",
+      ),
+    ).toBeInTheDocument();
+    const direct = screen.getByRole("heading", { name: host.displayName });
+    expect(
+      within(direct.closest("article")!).getByText("Configured"),
+    ).toBeInTheDocument();
+    expect(within(direct.closest("article")!).queryByRole("alert")).toBeNull();
+
+    settings.sshConnections = [
+      {
+        ...retained,
+        generation: retained.generation + 1,
+        transport:
+          type === "tailscale"
+            ? {
+                type: "tailscale",
+                configId: "f0000000-0000-4000-8000-000000000001",
+              }
+            : {
+                type: "cloudflare_access",
+                configId: "f0000000-0000-4000-8000-000000000001",
+              },
+      },
+    ];
+    context.mocks.ably.trigger("ssh:changed", {
+      orgId: auth.organization.activeOrg.id,
+    });
+    await waitFor(() => {
+      expect(details.getByText("Configured")).toBeInTheDocument();
+    });
+    expect(details.queryByRole("alert")).toBeNull();
+    expect(details.getByText(/SSH host: Desktop gateway/u)).toBeInTheDocument();
+    expect(
+      details.getByText("RFB destination: 127.0.0.1:5901"),
+    ).toBeInTheDocument();
+    expect(details.getByText("Desktop login")).toBeInTheDocument();
+  },
+);
+
 test("An SSH-backed card shows topology and a missing saved SSH host blocks edits", async () => {
   mockSettings({ connections: [tunneledHost], sshConnections: [] });
   const requests: unknown[] = [];
@@ -313,7 +658,7 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
         ...host,
         id: tunneledHost.id,
         displayName: tunneledHost.displayName,
-        host: tunneledHost.host,
+        host: "desktop.example.com",
         port: tunneledHost.port,
         security: tunneledHost.security,
         generation: tunneledHost.generation + 1,
@@ -337,14 +682,20 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
 
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog", { name: "Edit host" });
-  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
-    "Through saved SSH host",
-  );
+  expect(getAction("radio", "Through saved SSH host", dialog)).toBeChecked();
   expect(
     within(dialog).getByText(/The selected SSH host is no longer available/u),
   ).toBeInTheDocument();
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   await choose(dialog, "Connection route", "Direct from Runner");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "Private and loopback IP addresses require a saved SSH host",
+  );
+  await fill(
+    within(dialog).getByLabelText("RFB destination host"),
+    "desktop.example.com",
+  );
   expect(getAction("button", "Save", dialog)).toBeEnabled();
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
@@ -356,7 +707,7 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
       body: {
         expectedGeneration: tunneledHost.generation,
         displayName: tunneledHost.displayName,
-        host: tunneledHost.host,
+        host: "desktop.example.com",
         port: tunneledHost.port,
         transport: { type: "direct" },
         credential: { id: tunneledHost.credentialId },
@@ -366,6 +717,96 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
   ]);
 });
 
+test("Editing an Apple IPv6 loopback host preserves its SSH route and custom port", async () => {
+  const appleHost: VncConnectionResponse = {
+    ...host,
+    displayName: "Mac IPv6 desktop",
+    host: "::1",
+    port: 5905,
+    security: { type: "apple_dh" },
+    transport: { type: "ssh", connectionId: sshHost.id },
+  };
+  const appleCredential: VncCredentialResponse = {
+    ...credential,
+    authMethod: "apple_dh_username_password",
+    username: "operator",
+    hosts: [{ id: appleHost.id, displayName: appleHost.displayName }],
+  };
+  mockSettings({
+    connections: [appleHost],
+    credentials: [appleCredential],
+    sshConnections: [sshHost],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    return respond(200, { ...appleHost, generation: appleHost.generation + 1 });
+  });
+  await page();
+  await screen.findByText(appleHost.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Mac IPv6 desktop",
+  );
+  expect(
+    within(dialog).getByLabelText("RFB destination host"),
+  ).toHaveTextContent("::1");
+  expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
+    5905,
+  );
+  await expect(
+    within(dialog).findByLabelText("SSH host"),
+  ).resolves.toHaveTextContent(sshHost.displayName);
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      expectedGeneration: appleHost.generation,
+      displayName: "Mac IPv6 desktop",
+      host: "::1",
+      port: 5905,
+      transport: { type: "ssh", connectionId: sshHost.id },
+      credential: { id: appleCredential.id },
+      security: { type: "apple_dh" },
+    },
+  ]);
+});
+
+test("Direct route explains canonical IPv6 loopback and private mapped literals", async () => {
+  mockSettings({ connections: [], credentials: [credential] });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  const destination = within(dialog).getByLabelText("RFB destination host");
+  for (const address of [
+    "127.0.0.1.",
+    "0:0:0:0:0:0:0:1",
+    "::1.",
+    "::ffff:127.0.0.1",
+    "::ffff:10.2.3.4",
+    "fc00::1",
+    "febf::1",
+  ]) {
+    await fill(destination, address);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Private and loopback IP addresses require a saved SSH host",
+    );
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+  }
+  await fill(destination, "::ffff:8.8.8.8");
+  expect(within(dialog).queryByRole("alert")).toBeNull();
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+});
+
 test("Inline password creation preserves spaces and sends the selected custom certificate trust", async () => {
   mockSettings({ connections: [] });
   const requests: unknown[] = [];
@@ -373,7 +814,7 @@ test("Inline password creation preserves spaces and sends the selected custom ce
     requests.push(body);
     return respond(201, host);
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   const credentialFields = within(dialog).getByRole("group", {
@@ -420,83 +861,130 @@ test("Inline password creation preserves spaces and sends the selected custom ce
   expect(secret).toHaveValue("");
 });
 
-test.each([
-  { trust: "system" as const, trustLabel: "System certificate authorities" },
-  {
-    trust: "custom_ca" as const,
-    trustLabel: "Custom certificate authorities",
-  },
-])(
-  "Inline X509Plain creation sends exact username/password and $trust trust",
-  async ({ trust, trustLabel }) => {
-    mockSettings({ connections: [], credentials: [] });
-    const requests: unknown[] = [];
-    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
-      requests.push(body);
-      return respond(201, plainHost);
-    });
-    await page("/connectors/vnc?add=1");
-    const dialog = await screen.findByRole("dialog", { name: "Add host" });
-    await fillHost(dialog);
-    await choose(
-      dialog,
-      "Security profile",
-      "Encrypted username and password (X509Plain)",
-    );
-    await choose(dialog, "Credential", "Create new credential");
-    await fill(within(dialog).getByLabelText("Credential name"), "Plain login");
-    await fill(within(dialog).getByLabelText("Username"), " operator ");
-    const secret = within(dialog).getByLabelText("Password");
-    expect(secret).toHaveAttribute("type", "password");
-    expect(secret).toHaveValue("");
-    await fill(secret, " 密码 with spaces ");
-    if (trust === "custom_ca") {
-      await choose(dialog, "Server certificate trust", trustLabel);
-      await fill(
-        within(dialog).getByLabelText("CA certificates (PEM)"),
-        caBundle,
-      );
-    }
-    click(getAction("button", "Save", dialog));
-    await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    expect(requests).toStrictEqual([
-      {
-        id: expect.any(String),
-        displayName: "Second desktop",
-        host: "second.example.com",
-        port: 5900,
-        transport: { type: "direct" },
-        credential: {
-          create: {
-            name: "Plain login",
-            authentication: {
-              method: "username_password",
-              username: " operator ",
-              password: " 密码 with spaces ",
-            },
+test("Inline X509Plain creation sends exact username/password and custom_ca trust", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, plainHost);
+  });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await choose(
+    dialog,
+    "Security profile",
+    "Encrypted username and password (X509Plain)",
+  );
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(within(dialog).getByLabelText("Credential name"), "Plain login");
+  await fill(within(dialog).getByLabelText("Username"), " operator ");
+  const secret = within(dialog).getByLabelText("Password");
+  expect(secret).toHaveAttribute("type", "password");
+  expect(secret).toHaveValue("");
+  await fill(secret, " 密码 with spaces ");
+  await choose(
+    dialog,
+    "Server certificate trust",
+    "Custom certificate authorities",
+  );
+  await fill(within(dialog).getByLabelText("CA certificates (PEM)"), caBundle);
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Second desktop",
+      host: "second.example.com",
+      port: 5900,
+      transport: { type: "direct" },
+      credential: {
+        create: {
+          name: "Plain login",
+          authentication: {
+            method: "username_password",
+            username: " operator ",
+            password: " 密码 with spaces ",
           },
         },
-        security: {
-          type: "x509_plain",
-          trust:
-            trust === "system"
-              ? { mode: "system" }
-              : { mode: "custom_ca", caBundle },
+      },
+      security: {
+        type: "x509_plain",
+        trust: { mode: "custom_ca", caBundle },
+      },
+    },
+  ]);
+  expect(secret).toHaveValue("");
+});
+
+test("QEMU SCRAM creates only its explicit X509SASL pair and keeps its password out of state", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, qemuHost);
+  });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await choose(dialog, "Security profile", "QEMU SCRAM-SHA-256 (X509SASL)");
+  expect(within(dialog).getByText(/subtype 263 only/u)).toBeInTheDocument();
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "QEMU SCRAM login",
+  );
+  const username = within(dialog).getByLabelText("Username");
+  const password = within(dialog).getByLabelText("Password");
+  expect(username).toHaveAttribute("pattern", "(?!.*[,=])[!-~]{1,255}");
+  expect(password).toHaveAttribute("pattern", "[ -~]{1,1023}");
+  await fill(username, "operator");
+  await fill(password, " secret ");
+  await choose(
+    dialog,
+    "Server certificate trust",
+    "Custom certificate authorities",
+  );
+  await fill(within(dialog).getByLabelText("CA certificates (PEM)"), caBundle);
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Second desktop",
+      host: "second.example.com",
+      port: 5900,
+      transport: { type: "direct" },
+      credential: {
+        create: {
+          name: "QEMU SCRAM login",
+          authentication: {
+            method: "qemu_scram_sha256",
+            username: "operator",
+            password: " secret ",
+          },
         },
       },
-    ]);
-    expect(secret).toHaveValue("");
-  },
-);
+      security: {
+        type: "qemu_x509_sasl",
+        trust: { mode: "custom_ca", caBundle },
+      },
+    },
+  ]);
+  expect(password).toHaveValue("");
+  expect(document.body.textContent).not.toContain(" secret ");
+});
 
 test("Profile selection filters credentials and clears incompatible choices", async () => {
   mockSettings({
     connections: [],
     credentials: [credential, plainCredential],
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await waitFor(() => {
     expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
@@ -527,27 +1015,278 @@ test("Profile selection filters credentials and clears incompatible choices", as
   );
 });
 
-test("Switching profiles clears inline authentication drafts", async () => {
-  mockSettings({ connections: [], credentials: [] });
-  await page("/connectors/vnc?add=1");
+test("Name stays first and a later profile choice never rewrites the earlier draft", async () => {
+  mockSettings({ connections: [], credentials: [], sshConnections: [sshHost] });
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
-  const classicSecret = await within(dialog).findByLabelText("VNC password");
-  await fill(classicSecret, "classic");
-  await choose(
-    dialog,
-    "Security profile",
-    "Encrypted username and password (X509Plain)",
+  expect(within(dialog).getAllByRole("textbox")[0]).toHaveAccessibleName(
+    "Display name",
   );
-  expect(classicSecret).toHaveValue("");
-  expect(within(dialog).queryByLabelText("Password")).toBeNull();
-  await choose(dialog, "Credential", "Create new credential");
-  await fill(within(dialog).getByLabelText("Username"), "operator");
-  const plainSecret = within(dialog).getByLabelText("Password");
-  await fill(plainSecret, "plain secret");
+  await fill(within(dialog).getByLabelText("Display name"), "Office desktop");
+  await fill(
+    within(dialog).getByLabelText("RFB destination host"),
+    "desktop.example.com",
+  );
+  await choose(dialog, "Security profile", "Mac VNC (Apple DH)");
+  expect(
+    within(dialog).getByText(
+      /Standalone macOS Screen Sharing remains unverified/u,
+    ),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Office desktop",
+  );
+  expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
+  expect(
+    within(dialog).getByLabelText("RFB destination host"),
+  ).toHaveTextContent("127.0.0.1");
   await choose(dialog, "Security profile", "Encrypted VNC (X509Vnc)");
-  expect(plainSecret).toHaveValue("");
-  expect(within(dialog).queryByLabelText("VNC password")).toBeNull();
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Office desktop",
+  );
+  expect(within(dialog).getByLabelText("RFB destination host")).toHaveValue(
+    "desktop.example.com",
+  );
+  expect(getAction("radio", "Through saved SSH host", dialog)).toBeChecked();
+});
+
+test("Mac classic password is an explicit SSH-only profile with risk disclosure and bounded password", async () => {
+  mockSettings({
+    connections: [],
+    credentials: [],
+    sshConnections: [sshHost],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, {
+      ...host,
+      host: "127.0.0.1",
+      credentialName: "Mac classic password",
+      security: { type: "apple_vnc_password" },
+      transport: { type: "ssh", connectionId: sshHost.id },
+    });
+  });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
+  expect(
+    within(dialog).getByText(/other clients may reach port 5900/u),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).queryByLabelText("TLS certificate identity"),
+  ).toBeNull();
+  expect(
+    within(dialog).queryByLabelText("Server certificate trust"),
+  ).toBeNull();
+  expect(
+    within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
+  ).toBeNull();
+  expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
+  await choose(dialog, "SSH host", "Desktop gateway · gateway.example.com:22");
+  await fill(within(dialog).getByLabelText("Display name"), "Mac classic VNC");
+  const destination = within(dialog).getByLabelText("RFB destination host");
+  expect(destination).toHaveTextContent("127.0.0.1");
+  await userEvent.click(destination);
+  expect(screen.queryByRole("option", { name: "localhost" })).toBeNull();
+  await userEvent.keyboard("{Escape}");
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Mac classic password",
+  );
+  expect(within(dialog).queryByLabelText("Username")).toBeNull();
+  const password = within(dialog).getByLabelText("VNC password");
+  await fill(password, "ninebytes");
+  expect(password).toBeInvalid();
+  await fill(password, "secret");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Mac classic VNC",
+      host: "127.0.0.1",
+      port: 5900,
+      transport: { type: "ssh", connectionId: sshHost.id },
+      credential: {
+        create: {
+          name: "Mac classic password",
+          authentication: { method: "vnc_password", password: "secret" },
+        },
+      },
+      security: { type: "apple_vnc_password" },
+    },
+  ]);
+});
+
+test.each([
+  {
+    profile: "apple_dh" as const,
+    method: "apple_dh_username_password" as const,
+    label: "Mac VNC (Apple DH)",
+    usernameMaxLength: 63,
+    usernameHelp: /1–63 UTF-8 bytes/u,
+  },
+  {
+    profile: "apple_srp" as const,
+    method: "apple_srp_username_password" as const,
+    label: "Mac VNC (Apple Direct SRP)",
+    usernameMaxLength: 255,
+    usernameHelp: /1–255 UTF-8 bytes/u,
+  },
+  {
+    profile: "apple_rsa_srp" as const,
+    method: "apple_rsa_srp_username_password" as const,
+    label: "Mac VNC (Apple RSA/SRP)",
+    usernameMaxLength: 234,
+    usernameHelp: /1–234 UTF-8 bytes/u,
+  },
+])(
+  "$label host editor requires SSH loopback and omits X509 trust",
+  async ({ profile, method, label, usernameMaxLength, usernameHelp }) => {
+    mockSettings({
+      connections: [],
+      credentials: [],
+      sshConnections: [sshHost],
+    });
+    const requests: unknown[] = [];
+    const appleHost: CredentialedVncConnection = {
+      ...host,
+      host: "127.0.0.1",
+      credentialName: "Mac login",
+      security: { type: profile },
+      transport: { type: "ssh", connectionId: sshHost.id },
+    };
+    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+      requests.push(body);
+      return respond(201, appleHost);
+    });
+    await openAddHostPage();
+    const dialog = await screen.findByRole("dialog", { name: "Add host" });
+    await choose(dialog, "Security profile", label);
+    expect(
+      within(dialog).queryByLabelText("TLS certificate identity"),
+    ).toBeNull();
+    expect(
+      within(dialog).queryByLabelText("Server certificate trust"),
+    ).toBeNull();
+    expect(
+      within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
+    ).toBeNull();
+    expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
+    await choose(
+      dialog,
+      "SSH host",
+      "Desktop gateway · gateway.example.com:22",
+    );
+    await fill(
+      within(dialog).getByLabelText("Display name"),
+      "Mac Screen Sharing",
+    );
+    const destination = within(dialog).getByLabelText("RFB destination host");
+    expect(destination).toHaveTextContent("127.0.0.1");
+    await choose(dialog, "RFB destination host", "::1");
+    expect(destination).toHaveTextContent("::1");
+    await choose(dialog, "RFB destination host", "127.0.0.1");
+    await choose(dialog, "Credential", "Create new credential");
+    await fill(within(dialog).getByLabelText("Credential name"), "Mac login");
+    const usernameField = within(dialog).getByLabelText("Username");
+    expect(usernameField).toHaveAttribute(
+      "maxLength",
+      String(usernameMaxLength),
+    );
+    expect(
+      within(dialog).getByText(usernameHelp, {
+        selector: "#vnc-username-help",
+      }),
+    ).toBeInTheDocument();
+    await fill(usernameField, "operator");
+    await fill(within(dialog).getByLabelText("Password"), "secret");
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(requests).toStrictEqual([
+      {
+        id: expect.any(String),
+        displayName: "Mac Screen Sharing",
+        host: "127.0.0.1",
+        port: 5900,
+        transport: { type: "ssh", connectionId: sshHost.id },
+        credential: {
+          create: {
+            name: "Mac login",
+            authentication: {
+              method,
+              username: "operator",
+              password: "secret",
+            },
+          },
+        },
+        security: { type: profile },
+      },
+    ]);
+  },
+);
+
+test("QEMU SCRAM credential rotation preserves its exact profile without revealing secrets", async () => {
+  const data = mockSettings({
+    connections: [qemuHost],
+    credentials: [qemuCredential],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    const updated = {
+      ...qemuCredential,
+      revision: 2,
+      username:
+        body.authentication?.method === "qemu_scram_sha256"
+          ? body.authentication.username
+          : qemuCredential.username,
+    };
+    data.credentials = [updated];
+    return respond(200, updated);
+  });
+  await page();
+  await screen.findByText(qemuHost.displayName);
+  expect(
+    screen.getByText(
+      "QEMU SCRAM-SHA-256 (X509SASL) · QEMU SCRAM-SHA-256 (X509SASL) · System certificate authorities",
+    ),
+  ).toBeInTheDocument();
+  click(getAction("radio", "Credentials"));
+  await screen.findByText(qemuCredential.name);
+  click(getAction("button", "Edit credential"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit credential" });
+  expect(within(dialog).queryByLabelText("Password")).toBeNull();
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
+  );
+  expect(within(dialog).getByLabelText("Username")).toHaveValue("operator");
+  const password = within(dialog).getByLabelText("Password");
+  expect(password).toHaveValue("");
+  await fill(password, "new-secret");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      expectedRevision: 1,
+      name: qemuCredential.name,
+      authentication: {
+        method: "qemu_scram_sha256",
+        username: "operator",
+        password: "new-secret",
+      },
+    },
+  ]);
+  expect(password).toHaveValue("");
+  expect(document.body.textContent).not.toContain("new-secret");
 });
 
 test("Plain credential cards and edits expose only password-free metadata", async () => {
@@ -628,10 +1367,7 @@ test("Plain credential cards and edits expose only password-free metadata", asyn
 });
 
 test.each([
-  ["oversized UTF-8 username", "Username", "界".repeat(86)],
   ["oversized UTF-8 password", "Password", "界".repeat(342)],
-  ["NUL username", "Username", "operator\u0000root"],
-  ["NUL password", "Password", "secret\u0000tail"],
 ] as const)(
   "Plain %s validation fails before an API write",
   async (_case, label, invalidValue) => {
@@ -1008,78 +1744,56 @@ test("A credential conflict never rotates a password against an unseen revision"
   expect(within(reopened).queryByLabelText("VNC password")).toBeNull();
 });
 
-test.each(["host", "credential"] as const)(
-  "An uncertain %s creation freezes its draft and explicitly retries the same UUID and password",
-  async (kind) => {
-    const data = mockSettings({ connections: [], credentials: [] });
-    const requests: unknown[] = [];
-    let acknowledge = false;
-    // A lost response has no contract status; intercept the transport boundary.
-    context.mocks.http.post(
-      `*/api/vnc/${kind === "host" ? "connections" : "credentials"}`,
-      async ({ request }) => {
-        const body: unknown = await request.json();
-        requests.push(
-          kind === "host"
-            ? vncConnectionsContract.create.body.parse(body)
-            : vncCredentialsContract.create.body.parse(body),
-        );
-        if (kind === "host") {
-          data.connections = [host];
-        } else {
-          data.credentials = [{ ...credential, hosts: [] }];
-        }
-        return acknowledge
-          ? new HttpResponse(null, { status: 204 })
-          : HttpResponse.error();
-      },
-    );
-    await page(kind === "host" ? "/connectors/vnc?add=1" : "/connectors/vnc");
-    const dialog =
-      kind === "host"
-        ? await screen.findByRole("dialog", { name: "Add host" })
-        : await addCredential();
-    if (kind === "host") {
-      await fillHost(dialog);
-    }
-    await fill(within(dialog).getByLabelText("Credential name"), "Retry login");
-    const secret = within(dialog).getByLabelText("VNC password");
-    await fill(secret, " retry ");
-    click(getAction("button", "Save", dialog));
-    await within(dialog).findByText(/The save result is unknown/u);
-    expect(secret).toHaveValue(" retry ");
-    expect(secret).toBeDisabled();
-    expect(within(dialog).getByLabelText("Credential name")).toBeDisabled();
-    expect(getAction("button", "Retry", dialog)).toBeEnabled();
-    acknowledge = true;
-    click(getAction("button", "Retry", dialog));
-    await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    const newCredential = {
-      name: "Retry login",
-      authentication: { method: "vnc_password", password: " retry " },
-    };
-    const creationId = expect.any(String);
-    const expected =
-      kind === "host"
-        ? {
-            id: creationId,
-            displayName: "Second desktop",
-            host: "second.example.com",
-            port: 5900,
-            transport: { type: "direct" },
-            credential: { create: newCredential },
-            security: { type: "x509_vnc", trust: { mode: "system" } },
-          }
-        : { id: creationId, ...newCredential };
-    expect(requests).toStrictEqual([expected, expected]);
-    expect(requests[1]).toStrictEqual(requests[0]);
-    expect(secret).toHaveValue("");
-  },
-);
+test("An uncertain host creation freezes its draft and explicitly retries the same UUID and password", async () => {
+  const data = mockSettings({ connections: [], credentials: [] });
+  const requests: unknown[] = [];
+  let acknowledge = false;
+  // A lost response has no contract status; intercept the transport boundary.
+  context.mocks.http.post("*/api/vnc/connections", async ({ request }) => {
+    const body: unknown = await request.json();
+    requests.push(vncConnectionsContract.create.body.parse(body));
+    data.connections = [host];
+    return acknowledge
+      ? new HttpResponse(null, { status: 204 })
+      : HttpResponse.error();
+  });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await fill(within(dialog).getByLabelText("Credential name"), "Retry login");
+  const secret = within(dialog).getByLabelText("VNC password");
+  await fill(secret, " retry ");
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByText(/The save result is unknown/u);
+  expect(secret).toHaveValue(" retry ");
+  expect(secret).toBeDisabled();
+  expect(within(dialog).getByLabelText("Credential name")).toBeDisabled();
+  expect(getAction("button", "Retry", dialog)).toBeEnabled();
+  acknowledge = true;
+  click(getAction("button", "Retry", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  const newCredential = {
+    name: "Retry login",
+    authentication: { method: "vnc_password", password: " retry " },
+  };
+  const creationId = expect.any(String);
+  const expected = {
+    id: creationId,
+    displayName: "Second desktop",
+    host: "second.example.com",
+    port: 5900,
+    transport: { type: "direct" },
+    credential: { create: newCredential },
+    security: { type: "x509_vnc", trust: { mode: "system" } },
+  };
+  expect(requests).toStrictEqual([expected, expected]);
+  expect(requests[1]).toStrictEqual(requests[0]);
+  expect(secret).toHaveValue("");
+});
 
-test.each(["too-long-password", "密码"])(
+test.each(["密码"])(
   "An unsupported password %s remains intact and cannot be saved",
   async (password) => {
     mockSettings({ connections: [], credentials: [] });
@@ -1130,7 +1844,7 @@ test("A known invalid credential response retains an editable draft without leak
   );
 });
 
-test("A disabled VNC deep link shows unavailability without accessing saved configuration", async () => {
+test("A disabled VNC scope hides VNC without accessing saved configuration", async () => {
   const requests: string[] = [];
   context.mocks.http.get("*/api/vnc/*", ({ request }) => {
     requests.push(`${request.method} ${new URL(request.url).pathname}`);
@@ -1141,93 +1855,29 @@ test("A disabled VNC deep link shows unavailability without accessing saved conf
   });
   await setupPage({
     context,
-    path: "/connectors/vnc?add=1",
+    path: "/connectors?scope=remote-control&type=vnc",
     auth,
     featureSwitches: { [FeatureSwitchKey.VncAccess]: false },
   });
-  await screen.findByText("VNC is not available in this workspace.");
+  await screen.findByRole("radio", { name: "Connections" });
+  expect(screen.queryByRole("heading", { name: "VNC" })).toBeNull();
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(queryAction("button", "Add host")).toBeNull();
   expect(requests).toStrictEqual([]);
 });
 
-test.each(["owner", "navigation"] as const)(
-  "Changing %s while token acquisition is pending cancels the save and clears the secret",
-  async (transition) => {
-    mockSettings({ connections: [], credentials: [] });
-    const requests: unknown[] = [];
-    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
-      requests.push(body);
-      return respond(201, host);
-    });
-    await page();
-    await screen.findByText("Add a VNC host to get started.");
-    const agentsLink = getAction(
-      "link",
-      "Agents",
-      screen.getByRole("navigation", { name: "Sidebar" }),
-    );
-    click(getAction("button", "Add host"));
-    const dialog = await screen.findByRole("dialog", { name: "Add host" });
-    await fillHost(dialog);
-    await fill(within(dialog).getByLabelText("Credential name"), "Old login");
-    const secret = within(dialog).getByLabelText("VNC password");
-    await fill(secret, "old-pass");
-    const token = context.mocks.deferred<string>();
-    const started = context.mocks.deferred<void>();
-    mockedClerk.sessionGetToken.mockImplementationOnce(() => {
-      started.resolve();
-      return token.promise;
-    });
-    click(getAction("button", "Save", dialog));
-    await started.promise;
-    if (transition === "owner") {
-      const clerk = context.mocks.clerk();
-      act(() => {
-        clerk.user(
-          { id: "other-vnc-owner", fullName: "Other Owner" },
-          { token: "other-token" },
-        );
-        clerk.stateChanged();
-      });
-    } else {
-      click(agentsLink);
-      await screen.findByRole("heading", { name: "Agents" });
-    }
-    await act(async () => {
-      token.resolve("old-owner-token");
-      await token.promise;
-    });
-    await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    expect(secret).toHaveValue("");
-    expect(requests).toStrictEqual([]);
-  },
-);
-
-test("Replacing a session during token acquisition retains the draft and retries only with the new session", async () => {
+test("Changing owner while token acquisition is pending cancels the save and clears the secret", async () => {
   mockSettings({ connections: [], credentials: [] });
   const requests: unknown[] = [];
-  context.mocks.api(
-    vncConnectionsContract.create,
-    ({ body, request, respond }) => {
-      requests.push({
-        body,
-        authorization: request.headers.get("authorization"),
-      });
-      return respond(201, host);
-    },
-  );
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, host);
+  });
   await page();
   await screen.findByText("Add a VNC host to get started.");
   click(getAction("button", "Add host"));
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
-  await fill(
-    within(dialog).getByLabelText("Credential name"),
-    "Retained login",
-  );
+  await fill(within(dialog).getByLabelText("Credential name"), "Old login");
   const secret = within(dialog).getByLabelText("VNC password");
   await fill(secret, "old-pass");
   const token = context.mocks.deferred<string>();
@@ -1240,88 +1890,209 @@ test("Replacing a session during token acquisition retains the draft and retries
   await started.promise;
   const clerk = context.mocks.clerk();
   act(() => {
-    clerk.user(auth.user, {
-      id: "replacement-session",
-      token: "replacement-token",
-    });
+    clerk.user(
+      { id: "other-vnc-owner", fullName: "Other Owner" },
+      { token: "other-token" },
+    );
     clerk.stateChanged();
   });
   await act(async () => {
-    token.resolve("old-session-token");
+    token.resolve("old-owner-token");
     await token.promise;
   });
   await waitFor(() => {
-    expect(getAction("button", "Retry", dialog)).toBeEnabled();
+    return expect(screen.queryByRole("dialog")).toBeNull();
   });
-  expect(requests).toStrictEqual([]);
-  expect(dialog).toBeInTheDocument();
-  expect(secret).toHaveValue("old-pass");
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-    "Second desktop",
-  );
-  click(getAction("button", "Retry", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    {
-      body: {
-        id: expect.any(String),
-        displayName: "Second desktop",
-        host: "second.example.com",
-        port: 5900,
-        transport: { type: "direct" },
-        credential: {
-          create: {
-            name: "Retained login",
-            authentication: { method: "vnc_password", password: "old-pass" },
-          },
-        },
-        security: { type: "x509_vnc", trust: { mode: "system" } },
-      },
-      authorization: "Bearer replacement-token",
-    },
-  ]);
   expect(secret).toHaveValue("");
+  expect(requests).toStrictEqual([]);
 });
 
-test.each(["Hosts", "Credentials"] as const)(
-  "A failed %s request remains retryable and recovery preserves the selected tab",
-  async (tab) => {
-    mockSettings({ connections: [] });
-    let failed = true;
-    const error = {
-      error: { code: "INTERNAL_ERROR", message: "private list failure" },
-    };
-    if (tab === "Hosts") {
-      context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
-        return failed
-          ? respond(500, error)
-          : respond(200, { connections: [host] });
+test.each(
+  VNC_RSA_AES_SECURITY_TYPES.flatMap((type) => {
+    return ["rsa_aes_password", "rsa_aes_username_password"].map((method) => {
+      return { type, method } as const;
+    });
+  }),
+)(
+  "RSA-AES $type/$method saves an independent pin and exact route",
+  async ({ type, method }) => {
+    mockSettings({
+      connections: [],
+      credentials: [],
+      sshConnections: [sshHost],
+    });
+    const ne = type.includes("ra2ne");
+    const mode =
+      type === "rsa_aes_ra2"
+        ? "RA2 · AES-128"
+        : type === "rsa_aes_ra2_256"
+          ? "RA2_256 · AES-256"
+          : type === "rsa_aes_ra2ne"
+            ? "RA2ne · authentication only"
+            : "RA2ne_256 · authentication only";
+    const user = method === "rsa_aes_username_password";
+    const requests: unknown[] = [];
+    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+      requests.push(body);
+      return respond(201, {
+        ...host,
+        rsaAesAuthentication: user
+          ? "rsa_aes_username_password"
+          : "rsa_aes_password",
+        security: { type, serverKeySha256: "ab".repeat(32) },
+        ...(ne
+          ? {
+              transport: { type: "ssh", connectionId: sshHost.id },
+              host: "127.0.0.1",
+            }
+          : {}),
       });
-    } else {
-      context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
-        return failed
-          ? respond(500, error)
-          : respond(200, { credentials: [credential] });
-      });
-    }
-    await page();
-    if (tab === "Credentials") {
-      await screen.findByText("Add a VNC host to get started.");
-      click(getAction("radio", "Credentials"));
-    }
-    await screen.findByText("Could not load VNC configuration.");
-    expect(
-      screen.queryByText("VNC is not available in this workspace."),
-    ).toBeNull();
-    expect(document.body.textContent).not.toContain("private list failure");
-    failed = false;
-    click(getAction("button", "Retry"));
-    await screen.findByText(
-      tab === "Hosts" ? host.displayName : credential.name,
+    });
+    await openAddHostPage();
+    const dialog = await screen.findByRole("dialog", { name: "Add host" });
+    await choose(
+      dialog,
+      "Security profile",
+      `${mode} · ${user ? "username/password" : "password"}`,
     );
-    expect(getAction("radio", tab)).toHaveAttribute("aria-checked", "true");
-    expect(screen.queryByText("Could not load VNC configuration.")).toBeNull();
+    expect(
+      within(dialog).queryByLabelText("TLS certificate identity"),
+    ).toBeNull();
+    expect(
+      within(dialog).queryByLabelText("Server certificate trust"),
+    ).toBeNull();
+    await fill(within(dialog).getByLabelText("Display name"), "RSA desktop");
+    expect(queryAction("radio", "Direct from Runner", dialog) === null).toBe(
+      ne,
+    );
+    expect(
+      within(dialog).queryByText(/SSH protects only its hop/u) !== null,
+    ).toBe(ne);
+    if (ne) {
+      await choose(
+        dialog,
+        "SSH host",
+        "Desktop gateway · gateway.example.com:22",
+      );
+    } else {
+      await fill(
+        within(dialog).getByLabelText("RFB destination host"),
+        "rsa.example.com",
+      );
+    }
+    await fill(
+      within(dialog).getByLabelText("Server RSA wire-key SHA256"),
+      "ab".repeat(32),
+    );
+    await choose(dialog, "Credential", "Create new credential");
+    await fill(within(dialog).getByLabelText("Credential name"), "RSA login");
+    expect(within(dialog).queryByLabelText("Username") !== null).toBe(user);
+    if (user) {
+      await fill(within(dialog).getByLabelText("Username"), "用户名");
+    }
+    const password = within(dialog).getByLabelText("Password");
+    expect(password).toHaveAttribute("maxlength", "255");
+    await fill(password, "界".repeat(85));
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(requests).toStrictEqual([
+      {
+        id: expect.any(String),
+        displayName: "RSA desktop",
+        host: ne ? "127.0.0.1" : "rsa.example.com",
+        port: 5900,
+        transport: ne
+          ? { type: "ssh", connectionId: sshHost.id }
+          : { type: "direct" },
+        security: { type, serverKeySha256: "ab".repeat(32) },
+        credential: {
+          create: {
+            name: "RSA login",
+            authentication: user
+              ? { method, username: "用户名", password: "界".repeat(85) }
+              : { method, password: "界".repeat(85) },
+          },
+        },
+      },
+    ]);
+    expect(password).toHaveValue("");
   },
 );
+
+test("Trusted RSA public-key import only fills the pin and does not save or establish provenance", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(
+    vncConnectionsContract.inspectRsaKey,
+    ({ body, respond }) => {
+      requests.push(body);
+      return respond(200, {
+        serverKeySha256: "cd".repeat(32),
+        modulusBits: 2048,
+      });
+    },
+  );
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await choose(dialog, "Security profile", "RA2 · AES-128 · password");
+  await fill(
+    within(dialog).getByLabelText(
+      "Independently trusted RSA public PEM (optional)",
+    ),
+    "synthetic-trusted-public-pem",
+  );
+  click(getAction("button", "Import trusted public key", dialog));
+  await waitFor(() => {
+    return expect(
+      within(dialog).getByLabelText("Server RSA wire-key SHA256"),
+    ).toHaveValue("cd".repeat(32));
+  });
+  expect(
+    within(dialog).getByText("Imported public-key size: 2048 bits"),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(/Conversion does not establish identity or save/u),
+  ).toBeInTheDocument();
+  expect(requests).toStrictEqual([
+    { publicKeyPem: "synthetic-trusted-public-pem" },
+  ]);
+  expect(dialog).toBeInTheDocument();
+});
+
+test("A late RSA import cannot associate its old pin with a newer public-key draft", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.inspectRsaKey,
+    async ({ respond }) => {
+      started.resolve();
+      await release.promise;
+      return respond(200, {
+        serverKeySha256: "cd".repeat(32),
+        modulusBits: 2048,
+      });
+    },
+  );
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await choose(dialog, "Security profile", "RA2 · AES-128 · password");
+  const pin = within(dialog).getByLabelText("Server RSA wire-key SHA256");
+  const pem = within(dialog).getByLabelText(
+    "Independently trusted RSA public PEM (optional)",
+  );
+  await fill(pin, "ab".repeat(32));
+  await fill(pem, "old-public-pem");
+  click(getAction("button", "Import trusted public key", dialog));
+  await started.promise;
+  await fill(pem, "new-public-pem");
+  release.resolve();
+  await within(dialog).findByRole("alert");
+  expect(pin).toHaveValue("ab".repeat(32));
+  expect(pem).toHaveValue("new-public-pem");
+  expect(
+    within(dialog).queryByText("Imported public-key size: 2048 bits"),
+  ).toBeNull();
+});

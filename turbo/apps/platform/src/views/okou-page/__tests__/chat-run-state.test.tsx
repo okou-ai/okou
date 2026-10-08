@@ -1,10 +1,8 @@
-import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { click, fill } from "../../../__tests__/page-helper.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
-import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   assistantEvent,
   cancelledEvent,
@@ -13,71 +11,29 @@ import {
   findButton,
   installRunChat,
   promptEvent,
-  publishRunUpdate,
   queryButton,
   readyChat,
   RUN_PATH,
-  RUN_THREAD_ID,
   sendText,
-  thinkingEvent,
 } from "./chat-run-test-fixtures.ts";
 
 const RUN_A = "a0000000-0000-4000-a000-000000000101";
-const RUN_B = "a0000000-0000-4000-a000-000000000102";
 
-function optimisticUserMessageSpinners(): readonly Element[] {
-  return [...document.querySelectorAll("[data-optimistic-user-message]")];
+function userMessageInHistory(text: string): HTMLElement | null {
+  return (
+    screen
+      .queryAllByText(text)
+      .map((element) => {
+        return element.closest<HTMLElement>('[data-role="user"]');
+      })
+      .find((element) => {
+        return element !== null;
+      }) ?? null
+  );
 }
 
-function requiredButton(name: string, container: ParentNode): HTMLElement {
-  const button = queryButton(name, container);
-  if (!button) {
-    throw new Error(`Button ${name} was not available`);
-  }
-  return button;
-}
-
-function automationEvent(
-  id: string,
-  seqId: number,
-  brief: string,
-): MockChatEventInput {
-  return {
-    id,
-    eventType: "input.automation",
-    role: "user",
-    content: null,
-    runId: undefined,
-    seqId,
-    createdAt: `2026-08-01T10:01:${String(seqId).padStart(2, "0")}.000Z`,
-    userMessage: {
-      version: 1,
-      parts: [
-        {
-          type: "automation",
-          workflowName: "Deployment checks",
-          automationBrief: brief,
-        },
-      ],
-    },
-  };
-}
-
-function queuedEvent(
-  id: string,
-  runId: string,
-  seqId: number,
-): MockChatEventInput {
-  return {
-    id,
-    eventType: "run.queued",
-    role: "assistant",
-    content: "Waiting in queue...",
-    runId,
-    runEventId: "queue:queued",
-    seqId,
-    createdAt: `2026-08-01T10:02:${String(seqId).padStart(2, "0")}.000Z`,
-  };
+function queuedMessageRow(): HTMLElement | null {
+  return screen.queryByRole("listitem", { name: "Queued message" });
 }
 
 test("Show one cancellation outcome for an interrupted run", async () => {
@@ -113,7 +69,7 @@ test("Show one cancellation outcome for an interrupted run", async () => {
   const chat = await readyChat();
   expect(within(chat).getByText("I drafted the first section.")).toBeVisible();
   expect(
-    within(chat).getAllByText("Paused mid-thought — pick it back up whenever."),
+    within(chat).getAllByText("Run paused — resume anytime."),
   ).toHaveLength(1);
   expect(queryButton("Stop")).toBeNull();
 });
@@ -147,306 +103,154 @@ test("Finish a run and return the composer to send mode", async () => {
   expect(queryButton("Stop")).toBeNull();
 });
 
-test("Let the latest completion end stale thinking", async () => {
-  installRunChat({
-    activeRunIds: [RUN_A],
-    chatEvents: [
-      promptEvent({
-        id: "stale-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Older request",
-      }),
-      thinkingEvent({
-        id: "stale-thinking",
-        runId: RUN_A,
-        seqId: 2,
-        text: "Old work that must not revive",
-      }),
-      promptEvent({
-        id: "latest-user",
-        runId: RUN_B,
-        seqId: 3,
-        text: "Latest request",
-      }),
-      assistantEvent({
-        id: "latest-answer",
-        runId: RUN_B,
-        seqId: 4,
-        text: "Latest work is complete.",
-      }),
-      completedEvent({ id: "latest-complete", runId: RUN_B, seqId: 5 }),
-    ],
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  expect(screen.getByText("Latest work is complete.")).toBeVisible();
-  expect(
-    screen.queryByLabelText("Old work that must not revive"),
-  ).not.toBeInTheDocument();
-  expect(queryButton("Stop")).toBeNull();
-});
-
-test("Explain queued work while a cancelled run is recovering", async () => {
-  const events: MockChatEventInput[] = [
-    promptEvent({
-      id: "recovery-user",
-      runId: RUN_A,
-      seqId: 1,
-      text: "Prepare the handoff",
-    }),
-    cancelledEvent({ id: "recovery-cancelled", runId: RUN_A, seqId: 2 }),
-    automationEvent("recovery-automation", 3, "Run deployment checks"),
-  ];
-  let recoveryPending = true;
-  installRunChat({ chatEvents: events });
-  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      lastReadAt: null,
-      cancellationRecoveryPending: recoveryPending,
-    });
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  expect(
-    screen.getByText("Paused mid-thought — pick it back up whenever."),
-  ).toBeVisible();
-  const pendingAutomation = await screen.findByRole("listitem", {
-    name: "Pending automation event",
-  });
-  expect(pendingAutomation).toHaveTextContent("Run deployment checks");
-
-  click(requiredButton("About this automation event", pendingAutomation));
-  await expect(screen.findByText("Automation event")).resolves.toBeVisible();
-  expect(
-    screen.getAllByText(
-      "Finalizing the cancelled run before queued work continues.",
-    ),
-  ).toHaveLength(2);
-
-  const composer = screen.getByRole("textbox", { name: "Message" });
-  await fill(composer, "The composer still works");
-  expect(composer).toHaveTextContent("The composer still works");
-  click(requiredButton("Skip automation event", pendingAutomation));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("listitem", { name: "Pending automation event" }),
-    ).not.toBeInTheDocument();
-  });
-
-  recoveryPending = false;
-  events.push(
-    automationEvent("new-recovery-automation", 4, "Check the follow-up"),
-  );
-  publishRunUpdate();
-  context.mocks.ably.trigger(`chatThreadDetailChanged:${RUN_THREAD_ID}`);
-
-  const nextPendingAutomation = await screen.findByRole("listitem", {
-    name: "Pending automation event",
-  });
-  expect(nextPendingAutomation).toHaveTextContent("Check the follow-up");
-  click(requiredButton("About this automation event", nextPendingAutomation));
-  await expect(
-    screen.findByText(
-      "Waits behind queued messages and runs once the current run finishes.",
-    ),
-  ).resolves.toBeVisible();
-});
-
-test("Manage work waiting in the queue", async () => {
-  const events: MockChatEventInput[] = [
-    promptEvent({
-      id: "first-queued-user",
-      runId: RUN_A,
-      seqId: 1,
-      text: "Queued report",
-    }),
-    queuedEvent("first-queued-marker", RUN_A, 2),
-    promptEvent({
-      id: "first-waiting-followup",
-      seqId: 3,
-      text: "Add the appendix",
-    }),
-  ];
-  installRunChat({ chatEvents: events });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  await expect(findButton("queue...")).resolves.toBeVisible();
-  expect(
-    screen.queryByLabelText("Writing the queued report"),
-  ).not.toBeInTheDocument();
-  await expect(findButton("Stop")).resolves.toBeVisible();
-
-  events.push(
-    {
-      id: "first-dequeued",
-      eventType: "run.dequeued",
-      role: "assistant",
-      content: null,
-      runId: RUN_A,
-      runEventId: "queue:dequeued",
-      revokesEventId: "first-queued-marker",
-      seqId: 4,
-      createdAt: "2026-08-01T10:02:04.000Z",
-    },
-    assistantEvent({
-      id: "first-result",
-      runId: RUN_A,
-      seqId: 5,
-      text: "The queued report is ready.",
-    }),
-    completedEvent({ id: "first-done", runId: RUN_A, seqId: 6 }),
-  );
-  publishRunUpdate();
-
-  await expect(
-    screen.findByText("The queued report is ready."),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(queryButton("queue...")).not.toBeInTheDocument();
-  });
-
-  events.push(
-    promptEvent({
-      id: "second-queued-user",
-      runId: RUN_B,
-      seqId: 7,
-      text: "Queued audit",
-    }),
-    queuedEvent("second-queued-marker", RUN_B, 8),
-    promptEvent({
-      id: "second-waiting-followup",
-      seqId: 9,
-      text: "Include the receipts",
-    }),
-  );
-  publishRunUpdate();
-  await expect(screen.findByText("Queued audit")).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(queryButton("Stop")).toBeVisible();
-  });
-
-  const stopButton = requiredButton("Stop", document.body);
-  expect(stopButton).toBeVisible();
-  click(stopButton);
-  events.push(
-    cancelledEvent({ id: "second-cancelled", runId: RUN_B, seqId: 10 }),
-    {
-      id: "recall-second-followup",
-      eventType: "control.revoke",
-      role: "user",
-      content: null,
-      revokesEventId: "second-waiting-followup",
-      seqId: 11,
-      createdAt: "2026-08-01T10:02:11.000Z",
-    },
-  );
-  publishRunUpdate();
-
-  await expect(
-    screen.findByText("Paused mid-thought — pick it back up whenever."),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(screen.queryByText("Include the receipts")).not.toBeInTheDocument();
-    expect(queryButton("Stop")).toBeNull();
-  });
-});
-
-test("Show a cancelled run as paused", async () => {
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "paused-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Build the launch plan",
-      }),
-      assistantEvent({
-        id: "paused-partial",
-        runId: RUN_A,
-        seqId: 2,
-        text: "The first milestones are drafted.",
-      }),
-      cancelledEvent({ id: "paused-terminal", runId: RUN_A, seqId: 3 }),
-    ],
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  expect(screen.getByText("The first milestones are drafted.")).toBeVisible();
-  expect(
-    screen.getByText("Paused mid-thought — pick it back up whenever."),
-  ).toBeVisible();
-  expect(queryButton("Stop")).toBeNull();
-});
-
-test("Show thinking while a newly accepted prompt starts", async () => {
+test("Show thinking as soon as a new prompt is sent", async () => {
   const runAccepted = context.mocks.deferred<void>();
   const lifecycle = installRunChat({ sendGate: runAccepted.promise });
 
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  await sendText("Start the pending analysis");
-  await expect(
-    screen.findByText("Start the pending analysis"),
-  ).resolves.toBeVisible();
-  await expect(findButton("Stop")).resolves.toBeVisible();
+  await sendText("Summarize the launch risks");
+
+  await waitFor(() => {
+    expect(userMessageInHistory("Summarize the launch risks")).not.toBeNull();
+    expect(screen.getByText("Thinking...")).toBeInTheDocument();
+  });
+  expect(queuedMessageRow()).toBeNull();
 
   runAccepted.resolve(undefined);
   await waitFor(() => {
-    expect(screen.getAllByText("Start the pending analysis")).toHaveLength(1);
-    expect(queryButton("Stop")).not.toBeNull();
-    expect(context.mocks.ably.hasSharedDatabaseSubscription()).toBeTruthy();
+    expect(queryButton("Stop")).toBeVisible();
   });
+  expect(screen.getByText("Thinking...")).toBeInTheDocument();
+  expect(screen.getAllByText("Summarize the launch risks")).toHaveLength(1);
 
-  lifecycle.completeRun("The pending analysis is complete.");
+  lifecycle.completeRun("The launch risks are summarized.");
   await expect(
-    screen.findByText("The pending analysis is complete."),
+    screen.findByText("The launch risks are summarized."),
   ).resolves.toBeVisible();
   await expect(findButton("Send")).resolves.toBeVisible();
   expect(queryButton("Stop")).toBeNull();
 });
 
-test("Delay the spinner beside a user message the server has not confirmed", async () => {
-  const runAccepted = context.mocks.deferred<void>();
-  installRunChat({ sendGate: runAccepted.promise });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
+test("Keep a prompt waiting for steer delivery in the message history", async () => {
+  installRunChat({
+    activeRunIds: [RUN_A],
+    chatEvents: [
+      promptEvent({
+        id: "steer-running-user",
+        runId: RUN_A,
+        seqId: 1,
+        text: "Draft the rollout",
+      }),
+      promptEvent({
+        id: "steer-waiting-user",
+        seqId: 2,
+        text: "Add the appendix",
+      }),
+    ],
   });
+
+  await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  await sendText("Draft the launch checklist");
-  await expect(
-    screen.findByText("Draft the launch checklist"),
-  ).resolves.toBeInTheDocument();
-  expect(optimisticUserMessageSpinners()).toHaveLength(0);
-  const spinnerAppeared = context.mocks.deferred<void>();
-  const observer = new MutationObserver(() => {
-    if (optimisticUserMessageSpinners().length === 1) {
-      spinnerAppeared.resolve();
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-  try {
-    await spinnerAppeared.promise;
-  } finally {
-    observer.disconnect();
-  }
-  expect(optimisticUserMessageSpinners()).toHaveLength(1);
+  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
+  expect(userMessageInHistory("Add the appendix")).not.toBeNull();
+  expect(queuedMessageRow()).toBeNull();
+});
 
-  runAccepted.resolve(undefined);
-  await waitFor(() => {
-    expect(optimisticUserMessageSpinners()).toHaveLength(0);
+test("Show waiting in queue for a persisted prompt without a run", async () => {
+  installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: "org-full-finished-user",
+        runId: RUN_A,
+        seqId: 1,
+        text: "Draft the rollout",
+      }),
+      assistantEvent({
+        id: "org-full-finished-result",
+        runId: RUN_A,
+        seqId: 2,
+        text: "The rollout draft is ready.",
+      }),
+      completedEvent({ id: "org-full-finished-done", runId: RUN_A, seqId: 3 }),
+      promptEvent({
+        id: "org-full-waiting-user",
+        seqId: 4,
+        text: "Add the appendix",
+      }),
+    ],
   });
-  expect(screen.getAllByText("Draft the launch checklist")).toHaveLength(1);
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await expect(findButton("queue...")).resolves.toBeInTheDocument();
+  expect(screen.getByText("Waiting in")).toBeInTheDocument();
+  expect(userMessageInHistory("Add the appendix")).not.toBeNull();
+  expect(queuedMessageRow()).toBeNull();
+  expect(screen.getByText("The rollout draft is ready.")).toBeInTheDocument();
+  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+  expect(queryButton("Stop")).toBeNull();
+  expect(queryButton("Send")).not.toBeNull();
+});
+
+test("Open the queue drawer from waiting in queue", async () => {
+  installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: "org-full-drawer-user",
+        seqId: 1,
+        text: "Draft the rollout",
+      }),
+    ],
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  click(await findButton("queue..."));
+
+  const drawer = await screen.findByRole("dialog", {
+    name: "Your agent is waiting in line",
+  });
+  expect(
+    within(drawer).getByText(
+      "See how many concurrent runs are in use and upgrade to skip the wait.",
+    ),
+  ).toBeInTheDocument();
+});
+
+test("Show waiting in queue for a persisted automation event without a run", async () => {
+  installRunChat({
+    chatEvents: [
+      {
+        id: "org-full-waiting-automation",
+        eventType: "input.automation",
+        role: "user",
+        runId: undefined,
+        content: null,
+        seqId: 1,
+        createdAt: "2026-08-01T10:00:01.000Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "automation",
+              workflowName: "Release watcher",
+              automationBrief: "Check rollout health",
+            },
+          ],
+        },
+      },
+    ],
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await expect(findButton("queue...")).resolves.toBeInTheDocument();
+  expect(screen.getByText("Waiting in")).toBeInTheDocument();
+  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
 });

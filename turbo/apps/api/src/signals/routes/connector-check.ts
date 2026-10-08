@@ -1,4 +1,8 @@
-import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
+import {
+  CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
+  CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
+  connectorCheckContract,
+} from "@okouai/api-contracts/contracts/connector-check";
 import { command } from "ccstate";
 
 import {
@@ -7,6 +11,7 @@ import {
 } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import { resolveConnectorCheck$ } from "../services/connector-check.service";
 import { notFound } from "../../lib/error";
@@ -53,6 +58,13 @@ const checkInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (result.kind === "not-found") {
     return notFound("Agent run not found");
+  }
+  if (result.awsContextIncomplete === true) {
+    set(
+      setResHeader$,
+      CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
+      CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
+    );
   }
   return { status: 200 as const, body: result.diagnostic };
 });

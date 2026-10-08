@@ -38,9 +38,9 @@ pub struct OkouCliVersions {
 /// `@okouai/pi-agent-runtime` computes the digest at build time over the
 /// system prompt template and ordered tool schemas for fixed inputs, and the
 /// CLI artifact manifest records it as `sessionConstruction.digest`. It is
-/// the parity key for API-first handoffs: the guest execs the installed CLI
-/// only when the launch config names exactly this digest. Unlike the runtime
-/// version it does not move on dependency-only release bumps.
+/// the parity key for the installed CLI: the guest execs it only when the
+/// launch config names exactly this digest. Unlike the runtime version it does
+/// not move on dependency-only release bumps.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OkouCliSessionConstruction {

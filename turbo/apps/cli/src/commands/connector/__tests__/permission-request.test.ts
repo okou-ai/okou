@@ -238,6 +238,65 @@ describe("okou connector permission-request command", () => {
     expect(logCalls).not.toContain("secret");
   });
 
+  it("preserves explicit AWS selectors while checking the requested permission", async () => {
+    vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
+    vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
+    let diagnosticRequest:
+      | ReturnType<typeof connectorCheckRequestSchema.parse>
+      | undefined;
+    stubDiagnostic(
+      resolvedUrlDiagnostic({
+        connectorSlug: "aws",
+        label: "AWS",
+        method: "POST",
+        base: "https://sts.us-west-2.amazonaws.com",
+        relativePath: "/",
+        permission: {
+          kind: "matched",
+          permissions: [
+            {
+              name: "sts:get-caller-identity",
+              policy: { outcome: "deny", basis: "deny-list" },
+            },
+          ],
+        },
+      }),
+      "https://app.okou.ai",
+      (request) => {
+        diagnosticRequest = request;
+      },
+    );
+
+    await permissionRequestCommand.parseAsync([
+      "node",
+      "cli",
+      "aws",
+      "--permission",
+      "sts:get-caller-identity",
+      "--url",
+      "https://sts.us-west-2.amazonaws.com/",
+      "--method",
+      "POST",
+      "--aws-service",
+      "sts",
+      "--aws-action",
+      "GetCallerIdentity",
+    ]);
+
+    expect(diagnosticRequest).toStrictEqual({
+      mode: "url",
+      method: "POST",
+      url: "https://sts.us-west-2.amazonaws.com/",
+      connectorSlug: "aws",
+      aws: { sigv4Service: "sts", action: "GetCallerIdentity" },
+    });
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain(
+      "no SigV4 signature was validated and no AWS request was sent",
+    );
+    expect(output).toContain("[Manage AWS permissions]");
+  });
+
   it("includes the current thread and callback prompt in the grant URL", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");

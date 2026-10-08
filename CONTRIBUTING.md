@@ -61,7 +61,7 @@ its development tunnel. The proxy routes the local surfaces as follows:
 
 The bare `vm7.ai:8443` host redirects to Marketing. See the
 [Caddy configuration](turbo/packages/proxy/Caddyfile) for routing and the
-[Desktop guide](turbo/apps/desktop/README.md) for packaged macOS development.
+[Desktop guide](desktop/README.md) for packaged macOS development.
 
 The standalone API (`pnpm -F api dev` / `pnpm -F api start`) stops accepting
 connections and cancels application work on `SIGTERM` or `SIGINT`. Requests

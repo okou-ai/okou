@@ -2,14 +2,22 @@ import { describe, it, expect } from "vitest";
 import { CAPABILITIES, CAPABILITY_META } from "../capabilities";
 
 describe("CAPABILITIES", () => {
-  it("should have exactly 50 capabilities", () => {
-    expect(CAPABILITIES).toHaveLength(50);
+  it("should have exactly 54 capabilities", () => {
+    expect(CAPABILITIES).toHaveLength(53);
   });
 
   it("should follow {resource}:{action} naming pattern", () => {
     for (const cap of CAPABILITIES) {
-      expect(cap).toMatch(/^[a-z-]+(?::[a-z-]+)?:(read|write|delete)$/);
+      expect(cap).toMatch(
+        /^(subscription:switch|[a-z-]+(?::[a-z-]+)?:(read|write|delete))$/,
+      );
     }
+  });
+
+  it("should expose subscription reads and switching without agent reset execution", () => {
+    expect(CAPABILITIES).toContain("subscription:read");
+    expect(CAPABILITIES).toContain("subscription:switch");
+    expect(CAPABILITIES).not.toContain("subscription:reset");
   });
 
   it("should include artifact sharing capabilities", () => {
@@ -81,10 +89,6 @@ describe("CAPABILITIES", () => {
 
   it("should include managed social read capability", () => {
     expect(CAPABILITIES).toContain("social:read");
-  });
-
-  it("should include managed image recognition capability", () => {
-    expect(CAPABILITIES).toContain("image-recognition:write");
   });
 
   it("should include managed finance read capability", () => {

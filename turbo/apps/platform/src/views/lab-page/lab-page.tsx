@@ -6,7 +6,13 @@ import {
   type FeatureSwitchRolloutStage,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { surfaceVariants, Button, Switch, cn } from "@okouai/ui";
+import {
+  Toggle,
+  ToggleGroup,
+  surfaceVariants,
+  Button,
+  Switch,
+} from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import {
   featureSwitch$,
@@ -34,12 +40,16 @@ interface MaintainerFilterOption {
   readonly count: number;
 }
 
-function compareByName(a: FeatureSwitchKey, b: FeatureSwitchKey): number {
-  return a.localeCompare(b, undefined, { sensitivity: "base" });
-}
-
-function sortedFeatureSwitchKeys(): FeatureSwitchKey[] {
-  return Object.values(FeatureSwitchKey).sort(compareByName);
+function sortedFeatureSwitchKeys(
+  metadata: FeatureSwitchMetadataByKey,
+): FeatureSwitchKey[] {
+  return Object.values(FeatureSwitchKey).sort((a, b) => {
+    return (metadata[a].displayName ?? a).localeCompare(
+      metadata[b].displayName ?? b,
+      undefined,
+      { sensitivity: "base" },
+    );
+  });
 }
 
 function maintainerLabel(email: string): string {
@@ -134,7 +144,9 @@ function LabFeatureGroup(props: {
             <li key={key}>
               <label className="flex cursor-pointer items-center justify-between px-4 py-3 transition-colors hover:bg-state-hover">
                 <div className="flex min-w-0 flex-col gap-1 pr-4">
-                  <span className="text-sm text-foreground">{key}</span>
+                  <span className="text-sm text-foreground">
+                    {featureMetadata.displayName ?? key}
+                  </span>
                   {featureMetadata.description && (
                     <span className="text-xs text-muted-foreground">
                       {featureMetadata.description}
@@ -187,32 +199,24 @@ function MaintainerFilterPills(props: {
   ];
 
   return (
-    <>
+    <ToggleGroup
+      className="min-w-0 flex-wrap"
+      value={[props.value]}
+      onValueChange={(value) => {
+        props.onChange(value[0] ?? props.value);
+      }}
+    >
       {options.map((option) => {
-        const active = option.value === props.value;
         return (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={active}
-            onClick={() => {
-              props.onChange(option.value);
-            }}
-            className={cn(
-              "inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors",
-              active
-                ? "bg-muted text-foreground"
-                : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
-            )}
-          >
+          <Toggle key={option.value} value={option.value} variant="filter">
             <span>{option.label}</span>
             <span className="text-xs text-muted-foreground">
               {option.count}
             </span>
-          </button>
+          </Toggle>
         );
       })}
-    </>
+    </ToggleGroup>
   );
 }
 
@@ -267,7 +271,7 @@ export function LabPage() {
   const busy = resetting || toggling;
   const pageSignal = useGet(pageSignal$);
   const metadata = getFeatureSwitchMetadata();
-  const sorted = sortedFeatureSwitchKeys();
+  const sorted = sortedFeatureSwitchKeys(metadata);
   const maintainerOptions = maintainerFilterOptions({
     keys: sorted,
     metadata,

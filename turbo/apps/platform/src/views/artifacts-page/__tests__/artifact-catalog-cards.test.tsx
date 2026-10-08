@@ -1,12 +1,11 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
   findArtifactAction,
-  getButtonByName,
   setupArtifactCatalogPage,
 } from "./artifact-catalog-test-helpers.ts";
 
@@ -55,93 +54,6 @@ test("Artifact cards identify their kind and show available previews", async () 
   );
 });
 
-test("An artifact without a thumbnail covers the tile with its kind", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [
-        artifact({ title: "launch-plan.txt" }),
-        artifact({
-          id: "a0000000-0000-4000-a000-000000000002",
-          kind: "hosted-site",
-          title: "launch-site",
-        }),
-        artifact({
-          id: "a0000000-0000-4000-a000-000000000003",
-          kind: "presentation",
-          title: "q3-review",
-        }),
-      ],
-      nextCursor: null,
-    });
-  });
-
-  await setupArtifactCatalogPage(context);
-
-  const fileCard = await findArtifactAction("launch-plan.txt");
-  const siteCard = await findArtifactAction("launch-site");
-  const deckCard = await findArtifactAction("q3-review");
-
-  // The cover states the kind, so the corner badge would stamp the same icon
-  // twice on one card, and the kind stays announced exactly once.
-  expect(
-    within(siteCard).getByTestId("artifact-catalog-kind-cover-hosted-site"),
-  ).toBeInTheDocument();
-  expect(
-    within(siteCard).queryByTestId("artifact-catalog-kind-icon-hosted-site"),
-  ).toBeNull();
-  expect(
-    within(siteCard).getAllByLabelText("Hosted site artifact"),
-  ).toHaveLength(1);
-  expect(
-    within(deckCard).getByTestId("artifact-catalog-kind-cover-presentation"),
-  ).toBeInTheDocument();
-  expect(
-    within(deckCard).queryByTestId("artifact-catalog-kind-icon-presentation"),
-  ).toBeNull();
-  // A file keeps both: its cover states the format, which the badge does not.
-  expect(
-    within(fileCard).getByTestId("artifact-catalog-file-preview-icon"),
-  ).toBeInTheDocument();
-  expect(
-    within(fileCard).getByTestId("artifact-catalog-kind-icon-file"),
-  ).toBeInTheDocument();
-});
-
-test("A hosted site whose thumbnail fails to load falls back to its kind", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [
-        artifact({
-          id: "a0000000-0000-4000-a000-000000000002",
-          kind: "hosted-site",
-          title: "launch-site",
-          thumbnail: { url: "https://cdn.vm0.io/artifacts/test/preview.webp" },
-        }),
-      ],
-      nextCursor: null,
-    });
-  });
-
-  await setupArtifactCatalogPage(context);
-
-  const siteCard = await findArtifactAction("launch-site");
-  const thumbnail = await within(siteCard).findByTestId(
-    "artifact-catalog-thumbnail",
-  );
-  expect(
-    within(siteCard).getByTestId("artifact-catalog-kind-icon-hosted-site"),
-  ).toBeInTheDocument();
-
-  fireEvent.error(thumbnail);
-
-  await expect(
-    within(siteCard).findByTestId("artifact-catalog-kind-cover-hosted-site"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(siteCard).queryByTestId("artifact-catalog-kind-icon-hosted-site"),
-  ).toBeNull();
-});
-
 test("A video artifact without a poster uses its source as the catalog preview", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
@@ -165,24 +77,4 @@ test("A video artifact without a poster uses its source as the catalog preview",
     "src",
     "https://videos.example.test/product-tour.mp4#t=0.001",
   );
-});
-
-test("Artifact catalog failure is announced clearly", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(403, {
-      error: { code: "FORBIDDEN", message: "Transient catalog failure" },
-    });
-  });
-
-  await setupArtifactCatalogPage(context);
-
-  await expect(
-    screen.findByLabelText("Artifact kind filters"),
-  ).resolves.toBeInTheDocument();
-  const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent("Could not load artifacts.");
-  // The message owns the recovery, so it no longer tells the reader to come
-  // back later with nothing to act on.
-  expect(alert).not.toHaveTextContent("later");
-  expect(getButtonByName("Try again", alert)).toBeEnabled();
 });

@@ -10,6 +10,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { pathname } from "../../../signals/location.ts";
 import { mockTemplateChat } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   THREAD_ID,
@@ -70,7 +71,7 @@ function menuItem(menu: HTMLElement, label: string): HTMLElement {
   return item;
 }
 
-test("keeps the separate attach, template and workflow buttons while the add menu is off", async () => {
+test("keeps separate attach and template buttons while the add menu is off", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: false,
   });
@@ -78,11 +79,10 @@ test("keeps the separate attach, template and workflow buttons while the add men
 
   expect(within(card).getByLabelText("Attach")).toBeVisible();
   expect(within(card).getByLabelText("Template")).toBeVisible();
-  expect(within(card).getByLabelText("Create workflow")).toBeVisible();
   expect(within(card).queryByLabelText("Add")).toBeNull();
 });
 
-test("collapses those buttons into the add menu's rows", async () => {
+test("groups attach, template and import skills actions in the add menu", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
   });
@@ -90,31 +90,53 @@ test("collapses those buttons into the add menu's rows", async () => {
 
   expect(within(card).queryByLabelText("Attach")).toBeNull();
   expect(within(card).queryByLabelText("Template")).toBeNull();
-  expect(within(card).queryByLabelText("Create workflow")).toBeNull();
 
   const menu = await openAddMenu(editor);
   expect(menuItemLabels(menu)).toStrictEqual([
     "Attach",
     "Template",
-    "Create workflow",
+    "Import skills",
   ]);
 });
 
-// The task chips reach a presentation, image, video, website or visualization
-// in one click from directly under the composer, so the menu stays out of that
-// job even where every one of those generations is switched on.
-test("leaves starting a generation to the task chips", async () => {
+test("opens the import skills dialog from the add menu", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
-    [FeatureSwitchKey.ComposerTaskChips]: true,
   });
 
   const menu = await openAddMenu(editor);
   expect(menuItemLabels(menu)).toStrictEqual([
     "Attach",
     "Template",
-    "Create workflow",
+    "Import skills",
   ]);
+  click(menuItem(menu, "Import skills"));
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Import your skills",
+  });
+  // The dialog is ready once its prompt can be copied.
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast("button", dialog).find((button) => {
+        return button.textContent?.trim() === "Copy prompt";
+      }),
+    ).toBeVisible();
+  });
+
+  const viewWorkflows = queryAllByRoleFast("link", dialog).find((link) => {
+    return link.textContent?.trim() === "View workflows";
+  });
+  if (!viewWorkflows) {
+    throw new Error("Expected the View workflows link");
+  }
+  click(viewWorkflows);
+  await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
+  });
+  expect(
+    screen.queryByRole("dialog", { name: "Import your skills" }),
+  ).toBeNull();
 });
 
 // The dialog used to be mounted by the toolbar button that the menu replaces.

@@ -1,6 +1,16 @@
 import type { UsageRecordKindBreakdown } from "@okouai/api-contracts/contracts/usage-record";
 import { getModelDisplayName } from "@okouai/core/model-display-name";
 import { i18n } from "../i18n/index.ts";
+import type { ModelCatalog } from "../signals/external/model-catalog.ts";
+
+/**
+ * Run model names come only from the server catalog (`GET /api/model-catalog`).
+ * Undefined while the catalog loads; rows then show the raw model ID.
+ */
+type UsageModelCatalog = Pick<
+  ModelCatalog,
+  "displayName" | "modelForIdentifier"
+>;
 
 interface CreditUsageEntry {
   readonly kind: string;
@@ -134,10 +144,32 @@ function stripUsageProviderPrefix(value: string): string {
   return normalized;
 }
 
-function usageModelDisplayName(
+/**
+ * A run model row names the model the run actually used: the catalog's own
+ * display name of that model, retired or not, never its replacement's. A
+ * provider-prefixed upstream ID maps to its catalog model through the routes;
+ * an unknown ID is shown as recorded.
+ */
+function runModelDisplayName(
   model: string,
-  preserveUnknownModelId: boolean,
+  catalog: UsageModelCatalog | undefined,
 ): string {
+  const usageDisplayName = MODEL_DISPLAY_NAMES[model];
+  if (usageDisplayName) {
+    return usageDisplayName();
+  }
+  if (!catalog) {
+    return model;
+  }
+  const catalogModel = catalog.modelForIdentifier(model);
+  return catalogModel ? catalog.displayName(catalogModel) : model;
+}
+
+/**
+ * Image and video generation models are not run models and have no server
+ * catalog; their labels come from the generation model tables in core.
+ */
+function generationModelDisplayName(model: string): string {
   const usageDisplayName = MODEL_DISPLAY_NAMES[model];
   if (usageDisplayName) {
     return usageDisplayName();
@@ -154,9 +186,7 @@ function usageModelDisplayName(
     return strippedDisplayName;
   }
 
-  return preserveUnknownModelId
-    ? strippedModel
-    : formatUsageDisplayName(strippedModel);
+  return formatUsageDisplayName(strippedModel);
 }
 
 function usageKindBase(kind: string): string {
@@ -176,7 +206,11 @@ function managedUsageRowKey(kind: string): string | null {
     : null;
 }
 
-function getCreditUsageDisplayName(kind: string, provider: string): string {
+function getCreditUsageDisplayName(
+  kind: string,
+  provider: string,
+  catalog: UsageModelCatalog | undefined,
+): string {
   const baseKind = usageKindBase(kind);
   const managedKindDisplayName = MANAGED_USAGE_KIND_DISPLAY_NAMES[baseKind];
   if (managedKindDisplayName) {
@@ -188,8 +222,11 @@ function getCreditUsageDisplayName(kind: string, provider: string): string {
   }
 
   const normalizedProvider = provider.trim();
-  if (baseKind === "model" || baseKind === "image" || baseKind === "video") {
-    return usageModelDisplayName(normalizedProvider, baseKind === "model");
+  if (baseKind === "model") {
+    return runModelDisplayName(normalizedProvider, catalog);
+  }
+  if (baseKind === "image" || baseKind === "video") {
+    return generationModelDisplayName(normalizedProvider);
   }
 
   return formatUsageDisplayName(normalizedProvider);
@@ -225,6 +262,7 @@ function parseUsageKind(kind: string): {
 
 export function buildCreditUsageDisplayRows(
   entries: readonly CreditUsageEntry[],
+  catalog: UsageModelCatalog | undefined,
 ): readonly CreditUsageDisplayRow[] {
   const rows = new Map<string, CreditUsageDisplayRow>();
   for (const entry of entries) {
@@ -237,7 +275,7 @@ export function buildCreditUsageDisplayRows(
     const existing = rows.get(key);
     rows.set(key, {
       key,
-      label: getCreditUsageDisplayName(parsed.kind, provider),
+      label: getCreditUsageDisplayName(parsed.kind, provider, catalog),
       credits: (existing?.credits ?? 0) + entry.credits,
     });
   }
@@ -246,6 +284,7 @@ export function buildCreditUsageDisplayRows(
 
 export function buildCreditUsageDisplaySegments(
   breakdown: readonly UsageRecordKindBreakdown[],
+  catalog: UsageModelCatalog | undefined,
 ) {
   const segments = new Map<
     UsageRecordKindBreakdown["kind"],
@@ -299,7 +338,7 @@ export function buildCreditUsageDisplaySegments(
       return {
         kind: segment.kind,
         credits: segment.credits,
-        rows: buildCreditUsageDisplayRows(segment.entries),
+        rows: buildCreditUsageDisplayRows(segment.entries, catalog),
       };
     });
 }

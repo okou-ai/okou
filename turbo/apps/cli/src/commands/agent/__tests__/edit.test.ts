@@ -413,22 +413,6 @@ describe("okou agent edit command", () => {
       );
       expect(mockExit).toHaveBeenCalledWith(1);
     });
-
-    it("should reject unsupported model edit flags", async () => {
-      await expect(async () => {
-        await editCommand.parseAsync([
-          "node",
-          "cli",
-          "my-agent",
-          "--model-provider",
-          "00000000-0000-4000-8000-000000000001",
-          "--model",
-          "claude-sonnet-4-6",
-        ]);
-      }).rejects.toThrow("process.exit called");
-
-      expect(mockExit).toHaveBeenCalledWith(1);
-    });
   });
 
   describe("error handling", () => {

@@ -6,8 +6,40 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 const GUEST_BINARIES_FILE: &str = "guest-binaries.json";
+const MAX_CLI_PACKAGE_SIZE: u64 = 64 * 1024 * 1024;
+const MAX_CLI_MANIFEST_SIZE: u64 = 16 * 1024;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CliManifest {
+    version: u32,
+    package: CliPackage,
+    versions: CliVersions,
+    session_construction: CliSessionConstruction,
+}
+
+#[derive(Deserialize)]
+struct CliPackage {
+    path: String,
+    sha256: String,
+    size: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CliVersions {
+    cli: String,
+    pi_agent_runtime: String,
+    pi_sdk: String,
+}
+
+#[derive(Deserialize)]
+struct CliSessionConstruction {
+    digest: String,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -23,14 +55,16 @@ type GuestField = (&'static str, fn(&GuestBinary) -> &str);
 
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(bundled_guests)");
+    println!("cargo::rustc-check-cfg=cfg(bundled_okou_cli)");
 
     // Rebuild when embedded files change (include_str! tracks deps for rustc,
     // but CI artifact caches may not — explicit rerun-if-changed ensures correctness).
-    println!("cargo::rerun-if-changed=scripts/agent-abnormal-exit-diagnostics.sh");
-    println!("cargo::rerun-if-changed=scripts/rootfs-usage.py");
+    println!(
+        "cargo::rerun-if-changed=../runner-executor/scripts/agent-abnormal-exit-diagnostics.sh"
+    );
+    println!("cargo::rerun-if-changed=../runner-executor/scripts/rootfs-usage.py");
     println!("cargo::rerun-if-changed=scripts/build-template.sh");
     println!("cargo::rerun-if-changed=scripts/customize-rootfs.sh");
-    println!("cargo::rerun-if-changed=scripts/freeze-workspace-drive.sh");
     println!("cargo::rerun-if-changed=scripts/verify-rootfs.sh");
     println!("cargo::rerun-if-changed={GUEST_BINARIES_FILE}");
 
@@ -46,45 +80,55 @@ fn main() {
         .expect("CARGO_MANIFEST_DIR should have a parent")
         .to_path_buf();
 
-    // Always rebuild when any of these env vars change.
+    // Supply every Guest binary, the CLI tarball and its explicit manifest, or none.
+    println!("cargo::rerun-if-env-changed=GUEST_CLI_PATH");
+    println!("cargo::rerun-if-env-changed=GUEST_CLI_MANIFEST_PATH");
     for guest in &guests {
         println!("cargo::rerun-if-env-changed={}", guest.path_env);
     }
-
-    // All-or-nothing: either all inventory path environment variables are set, or none.
+    let guest_cli_path = read_bundle_path("GUEST_CLI_PATH");
+    let guest_cli_manifest_path = read_bundle_path("GUEST_CLI_MANIFEST_PATH");
     let paths: Vec<_> = guests
         .iter()
-        .filter_map(|guest| {
-            std::env::var(&guest.path_env)
-                .ok()
-                .map(|value| (guest, value))
-        })
+        .filter_map(|guest| read_bundle_path(&guest.path_env).map(|value| (guest, value)))
         .collect();
-
-    if !paths.is_empty() && paths.len() != guests.len() {
-        let set: Vec<_> = paths
+    let supplied = paths.len()
+        + usize::from(guest_cli_path.is_some())
+        + usize::from(guest_cli_manifest_path.is_some());
+    if supplied != 0 && supplied != guests.len() + 2 {
+        let mut set: Vec<_> = paths
             .iter()
             .map(|(guest, _)| guest.path_env.as_str())
             .collect();
-        let missing: Vec<_> = guests
+        let mut missing: Vec<_> = guests
             .iter()
             .filter(|guest| !set.contains(&guest.path_env.as_str()))
             .map(|guest| guest.path_env.as_str())
             .collect();
+        for (name, provided) in [
+            ("GUEST_CLI_PATH", guest_cli_path.is_some()),
+            ("GUEST_CLI_MANIFEST_PATH", guest_cli_manifest_path.is_some()),
+        ] {
+            if provided {
+                set.push(name);
+            } else {
+                missing.push(name);
+            }
+        }
         panic!(
-            "partial guest binary path env vars: set={set:?}, missing={missing:?} — must set all or none"
+            "partial Guest binary and CLI paths: set={set:?}, missing={missing:?} — must set all or none"
         );
     }
 
-    if paths.len() == guests.len() {
+    if supplied == guests.len() + 2 {
         println!("cargo::rustc-cfg=bundled_guests");
         for (guest, raw_path) in paths {
-            let resolved = if std::path::Path::new(raw_path.as_str()).is_relative() {
+            let resolved = if Path::new(raw_path.as_str()).is_relative() {
                 workspace_root.join(raw_path.as_str())
             } else {
                 PathBuf::from(raw_path.as_str())
             };
-            let abs = std::fs::canonicalize(&resolved)
+            let abs = fs::canonicalize(&resolved)
                 .unwrap_or_else(|e| panic!("{raw_path} (resolved to {}): {e}", resolved.display()));
             let abs_str = abs
                 .to_str()
@@ -92,7 +136,143 @@ fn main() {
             println!("cargo::rustc-env={}={abs_str}", guest.bundled_env);
             println!("cargo::rerun-if-changed={abs_str}");
         }
+        embed_guest_cli(
+            &guest_cli_path.expect("CLI path is required with Guest paths"),
+            &guest_cli_manifest_path.expect("CLI manifest path is required with Guest paths"),
+            &workspace_root,
+        );
     }
+}
+
+fn read_bundle_path(name: &str) -> Option<String> {
+    match env::var(name) {
+        Ok(path) if !path.is_empty() => Some(path),
+        Ok(_) | Err(env::VarError::NotPresent) => None,
+        Err(env::VarError::NotUnicode(_)) => panic!("{name} must be a UTF-8 path"),
+    }
+}
+
+fn cli_file_path(path: &str, workspace_root: &Path, label: &str, max_size: u64) -> PathBuf {
+    let resolved = if Path::new(path).is_relative() {
+        workspace_root.join(path)
+    } else {
+        PathBuf::from(path)
+    };
+    let metadata = fs::symlink_metadata(&resolved)
+        .unwrap_or_else(|e| panic!("CLI {label} {}: {e}", resolved.display()));
+    assert!(
+        metadata.file_type().is_file() && metadata.len() > 0 && metadata.len() <= max_size,
+        "CLI {label} must be a nonempty regular file no larger than {max_size} bytes: {path}"
+    );
+    let path = fs::canonicalize(&resolved)
+        .unwrap_or_else(|e| panic!("CLI {label} {}: {e}", resolved.display()));
+    println!("cargo::rerun-if-changed={}", path.display());
+    path
+}
+
+fn valid_lower_hex(value: &str, len: usize) -> bool {
+    value.len() == len
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn valid_release_version(value: &str) -> bool {
+    let parts: Vec<_> = value.split('.').collect();
+    parts.len() == 3
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && part.len() <= 10
+                && part.bytes().all(|byte| byte.is_ascii_digit())
+                && (part.len() == 1 || !part.starts_with('0'))
+        })
+}
+
+fn embed_guest_cli(path: &str, manifest_path: &str, workspace_root: &Path) {
+    let package = cli_file_path(path, workspace_root, "package", MAX_CLI_PACKAGE_SIZE);
+    let manifest_path = cli_file_path(
+        manifest_path,
+        workspace_root,
+        "manifest",
+        MAX_CLI_MANIFEST_SIZE,
+    );
+    let manifest: CliManifest =
+        serde_json::from_slice(&fs::read(&manifest_path).expect("read CLI manifest"))
+            .expect("parse CLI manifest");
+    assert_eq!(manifest.version, 1, "unsupported CLI manifest version");
+    assert_eq!(
+        manifest.package.path, "package.tgz",
+        "unexpected CLI package path"
+    );
+    assert!(
+        valid_lower_hex(&manifest.package.sha256, 64),
+        "invalid CLI package SHA-256"
+    );
+    let bytes = fs::read(&package).expect("read CLI package");
+    assert_eq!(
+        manifest.package.size,
+        bytes.len() as u64,
+        "CLI package size mismatch"
+    );
+    assert_eq!(
+        manifest.package.sha256,
+        hex::encode(Sha256::digest(&bytes)),
+        "CLI package digest mismatch"
+    );
+    assert!(
+        valid_release_version(&manifest.versions.cli),
+        "invalid CLI version"
+    );
+    assert!(
+        valid_release_version(&manifest.versions.pi_agent_runtime),
+        "invalid Pi runtime version"
+    );
+    let (sdk_version, patch) = manifest
+        .versions
+        .pi_sdk
+        .split_once("+okou.")
+        .expect("invalid Pi SDK identity");
+    assert!(
+        valid_release_version(sdk_version) && valid_lower_hex(patch, 12),
+        "invalid Pi SDK identity"
+    );
+    assert!(
+        valid_lower_hex(&manifest.session_construction.digest, 64),
+        "invalid session-construction digest"
+    );
+
+    // Only the tarball is included as a Runner resource. The manifest stays a
+    // build input; individual validated identity fields become compile-time
+    // constants for constructing the installed rootfs manifest.
+    println!("cargo::rustc-cfg=bundled_okou_cli");
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_CLI_PACKAGE={}",
+        package.display()
+    );
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_CLI_SHA256={}",
+        manifest.package.sha256
+    );
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_CLI_SIZE={}",
+        manifest.package.size
+    );
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_CLI_VERSION={}",
+        manifest.versions.cli
+    );
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_PI_RUNTIME_VERSION={}",
+        manifest.versions.pi_agent_runtime
+    );
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_PI_SDK_VERSION={}",
+        manifest.versions.pi_sdk
+    );
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_SESSION_DIGEST={}",
+        manifest.session_construction.digest
+    );
 }
 
 fn load_guest_binaries() -> Vec<GuestBinary> {

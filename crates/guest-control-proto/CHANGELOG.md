@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.21.50](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.49...guest-control-proto-v0.21.50) (2026-10-07)
+
+## [0.21.49](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.48...guest-control-proto-v0.21.49) (2026-10-07)
+
+## [0.21.48](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.47...guest-control-proto-v0.21.48) (2026-10-07)
+
+## [0.21.47](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.46...guest-control-proto-v0.21.47) (2026-10-02)
+
+## [0.21.46](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.45...guest-control-proto-v0.21.46) (2026-10-01)
+
+## [0.21.45](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.44...guest-control-proto-v0.21.45) (2026-09-30)
+
+## [0.21.44](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.43...guest-control-proto-v0.21.44) (2026-09-30)
+
+## [0.21.43](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.42...guest-control-proto-v0.21.43) (2026-09-30)
+
+## [0.21.42](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.41...guest-control-proto-v0.21.42) (2026-09-29)
+
+## [0.21.41](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.40...guest-control-proto-v0.21.41) (2026-09-29)
+
+## [0.21.40](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.39...guest-control-proto-v0.21.40) (2026-09-28)
+
+## [0.21.39](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.38...guest-control-proto-v0.21.39) (2026-09-28)
+
+## [0.21.38](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.37...guest-control-proto-v0.21.38) (2026-09-28)
+
+## [0.21.37](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.36...guest-control-proto-v0.21.37) (2026-09-27)
+
+## [0.21.36](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.35...guest-control-proto-v0.21.36) (2026-09-26)
+
+## [0.21.35](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.34...guest-control-proto-v0.21.35) (2026-09-25)
+
+## [0.21.34](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.33...guest-control-proto-v0.21.34) (2026-09-25)
+
+## [0.21.33](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.32...guest-control-proto-v0.21.33) (2026-09-24)
+
+## [0.21.32](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.31...guest-control-proto-v0.21.32) (2026-09-23)
+
+## [0.21.31](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.30...guest-control-proto-v0.21.31) (2026-09-23)
+
 ## [0.21.30](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.29...guest-control-proto-v0.21.30) (2026-09-22)
 
 ## [0.21.29](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.28...guest-control-proto-v0.21.29) (2026-09-22)

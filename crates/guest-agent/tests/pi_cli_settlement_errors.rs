@@ -1,5 +1,5 @@
-//! Pi CLI terminal results preserve error-message and aborted fallback
-//! semantics through the guest's public event projection.
+//! Pi CLI terminal results preserve completed length responses, error-message,
+//! and aborted fallback semantics through the guest's public event projection.
 
 mod common;
 
@@ -18,6 +18,7 @@ use std::time::Duration;
 /// count and digest come from the discarded page, so that case asserts the
 /// contract instead: the marker, no observed transport evidence, and no markup.
 enum ExpectedTerminalResult<'a> {
+    Completed(&'a str),
     Exact(&'a str),
     UpstreamNonApiResponse,
 }
@@ -31,6 +32,7 @@ async fn run_settlement_case(
     base_path: &OsStr,
     original_directory: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let completed = matches!(expected_result, ExpectedTerminalResult::Completed(_));
     let tmp = tempfile::tempdir()?;
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
     let bin_dir = tmp.path().join("bin");
@@ -54,7 +56,6 @@ async fn run_settlement_case(
         &npx,
         r#"#!/bin/sh
 set -eu
-printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":1,"ownershipTransferMode":"pending-tool-continuation"}'
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;
@@ -104,9 +105,7 @@ fi
             &runtime_dir,
             &guest_contracts::env::RunPayload {
                 prompt: "verify Pi terminal result".to_string(),
-                pi_launch_config:
-                    r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#
-                        .to_string(),
+                pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
                 pi_model_config: "{}".to_string(),
                 pi_session_id: "11111111-1111-4111-8111-111111111111".to_string(),
                 ..guest_contracts::env::RunPayload::default()
@@ -142,88 +141,102 @@ fi
     .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Pi CLI process timed out"))??;
 
     std::env::set_current_dir(original_directory)?;
-    assert_eq!(result.exit_code, 1);
+    assert_eq!(result.exit_code, i32::from(!completed));
     assert_eq!(
-        result.jsonl_result.map(|summary| summary.status),
-        Some(guest_agent::cli::JsonlResultStatus::Error)
+        result.jsonl_result.as_ref().map(|summary| summary.status),
+        Some(if completed {
+            guest_agent::cli::JsonlResultStatus::Success
+        } else {
+            guest_agent::cli::JsonlResultStatus::Error
+        })
     );
-    let terminal_failure = guest_agent::failure_diagnostics::cli_nonzero_failure_for_config(
-        &runtime.config,
-        None,
-        &result,
-    );
-    assert_eq!(terminal_failure.diagnostic.framework, AgentFramework::Pi);
-    assert_eq!(
-        terminal_failure.diagnostic.failure_detail_source,
-        Some(FailureDetailSource::PiResult)
-    );
-    assert_eq!(terminal_failure.diagnostic.claude_num_turns, None);
-    assert_eq!(
-        terminal_failure.diagnostic.failure_reason,
-        expected_failure_reason
-    );
-    if expected_failure_reason == Some(FailureReason::ProviderQueueTimeout) {
+    if completed {
         assert_eq!(
             result
-                .cli_observed_exit
+                .jsonl_result
                 .as_ref()
-                .and_then(|exit| exit.exit_code),
-            Some(0)
+                .and_then(|summary| summary.model_request.as_ref()),
+            None
         );
-    }
-    if expected_failure_reason == Some(FailureReason::ProviderRateLimited) {
+    } else {
+        let terminal_failure = guest_agent::failure_diagnostics::cli_nonzero_failure_for_config(
+            &runtime.config,
+            None,
+            &result,
+        );
+        assert_eq!(terminal_failure.diagnostic.framework, AgentFramework::Pi);
         assert_eq!(
-            result
-                .cli_observed_exit
-                .as_ref()
-                .and_then(|exit| exit.exit_code),
-            Some(0)
+            terminal_failure.diagnostic.failure_detail_source,
+            Some(FailureDetailSource::PiResult)
         );
+        assert_eq!(terminal_failure.diagnostic.claude_num_turns, None);
         assert_eq!(
-            terminal_failure.diagnostic.model_request,
-            Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
-                http_status: Some(429),
-                transport_attempts: 1,
-                retry_attempts: 0,
-                retry_limit: None,
-                transport_failure: None,
-            })
+            terminal_failure.diagnostic.failure_reason,
+            expected_failure_reason
         );
-        let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+        if expected_failure_reason == Some(FailureReason::ProviderQueueTimeout) {
+            assert_eq!(
+                result
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+        }
+        if expected_failure_reason == Some(FailureReason::ProviderRateLimited) {
+            assert_eq!(
+                result
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+            assert_eq!(
+                terminal_failure.diagnostic.model_request,
+                Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+                    http_status: Some(429),
+                    transport_attempts: 1,
+                    retry_attempts: 0,
+                    retry_limit: None,
+                    transport_failure: None,
+                })
+            );
+            let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
             terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
-        assert_eq!(serde_json::to_value(reason)?, "provider_rate_limited");
-    }
-    if expected_failure_reason == Some(FailureReason::ResponseConnectionLost) {
-        assert_eq!(
-            result
-                .cli_observed_exit
-                .as_ref()
-                .and_then(|exit| exit.exit_code),
-            Some(0)
-        );
-        let request = terminal_failure
-            .diagnostic
-            .model_request
-            .ok_or_else(|| std::io::Error::other("missing model request evidence"))?;
-        assert_eq!(request.http_status, Some(200));
-        assert_eq!(
-            serde_json::to_value(request.transport_failure)?,
-            serde_json::json!({
-                "phase": "response_body", "signalAborted": false,
-                "errorName": "TypeError", "causeCode": "UND_ERR_RES_CONTENT_LENGTH_MISMATCH"
-            })
-        );
-    }
+            assert_eq!(serde_json::to_value(reason)?, "provider_rate_limited");
+        }
+        if expected_failure_reason == Some(FailureReason::ResponseConnectionLost) {
+            assert_eq!(
+                result
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+            let request = terminal_failure
+                .diagnostic
+                .model_request
+                .ok_or_else(|| std::io::Error::other("missing model request evidence"))?;
+            assert_eq!(request.http_status, Some(200));
+            assert_eq!(
+                serde_json::to_value(request.transport_failure)?,
+                serde_json::json!({
+                    "phase": "response_body", "signalAborted": false,
+                    "errorName": "TypeError", "causeCode": "UND_ERR_RES_CONTENT_LENGTH_MISMATCH"
+                })
+            );
+        }
 
-    let system_log = std::fs::read_to_string(runtime.paths.system_log_file())?;
-    assert!(
-        system_log.contains("Pi JSONL failure result"),
-        "system log should attribute the result failure to Pi: {system_log}"
-    );
-    assert!(
-        !system_log.contains("Claude JSONL failure result"),
-        "system log should not attribute a Pi result failure to Claude: {system_log}"
-    );
+        let system_log = std::fs::read_to_string(runtime.paths.system_log_file())?;
+        assert!(
+            system_log.contains("Pi JSONL failure result"),
+            "system log should attribute the result failure to Pi: {system_log}"
+        );
+        assert!(
+            !system_log.contains("Claude JSONL failure result"),
+            "system log should not attribute a Pi result failure to Claude: {system_log}"
+        );
+    }
 
     let mut delivered_events = Vec::new();
     for request in server.requests()? {
@@ -262,13 +275,26 @@ fi
         .iter()
         .find(|event| event["type"] == "result")
         .ok_or_else(|| std::io::Error::other("terminal result was not delivered"))?;
-    assert_eq!(terminal["subtype"], "error_during_execution");
-    assert_eq!(terminal["is_error"], true);
+    assert_eq!(
+        terminal["subtype"],
+        if completed {
+            "success"
+        } else {
+            "error_during_execution"
+        }
+    );
+    assert_eq!(terminal["is_error"], !completed);
+    if completed {
+        assert!(terminal.get("failureReason").is_none());
+        assert!(terminal.get("modelRequest").is_none());
+    }
     let result = terminal["result"]
         .as_str()
         .ok_or_else(|| std::io::Error::other("terminal result text was not a string"))?;
     match expected_result {
-        ExpectedTerminalResult::Exact(expected) => assert_eq!(result, expected),
+        ExpectedTerminalResult::Exact(expected) | ExpectedTerminalResult::Completed(expected) => {
+            assert_eq!(result, expected);
+        }
         ExpectedTerminalResult::UpstreamNonApiResponse => {
             assert!(
                 result.starts_with("upstream_non_api_response "),
@@ -292,10 +318,53 @@ fi
 }
 
 #[tokio::test]
-async fn guest_preserves_pi_error_and_aborted_settlement_results()
+async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_results()
 -> Result<(), Box<dyn std::error::Error>> {
     let base_path = std::env::var_os("PATH").unwrap_or_default();
     let original_directory = std::env::current_dir()?;
+    for (run_id, messages, result, assistant_text) in [
+        (
+            "00000000-0000-4000-8000-000000000141",
+            vec![serde_json::json!({
+                "role": "assistant", "stopReason": "length",
+                "content": [{"type": "text", "text": "Partial answer"}]
+            })],
+            "Partial answer",
+            Some("Partial answer"),
+        ),
+        (
+            "00000000-0000-4000-8000-000000000160",
+            vec![serde_json::json!({
+                "role": "assistant", "stopReason": "length",
+                "content": [{"type": "thinking", "thinking": "Unfinished reasoning"}]
+            })],
+            "",
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000161",
+            vec![
+                serde_json::json!({"role": "assistant", "stopReason": "length", "content": []}),
+                serde_json::json!({
+                    "role": "assistant", "stopReason": "stop",
+                    "content": [{"type": "text", "text": "Recovered answer"}]
+                }),
+            ],
+            "Recovered answer",
+            Some("Recovered answer"),
+        ),
+    ] {
+        run_settlement_case(
+            run_id,
+            &messages,
+            ExpectedTerminalResult::Completed(result),
+            None,
+            assistant_text,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
     const QUEUE_TIMEOUT: &str = "We were unable to start processing your request within the 900-second timeout limit. Please try again later.";
     for (index, metadata) in [
         serde_json::json!({
@@ -348,16 +417,6 @@ async fn guest_preserves_pi_error_and_aborted_settlement_results()
             "Codex error: Our servers are currently overloaded. Please try again later.",
             FailureReason::ProviderOverloaded,
             None,
-        ),
-        (
-            "00000000-0000-4000-8000-000000000141",
-            serde_json::json!({
-                "role": "assistant", "stopReason": "length",
-                "content": [{"type": "text", "text": "Partial answer"}]
-            }),
-            "Pi model response exceeded the output token limit.",
-            FailureReason::OutputTokenLimit,
-            Some("Partial answer"),
         ),
         (
             "00000000-0000-4000-8000-000000000142",

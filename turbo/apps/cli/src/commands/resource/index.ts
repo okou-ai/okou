@@ -13,12 +13,9 @@ import {
   findImageStyle,
   findPresentationReverseTemplateResource,
   findPresentationRunbookResource,
-  findTool,
   findTemplate,
-  findVideoTemplate,
   findWebsiteTemplateResource,
   type RegistryEntry,
-  type VideoTemplateRegistryEntry,
 } from "@okouai/core/resource-registry";
 
 import {
@@ -26,8 +23,6 @@ import {
   getRegistryResourceDownload,
 } from "../../lib/api/domains/registry-resources";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-
-type PullableRegistryEntry = RegistryEntry | VideoTemplateRegistryEntry;
 
 interface PullOptions {
   readonly dir: string;
@@ -41,23 +36,19 @@ function candidateIds(id: string): readonly string[] {
     `template:${id}`,
     `design-system:${id}`,
     `color-system:${id}`,
-    `tool:${id}`,
     `image-style:${id}`,
-    `video-template:${id}`,
   ];
 }
 
 export function findRegistryResourceForPull(
   id: string,
-): PullableRegistryEntry | undefined {
+): RegistryEntry | undefined {
   for (const candidate of candidateIds(id)) {
     const entry =
       findTemplate(candidate) ??
       findDesignSystem(candidate) ??
       findColorSystem(candidate) ??
-      findTool(candidate) ??
       findImageStyle(candidate) ??
-      findVideoTemplate(candidate) ??
       findPresentationReverseTemplateResource(candidate) ??
       findPresentationRunbookResource(candidate) ??
       findWebsiteTemplateResource(candidate);

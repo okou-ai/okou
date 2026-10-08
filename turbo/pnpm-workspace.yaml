@@ -33,6 +33,11 @@ auditConfig:
     # @hono/vite-build/vercel requires node-server v1. This advisory only
     # affects serve-static on Windows; the API uses neither surface.
     - GHSA-frvp-7c67-39w9
+    # No patched http-cache-semantics release exists yet. It is reachable only
+    # through ably>got>cacheable-request, and Ably's Node REST client never
+    # passes got's `cache` option, so the vulnerable max-stale path is unused.
+    # Remove when a fixed release is published or Ably drops got.
+    - GHSA-ch52-4w7c-c8xp
 
 overrides:
   # Upstream dependencies still resolve vulnerable releases without these floors.
@@ -43,6 +48,24 @@ overrides:
   "@langfuse/tracing": 5.10.0
   "esbuild@>=0.27.3 <0.28.1": ">=0.28.1"
   "jayson>uuid": 11.1.1
+  # @swc/core 1.16 refuses to load its native binding in the CI container
+  # (ERR_SWC_NATIVE_CACHE on the shared HOME). Keep i18next-cli on the repo's
+  # 1.15 line; remove once the toolchain container satisfies 1.16's cache checks.
+  "i18next-cli>@swc/core": 1.15.46
+  # Miniflare pins vulnerable patch releases. Remove when upstream requires
+  # sharp >=0.35.4 (libheif) and undici >=7.29.1 (TLS validation and DoS fixes).
+  "miniflare>sharp": ^0.35.4
+  "miniflare>undici": ^7.29.1
+  # Slack SDK 7.x still permits vulnerable axios releases. Remove when upstream
+  # requires axios >=1.20.0, which fixes the data-URL parser ReDoS.
+  "@slack/web-api>axios": 1.20.0
+  # AJV and express-rate-limit still permit vulnerable transitive releases.
+  # Remove these floors when upstream requires the patched versions.
+  "ajv>fast-uri": ^3.1.7
+  "express-rate-limit>ip-address": ^10.5.1
+  # Express still pins proxy-addr 2.0.7, vulnerable to IPv4-mapped IPv6 trust
+  # subnet spoofing (GHSA-jqcg-44mw-7w3h). Remove when upstream requires 2.0.8.
+  "express>proxy-addr": 2.0.8
   tar: ">=7.5.21"
   tmp: ">=0.2.6"
   ws: ">=8.21.0"
@@ -54,9 +77,9 @@ overrides:
 patchedDependencies:
   # Remove when Base UI resolves empty trigger refs before its portal focus guard.
   "@base-ui/react@1.7.0": patches/@base-ui__react@1.7.0.patch
-  "@earendil-works/pi-agent-core@0.86.1": patches/@earendil-works__pi-agent-core@0.86.1.patch
-  "@earendil-works/pi-ai@0.86.1": patches/@earendil-works__pi-ai@0.86.1.patch
-  "@earendil-works/pi-coding-agent@0.86.1": patches/@earendil-works__pi-coding-agent@0.86.1.patch
+  "@earendil-works/pi-agent-core@0.87.1": patches/@earendil-works__pi-agent-core@0.87.1.patch
+  "@earendil-works/pi-ai@0.87.1": patches/@earendil-works__pi-ai@0.87.1.patch
+  "@earendil-works/pi-coding-agent@0.87.1": patches/@earendil-works__pi-coding-agent@0.87.1.patch
   "@langfuse/pi-observability-plugin@0.1.2": patches/@langfuse__pi-observability-plugin@0.1.2.patch
   # Remove when upstream jest-dom declarations support Vitest 5's Matchers.
   "@testing-library/jest-dom@6.9.1": patches/@testing-library__jest-dom@6.9.1.patch

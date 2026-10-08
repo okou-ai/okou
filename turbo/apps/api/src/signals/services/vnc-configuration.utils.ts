@@ -12,13 +12,15 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { VncAuthentication } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
+  isVncRsaAesSecurityType,
+  isVncRsaAesAuthenticationOnly,
+} from "@okouai/api-contracts/contracts/vnc-rsa-aes";
+import {
   VNC_ERROR_CODES,
   type VncErrorCode,
 } from "@okouai/api-contracts/contracts/vnc-errors";
-import type { Db } from "../external/db";
 import { safeSync } from "../utils";
 
-export type VncTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type VncResult<T> =
   | { readonly ok: true; readonly value: T }
   | {
@@ -29,10 +31,44 @@ export type VncResult<T> =
     };
 
 const failures = {
+  membershipRevoked: {
+    kind: "not_found",
+    code: VNC_ERROR_CODES.UNAVAILABLE,
+    message: "VNC configuration is not available",
+  },
   invalidHost: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_HOST,
     message: "Invalid VNC host",
+  },
+  invalidAppleVncPasswordRoute: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_APPLE_VNC_PASSWORD_ROUTE,
+    message:
+      "Mac classic VNC password requires saved SSH to the Mac's loopback VNC service",
+  },
+  invalidAppleDhRoute: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_APPLE_DH_ROUTE,
+    message: "Apple DH requires saved SSH to the Mac's loopback VNC service",
+  },
+  invalidAppleSrpRoute: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_APPLE_SRP_ROUTE,
+    message:
+      "Apple Direct SRP requires saved SSH to the Mac's loopback VNC service",
+  },
+  invalidAppleRsaSrpRoute: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_APPLE_RSA_SRP_ROUTE,
+    message:
+      "Apple RSA/SRP requires saved SSH to the Mac's loopback VNC service",
+  },
+  invalidRsaAesRoute: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_INPUT,
+    message:
+      "RSA-AES authentication-only modes require saved SSH to literal server loopback",
   },
   invalidServerName: {
     kind: "bad_request",
@@ -43,6 +79,11 @@ const failures = {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_TRUST,
     message: "VNC custom trust requires a bounded bundle of CA certificates",
+  },
+  invalidClientIdentity: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_CLIENT_IDENTITY,
+    message: "Invalid VNC client certificate identity",
   },
   profileMismatch: {
     kind: "bad_request",
@@ -83,11 +124,6 @@ const failures = {
     kind: "conflict",
     code: VNC_ERROR_CODES.REVISION_EXHAUSTED,
     message: "VNC configuration revision limit reached",
-  },
-  ownerChanged: {
-    kind: "conflict",
-    code: VNC_ERROR_CODES.OWNER_CHANGED,
-    message: "VNC owner is no longer writable",
   },
   resourceIdConflict: {
     kind: "conflict",
@@ -230,10 +266,40 @@ export function prepareVncTransport(
 
 export function prepareVncSecurity(security: VncSecurity): VncResult<{
   readonly securityType: VncSecurity["type"];
-  readonly trustMode: "system" | "custom_ca";
+  readonly trustMode: "system" | "custom_ca" | "none";
   readonly caBundle: string | null;
   readonly x509ServerName: string | null;
+  readonly rsaServerKeySha256: string | null;
 }> {
+  if ("serverKeySha256" in security) {
+    return {
+      ok: true,
+      value: {
+        securityType: security.type,
+        trustMode: "none",
+        caBundle: null,
+        x509ServerName: null,
+        rsaServerKeySha256: security.serverKeySha256.toLowerCase(),
+      },
+    };
+  }
+  if (
+    security.type === "apple_vnc_password" ||
+    security.type === "apple_dh" ||
+    security.type === "apple_srp" ||
+    security.type === "apple_rsa_srp"
+  ) {
+    return {
+      ok: true,
+      value: {
+        securityType: security.type,
+        trustMode: "none",
+        caBundle: null,
+        x509ServerName: null,
+        rsaServerKeySha256: null,
+      },
+    };
+  }
   const trust = prepareVncTrust(security.trust);
   if (!trust.ok) {
     return trust;
@@ -251,18 +317,68 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
       securityType: security.type,
       ...trust.value,
       x509ServerName: serverName?.value ?? null,
+      rsaServerKeySha256: null,
     },
   };
 }
 
+const securityByAuthentication = {
+  none: "x509_none",
+  client_certificate: "x509_none",
+  client_certificate_vnc_password: "x509_vnc",
+  vnc_password: "x509_vnc",
+  username_password: "x509_plain",
+  qemu_scram_sha256: "qemu_x509_sasl",
+  apple_dh_username_password: "apple_dh",
+  apple_srp_username_password: "apple_srp",
+  apple_rsa_srp_username_password: "apple_rsa_srp",
+} as const;
+
 export function isVncProfileCompatible(
-  authMethod: VncAuthentication["method"],
+  authMethod: VncAuthentication["method"] | "none",
   securityType: VncSecurity["type"],
 ): boolean {
+  if (
+    authMethod === "rsa_aes_password" ||
+    authMethod === "rsa_aes_username_password"
+  ) {
+    return isVncRsaAesSecurityType(securityType);
+  }
   return (
-    (authMethod === "vnc_password" && securityType === "x509_vnc") ||
-    (authMethod === "username_password" && securityType === "x509_plain")
+    securityByAuthentication[authMethod] === securityType ||
+    (authMethod === "vnc_password" && securityType === "apple_vnc_password")
   );
+}
+
+export function validateVncProfileRoute(
+  securityType: VncSecurity["type"],
+  host: string,
+  transportType: "direct" | "ssh",
+): VncResult<undefined> {
+  if (
+    isVncRsaAesAuthenticationOnly(securityType) &&
+    (transportType !== "ssh" || (host !== "127.0.0.1" && host !== "::1"))
+  ) {
+    return vncFailure("invalidRsaAesRoute");
+  }
+  if (
+    (securityType === "apple_vnc_password" ||
+      securityType === "apple_dh" ||
+      securityType === "apple_srp" ||
+      securityType === "apple_rsa_srp") &&
+    (transportType !== "ssh" || (host !== "127.0.0.1" && host !== "::1"))
+  ) {
+    return vncFailure(
+      securityType === "apple_vnc_password"
+        ? "invalidAppleVncPasswordRoute"
+        : securityType === "apple_dh"
+          ? "invalidAppleDhRoute"
+          : securityType === "apple_srp"
+            ? "invalidAppleSrpRoute"
+            : "invalidAppleRsaSrpRoute",
+    );
+  }
+  return { ok: true, value: undefined };
 }
 
 function prepareVncTrust(trust: VncTrust): VncResult<{

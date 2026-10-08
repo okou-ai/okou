@@ -1,7 +1,7 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { randomUUID } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -11,6 +11,8 @@ import {
 } from "./helpers/api-bdd-auth-org";
 import { expectApiError } from "./helpers/api-bdd";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 /*
 Round-5 cluster auth-03 (AUTH-01/AUTH-03): user-owned configuration plus the
@@ -20,7 +22,7 @@ accept for agent creation. Sandbox, Okou run, and forged-PAT bearers are minted
 with the exported test token signers.
 */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
 const cfg = createUserConfigBddApi(context);
 
@@ -122,6 +124,22 @@ describe("AUTH-03 agent user connectors", () => {
     expect(new Set(deduped.enabledConnectorSlugs)).toStrictEqual(
       new Set(["github", "slack"]),
     );
+
+    for (const operation of ["add", "remove"] as const) {
+      const unchanged = await cfg.updateUserBuiltinConnectors(
+        admin,
+        agent.agentId,
+        [],
+        operation,
+      );
+      expect(new Set(unchanged.enabledConnectorSlugs)).toStrictEqual(
+        new Set(["github", "slack"]),
+      );
+      const readUnchanged = await cfg.readUserConnectors(admin, agent.agentId);
+      expect(new Set(readUnchanged.enabledConnectorSlugs)).toStrictEqual(
+        new Set(["github", "slack"]),
+      );
+    }
 
     const added = await cfg.updateUserBuiltinConnectors(
       admin,
@@ -282,7 +300,7 @@ describe("AUTH-03 agent user connectors", () => {
 });
 
 describe("AUTH-03 user model preference", () => {
-  it("defaults, updates, validates, and clears the user model preference", async () => {
+  it("defaults to Auto, rejects the Auto run model, and stores Auto as null", async () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-b2") });
 
@@ -291,20 +309,21 @@ describe("AUTH-03 user model preference", () => {
       selectedModel: null,
       serviceTier: null,
       modelSettings: {},
-      selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
     });
 
-    const updated = await cfg.updateModelPreference(admin, {
-      selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-      serviceTier: null,
-    });
-    expect(updated.selectedModel).toBe(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
-    expect(updated.serviceTier).toBeNull();
-    expect(updated.updatedAt).toStrictEqual(expect.any(String));
-    const readUpdated = await cfg.readModelPreference(admin);
-    expect(readUpdated).toStrictEqual(updated);
+    // Auto is only the null selection; its internal run model is not selectable.
+    const rejected = await cfg.requestUpdateModelPreference(
+      admin,
+      { selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL, serviceTier: null },
+      [400],
+    );
+    expectApiError(rejected.body);
+    expect(rejected.body.error.code).toBe("BAD_REQUEST");
+    await expect(cfg.readModelPreference(admin)).resolves.toStrictEqual(
+      defaults,
+    );
 
     const cleared = await cfg.updateModelPreference(admin, {
       selectedModel: null,
@@ -314,7 +333,6 @@ describe("AUTH-03 user model preference", () => {
       selectedModel: null,
       serviceTier: null,
       modelSettings: {},
-      selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
     });
@@ -323,7 +341,6 @@ describe("AUTH-03 user model preference", () => {
       selectedModel: null,
       serviceTier: null,
       modelSettings: {},
-      selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
     });
@@ -332,6 +349,11 @@ describe("AUTH-03 user model preference", () => {
   it("stores independent model effort preferences without deleting prior entries", async () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-effort") });
+    // Astra is restricted on the limited-free plan this admin starts on.
+    await createRunsApi(context).grantProEntitlement(admin);
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+      admin,
+    );
 
     const astra = await cfg.updateModelPreference(admin, {
       selectedModel: "gpt-6-astra",
@@ -369,8 +391,24 @@ describe("AUTH-03 user model preference", () => {
     );
     expectApiError(unsupported.body);
     expect(unsupported.body.error.message).toBe(
-      "Reasoning effort is not supported by the selected model",
+      "Reasoning effort is not available for this subscription",
     );
+    await expect(cfg.readModelPreference(admin)).resolves.toMatchObject({
+      selectedModel: "gpt-6-luna",
+      modelSettings: luna.modelSettings,
+    });
+    // Selecting Auto stores the null selection and keeps model settings.
+    const auto = await cfg.updateModelPreference(admin, {
+      selectedModel: null,
+      serviceTier: null,
+    });
+    expect(auto).toMatchObject({
+      selectedModel: null,
+      modelSettings: luna.modelSettings,
+    });
+    await expect(cfg.readModelPreference(admin)).resolves.toMatchObject({
+      selectedModel: null,
+    });
   });
 
   it("rejects contract-invalid model preference bodies and unauthenticated access", async () => {
@@ -381,18 +419,7 @@ describe("AUTH-03 user model preference", () => {
     expectApiError(emptyBody.body);
     expect(emptyBody.body.error.code).toBe("BAD_REQUEST");
     expect(emptyBody.body.error.message).toContain(
-      "selectedModel: Invalid option",
-    );
-
-    const removedModel = await cfg.rawUpdateModelPreference(
-      admin,
-      { selectedModel: "claude-haiku-4-5", serviceTier: null },
-      [400],
-    );
-    expectApiError(removedModel.body);
-    expect(removedModel.body.error.code).toBe("BAD_REQUEST");
-    expect(removedModel.body.error.message).toContain(
-      "selectedModel: Invalid option",
+      "selectedModel: Invalid input",
     );
 
     const unauthenticated = await cfg.requestReadModelPreference(null, [401]);

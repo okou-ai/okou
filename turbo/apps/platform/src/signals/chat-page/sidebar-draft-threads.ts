@@ -6,8 +6,9 @@ import { apiClient$ } from "../api-client.ts";
 const internalReloadSidebarDrafts$ = state(0);
 
 /**
- * Bump after a local draft save so the sidebar draft dots refresh without a
- * full thread-list reload. Draft changes are not broadcast by the server.
+ * Bump after a local draft save adds or removes a thread's draft so the
+ * sidebar draft dots refresh without a full thread-list reload. Draft changes
+ * are not broadcast by the server.
  */
 export const reloadSidebarDraftThreads$ = command(({ set }) => {
   set(internalReloadSidebarDrafts$, (n) => {

@@ -1,16 +1,17 @@
-import { command, computed, state } from "ccstate";
 import type { UsagePackManagementResponse } from "@okouai/api-contracts/contracts/billing";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { searchParams$, updateSearchParams$ } from "../../route.ts";
-import { reloadBillingStatus$, usagePackManagementAsync$ } from "../billing.ts";
+import { command, computed, state } from "ccstate";
 import { isOrgAdmin$ } from "../../org.ts";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
-import { reloadPersonalModelProviders$ } from "../../external/personal-model-providers.ts";
-import { resetSignal } from "../../utils.ts";
-import { reloadConnectorCatalogDiagnostics$ } from "./connector-catalog-diagnostics.ts";
-import { reloadBuiltInModelCooldownDiagnostics$ } from "./built-in-model-cooldown-diagnostics.ts";
-import { retryEmailSubscription$ } from "./email-subscription.ts";
+import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
+import { resetSignal } from "../../utils.ts";
+import { usagePackManagementAsync$ } from "../billing.ts";
+import { retryEmailSubscription$ } from "./email-subscription.ts";
+import {
+  managedUsagePackSelection,
+  resetUsagePackPricing$,
+  setMemberUsageSelections$,
+  setSelectedUsagePackPlan$,
+} from "./usage-pack-pricing-state.ts";
 import {
   billingPlansStandalone$,
   billingSubPage$,
@@ -22,12 +23,6 @@ import {
   setBillingPlansStandalone$,
   setBillingSubPage$,
 } from "./workspace-settings-state.ts";
-import {
-  managedUsagePackSelection,
-  resetUsagePackPricing$,
-  setMemberUsageSelections$,
-  setSelectedUsagePackPlan$,
-} from "./usage-pack-pricing-state.ts";
 
 // `usage` is the credit balance surface and keeps its id so existing
 // `?settings=usage` links stay valid; `usage-records` is the usage history that
@@ -67,15 +62,9 @@ export function resolveAvailableSettingsSection(
   section: SettingsSection,
   options: {
     readonly isAdmin: boolean;
-    readonly chatPreferenceEnabled: boolean;
-    readonly toolsTabEnabled: boolean;
   },
 ): SettingsSection {
-  if (
-    (!options.isAdmin && isAdminOnlySettingsSection(section)) ||
-    (!options.chatPreferenceEnabled && section === "chat") ||
-    (!options.toolsTabEnabled && section === "tools")
-  ) {
+  if (!options.isAdmin && isAdminOnlySettingsSection(section)) {
     return "preference";
   }
   return section;
@@ -116,17 +105,12 @@ export const settingsActiveSection$ = computed((get) => {
 export const setSettingsActiveSection$ = command(
   ({ get, set }, section: SettingsSection) => {
     if (section === "debug" && get(internalActiveSection$) !== "debug") {
-      set(reloadConnectorCatalogDiagnostics$);
-      set(reloadBuiltInModelCooldownDiagnostics$);
       set(reloadIndexedDbDiagnosticsFromWorker$);
     }
     set(internalActiveSection$, section);
     if (section !== "billing") {
       set(clearBillingScrollTarget$);
       set(resetUsagePackPricing$);
-    }
-    if (section === "model") {
-      set(reloadPersonalModelProviders$);
     }
     const params = new URLSearchParams(get(searchParams$));
     if (params.get("settings") !== section) {
@@ -283,10 +267,7 @@ export const setSettingsDialogOpen$ = command(
     // A plans sub-page that is already open when the session starts was opened
     // by an entry point outside Settings, so that flow owns the whole dialog.
     set(setBillingPlansStandalone$, get(billingSubPage$));
-    set(reloadBillingStatus$);
     if (get(internalActiveSection$) === "debug") {
-      set(reloadConnectorCatalogDiagnostics$);
-      set(reloadBuiltInModelCooldownDiagnostics$);
       set(reloadIndexedDbDiagnosticsFromWorker$);
     }
     set(internalSettingsDialogOpen$, true);
@@ -295,9 +276,6 @@ export const setSettingsDialogOpen$ = command(
     modalSignal.throwIfAborted();
     const params = new URLSearchParams(get(searchParams$));
     const section = get(internalActiveSection$);
-    if (section === "model") {
-      set(reloadPersonalModelProviders$);
-    }
     if (params.get("settings") !== section) {
       params.set("settings", section);
       set(updateSearchParams$, params);
@@ -367,14 +345,7 @@ export const checkUnifiedSettingsParam$ = command(
       return;
     }
 
-    const resolved = resolveAvailableSettingsSection(section, {
-      isAdmin,
-      chatPreferenceEnabled:
-        get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false,
-      toolsTabEnabled:
-        (get(featureSwitch$)[FeatureSwitchKey.SettingsToolsTab] ?? false) &&
-        (get(featureSwitch$)[FeatureSwitchKey.PaidToolControls] ?? false),
-    });
+    const resolved = resolveAvailableSettingsSection(section, { isAdmin });
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");
     if (opensBuyCredits && resolved === "billing") {

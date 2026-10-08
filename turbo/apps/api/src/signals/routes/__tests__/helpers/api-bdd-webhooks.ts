@@ -2,7 +2,6 @@ import { createHmac, randomUUID } from "node:crypto";
 
 import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
 import {
-  webhookBuiltInGenerationBytePlusContract,
   webhookBuiltInGenerationFalContract,
   webhookCheckpointsContract,
   webhookCheckpointsPrepareHistoryContract,
@@ -107,7 +106,7 @@ interface GithubWebhookResponse {
   readonly headers: Headers;
 }
 
-type BuiltInGenerationProvider = "fal" | "byteplus";
+type BuiltInGenerationProvider = "fal";
 const RESEND_WEBHOOK_SECRET = "whsec_test";
 interface StripeWebhookResponse {
   readonly status: 200 | 500;
@@ -417,17 +416,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       });
     },
 
-    bytePlusGenerationWebhookToken(
-      generationId: string,
-      visualKey?: string,
-    ): string {
-      return builtInGenerationToken({
-        provider: "byteplus",
-        generationId,
-        visualKey,
-      });
-    },
-
     async requestFalGenerationWebhook(args: {
       readonly generationId: string;
       readonly token: string;
@@ -438,25 +426,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       return await accept(
         setupApp({ context, routes: webhooksBuiltInGenerationRoutes })(
           webhookBuiltInGenerationFalContract,
-        ).post({
-          params: { generationId: args.generationId },
-          query: { token: args.token, visualKey: args.visualKey },
-          body: args.body as string,
-        }),
-        args.statuses,
-      );
-    },
-
-    async requestBytePlusGenerationWebhook(args: {
-      readonly generationId: string;
-      readonly token: string;
-      readonly visualKey?: string;
-      readonly body: unknown;
-      readonly statuses: readonly (200 | 400 | 401 | 503)[];
-    }) {
-      return await accept(
-        setupApp({ context, routes: webhooksBuiltInGenerationRoutes })(
-          webhookBuiltInGenerationBytePlusContract,
         ).post({
           params: { generationId: args.generationId },
           query: { token: args.token, visualKey: args.visualKey },
@@ -791,7 +760,7 @@ export function createWebhookCallbackApi(context: TestContext) {
     async requestAgentStorageCommit(
       body: AgentStorageCommitBody,
       headers: SandboxWebhookHeaders,
-      statuses: readonly (200 | 400 | 401 | 404 | 409 | 413 | 500)[],
+      statuses: readonly (200 | 400 | 401 | 404 | 413 | 500)[],
     ) {
       return await accept(
         setupApp({ context, routes: webhooksAgentStorageRoutes })(
@@ -807,7 +776,7 @@ export function createWebhookCallbackApi(context: TestContext) {
     async requestAgentStorageCommitUnchecked(
       body: unknown,
       headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 409 | 413 | 500)[],
+      statuses: readonly (400 | 401 | 404 | 413 | 500)[],
     ) {
       return await accept(
         setupApp({ context, routes: webhooksAgentStorageRoutes })(

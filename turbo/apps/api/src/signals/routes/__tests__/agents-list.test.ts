@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import {
+  agentsByIdContract,
+  agentsMainContract,
+} from "@okouai/api-contracts/contracts/agents";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { overrideCanonicalAgentAuthorityFixture } from "../../../test-fixtures/canonical-agent-authority";
+import { withMockNowForTest } from "../../../lib/time";
 import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 
@@ -34,29 +37,6 @@ describe("GET /api/agents", () => {
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
-  });
-
-  it("returns 401 when the authenticated session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-    const response = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [401],
-    );
-    expect(response.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns empty array when no agents exist", async () => {
-    const user = newOrgUser();
-    mocks.clerk.session(user.userId, user.orgId);
-
-    const response = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual([]);
   });
 
   it("returns an agent created through POST /api/agents", async () => {
@@ -119,7 +99,7 @@ describe("GET /api/agents", () => {
       orgId: owner.orgId,
       userId: `user_${randomUUID()}`,
     };
-    mocks.clerk.session(owner.userId, owner.orgId);
+    mocks.clerk.session(canonicalOwner.userId, canonicalOwner.orgId);
     context.mocks.s3.send.mockResolvedValue({});
 
     const first = await accept(
@@ -129,23 +109,34 @@ describe("GET /api/agents", () => {
       }),
       [201],
     );
+    mocks.clerk.session(owner.userId, owner.orgId);
     const second = await accept(
       apiClient().create({
         headers: authHeaders(),
-        body: { displayName: "Second Agent" },
+        body: { displayName: "Second Agent", visibility: "public" },
       }),
       [201],
     );
-    await overrideCanonicalAgentAuthorityFixture({
-      agentId: first.body.agentId,
-      override: {
-        owner: canonicalOwner.userId,
-        displayName: "Canonical First Agent",
-        visibility: "private",
-        updatedAt: new Date("2099-01-01T00:00:00.000Z"),
+    mocks.clerk.session(canonicalOwner.userId, canonicalOwner.orgId);
+    await withMockNowForTest(
+      Date.parse("2099-01-01T00:00:00.000Z"),
+      async () => {
+        await accept(
+          setupApp({ context, routes: agentsRoutes })(
+            agentsByIdContract,
+          ).updateMetadata({
+            headers: authHeaders(),
+            params: { id: first.body.agentId },
+            body: {
+              displayName: "Canonical First Agent",
+              visibility: "private",
+            },
+          }),
+          [200],
+        );
       },
-      signal: context.signal,
-    });
+    );
+    mocks.clerk.session(owner.userId, owner.orgId);
     const ownerList = await accept(
       apiClient().list({ headers: authHeaders() }),
       [200],

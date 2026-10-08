@@ -23,7 +23,7 @@ use crate::duration::duration_ms;
 use crate::error::{
     ApiFailureKind, ApiRequestContext, ApiTransportCause, ApiTransportError, ProviderError,
 };
-use crate::http::{ProviderHttpClient, api_transport_cause};
+use crate::http::{HttpClient, api_transport_cause};
 use crate::run_cancellation::{RunCancellationHandle, RunCancellationMode as Mode};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
@@ -42,7 +42,7 @@ pub(super) struct CancellationReconciliation {
 }
 
 struct ReadClient {
-    http: ProviderHttpClient,
+    http: HttpClient,
     group: String,
     identity: RunnerProcessIdentity,
 }
@@ -270,11 +270,7 @@ impl ReadFailures {
 }
 
 impl CancellationReconciliation {
-    pub(super) fn new(
-        http: ProviderHttpClient,
-        group: String,
-        identity: RunnerProcessIdentity,
-    ) -> Self {
+    pub(super) fn new(http: HttpClient, group: String, identity: RunnerProcessIdentity) -> Self {
         Self {
             client: Arc::new(ReadClient {
                 http,

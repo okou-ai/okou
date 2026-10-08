@@ -8,16 +8,12 @@ import {
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import {
   integrationsFeishuMessageContract,
   integrationsLarkMessageContract,
   integrationsLarkUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
-import {
-  FEISHU_PLATFORMS,
-  type FeishuPlatform,
-} from "@okouai/core/feishu-platform";
+import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -26,13 +22,11 @@ import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
-import { logsRoutes } from "../logs";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRouteMocks } from "./helpers/route-test";
@@ -119,7 +113,7 @@ describe("Lark integration", () => {
     );
   });
 
-  async function fixture() {
+  async function createOnboardedActor() {
     const userId = `user_${randomUUID()}`;
     const actor = {
       userId,
@@ -132,10 +126,15 @@ describe("Lark integration", () => {
       [FeatureSwitchKey.FeishuIntegration]: true,
     });
     authOrgApi.acceptAgentStorageWrites();
-    const agent = await authOrgApi.createAgent(actor, {
+    const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "Bot agent",
-      visibility: "public",
     });
+    const agent = await authOrgApi.updateAgentMetadata(
+      actor,
+      bootstrap.body.agentId,
+      { visibility: "public" },
+    );
+    await runsApi.grantProEntitlement(actor);
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const client = setupApp({ context, routes: feishuConnectRoutes })(
       feishuConnectContract,
@@ -155,7 +154,6 @@ describe("Lark integration", () => {
             appId,
             appSecret: "test-secret",
             verificationToken: "test-verification",
-            defaultAgentId: agent.agentId,
             createNew: true,
           },
         }),
@@ -169,7 +167,7 @@ describe("Lark integration", () => {
         platformClient.updateInstallation({
           headers,
           params: { installationId },
-          body: { defaultAgentId: agent.agentId, setupCompleted: true },
+          body: { setupCompleted: true },
         }),
         [200],
       );
@@ -195,250 +193,8 @@ describe("Lark integration", () => {
     };
   }
 
-  async function agentSelectionFixture() {
-    const { actor, client, larkClient, install, defaultAgentId } =
-      await fixture();
-    runsApi.configureRunnerGroup();
-    runsApi.acceptStorageDownloads();
-    runsApi.acceptTelemetryIngest();
-    await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor);
-    const feishuAgent = await authOrgApi.createAgent(actor, {
-      displayName: "Feishu selected agent",
-      visibility: "public",
-    });
-    const larkAgent = await authOrgApi.createAgent(actor, {
-      displayName: "Lark selected agent",
-      visibility: "public",
-    });
-    for (const platform of ["feishu", "lark"] as const) {
-      const origin = FEISHU_PLATFORMS[platform].apiOrigin;
-      server.use(
-        http.post(`${origin}/open-apis/authen/v2/oauth/token`, () => {
-          return HttpResponse.json({
-            code: 0,
-            access_token: `${platform}-user-token`,
-            refresh_token: `${platform}-refresh`,
-            expires_in: 7200,
-            scope: "offline_access",
-          });
-        }),
-        http.get(`${origin}/open-apis/authen/v1/user_info`, () => {
-          return HttpResponse.json({
-            code: 0,
-            data: {
-              name: `${platform} user`,
-              open_id: "ou_user",
-              tenant_key: `${platform}-tenant`,
-            },
-          });
-        }),
-        http.get(`${origin}/open-apis/im/v1/messages`, () => {
-          return HttpResponse.json({
-            code: 0,
-            data: { items: [], has_more: false },
-          });
-        }),
-        http.post(`${origin}/open-apis/im/v1/messages`, () => {
-          return HttpResponse.json({
-            code: 0,
-            data: {
-              message_id: `om_${randomUUID()}`,
-              chat_id: `oc_${platform}`,
-            },
-          });
-        }),
-        http.post(`${origin}/open-apis/im/v1/messages/:messageId/reply`, () => {
-          return HttpResponse.json({
-            code: 0,
-            data: {
-              message_id: `om_${randomUUID()}`,
-              chat_id: `oc_${platform}`,
-            },
-          });
-        }),
-        http.post(
-          `${origin}/open-apis/im/v1/messages/:messageId/reactions`,
-          () => {
-            return HttpResponse.json({
-              code: 0,
-              data: { reaction_id: `reaction_${randomUUID()}` },
-            });
-          },
-        ),
-        http.delete(
-          `${origin}/open-apis/im/v1/messages/:messageId/reactions/:reactionId`,
-          () => {
-            return HttpResponse.json({ code: 0 });
-          },
-        ),
-      );
-    }
-    const installations = {
-      feishu: await install("feishu"),
-      lark: await install("lark"),
-    };
-    const oauthApp = createAppWithRoutes({
-      signal: context.signal,
-      routes: feishuOauthRoutes,
-    });
-    for (const installation of Object.values(installations)) {
-      if (!installation.connectUrl) {
-        throw new Error("Expected installation OAuth URL");
-      }
-      const start = await oauthApp.request(installation.connectUrl);
-      expect(start.status).toBe(307);
-      const state = new URL(
-        start.headers.get("location") ?? "",
-      ).searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected OAuth state");
-      }
-      const result = await oauthApp.request(
-        `${feishuOauthContract.callback.path}?${new URLSearchParams({ state, code: `code_${randomUUID()}`, responseMode: "json" })}`,
-      );
-      expect(result.status).toBe(200);
-    }
-    const eventsApp = createAppWithRoutes({
-      signal: context.signal,
-      routes: feishuEventsRoutes,
-    });
-    async function send(platform: FeishuPlatform, text: string) {
-      const installation = installations[platform];
-      const response = await eventsApp.request(installation.callbackUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          schema: "2.0",
-          header: {
-            event_id: randomUUID(),
-            event_type: "im.message.receive_v1",
-            tenant_key: `${platform}-tenant`,
-            app_id: installation.appId,
-            token: "test-verification",
-          },
-          event: {
-            sender: { sender_id: { open_id: "ou_user" }, sender_type: "user" },
-            message: {
-              message_id: `om_${randomUUID()}`,
-              chat_id: `oc_${platform}`,
-              chat_type: "p2p",
-              message_type: "text",
-              content: JSON.stringify({ text }),
-            },
-          },
-        }),
-      });
-      expect(response.status).toBe(200);
-      await flushWaitUntilForTest();
-    }
-    async function getAgentRun(platform: FeishuPlatform) {
-      const prompt = `Check ${platform} selection ${randomUUID()}`;
-      await send(platform, prompt);
-      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      const logs = await accept(
-        setupApp({ context, routes: logsRoutes })(logsListContract).list({
-          headers,
-          query: { triggerSource: platform, limit: 20 },
-        }),
-        [200],
-      );
-      const run = logs.body.data.find((entry) => {
-        return entry.prompt === prompt;
-      });
-      if (!run) {
-        throw new Error("Expected integration run");
-      }
-      await runsApi.requestCancelRun(actor, run.id, [200]);
-      await flushWaitUntilForTest();
-      return run;
-    }
-    async function removeInstallations() {
-      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      await accept(
-        client.removeInstallation({
-          headers,
-          params: { installationId: installations.feishu.id },
-        }),
-        [200],
-      );
-      await accept(
-        larkClient.removeInstallation({
-          headers,
-          params: { installationId: installations.lark.id },
-        }),
-        [200],
-      );
-    }
-    return {
-      defaultAgentId,
-      feishuAgentId: feishuAgent.agentId,
-      larkAgentId: larkAgent.agentId,
-      send,
-      getAgentRun,
-      removeInstallations,
-    };
-  }
-
-  it("keeps Lark on the default Agent when Feishu selection changes", async () => {
-    const scenario = await agentSelectionFixture();
-    await scenario.send("feishu", `/switch ${scenario.feishuAgentId}`);
-    await expect(scenario.getAgentRun("lark")).resolves.toMatchObject({
-      agentId: scenario.defaultAgentId,
-      triggerSource: "lark",
-    });
-    await scenario.removeInstallations();
-  });
-
-  it("keeps Feishu selection when Lark selection changes", async () => {
-    const scenario = await agentSelectionFixture();
-    await scenario.send("feishu", `/switch ${scenario.feishuAgentId}`);
-    await scenario.send("lark", `/switch ${scenario.larkAgentId}`);
-    await expect(scenario.getAgentRun("feishu")).resolves.toMatchObject({
-      agentId: scenario.feishuAgentId,
-      triggerSource: "feishu",
-    });
-    await expect(scenario.getAgentRun("lark")).resolves.toMatchObject({
-      agentId: scenario.larkAgentId,
-      triggerSource: "lark",
-    });
-    await scenario.removeInstallations();
-  });
-
-  it("keeps Lark selection when Feishu returns to default", async () => {
-    const scenario = await agentSelectionFixture();
-    await scenario.send("feishu", `/switch ${scenario.feishuAgentId}`);
-    await scenario.send("lark", `/switch ${scenario.larkAgentId}`);
-    await scenario.send("feishu", "/switch default");
-    await expect(scenario.getAgentRun("feishu")).resolves.toMatchObject({
-      agentId: scenario.defaultAgentId,
-      triggerSource: "feishu",
-    });
-    await expect(scenario.getAgentRun("lark")).resolves.toMatchObject({
-      agentId: scenario.larkAgentId,
-      triggerSource: "lark",
-    });
-    await scenario.removeInstallations();
-  });
-
-  it("keeps Feishu selection when Lark returns to default", async () => {
-    const scenario = await agentSelectionFixture();
-    await scenario.send("feishu", `/switch ${scenario.feishuAgentId}`);
-    await scenario.send("lark", `/switch ${scenario.larkAgentId}`);
-    await scenario.send("lark", "/switch default");
-    await expect(scenario.getAgentRun("lark")).resolves.toMatchObject({
-      agentId: scenario.defaultAgentId,
-      triggerSource: "lark",
-    });
-    await expect(scenario.getAgentRun("feishu")).resolves.toMatchObject({
-      agentId: scenario.feishuAgentId,
-      triggerSource: "feishu",
-    });
-    await scenario.removeInstallations();
-  });
-
   it("keeps Lark installations separate from the legacy Feishu default", async () => {
-    const { client, larkClient, install } = await fixture();
+    const { client, larkClient, install } = await createOnboardedActor();
     const feishu = await install("feishu");
     const lark = await install("lark");
     const legacy = await accept(client.getStatus({ headers }), [200]);
@@ -476,7 +232,7 @@ describe("Lark integration", () => {
   });
 
   it("shares Lark rollout with other members of the installation organization", async () => {
-    const { actor, larkClient, install } = await fixture();
+    const { actor, larkClient, install } = await createOnboardedActor();
     const installation = await install("lark");
     mocks.clerk.session(`user_${randomUUID()}`, actor.orgId, "org:member");
     const status = await accept(larkClient.getStatus({ headers }), [200]);
@@ -485,7 +241,7 @@ describe("Lark integration", () => {
   });
 
   it("rejects an App ID already registered on the other platform", async () => {
-    const { larkClient, install } = await fixture();
+    const { larkClient, install } = await createOnboardedActor();
     const existing = await install("feishu");
     const conflict = await accept(
       larkClient.checkAppId({
@@ -498,7 +254,7 @@ describe("Lark integration", () => {
   });
 
   it("uses Lark for OAuth, user identity, and the bot deep link", async () => {
-    const { larkClient, install } = await fixture();
+    const { larkClient, install } = await createOnboardedActor();
     const installation = await install("lark");
     if (!installation.connectUrl) {
       throw new Error("Expected OAuth URL");
@@ -536,7 +292,7 @@ describe("Lark integration", () => {
   });
 
   it("verifies Lark callbacks and rejects them after the owner disables Lark", async () => {
-    const { actor, client, larkClient, install } = await fixture();
+    const { actor, client, larkClient, install } = await createOnboardedActor();
     const installation = await install("lark");
     const app = createAppWithRoutes({
       signal: context.signal,
@@ -568,7 +324,7 @@ describe("Lark integration", () => {
   });
 
   it("sends through Lark only and blocks sends when the switch is disabled", async () => {
-    const { actor, install, token } = await fixture();
+    const { actor, install, token } = await createOnboardedActor();
     const installation = await install("lark");
     const client = setupApp({
       context,
@@ -631,17 +387,9 @@ describe("Lark integration", () => {
     ).toHaveLength(1);
   });
   describe("with an installed Lark app", () => {
-    async function prepareScenario() {
-      const { install } = await fixture();
-      const installation = await install("lark");
-      return { installation };
-    }
-    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-    beforeEach(async () => {
-      preparedScenario = await prepareScenario();
-    });
     it("answers an incoming Lark message with a Lark account-connect card", async () => {
-      const { installation } = preparedScenario;
+      const { install } = await createOnboardedActor();
+      const installation = await install("lark");
       const sent = createDeferredPromise<unknown>(context.signal);
       server.use(
         http.post(

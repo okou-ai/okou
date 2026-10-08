@@ -305,7 +305,7 @@ try {
   } finally {
     await client.query("ROLLBACK");
   }
-  console.log("PASS lease FK blocks implicit capacity erasure");
+  console.log("PASS lease FK blocks implicit capacity deletion");
 } finally {
   await client.end();
   await admin.query(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);

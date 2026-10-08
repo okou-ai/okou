@@ -11,47 +11,35 @@ from tests.model_provider_flow_helpers import set_model_provider_flow_metadata
 
 @dataclass(frozen=True)
 class ModelProviderJsonCase:
-    id: str
     host: str
     original_url: str
     firewall_name: str
     cli_agent_type: str | None
     message_id: str
     model: str
-    uses_openai_responses: bool
     input_tokens: int = 50
     output_tokens: int = 200
     cached_tokens: int | None = None
 
 
-ANTHROPIC_JSON_CASE = ModelProviderJsonCase(
-    id="anthropic",
+CLAUDE_CODE_JSON_CASE = ModelProviderJsonCase(
     host="api.anthropic.com",
     original_url="https://api.anthropic.com/v1/messages",
-    firewall_name="model-provider:anthropic-api-key",
-    cli_agent_type=None,
+    firewall_name="model-provider:claude-code-oauth-token",
+    cli_agent_type="claude-code",
     message_id="msg_1",
     model="claude-sonnet-4-6",
-    uses_openai_responses=False,
 )
 
 OPENAI_RESPONSES_CASE = ModelProviderJsonCase(
-    id="openai",
-    host="api.openai.com",
-    original_url="https://api.openai.com/v1/responses",
-    firewall_name="model-provider:openai-api-key",
+    host="openrouter.ai",
+    original_url="https://openrouter.ai/api/v1/responses",
+    firewall_name="model-provider:openrouter-codex",
     cli_agent_type="codex",
     message_id="resp_1",
     model="gpt-5.5",
-    uses_openai_responses=True,
     cached_tokens=10,
 )
-
-MODEL_PROVIDER_JSON_CASES = (ANTHROPIC_JSON_CASE, OPENAI_RESPONSES_CASE)
-
-
-def model_provider_json_case_id(provider_case: ModelProviderJsonCase) -> str:
-    return provider_case.id
 
 
 def standard_success_payload(
@@ -69,21 +57,18 @@ def standard_success_payload(
         "input_tokens": resolved_input_tokens,
         "output_tokens": resolved_output_tokens,
     }
-    if provider_case.uses_openai_responses:
-        input_tokens_details: dict[str, int] = {}
-        if resolved_cached_tokens is not None:
-            input_tokens_details["cached_tokens"] = resolved_cached_tokens
-        if cache_write_tokens is not None:
-            input_tokens_details["cache_write_tokens"] = cache_write_tokens
-        if input_tokens_details:
-            usage_payload["input_tokens_details"] = input_tokens_details
+    input_tokens_details: dict[str, int] = {}
+    if resolved_cached_tokens is not None:
+        input_tokens_details["cached_tokens"] = resolved_cached_tokens
+    if cache_write_tokens is not None:
+        input_tokens_details["cache_write_tokens"] = cache_write_tokens
+    if input_tokens_details:
+        usage_payload["input_tokens_details"] = input_tokens_details
     payload: dict[str, object] = {
         "id": provider_case.message_id,
         "model": provider_case.model,
         "usage": usage_payload,
     }
-    if not provider_case.uses_openai_responses:
-        payload["content"] = [{"type": "text", "text": "Hello"}]
     return json.dumps(payload).encode()
 
 
@@ -104,17 +89,16 @@ def expected_model_usage(
         "tokens.input": resolved_input_tokens,
         "tokens.output": resolved_output_tokens,
     }
-    if provider_case.uses_openai_responses:
-        remaining_input_tokens = resolved_input_tokens
-        if resolved_cached_tokens is not None:
-            assert resolved_cached_tokens <= remaining_input_tokens
-            remaining_input_tokens -= resolved_cached_tokens
-            expected["tokens.cache_read"] = resolved_cached_tokens
-        if cache_write_tokens is not None:
-            assert cache_write_tokens <= remaining_input_tokens
-            remaining_input_tokens -= cache_write_tokens
-            expected["tokens.cache_creation"] = cache_write_tokens
-        expected["tokens.input"] = remaining_input_tokens
+    remaining_input_tokens = resolved_input_tokens
+    if resolved_cached_tokens is not None:
+        assert resolved_cached_tokens <= remaining_input_tokens
+        remaining_input_tokens -= resolved_cached_tokens
+        expected["tokens.cache_read"] = resolved_cached_tokens
+    if cache_write_tokens is not None:
+        assert cache_write_tokens <= remaining_input_tokens
+        remaining_input_tokens -= cache_write_tokens
+        expected["tokens.cache_creation"] = cache_write_tokens
+    expected["tokens.input"] = remaining_input_tokens
     return expected
 
 

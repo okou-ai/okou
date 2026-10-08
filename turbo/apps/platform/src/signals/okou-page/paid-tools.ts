@@ -1,7 +1,7 @@
 import { command, computed, state } from "ccstate";
 import {
   paidToolsContract,
-  type PaidToolId,
+  type AVAILABLE_PAID_TOOL_IDS,
 } from "@okouai/api-contracts/contracts/paid-tools";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
@@ -11,6 +11,9 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../auth.ts";
 import type { ComposerCreateMode } from "./composer-create.ts";
+
+/** Paid tools the App can still show, toggle or name; retired IDs stay parseable only. */
+export type AvailablePaidToolId = (typeof AVAILABLE_PAID_TOOL_IDS)[number];
 
 const revision$ = state(0);
 
@@ -59,7 +62,7 @@ export const disabledPaidTools$ = computed(async (get) => {
   return response.body.disabledTools;
 });
 
-export function paidToolDisabledMessage(toolId: PaidToolId): string {
+export function paidToolDisabledMessage(toolId: AvailablePaidToolId): string {
   return i18n.t(
     ($) => {
       return $.settings.paidTools.disabledForCreation;
@@ -78,7 +81,7 @@ export const checkPaidToolForCreation$ = command(
     if (mode !== "image") {
       return true;
     }
-    const toolId: PaidToolId = "image-generation";
+    const toolId: AvailablePaidToolId = "image-generation";
     const { client, assertCurrent } = await get(paidToolsClient$);
     signal.throwIfAborted();
     assertCurrent();
@@ -100,16 +103,10 @@ export const checkPaidToolForCreation$ = command(
 /** Template hints describe their default paid branch, not a promise that every message generates. */
 export function templatePaidTool(
   template: GenerationTemplateRequest,
-): PaidToolId | undefined {
+): AvailablePaidToolId | undefined {
   switch (generationTemplateKind(template)) {
     case "illustration": {
       return "image-generation";
-    }
-    case "video": {
-      return "video-generation";
-    }
-    case "avatar": {
-      return "avatar-video-generation";
     }
     default: {
       return undefined;

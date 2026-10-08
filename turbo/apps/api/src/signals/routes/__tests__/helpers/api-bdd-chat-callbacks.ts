@@ -2,54 +2,39 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { z } from "zod";
 
 import { mockOptionalEnv } from "../../../../lib/env";
 import { nowDate } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
-import { modelPoliciesRoutes } from "../../model-policies";
 import { pushSubscriptionsRoutes } from "../../push-subscriptions";
 import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 import { installArtifactReferenceStorage } from "./artifact-reference-storage";
-import { openRouterModelContractError } from "./openrouter-model-contract";
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+  vertexTextResponse,
+} from "./google-text";
 import type { AgentEvent } from "../../../../lib/event-consumer/verify";
 
 const CHAT_CALLBACK_URL = "http://localhost:3000/api/internal/callbacks/chat";
-const OPENROUTER_COMPLETIONS_URL =
-  "https://openrouter.ai/api/v1/chat/completions";
-
-type OrgModelPolicies = z.infer<
-  (typeof modelPoliciesMainContract.update)["body"]
->["policies"];
-
-const openRouterCompletionBodySchema = z.object({
-  model: z.string(),
-  max_tokens: z.number().optional(),
-  reasoning: z.object({ effort: z.string() }).optional(),
-  messages: z.array(z.object({ role: z.string(), content: z.string() })),
-});
-
-type OpenRouterCompletionBody = z.infer<typeof openRouterCompletionBodySchema>;
+type VertexCompletionBody = ReturnType<typeof vertexTextRequest>;
 
 /**
  * A completion the upstream cut short. Whether the partial text survives is a
  * per-caller decision: prose summaries keep it, while immutably persisted
  * titles and JSON output reject it. Tests use this to prove both halves.
  */
-interface TruncatedOpenRouterCompletion {
+interface TruncatedVertexCompletion {
   readonly content: string;
   readonly finishReason: "length";
 }
 
-type OpenRouterCompletionResult =
-  | string
-  | TruncatedOpenRouterCompletion
-  | Response;
+type VertexCompletionResult = string | TruncatedVertexCompletion | Response;
 
 interface StoredS3Object {
   readonly bucket: string;
@@ -158,12 +143,85 @@ function storedS3ObjectResponse(
     Metadata: object?.metadata,
     Body: body
       ? {
+          transformToString(): Promise<string> {
+            return Promise.resolve(Buffer.from(body).toString("utf8"));
+          },
           async *[Symbol.asyncIterator](): AsyncGenerator<Uint8Array> {
             yield body;
           },
         }
       : undefined,
   };
+}
+
+function isHostedMetadataKey(key: string): boolean {
+  return (
+    key.startsWith("artifact-delivery/") ||
+    key.startsWith("artifact-shares/") ||
+    (key.startsWith("sites/") && key.endsWith(".json"))
+  );
+}
+
+function putHostedMetadata(
+  objects: StoredS3Object[],
+  bucket: string,
+  key: string,
+  input: Record<string, unknown>,
+) {
+  const previousIndex = objects.findIndex((object) => {
+    return object.bucket === bucket && object.key === key;
+  });
+  if (
+    (input.IfNoneMatch === "*" && previousIndex !== -1) ||
+    (typeof input.IfMatch === "string" &&
+      storedS3ObjectResponse(objects, bucket, key).ETag !== input.IfMatch)
+  ) {
+    throw Object.assign(new Error("Hosted metadata condition failed"), {
+      name: "PreconditionFailed",
+      $metadata: { httpStatusCode: 412 },
+    });
+  }
+  const body = input.Body;
+  if (typeof body !== "string" && !(body instanceof Uint8Array)) {
+    throw new Error("Expected hosted metadata bytes");
+  }
+  const bytes = Buffer.from(body);
+  const object: StoredS3Object = {
+    bucket,
+    key,
+    body: bytes,
+    size: bytes.byteLength,
+    ...(typeof input.ContentType === "string"
+      ? { contentType: input.ContentType }
+      : {}),
+    ...(isStringRecord(input.Metadata) ? { metadata: input.Metadata } : {}),
+  };
+  if (previousIndex === -1) {
+    objects.push(object);
+  } else {
+    objects[previousIndex] = object;
+  }
+  return { ETag: storedS3ObjectResponse(objects, bucket, key).ETag };
+}
+
+function requireHostedMetadataForRead(
+  objects: readonly StoredS3Object[],
+  command: string,
+  bucket: string,
+  key: string,
+): void {
+  if (
+    (command === "GetObjectCommand" || command === "HeadObjectCommand") &&
+    isHostedMetadataKey(key) &&
+    !objects.some((object) => {
+      return object.bucket === bucket && object.key === key;
+    })
+  ) {
+    throw Object.assign(new Error("Hosted metadata is missing"), {
+      name: "NoSuchKey",
+      $metadata: { httpStatusCode: 404 },
+    });
+  }
 }
 
 function deleteStoredS3Objects(
@@ -248,13 +306,6 @@ export function createChatCallbacksApi(context: TestContext) {
     })(pushSubscriptionsContract);
   }
 
-  function modelPoliciesClient() {
-    return setupAppWithRoutes({
-      context,
-      routes: modelPoliciesRoutes,
-    })(modelPoliciesMainContract);
-  }
-
   return {
     failIfChatCallbackRouteIsFetched(): () => number {
       let requests = 0;
@@ -299,67 +350,31 @@ export function createChatCallbacksApi(context: TestContext) {
       mockOptionalEnv("VAPID_PRIVATE_KEY", undefined);
     },
 
-    /** Replaces the org model-first policy set through the public route. */
-    async updateOrgModelPolicies(
-      actor: ApiTestUser,
-      policies: OrgModelPolicies,
-    ): Promise<void> {
-      const snapshot = await accept(
-        modelPoliciesClient().list({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
-      await accept(
-        modelPoliciesClient().update({
-          headers: authenticate(context, actor),
-          body: { policies, revision: snapshot.body.revision },
-        }),
-        [200],
-      );
-    },
-
-    /**
-     * Single OpenRouter completions endpoint serving title, follow-up, run
-     * summary, and notification summary prompts. The handler branches on the
-     * system prompt and returns the completion text.
-     */
-    mockOpenRouterCompletions(
+    /** Native Vertex completions serving title, follow-up and summary fixtures. */
+    mockVertexCompletions(
       handler: (
-        body: OpenRouterCompletionBody,
-      ) => OpenRouterCompletionResult | Promise<OpenRouterCompletionResult>,
+        body: VertexCompletionBody,
+      ) => VertexCompletionResult | Promise<VertexCompletionResult>,
     ): void {
+      mockGoogleText();
       server.use(
-        http.post(OPENROUTER_COMPLETIONS_URL, async ({ request }) => {
-          const body = openRouterCompletionBodySchema.parse(
-            await request.json(),
-          );
-          const contractError = openRouterModelContractError(body);
-          if (contractError) {
-            return contractError;
-          }
+        http.post(VERTEX_TEXT_URL, async ({ request }) => {
+          const body = vertexTextRequest(await request.json(), request.url);
           const result = await handler(body);
           if (result instanceof Response) {
             return result;
           }
-          return HttpResponse.json({
-            choices: [
-              typeof result === "string"
-                ? { finish_reason: "stop", message: { content: result } }
-                : {
-                    finish_reason: result.finishReason,
-                    native_finish_reason: "MAX_TOKENS",
-                    message: { content: result.content },
-                  },
-            ],
-          });
+          return typeof result === "string"
+            ? vertexTextResponse(result)
+            : vertexTextResponse(result.content, "MAX_TOKENS");
         }),
       );
     },
 
-    mockOpenRouterFailure(): void {
+    mockVertexFailure(): void {
+      mockGoogleText();
       server.use(
-        http.post(OPENROUTER_COMPLETIONS_URL, () => {
+        http.post(VERTEX_TEXT_URL, () => {
           return new HttpResponse("Internal Server Error", { status: 500 });
         }),
       );
@@ -384,6 +399,7 @@ export function createChatCallbacksApi(context: TestContext) {
      * Object-storage fake for chat chains: session-history blobs download
      * with deterministic content (so session resume works end to end),
      * registered upload objects appear in prefix listings (upload complete),
+     * hosted metadata retains bytes/ETags and enforces conditional writes,
      * and every other command acks like the plain storage-write mock.
      */
     acceptChatObjectStorage(): {
@@ -445,7 +461,13 @@ export function createChatCallbacksApi(context: TestContext) {
               }),
             );
           }
+          if (isHostedMetadataKey(key)) {
+            return Promise.resolve(
+              putHostedMetadata(objects, bucket, key, input),
+            );
+          }
         }
+        requireHostedMetadataForRead(objects, name, bucket, key);
         if (name === "HeadObjectCommand") {
           return Promise.resolve(storedS3ObjectResponse(objects, bucket, key));
         }

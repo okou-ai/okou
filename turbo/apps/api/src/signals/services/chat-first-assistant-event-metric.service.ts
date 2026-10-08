@@ -1,22 +1,48 @@
+import { command } from "ccstate";
 import { elapsedSinceApiStartMs } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import { waitUntil } from "../context/wait-until";
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now } from "../../lib/time";
 import { tapError } from "../utils";
-import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
-
-import {
-  withRunContentWrite,
-  type RunContentOwnership,
-} from "./run-content-erasure-admission.service";
+import type { RunnerJobNotification } from "./runner-dispatch.service";
+import { recordSameThreadRunnerJobPersisted } from "./runner-job-queue-lifecycle.service";
 
 const L = logger("api:chat-first-assistant-message-metric");
+
+/** Thread-owned markers finish before shared post-commit activation begins. */
+export function recordThreadRunActivationMarkers(
+  notification: RunnerJobNotification,
+  apiStartedAt: number,
+  activationOrigin: "direct" | "promotion",
+): void {
+  recordSameThreadRunnerJobPersisted(notification);
+  recordFirstAssistantEventEligibility({
+    runId: notification.runId,
+    apiStartedAt,
+  });
+  const completedAt = now();
+  recordSandboxOperation({
+    sandboxType: "runner",
+    actionType: "runner_notification_queue_to_same_thread_markers_complete",
+    durationMs: Math.max(0, completedAt - notification.createdAt.getTime()),
+    success: true,
+    runId: notification.runId,
+    dimensions: {
+      runner_group: notification.runnerGroup,
+      profile: notification.profile,
+      notification_target: "broadcast",
+      activation_origin: activationOrigin,
+      same_thread_markers: "recorded",
+      logical_queue_created_at: notification.createdAt.toISOString(),
+      boundary_at: new Date(completedAt).toISOString(),
+    },
+  });
+}
 
 export function recordFirstAssistantEventEligibility(args: {
   readonly runId: string;
@@ -32,47 +58,43 @@ export function recordFirstAssistantEventEligibility(args: {
   });
 }
 
-async function recordFirstAssistantEventAcknowledgement(args: {
-  readonly db: Db;
-  readonly ownership: RunContentOwnership;
-  readonly runId: string;
-  readonly acknowledgedAt: number;
-}): Promise<void> {
-  const firstAssistantClaimWhere = and(
-    eq(agentRuns.id, args.runId),
-    isNotNull(agentRuns.apiStartedAt),
-    isNull(agentRuns.firstAssistantEventAcknowledgedAt),
-  );
-  if (!firstAssistantClaimWhere) {
-    throw new Error("First assistant acknowledgement predicate is empty");
-  }
-  const admitted = await withRunContentWrite(
-    args.db,
-    { runId: args.runId, ownership: args.ownership },
-    async (tx) => {
-      return await writeRunMetadataInTransaction(tx, {
-        patch: {
-          firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
-        },
-        where: firstAssistantClaimWhere,
-      });
+const recordFirstAssistantEventAcknowledgement$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly acknowledgedAt: number;
     },
-    AbortSignal.timeout(20_000),
-  );
-  if (admitted.outcome === "closed") {
-    return;
-  }
-  const [claimed] = admitted.value;
-  if (!claimed?.apiStartedAt) {
-    return;
-  }
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const firstAssistantClaimWhere = and(
+      eq(agentRuns.id, args.runId),
+      isNotNull(agentRuns.apiStartedAt),
+      isNull(agentRuns.firstAssistantEventAcknowledgedAt),
+    );
+    if (!firstAssistantClaimWhere) {
+      throw new Error("First assistant acknowledgement predicate is empty");
+    }
+    const [claimed] = await set(writeDb$)
+      .update(agentRuns)
+      .set({
+        firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
+      })
+      .where(firstAssistantClaimWhere)
+      .returning({ id: agentRuns.id, apiStartedAt: agentRuns.apiStartedAt });
+    signal.throwIfAborted();
+    if (!claimed?.apiStartedAt) {
+      return;
+    }
 
-  recordFirstAssistantEventAcknowledgementMetric({
-    runId: args.runId,
-    apiStartedAt: claimed.apiStartedAt.getTime(),
-    acknowledgedAt: args.acknowledgedAt,
-  });
-}
+    recordFirstAssistantEventAcknowledgementMetric({
+      runId: args.runId,
+      apiStartedAt: claimed.apiStartedAt.getTime(),
+      acknowledgedAt: args.acknowledgedAt,
+    });
+  },
+);
 
 export function recordFirstAssistantEventAcknowledgementMetric(args: {
   readonly runId: string;
@@ -97,49 +119,37 @@ export function recordFirstAssistantEventAcknowledgementMetric(args: {
   });
 }
 
-export async function publishFirstAssistantEventCreatedSignalSafely(args: {
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely(args);
-}
-
-async function publishFirstAssistantEventCreated(args: {
-  readonly db: Db;
-  readonly ownership: RunContentOwnership;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly runId: string;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely(args);
-  const acknowledgedAt = now();
-  waitUntil(
-    tapError(
-      recordFirstAssistantEventAcknowledgement({
-        db: args.db,
-        ownership: args.ownership,
-        runId: args.runId,
-        acknowledgedAt,
-      }),
+export const publishFirstAssistantEventCreatedSafely$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly threadId: string;
+      readonly userId: string;
+      readonly runId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    await publishChatThreadMessageCreatedSafely(args);
+    signal.throwIfAborted();
+    const acknowledgedAt = now();
+    await tapError(
+      set(
+        recordFirstAssistantEventAcknowledgement$,
+        {
+          runId: args.runId,
+          acknowledgedAt,
+        },
+        signal,
+      ),
       (error) => {
         L.warn("Failed to record first assistant message acknowledgement", {
           runId: args.runId,
           error,
         });
       },
-    ),
-  );
-}
-
-export async function publishFirstAssistantEventCreatedSafely(args: {
-  readonly db: Db;
-  readonly ownership: RunContentOwnership;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly runId: string;
-}): Promise<void> {
-  await publishFirstAssistantEventCreated(args);
-}
+    );
+    signal.throwIfAborted();
+  },
+);

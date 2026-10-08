@@ -5,13 +5,13 @@ import type {
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatEvent } from "./chat-event-types.ts";
+import type { RunIndicatorState } from "./chat-event-state.ts";
 import {
   createChatEventStorageSignals,
   type AppendOptimisticEventCommand,
 } from "./chat-event-storage-signals.ts";
 import { nowDate } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
-import { reloadBillingStatus$ } from "../okou-page/billing.ts";
 import { sendChatEvent } from "./chat-event-api.ts";
 import {
   optimisticChatThreadCreateUnsettled,
@@ -39,11 +39,7 @@ export function withOptimisticAgentRunSource(
     version: 1,
     parts: [
       ...document.parts.filter((part) => {
-        return (
-          part.type !== "source" &&
-          part.type !== "automation" &&
-          part.type !== "goal"
-        );
+        return part.type !== "source" && part.type !== "automation";
       }),
       {
         type: "source",
@@ -87,34 +83,21 @@ export interface SendInterruptChatEvent {
   readonly interruptsRunId: string;
 }
 
-export interface SendBrowserLifecycleChatEvent {
-  readonly kind: "browser-lifecycle";
-  readonly eventId: string;
-  readonly eventType: "browser.open" | "browser.close";
-}
-
 export type SendChatEventInput =
   | SendInputChatEvent
   | SendRevokeChatEvent
-  | SendInterruptChatEvent
-  | SendBrowserLifecycleChatEvent;
-
-export interface SendChatEventResult {
-  readonly runId: string | null;
-}
+  | SendInterruptChatEvent;
 
 interface SendChatEventDependencies {
   readonly threadId: string;
   readonly appendOptimisticEvent$: AppendOptimisticEventCommand;
-  readonly syncRemoteEvents$: Command<Promise<void>, [AbortSignal]>;
 }
 
 function createSendInputChatEvent({
   threadId,
   appendOptimisticEvent$,
-  syncRemoteEvents$,
 }: SendChatEventDependencies): Command<
-  Promise<SendChatEventResult>,
+  Promise<void>,
   [SendInputChatEvent, AbortSignal]
 > {
   return command(
@@ -174,7 +157,7 @@ function createSendInputChatEvent({
         clientEventId,
       });
       input.onOptimisticSend?.();
-      const result = await sendChatEvent(
+      await sendChatEvent(
         get(apiClient$),
         {
           agentId: input.agentId,
@@ -208,14 +191,7 @@ function createSendInputChatEvent({
         traceTime: chatEventTraceTime(),
         threadId,
         clientEventId,
-        runId: result.runId,
       });
-      if (input.delivery === "run" && result.runId === null) {
-        set(reloadBillingStatus$);
-        await set(syncRemoteEvents$, signal);
-        signal.throwIfAborted();
-      }
-      return { runId: result.runId };
     },
   );
 }
@@ -224,7 +200,7 @@ function createSendRevokeChatEvent({
   threadId,
   appendOptimisticEvent$,
 }: SendChatEventDependencies): Command<
-  Promise<SendChatEventResult>,
+  Promise<void>,
   [SendRevokeChatEvent, AbortSignal]
 > {
   return command(
@@ -246,7 +222,7 @@ function createSendRevokeChatEvent({
         signal,
       );
       signal.throwIfAborted();
-      const result = await sendChatEvent(
+      await sendChatEvent(
         get(apiClient$),
         {
           agentId: input.agentId,
@@ -256,7 +232,6 @@ function createSendRevokeChatEvent({
         },
         signal,
       );
-      return { runId: result.runId };
     },
   );
 }
@@ -265,7 +240,7 @@ function createSendInterruptChatEvent({
   threadId,
   appendOptimisticEvent$,
 }: SendChatEventDependencies): Command<
-  Promise<SendChatEventResult>,
+  Promise<void>,
   [SendInterruptChatEvent, AbortSignal]
 > {
   return command(
@@ -291,7 +266,7 @@ function createSendInterruptChatEvent({
         signal,
       );
       signal.throwIfAborted();
-      const result = await sendChatEvent(
+      await sendChatEvent(
         get(apiClient$),
         {
           agentId: input.agentId,
@@ -301,51 +276,16 @@ function createSendInterruptChatEvent({
         },
         signal,
       );
-      return { runId: result.runId };
-    },
-  );
-}
-
-function createSendBrowserLifecycleChatEvent({
-  threadId,
-  appendOptimisticEvent$,
-}: SendChatEventDependencies): Command<
-  Promise<SendChatEventResult>,
-  [SendBrowserLifecycleChatEvent, AbortSignal]
-> {
-  return command(
-    async (
-      { set },
-      input: SendBrowserLifecycleChatEvent,
-      signal: AbortSignal,
-    ): Promise<SendChatEventResult> => {
-      await set(
-        appendOptimisticEvent$,
-        {
-          threadId,
-          event: {
-            id: input.eventId,
-            threadId,
-            eventType: input.eventType,
-            content: null,
-            createdAt: nowDate().toISOString(),
-          },
-        },
-        signal,
-      );
-      return { runId: null };
     },
   );
 }
 
 function createSendChatEvent(
   dependencies: SendChatEventDependencies,
-): Command<Promise<SendChatEventResult>, [SendChatEventInput, AbortSignal]> {
+): Command<Promise<void>, [SendChatEventInput, AbortSignal]> {
   const sendInput$ = createSendInputChatEvent(dependencies);
   const sendRevoke$ = createSendRevokeChatEvent(dependencies);
   const sendInterrupt$ = createSendInterruptChatEvent(dependencies);
-  const sendBrowserLifecycle$ =
-    createSendBrowserLifecycleChatEvent(dependencies);
   return command(
     async ({ set }, input: SendChatEventInput, signal: AbortSignal) => {
       switch (input.kind) {
@@ -357,9 +297,6 @@ function createSendChatEvent(
         }
         case "interrupt": {
           return await set(sendInterrupt$, input, signal);
-        }
-        case "browser-lifecycle": {
-          return await set(sendBrowserLifecycle$, input, signal);
         }
       }
     },
@@ -405,10 +342,11 @@ export interface ChatEventSignals {
   readonly threadId: string;
   readonly chatEvents$: Computed<ChatEvent[]>;
   readonly hasOptimisticUserMessage$: Computed<boolean>;
+  readonly serverRunState$: Computed<RunIndicatorState>;
   readonly setup$: Command<Promise<void>, [AbortSignal]>;
   readonly catchUp$: Command<Promise<void>, [AbortSignal]>;
   readonly sendEvent$: Command<
-    Promise<SendChatEventResult>,
+    Promise<void>,
     [SendChatEventInput, AbortSignal]
   >;
 }
@@ -418,7 +356,6 @@ export function createChatEventSignals(threadId: string): ChatEventSignals {
   const sendEvent$ = createSendChatEvent({
     threadId,
     appendOptimisticEvent$: events.appendOptimisticEvent$,
-    syncRemoteEvents$: events.syncRemoteEvents$,
   });
   const setup = createChatEventSetup({
     threadId,
@@ -429,6 +366,7 @@ export function createChatEventSignals(threadId: string): ChatEventSignals {
     threadId,
     chatEvents$: events.chatEvents$,
     hasOptimisticUserMessage$: events.hasOptimisticUserMessage$,
+    serverRunState$: events.serverRunState$,
     ...setup,
     sendEvent$,
   };

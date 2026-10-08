@@ -1,31 +1,25 @@
-import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { command } from "ccstate";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
+import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import { setAuthenticatedIdentity$ } from "./auth-context.ts";
+import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
 import { initializeChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
+import { subscribeCloudflareAccessChanged$ } from "./cloudflare-access.ts";
+import { setupRunModelRealtime$ } from "./external/run-model-realtime.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
-import { setupModelPolicyRealtime$ } from "./external/model-policy-realtime.ts";
-import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
-import {
-  setRealtimeDegradedNotifier$,
-  setSharedWorkerRealtimeBridge$,
-  setupRealtime$,
-} from "./realtime.ts";
-import { i18n } from "../i18n/index.ts";
 import { setupBillingRealtime$ } from "./okou-page/billing.ts";
+import { subscribeAgentConnectorAccess$ } from "./okou-page/composer-agent-connectors.ts";
+import { subscribeConnectorOverview$ } from "./okou-page/connector-overview.ts";
 import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-library.ts";
+import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
 import { subscribeCustomConnectorListChanged$ } from "./okou-page/settings/custom-connectors.ts";
-import { subscribeSshChanged$ } from "./ssh.ts";
-import { subscribeCloudflareAccessChanged$ } from "./cloudflare-access.ts";
+import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
+import { setSharedWorkerRealtimeBridge$, setupRealtime$ } from "./realtime.ts";
 import {
   bridgeConnected$,
   installedSharedDatabaseBridge$,
 } from "./shared-database-bridge-state.ts";
-import { setupMorningBriefRealtime$ } from "./okou-page/settings/morning-brief-preference.ts";
-import { initializeUserTimezone$ } from "./okou-page/settings/user-preferences.ts";
-import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
+import { subscribeSshChanged$ } from "./ssh.ts";
 import { detach, Reason, waitForOperation } from "./utils.ts";
 
 const runAppRealtimeDaemons$ = command(
@@ -43,9 +37,10 @@ const runAppRealtimeDaemons$ = command(
     set(subscribePermissionUpdate$, signal);
     set(setupBillingRealtime$, signal);
     set(setupUserPreferenceRealtime$, signal);
-    set(setupModelPolicyRealtime$, signal);
-    set(setupMorningBriefRealtime$, signal);
+    set(setupRunModelRealtime$, signal);
     set(subscribeCustomConnectorListChanged$, signal);
+    set(subscribeConnectorOverview$, signal);
+    set(subscribeAgentConnectorAccess$, signal);
     set(subscribeCustomTemplatesChanged$, signal);
     set(subscribeSshChanged$, signal);
     set(subscribeCloudflareAccessChanged$, signal);
@@ -75,13 +70,6 @@ const initializeAuthenticatedRealtime$ = command(
         email: user.primaryEmailAddress?.emailAddress,
       }),
     );
-    set(setRealtimeDegradedNotifier$, () => {
-      toast.error(
-        i18n.t(($) => {
-          return $.global.realtime.degraded;
-        }),
-      );
-    });
 
     await get(bridgeConnected$);
     signal.throwIfAborted();
@@ -132,9 +120,6 @@ export const setupAuthenticatedBootstrapData$ = command(
     }
     await get(bridgeConnected$);
     signal.throwIfAborted();
-    await Promise.all([
-      set(initializeChatThreadEventSource$, signal),
-      set(initializeUserTimezone$, signal),
-    ]);
+    await set(initializeChatThreadEventSource$, signal);
   },
 );

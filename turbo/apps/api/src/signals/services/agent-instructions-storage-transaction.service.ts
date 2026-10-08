@@ -33,9 +33,8 @@ export async function lockAgentInstructionsStoragesInTransaction(
   if (!targetCondition) {
     throw new Error("Agent instructions Storage lock condition is empty");
   }
-  // GC and publication own Storage parents in ascending UUID order before any
-  // artifact or retention edge. Lifecycle deletion must prelock its complete
-  // Storage set in that same order before deleting stable-context artifacts;
+  // Publication owns Storage parents in ascending UUID order. Lifecycle
+  // deletion must prelock its complete Storage set in that same order;
   // deleting one Agent at a time would instead inherit Agent UUID order.
   return await tx
     .select({ id: storages.id, s3Prefix: storages.s3Prefix })

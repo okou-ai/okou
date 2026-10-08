@@ -1207,16 +1207,11 @@ pub fn active_input_payload(text: &str) -> Result<Vec<u8>, serde_json::Error> {
 pub fn active_input_runtime(
     runtime: &guest_agent::run_context::GuestRuntime,
 ) -> Result<guest_agent::active_input::ActiveInputRuntime, guest_agent::error::AgentError> {
-    let journal_path = guest_contracts::runtime_paths::active_input_receipt_journal_file(
-        runtime.paths.runtime_dir(),
-    );
-    guest_agent::active_input::ActiveInputRuntime::new_with_receipts(
+    Ok(guest_agent::active_input::ActiveInputRuntime::new_enabled(
         &runtime.config.run_id,
         &runtime.config.prompt,
-        journal_path,
         guest_agent::http::HttpClient::new()?,
-    )
-    .map_err(guest_agent::error::AgentError::Io)
+    ))
 }
 
 pub fn read_codex_session_history_events_for_runtime(

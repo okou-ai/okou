@@ -12,7 +12,6 @@ import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-con
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
@@ -21,6 +20,7 @@ import { and, eq, lt, ne, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
+import { runThreadSshAccess } from "./run-thread-remote-access.service";
 
 type SshResolveInput = RunnerSshResolveRequest & {
   readonly runId: string;
@@ -51,6 +51,7 @@ function currentConnectionQuery(
       encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
       encryptedPassphrase: sshCredentials.encryptedPassphrase,
       accessId: sshConnections.cloudflareAccessId,
+      needsRebind: sshConnections.needsRebind,
       access: {
         id: cloudflareAccessConfigs.id,
         generation: cloudflareAccessConfigs.generation,
@@ -76,14 +77,6 @@ function currentConnectionQuery(
       ),
     )
     .innerJoin(
-      agentSshAccess,
-      and(
-        eq(agentSshAccess.agentId, agents.id),
-        eq(agentSshAccess.orgId, agentRuns.orgId),
-        eq(agentSshAccess.userId, agentRuns.userId),
-      ),
-    )
-    .innerJoin(
       sshConnections,
       and(
         eq(sshConnections.id, input.connectionId),
@@ -104,7 +97,13 @@ function currentConnectionQuery(
       and(
         eq(cloudflareAccessConfigs.id, sshConnections.cloudflareAccessId),
         eq(cloudflareAccessConfigs.orgId, agentRuns.orgId),
-        eq(cloudflareAccessConfigs.userId, agentRuns.userId),
+        or(
+          eq(cloudflareAccessConfigs.scope, "organization"),
+          and(
+            eq(cloudflareAccessConfigs.scope, "personal"),
+            eq(cloudflareAccessConfigs.userId, agentRuns.userId),
+          ),
+        ),
       ),
     )
     .where(
@@ -116,11 +115,12 @@ function currentConnectionQuery(
           agentRuns.runnerHeartbeatGeneration,
           input.runnerIdentity.heartbeatGeneration,
         ),
+        runThreadSshAccess(),
       ),
     );
   return lockAuthority
     ? query.for("share", {
-        of: [agentRuns, agentSessions, agents, agentSshAccess, sshCredentials],
+        of: [agentRuns, agentSessions, agents, sshCredentials],
       })
     : query;
 }
@@ -134,6 +134,9 @@ async function currentConnection(
   const [row] = await currentConnectionQuery(db, input, lockAuthority);
   signal.throwIfAborted();
   if (!row) {
+    return null;
+  }
+  if (row.needsRebind) {
     return null;
   }
   if (row.accessId === null) {
@@ -153,7 +156,13 @@ async function currentConnection(
         and(
           eq(cloudflareAccessConfigs.id, row.accessId),
           eq(cloudflareAccessConfigs.orgId, row.orgId),
-          eq(cloudflareAccessConfigs.userId, row.userId),
+          or(
+            eq(cloudflareAccessConfigs.scope, "organization"),
+            and(
+              eq(cloudflareAccessConfigs.scope, "personal"),
+              eq(cloudflareAccessConfigs.userId, row.userId),
+            ),
+          ),
           eq(cloudflareAccessConfigs.generation, row.access.generation),
         ),
       )

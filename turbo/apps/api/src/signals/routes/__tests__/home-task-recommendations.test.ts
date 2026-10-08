@@ -1,3 +1,4 @@
+import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
 
 import { cronRefreshHomeTaskRecommendationsContract } from "@okouai/api-contracts/contracts/cron";
@@ -8,6 +9,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -29,14 +31,14 @@ import {
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const FAILURE_COOLDOWN_ELAPSED_MS = 5 * 60 * 1000 + 1;
-const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_CHAT_URL = VERTEX_TEXT_URL;
 const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 const GMAIL_LIST_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const GMAIL_MESSAGE_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages/:messageId";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const fixture = createChatEventsFixture(context);
 const connectorsApi = createConnectorBddApi(context);
 
@@ -102,7 +104,8 @@ async function connectGmailAccount(
 
 describe("GET /api/home-task-recommendations", () => {
   it("keeps evidence, destinations, Gmail access, and cache scoped to the requested Agent", async () => {
-    const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+    const { actor, agentId, runnerGroup } =
+      await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -164,6 +167,7 @@ describe("GET /api/home-task-recommendations", () => {
     let textCalls = 0;
     let decisionCalls = 0;
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     server.use(
       http.post(OPENROUTER_CHAT_URL, async ({ request }) => {
@@ -204,13 +208,22 @@ describe("GET /api/home-task-recommendations", () => {
                 },
               ]);
         return HttpResponse.json({
-          choices: [
+          candidates: [
             {
-              finish_reason: "stop",
-              message: { content },
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: content,
+                  },
+                ],
+              },
             },
           ],
-          usage: { prompt_tokens: 100, completion_tokens: 20 },
+          usageMetadata: {
+            promptTokenCount: 100,
+            candidatesTokenCount: 20,
+          },
         });
       }),
       http.post(OPENROUTER_DECISIONS_URL, async ({ request }) => {
@@ -409,6 +422,13 @@ describe("GET /api/home-task-recommendations", () => {
           connectors: ["gmail"],
         },
       ],
+      connectors: [
+        {
+          slug: "gmail",
+          label: expect.any(String),
+          icon: expect.objectContaining({ url: expect.any(String) }),
+        },
+      ],
     });
     expect(gmailListCalls).toBe(1);
     expect(gmailDetailCalls).toBe(1);
@@ -461,7 +481,7 @@ describe("GET /api/home-task-recommendations", () => {
   });
 
   it("fails closed when Gmail detail permission is revoked during collection", async () => {
-    const { actor, agentId } = await fixture.entitledChatActor();
+    const { actor, agentId } = await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -478,6 +498,7 @@ describe("GET /api/home-task-recommendations", () => {
       { [FeatureSwitchKey.HomeTaskRecommendations]: true },
     );
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
 
     let gmailListCalls = 0;
@@ -563,7 +584,7 @@ describe("GET /api/home-task-recommendations", () => {
   });
 
   it("renews an open home's cron lease without loading or replacing cards", async () => {
-    const { actor, agentId } = await fixture.entitledChatActor();
+    const { actor, agentId } = await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -573,6 +594,7 @@ describe("GET /api/home-task-recommendations", () => {
       { [FeatureSwitchKey.HomeTaskRecommendations]: true },
     );
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     const base = now();
     mockNow(base);
@@ -610,7 +632,8 @@ describe("GET /api/home-task-recommendations", () => {
   });
 
   it("asks the Agent to assess a Workflow only after repeated completed requests", async () => {
-    const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+    const { actor, agentId, runnerGroup } =
+      await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -627,18 +650,54 @@ describe("GET /api/home-task-recommendations", () => {
       const claim = await fixture.claimChatRun(runnerGroup, run.runId);
       await fixture.completeChatRunOk(run.runId, claim.sandboxHeaders);
     }
+    for (const outcome of ["failed", "cancelled"] as const) {
+      const run = await fixture.sendChatRun(actor, {
+        agentId,
+        prompt: `Prepare a weekly sales summary for team ${outcome}.`,
+      });
+      const claim = await fixture.claimChatRun(runnerGroup, run.runId);
+      if (outcome === "failed") {
+        await fixture.failChatRun(
+          run.runId,
+          claim.sandboxHeaders,
+          "Failed summary",
+        );
+      } else {
+        await fixture.cancelChatRun(actor, run.runId, claim.sandboxHeaders);
+      }
+    }
     await flushWaitUntilForTest();
     let decisionsCalled = false;
     let textBeforeDecision = false;
     let decisionBody: unknown;
+    let workflowCandidateId: string | undefined;
     server.use(
       http.post(OPENROUTER_DECISIONS_URL, async ({ request }) => {
         decisionBody = await request.json();
+        const { state } = z
+          .object({
+            state: z.object({
+              untrustedCandidates: z.array(
+                z.object({
+                  id: z.string(),
+                  purpose: z.enum(["task", "workflow"]),
+                }),
+              ),
+            }),
+          })
+          .parse(decisionBody);
+        workflowCandidateId = state.untrustedCandidates.find((candidate) => {
+          return candidate.purpose === "workflow";
+        })?.id;
+        if (!workflowCandidateId) {
+          throw new Error(
+            "Expected completed requests to form a Workflow candidate",
+          );
+        }
         decisionsCalled = true;
         const answers = Object.fromEntries(
-          [1, 2, 3, 4].flatMap((index) => {
-            const id = `c${index.toString()}`;
-            const accepted = index === 4;
+          state.untrustedCandidates.flatMap(({ id, purpose }) => {
+            const accepted = purpose === "workflow";
             return [
               [
                 `${id}_actionability`,
@@ -664,27 +723,35 @@ describe("GET /api/home-task-recommendations", () => {
       http.post(OPENROUTER_CHAT_URL, () => {
         textBeforeDecision = !decisionsCalled;
         return HttpResponse.json({
-          choices: [
+          candidates: [
             {
-              finish_reason: "stop",
-              message: {
-                content: JSON.stringify([
+              finishReason: "STOP",
+              content: {
+                parts: [
                   {
-                    candidateId: "c4",
-                    title: "Assess a weekly sales Workflow",
-                    prompt:
-                      "Review the completed sales summaries below. Decide whether a reusable Workflow fits, check existing Workflows, and ask me for any missing constraints before creating one.",
-                    rationale: "I have repeated this work three times",
+                    text: JSON.stringify([
+                      {
+                        candidateId: workflowCandidateId,
+                        title: "Assess a weekly sales Workflow",
+                        prompt:
+                          "Review the completed sales summaries below. Decide whether a reusable Workflow fits, check existing Workflows, and ask me for any missing constraints before creating one.",
+                        rationale: "I have repeated this work three times",
+                      },
+                    ]),
                   },
-                ]),
+                ],
               },
             },
           ],
-          usage: { prompt_tokens: 100, completion_tokens: 20 },
+          usageMetadata: {
+            promptTokenCount: 100,
+            candidatesTokenCount: 20,
+          },
         });
       }),
     );
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     await updateFeatureSwitchesForUser(
       context,
@@ -719,6 +786,12 @@ describe("GET /api/home-task-recommendations", () => {
     expect(generated.body.recommendations[0]?.prompt).toContain(
       "Prepare a weekly sales summary for team Gamma.",
     );
+    expect(generated.body.recommendations[0]?.prompt).not.toContain(
+      "Prepare a weekly sales summary for team failed.",
+    );
+    expect(generated.body.recommendations[0]?.prompt).not.toContain(
+      "Prepare a weekly sales summary for team cancelled.",
+    );
     expect(textBeforeDecision).toBeFalsy();
     expect(decisionBody).toMatchObject({
       state: {
@@ -737,7 +810,8 @@ describe("GET /api/home-task-recommendations", () => {
   });
 
   it("keeps cards on malformed output and retries after the failure cooldown", async () => {
-    const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+    const { actor, agentId, runnerGroup } =
+      await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -759,7 +833,7 @@ describe("GET /api/home-task-recommendations", () => {
       initialClaim.sandboxHeaders,
     );
     // Run completion schedules title generation through waitUntil. Settle that
-    // owned work before this test gives the shared OpenRouter endpoint a
+    // owned work before this test gives the shared Vertex endpoint a
     // phase-sensitive handler, so an unrelated title request cannot consume
     // the card writer's first response.
     await flushWaitUntilForTest();
@@ -767,6 +841,7 @@ describe("GET /api/home-task-recommendations", () => {
     const base = now();
     mockNow(base);
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     let writerOutputIsInvalid = false;
     let textCalls = 0;
@@ -791,8 +866,22 @@ describe("GET /api/home-task-recommendations", () => {
               },
             ]);
         return HttpResponse.json({
-          choices: [{ finish_reason: "stop", message: { content } }],
-          usage: { prompt_tokens: 100, completion_tokens: 20 },
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: content,
+                  },
+                ],
+              },
+            },
+          ],
+          usageMetadata: {
+            promptTokenCount: 100,
+            candidatesTokenCount: 20,
+          },
         });
       }),
       http.post(OPENROUTER_DECISIONS_URL, () => {
@@ -847,15 +936,42 @@ describe("GET /api/home-task-recommendations", () => {
       ],
     });
 
-    mockNow(base + HOME_TASK_RECOMMENDATION_REFRESH_MS + 1);
     const nextRun = await fixture.sendChatRun(actor, {
       agentId,
       threadId: thread.id,
       prompt: "Update the follow-up with the latest details.",
     });
+    const busyCachedRead = await accept(
+      recommendationsClient().list({
+        headers: fixture.sessionHeaders(actor),
+        query: { agentId },
+      }),
+      [200],
+    );
+    expect(busyCachedRead.body).toMatchObject({
+      status: "unavailable",
+      recommendations: [],
+    });
+
     const nextClaim = await fixture.claimChatRun(runnerGroup, nextRun.runId);
     await fixture.completeChatRunOk(nextRun.runId, nextClaim.sandboxHeaders);
     await flushWaitUntilForTest();
+    // Completion releases the cached destination even before Runner shutdown.
+    // No cron refresh is needed to make the unchanged card visible again.
+    const completedCachedRead = await accept(
+      recommendationsClient().list({
+        headers: fixture.sessionHeaders(actor),
+        query: { agentId },
+      }),
+      [200],
+    );
+    expect(completedCachedRead.body).toMatchObject({
+      status: "available",
+      recommendations: generated.body.recommendations,
+      revision: generated.body.revision,
+    });
+
+    mockNow(base + HOME_TASK_RECOMMENDATION_REFRESH_MS + 1);
     const callsBeforeFailure = textCalls;
     writerOutputIsInvalid = true;
     const failedRefresh = await refresh({

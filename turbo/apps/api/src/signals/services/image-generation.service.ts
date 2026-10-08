@@ -1,12 +1,12 @@
+import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { Buffer } from "node:buffer";
 
 import { command, computed, type Computed } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import {
   DEFAULT_IMAGE_MODEL,
-  IMAGE_MODEL_ALIASES as SELECTABLE_IMAGE_MODEL_ALIASES,
+  IMAGE_MODEL_ALIASES,
+  resolveImageModel,
   type ImageModel as SelectableImageModel,
 } from "@okouai/core/image-model-catalog";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
@@ -23,21 +23,16 @@ import {
   usagePricingResolution$,
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
 import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
-import { processOrgUsageEvents$ } from "./credit-usage.service";
-import {
-  builtInGenerationUsageIdempotencyKey,
-  type BuiltInGenerationUsageIdempotency,
-} from "./built-in-generation-usage-idempotency";
+import { processUsageEventKeys$ } from "./credit-usage.service";
+import { builtInGenerationUsageIdempotencyKey } from "./built-in-generation-usage-idempotency";
 
 const FAL_IMAGE_QUEUE_URL_PREFIX = "https://queue.fal.run";
 const FAL_BILLABLE_UNITS_HEADER = "x-fal-billable-units";
 const OPENAI_IMAGES_URL_PREFIX = "https://api.openai.com/v1/images";
-const BYTEPLUS_IMAGE_GENERATIONS_URL =
-  "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations";
 const IMAGE_IO_MAX_PROMPT_LENGTH = 32_000;
 const IMAGE_IO_MIN_PIXELS = 655_360;
 const IMAGE_IO_MAX_PIXELS = 8_294_400;
@@ -63,21 +58,10 @@ const QWEN_IMAGE_3_STANDARD_TIER_MAX_PIXELS = 2_250_000;
 const QWEN_IMAGE_3_MAX_PIXELS = 2048 * 2048;
 /** Largest fal flexible-size preset, used when a request carries `auto`. */
 const FAL_SIZE_PRESET_MAX_PIXELS = 1024 * 1024;
-const SEEDREAM_5_PRO_MODEL = "dola-seedream-5-0-pro-260628";
-const SEEDREAM_5_LITE_MODEL = "seedream-5-0-lite-260128";
-const SEEDREAM_5_LITE_MAX_SOURCE_IMAGE_URLS = 14;
-const SEEDREAM_5_PRO_LOW_TIER_MAX_PIXELS = 2_610_000;
-const SEEDREAM_5_PRO_LOW_TIER_OUTPUT_COST_USD_MICROS = 45_000;
-const SEEDREAM_5_PRO_HIGH_TIER_OUTPUT_COST_USD_MICROS = 90_000;
-const SEEDREAM_5_PRO_ADDITIONAL_INPUT_COST_USD_MICROS = 3000;
-const SEEDREAM_5_LITE_OUTPUT_COST_USD_MICROS = 35_000;
-const BIREFNET_MODEL = "fal-ai/birefnet/v2";
-const CLARITY_UPSCALER_MODEL = "fal-ai/clarity-upscaler";
 
 const USAGE_KIND = "image";
 const FAL_OUTPUT_IMAGE_CATEGORY = "output_image";
 const FAL_OUTPUT_MEGAPIXEL_CATEGORY = "output_megapixel";
-const PROVIDER_COST_USD_MICROS_CATEGORY = "provider_cost_usd_micros";
 const FAL_QUALITY_SIZE_IMAGE_PRICING_CATEGORIES = [
   "output_image.low.standard",
   "output_image.low.large",
@@ -107,7 +91,6 @@ const OPENAI_IMAGE_PRICING_CATEGORIES = [
 const IMAGE_PRICING_CATEGORIES = [
   FAL_OUTPUT_IMAGE_CATEGORY,
   FAL_OUTPUT_MEGAPIXEL_CATEGORY,
-  PROVIDER_COST_USD_MICROS_CATEGORY,
   ...FAL_QUALITY_SIZE_IMAGE_PRICING_CATEGORIES,
   ...FAL_PIXEL_TIER_IMAGE_PRICING_CATEGORIES,
   ...FLUX_2_PRO_PRICING_CATEGORIES,
@@ -130,9 +113,6 @@ const STANDARD_GPT_IMAGE_SIZES = [
   "1024x1536",
 ] as const;
 const FAL_IMAGE_OUTPUT_FORMATS = ["png", "jpeg"] as const;
-const BYTEPLUS_IMAGE_OUTPUT_FORMATS = ["png", "jpeg"] as const;
-const SEEDREAM_5_PRO_SIZE_PRESETS = ["1K", "1.5K", "2K"] as const;
-const SEEDREAM_5_LITE_SIZE_PRESETS = ["2K", "3K", "4K"] as const;
 const FAL_IMAGE_ASPECT_RATIOS = [
   "21:9",
   "16:9",
@@ -145,14 +125,7 @@ const FAL_IMAGE_ASPECT_RATIOS = [
   "9:21",
 ] as const;
 
-const IMAGE_MODEL_ALIASES = {
-  ...SELECTABLE_IMAGE_MODEL_ALIASES,
-  birefnet: BIREFNET_MODEL,
-  "clarity-upscaler": CLARITY_UPSCALER_MODEL,
-} as const;
-
 const OPENAI_IMAGE_MODEL_CONFIG = {
-  promptless: false,
   sourceImageInput: "image_urls",
   provider: "openai",
   sizeMode: "flexible",
@@ -174,7 +147,7 @@ const OPENAI_IMAGE_MODEL_CONFIG = {
   supportsImagePromptStrength: false,
 } as const;
 
-const IMAGE_GENERATION_MODEL_CONFIGS = {
+const IMAGE_MODEL_CONFIGS = {
   "gpt-image-2.5-flare": {
     ...OPENAI_IMAGE_MODEL_CONFIG,
     alias: "gpt-image-2.5-flare",
@@ -189,7 +162,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "gpt-image-2": {
     alias: "gpt-image-2",
-    promptless: false,
     endpointId: "openai/gpt-image-2",
     imageToImageEndpointId: "openai/gpt-image-2/edit",
     sourceImageInput: "image_urls",
@@ -214,7 +186,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "gpt-image-1": {
     alias: "gpt-image-1",
-    promptless: false,
     endpointId: "fal-ai/gpt-image-1/text-to-image",
     imageToImageEndpointId: "fal-ai/gpt-image-1/edit-image",
     sourceImageInput: "image_urls",
@@ -239,7 +210,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "fal-ai/flux-pro/v1.1": {
     alias: "flux-pro-1.1",
-    promptless: false,
     endpointId: "fal-ai/flux-pro/v1.1",
     imageToImageEndpointId: "fal-ai/flux-pro/v1.1/redux",
     sourceImageInput: "image_url",
@@ -264,7 +234,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "fal-ai/flux-pro/v1.1-ultra": {
     alias: "flux-pro-1.1-ultra",
-    promptless: false,
     endpointId: "fal-ai/flux-pro/v1.1-ultra",
     imageToImageEndpointId: "fal-ai/flux-pro/v1.1-ultra/redux",
     sourceImageInput: "image_url",
@@ -289,7 +258,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [FLUX_2_PRO_MODEL]: {
     alias: "flux-2-pro",
-    promptless: false,
     endpointId: FLUX_2_PRO_MODEL,
     imageToImageEndpointId: `${FLUX_2_PRO_MODEL}/edit`,
     sourceImageInput: "image_urls",
@@ -314,7 +282,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [QWEN_IMAGE_3_MODEL]: {
     alias: "qwen-image-3",
-    promptless: false,
     endpointId: QWEN_IMAGE_3_MODEL,
     imageToImageEndpointId: "alibaba/qwen-image-3/edit",
     sourceImageInput: "image_urls",
@@ -339,7 +306,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [IDEOGRAM_4_MODEL]: {
     alias: "ideogram-4",
-    promptless: false,
     endpointId: IDEOGRAM_4_MODEL,
     imageToImageEndpointId: `${IDEOGRAM_4_MODEL}/image-to-image`,
     sourceImageInput: "image_url",
@@ -364,7 +330,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "fal-ai/bytedance/seedream/v4/text-to-image": {
     alias: "seedream4",
-    promptless: false,
     endpointId: "fal-ai/bytedance/seedream/v4/text-to-image",
     imageToImageEndpointId: "fal-ai/bytedance/seedream/v4/edit",
     sourceImageInput: "image_urls",
@@ -387,59 +352,8 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
     supportsInputFidelity: false,
     supportsImagePromptStrength: false,
   },
-  [SEEDREAM_5_PRO_MODEL]: {
-    alias: "seedream5-pro",
-    promptless: false,
-    endpointId: BYTEPLUS_IMAGE_GENERATIONS_URL,
-    imageToImageEndpointId: BYTEPLUS_IMAGE_GENERATIONS_URL,
-    sourceImageInput: "image_urls",
-    provider: "byteplus",
-    sizeMode: "flexible",
-    sizeParameter: "size",
-    outputFormats: BYTEPLUS_IMAGE_OUTPUT_FORMATS,
-    pricingCategories: [PROVIDER_COST_USD_MICROS_CATEGORY],
-    billingMode: "byteplus_provider_cost",
-    supportsTransparentBackground: false,
-    supportsOutputCompression: false,
-    supportsModeration: false,
-    supportsQuality: false,
-    supportsBackground: false,
-    usesOpenAiByok: false,
-    supportsSeed: false,
-    supportsSafetyTolerance: false,
-    supportsEnhancePrompt: false,
-    supportsMaskImage: false,
-    supportsInputFidelity: false,
-    supportsImagePromptStrength: false,
-  },
-  [SEEDREAM_5_LITE_MODEL]: {
-    alias: "seedream5-lite",
-    promptless: false,
-    endpointId: BYTEPLUS_IMAGE_GENERATIONS_URL,
-    imageToImageEndpointId: BYTEPLUS_IMAGE_GENERATIONS_URL,
-    sourceImageInput: "image_urls",
-    provider: "byteplus",
-    sizeMode: "flexible",
-    sizeParameter: "size",
-    outputFormats: BYTEPLUS_IMAGE_OUTPUT_FORMATS,
-    pricingCategories: [PROVIDER_COST_USD_MICROS_CATEGORY],
-    billingMode: "byteplus_provider_cost",
-    supportsTransparentBackground: false,
-    supportsOutputCompression: false,
-    supportsModeration: false,
-    supportsQuality: false,
-    supportsBackground: false,
-    usesOpenAiByok: false,
-    supportsSeed: false,
-    supportsSafetyTolerance: false,
-    supportsEnhancePrompt: false,
-    supportsMaskImage: false,
-    supportsInputFidelity: false,
-    supportsImagePromptStrength: false,
-  },
   [NANO_BANANA_2_MODEL]: {
     alias: "nano-banana-2",
-    promptless: false,
     endpointId: NANO_BANANA_2_MODEL,
     imageToImageEndpointId: "fal-ai/nano-banana-2/edit",
     sourceImageInput: "image_urls",
@@ -464,7 +378,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [NANO_BANANA_2_LITE_MODEL]: {
     alias: "nano-banana-2-lite",
-    promptless: false,
     endpointId: NANO_BANANA_2_LITE_MODEL,
     imageToImageEndpointId: "google/nano-banana-2-lite/edit",
     sourceImageInput: "image_urls",
@@ -489,64 +402,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
 } as const satisfies Record<SelectableImageModel, unknown>;
 
-const IMAGE_TRANSFORM_MODEL_CONFIGS = {
-  [BIREFNET_MODEL]: {
-    alias: "birefnet",
-    promptless: true,
-    endpointId: BIREFNET_MODEL,
-    imageToImageEndpointId: BIREFNET_MODEL,
-    sourceImageInput: "image_url",
-    provider: "fal",
-    sizeMode: "flexible",
-    sizeParameter: undefined,
-    outputFormats: ["png"],
-    pricingCategories: [FAL_OUTPUT_IMAGE_CATEGORY],
-    billingMode: "image",
-    supportsTransparentBackground: true,
-    supportsOutputCompression: false,
-    supportsModeration: false,
-    supportsQuality: false,
-    supportsBackground: false,
-    usesOpenAiByok: false,
-    supportsSeed: false,
-    supportsSafetyTolerance: false,
-    supportsEnhancePrompt: false,
-    supportsMaskImage: false,
-    supportsInputFidelity: false,
-    supportsImagePromptStrength: false,
-  },
-  [CLARITY_UPSCALER_MODEL]: {
-    alias: "clarity-upscaler",
-    promptless: true,
-    endpointId: CLARITY_UPSCALER_MODEL,
-    imageToImageEndpointId: CLARITY_UPSCALER_MODEL,
-    sourceImageInput: "image_url",
-    provider: "fal",
-    sizeMode: "flexible",
-    sizeParameter: undefined,
-    outputFormats: FAL_IMAGE_OUTPUT_FORMATS,
-    pricingCategories: [FAL_OUTPUT_MEGAPIXEL_CATEGORY],
-    billingMode: "megapixel",
-    supportsTransparentBackground: false,
-    supportsOutputCompression: false,
-    supportsModeration: false,
-    supportsQuality: false,
-    supportsBackground: false,
-    usesOpenAiByok: false,
-    supportsSeed: false,
-    supportsSafetyTolerance: false,
-    supportsEnhancePrompt: false,
-    supportsMaskImage: false,
-    supportsInputFidelity: false,
-    supportsImagePromptStrength: false,
-  },
-} as const;
-
-const IMAGE_MODEL_CONFIGS = {
-  ...IMAGE_GENERATION_MODEL_CONFIGS,
-  ...IMAGE_TRANSFORM_MODEL_CONFIGS,
-} as const;
-
 const IMAGE_MODELS = Object.keys(IMAGE_MODEL_CONFIGS) as ImageModel[];
 const L = logger("ImageGeneration");
 
@@ -558,7 +413,7 @@ type ImageSafetyTolerance = (typeof IMAGE_SAFETY_TOLERANCES)[number];
 type ImageInputFidelity = (typeof IMAGE_INPUT_FIDELITIES)[number];
 type ImagePricingCategory = (typeof IMAGE_PRICING_CATEGORIES)[number];
 export type ImageModel = keyof typeof IMAGE_MODEL_CONFIGS;
-export type ImageProvider = "fal" | "byteplus" | "openai";
+export type ImageProvider = "fal" | "openai";
 type ImageModelConfig = (typeof IMAGE_MODEL_CONFIGS)[ImageModel];
 
 type ErrorStatus = 400 | 402 | 500 | 502 | 503;
@@ -576,8 +431,6 @@ type ErrorResponse = {
 };
 
 interface ImagePricingRow {
-  readonly provider: ImageModel;
-  readonly category: ImagePricingCategory;
   readonly unitPrice: number;
   readonly unitSize: number;
 }
@@ -674,18 +527,6 @@ interface FalImageResult {
   readonly image: FalImageFile;
   readonly revisedPrompt: string | undefined;
   readonly seed: number | undefined;
-}
-
-interface BytePlusImageFile {
-  readonly url: string;
-  readonly width: number | undefined;
-  readonly height: number | undefined;
-  readonly size: string | undefined;
-  readonly outputFormat: ImageOutputFormat | undefined;
-}
-
-interface BytePlusImageResult {
-  readonly image: BytePlusImageFile;
 }
 
 interface FalImageQueueHandle {
@@ -810,16 +651,6 @@ function hasString(values: readonly string[], value: string): boolean {
   return values.includes(value);
 }
 
-function normalizeImageModel(value: string): ImageModel | null {
-  if (value in IMAGE_MODEL_CONFIGS) {
-    return value as ImageModel;
-  }
-  if (value in IMAGE_MODEL_ALIASES) {
-    return IMAGE_MODEL_ALIASES[value as keyof typeof IMAGE_MODEL_ALIASES];
-  }
-  return null;
-}
-
 function imageModelList(): string {
   return Object.keys(IMAGE_MODEL_ALIASES).join(", ");
 }
@@ -851,76 +682,12 @@ function parseSize(size: string): {
   return { width: Number(match[1]), height: Number(match[2]) };
 }
 
-interface BytePlusImageSizeLimits {
-  readonly presets: readonly string[];
-  readonly minPixels: number;
-  readonly maxPixels: number;
-}
-
-function bytePlusImageSizeLimits(
-  model: ImageModel,
-): BytePlusImageSizeLimits | null {
-  if (model === SEEDREAM_5_PRO_MODEL) {
-    return {
-      presets: SEEDREAM_5_PRO_SIZE_PRESETS,
-      minPixels: 921_600,
-      maxPixels: 4_624_220,
-    };
-  }
-  if (model === SEEDREAM_5_LITE_MODEL) {
-    return {
-      presets: SEEDREAM_5_LITE_SIZE_PRESETS,
-      minPixels: 3_686_400,
-      maxPixels: 16_777_216,
-    };
-  }
-  return null;
-}
-
-function validateBytePlusImageSize(
-  model: ImageModel,
-  size: string,
-  limits: BytePlusImageSizeLimits,
-): ErrorResponse | null {
-  if (hasString(limits.presets, size)) {
-    return null;
-  }
-  const modelConfig = IMAGE_MODEL_CONFIGS[model];
-  const parsed = parseSize(size);
-  if (!parsed) {
-    return badRequest(
-      `Unsupported image size for ${modelConfig.alias}: ${size}. Use auto, ${limits.presets.join(", ")}, or WIDTHxHEIGHT`,
-    );
-  }
-
-  const { width, height } = parsed;
-  const longEdge = Math.max(width, height);
-  const shortEdge = Math.min(width, height);
-  const pixels = width * height;
-  if (longEdge / shortEdge > 16) {
-    return badRequest(
-      `Unsupported image size: ${size}; aspect ratio must be at most 16:1`,
-    );
-  }
-  if (pixels < limits.minPixels || pixels > limits.maxPixels) {
-    return badRequest(
-      `Unsupported image size for ${modelConfig.alias}: ${size}; total pixels must be between ${limits.minPixels} and ${limits.maxPixels}`,
-    );
-  }
-  return null;
-}
-
 function validateImageSize(
   model: ImageModel,
   size: string,
 ): ErrorResponse | null {
   if (size === "auto") {
     return null;
-  }
-
-  const bytePlusLimits = bytePlusImageSizeLimits(model);
-  if (bytePlusLimits) {
-    return validateBytePlusImageSize(model, size, bytePlusLimits);
   }
 
   const parsed = parseSize(size);
@@ -1006,15 +773,9 @@ function readBoolean(
   return typeof value === "boolean" ? value : fallback;
 }
 
-function parsePrompt(
-  body: Record<string, unknown>,
-  modelConfig: ImageModelConfig,
-): string | ErrorResponse {
+function parsePrompt(body: Record<string, unknown>): string | ErrorResponse {
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (prompt.length === 0) {
-    if (modelConfig.promptless) {
-      return prompt;
-    }
     return badRequest("prompt is required");
   }
   if (prompt.length > IMAGE_IO_MAX_PROMPT_LENGTH) {
@@ -1031,7 +792,7 @@ function parseImageModel(
   defaultModel: ImageModel,
 ): ImageModel | ErrorResponse {
   const rawModel = readString(body, "model", defaultModel);
-  const model = normalizeImageModel(rawModel);
+  const model = resolveImageModel(rawModel);
   if (!model) {
     return badRequest(
       `Unsupported image model: ${rawModel}. Available models: ${imageModelList()}`,
@@ -1228,9 +989,6 @@ function parseSourceImageUrls(
   }
 
   if (sourceImageUrls.length === 0) {
-    if (modelConfig.promptless) {
-      return badRequest(`${modelConfig.alias} requires imageUrl`);
-    }
     return sourceImageUrls;
   }
   const maxSourceImageUrls =
@@ -1241,11 +999,9 @@ function parseSourceImageUrls(
         ? NANO_BANANA_2_MAX_SOURCE_IMAGE_URLS
         : modelConfig.alias === "flux-2-pro"
           ? FLUX_2_PRO_MAX_SOURCE_IMAGE_URLS
-          : modelConfig.alias === "seedream5-lite"
-            ? SEEDREAM_5_LITE_MAX_SOURCE_IMAGE_URLS
-            : modelConfig.alias === "qwen-image-3"
-              ? QWEN_IMAGE_3_MAX_SOURCE_IMAGE_URLS
-              : MAX_SOURCE_IMAGE_URLS;
+          : modelConfig.alias === "qwen-image-3"
+            ? QWEN_IMAGE_3_MAX_SOURCE_IMAGE_URLS
+            : MAX_SOURCE_IMAGE_URLS;
   if (sourceImageUrls.length > maxSourceImageUrls) {
     return badRequest(
       `imageUrls supports at most ${maxSourceImageUrls} images`,
@@ -1343,37 +1099,34 @@ function parseImagePromptStrength(
   return undefined;
 }
 
-function requestedDefaultImageModel(
-  options: { readonly defaultModel?: ImageModel } | undefined,
-): ImageModel {
-  return options?.defaultModel ?? DEFAULT_IMAGE_MODEL;
-}
-
 function requestedImageSize(
   body: Record<string, unknown>,
-  model: ImageModel,
   hasSourceImages: boolean,
 ): string {
-  const defaultSize =
-    hasSourceImages || model === SEEDREAM_5_LITE_MODEL ? "auto" : "1024x1024";
+  const defaultSize = hasSourceImages ? "auto" : "1024x1024";
   return readString(body, "size", defaultSize);
 }
 
+/**
+ * `options.model` is the caller-resolved model; when given, the body's `model`
+ * is ignored. Without it the body's `model` is read, which is how a persisted
+ * job request (already normalized with its model) is parsed again.
+ */
 export function parseImageOptions(
   body: unknown,
-  options?: { readonly defaultModel?: ImageModel },
+  options?: { readonly model?: ImageModel },
 ): ImageOptions | ErrorResponse {
   if (!isRecord(body)) {
     return badRequest("Invalid JSON body");
   }
 
-  const model = parseImageModel(body, requestedDefaultImageModel(options));
+  const model = options?.model ?? parseImageModel(body, DEFAULT_IMAGE_MODEL);
   if (typeof model === "object") {
     return model;
   }
   const modelConfig = IMAGE_MODEL_CONFIGS[model];
 
-  const prompt = parsePrompt(body, modelConfig);
+  const prompt = parsePrompt(body);
   if (typeof prompt === "object") {
     return prompt;
   }
@@ -1384,7 +1137,7 @@ export function parseImageOptions(
   }
   const hasSourceImages = sourceImageUrls.length > 0;
 
-  const size = requestedImageSize(body, model, hasSourceImages);
+  const size = requestedImageSize(body, hasSourceImages);
   const sizeError = validateImageSize(model, size);
   if (sizeError) {
     return sizeError;
@@ -1475,13 +1228,11 @@ function mapPricingRows(
 ): ImagePricing {
   const pricing = new Map<string, ImagePricingRow>();
   for (const row of rows) {
-    const model = normalizeImageModel(
+    const model = resolveImageModel(
       canonicalUsagePricingProvider(resolution, USAGE_KIND, row.provider),
     );
     if (model && includesString(IMAGE_PRICING_CATEGORIES, row.category)) {
       pricing.set(imagePricingKey(model, row.category), {
-        provider: model,
-        category: row.category,
         unitPrice: row.unitPrice,
         unitSize: row.unitSize,
       });
@@ -1594,13 +1345,6 @@ function estimateImageCredits(
 function falHeaders(falKey: string): Record<string, string> {
   return {
     Authorization: `Key ${falKey}`,
-    "Content-Type": "application/json",
-  };
-}
-
-function bytePlusHeaders(apiKey: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
   };
 }
@@ -1737,9 +1481,6 @@ function falImageInput(
   references: ImageProviderReferences,
 ): Record<string, unknown> {
   const modelConfig = IMAGE_MODEL_CONFIGS[options.model];
-  if (modelConfig.promptless) {
-    return falSourceImageInput(modelConfig, references.sourceImageUrls);
-  }
   return {
     prompt: options.prompt,
     ...(modelConfig.sizeParameter === "aspect_ratio"
@@ -1892,103 +1633,6 @@ export async function getFalImageBillableUnits(
     return badGateway("Fal returned no billing details", "NO_BILLING_UNITS");
   }
   return billableUnits;
-}
-
-function bytePlusImageSize(options: ImageOptions): string {
-  return options.size === "auto" ? "2K" : options.size;
-}
-
-function bytePlusImageInput(
-  options: ImageOptions,
-  references: ImageProviderReferences,
-): Record<string, unknown> {
-  const sourceImages =
-    references.sourceImageUrls.length === 1
-      ? references.sourceImageUrls[0]
-      : references.sourceImageUrls;
-  return {
-    model: options.model,
-    prompt: options.prompt,
-    ...(options.sourceImageUrls.length > 0 ? { image: sourceImages } : {}),
-    size: bytePlusImageSize(options),
-    output_format: options.outputFormat,
-    response_format: "url",
-    watermark: false,
-  };
-}
-
-function parseBytePlusImageFile(value: unknown): BytePlusImageFile | null {
-  if (!isRecord(value) || typeof value.url !== "string") {
-    return null;
-  }
-  const size = typeof value.size === "string" ? value.size : undefined;
-  const parsedSize = size ? parseSize(size) : null;
-  const outputFormat =
-    typeof value.output_format === "string" &&
-    includesString(IMAGE_OUTPUT_FORMATS, value.output_format)
-      ? value.output_format
-      : undefined;
-  return {
-    url: value.url,
-    width: parsedSize?.width,
-    height: parsedSize?.height,
-    size,
-    outputFormat,
-  };
-}
-
-function parseBytePlusImageResult(
-  value: unknown,
-): BytePlusImageResult | ErrorResponse {
-  if (!isRecord(value) || !Array.isArray(value.data)) {
-    return badGateway("BytePlus returned no image data", "NO_IMAGE_RETURNED");
-  }
-  const image = parseBytePlusImageFile(value.data[0]);
-  if (!image) {
-    return badGateway("BytePlus returned no image data", "NO_IMAGE_RETURNED");
-  }
-  return { image };
-}
-
-export async function generateBytePlusImage(
-  options: ImageOptions,
-  references: ImageProviderReferences,
-  apiKey: string,
-  signal: AbortSignal,
-): Promise<ParsedImageGeneration | ErrorResponse> {
-  const response = await fetch(BYTEPLUS_IMAGE_GENERATIONS_URL, {
-    method: "POST",
-    headers: bytePlusHeaders(apiKey),
-    body: JSON.stringify(bytePlusImageInput(options, references)),
-    signal,
-  });
-  if (!response.ok) {
-    const responseBody = await readImageProviderErrorBody(response, signal);
-    L.error("BytePlus image generation request failed", {
-      model: options.model,
-      status: response.status,
-      body: responseBody,
-    });
-    return badGateway(
-      "Image generation failed",
-      "BYTEPLUS_IMAGE_REQUEST_FAILED",
-    );
-  }
-
-  const responseText = await response.text();
-  signal.throwIfAborted();
-  const body = safeJsonParse(responseText);
-  if (body === undefined) {
-    return badGateway(
-      "BytePlus returned an invalid response",
-      "BYTEPLUS_IMAGE_BAD_RESPONSE",
-    );
-  }
-  const result = parseBytePlusImageResult(body);
-  if ("status" in result) {
-    return result;
-  }
-  return await downloadBytePlusImage(result, options, signal);
 }
 
 const openAiImageResponseSchema = z.object({
@@ -2373,60 +2017,6 @@ function falBillingEntries(
   return [{ category: FAL_OUTPUT_IMAGE_CATEGORY, quantity: 1 }];
 }
 
-function bytePlusOutputPixels(
-  image: BytePlusImageFile,
-  options: ImageOptions,
-): number | undefined {
-  if (image.width && image.height) {
-    return image.width * image.height;
-  }
-  const parsedRequestedSize = parseSize(options.size);
-  if (parsedRequestedSize) {
-    return parsedRequestedSize.width * parsedRequestedSize.height;
-  }
-  if (options.size === "2K" || options.size === "auto") {
-    return 2048 * 2048;
-  }
-  if (options.size === "1.5K") {
-    return 1536 * 1536;
-  }
-  if (options.size === "1K") {
-    return 1024 * 1024;
-  }
-  return undefined;
-}
-
-function bytePlusProviderCostUsdMicros(
-  image: BytePlusImageFile,
-  options: ImageOptions,
-): number {
-  if (options.model === SEEDREAM_5_LITE_MODEL) {
-    return SEEDREAM_5_LITE_OUTPUT_COST_USD_MICROS;
-  }
-  const outputPixels = bytePlusOutputPixels(image, options);
-  const outputCost =
-    outputPixels !== undefined &&
-    outputPixels > SEEDREAM_5_PRO_LOW_TIER_MAX_PIXELS
-      ? SEEDREAM_5_PRO_HIGH_TIER_OUTPUT_COST_USD_MICROS
-      : SEEDREAM_5_PRO_LOW_TIER_OUTPUT_COST_USD_MICROS;
-  const additionalInputCost =
-    Math.max(0, options.sourceImageUrls.length - 1) *
-    SEEDREAM_5_PRO_ADDITIONAL_INPUT_COST_USD_MICROS;
-  return outputCost + additionalInputCost;
-}
-
-function bytePlusBillingEntries(
-  image: BytePlusImageFile,
-  options: ImageOptions,
-): readonly ImageBillingEntry[] {
-  return [
-    {
-      category: PROVIDER_COST_USD_MICROS_CATEGORY,
-      quantity: bytePlusProviderCostUsdMicros(image, options),
-    },
-  ];
-}
-
 function falQualitySizeImageCategory(
   image: FalImageFile,
   options: ImageOptions,
@@ -2503,56 +2093,6 @@ export async function downloadFalImage(
   };
 }
 
-async function downloadBytePlusImage(
-  result: BytePlusImageResult,
-  options: ImageOptions,
-  signal: AbortSignal,
-): Promise<ParsedImageGeneration | ErrorResponse> {
-  const response = await fetch(result.image.url, { method: "GET", signal });
-  if (!response.ok) {
-    return badGateway(
-      "Could not download generated image",
-      "IMAGE_DOWNLOAD_FAILED",
-    );
-  }
-
-  const imageBytes = Buffer.from(await response.arrayBuffer());
-  if (imageBytes.byteLength === 0) {
-    return badGateway("Model returned empty image", "NO_IMAGE_RETURNED");
-  }
-
-  const fallbackFormat = result.image.outputFormat ?? options.outputFormat;
-  const contentType =
-    normalizeImageContentType(response.headers.get("content-type")) ??
-    contentTypeForFormat(fallbackFormat);
-  const outputFormat = formatForContentType(contentType);
-  const imageSize =
-    result.image.width && result.image.height
-      ? `${result.image.width}x${result.image.height}`
-      : (result.image.size ?? bytePlusImageSize(options));
-
-  return {
-    model: options.model,
-    provider: "byteplus",
-    imageBytes,
-    revisedPrompt: undefined,
-    imageSize,
-    quality: "model-default",
-    background: "auto",
-    outputFormat,
-    outputCompression: undefined,
-    moderation: options.moderation,
-    safetyTolerance: undefined,
-    billing: bytePlusBillingEntries(result.image, options),
-    sourceUrl: result.image.url,
-    seed: undefined,
-    sourceImageUrls: options.sourceImageUrls,
-    maskImageUrl: options.maskImageUrl,
-    inputFidelity: options.inputFidelity,
-    imagePromptStrength: options.imagePromptStrength,
-  };
-}
-
 function generatedImageMetadata(
   generation: ParsedImageGeneration,
   isPrivate: boolean,
@@ -2588,16 +2128,13 @@ export const recordGeneratedImage$ = command(
       readonly runId: string | undefined;
       readonly billingRunId: string | null;
       readonly billingContext: string;
-      readonly publicBrand: PublicBrand;
       readonly privateArtifacts: boolean;
       readonly pricing: ImagePricing;
       readonly generation: ParsedImageGeneration;
-      readonly recordArtifact?: boolean;
-      readonly usageIdempotency: BuiltInGenerationUsageIdempotency;
+      readonly generationId: string;
     },
     signal: AbortSignal,
   ): Promise<RecordedImage> => {
-    const writeDb = set(writeDb$);
     const artifact = await set(
       storeGeneratedArtifactObject$,
       {
@@ -2608,51 +2145,47 @@ export const recordGeneratedImage$ = command(
         extension: extensionForFormat(params.generation.outputFormat),
         body: params.generation.imageBytes,
         contentType: contentTypeForFormat(params.generation.outputFormat),
-        publicBrand: params.publicBrand,
       },
       signal,
     );
     const { id: fileId, filename, key: s3Key, url } = artifact;
     const contentType = contentTypeForFormat(params.generation.outputFormat);
 
-    if (params.recordArtifact !== false) {
-      await set(
-        recordWebUploadedFile$,
-        {
-          runId: params.runId,
-          externalId: fileId,
-          userId: params.userId,
-          orgId: params.orgId,
-          filename,
-          contentType,
-          sizeBytes: params.generation.imageBytes.byteLength,
-          url,
-          s3Key,
-          publicBrand: params.publicBrand,
-          metadata: generatedImageMetadata(
-            params.generation,
-            artifact.isPrivate,
-          ),
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-    }
+    await set(
+      recordWebUploadedFile$,
+      {
+        runId: params.runId,
+        externalId: fileId,
+        userId: params.userId,
+        orgId: params.orgId,
+        filename,
+        contentType,
+        sizeBytes: params.generation.imageBytes.byteLength,
+        url,
+        s3Key,
+        layout: artifact.layout,
+        metadata: generatedImageMetadata(params.generation, artifact.isPrivate),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
 
     const usageRows = params.generation.billing.filter((row) => {
       return row.quantity > 0;
     });
 
-    await writeDb
-      .insert(usageEvent)
-      .values(
-        usageRows.map((row) => {
+    await set(
+      recordProviderUsageBatch$,
+      {
+        orgId: params.orgId,
+        userId: params.userId,
+        runId: params.runId,
+        billingRunId: params.billingRunId,
+        billingContext: params.billingContext,
+        events: usageRows.map((row) => {
           return {
-            runId: params.runId ?? null,
-            billingRunId: params.billingRunId,
-            billingContext: params.billingContext,
             idempotencyKey: builtInGenerationUsageIdempotencyKey({
-              ...params.usageIdempotency,
+              generationId: params.generationId,
               category: row.category,
             }),
             orgId: params.orgId,
@@ -2663,11 +2196,24 @@ export const recordGeneratedImage$ = command(
             quantity: row.quantity,
           };
         }),
-      )
-      .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
-    await set(processOrgUsageEvents$, params.orgId, signal);
+    await set(
+      processUsageEventKeys$,
+      {
+        orgId: params.orgId,
+        idempotencyKeys: usageRows.map((row) => {
+          return builtInGenerationUsageIdempotencyKey({
+            generationId: params.generationId,
+            category: row.category,
+          });
+        }),
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     return {

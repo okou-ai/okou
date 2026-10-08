@@ -84,6 +84,7 @@ import { Markdown } from "../components/markdown.tsx";
 import { NoPermissionIllustration } from "./components/no-permission-illustration.tsx";
 import { formatAppNumber } from "../../i18n/format.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
+import { DiscordMark } from "./components/discord-mark.tsx";
 
 // ---------------------------------------------------------------------------
 // Error Banner
@@ -185,19 +186,6 @@ function RunErrorBanner({ error }: { error: string }) {
           }),
           guidance: t(($) => {
             return $.runErrors.modelRoutesUnavailable;
-          }),
-        };
-        break;
-      }
-      case "PROVIDER_DELETED": {
-        localized = {
-          title: t(($) => {
-            return $.activity.detail.errorGuidance.modelProviderUnavailable
-              .title;
-          }),
-          guidance: t(($) => {
-            return $.activity.detail.errorGuidance.modelProviderUnavailable
-              .guidance;
           }),
         };
         break;
@@ -356,7 +344,8 @@ export function ActivityHeaderCard({
                     return $.activity.detail.fields.source;
                   })}
                 </span>
-                <span className="text-foreground whitespace-nowrap">
+                <span className="inline-flex items-center gap-1.5 text-foreground whitespace-nowrap">
+                  {triggerSource === "discord" && <DiscordMark size={15} />}
                   {getTriggerSourceLabel(
                     triggerSource,
                     logDetail?.appendSystemPrompt,

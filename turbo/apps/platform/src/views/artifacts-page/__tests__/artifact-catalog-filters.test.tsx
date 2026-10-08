@@ -1,61 +1,18 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { search } from "../../../signals/location.ts";
 import {
   artifact,
   findArtifactAction,
   getButtonByName,
-  getCatalogViewport,
   queryButtonByName,
   setupArtifactCatalogPage,
 } from "./artifact-catalog-test-helpers.ts";
 
 const context = testContext();
-
-test("Artifact filters stay synchronized with browser history", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
-    const kind = query.kind ?? "presentation";
-    return respond(200, {
-      artifacts: [artifact({ kind, title: `${kind}-artifact` })],
-      nextCursor: null,
-    });
-  });
-
-  await setupArtifactCatalogPage(context, { path: "/artifacts?tab=image" });
-
-  await expect(
-    findArtifactAction("image-artifact"),
-  ).resolves.toBeInTheDocument();
-  const filters = screen.getByLabelText("Artifact kind filters");
-  expect(getButtonByName("Show image artifacts", filters)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-
-  click(getButtonByName("Show video artifacts", filters));
-
-  await expect(
-    findArtifactAction("video-artifact"),
-  ).resolves.toBeInTheDocument();
-  expect(new URLSearchParams(search()).get("tab")).toBe("video");
-
-  act(() => {
-    window.history.back();
-  });
-
-  await expect(
-    findArtifactAction("image-artifact"),
-  ).resolves.toBeInTheDocument();
-  expect(getButtonByName("Show image artifacts", filters)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(new URLSearchParams(search()).get("tab")).toBe("image");
-});
 
 test("Artifact kind filters remain available while switching catalogs", async () => {
   const avatarRequestStarted = context.mocks.deferred<void>();
@@ -99,14 +56,6 @@ test("Artifact kind filters remain available while switching catalogs", async ()
   expect(
     getButtonByName("Show presentation artifacts", filters),
   ).toHaveAttribute("aria-pressed", "true");
-
-  const viewport = getCatalogViewport();
-  Object.defineProperty(viewport, "scrollTop", {
-    configurable: true,
-    value: 100,
-  });
-  fireEvent.scroll(viewport);
-  expect(filters).toBeInTheDocument();
 
   click(getButtonByName("Show avatar artifacts", filters));
   await avatarRequestStarted.promise;

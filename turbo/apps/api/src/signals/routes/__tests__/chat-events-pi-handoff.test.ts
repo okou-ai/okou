@@ -1,14 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
-  PI_API_FIRST_TURN_SESSION_MAX_BYTES,
   PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
   RESUME_SESSION_HISTORY_MAX_BYTES,
-  piApiFirstTurnManifestSchema,
 } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   PI_AGENT_RUNTIME_VERSION,
   PI_SESSION_CONSTRUCTION_DIGEST,
@@ -16,43 +12,32 @@ import {
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
-import { testContext } from "../../../__tests__/test-context";
-import { env, mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  holdPiApiFirstTurnLifecycleLockFixture,
-  readRunUsageEventsFixture,
-  replacePiSessionHistoryInlineFixture,
-  replacePiSessionHistoryJsonlFixture,
-} from "../../../test-fixtures/chat-events";
+  updateFeatureSwitchesForUser,
+  deleteFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
+import { testContext } from "../../../__tests__/test-context";
+import { env } from "../../../lib/env";
+import { server } from "../../../mocks/server";
+
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
+import {
+  expectThreadModelTokens,
+  readThreadModelUsage,
+} from "./helpers/public-thread-usage";
 import {
   createChatEventsFixture,
-  expectNoBuiltInModelUsage,
   claimEnvironment,
+  expectExactPrivatePiMemoryAdmission,
   modelProviderSecretPlaceholder,
-  API_FIRST_TURN_OWNERSHIP_BUDGET_MS,
-  API_FIRST_TURN_COORDINATION_BUDGET_MS,
-  GPT_PI_BDD_MODELS,
-  requireOrgId,
-  totalChargedCredits,
-  createGptUsagePricingResolution,
-  createPiApiFirstTurnUsagePricingResolution,
+  createPiUsagePricingResolution,
   eventBackedContents,
   type PiCheckpointS3Command,
   piS3ObjectKey,
   PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
-  occurrences,
 } from "./helpers/chat-events-fixture";
-import {
-  piResponsesTextSse,
-  piResponsesContentSse,
-  nativeCodexSseResponse,
-} from "./helpers/pi-responses";
 
 const context = testContext();
 const {
@@ -61,46 +46,38 @@ const {
   webhooks,
   entitledChatActor,
   configureBuiltInPiModel,
-  configureBuiltInPiModelOnOpenRouter,
+  configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
-  waitForThreadMessages,
   waitForRunStatus,
-  completeChatRunOk,
   failChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
-  expectNoPiApiFirstTurnArtifacts,
-  expectPiApiFirstTurnTerminalWithoutOutput,
-  uploadedPiS3Object,
+  piSandboxBaseSession,
   publishPendingPiInstructions,
-  mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
   queueCapabilityProvenPiRun,
 } = createChatEventsFixture(context);
 
-describe("CHAT-02: model-first provider policies", () => {
-  it.each([
-    { encoding: "identity", responseLost: false, large: false },
-    { encoding: "identity", responseLost: false, large: true },
-    { encoding: "gzip", responseLost: false, large: true },
-    { encoding: "zstd", responseLost: false, large: true },
-    { encoding: "identity", responseLost: true, large: true },
-  ] as const)(
-    "references Pi $encoding history (large: $large, publication response lost: $responseLost) without API history or resource IO",
-    async ({ encoding, responseLost, large }) => {
+describe("CHAT-02: model-first routing", () => {
+  it.each(["identity", "gzip", "zstd"] as const)(
+    "references Pi %s resume history without API history or resource IO",
+    async (encoding) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
+      if (!actor.orgId) {
+        throw new Error("Expected private memory owner organization");
+      }
+      const memoryOwner = { orgId: actor.orgId, userId: actor.userId };
+      await updateFeatureSwitchesForUser(context, memoryOwner, {
+        [FeatureSwitchKey.PiMemory]: true,
+      });
+      onTestFinished(async () => {
+        await deleteFeatureSwitchesForUser(context, memoryOwner);
+      });
       await publishPendingPiInstructions(actor, agentId);
       const checkpointObjects = mockPiCheckpointObjectStore();
-      let modelCalls = 0;
       let resourceDownloads = 0;
       server.use(
-        http.post("https://api.openai.com/v1/responses", () => {
-          modelCalls += 1;
-          return nativeCodexSseResponse(
-            piResponsesTextSse("unexpected API answer", modelCalls),
-          );
-        }),
         http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
           resourceDownloads += 1;
           return HttpResponse.json(
@@ -115,13 +92,8 @@ describe("CHAT-02: model-first provider policies", () => {
         runnerGroup,
         prompt: "/skill:long-session finish in sandbox",
       });
-      await completeChatRunOk(
-        queued.anchor.runId,
-        queued.anchorClaim.sandboxHeaders,
-        { usagePricingResolution: queued.usagePricingResolution },
-      );
+      const run = await queued.launch();
       await flushWaitUntilForTest();
-      const { run } = queued;
       const claimed = await claimChatRun(runnerGroup, run.runId);
       const session = MemoryPiSession.create({
         cwd: "/home/user/workspace",
@@ -137,12 +109,12 @@ describe("CHAT-02: model-first provider policies", () => {
         content: [
           {
             type: "text",
-            text: "x".repeat(large ? PI_API_FIRST_TURN_SESSION_MAX_BYTES : 64),
+            text: "x".repeat(64),
           },
         ],
         api: "openai-responses",
         provider: "openai",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         usage: {
           input: 0,
           output: 0,
@@ -162,11 +134,6 @@ describe("CHAT-02: model-first provider policies", () => {
             ? zstdCompressSync(raw)
             : raw;
       const hash = createHash("sha256").update(raw).digest("hex");
-      if (large) {
-        expect(raw.length).toBeGreaterThan(PI_API_FIRST_TURN_SESSION_MAX_BYTES);
-      } else {
-        expect(raw.length).toBeLessThan(PI_API_FIRST_TURN_SESSION_MAX_BYTES);
-      }
       const invalidHash = createHash("sha256")
         .update(randomUUID())
         .digest("hex");
@@ -256,44 +223,14 @@ describe("CHAT-02: model-first provider policies", () => {
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "completed",
       });
-      if (responseLost) {
-        const deadline = new AbortController();
-        onTestFinished(() => {
-          deadline.abort();
-        });
-        // An object-store response can be lost after the manifest is visible.
-        // Expire the real attempt signal exactly at that external boundary.
-        context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-          return milliseconds > API_FIRST_TURN_OWNERSHIP_BUDGET_MS - 1000 &&
-            milliseconds <= API_FIRST_TURN_OWNERSHIP_BUDGET_MS
-            ? deadline.signal
-            : undefined;
-        });
-        const send = context.mocks.s3.send.getMockImplementation();
-        if (!send) {
-          throw new Error("Expected the checkpoint object store");
-        }
-        context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-          const candidate = command as PiCheckpointS3Command;
-          const stored = await send(command);
-          if (
-            candidate.constructor?.name === "PutObjectCommand" &&
-            piS3ObjectKey(candidate)?.endsWith("/manifest.json")
-          ) {
-            expect(
-              checkpointObjects.has(piS3ObjectKey(candidate) ?? ""),
-            ).toBeTruthy();
-            deadline.abort(
-              new DOMException(
-                "Manifest response lost at ownership deadline",
-                "TimeoutError",
-              ),
-            );
-            throw deadline.signal.reason;
-          }
-          return stored;
-        });
+      if (!actor.orgId) {
+        throw new Error("Expected memory owner organization");
       }
+      await expectExactPrivatePiMemoryAdmission({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        runId: run.runId,
+      });
       const callsBeforeResume = context.mocks.s3.send.mock.calls.length;
       const resumed = await sendChatRun(
         actor,
@@ -301,46 +238,30 @@ describe("CHAT-02: model-first provider policies", () => {
           agentId,
           threadId: run.threadId,
           prompt: "continue the long session",
-          model: "gpt-5.6-terra",
+          model: null,
         },
         queued.usagePricingResolution,
       );
       await flushWaitUntilForTest();
-      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${resumed.runId}/manifest.json`;
-      // Terminal cleanup removes the failed run's object. The captured write
-      // still proves that ownership publication happened before its response
-      // was lost; the normal transfer retains its currently readable object.
-      const publishedManifest = responseLost
-        ? uploadedPiS3Object(manifestKey)
-        : checkpointObjects.get(manifestKey);
-      const manifest = piApiFirstTurnManifestSchema.parse(
-        JSON.parse(publishedManifest?.toString("utf8") ?? "{}"),
-      );
-      expect(manifest).toMatchObject({
-        schemaVersion: 4,
-        mode: "sandbox-first",
-        outcome: "ownership-transfer",
-        baseSession: { sessionId: run.threadId, sha256: hash },
-        session: { sessionId: run.threadId, sha256: hash, rawSize: raw.length },
-        history: {
+      const resumedClaim = await claimChatRun(runnerGroup, resumed.runId);
+      const resumeSession = resumedClaim.claim.resumeSession;
+      expect(resumeSession).toMatchObject({
+        sessionId: run.threadId,
+        historyRef: {
+          kind: "blob",
+          hash,
           encoding,
+          rawSize: raw.length,
           encodedSize: encoded.length,
           url: expect.any(String),
         },
-        sandboxEventSequenceStart: 1,
-        apiUsage: {
-          schemaVersion: 1,
-          state: "no-inference",
-          sampledAt: expect.any(Number),
-        },
       });
-      if (manifest.schemaVersion !== 4) {
-        throw new Error("Expected a referenced sandbox checkpoint");
+      if (!resumeSession || !("historyRef" in resumeSession)) {
+        throw new Error("Expected a referenced resume history");
       }
-      expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
-        blobKey,
-      );
-      expect(modelCalls).toBe(0);
+      expect(
+        new URL(resumeSession.historyRef.url).searchParams.get("object"),
+      ).toBe(blobKey);
       expect(resourceDownloads).toBe(0);
       expect(
         context.mocks.s3.send.mock.calls
@@ -353,38 +274,6 @@ describe("CHAT-02: model-first provider policies", () => {
             );
           }),
       ).toBeFalsy();
-      expect(
-        checkpointObjects.has(
-          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${resumed.runId}/session.jsonl`,
-        ),
-      ).toBeFalsy();
-      if (responseLost) {
-        await waitForRunStatus(actor, resumed.runId, "failed");
-        await expectPiApiFirstTurnTerminalWithoutOutput(
-          actor,
-          resumed,
-          "failed",
-          "[PI_API_FIRST_TURN_DEADLINE_EXCEEDED] Pi API first-turn deadline elapsed",
-        );
-        expect(
-          context.mocks.s3.send.mock.calls
-            .slice(callsBeforeResume)
-            .filter(([command]) => {
-              const candidate = command as PiCheckpointS3Command;
-              return (
-                candidate.constructor?.name === "PutObjectCommand" &&
-                piS3ObjectKey(candidate) === manifestKey
-              );
-            }),
-        ).toHaveLength(1);
-        await api.requestClaimRunnerJob(true, resumed.runId, [404]);
-        return;
-      }
-      const resumedClaim = await claimChatRun(runnerGroup, resumed.runId);
-      expect(resumedClaim.claim.resumeSession).toMatchObject({
-        sessionId: run.threadId,
-        historyRef: { hash, encoding, rawSize: raw.length },
-      });
       await webhooks.requestAgentCheckpointPrepareHistory(
         {
           runId: resumed.runId,
@@ -407,20 +296,13 @@ describe("CHAT-02: model-first provider policies", () => {
     "/unknown-command first  argument\nsecond line",
     "/home/user/workspace/report.txt first  argument\nsecond line",
   ] as const)(
-    "hands native input %j to Sandbox with exact fresh and resumed H0",
+    "claims native input %j with exact fresh and resumed Sandbox H0",
     async (prompt) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await publishPendingPiInstructions(actor, agentId);
       const checkpointObjects = mockPiCheckpointObjectStore();
-      let modelCalls = 0;
       let resourceDownloads = 0;
       server.use(
-        http.post("https://api.openai.com/v1/responses", () => {
-          modelCalls += 1;
-          return nativeCodexSseResponse(
-            piResponsesTextSse("ordinary API answer", modelCalls),
-          );
-        }),
         http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
           resourceDownloads += 1;
           return HttpResponse.json(
@@ -435,15 +317,9 @@ describe("CHAT-02: model-first provider policies", () => {
         runnerGroup,
         prompt,
       });
-      await completeChatRunOk(
-        queued.anchor.runId,
-        queued.anchorClaim.sandboxHeaders,
-        {
-          usagePricingResolution: queued.usagePricingResolution,
-        },
-      );
-      let run = queued.run;
+      let run = await queued.launch();
       let expectedH0: Buffer | undefined;
+      let applicationSession: string | undefined;
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
       for (const turn of [1, 2]) {
         const originalPrompt = turn === 1 ? prompt : `${prompt}\nresume once`;
@@ -454,75 +330,53 @@ describe("CHAT-02: model-first provider policies", () => {
               agentId,
               threadId: run.threadId,
               prompt: originalPrompt,
-              model: "gpt-5.6-terra",
+              model: null,
             },
             queued.usagePricingResolution,
           );
         }
         await flushWaitUntilForTest();
-        const manifestKey = `${bucket}/pi-api-first-turn/${run.runId}/manifest.json`;
-        const sessionKey = `${bucket}/pi-api-first-turn/${run.runId}/session.jsonl`;
-        const manifestBytes = checkpointObjects.get(manifestKey);
-        if (!manifestBytes) {
-          throw new Error("Expected native-input Sandbox manifest");
-        }
-        const manifest = piApiFirstTurnManifestSchema.parse(
-          JSON.parse(manifestBytes.toString("utf8")),
-        );
-        let h0: Buffer;
+        expect(resourceDownloads).toBe(0);
+        const claim = await claimChatRun(runnerGroup, run.runId);
+        expect(claim.claim).toMatchObject({
+          cliAgentType: "pi",
+          piSessionId: run.threadId,
+          prompt: originalPrompt,
+          piInstalledCliRequirement: {
+            requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+            minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+            requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
+          },
+        });
+        expect(claim.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
         if (turn === 1) {
-          const published = checkpointObjects.get(sessionKey);
-          if (!published) {
-            throw new Error("Expected fresh sandbox-first session object");
-          }
-          h0 = published;
-          expect(manifest).toMatchObject({
-            schemaVersion: 3,
-            outcome: "ownership-transfer",
-            mode: "sandbox-first",
-            baseSession: { sessionId: run.threadId, sha256: null },
-            session: {
-              sessionId: run.threadId,
-              sha256: createHash("sha256").update(h0).digest("hex"),
-              rawSize: h0.length,
-            },
-            sandboxEventSequenceStart: 1,
-          });
+          expect(claim.claim.resumeSession).toBeNull();
         } else {
           if (!expectedH0) {
             throw new Error("Expected settled first-turn checkpoint");
           }
           const hash = createHash("sha256").update(expectedH0).digest("hex");
-          const blobKey = `${bucket}/blobs/${hash}.blob`;
-          expect(manifest).toMatchObject({
-            schemaVersion: 4,
-            outcome: "ownership-transfer",
-            mode: "sandbox-first",
-            baseSession: { sessionId: run.threadId, sha256: hash },
-            session: {
-              sessionId: run.threadId,
-              sha256: hash,
-              rawSize: expectedH0.length,
-            },
-            history: {
+          const resumeSession = claim.claim.resumeSession;
+          expect(resumeSession).toMatchObject({
+            sessionId: run.threadId,
+            historyRef: {
+              kind: "blob",
+              hash,
               encoding: "identity",
+              rawSize: expectedH0.length,
               encodedSize: expectedH0.length,
               url: expect.any(String),
             },
-            sandboxEventSequenceStart: 1,
           });
-          if (manifest.schemaVersion !== 4) {
+          if (!resumeSession || !("historyRef" in resumeSession)) {
             throw new Error("Expected referenced resume history");
           }
-          expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
-            blobKey,
-          );
-          expect(checkpointObjects.has(sessionKey)).toBeFalsy();
-          const referenced = checkpointObjects.get(blobKey);
-          if (!referenced) {
-            throw new Error("Expected referenced Sandbox checkpoint bytes");
-          }
-          h0 = referenced;
+          expect(
+            new URL(resumeSession.historyRef.url).searchParams.get("object"),
+          ).toBe(`${bucket}/blobs/${hash}.blob`);
+        }
+        const h0 = piSandboxBaseSession(claim.claim, checkpointObjects);
+        if (turn === 2) {
           expect(h0).toStrictEqual(expectedH0);
         }
         const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
@@ -530,44 +384,11 @@ describe("CHAT-02: model-first provider policies", () => {
         expect(session.buildSessionContext().messages).toHaveLength(
           (turn - 1) * 2,
         );
-        const writes = context.mocks.s3.send.mock.calls.flatMap(([command]) => {
-          const candidate = command as PiCheckpointS3Command;
-          const key = piS3ObjectKey(candidate);
-          return candidate.constructor?.name === "PutObjectCommand" &&
-            (key === sessionKey || key === manifestKey)
-            ? [key]
-            : [];
-        });
-        expect(writes).toStrictEqual(
-          turn === 1 ? [sessionKey, manifestKey] : [manifestKey],
-        );
-        expect(modelCalls).toBe(0);
-        expect(resourceDownloads).toBe(0);
-        // Public usage summaries omit pending usage, so inspect this run's
-        // uniquely owned ledger to rule out duplicate API billing ownership.
-        await expect(
-          readRunUsageEventsFixture(run.runId),
-        ).resolves.toStrictEqual([]);
-        const claim = await claimChatRun(runnerGroup, run.runId);
-        expect(claim.claim).toMatchObject({
-          cliAgentType: "pi",
-          piSessionId: run.threadId,
-          prompt: originalPrompt,
-          piLaunchConfig: {
-            apiFirstTurn: {
-              sandboxEventSequenceStart: 1,
-              requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
-              minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-              requiredPiSessionConstructionDigest:
-                PI_SESSION_CONSTRUCTION_DIGEST,
-            },
-          },
-        });
 
         const sandboxUsage = {
           idempotencyKey: randomUUID(),
           kind: "model" as const,
-          provider: "gpt-5.6-terra",
+          provider: "gpt-6-luna",
           category: "tokens.output",
           quantity: 2,
         };
@@ -612,20 +433,16 @@ describe("CHAT-02: model-first provider policies", () => {
             return message.content === answer;
           }),
         ).toHaveLength(1);
-        await expect(
-          readRunUsageEventsFixture(run.runId),
-        ).resolves.toStrictEqual([
-          expect.objectContaining({
-            provider: "gpt-5.6-terra",
-            category: "tokens.output",
-            quantity: 2,
-            status: "processed",
-            billingError: null,
-          }),
-        ]);
-        await expect(
-          readThreadSessionConversation(context, run.threadId),
-        ).resolves.toMatchObject({ conversation_run_id: run.runId });
+        await expectThreadModelTokens(context, actor, run.threadId, turn * 2);
+        const completedSession = await readCompletedRunSessionId(
+          context,
+          actor,
+          run.runId,
+        );
+        if (applicationSession === undefined) {
+          applicationSession = completedSession;
+        }
+        expect(completedSession).toBe(applicationSession);
         const blob = [...checkpointObjects.entries()]
           .filter(([key]) => {
             return key.startsWith(`${bucket}/blobs/`);
@@ -640,817 +457,50 @@ describe("CHAT-02: model-first provider policies", () => {
         expect(settled.isSettledCheckpoint()).toBeTruthy();
         expect(settled.buildSessionContext().messages).toHaveLength(turn * 2);
       }
-
-      mockPiResourceArchiveDownloads();
-      const ordinary = await sendChatRun(
-        actor,
-        {
-          agentId,
-          prompt: "ordinary prose with /skill:handoff-skill later in the text",
-          model: "gpt-5.6-terra",
-        },
-        queued.usagePricingResolution,
-      );
-      await flushWaitUntilForTest();
-      await waitForRunStatus(actor, ordinary.runId, "completed");
-      expect(modelCalls).toBe(1);
     },
     90_000,
   );
 
-  it.each(["readback mismatch", "coordination deadline"] as const)(
-    "fails native-input publication safely on %s",
-    async (failure) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      let modelCalls = 0;
-      server.use(
-        http.post("https://api.openai.com/v1/responses", () => {
-          modelCalls += 1;
-          return nativeCodexSseResponse(
-            piResponsesTextSse("unsafe API turn", modelCalls),
-          );
-        }),
-      );
-      const { anchor, anchorClaim, run, usagePricingResolution } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "/skill:handoff-skill preserve  arguments",
-        });
-      const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`;
-      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-      const send = context.mocks.s3.send.getMockImplementation();
-      if (!send) {
-        throw new Error("Expected the checkpoint object-store boundary");
-      }
-      const apiStartedAt = now();
-      mockNow(apiStartedAt);
-      context.mocks.s3.send.mockImplementation((command: unknown) => {
-        const candidate = command as PiCheckpointS3Command;
-        if (
-          candidate.constructor?.name === "GetObjectCommand" &&
-          piS3ObjectKey(candidate) === sessionKey
-        ) {
-          if (failure === "coordination deadline") {
-            mockNow(apiStartedAt + API_FIRST_TURN_COORDINATION_BUDGET_MS);
-          } else {
-            const bytes = checkpointObjects.get(sessionKey);
-            if (!bytes) {
-              throw new Error("Expected uploaded H0 before readback");
-            }
-            const corrupted = Buffer.from(bytes);
-            corrupted[0] = 0;
-            checkpointObjects.set(sessionKey, corrupted);
-          }
-        }
-        return send(command);
-      });
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-        usagePricingResolution,
-      });
-      await waitForRunStatus(actor, run.runId, "failed");
-      await flushWaitUntilForTest();
-      expect(modelCalls).toBe(0);
-      expect(uploadedPiS3Object(manifestKey)).toBeUndefined();
-      await api.requestClaimRunnerJob(true, run.runId, [404]);
-      expect((await api.readRun(actor, run.runId)).error).toContain(
-        failure === "coordination deadline"
-          ? "[PI_API_FIRST_TURN_DEADLINE_EXCEEDED]"
-          : "[PI_API_SANDBOX_FALLBACK_FAILED]",
-      );
-      const events = (await chat.listThreadEvents(actor, run.threadId)).events;
-      expect(
-        events
-          .filter((event) => {
-            return (
-              event.runId === run.runId &&
-              isChatRunTerminalEventType(event.eventType)
-            );
-          })
-          .map((event) => {
-            return event.eventType;
-          }),
-      ).toStrictEqual(["run.failed"]);
-      expect(eventBackedContents(events, run.runId)).toStrictEqual([]);
-    },
-    90_000,
-  );
-
-  it.each(["cancelled", "failed"] as const)(
-    "does not publish native-input H0 after lifecycle ownership becomes %s",
-    async (status) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      let modelCalls = 0;
-      server.use(
-        http.post("https://api.openai.com/v1/responses", () => {
-          modelCalls += 1;
-          return nativeCodexSseResponse(
-            piResponsesTextSse("unsafe API turn", modelCalls),
-          );
-        }),
-      );
-      const { anchor, anchorClaim, run, usagePricingResolution } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "/skill:handoff-skill preserve  arguments",
-        });
-      // Only this run-owned fixture can hold publication at the lifecycle
-      // boundary while a real cancellation or Sandbox failure wins ownership.
-      const lock = await holdPiApiFirstTurnLifecycleLockFixture({
-        runId: run.runId,
-        signal: context.signal,
-      });
-      onTestFinished(async () => {
-        lock.release();
-        await lock.done;
-      });
-      if (status === "cancelled") {
-        const cancellation = api.requestCancelRun(
-          actor,
-          run.runId,
-          [200],
-          usagePricingResolution,
-        );
-        await expect.poll(lock.waiterCount).toBe(1);
-        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-          usagePricingResolution,
-        });
-        await expect.poll(lock.waiterCount).toBe(2);
-        lock.release();
-        await lock.done;
-        await cancellation;
-      } else {
-        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-          usagePricingResolution,
-        });
-        await expect.poll(lock.waiterCount).toBe(1);
-        const claim = await claimChatRun(runnerGroup, run.runId);
-        await failChatRun(
-          run.runId,
-          claim.sandboxHeaders,
-          "Sandbox startup failed before takeover",
-        );
-        lock.release();
-        await lock.done;
-      }
-      await waitForRunStatus(actor, run.runId, status);
-      await flushWaitUntilForTest();
-      expect(modelCalls).toBe(0);
-      expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
-      const events = (await chat.listThreadEvents(actor, run.threadId)).events;
-      expect(
-        events
-          .filter((event) => {
-            return (
-              event.runId === run.runId &&
-              isChatRunTerminalEventType(event.eventType)
-            );
-          })
-          .map((event) => {
-            return event.eventType;
-          }),
-      ).toStrictEqual([`run.${status}`]);
-      expect(eventBackedContents(events, run.runId)).toStrictEqual([]);
-      await api.requestClaimRunnerJob(true, run.runId, [404]);
-    },
-    90_000,
-  );
-
-  it.each(["gpt-5.6-terra", "deepseek-v4.1-flash"] as const)(
-    "hands a %s resource failure to Sandbox without replaying a later credential failure",
+  it.each(["okou-1.0", "gpt-6-luna"] as const)(
+    "claims %s with Sandbox credentials and bills duplicate Sandbox usage once",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await publishPendingPiInstructions(actor, agentId);
-      if (!actor.orgId) {
-        throw new Error("Expected entitled chat actor to have an org");
-      }
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-      await api.heartbeatRunner(runnerGroup);
-      const anchor = await sendChatRun(actor, {
-        agentId,
-        prompt: "hold the thread while the future Pi launch is queued",
-        model: "claude-sonnet-5",
-      });
-      await flushWaitUntilForTest();
-      const anchorState = await api.readRun(actor, anchor.runId);
-      if (anchorState.status !== "pending") {
-        throw new Error(
-          `Expected pending anchor before claim: ${JSON.stringify(anchorState)}`,
-        );
-      }
-      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-      expect(anchorClaim.claim.cliAgentType).toBe("claude-code");
-
-      await configureBuiltInPiModel(actor, selectedModel);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
-      mockPiResourceArchiveDownloads(true);
-      let modelCalls = 0;
-      server.use(
-        http.post(
-          selectedModel === "deepseek-v4.1-flash"
-            ? "https://api.deepseek.com/responses"
-            : "https://api.openai.com/v1/responses",
-          () => {
-            modelCalls += 1;
-            return HttpResponse.json(
-              {
-                error: {
-                  code: "invalid_api_key",
-                  message: "credential rejected",
-                },
-              },
-              { status: 401 },
-            );
-          },
-        ),
-      );
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      const fallbackPrompt = "execute this fallback prompt exactly once";
-      const fallback = await sendChatRun(actor, {
-        agentId,
-        prompt: fallbackPrompt,
-        model: selectedModel,
-      });
-      await waitForRunStatus(actor, fallback.runId, "queued");
-
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
-      await flushWaitUntilForTest();
-      const fallbackManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fallback.runId}/manifest.json`;
-      expect(checkpointObjects.get(fallbackManifestKey)).toBeInstanceOf(Buffer);
-      expect(modelCalls).toBe(0);
-
-      const fallbackManifest = piApiFirstTurnManifestSchema.parse(
-        JSON.parse(
-          checkpointObjects.get(fallbackManifestKey)?.toString("utf8") ?? "{}",
-        ),
-      );
-      expect(fallbackManifest).toMatchObject({
-        schemaVersion: 3,
-        outcome: "ownership-transfer",
-        mode: "sandbox-first",
-        baseSession: { sessionId: fallback.threadId, sha256: null },
-        session: {
-          sessionId: fallback.threadId,
-          sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-          rawSize: expect.any(Number),
-        },
-        sandboxEventSequenceStart: 1,
-      });
-      const fallbackSessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fallback.runId}/session.jsonl`;
-      const fallbackH0 =
-        checkpointObjects.get(fallbackSessionKey)?.toString("utf8") ?? "";
-      expect(Buffer.byteLength(fallbackH0)).toBe(
-        fallbackManifest.session.rawSize,
-      );
-      expect(createHash("sha256").update(fallbackH0).digest("hex")).toBe(
-        fallbackManifest.session.sha256,
-      );
-      const sandboxSession = MemoryPiSession.fromJsonl(fallbackH0);
-      expect(sandboxSession.getSessionId()).toBe(fallback.threadId);
-      expect(sandboxSession.buildSessionContext().messages).toHaveLength(0);
-
-      const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
-      expect(fallbackClaim.claim).toMatchObject({
-        cliAgentType: "pi",
-        piSessionId: fallback.threadId,
-        prompt: fallbackPrompt,
-        piLaunchConfig: {
-          apiFirstTurn: {
-            sandboxEventSequenceStart: 1,
-          },
-        },
-      });
-      const postProviderPrompt =
-        "fail a credential rejection after one provider request";
-      const postProvider = await sendChatRun(actor, {
-        agentId,
-        prompt: postProviderPrompt,
-        model: selectedModel,
-      });
-      await waitForRunStatus(actor, postProvider.runId, "queued");
-
-      mockPiResourceArchiveDownloads();
-      sandboxSession.appendMessage({
-        role: "user",
-        content: fallbackPrompt,
-        timestamp: 1,
-      });
-      const fallbackAnswer = "Sandbox completed the fallback exactly once";
-      sandboxSession.appendMessage({
-        role: "assistant",
-        content: [{ type: "text", text: fallbackAnswer }],
-        api: "openai-responses",
-        provider:
-          selectedModel === "deepseek-v4.1-flash" ? "deepseek" : "openai",
-        model: getProviderRuntimeModel("built-in", selectedModel),
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: {
-            input: 0,
-            output: 0,
-            cacheRead: 0,
-            cacheWrite: 0,
-            total: 0,
-          },
-        },
-        stopReason: "stop",
-        timestamp: 2,
-      });
-      const fallbackH2 = sandboxSession.toJsonl();
-      expect(occurrences(fallbackH2, fallbackPrompt)).toBe(1);
-      expect(
-        MemoryPiSession.fromJsonl(fallbackH2).isSettledCheckpoint(),
-      ).toBeTruthy();
-      const fallbackH2Hash = createHash("sha256")
-        .update(fallbackH2)
-        .digest("hex");
-      const preparedH2 = await webhooks.requestAgentCheckpointPrepareHistory(
-        {
-          runId: fallback.runId,
-          hash: fallbackH2Hash,
-          rawSize: Buffer.byteLength(fallbackH2),
-          encodedSize: Buffer.byteLength(fallbackH2),
-          encoding: "identity",
-        },
-        fallbackClaim.sandboxHeaders,
-        [200],
-      );
-      expect(preparedH2.body).toMatchObject({
-        existing: false,
-        encoding: "identity",
-      });
-      checkpointObjects.set(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${fallbackH2Hash}.blob`,
-        Buffer.from(fallbackH2, "utf8"),
-      );
-      await webhooks.requestAgentEvents(
-        {
-          runId: fallback.runId,
-          events: [
-            {
-              type: "assistant",
-              sequenceNumber: 1,
-              message: {
-                content: [{ type: "text", text: fallbackAnswer }],
-              },
-            },
-            {
-              type: "result",
-              sequenceNumber: 2,
-              result: fallbackAnswer,
-            },
-          ],
-        },
-        fallbackClaim.sandboxHeaders,
-        [200],
-      );
-      const completedFallback = await webhooks.requestAgentComplete(
-        {
-          runId: fallback.runId,
-          exitCode: 0,
-          lastEventSequence: 2,
-          checkpoint: {
-            cliAgentType: "pi",
-            cliAgentSessionId: fallback.threadId,
-            cliAgentSessionHistoryHash: fallbackH2Hash,
-          },
-        },
-        fallbackClaim.sandboxHeaders,
-        [200],
-      );
-      expect(completedFallback.body).toStrictEqual({
-        success: true,
-        status: "completed",
-      });
-      await waitForRunStatus(actor, fallback.runId, "completed", 5000);
-      await waitForRunStatus(actor, postProvider.runId, "failed", 5000);
-      await flushWaitUntilForTest();
-
-      expect(modelCalls).toBe(1);
-      await expectNoBuiltInModelUsage(fallback.runId);
-      await expectNoBuiltInModelUsage(postProvider.runId);
-      expect((await api.readRun(actor, postProvider.runId)).error).toContain(
-        "[PI_API_MODEL_FAILED]",
-      );
-      const postProviderManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${postProvider.runId}/manifest.json`;
-      expect(checkpointObjects.has(postProviderManifestKey)).toBeFalsy();
-      const postProviderClaim = await api.requestClaimRunnerJob(
-        true,
-        postProvider.runId,
-        [404],
-      );
-      expect(postProviderClaim.status).toBe(404);
-      const finalThread = await waitForThreadMessages(
-        actor,
-        fallback.threadId,
-        (messages) => {
-          return eventBackedContents(messages, fallback.runId).some(
-            (message) => {
-              return message.content === fallbackAnswer;
-            },
-          );
-        },
-      );
-      expect(
-        eventBackedContents(finalThread.events, fallback.runId).filter(
-          (message) => {
-            return message.content === fallbackAnswer;
-          },
-        ),
-      ).toHaveLength(1);
-      await expect(
-        readThreadSessionConversation(context, fallback.threadId),
-      ).resolves.toMatchObject({ conversation_run_id: fallback.runId });
-    },
-    90_000,
-  );
-
-  it("preserves inline OpenRouter resume bytes in a v3 sandbox handoff", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected entitled chat actor to have an org");
-    }
-    const usagePricingResolution = await createGptUsagePricingResolution();
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 1,
-    };
-    await api.requestHeartbeatRunner(true, [200], {
-      runnerId: runnerIdentity.runnerId,
-      group: runnerGroup,
-    });
-    const anchor = await sendChatRun(actor, {
-      agentId,
-      prompt: "hold capacity for the resume transfer",
-      model: "claude-sonnet-5",
-    });
-    await flushWaitUntilForTest();
-    const anchorState = await api.readRun(actor, anchor.runId);
-    if (anchorState.status !== "pending") {
-      throw new Error(
-        `Expected pending resume anchor: ${JSON.stringify(anchorState)}`,
-      );
-    }
-    const anchorClaim = await api.claimRunnerJob(anchor.runId, {
-      runnerIdentity,
-    });
-    const anchorSandboxHeaders = {
-      authorization: `Bearer ${anchorClaim.sandboxToken}`,
-    };
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-
-    const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
-      actor,
-      "gpt-5.6-terra",
-    );
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.PiLoop]: true,
-      },
-    );
-    mockPiResourceArchiveDownloads();
-    let modelCalls = 0;
-    const modelRequests: unknown[] = [];
-    server.use(
-      http.post(
-        "https://openrouter.ai/api/v1/responses",
-        async ({ request }) => {
-          modelCalls += 1;
-          modelRequests.push(await request.json());
-          return new HttpResponse(
-            piResponsesTextSse(
-              "seed the compaction checkpoint",
-              modelCalls,
-              {
-                input_tokens: 1_033_617,
-                output_tokens: 0,
-                total_tokens: 1_033_617,
-              },
-              "priority",
-            ),
-            { headers: { "content-type": "text/event-stream" } },
-          );
-        },
-      ),
-    );
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const first = await withOpenRouterRoute(async () => {
-      return await sendChatRun(
-        actor,
-        {
-          agentId,
-          prompt: "create a settled Pi checkpoint",
-          model: "gpt-5.6-terra",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        usagePricingResolution,
-      );
-    });
-    await waitForRunStatus(actor, first.runId, "completed");
-    await flushWaitUntilForTest();
-    expect(modelCalls).toBe(1);
-    expect(
-      z
-        .object({ service_tier: z.literal("priority") })
-        .passthrough()
-        .parse(modelRequests[0]).service_tier,
-    ).toBe("priority");
-    await expect(readRunUsageEventsFixture(first.runId)).resolves.toStrictEqual(
-      [
-        expect.objectContaining({
-          provider: "gpt-5.6-terra",
-          category: "tokens.input.long_context.fast",
-          quantity: 1_033_617,
-          status: "processed",
-          billingError: null,
-          creditsCharged: expect.any(Number),
-        }),
-      ],
-    );
-
-    const blobPrefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/`;
-    const persistedBlobs = [...checkpointObjects.entries()].filter(([key]) => {
-      return key.startsWith(blobPrefix) && key.endsWith(".blob");
-    });
-    expect(persistedBlobs).toHaveLength(1);
-    const persistedBlob = persistedBlobs[0];
-    if (!persistedBlob) {
-      throw new Error("Expected the first Pi run to persist native H1");
-    }
-    const [h0ObjectKey, firstSessionBytes] = persistedBlob;
-    const h0Hash = h0ObjectKey.slice(blobPrefix.length, -".blob".length);
-    const resumedH0 = firstSessionBytes.toString("utf8");
-    // Current checkpoint APIs persist blobs only; this test-owned historical
-    // inline snapshot cannot be constructed through a production endpoint.
-    await replacePiSessionHistoryInlineFixture({
-      runId: first.runId,
-      jsonl: resumedH0,
-    });
-
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const prompt = "preserve this original prompt for official compaction";
-    const second = await withOpenRouterRoute(async () => {
-      return await sendChatRun(
-        actor,
-        {
-          agentId,
-          threadId: first.threadId,
-          prompt,
-          model: "gpt-5.6-terra",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        usagePricingResolution,
-      );
-    });
-    await waitForRunStatus(actor, second.runId, "queued");
-    await completeChatRunOk(anchor.runId, anchorSandboxHeaders);
-
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.get(manifestKey);
-      })
-      .toBeInstanceOf(Buffer);
-    expect(modelCalls).toBe(1);
-    await expect(
-      readRunUsageEventsFixture(second.runId),
-    ).resolves.toStrictEqual([]);
-    const manifestBytes = checkpointObjects.get(manifestKey);
-    if (!manifestBytes) {
-      throw new Error("Expected resume ownership-transfer manifest");
-    }
-    const manifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(manifestBytes.toString("utf8")),
-    );
-    expect(manifest).toMatchObject({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode: "sandbox-first",
-      baseSession: { sessionId: first.threadId, sha256: h0Hash },
-      session: {
-        sessionId: first.threadId,
-        sha256: h0Hash,
-        rawSize: Buffer.byteLength(resumedH0),
-      },
-      sandboxEventSequenceStart: 1,
-    });
-    const publishedH0 = checkpointObjects.get(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/session.jsonl`,
-    );
-    expect(publishedH0).toStrictEqual(firstSessionBytes);
-    expect(manifest.schemaVersion).toBe(3);
-    const claim = await api.claimRunnerJob(second.runId, { runnerIdentity });
-    const sandboxHeaders = {
-      authorization: `Bearer ${claim.sandboxToken}`,
-    };
-    expect(claim).toMatchObject({
-      cliAgentType: "pi",
-      piSessionId: first.threadId,
-      prompt,
-      piModelConfig: {
-        provider: "openrouter",
-        serviceTier: "priority",
-      },
-    });
-    expect(resumedH0).not.toContain("serviceTier");
-    await cancelChatRun(actor, second.runId, sandboxHeaders);
-  }, 90_000);
-
-  it.each(["malformed", "mismatched", "cyclic"] as const)(
-    "transfers $damage stored Pi history by reference without API parsing",
-    async (damage) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      if (!actor.orgId) {
-        throw new Error("Expected entitled chat actor to have an org");
-      }
-      await configureBuiltInPiModel(actor, "deepseek-v4-flash");
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
-      mockPiResourceArchiveDownloads();
-      let modelCalls = 0;
-      server.use(
-        http.post("https://api.deepseek.com/responses", () => {
-          modelCalls += 1;
-          return new HttpResponse(
-            piResponsesTextSse("canonical H0 answer", modelCalls),
-            { headers: { "content-type": "text/event-stream" } },
-          );
-        }),
-      );
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      const first = await sendChatRun(actor, {
-        agentId,
-        prompt: "create canonical Pi H0",
-        model: "deepseek-v4-flash",
-      });
-      await waitForRunStatus(actor, first.runId, "completed");
-      await flushWaitUntilForTest();
-      expect(modelCalls).toBe(1);
-      const firstSessionBytes = checkpointObjects.get(
-        [...checkpointObjects.keys()].find((key) => {
-          return key.includes("/blobs/");
-        }) ?? "missing-canonical-pi-blob",
-      );
-      if (!firstSessionBytes) {
-        throw new Error("Expected the first Pi run to persist native H1");
-      }
-      const original = firstSessionBytes.toString("utf8");
-      const damagedH0 =
-        damage === "malformed"
-          ? `${original}{malformed\n`
-          : damage === "mismatched"
-            ? original.replace(first.threadId, randomUUID())
-            : `${original}${JSON.stringify({ type: "model_change", id: "cycle", parentId: "cycle", timestamp: "2026-09-05T00:00:00.000Z", provider: "openai", modelId: "gpt-5.6-terra" })}\n`;
-      // A public caller cannot write this historical corruption. Only the
-      // stored object fixture sets it; publication is verified through the API.
-      const hash = await replacePiSessionHistoryJsonlFixture({
-        runId: first.runId,
-        jsonl: damagedH0,
-      });
-      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-      const blobKey = `${bucket}/blobs/${hash}.blob`;
-      checkpointObjects.set(blobKey, Buffer.from(damagedH0, "utf8"));
-
-      const second = await sendChatRun(actor, {
-        agentId,
-        threadId: first.threadId,
-        prompt: "continue in Sandbox",
-      });
-      await flushWaitUntilForTest();
-      const manifestKey = `${bucket}/pi-api-first-turn/${second.runId}/manifest.json`;
-      const manifest = piApiFirstTurnManifestSchema.parse(
-        JSON.parse(
-          checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}",
-        ),
-      );
-      expect(manifest).toMatchObject({
-        schemaVersion: 4,
-        mode: "sandbox-first",
-        baseSession: { sessionId: first.threadId, sha256: hash },
-        session: {
-          sessionId: first.threadId,
-          sha256: hash,
-          rawSize: Buffer.byteLength(damagedH0),
-        },
-      });
-      if (manifest.schemaVersion !== 4) {
-        throw new Error("Expected a referenced Sandbox checkpoint");
-      }
-      expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
-        blobKey,
-      );
-      expect(modelCalls).toBe(1);
-      const claim = await claimChatRun(runnerGroup, second.runId);
-      await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
-    },
-    90_000,
-  );
-
-  it.each([
-    "deepseek-v4-flash",
-    "deepseek-v4.1-flash",
-    ...GPT_PI_BDD_MODELS,
-  ] as const)(
-    "keeps %s API-first and Sandbox usage as separate billable rows",
-    async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const orgId = requireOrgId(actor);
-      const isDeepSeek =
-        selectedModel === "deepseek-v4-flash" ||
-        selectedModel === "deepseek-v4.1-flash";
+      const builtIn = selectedModel === "okou-1.0";
       const usagePricingResolution =
-        await createPiApiFirstTurnUsagePricingResolution(selectedModel);
-      await configureBuiltInPiModel(actor, selectedModel);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
-      mockPiResourceArchiveDownloads();
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      let modelCalls = 0;
-      server.use(
-        http.post(
-          isDeepSeek
-            ? "https://api.deepseek.com/responses"
-            : "https://api.openai.com/v1/responses",
-          () => {
-            modelCalls += 1;
-            return new HttpResponse(
-              piResponsesContentSse({
-                blocks: [
-                  {
-                    type: "toolCall",
-                    callId: "call_deepseek_sandbox",
-                    name: "bash",
-                    arguments: { command: "true" },
-                  },
-                ],
-                sequence: modelCalls,
-                usage: {
-                  input_tokens: 10,
-                  output_tokens: 3,
-                  total_tokens: 13,
-                  input_tokens_details: {
-                    cached_tokens: 3,
-                    cache_write_tokens: 2,
-                  },
-                },
-              }),
-              { headers: { "content-type": "text/event-stream" } },
-            );
-          },
-        ),
-      );
+        await createPiUsagePricingResolution(selectedModel);
+      if (builtIn) {
+        await configureBuiltInPiModel(actor, selectedModel);
+      } else {
+        await configureSubscriptionPiModel(actor, {}, selectedModel);
+      }
+      const upstreamModel = builtIn ? "@preset/okou-1-0" : selectedModel;
 
       const run = await sendChatRun(
         actor,
         {
           agentId,
-          prompt: "hand a built-in DeepSeek tool response to Sandbox",
-          model: selectedModel,
+          prompt: "hand a built-in Pi turn to Sandbox",
+          // Auto is the null selection; its run model is the built-in one.
+          model: builtIn ? null : selectedModel,
         },
         usagePricingResolution,
       );
-      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-      await expect
-        .poll(() => {
-          return checkpointObjects.has(manifestKey);
-        })
-        .toBe(true);
       await flushWaitUntilForTest();
-      expect(modelCalls).toBe(1);
 
       const claimed = await claimChatRun(runnerGroup, run.runId);
       expect(claimed.claim.piModelConfig).toMatchObject({
-        provider: isDeepSeek ? "deepseek" : "openai",
-        model: getProviderRuntimeModel("built-in", selectedModel),
+        provider: builtIn ? "openrouter" : "openai-codex",
+        model: upstreamModel,
       });
       expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
       expect(claimed.claim.piModelConfig).not.toHaveProperty("serviceTier");
-      expect(claimEnvironment(claimed.claim).OPENAI_API_KEY).toBe(
+      const credentials = claimEnvironment(claimed.claim);
+      expect(
+        builtIn ? credentials.OPENAI_API_KEY : credentials.CHATGPT_ACCESS_TOKEN,
+      ).toBe(
         modelProviderSecretPlaceholder(
-          isDeepSeek ? "deepseek" : "openai-api-key",
-          isDeepSeek ? "DEEPSEEK_API_KEY" : "OPENAI_API_KEY",
+          builtIn ? "openrouter-codex" : "codex-oauth-token",
+          builtIn ? "OPENROUTER_API_KEY" : "CHATGPT_ACCESS_TOKEN",
         ),
       );
       const sandboxUsageEvent = {
@@ -1488,30 +538,15 @@ describe("CHAT-02: model-first provider policies", () => {
       await waitForRunStatus(actor, run.runId, "cancelled");
       await failChatRun(run.runId, claimed.sandboxHeaders, "Run cancelled");
       await flushWaitUntilForTest();
-      const combinedUsage = await readRunUsageEventsFixture(run.runId);
-      expect(
-        combinedUsage.filter((row) => {
-          return row.category === "tokens.output" && row.quantity === 3;
-        }),
-      ).toHaveLength(1);
-      expect(
-        combinedUsage.filter((row) => {
-          return row.category === "tokens.output" && row.quantity === 2;
-        }),
-      ).toHaveLength(1);
-      expect(combinedUsage).toHaveLength(5);
-      expect(
-        combinedUsage.every((row) => {
-          return (
-            row.provider === selectedModel &&
-            row.status === "processed" &&
-            row.billingError === null &&
-            !row.category.includes(".fast") &&
-            !row.category.includes(".long_context")
-          );
-        }),
-      ).toBeTruthy();
-      expect(totalChargedCredits(combinedUsage)).toBeGreaterThan(0);
+      // Metered Auto records the guest output once. Personal subscription
+      // model traffic is not admitted to the platform billing ledger.
+      const usage = await readThreadModelUsage(context, actor, run.threadId);
+      expect(usage.tokens).toBe(builtIn ? 2 : 0);
+      if (builtIn) {
+        expect(usage.credits).toBeGreaterThan(0);
+      } else {
+        expect(usage.credits).toBe(0);
+      }
     },
     90_000,
   );

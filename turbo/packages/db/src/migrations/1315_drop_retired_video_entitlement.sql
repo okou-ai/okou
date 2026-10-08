@@ -1,0 +1,1 @@
+ALTER TABLE "org_plan_entitlements" DROP COLUMN "video_generation_allowed";

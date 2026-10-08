@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { PresentationTemplateSummary } from "@okouai/api-contracts/contracts/presentation-templates";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
@@ -9,9 +7,9 @@ import {
 } from "@okouai/core/presentation-template-selection";
 import { getPresentationTemplateStorageName } from "@okouai/core/storage-names";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { z } from "zod";
-
 import type { ReadonlyDb } from "../external/db";
 
 export type PresentationTemplateRow = typeof presentationTemplates.$inferSelect;
@@ -72,7 +70,7 @@ export function parsePresentationTemplatePreviewAssetId(
  *
  * Syntax only. A well-formed id says nothing about whether that row exists or
  * whether the sender may read it; that is decided by
- * {@link authorizedUserPresentationTemplateIds}.
+ * the pick graph's authorized presentation template selection.
  */
 export function selectedUserPresentationTemplateIds(
   generationTemplates: readonly GenerationTemplateRequest[],
@@ -90,48 +88,6 @@ export function selectedUserPresentationTemplateIds(
     }
   }
   return [...templateIds];
-}
-
-/**
- * The subset of those ids this caller may access, in selection order.
- *
- * The row is the authority for its own existence and visibility. An id that
- * does not come back is indistinguishable from an inaccessible template and
- * from a deleted one on purpose, so a caller cannot use the answer to probe
- * which case it was.
- */
-export async function authorizedUserPresentationTemplateIds(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly templateIds: readonly string[];
-  },
-): Promise<readonly string[]> {
-  if (args.templateIds.length === 0) {
-    return [];
-  }
-  const rows = await db
-    .select({ id: presentationTemplates.id })
-    .from(presentationTemplates)
-    .where(
-      and(
-        inArray(presentationTemplates.id, [...args.templateIds]),
-        eq(presentationTemplates.orgId, args.orgId),
-        or(
-          eq(presentationTemplates.ownerUserId, args.userId),
-          eq(presentationTemplates.visibility, "public"),
-        ),
-      ),
-    );
-  const accessible = new Set(
-    rows.map((row) => {
-      return row.id;
-    }),
-  );
-  return args.templateIds.filter((templateId) => {
-    return accessible.has(templateId);
-  });
 }
 
 /**

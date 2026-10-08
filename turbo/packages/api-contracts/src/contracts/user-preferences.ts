@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
-import { voiceInputModelIdSchema } from "./voice-input-models";
 
 const c = initContract();
 
@@ -50,6 +49,7 @@ export const SUPPORTED_USER_LOCALES = [
 ] as const;
 export const userLocaleSchema = z.enum(SUPPORTED_USER_LOCALES);
 export type UserLocale = z.infer<typeof userLocaleSchema>;
+export const DEFAULT_USER_LOCALE = "en-US" satisfies UserLocale;
 
 export const userPreferencesResponseSchema = z.object({
   timezone: z.string().nullable(),
@@ -63,12 +63,23 @@ export const userPreferencesResponseSchema = z.object({
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
   captureNetworkBodiesRemaining: z.number().int().min(0),
-  voiceInputModel: z.string().nullable(),
+  // False until this member's memory storage has a HEAD. The Web App then
+  // calls the idempotent initialize route before starting runs; run creation
+  // fails for a member without memory.
+  memoryInitialized: z.boolean(),
 });
 
 export type UserPreferencesResponse = z.infer<
   typeof userPreferencesResponseSchema
 >;
+
+export const USER_PREFERENCES_UNINITIALIZED =
+  "USER_PREFERENCES_UNINITIALIZED" as const;
+
+export type InitializedUserPreferencesResponse = Omit<
+  UserPreferencesResponse,
+  "timezone" | "locale"
+> & { readonly timezone: string; readonly locale: UserLocale };
 
 export const updateUserPreferencesRequestSchema = z
   .object({
@@ -81,7 +92,6 @@ export const updateUserPreferencesRequestSchema = z
     theme: themePreferenceSchema.optional(),
     colorTheme: colorThemeSchema.optional(),
     captureNetworkBodiesRemaining: z.number().int().min(0).optional(),
-    voiceInputModel: voiceInputModelIdSchema.nullable().optional(),
   })
   .refine(
     (data) => {
@@ -93,8 +103,7 @@ export const updateUserPreferencesRequestSchema = z
         data.cloudBrowserEnabledByDefault !== undefined ||
         data.theme !== undefined ||
         data.colorTheme !== undefined ||
-        data.captureNetworkBodiesRemaining !== undefined ||
-        data.voiceInputModel !== undefined
+        data.captureNetworkBodiesRemaining !== undefined
       );
     },
     {
@@ -117,7 +126,10 @@ export const userPreferencesContract = c.router({
     method: "POST",
     path: "/api/user-preferences/initialize",
     headers: authHeadersSchema,
-    body: z.object({ timezone: z.string().min(1).optional() }),
+    body: z.object({
+      timezone: z.string().min(1).optional(),
+      locale: userLocaleSchema,
+    }),
     responses: {
       200: userPreferencesResponseSchema,
       400: apiErrorSchema,
@@ -125,7 +137,7 @@ export const userPreferencesContract = c.router({
       500: apiErrorSchema,
     },
     summary:
-      "Initialize missing member preferences and Morning Brief enrollment",
+      "Initialize missing timezone, locale and member memory and enroll Morning Brief",
   },
   get: {
     method: "GET",
@@ -133,6 +145,12 @@ export const userPreferencesContract = c.router({
     headers: authHeadersSchema,
     responses: {
       200: userPreferencesResponseSchema,
+      409: z.object({
+        error: z.object({
+          code: z.literal(USER_PREFERENCES_UNINITIALIZED),
+          message: z.string(),
+        }),
+      }),
       401: apiErrorSchema,
       500: apiErrorSchema,
     },
@@ -147,6 +165,7 @@ export const userPreferencesContract = c.router({
       200: userPreferencesResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
+      409: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Update user preferences",

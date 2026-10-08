@@ -1,27 +1,50 @@
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command } from "ccstate";
-import { and, asc, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { settle } from "../utils";
-import {
-  loadMorningBriefEnrollment,
-  type MorningBriefMemberIdentity,
-  morningBriefEnrollmentWhere,
-} from "./morning-brief-enrollment-data.service";
+import { loadMorningBriefEnrollment$ } from "./morning-brief-enrollment-data.service";
+import { prepareMorningBriefEnrollment$ } from "./morning-brief-enrollment-retry.service";
 import { ensureMorningBriefDefaultEnabled$ } from "./morning-brief-preference.service";
 
 const log = logger("MorningBriefEnrollment");
 /** Shared enrollment admission owns the lease and backoff for every entry point. */
-const executeMorningBriefEnrollmentScope$ = command(
-  async (
-    { set },
-    identity: MorningBriefMemberIdentity | undefined,
-    signal: AbortSignal,
-  ): Promise<number> => {
+export const executeMorningBriefEnrollmentWork$ = command(
+  async ({ set }, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
+    // Older members can have a timezone without an enrollment row. Admit a
+    // bounded set before selecting due work; qualification checks eligibility.
+    // Remove after old timezone writers drain and the historical gap is empty;
+    // #36270 tracks the production inventory and cleanup.
+    const missing = await db
+      .select({
+        orgId: orgMembersMetadata.orgId,
+        userId: orgMembersMetadata.userId,
+      })
+      .from(orgMembersMetadata)
+      .leftJoin(
+        morningBriefEnrollments,
+        and(
+          eq(morningBriefEnrollments.orgId, orgMembersMetadata.orgId),
+          eq(morningBriefEnrollments.userId, orgMembersMetadata.userId),
+        ),
+      )
+      .where(
+        and(
+          isNotNull(orgMembersMetadata.timezone),
+          isNull(morningBriefEnrollments.userId),
+        ),
+      )
+      .orderBy(asc(orgMembersMetadata.orgId), asc(orgMembersMetadata.userId))
+      .limit(20);
+    signal.throwIfAborted();
+    for (const member of missing) {
+      await set(prepareMorningBriefEnrollment$, member, signal);
+      signal.throwIfAborted();
+    }
     const currentTime = nowDate();
     const rows = await db
       .select()
@@ -30,7 +53,6 @@ const executeMorningBriefEnrollmentScope$ = command(
         and(
           inArray(morningBriefEnrollments.state, ["checking", "pending"]),
           lte(morningBriefEnrollments.availableAt, currentTime),
-          identity ? morningBriefEnrollmentWhere(identity) : undefined,
         ),
       )
       .orderBy(asc(morningBriefEnrollments.availableAt))
@@ -56,7 +78,11 @@ const executeMorningBriefEnrollmentScope$ = command(
         continue;
       }
       attempted++;
-      const currentEnrollment = await loadMorningBriefEnrollment(db, identity);
+      const currentEnrollment = await set(
+        loadMorningBriefEnrollment$,
+        identity,
+        signal,
+      );
       signal.throwIfAborted();
       const lastError = !result.ok
         ? String(result.error)
@@ -78,27 +104,9 @@ const executeMorningBriefEnrollmentScope$ = command(
         } else {
           log.info("Morning Brief enrollment changed", details);
         }
-        await publishMorningBriefChangedSafely(identity);
         signal.throwIfAborted();
       }
     }
     return attempted;
-  },
-);
-
-export const executeMorningBriefEnrollmentWork$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    return await set(executeMorningBriefEnrollmentScope$, undefined, signal);
-  },
-);
-
-/** The test harness drives the same worker with an explicitly owned member. */
-export const executeMorningBriefEnrollmentForMember$ = command(
-  async (
-    { set },
-    identity: MorningBriefMemberIdentity,
-    signal: AbortSignal,
-  ) => {
-    return await set(executeMorningBriefEnrollmentScope$, identity, signal);
   },
 );

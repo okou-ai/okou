@@ -1,7 +1,4 @@
-import { piApiHandoffUsageSchema } from "./pi-inference-lifecycle";
 import { z } from "zod";
-import { piCredentialHeaderSchema } from "./pi-credential";
-import { piModelConfigV4Schema } from "./pi-native";
 
 import { authHeadersSchema, initContract } from "./base";
 import {
@@ -23,12 +20,6 @@ import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
 } from "./runner-primitives";
-import { eventSequenceNumberSchema } from "./runs";
-
-export {
-  PI_MODEL_CONFIG_NATIVE_GENERATION,
-  piModelConfigV4Schema,
-} from "./pi-native";
 
 export { BUILTIN_FIREWALL_CATALOG_MAX_BYTES } from "@okouai/connectors/connector-catalog/contracts";
 
@@ -92,13 +83,14 @@ export const PI_MODEL_CONFIG_CURRENT_GENERATION = 2;
 export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
 export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
 /**
- * Lowest `@okouai/cli` release whose `__agent-loop` understands the current
- * launch payload and API-first handoff contract. The API records it in every
- * Pi launch config; a rootfs whose installed CLI is older keeps launching the
- * commit-addressed package. Raise it whenever a launch-payload or handoff field
- * becomes required rather than optional.
+ * Minimum `@okouai/cli` version boundary for `__agent-loop` launch-payload
+ * compatibility. The API records it in every Pi run's installed-CLI
+ * requirement; a rootfs whose installed CLI is older keeps launching the
+ * commit-addressed package. Raise it whenever the launch payload changes in a
+ * way an older CLI rejects. Keep the boundary at 9.370.3; earlier installed
+ * CLIs require a retired launch payload and must use the commit-addressed CLI.
  */
-export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.352.7";
+export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.370.3";
 /** Release versions are exact `MAJOR.MINOR.PATCH`; nothing here is a range. */
 export const releaseVersionSchema = z
   .string()
@@ -180,7 +172,7 @@ export const runnerClaimCapabilitiesSchema = z
 /**
  * Versions of the Okou CLI bundle installed into a runner's rootfs at build
  * time. Advertised on claim so the API can observe (and, once the npx launch
- * path is retired, gate) API-first handoff parity. `piSdk` is informational.
+ * path is retired, gate) installed-CLI parity. `piSdk` is informational.
  * `piSessionConstructionDigest` is the parity key the guest compares. It stays
  * optional for runners with an older installed CLI artifact.
  */
@@ -193,11 +185,6 @@ export const runnerInstalledVersionsSchema = z
   })
   .strict()
   .readonly();
-
-/** Native model support is advertised in headers ignored by previous APIs. */
-export const NATIVE_GPT_6_SOL_HEADER = "X-Native-Gpt-6-Sol";
-export const NATIVE_CLAUDE_OPUS_5_5_HEADER = "X-Native-Claude-Opus-5-5";
-export const NATIVE_GPT_6_LUNA_HEADER = "X-Native-Gpt-6-Luna";
 
 export const builtInModelProviderConnectionSourceSchema = z.enum([
   "provider_response",
@@ -598,6 +585,12 @@ export const heldSandboxStateSchema = z.object({
   }),
 });
 
+export const activeReuseProducerSchema = z.object({
+  runId: z.uuid(),
+  reuseKey: z.string(),
+  profile: z.string(),
+});
+
 export const heldWorkspaceStateSchema = z.object({
   reuseKey: z.string(),
   lastCompletedAt: z.string().datetime({ offset: true }),
@@ -845,18 +838,6 @@ const PI_MEMORY_SUMMARY_MIN_TOKEN_BYTES = 1;
 export const PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS =
   PI_MEMORY_SUMMARY_MAX_BYTES / PI_MEMORY_SUMMARY_MIN_TOKEN_BYTES;
 export const PI_SKILLS_ROOT = `${PI_AGENT_DIR}/skills`;
-export const PI_API_FIRST_TURN_SESSION_MAX_BYTES = 16 * 1024 * 1024;
-
-export const piSessionCheckpointSchema = z
-  .object({
-    sessionId: z.uuid(),
-    sha256: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .nullable(),
-  })
-  .strict()
-  .readonly();
 
 const piResourceSnapshotAgentsFilesSchema = z
   .array(
@@ -962,122 +943,18 @@ export const piLangfuseParentSchema = z
   .strict()
   .readonly();
 
-const piApiFirstTurnSessionSchema = z
+/**
+ * Installed-CLI launch requirements the API captured for a Pi run. The guest
+ * execs the rootfs-installed CLI only when it matches the session
+ * construction (or runtime version) and meets the CLI floor; otherwise it uses
+ * the commit-addressed package. Carried in the execution context, not the
+ * launch config, because the Pi CLI parses the launch config strictly.
+ */
+export const piInstalledCliRequirementSchema = z
   .object({
-    sessionId: z.uuid(),
-    sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    rawSize: z
-      .number()
-      .int()
-      .positive()
-      .max(PI_API_FIRST_TURN_SESSION_MAX_BYTES),
-  })
-  .strict()
-  .readonly();
-
-const piSandboxEventSequenceStartSchema = eventSequenceNumberSchema.min(1);
-
-const piApiFirstTurnOwnershipTransferManifestShape = {
-  schemaVersion: z.literal(3),
-  outcome: z.literal("ownership-transfer"),
-  baseSession: piSessionCheckpointSchema,
-  session: piApiFirstTurnSessionSchema,
-  sandboxEventSequenceStart: piSandboxEventSequenceStartSchema,
-  langfuseParent: piLangfuseParentSchema.optional(),
-  apiUsage: piApiHandoffUsageSchema.optional(),
-};
-
-export const piApiFirstTurnOwnershipTransferModeSchema = z.enum([
-  "sandbox-first",
-  "pending-tool-continuation",
-  "settled-session-continuation",
-]);
-
-const piApiFirstTurnManifestV3Schema = z.discriminatedUnion("mode", [
-  z
-    .object({
-      ...piApiFirstTurnOwnershipTransferManifestShape,
-      mode: z.literal("sandbox-first"),
-    })
-    .readonly(),
-  z
-    .object({
-      ...piApiFirstTurnOwnershipTransferManifestShape,
-      mode: z.literal("pending-tool-continuation"),
-    })
-    .readonly(),
-  z
-    .object({
-      ...piApiFirstTurnOwnershipTransferManifestShape,
-      mode: z.literal("settled-session-continuation"),
-    })
-    .readonly(),
-]);
-
-// Large H0 checkpoints bypass API materialization. The sandbox verifies the
-// original blob before starting the turn; API-produced H1 stays bounded at 16 MiB.
-export const piApiFirstTurnManifestSchema = z.union([
-  piApiFirstTurnManifestV3Schema,
-  z
-    .object({
-      ...piApiFirstTurnOwnershipTransferManifestShape,
-      schemaVersion: z.literal(4),
-      mode: z.literal("sandbox-first"),
-      session: piApiFirstTurnSessionSchema
-        .unwrap()
-        .extend({
-          rawSize: z
-            .number()
-            .int()
-            .positive()
-            .max(RESUME_SESSION_HISTORY_MAX_BYTES),
-        })
-        .readonly(),
-      history: z
-        .object({
-          url: z.url(),
-          encoding: sessionHistoryEncodingSchema,
-          encodedSize: z
-            .number()
-            .int()
-            .positive()
-            .max(RESUME_SESSION_HISTORY_MAX_BYTES),
-        })
-        .strict()
-        .readonly(),
-    })
-    .readonly(),
-]);
-
-export const piApiFirstTurnConfigSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    resourceSnapshotDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    manifestUrl: z.url(),
-    sessionUrl: z.url(),
-    deadlineAt: z.number().int().positive(),
-    baseSession: piSessionCheckpointSchema,
-    sandboxEventSequenceStart: piSandboxEventSequenceStartSchema,
-    /**
-     * `@okouai/pi-agent-runtime` release the API prepared this turn with. The
-     * guest execs the rootfs-installed CLI only when its bundled runtime is
-     * exactly this version; the CLI itself restarts a pending-tool handoff
-     * from H0 as `sandbox-first` on mismatch. Absent from launch configs
-     * captured before versioned CLI artifacts existed.
-     */
-    requiredPiAgentRuntimeVersion: releaseVersionSchema.optional(),
-    /** Lowest installed CLI release allowed to run this launch payload. */
-    minCliVersion: releaseVersionSchema.optional(),
-    /**
-     * Digest of the session construction the API prepared this turn with. When
-     * present it replaces `requiredPiAgentRuntimeVersion` as the parity key:
-     * the guest execs the rootfs-installed CLI, and the CLI continues a
-     * pending-tool handoff, only when the digest bundled into that CLI is
-     * identical, so dependency-only runtime version bumps no longer force the
-     * `npx` launch. Absent from launch configs captured before the writer.
-     */
-    requiredPiSessionConstructionDigest:
-      piSessionConstructionDigestSchema.optional(),
+    requiredPiAgentRuntimeVersion: releaseVersionSchema,
+    minCliVersion: releaseVersionSchema,
+    requiredPiSessionConstructionDigest: piSessionConstructionDigestSchema,
   })
   .strict()
   .readonly();
@@ -1090,17 +967,8 @@ export const piApiFirstTurnConfigSchema = z
 
 export const piModelConfigLegacySchema = z
   .object({
-    provider: z.enum([
-      "deepseek",
-      "moonshotai",
-      "openai",
-      "openrouter",
-      "vercel-ai-gateway",
-      "codex",
-    ]),
+    provider: z.enum(["openrouter", "codex"]),
     baseUrl: z.url(),
-    // Request identity can differ from the trusted Pi catalog entry for an
-    // organization-configured model provider gateway.
     model: z.string().min(1),
     catalogModel: z.string().min(1).optional(),
     thinkingLevel: z
@@ -1109,26 +977,13 @@ export const piModelConfigLegacySchema = z
     // Per-run provider request policy. This is not Pi session identity or
     // persisted Pi JSONL metadata.
     serviceTier: z.enum(["priority"]).optional(),
-    apiKeyEnv: z.enum([
-      "ANTHROPIC_AUTH_TOKEN",
-      "OPENAI_API_KEY",
-      "CHATGPT_ACCESS_TOKEN",
-    ]),
+    apiKeyEnv: z.enum(["OPENAI_API_KEY", "CHATGPT_ACCESS_TOKEN"]),
     credentialSecretName: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
-    // Non-secret gateway request policy. The credential itself remains in the
-    // encrypted secret named above and is resolved only at an execution edge.
-    credentialHeader: piCredentialHeaderSchema.optional(),
   })
   .strict()
   .readonly();
 
-const piApiKeyCredentialSecretNameSchema = z.enum([
-  "DEEPSEEK_API_KEY",
-  "OPENAI_API_KEY",
-  "OPENROUTER_API_KEY",
-  "VERCEL_AI_GATEWAY_API_KEY",
-  "OKOU_MODEL_PROVIDER_API_KEY",
-]);
+const piApiKeyCredentialSecretNameSchema = z.enum(["OPENROUTER_API_KEY"]);
 
 const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [
   z
@@ -1136,7 +991,6 @@ const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [
       kind: z.literal("api-key"),
       environment: z.enum(["OPENAI_API_KEY"]),
       secretName: piApiKeyCredentialSecretNameSchema,
-      credentialHeader: piCredentialHeaderSchema.optional(),
     })
     .strict()
     .readonly(),
@@ -1170,7 +1024,7 @@ const piModelConfigVersionedSchema = z
     ]),
     dialect: z.enum(["openai-responses", "openai-codex-responses"]),
     transport: z.literal("sse"),
-    provider: z.enum(["deepseek", "openai", "openrouter", "openai-codex"]),
+    provider: z.enum(["openrouter", "openai-codex"]),
     baseUrl: z.url(),
     model: z.string().min(1).max(512),
     catalogModel: z.string().min(1).max(512).optional(),
@@ -1263,7 +1117,7 @@ export const piModelConfigV3Schema = z
       schemaVersion: z.literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
       dialect: z.literal("openai-responses"),
       transport: z.enum(["sse"]),
-      provider: z.enum(["deepseek", "openai", "openrouter"]),
+      provider: z.enum(["openrouter"]),
       serviceTier: z.enum(["priority"]).optional(),
     }),
     piModelConfigVersionedSchema.safeExtend({
@@ -1280,7 +1134,6 @@ export const piModelConfigSchema = z.union([
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
-  piModelConfigV4Schema,
 ]);
 
 const lowercaseSha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -1351,7 +1204,6 @@ export const piMemoryPhase2MaintenanceSchema = z
 export const piLaunchConfigSchema = z
   .object({
     schemaVersion: z.literal(2),
-    apiFirstTurn: piApiFirstTurnConfigSchema,
     memoryRecall: piMemoryRecallSelectionSchema.optional(),
     maintenance: piMemoryPhase2MaintenanceSchema.optional(),
   })
@@ -1472,19 +1324,31 @@ const storedExecutionContextObjectSchema = z.object({
   // Feature flags evaluated at job creation time (all switch states for user/org)
   featureFlags: z.record(z.string(), z.boolean()).optional(),
   billableFirewalls: z.array(z.string()).optional(),
-  // Canonical model id the proxy reports for model token usage. The API uses
-  // this model id for built-in billing rows; billing eligibility is decided
-  // from API-owned run context.
+  // Provider the proxy reports model token usage under: a Built-in route's
+  // `usage_pricing` provider (possibly an alias of the actual model), else the
+  // catalog model id. Billing eligibility is decided from API-owned run context.
   modelUsageProvider: z.string().optional(),
+  // Total-input threshold (input + cache read + cache creation) at which
+  // `modelUsageProvider` usage bills the `.long_context` categories, captured
+  // by the API from the run's Built-in route
+  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
+  // the route bills a single tier and the proxy must not consult its generated
+  // map. Absent: an API without catalog thresholds; only then does the proxy
+  // fall back to its generated map keyed by `modelUsageProvider`.
+  modelUsageLongContextMinTotalInputTokens: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
   // API-owned Codex provider/runtime metadata forwarded through the runner.
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
     .optional(),
-  // Pi runs use the API first-turn slot and can continue through an explicit
-  // Sandbox tool handoff. This state is a single hard-cut protocol bundle.
+  // Pi runs carry their session, launch config and model as one bundle.
   piSessionId: z.uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
+  piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
 export const storedExecutionContextSchema =
@@ -1580,10 +1444,22 @@ const executionContextObjectSchema = z.object({
   // Feature flags evaluated at job creation time (all switch states for user/org)
   featureFlags: z.record(z.string(), z.boolean()).optional(),
   billableFirewalls: z.array(z.string()).optional(),
-  // Canonical model id the proxy reports for model token usage. The API uses
-  // this model id for built-in billing rows; billing eligibility is decided
-  // from API-owned run context.
+  // Provider the proxy reports model token usage under: a Built-in route's
+  // `usage_pricing` provider (possibly an alias of the actual model), else the
+  // catalog model id. Billing eligibility is decided from API-owned run context.
   modelUsageProvider: z.string().optional(),
+  // Total-input threshold (input + cache read + cache creation) at which
+  // `modelUsageProvider` usage bills the `.long_context` categories, captured
+  // by the API from the run's Built-in route
+  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
+  // the route bills a single tier and the proxy must not consult its generated
+  // map. Absent: an API without catalog thresholds; only then does the proxy
+  // fall back to its generated map keyed by `modelUsageProvider`.
+  modelUsageLongContextMinTotalInputTokens: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
   // API-owned Codex provider/runtime metadata forwarded through the runner.
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
@@ -1591,6 +1467,7 @@ const executionContextObjectSchema = z.object({
   piSessionId: z.uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
+  piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
 export const executionContextSchema = executionContextObjectSchema.superRefine(
@@ -1769,73 +1646,72 @@ export const runnersModelProviderFailuresContract = c.router({
   },
 });
 
-const activeInputDeliveryReferenceSchema = z.object({
-  deliveryId: z.uuid(),
-  eventIds: z.array(z.uuid()).length(1),
+export const STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE =
+  "INPUT_ALREADY_CONSUMED";
+export const STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE = "RUN_NOT_RUNNING";
+
+export const runnerNextSteerableInputResponseSchema = z.object({
+  input: z
+    .object({
+      eventId: z.uuid(),
+      prompt: z.string().min(1),
+    })
+    .nullable(),
 });
 
-export const activeInputDeliveryReserveResponseSchema = z.discriminatedUnion(
-  "outcome",
-  [
-    activeInputDeliveryReferenceSchema.extend({
-      outcome: z.literal("reserved"),
-      prompt: z.string().min(1),
-    }),
-    z.object({ outcome: z.literal("empty") }),
-    z.object({ outcome: z.literal("terminal") }),
-    activeInputDeliveryReferenceSchema.extend({
-      outcome: z.literal("held"),
-    }),
-    z.object({
-      outcome: z.literal("rejected"),
-      reason: z.enum(["payload_too_large", "run_not_running"]),
-    }),
-  ],
-);
+export const runnerSteeredInputResponseSchema = z.object({
+  outcome: z.literal("steered"),
+});
 
-export const activeInputDeliveryReceiptResponseSchema = z.discriminatedUnion(
-  "outcome",
-  [
-    z.object({ outcome: z.literal("delivered") }),
-    z.object({ outcome: z.literal("rejected") }),
-  ],
-);
-
-export const runnersActiveInputsContract = c.router({
-  reserve: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/active-inputs/reserve",
+/**
+ * Read the next steerable prompt or `input.budget` targeting the running run,
+ * then declare it steered. The replacement retains the source event type and
+ * carries the run ID. Both authenticate with the run's sandbox token.
+ */
+export const runnersSteerContract = c.router({
+  next: {
+    method: "GET",
+    path: "/api/runners/runs/:runId/steerable-inputs/next",
     headers: authHeadersSchema,
     pathParams: z.object({
       runId: z.uuid(),
     }),
-    body: z.object({}),
     responses: {
-      200: activeInputDeliveryReserveResponseSchema,
+      200: runnerNextSteerableInputResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Reserve or retrieve pending active input for a run",
+    summary:
+      "Read the next prompt or run-targeted budget a running run may steer",
   },
-  receipt: {
+  steered: {
     method: "POST",
-    path: "/api/runners/runs/:runId/active-inputs/deliveries/:deliveryId/receipt",
+    path: "/api/runners/runs/:runId/steerable-inputs/:eventId/steered",
     headers: authHeadersSchema,
     pathParams: z.object({
       runId: z.uuid(),
-      deliveryId: z.uuid(),
+      eventId: z.uuid(),
     }),
     body: z.object({}),
     responses: {
-      200: activeInputDeliveryReceiptResponseSchema,
+      200: runnerSteeredInputResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema.extend({
+        error: apiErrorSchema.shape.error.extend({
+          code: z.enum([
+            STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
+            STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
+          ]),
+        }),
+      }),
       500: apiErrorSchema,
     },
-    summary: "Record acceptance of an active-input delivery",
+    summary: "Declare a prompt or run-targeted budget steered into a run",
   },
 });
 
@@ -1903,6 +1779,10 @@ export const heartbeatBodySchema = z
     admittableProfiles: runnerProfileListSchema,
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
     heldWorkspaceStates: z.array(heldWorkspaceStateSchema).max(1024),
+    activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
+    // This shared endpoint also accepts PAT and older Runner heartbeats without
+    // a host observation. Absence is a first-class unknown, never WSS-eligible.
+    wssIngressServiceActive: z.boolean().optional(),
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {
@@ -1947,7 +1827,7 @@ export type RunnersPollContract = typeof runnersPollContract;
 export type RunnersJobClaimContract = typeof runnersJobClaimContract;
 export type RunnersModelProviderFailuresContract =
   typeof runnersModelProviderFailuresContract;
-export type RunnersActiveInputsContract = typeof runnersActiveInputsContract;
+export type RunnersSteerContract = typeof runnersSteerContract;
 export type RunnersConnectorRuntimeSyncContract =
   typeof runnersConnectorRuntimeSyncContract;
 export type RunnersHeartbeatContract = typeof runnersHeartbeatContract;
@@ -1958,6 +1838,7 @@ export type RunnerPreference = z.infer<typeof runnerPreferenceSchema>;
 export type RunnerPreferenceClaimState = z.infer<
   typeof runnerPreferenceClaimStateSchema
 >;
+export type ActiveReuseProducer = z.infer<typeof activeReuseProducerSchema>;
 export type HeldSandboxState = z.infer<typeof heldSandboxStateSchema>;
 export type HeldWorkspaceState = z.infer<typeof heldWorkspaceStateSchema>;
 export type ExecutionContext = z.infer<typeof executionContextSchema>;
@@ -1984,14 +1865,10 @@ export type PiMemoryPhase2Maintenance = z.infer<
 export type PiMemoryRecallSelection = z.infer<
   typeof piMemoryRecallSelectionSchema
 >;
-export type PiApiFirstTurnConfig = z.infer<typeof piApiFirstTurnConfigSchema>;
-export type PiApiFirstTurnOwnershipTransferMode = z.infer<
-  typeof piApiFirstTurnOwnershipTransferModeSchema
+export type PiInstalledCliRequirement = z.infer<
+  typeof piInstalledCliRequirementSchema
 >;
 export type PiLangfuseParent = z.infer<typeof piLangfuseParentSchema>;
-export type PiApiFirstTurnManifest = z.infer<
-  typeof piApiFirstTurnManifestSchema
->;
 export type PiResourceSnapshot = z.infer<typeof piResourceSnapshotSchema>;
 export type PiLaunchPayload = z.infer<typeof piLaunchPayloadSchema>;
 export type CompatibleStoredExecutionContext = z.infer<

@@ -1,19 +1,22 @@
-import { performance } from "node:perf_hooks";
-
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-
-import { env } from "../../lib/env";
+import { performance } from "node:perf_hooks";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
+import { env } from "../../lib/env";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
-import { recordSandboxOperations } from "../external/sandbox-op-log";
+import {
+  recordApiOperationTimings,
+  recordSandboxOperations,
+} from "../external/sandbox-op-log";
 import { safeSync } from "../utils";
 
 type ApiDispatchTimingSpanKind = "top_level" | "nested";
 export type ApiDispatchTimingDimensions = Readonly<Record<string, string>>;
+// Bounded string dimensions and numeric observation metrics share the ingest fields.
+type ApiDispatchTimingFields = Readonly<Record<string, string | number>>;
 export type ApiDispatchTimingDimensionsInput =
-  | ApiDispatchTimingDimensions
-  | (() => ApiDispatchTimingDimensions | undefined);
+  | ApiDispatchTimingFields
+  | (() => ApiDispatchTimingFields | undefined);
 
 type ApiProcessAgeBucket =
   | "0_1s"
@@ -143,6 +146,29 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_pre_create_agent_teams_create_run"
   | "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap"
   | "api_dispatch_pre_create_agent_workflow_automation_queue_admission"
+  | "api_dispatch_workflow_enqueue_display_name"
+  | "api_dispatch_workflow_enqueue_transaction"
+  | "api_dispatch_workflow_enqueue_transaction_callback"
+  | "api_dispatch_workflow_enqueue_model_selection"
+  | "api_dispatch_workflow_enqueue_event_context_insert"
+  | "api_dispatch_workflow_enqueue_event_insert"
+  | "api_dispatch_workflow_enqueue_queue_upsert"
+  | "api_dispatch_workflow_enqueue_schedule_claim"
+  | "api_dispatch_workflow_enqueue_event_binding"
+  | "api_dispatch_workflow_enqueue_replace_pending_ticks"
+  | "api_dispatch_workflow_enqueue_pending_tick_lookup"
+  | "api_dispatch_workflow_enqueue_pending_tick_revocation_append"
+  | "api_dispatch_workflow_enqueue_source_transition"
+  | "api_dispatch_workflow_event_created_to_consume_start"
+  | "api_dispatch_enqueue_commit_to_consume_start"
+  | "api_dispatch_workflow_admission_display_name"
+  | "api_dispatch_workflow_admission_transaction"
+  | "api_dispatch_workflow_admission_transaction_callback"
+  | "api_dispatch_workflow_admission_pending_lookup"
+  | "api_dispatch_workflow_admission_schedule_claim"
+  | "api_dispatch_workflow_admission_event_insert"
+  | "api_dispatch_workflow_admission_source_transition"
+  | "api_dispatch_workflow_admission_event_binding"
   | "api_dispatch_pre_create_agent_workflow_automation_check_active_run"
   | "api_dispatch_pre_create_agent_workflow_automation_check_target_access"
   | "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context"
@@ -181,6 +207,13 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_context_load_custom_connectors"
   | "api_dispatch_prepare_context_load_custom_connector_rows"
   | "api_dispatch_prepare_context_load_custom_connector_value_rows"
+  | "api_dispatch_prepare_context_project_custom_connector_value_rows"
+  | "api_dispatch_prepare_context_connector_context_environment_query"
+  | "api_dispatch_prepare_context_connector_context_pool_acquire"
+  | "api_dispatch_prepare_context_connector_context_environment_materialize"
+  | "api_dispatch_prepare_context_connector_context_sources_materialize"
+  | "api_dispatch_prepare_context_connector_context_builtin_resolve"
+  | "api_dispatch_prepare_context_connector_context_builtin_decrypt"
   | "api_dispatch_prepare_context_build_custom_connector_firewalls"
   | "api_dispatch_prepare_context_render_custom_connector_auth_templates"
   | "api_dispatch_prepare_context_render_custom_connector_prefixes"
@@ -205,20 +238,12 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_pi_launch_resources"
   | "api_dispatch_prepare_pi_launch_resume_session"
   | "api_dispatch_prepare_atomic_launch_persistence"
-  | "api_dispatch_compute_erasure_admission"
   | "api_dispatch_persist_atomic_launch"
-  | "api_dispatch_admission_lock_wait"
-  | "api_dispatch_admission_lock_held"
-  | "api_dispatch_subscription_prepare_snapshot"
-  | "api_dispatch_subscription_prepare_bundle_proof"
   | "api_dispatch_subscription_validate_admission"
   | "api_dispatch_check_concurrency_limit"
   | "api_dispatch_validate_official_workflow_admission"
-  | "api_dispatch_validate_compute_session"
-  | "api_dispatch_concurrency_preflight_lock_wait"
   | "api_dispatch_concurrency_preflight_check"
-  | "api_dispatch_queue_promotion_lock_wait"
-  | "api_dispatch_queue_promotion_lock_held"
+  | "api_dispatch_queue_promotion_transaction"
   | "api_dispatch_resolve_queue_first_admission"
   | "api_dispatch_queue_first_admission_projection"
   | "api_dispatch_claim_queue_first_message"
@@ -255,6 +280,7 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_storage_manifest_cache_prefetch_decision"
   | "api_dispatch_prepare_storage_manifest_cache_mixed_lookup"
   | "api_dispatch_prepare_storage_manifest_cache_lookup"
+  | "api_dispatch_prepare_storage_manifest_cache_pool_acquire"
   | "api_dispatch_prepare_storage_manifest_cache_classify"
   | "api_dispatch_prepare_storage_manifest_cache_sign_misses"
   | "api_dispatch_prepare_storage_manifest_cache_upsert_misses"
@@ -263,22 +289,8 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_storage_manifest_assemble"
   | "api_dispatch_build_stored_execution_context"
   | "api_dispatch_connector_catalog_load_runtime_snapshot"
-  | "api_dispatch_connector_catalog_query_projection_identity"
-  | "api_dispatch_connector_catalog_query_projection_rows"
-  | "api_dispatch_connector_catalog_fetch_projection_rows"
-  | "api_dispatch_connector_catalog_validate_projection_rows"
-  | "api_dispatch_connector_catalog_parse_projection_rows"
-  | "api_dispatch_connector_catalog_verify_projection_row_digests"
-  | "api_dispatch_connector_catalog_count_projection_rows"
-  | "api_dispatch_connector_catalog_materialize_projection"
   | "api_dispatch_connector_catalog_query_identity"
   | "api_dispatch_connector_catalog_query_payload"
-  | "api_dispatch_connector_catalog_decompress"
-  | "api_dispatch_connector_catalog_verify_digest"
-  | "api_dispatch_connector_catalog_decode_json"
-  | "api_dispatch_connector_catalog_validate_schema"
-  | "api_dispatch_connector_catalog_validate_public_projection"
-  | "api_dispatch_connector_catalog_validate_relationships"
   | "api_dispatch_connector_catalog_validate_compatibility"
   | "api_dispatch_connector_catalog_materialize_accepted_snapshot"
   | "api_dispatch_connector_catalog_materialize_runtime_snapshot"
@@ -286,13 +298,15 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_phase_pre_create"
   | "api_dispatch_phase_prepare_context"
   | "api_dispatch_phase_prepare_launch"
-  | "api_dispatch_phase_queue_insert";
+  | "api_dispatch_phase_queue_insert"
+  | "api_dispatch_phase_commit";
 
 type ApiDispatchPhaseActionType =
   | "api_dispatch_phase_pre_create"
   | "api_dispatch_phase_prepare_context"
   | "api_dispatch_phase_prepare_launch"
-  | "api_dispatch_phase_queue_insert";
+  | "api_dispatch_phase_queue_insert"
+  | "api_dispatch_phase_commit";
 
 interface ApiDispatchPhaseRecord {
   readonly actionType: ApiDispatchPhaseActionType;
@@ -338,7 +352,7 @@ interface ApiDispatchTimingRecord {
   readonly spanKind: ApiDispatchTimingSpanKind;
   readonly durationMs: number;
   readonly timestamp: string;
-  readonly dimensions?: ApiDispatchTimingDimensions;
+  readonly dimensions?: ApiDispatchTimingFields;
 }
 
 export class ApiDispatchTimingCollector {
@@ -421,6 +435,34 @@ export class ApiDispatchTimingCollector {
     return result.ok;
   }
 
+  /**
+   * Emit the records of work that ends before any run exists, such as an
+   * enqueue whose pick runs in the background.
+   */
+  flushWithoutRun(
+    dimensions?: ApiDispatchTimingDimensions,
+    success = true,
+  ): void {
+    const records = this.records.splice(0);
+    const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
+    recordApiOperationTimings(
+      records.map((record) => {
+        return {
+          actionType: record.actionType,
+          durationMs: record.durationMs,
+          success,
+          timestamp: record.timestamp,
+          dimensions: {
+            ...dimensions,
+            ...record.dimensions,
+            span_kind: record.spanKind,
+            ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
+          },
+        };
+      }),
+    );
+  }
+
   flush(args: {
     readonly runId: string;
     readonly runnerGroup: string;
@@ -483,21 +525,8 @@ export async function measureApiDispatchTiming<T>(
   return await collector.measure(actionType, spanKind, operation, dimensions);
 }
 
-export function measureApiDispatchTimingSync<T>(
-  collector: ApiDispatchTimingCollector | undefined,
-  actionType: ApiDispatchTimingActionType,
-  spanKind: ApiDispatchTimingSpanKind,
-  operation: () => T,
-  dimensions?: ApiDispatchTimingDimensionsInput,
-): T {
-  if (!collector) {
-    return operation();
-  }
-  return collector.measureSync(actionType, spanKind, operation, dimensions);
-}
-
 function resolveApiDispatchTimingDimensions(
   dimensions: ApiDispatchTimingDimensionsInput | undefined,
-): ApiDispatchTimingDimensions | undefined {
+): ApiDispatchTimingFields | undefined {
   return typeof dimensions === "function" ? dimensions() : dimensions;
 }

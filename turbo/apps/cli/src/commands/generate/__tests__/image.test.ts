@@ -13,7 +13,6 @@ import chalk from "chalk";
 import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import { imageCommand } from "../image";
-import { DEFAULT_IMAGE_MODEL_ENV } from "@okouai/core/image-model-catalog";
 import {
   AVAILABILITY_URL,
   GENERATION_ARTIFACT_ID,
@@ -70,7 +69,6 @@ describe("okou generate image command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, undefined);
     imageCommand.setOptionValue("visibility", undefined);
   });
 
@@ -221,8 +219,6 @@ describe("okou generate image command", () => {
 
     expect(capturedBody).toEqual({
       prompt: "A watercolor fox",
-      model: "gpt-image-1",
-      size: "1024x1024",
       quality: "auto",
       background: "opaque",
       outputFormat: "webp",
@@ -251,60 +247,12 @@ describe("okou generate image command", () => {
   });
 
   it.each([
-    {
-      name: "outside a run with an implicit model",
-      insideRun: false,
-      runDefaultImageModel: undefined,
-      modelArguments: [],
-      expectedModel: "gpt-image-1",
-    },
-    {
-      name: "outside a run with an explicit model",
-      insideRun: false,
-      runDefaultImageModel: undefined,
-      modelArguments: ["--model", "flux-pro-1.1"],
-      expectedModel: "flux-pro-1.1",
-    },
-    {
-      name: "inside a run with an implicit model",
-      insideRun: true,
-      runDefaultImageModel: undefined,
-      modelArguments: [],
-      expectedModel: undefined,
-    },
-    {
-      name: "inside a gated run with an implicit model",
-      insideRun: true,
-      runDefaultImageModel: "flux-pro-1.1",
-      modelArguments: [],
-      expectedModel: undefined,
-    },
-    {
-      name: "inside a gated run with an explicit model",
-      insideRun: true,
-      runDefaultImageModel: "seedream4",
-      modelArguments: ["--model", "flux-pro-1.1"],
-      expectedModel: "flux-pro-1.1",
-    },
-    {
-      name: "inside a gated run with an explicit value equal to the CLI default",
-      insideRun: true,
-      runDefaultImageModel: "flux-pro-1.1",
-      modelArguments: ["--model", "gpt-image-1"],
-      expectedModel: "gpt-image-1",
-    },
+    { name: "outside a run", insideRun: false },
+    { name: "inside a run", insideRun: true },
   ])(
-    "should serialize image model precedence for $name",
-    async ({
-      insideRun,
-      runDefaultImageModel,
-      modelArguments,
-      expectedModel,
-    }) => {
+    "should leave model and size to the server $name",
+    async ({ insideRun }) => {
       vi.stubEnv("OKOU_TOKEN", insideRun ? buildRunToken() : "test-token");
-      if (runDefaultImageModel !== undefined) {
-        vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, runDefaultImageModel);
-      }
       let capturedBody: unknown;
       server.use(
         http.post(IMAGE_URL, async ({ request }) => {
@@ -318,14 +266,11 @@ describe("okou generate image command", () => {
         "cli",
         "image",
         "--raw-prompt",
-        "Model precedence",
-        ...modelArguments,
+        "Server-selected model",
       ]);
 
       expect(capturedBody).toEqual({
-        prompt: "Model precedence",
-        ...(expectedModel === undefined ? {} : { model: expectedModel }),
-        size: "1024x1024",
+        prompt: "Server-selected model",
         quality: "medium",
         background: "auto",
         outputFormat: "png",
@@ -335,73 +280,35 @@ describe("okou generate image command", () => {
     },
   );
 
-  it.each([
-    {
-      name: "an explicit Lite model with an implicit size",
-      runDefaultImageModel: undefined,
-      modelArguments: ["--model", "seedream5-lite"],
-      sizeArguments: [],
-      expectedModel: "seedream5-lite",
-      expectedSize: "auto",
-    },
-    {
-      name: "a Lite run default with an implicit size",
-      runDefaultImageModel: "seedream5-lite",
-      modelArguments: [],
-      sizeArguments: [],
-      expectedModel: undefined,
-      expectedSize: "auto",
-    },
-    {
-      name: "an explicit Lite size",
-      runDefaultImageModel: undefined,
-      modelArguments: ["--model", "seedream5-lite"],
-      sizeArguments: ["--size", "1024x1024"],
-      expectedModel: "seedream5-lite",
-      expectedSize: "1024x1024",
-    },
-  ])(
-    "should serialize $name without rewriting caller intent",
-    async ({
-      runDefaultImageModel,
-      modelArguments,
-      sizeArguments,
-      expectedModel,
-      expectedSize,
-    }) => {
-      if (runDefaultImageModel !== undefined) {
-        vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, runDefaultImageModel);
-      }
-      let capturedBody: unknown;
-      server.use(
-        http.post(IMAGE_URL, async ({ request }) => {
-          capturedBody = await request.json();
-          return HttpResponse.json(IMAGE_RESULT);
-        }),
-      );
+  it("should send an explicit size", async () => {
+    let capturedBody: unknown;
+    server.use(
+      http.post(IMAGE_URL, async ({ request }) => {
+        capturedBody = await request.json();
+        return HttpResponse.json(IMAGE_RESULT);
+      }),
+    );
 
-      await generateCommand.parseAsync([
-        "node",
-        "cli",
-        "image",
-        "--raw-prompt",
-        "Lite size precedence",
-        ...modelArguments,
-        ...sizeArguments,
-      ]);
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "image",
+      "--raw-prompt",
+      "Explicit size",
+      "--size",
+      "1536x1024",
+    ]);
 
-      expect(capturedBody).toEqual({
-        prompt: "Lite size precedence",
-        ...(expectedModel === undefined ? {} : { model: expectedModel }),
-        size: expectedSize,
-        quality: "medium",
-        background: "auto",
-        outputFormat: "png",
-        moderation: "auto",
-        safetyTolerance: "4",
-      });
-    },
-  );
+    expect(capturedBody).toEqual({
+      prompt: "Explicit size",
+      size: "1536x1024",
+      quality: "medium",
+      background: "auto",
+      outputFormat: "png",
+      moderation: "auto",
+      safetyTolerance: "4",
+    });
+  });
 
   it("should surface the CDN embed URL when it differs from the file URL", async () => {
     const embedUrl =
@@ -564,8 +471,6 @@ describe("okou generate image command", () => {
       "image",
       "--raw-prompt",
       "A product hero shot",
-      "--model",
-      "flux-pro-1.1",
       "--format",
       "jpeg",
       "--seed",
@@ -577,8 +482,6 @@ describe("okou generate image command", () => {
 
     expect(capturedBody).toEqual({
       prompt: "A product hero shot",
-      model: "flux-pro-1.1",
-      size: "1024x1024",
       quality: "medium",
       background: "auto",
       outputFormat: "jpeg",
@@ -617,8 +520,6 @@ describe("okou generate image command", () => {
       "image",
       "--compiled-prompt",
       "Turn this mockup into a polished product shot",
-      "--model",
-      "flux-pro-1.1",
       "--image-url",
       "https://example.com/mockup.png",
       "--image-prompt-strength",
@@ -629,8 +530,6 @@ describe("okou generate image command", () => {
 
     expect(capturedBody).toEqual({
       prompt: "Turn this mockup into a polished product shot",
-      model: "flux-pro-1.1",
-      size: "auto",
       quality: "medium",
       background: "auto",
       outputFormat: "jpeg",
@@ -669,8 +568,6 @@ describe("okou generate image command", () => {
       "image",
       "--compiled-prompt",
       "Combine these references into a campaign image",
-      "--model",
-      "nano-banana-2",
       "--image-url",
       "https://example.com/reference-1.png",
       "--image-url",
@@ -685,8 +582,6 @@ describe("okou generate image command", () => {
 
     expect(capturedBody).toEqual({
       prompt: "Combine these references into a campaign image",
-      model: "nano-banana-2",
-      size: "auto",
       quality: "medium",
       background: "auto",
       outputFormat: "webp",
@@ -741,10 +636,14 @@ describe("okou generate image command", () => {
     expect(stdout.indexOf("## Artifact Output Model")).toBeLessThan(
       stdout.indexOf("## Requested Parameters"),
     );
-    expect(stdout).toContain("Requested size: 1024x1024");
+    expect(stdout).toContain(
+      "Image model if direct image generation is used: the user's Settings › Built-in tools image model (default gpt-image-2.5-flare)",
+    );
+    expect(stdout).toContain(
+      "Requested size: model default (1024x1024, or auto with --image-url)",
+    );
     expect(stdout).toContain("Source image URLs: none");
     expect(stdout).toContain("## Image Authoring Rules");
-    expect(stdout).not.toContain("## Parameter Precedence");
     expect(stdout).toContain("CLI fallback values last");
     expect(stdout).toContain(
       "`--background` accepts only `auto`, `opaque`, or `transparent`",
@@ -752,8 +651,7 @@ describe("okou generate image command", () => {
     expect(stdout).toContain("--compiled-prompt");
   });
 
-  it("should keep style compilation on the run default unless a model is explicit", async () => {
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "seedream4");
+  it("should report an explicit size in style compilation", async () => {
     await generateCommand.parseAsync([
       "node",
       "cli",
@@ -763,36 +661,14 @@ describe("okou generate image command", () => {
       "--prompt",
       "A florist named Luna Floral",
       "--compile",
+      "--size",
+      "1024x1536",
     ]);
 
-    const implicitStdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(implicitStdout).toContain(
-      "Run default model if direct image generation is used: seedream4; omit --model so the server applies it",
-    );
-    expect(implicitStdout).not.toContain(
-      "Model preference if direct image generation is used: gpt-image-1",
-    );
-
-    mockConsoleLog.mockClear();
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "image",
-      "--style",
-      "image-style:ink-storefront",
-      "--prompt",
-      "A florist named Luna Floral",
-      "--compile",
-      "--model",
-      "flux-pro-1.1",
-    ]);
-
-    const explicitStdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(explicitStdout).toContain(
-      "Explicit model if direct image generation is used: flux-pro-1.1",
-    );
-    expect(explicitStdout).not.toContain(
-      "Run default model if direct image generation is used",
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(stdout).toContain("Requested size: 1024x1536");
+    expect(stdout).toContain(
+      "Image model if direct image generation is used: the user's Settings › Built-in tools image model",
     );
   });
 
@@ -1133,26 +1009,29 @@ describe("okou generate image command", () => {
     expect(helpOutput).toContain("gpt-image-2.5-flare");
     expect(helpOutput).toContain("gpt-image-2.5-sunburst");
     expect(normalizedHelpOutput).toContain("xhigh and max");
-    expect(helpOutput).toContain("gpt-image-1 (default)");
+    expect(normalizedHelpOutput).toContain(
+      "The image model is not a command option. Built-in generation uses the image model selected in Settings › Built-in tools, or gpt-image-2.5-flare when none is selected.",
+    );
+    expect(normalizedHelpOutput).toContain(
+      "(default: 1024x1024, or auto with --image-url)",
+    );
+    expect(normalizedHelpOutput).toContain(
+      "depends on the image model selected in Settings",
+    );
     expect(helpOutput).toContain("flux-pro-1.1");
     expect(helpOutput).toContain("nano-banana-2");
-    expect(helpOutput).toContain("seedream5-pro");
-    expect(helpOutput).toContain("seedream5-lite");
-    expect(normalizedHelpOutput).toContain("support varies");
     expect(helpOutput).toContain("3840x2160");
     expect(helpOutput).toContain("edges divisible by 16");
     expect(helpOutput).toContain("--compression <0-100>");
     expect(helpOutput).toContain("Moderation strictness: auto or low");
     expect(helpOutput).toContain(
-      "Uses OpenAI, fal.ai, and BytePlus for built-in image model execution",
+      "Uses OpenAI and fal.ai for built-in image model execution",
     );
     expect(helpOutput).toContain("--seed");
     expect(helpOutput).toContain("--safety-tolerance");
     expect(helpOutput).toContain("--image-url");
     expect(helpOutput).toContain("--image-prompt-strength");
-    expect(helpOutput).toContain(
-      "Nano Banana 2 models and Seedream 5 Lite accept up to 14",
-    );
+    expect(helpOutput).toContain("Nano Banana 2 models accept up to 14");
     expect(helpOutput).toContain("qwen-image-3");
     expect(helpOutput).toContain("nano-banana-2-lite");
     expect(helpOutput).toContain("flux-2-pro");

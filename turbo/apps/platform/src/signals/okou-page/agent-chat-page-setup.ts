@@ -27,11 +27,20 @@ import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { checkUnifiedSettingsParam$ } from "./settings/settings-dialog.ts";
 import { setupAgentChatKeyboardShortcuts$ } from "./agent-chat-keyboard.ts";
 import {
+  isPwaAgentComposeRequested,
+  setPwaAgentComposeRequested$,
+} from "./pwa-navigation.ts";
+import {
   enterHomeTaskRecommendations$,
   subscribeHomeTaskRecommendations$,
 } from "./home-task-recommendations.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
+import { detach, Reason } from "../utils.ts";
+import {
+  setAgentPhoneConnectDialogOpen$,
+  watchAgentPhoneConnection$,
+} from "./agentphone.ts";
 
 export const setupAgentChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -42,6 +51,10 @@ export const setupAgentChatPage$ = command(
     }
 
     set(setChatAgentId$, agentId);
+    set(
+      setPwaAgentComposeRequested$,
+      isPwaAgentComposeRequested(get(searchParams$)),
+    );
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });
     set(enterHomeTaskRecommendations$);
@@ -49,7 +62,17 @@ export const setupAgentChatPage$ = command(
     set(setTalkDraft$, agentDraft.draft);
     const firstGreetingVisit = set(startChatGreetingVisit$);
     set(resetChatPageModelSelection$);
+    set(setAgentPhoneConnectDialogOpen$, false);
     set(updatePage$, createElement(AgentChatPage), "sidebar");
+    // Keep the phone link current while Get started can open its connect
+    // dialog here, so a link made from the phone closes it the way it does on
+    // the pages that also offer the link. Link status never delays the chat,
+    // so the watch runs beside setup.
+    detach(
+      set(watchAgentPhoneConnection$, signal),
+      Reason.Daemon,
+      "get started phone link",
+    );
 
     await set(hideAppSkeleton$, signal);
 

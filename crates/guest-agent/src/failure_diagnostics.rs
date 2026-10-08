@@ -365,7 +365,7 @@ fn classify_cli_failure_reason(
     {
         return Some(FailureReason::ProviderInsufficientCredits);
     }
-    if is_insufficient_credits_error(&normalized) {
+    if has_insufficient_credits_response_envelope(&normalized) {
         return Some(FailureReason::InsufficientCredits);
     }
     if matches!(framework, AgentFramework::ClaudeCode)
@@ -451,7 +451,7 @@ fn classify_cli_failure_reason(
     // Subscription/usage limits are an expected quota state for both Codex
     // (ChatGPT plan "usage limit" or API billing "quota exceeded") and Claude
     // Code (Max plan "session limit" / "weekly limit" /
-    // org monthly spend limit), so classify them regardless of framework where
+    // monthly spend limit), so classify them regardless of framework where
     // the wording is shared. This lets the runner log these expected outcomes
     // at info instead of error.
     if normalized.contains("usage limit")
@@ -461,7 +461,7 @@ fn classify_cli_failure_reason(
         || normalized.contains("weekly limit")
         || (matches!(framework, AgentFramework::ClaudeCode)
             && (is_claude_subscription_access_disabled_error(&normalized)
-                || is_claude_monthly_spend_limit_error(&normalized)))
+                || is_claude_monthly_spend_limit_error(source, &normalized)))
     {
         return Some(FailureReason::UsageLimit);
     }
@@ -532,12 +532,6 @@ fn pi_upstream_non_api_response_reason(failure_message: &str) -> Option<FailureR
 fn is_codex_safety_policy_refusal(source: FailureDetailSource, failure_message: &str) -> bool {
     source == FailureDetailSource::CodexJsonl
         && failure_message.trim() == CODEX_SAFETY_POLICY_REFUSAL_MESSAGE
-}
-
-fn is_insufficient_credits_error(normalized: &str) -> bool {
-    normalized.trim()
-        == "api error: 402 insufficient credits. add credits or configure your own api key to continue."
-        || has_insufficient_credits_response_envelope(normalized)
 }
 
 fn is_provider_balance_response_error(normalized: &str) -> bool {
@@ -720,9 +714,12 @@ fn is_claude_subscription_access_disabled_error(normalized: &str) -> bool {
     normalized.contains("disabled claude subscription access") && normalized.contains("claude code")
 }
 
-fn is_claude_monthly_spend_limit_error(normalized: &str) -> bool {
-    normalized.contains("org's monthly spend limit")
-        && normalized.contains("claude.ai/settings/usage")
+fn is_claude_monthly_spend_limit_error(source: FailureDetailSource, normalized: &str) -> bool {
+    (normalized.contains("org's monthly spend limit")
+        && normalized.contains("claude.ai/settings/usage"))
+        || (source == FailureDetailSource::ClaudeResult
+            && normalized.trim()
+                == "you've hit your monthly spend limit. switch to another model to continue.")
 }
 
 fn is_codex_oauth_reconnect_required_run_error(error_message: &str) -> bool {

@@ -182,7 +182,7 @@ Do not rewrite 1093/1094, hot events, snapshots, or append another archive.
 | Chat and public-share pages              | Identified runless archives use a text tree with preserved whitespace, without HTML/Markdown interpretation, generated closing tags, or action cards. Copy/export retain the original source. |
 
 The remaining SQL content callers are run-scoped callback/session/incomplete-context
-readers, run-bound initial-thinking readers, or input/control/followup validation.
+readers or input/control/followup validation.
 Their selections and text/null/regex predicates retain the previous behavior.
 Title/followup context selection uses the provenance-aware projection because its
 thread-wide query can include runless historical output. No callback, queue,
@@ -249,13 +249,8 @@ factory prevented divergent non-Goal columns. S4 preserved physical
 removed those definitions. Migration consistency still generates and compares
 the complete current physical schema.
 
-The retained `goal-schema-contraction.test.ts` fixture now runs the complete
-current migration sequence in a test-owned database. Real failed-launch INSERT and
-successful launch CTE, run reads/metadata, claimed terminal callback and late
-usage execute there. OpenTelemetry captures the actual application statements;
-the test verifies both insertion forms and the absence of obsolete SQL names.
-This fixture preserves current-schema consumer and accounting coverage; it does
-not perform a production migration.
+The Goal current-schema API tests (`goal-schema-contraction.test.ts`) and their
+fixtures were removed in #37034 after Goal went fully offline.
 
 ### Historical provenance and accounting
 

@@ -62,10 +62,6 @@ const thirdPartyWebhookOkSchema = z.union([
   z.string(),
   z.object({ message: z.literal("pong") }),
 ]);
-const miniMaxWebhookOkSchema = z.union([
-  thirdPartyWebhookOkSchema,
-  z.object({ challenge: z.string() }),
-]);
 
 /**
  * Clerk third-party webhook contract for /api/webhooks/clerk.
@@ -327,65 +323,6 @@ export const webhookBuiltInGenerationFalContract = c.router({
   },
 });
 
-export const webhookBuiltInGenerationBytePlusContract = c.router({
-  post: {
-    method: "POST",
-    path: "/api/webhooks/built-in-generations/byteplus/:generationId",
-    pathParams: z.object({
-      generationId: z.uuid(),
-    }),
-    query: z.object({
-      token: z.string().min(1),
-      visualKey: z.string().min(1).optional(),
-    }),
-    body: c.type<string>(),
-    responses: {
-      200: thirdPartyWebhookOkSchema,
-      400: thirdPartyWebhookErrorSchema,
-      401: thirdPartyWebhookErrorSchema,
-      503: thirdPartyWebhookErrorSchema,
-    },
-    summary: "Handle BytePlus built-in generation webhooks",
-  },
-});
-
-export const webhookBuiltInGenerationMiniMaxContract = c.router({
-  post: {
-    method: "POST",
-    path: "/api/webhooks/built-in-generations/minimax/:generationId",
-    pathParams: z.object({
-      generationId: z.uuid(),
-    }),
-    query: z.object({
-      token: z.string().min(1),
-      visualKey: z.string().min(1).optional(),
-    }),
-    body: c.type<string>(),
-    responses: {
-      200: miniMaxWebhookOkSchema,
-      400: thirdPartyWebhookErrorSchema,
-      401: thirdPartyWebhookErrorSchema,
-      503: thirdPartyWebhookErrorSchema,
-    },
-    summary: "Handle MiniMax built-in generation webhooks",
-  },
-});
-
-export const webhookBuiltInGenerationJoggAiContract = c.router({
-  post: {
-    method: "POST",
-    path: "/api/webhooks/built-in-generations/joggai",
-    body: c.type<string>(),
-    responses: {
-      200: thirdPartyWebhookOkSchema,
-      400: thirdPartyWebhookErrorSchema,
-      401: thirdPartyWebhookErrorSchema,
-      503: thirdPartyWebhookErrorSchema,
-    },
-    summary: "Handle registered JoggAI built-in generation webhooks",
-  },
-});
-
 const currentSandboxReuseMissSchema = z.enum([
   "noReuseKey",
   "poolMiss",
@@ -393,32 +330,6 @@ const currentSandboxReuseMissSchema = z.enum([
   "deviceLimitMismatch",
   "unparkFailed",
 ]);
-
-export const ACTIVE_INPUT_DELIVERY_RECEIPT_MAX_IDS = 1024;
-
-const activeInputDeliveryIdsSchema = z
-  .array(
-    z
-      .string()
-      .uuid()
-      .refine((id) => {
-        return id === id.toLowerCase();
-      }, "active input delivery IDs must use canonical lowercase UUIDs"),
-  )
-  .max(ACTIVE_INPUT_DELIVERY_RECEIPT_MAX_IDS)
-  .superRefine((ids, context) => {
-    const seen = new Set<string>();
-    ids.forEach((id, index) => {
-      if (seen.has(id)) {
-        context.addIssue({
-          code: "custom",
-          path: [index],
-          message: "active input delivery IDs must be unique",
-        });
-      }
-      seen.add(id);
-    });
-  });
 
 /**
  * Artifact snapshots schema — canonical
@@ -499,7 +410,6 @@ const webhookCompleteBodySchema = z
     sandboxId: z.string().max(255).optional(),
     sandboxReuseResult: sandboxReuseResultSchema.optional(),
     workspaceReuseResult: workspaceReuseResultSchema.optional(),
-    activeInputDeliveryIds: activeInputDeliveryIdsSchema.optional(),
     checkpoint: webhookCheckpointMetadataSchema.optional(),
   })
   .superRefine((body, context) => {
@@ -632,9 +542,9 @@ const firewallAuthResponseSchema = z.object({
   base: z.string().optional(),
   query: z.record(z.string(), z.string()).optional(),
   awsSigv4: firewallAwsSigv4AuthSchema.optional(),
-  // Effective addon cache expiry as Unix seconds. Access token expiry is the
-  // normal source; billable firewall auth can shorten it to force credit
-  // re-authorization. Null means non-expiring only for non-billable auth.
+  // Effective expiry as Unix seconds: refreshable token expiry minus the API's
+  // refresh buffer, capped by other authorization limits such as credit leases.
+  // Remaining lifetime must be positive; null is non-expiring only for non-billable auth.
   expiresAt: z.number().nullable(),
   resolvedSecrets: z.array(z.string()),
   refreshedConnectors: z.array(z.string()),
@@ -1066,6 +976,16 @@ const sandboxOperationSchema = z.object({
   dns_readiness_timing: z
     .enum(["paired", "unavailable", "inconsistent"])
     .optional(),
+  storage_batch_guest_duration_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_outer_residual_ms: z.number().int().nonnegative().optional(),
+  storage_batch_timing: z
+    .enum(["paired", "unavailable", "inconsistent"])
+    .optional(),
   runner_startup_path: runnerStartupPathSchema.optional(),
   sandbox_reuse_result: sandboxReuseResultSchema.optional(),
   runner_pre_spawn_concurrency_bucket:
@@ -1198,6 +1118,7 @@ export const webhookStoragesPrepareContract = c.router({
       storageId: z.string().uuid(),
       files: storageManifestFilesSchema,
       parentVersionId: z.string().optional(),
+      /** Legacy request field; a registered version cannot be re-uploaded. */
       force: z.boolean().optional(),
       baseVersion: z.string().optional(),
       changes: storageChangesSchema.optional(),
@@ -1264,7 +1185,6 @@ export const webhookStoragesCommitContract = c.router({
       400: apiErrorSchema,
       401: apiErrorSchema,
       404: apiErrorSchema,
-      409: apiErrorSchema, // S3 files missing
       413: apiErrorSchema,
       500: apiErrorSchema,
     },
@@ -1288,12 +1208,6 @@ export type WebhookWorkflowAutomationContract =
   typeof webhookWorkflowAutomationContract;
 export type WebhookBuiltInGenerationFalContract =
   typeof webhookBuiltInGenerationFalContract;
-export type WebhookBuiltInGenerationBytePlusContract =
-  typeof webhookBuiltInGenerationBytePlusContract;
-export type WebhookBuiltInGenerationMiniMaxContract =
-  typeof webhookBuiltInGenerationMiniMaxContract;
-export type WebhookBuiltInGenerationJoggAiContract =
-  typeof webhookBuiltInGenerationJoggAiContract;
 export type WebhookFirewallAuthContract = typeof webhookFirewallAuthContract;
 export type WebhookCompleteContract = typeof webhookCompleteContract;
 export type WebhookCheckpointsContract = typeof webhookCheckpointsContract;

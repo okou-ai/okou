@@ -1,7 +1,6 @@
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -35,32 +34,19 @@ test("A claimed queued message restores as the active run after refresh", async 
         revokesEventId: queuedEventId,
         createdAt: "2026-08-22T09:00:01.000Z",
       },
-      {
-        id: "active-run-thinking",
-        role: "assistant",
-        content: null,
-        runId: activeRunId,
-        thinking: "Working on the immediate request",
-        createdAt: "2026-08-22T09:00:02.000Z",
-      },
     ],
   });
 
-  // The indicator reads its copy from the run's own thinking event only while
-  // thread activity summaries are off, which is what this restored run asserts.
   await setupPage({
     context,
     path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
   });
 
   const prompts = await screen.findAllByText(prompt);
   expect(prompts).toHaveLength(1);
   expect(screen.queryByLabelText("Queued message")).toBeNull();
   await expect(findFastControl("button", "Stop")).resolves.toBeVisible();
-  await expect(
-    screen.findByLabelText("Working on the immediate request"),
-  ).resolves.toBeVisible();
+  await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 });
 
 test("A chat with no artifacts shows an empty artifact inbox", async () => {

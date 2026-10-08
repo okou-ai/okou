@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import {
   index,
   pgEnum,
@@ -33,7 +32,6 @@ export const modelProviderAuthSessions = pgTable(
     status: modelProviderAuthSessionStatusEnum("status")
       .default("initializing")
       .notNull(),
-    sandboxId: varchar("sandbox_id", { length: 255 }),
     approvalUrl: text("approval_url"),
     verificationCode: varchar("verification_code", { length: 128 }),
     encryptedProviderState: text("encrypted_provider_state"),
@@ -57,9 +55,6 @@ export const modelProviderAuthSessions = pgTable(
         table.status,
         table.expiresAt,
       ),
-      index("idx_model_provider_auth_sessions_sandbox")
-        .on(table.sandboxId)
-        .where(sql`${table.sandboxId} IS NOT NULL`),
     ];
   },
 );

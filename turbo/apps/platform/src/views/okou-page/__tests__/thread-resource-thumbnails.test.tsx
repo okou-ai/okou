@@ -123,7 +123,7 @@ test("Workspace search uses a small authorized thumbnail for a private image", a
   );
 });
 
-test("Thread video cards wait for their poster and fall back after a thumbnail error", async () => {
+test("Thread video cards wait for their authorized poster", async () => {
   context.mocks.browser.matchMedia((query) => {
     return (
       query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
@@ -174,9 +174,4 @@ test("Thread video cards wait for their poster and fall back after a thumbnail e
   expect(
     within(sidebar).queryByTestId("artifact-catalog-video-source"),
   ).toBeNull();
-
-  fireEvent.error(thumbnail);
-  await expect(
-    within(sidebar).findByTestId("artifact-catalog-video-source"),
-  ).resolves.toHaveAttribute("src", `${videoUrl}#t=0.001`);
 });

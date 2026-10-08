@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   connectorCatalogContract,
-  type PublicConnectorCatalogListResponse,
-  type PublicConnectorCatalogStatusResponse,
+  isOneClickConnectorGrantKind,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -12,7 +11,6 @@ import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
@@ -31,7 +29,7 @@ import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { featureSwitchesRoutes } from "../feature-switches";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -72,57 +70,6 @@ async function deleteFeatureSwitches(
 
 function currentSecond(): number {
   return Math.floor(now() / 1000);
-}
-
-function assertCategoryMetadataMatchesVisibleConnectors(
-  body:
-    | PublicConnectorCatalogListResponse
-    | PublicConnectorCatalogStatusResponse,
-): void {
-  const metadata = body.categoryMetadata;
-  expect(metadata).toBeDefined();
-  if (!metadata) {
-    return;
-  }
-  const connectorCategories = new Set(
-    body.connectors.map((connector) => {
-      return connector.category;
-    }),
-  );
-  const metadataCategoryIds = metadata.categories.map((category) => {
-    return category.id;
-  });
-  expect(metadataCategoryIds).toHaveLength(new Set(metadataCategoryIds).size);
-  expect(new Set(metadataCategoryIds)).toStrictEqual(connectorCategories);
-  const referencedGroupIds = new Set(
-    metadata.categories.flatMap((category) => {
-      return category.groupId ? [category.groupId] : [];
-    }),
-  );
-  const metadataGroupIds = metadata.groups.map((group) => {
-    return group.id;
-  });
-  expect(metadataGroupIds).toHaveLength(new Set(metadataGroupIds).size);
-  expect(new Set(metadataGroupIds)).toStrictEqual(referencedGroupIds);
-  for (const groupId of metadataGroupIds) {
-    expect(connectorCategories.has(groupId)).toBeFalsy();
-  }
-
-  expect(metadata.categories).toStrictEqual([
-    {
-      id: "test-connectors",
-      label: "Test Connectors",
-      menuLabel: "Test Connectors",
-      groupId: "test",
-    },
-  ]);
-  expect(metadata.groups).toStrictEqual([
-    {
-      id: "test",
-      label: "Test",
-      menuLabel: "Test",
-    },
-  ]);
 }
 
 function stateFromAuthorizationUrl(authorizationUrl: string): string {
@@ -187,34 +134,6 @@ describe("GET /api/connector-catalog", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it.each(["get", "permissions"] as const)(
-    "returns 503 for %s when the configured catalog has no accepted snapshot",
-    async (endpoint) => {
-      mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-      // A newly configured catalog source has no accepted publication yet.
-      mockEnv(
-        "R2_USER_STORAGES_BUCKET_NAME",
-        `test-catalog-unavailable-${randomUUID()}`,
-      );
-      const client = setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      );
-      const request = {
-        params: { connectorSlug: "openai" },
-        headers: { authorization: "Bearer clerk-session" },
-      };
-      const response =
-        endpoint === "get"
-          ? await accept(client.get(request), [503])
-          : await accept(client.permissions(request), [503]);
-
-      expect(response.body.error).toMatchObject({
-        code: "PROVIDER_UNAVAILABLE",
-        message: "Connector catalog is temporarily unavailable",
-      });
-    },
-  );
-
   it.each(["posthog", "calendly"])(
     "returns public catalog metadata including %s OAuth",
     async (connectorSlug) => {
@@ -229,7 +148,6 @@ describe("GET /api/connector-catalog", () => {
       );
 
       assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-      assertCategoryMetadataMatchesVisibleConnectors(response.body);
       expect(response.body.connectors).toContainEqual(
         expect.objectContaining({
           slug: connectorSlug,
@@ -386,122 +304,6 @@ describe("GET /api/connector-catalog", () => {
     );
   });
 
-  it("returns 401 for diagnostics when not authenticated", async () => {
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(client.diagnostics({ headers: {} }), [401]);
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns 401 for diagnostics when the session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.diagnostics({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("rejects diagnostics calls from Okou run tokens even with connector:read", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    seededOrgs.push(
-      await store.set(
-        seedOrgMembership$,
-        { orgId, userId, role: "admin" },
-        context.signal,
-      ),
-    );
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId,
-      runId: `run_${randomUUID()}`,
-      capabilities: ["connector:read"],
-      iat: seconds,
-      exp: seconds + 600,
-    });
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.diagnostics({
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [403],
-    );
-
-    expect(response.body.error.code).toBe("FORBIDDEN");
-  });
-
-  it("returns 403 for diagnostics when OkouDebug is disabled", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.diagnostics({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [403],
-    );
-
-    expect(response.body.error).toStrictEqual({
-      message: "Connector catalog diagnostics are not enabled",
-      code: "FORBIDDEN",
-    });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-  });
-
-  it("returns sanitized DB diagnostics when OkouDebug is enabled", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    await enableConnectorFeatureSwitches(orgId, userId, {
-      [FeatureSwitchKey.OkouDebug]: true,
-    });
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.diagnostics({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toMatchObject({
-      state: expect.stringMatching(/^(?:current|never-synced|stale)$/u),
-      filtering: {
-        capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
-        stale: expect.any(Boolean),
-        filteredAuthMethods: expect.any(Array),
-      },
-      credentialStorage: {
-        missingConnectorVersions: expect.any(Number),
-        unownedConnectorSecrets: expect.any(Number),
-        unownedConnectorVariables: expect.any(Number),
-        unresolvedBridgeCredentials: expect.any(Number),
-      },
-    });
-    expect(response.body).not.toHaveProperty("sourceId");
-    expect(response.body).not.toHaveProperty("catalog");
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-  });
-
   it("returns 401 for catalog status when not authenticated", async () => {
     const client = setupApp({ context, routes: connectorCatalogRoutes })(
       connectorCatalogContract,
@@ -655,17 +457,6 @@ describe("GET /api/connector-catalog", () => {
       expect(connector.category).toBe(category);
     }
 
-    // The category list describes the catalog, not the response. A client
-    // offers the other categories from it, so collapsing it to the one being
-    // browsed would leave no way to reach any of them.
-    expect(
-      (scoped.body.categoryMetadata?.categories ?? [])
-        .map((entry) => {
-          return entry.id;
-        })
-        .sort(),
-    ).toStrictEqual(Object.keys(counts).sort());
-
     // Still ranked, and still without the connectors Okou runs for itself.
     const ranks = scoped.body.connectors.map((connector) => {
       return connector.popularityRank ?? Number.MAX_SAFE_INTEGER;
@@ -726,7 +517,6 @@ describe("GET /api/connector-catalog", () => {
     );
 
     assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    assertCategoryMetadataMatchesVisibleConnectors(response.body);
     const openai = response.body.connectors.find((connector) => {
       return connector.slug === "openai";
     });
@@ -768,6 +558,82 @@ describe("GET /api/connector-catalog", () => {
         return authMethod.id;
       }),
     ).toStrictEqual(["api-token"]);
+  });
+
+  it("returns 401 for one-click connectors when not authenticated", async () => {
+    const client = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const response = await accept(client.oneClick({ headers: {} }), [401]);
+
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("lists one-click connectors with connection status and without per-connector detail", async () => {
+    const actor = bdd.user();
+    mockGitHubConnectorOAuth();
+    const start = await connectorsApi.startOauth(actor, "github", "oauth");
+    await connectorsApi.completeOauthCallback("github", {
+      code: `github-${randomUUID()}`,
+      state: stateFromAuthorizationUrl(start.authorizationUrl),
+    });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const client = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const [oneClick, status] = await Promise.all([
+      accept(
+        client.oneClick({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      ),
+      accept(
+        client.status({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      ),
+    ]);
+
+    assertPublicConnectorCatalogHasNoPrivateFields(oneClick.body);
+    const slugs = oneClick.body.connectors.map((connector) => {
+      return connector.slug;
+    });
+    const expectedSlugs = status.body.connectors.flatMap((connector) => {
+      return connector.authMethods.some((method) => {
+        return isOneClickConnectorGrantKind(method.grantKind);
+      })
+        ? [connector.slug]
+        : [];
+    });
+    expect(slugs).toStrictEqual(expectedSlugs);
+    expect(slugs).toContain("github");
+    expect(slugs).not.toContain("openai");
+
+    const github = oneClick.body.connectors.find((connector) => {
+      return connector.slug === "github";
+    });
+    const githubStatus = status.body.connectors.find((connector) => {
+      return connector.slug === "github";
+    });
+    expect(github).toStrictEqual({
+      slug: githubStatus?.slug,
+      label: githubStatus?.label,
+      description: githubStatus?.description,
+      icon: githubStatus?.icon,
+      ...(githubStatus?.popularityRank === undefined
+        ? {}
+        : { popularityRank: githubStatus.popularityRank }),
+      authMethods: githubStatus?.authMethods,
+      connection: githubStatus?.connection,
+      connected: true,
+      connectionStatus: "connected",
+      scopeMismatch: false,
+      authMethodSupportsRefresh: githubStatus?.authMethodSupportsRefresh,
+      tokenExpiresAt: githubStatus?.tokenExpiresAt,
+      singleAuthCodeAuthMethodId: "oauth",
+      connectNotice: null,
+    });
+    expect(github).not.toHaveProperty("permissionSummary");
+    expect(github).not.toHaveProperty("tags");
   });
 
   it("returns connected manual grant status from public API-created state", async () => {

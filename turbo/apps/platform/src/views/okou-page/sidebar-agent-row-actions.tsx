@@ -159,16 +159,12 @@ export function AgentRowSideActions({
         <TooltipProvider delay={200}>
           <DropdownMenu>
             <DropdownMenuTrigger
+              disabled={triggerDisabled}
               render={
                 <button
                   type="button"
                   className={triggerClassName(variant, isPrimarySelected)}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
                   aria-label={menuCopy.openMenu}
-                  disabled={triggerDisabled}
                 />
               }
             >

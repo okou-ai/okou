@@ -72,10 +72,16 @@ responses keep the diagnostic status and metadata but have no body or
 ``Content-Encoding``, ``Content-Length``, and ``Transfer-Encoding`` headers and
 discards trailers before applying JSON framing.
 
+A separate HTTP ``409`` ``connector_auth_owner_conflict`` response blocks
+confirmed request authentication on a unique inactive route before active
+base-only owner credentials are fetched. It is not a connector availability
+diagnostic and does not depend on connector intent.
+
 Authentication inspection has per-invocation header and query work budgets.
-An exhausted budget leaves authentication indeterminate and suppresses this
-optional diagnostic, preserving ordinary request and response handling. It
-does not reject requests or change their headers.
+An exhausted budget leaves authentication indeterminate and suppresses the
+optional diagnostic, preserving ordinary request and response handling. Confirmed
+authentication material for a unique inactive route owner blocks another owner's
+credential injection. Inspection does not change request headers.
 
 This is an agent-visible compatibility contract. Consumers should branch on
 stable machine-readable fields such as ``error`` and ``reason`` rather than
@@ -85,11 +91,11 @@ contract update before existing fields are removed or their meanings change.
 
 import json
 import urllib.parse
+from typing import Literal
 
 from mitmproxy import http
 
 import builtin_connector_diagnostics
-import connector_intent
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_local_responses
@@ -101,6 +107,7 @@ from logging_utils import log_proxy_entry, project_url_for_proxy_log
 _HTTP_STATUS_UNAUTHORIZED = 401
 _HTTP_STATUS_FORBIDDEN = 403
 _HTTP_STATUS_FAILED_DEPENDENCY = 424
+_AuthMaterialStatus = Literal["absent", "present", "unknown"]
 
 MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS = 64 * 1024
 MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS = 8 * 1024
@@ -126,7 +133,6 @@ _CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_CALLBACK = "_connector_diagnostic_response
 _CONNECTOR_DIAGNOSTIC_PROXY_ENTRY_LOGGED = "_connector_diagnostic_proxy_entry_logged"
 _CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON = "_connector_diagnostic_ownership_reason"
 _CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES = "_connector_diagnostic_ownership_candidates"
-_CONNECTOR_DIAGNOSTIC_OWNERSHIP_HINT_STATUS = "_connector_diagnostic_ownership_hint_status"
 
 _EMPTY_RESPONSE_STREAM_CHUNKS: tuple[bytes, ...] = ()
 _GENERIC_AUTH_HEADER_NAMES = frozenset(
@@ -205,7 +211,7 @@ def record_allow_context(
 
 def maybe_make_connector_owner_local_response(
     flow: http.HTTPFlow,
-    classification: request_classification.FirewallAllow | request_classification.FirewallAmbiguous,
+    classification: request_classification.FirewallAllow,
     *,
     commit: bool,
 ) -> bool:
@@ -217,8 +223,9 @@ def maybe_make_connector_owner_local_response(
     provisional probe; ``request()`` passes ``commit=True`` for the committed
     path.
 
-    A noncandidate explicit intent against a sole active owner may use the same
-    local diagnostic. It never resumes that other owner's authentication path.
+    A unique inactive route owner can be diagnosed despite an active base-only
+    firewall. Existing authentication material on that route blocks credential
+    injection, independently of connector intent.
 
     ``commit`` controls catalog snapshot retention, not response construction.
     Once snapshot selection is reached, the committed path pins that snapshot
@@ -226,27 +233,20 @@ def maybe_make_connector_owner_local_response(
     diagnostic. The provisional path pins only when it actually builds the
     local response.
 
-    Return ``True`` only after installing and logging the pre-upstream mode of
-    the module's connector availability response contract: a local HTTP 424
-    response with ``upstreamStatus`` set to ``0`` and the selected candidate
-    and ownership metadata. HEAD keeps the same diagnostic status and metadata
-    without response content. The caller must stop normal request dispatch on
-    ``True``.
+    Return ``True`` after a local HTTP 424 availability diagnostic or a local
+    HTTP 409 authentication conflict. The diagnostic records ``upstreamStatus``
+    as ``0`` and the selected candidate and ownership metadata. HEAD keeps its
+    status and metadata without response content. The caller must stop normal
+    request dispatch on ``True``.
     """
     if _is_browser_diagnostic_skip(flow):
         return False
 
     sandbox_info = classification.sandbox_info
-    if classification.kind == "firewall_ambiguous":
-        ambiguous = classification.firewall_ambiguous
-        if ambiguous.reason != "connector_intent_not_candidate" or len(ambiguous.candidates) != 1:
-            return False
-        matched_firewall_name = ambiguous.candidates[0]
-    else:
-        allow = classification.firewall_allow
-        if not _firewall_allow_is_unknown_endpoint(allow):
-            return False
-        matched_firewall_name = allow.name
+    allow = classification.firewall_allow
+    if not _firewall_allow_is_unknown_endpoint(allow):
+        return False
+    matched_firewall_name = allow.name
 
     original_url = flow_metadata.original_url(flow.metadata)
     if not original_url:
@@ -261,13 +261,21 @@ def maybe_make_connector_owner_local_response(
         flow.request.method,
         active_firewall_names=_active_firewall_names(sandbox_info),
         matched_firewall_name=matched_firewall_name,
-        connector_intent=_present_connector_intent_from_flow(flow),
     )
     if resolution is None or resolution.candidate is None:
         return False
 
     candidate = resolution.candidate
-    if _request_may_have_auth_material(flow, candidate, original_url):
+    auth_status = _request_auth_material_status(flow, candidate, original_url)
+    if auth_status != "absent":
+        if auth_status == "present":
+            flow_metadata.start_request_timing(flow.metadata)
+            http_local_responses.block_connector_auth_owner_conflict(
+                flow,
+                active_owner=matched_firewall_name,
+                inactive_owner=candidate.connector_slug,
+            )
+            return True
         return False
 
     flow.metadata[_CONNECTOR_DIAGNOSTIC_CATALOG_SNAPSHOT] = diagnostic_snapshot
@@ -275,7 +283,6 @@ def maybe_make_connector_owner_local_response(
     _set_failure_metadata(flow, candidate)
     flow.metadata[_CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON] = resolution.reason
     flow.metadata[_CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES] = resolution.candidate_connector_slugs
-    flow.metadata[_CONNECTOR_DIAGNOSTIC_OWNERSHIP_HINT_STATUS] = resolution.hint_status
     flow_metadata.set_firewall_decision(flow.metadata, "ALLOW")
     flow.response = _make_local_response(
         flow,
@@ -455,7 +462,6 @@ def release_flow_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES, None)
-    flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_HINT_STATUS, None)
     stream_callback = flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_CALLBACK, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_BODY, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_BODY_SENT, None)
@@ -463,11 +469,6 @@ def release_flow_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_PROXY_ENTRY_LOGGED, None)
     if stream_callback is not None and flow.response and flow.response.stream is stream_callback:
         flow.response.stream = False
-
-
-def _present_connector_intent_from_flow(flow: http.HTTPFlow) -> str | None:
-    intent = connector_intent.from_flow(flow)
-    return intent.value if intent.status == "present" else None
 
 
 def _active_firewall_names(sandbox_info: dict) -> set[str]:
@@ -698,19 +699,28 @@ def _request_may_have_auth_material(
     original_url: str,
 ) -> bool:
     """Return whether auth is present or bounded header/query inspection is inconclusive."""
-    if _request_headers_may_have_auth_material(flow, candidate.auth_header_names):
-        return True
+    return _request_auth_material_status(flow, candidate, original_url) != "absent"
+
+
+def _request_auth_material_status(
+    flow: http.HTTPFlow,
+    candidate: builtin_connector_diagnostics.ConnectorDiagnosticCandidate,
+    original_url: str,
+) -> _AuthMaterialStatus:
+    header_status = _request_headers_auth_material_status(flow, candidate.auth_header_names)
+    if header_status == "present":
+        return header_status
 
     configured_query_params = set(candidate.auth_query_param_names)
     normalized_configured_query_params = {name.lower() for name in candidate.auth_query_param_names}
     try:
         parsed = runtime_url_parsing.split_runtime_url(original_url)
     except ValueError:
-        return False
+        return header_status
 
     query = parsed.query
     if len(query) > MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS:
-        return True
+        return "unknown"
 
     field_count = 0
     field_start = 0
@@ -723,7 +733,7 @@ def _request_may_have_auth_material(
         if field_start < field_end:
             field_count += 1
             if field_count > MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS:
-                return True
+                return "unknown"
 
             separator_index = query.find("=", field_start, field_end)
             name_end = field_end if separator_index == -1 else separator_index
@@ -738,16 +748,16 @@ def _request_may_have_auth_material(
                 value_start = field_end if separator_index == -1 else separator_index + 1
                 value = urllib.parse.unquote_plus(query[value_start:field_end])
                 if _query_param_has_auth_material(value):
-                    return True
+                    return "present"
 
         field_start = field_end + 1
 
-    return False
+    return header_status
 
 
-def _request_headers_may_have_auth_material(
+def _request_headers_auth_material_status(
     flow: http.HTTPFlow, configured_header_names: tuple[str, ...]
-) -> bool:
+) -> _AuthMaterialStatus:
     """Inspect raw fields once, suppressing optional diagnostics when a budget is exhausted.
 
     Name/field limits apply independently to the configured lookup and request
@@ -757,20 +767,20 @@ def _request_headers_may_have_auth_material(
     These per-invocation limits do not reject or modify the request.
     """
     if len(configured_header_names) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_FIELDS:
-        return True
+        return "unknown"
     auth_headers: set[bytes] = set(_GENERIC_AUTH_HEADER_NAMES)
     configured_name_bytes = 0
     for name in configured_header_names:
         # Bound string work before encoding, then enforce the actual byte limit.
         if len(name) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES:
-            return True
+            return "unknown"
         raw_name = name.lower().encode("utf-8", "surrogateescape")
         configured_name_bytes += len(raw_name)
         if (
             len(raw_name) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES
             or configured_name_bytes > MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_NAME_BYTES
         ):
-            return True
+            return "unknown"
         auth_headers.add(raw_name.lower())
 
     name_bytes = 0
@@ -782,7 +792,7 @@ def _request_headers_may_have_auth_material(
             or len(raw_name) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES
             or name_bytes > MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_NAME_BYTES
         ):
-            return True
+            return "unknown"
         normalized_name = raw_name.lower()
         if normalized_name not in auth_headers:
             continue
@@ -791,11 +801,11 @@ def _request_headers_may_have_auth_material(
             len(raw_value) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_VALUE_BYTES
             or value_bytes > MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_VALUE_BYTES
         ):
-            return True
+            return "unknown"
         value = raw_value.decode("utf-8", "surrogateescape")
         if _header_value_has_auth_material(normalized_name, value):
-            return True
-    return False
+            return "present"
+    return "absent"
 
 
 def _header_value_has_auth_material(name: bytes, value: str) -> bool:
@@ -863,9 +873,6 @@ def _log_proxy_entry(
         isinstance(candidate, str) for candidate in ownership_candidates
     ):
         extra["ownership_candidates"] = list(ownership_candidates)
-    ownership_hint_status = flow.metadata.get(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_HINT_STATUS)
-    if isinstance(ownership_hint_status, str) and ownership_hint_status:
-        extra["ownership_hint_status"] = ownership_hint_status
     extra.update(url_projection.truncation_fields())
     log_proxy_entry(
         flow_metadata.proxy_log_path(flow.metadata),

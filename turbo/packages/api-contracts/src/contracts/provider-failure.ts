@@ -18,12 +18,6 @@ const PROVIDER_FAILURE_CODES = new Map<string, KnownRunFailureReason>([
   ["content_policy_violation", "safety_policy_refusal"],
   ["model_not_found", "unsupported_model"],
   ["unsupported_model", "unsupported_model"],
-  ["ThrottlingException", "provider_rate_limited"],
-  ["throttlingException", "provider_rate_limited"],
-  ["ServiceUnavailableException", "provider_server_error"],
-  ["serviceUnavailableException", "provider_server_error"],
-  ["InternalServerException", "provider_server_error"],
-  ["internalServerException", "provider_server_error"],
 ]);
 
 /** A provider-owned error code, never a word extracted from ordinary output. */

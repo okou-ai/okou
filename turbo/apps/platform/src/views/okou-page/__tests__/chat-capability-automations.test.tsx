@@ -187,15 +187,6 @@ test("Browse a webhook workflow without offering schedule editing", async () => 
   ).toBeFalsy();
 });
 
-test("Browse a paused scheduled workflow without an inline switch", async () => {
-  await openAutomationBrowser();
-  const disabledSchedule = automationPanel("Paused digest schedule");
-  expect(within(disabledSchedule).getByText("Disabled")).toBeVisible();
-  expect(
-    within(disabledSchedule).queryByRole("switch"),
-  ).not.toBeInTheDocument();
-});
-
 test("Refresh the automation list when the thread's automations change", async () => {
   const automations: ChatThreadWorkflowAutomation[] = [
     {

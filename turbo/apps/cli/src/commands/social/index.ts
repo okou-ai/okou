@@ -14,6 +14,7 @@ import {
   type SocialKitRequest,
   type SocialKitResponse,
   type SocialKitCollectionSourceLimit,
+  type SocialKitInstagramCommentsOutcome,
   type SocialErrorReason,
 } from "@okouai/api-contracts/contracts/social";
 import chalk from "chalk";
@@ -147,7 +148,7 @@ type SocialStatus = "complete" | "partial" | "error";
 interface SocialBilling {
   readonly category: string;
   readonly quantity: number;
-  readonly creditsCharged: number;
+  readonly creditsCharged: number | null;
 }
 
 interface SocialWarning {
@@ -166,6 +167,7 @@ interface SocialCollectionOutput {
   readonly uncertainty?: string;
   readonly nextInput?: SocialCollectionNextInput;
   readonly sourceLimit?: SocialKitCollectionSourceLimit;
+  readonly providerOutcome?: SocialKitInstagramCommentsOutcome;
   readonly callerLimited?: boolean;
   readonly bufferedItemsReturned?: number;
   readonly cumulative?: CollectionProgress;
@@ -222,7 +224,7 @@ interface CollectionProgress {
   readonly itemsReturned: number;
   readonly itemsObserved: number;
   readonly billingQuantity: number;
-  readonly creditsCharged: number;
+  readonly creditsCharged: number | null;
 }
 
 class SocialCollectionError extends Error {
@@ -622,7 +624,12 @@ function collectionPage(
     items,
     context: Object.fromEntries(
       Object.entries(response.result).filter(([key]) => {
-        return key !== resultField && !PAGINATION_RESULT_FIELDS.has(key);
+        return (
+          key !== resultField &&
+          !PAGINATION_RESULT_FIELDS.has(key) &&
+          (response.tool !== "instagram_comments" ||
+            (key !== "collectionStatus" && key !== "stopReason"))
+        );
       }),
     ),
   };
@@ -661,7 +668,7 @@ function progress(
   itemsReturned: number,
   itemsObserved: number,
   billingQuantity: number,
-  creditsCharged: number,
+  creditsCharged: number | null,
 ): CollectionProgress {
   return {
     pages,
@@ -689,6 +696,37 @@ function collectionWarnings(
             },
           ]
         : []),
+    ];
+  }
+  if (collection.state === "provider_limited") {
+    if (collection.providerOutcome?.collectionStatus === "partial") {
+      return [
+        {
+          code: "PROVIDER_LIMITED",
+          message: `Instagram stopped comment collection (${collection.providerOutcome.stopReason}); the returned comments are a partial sample.`,
+        },
+      ];
+    }
+    if (collection.providerOutcome?.collectionStatus === "unknown") {
+      return [
+        {
+          code: "PROVIDER_LIMITED",
+          message:
+            "Instagram did not confirm whether the available comment pages were exhausted.",
+        },
+      ];
+    }
+  }
+  if (
+    collection.state === "complete" &&
+    collection.providerOutcome?.collectionStatus === "exhausted"
+  ) {
+    return [
+      {
+        code: "SOURCE_PAGINATION_EXHAUSTED",
+        message:
+          "Available Instagram comment pages ended; hidden comments or replies may still be missing.",
+      },
     ];
   }
   switch (collection.state) {
@@ -733,7 +771,7 @@ interface CollectionAccumulator {
   pages: number;
   itemsObserved: number;
   billingQuantity: number;
-  creditsCharged: number;
+  creditsCharged: number | null;
   reportedTotal?: number;
   nextInput?: SocialCollectionNextInput;
   bufferedItems?: unknown[];
@@ -788,7 +826,10 @@ function appendCollectionPage(
   accumulator.pages += 1;
   accumulator.itemsObserved += metadata.itemsReturned;
   accumulator.billingQuantity += response.billingQuantity;
-  accumulator.creditsCharged += response.creditsCharged;
+  accumulator.creditsCharged =
+    accumulator.creditsCharged === null || response.creditsCharged === null
+      ? null
+      : accumulator.creditsCharged + response.creditsCharged;
   accumulator.reportedTotal =
     metadata.reportedTotal ?? accumulator.reportedTotal;
   return { context: page.context, returnedItems };
@@ -846,6 +887,21 @@ function collectionOutput(
       };
 }
 
+function terminalCollectionStatus(
+  metadata: SocialKitCollection,
+  requestSatisfied: boolean,
+  sourceComplete: boolean,
+): SocialStatus {
+  if (
+    metadata.state === "provider_limited" &&
+    metadata.providerOutcome &&
+    metadata.providerOutcome.collectionStatus !== "exhausted"
+  ) {
+    return "partial";
+  }
+  return requestSatisfied || sourceComplete ? "complete" : "partial";
+}
+
 function terminalCollectionOutput(
   intent: SocialIntent,
   requestedItems: number,
@@ -886,11 +942,14 @@ function terminalCollectionOutput(
           callerLimited: collectionHasTail(accumulator),
         }
       : {}),
+    ...(metadata.providerOutcome
+      ? { providerOutcome: metadata.providerOutcome }
+      : {}),
   };
   return collectionOutput(
     intent,
     accumulator,
-    requestSatisfied || sourceComplete ? "complete" : "partial",
+    terminalCollectionStatus(metadata, requestSatisfied, sourceComplete),
     collection,
     {
       category: "request",
@@ -905,7 +964,8 @@ function collectionHasTail(accumulator: CollectionAccumulator): boolean {
     return accumulator.bufferedItems.length > 0;
   return (
     accumulator.itemsObserved > accumulator.itemsReturned ||
-    (accumulator.reportedTotal !== undefined &&
+    (accumulator.request.tool !== "instagram_comments" &&
+      accumulator.reportedTotal !== undefined &&
       accumulator.reportedTotal > accumulator.itemsReturned)
   );
 }
@@ -1025,7 +1085,9 @@ async function finishCollectionOutput(
     previous.itemsReturned + accumulator.itemsReturned,
     previous.itemsObserved + accumulator.itemsObserved,
     previous.billingQuantity + accumulator.billingQuantity,
-    previous.creditsCharged + accumulator.creditsCharged,
+    previous.creditsCharged === null || accumulator.creditsCharged === null
+      ? null
+      : previous.creditsCharged + accumulator.creditsCharged,
   );
   const saved: SavedCollection = {
     ...checkpoint.saved,

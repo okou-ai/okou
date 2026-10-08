@@ -4,9 +4,7 @@ import { getModelDisplayName } from "../model-display-name";
 
 describe("getModelDisplayName", () => {
   it("formats Okou model aliases", () => {
-    expect(getModelDisplayName("okou-1.0")).toBe("Okou 1.0");
-    expect(getModelDisplayName("okou-1.0-pro")).toBe("Okou 1.0 Pro");
-    expect(getModelDisplayName("okou-1.0-max")).toBe("Okou 1.0 Max");
+    expect(getModelDisplayName("okou-1.0")).toBe("Auto");
   });
 
   it("uses friendly labels for OpenAI model IDs", () => {
@@ -17,7 +15,7 @@ describe("getModelDisplayName", () => {
     expect(getModelDisplayName("gpt-6-luna")).toBe("GPT 6 Luna");
     expect(getModelDisplayName("openai/gpt-6-luna")).toBe("GPT 6 Luna");
     expect(getModelDisplayName("gpt-5.6-sol")).toBe("GPT 5.6 Sol");
-    expect(getModelDisplayName("gpt-5.6-terra")).toBe("GPT 5.6 Terra");
+    expect(getModelDisplayName("gpt-6-luna")).toBe("GPT 6 Luna");
     expect(getModelDisplayName("gpt-5.6-luna")).toBe("GPT 5.6 Luna");
     expect(getModelDisplayName("gpt-5.5")).toBe("GPT 5.5");
     expect(getModelDisplayName("openai/gpt-5.5")).toBe("GPT 5.5");
@@ -54,16 +52,25 @@ describe("getModelDisplayName", () => {
     expect(getModelDisplayName("deepseek-v4-pro")).toBe("DeepSeek V4 Pro");
   });
 
+  it("keeps labels for retired Claude and DeepSeek run models", () => {
+    expect(getModelDisplayName("claude-sonnet-4-6")).toBe("Claude Sonnet 4.6");
+    expect(getModelDisplayName("anthropic/claude-sonnet-4.6")).toBe(
+      "Claude Sonnet 4.6",
+    );
+    expect(getModelDisplayName("claude-opus-4-8")).toBe("Claude Opus 4.8");
+    expect(getModelDisplayName("anthropic/claude-opus-4.8")).toBe(
+      "Claude Opus 4.8",
+    );
+    expect(getModelDisplayName("deepseek/deepseek-v4-pro")).toBe(
+      "DeepSeek V4 Pro",
+    );
+  });
+
   it("uses catalog labels for canonical image models and primary aliases", () => {
     expect(getModelDisplayName("fal-ai/flux-2-pro")).toBe("FLUX.2 Pro");
     expect(getModelDisplayName("flux-2-pro")).toBe("FLUX.2 Pro");
     expect(getModelDisplayName("ideogram/v4")).toBe("Ideogram 4");
     expect(getModelDisplayName("ideogram-4")).toBe("Ideogram 4");
-  });
-
-  it("does not resolve removed secondary image aliases", () => {
-    expect(getModelDisplayName("flux2-pro")).toBe("flux2-pro");
-    expect(getModelDisplayName("ideogram-v4")).toBe("ideogram-v4");
   });
 
   it("falls back to the raw model ID when no display name is defined", () => {

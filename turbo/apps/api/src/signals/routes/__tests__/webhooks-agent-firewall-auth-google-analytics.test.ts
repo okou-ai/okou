@@ -2,44 +2,51 @@ import { randomUUID } from "node:crypto";
 
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createPublicFirewallFixture,
+  type PublicFirewallFixture,
+} from "./helpers/public-firewall-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-async function setupAnalyticsFirewall() {
+async function setupAnalyticsFirewall(publicFixture: PublicFirewallFixture) {
   const bdd = createBddApi(context);
   const fw = createFirewallApi(context);
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
-  const actor = bdd.user();
+  const actor = publicFixture.actor;
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
+  const runnerGroup = runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  await fw.provisionRunReadyOrg(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await publicFixture.fund();
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Analytics refresh agent",
     description: "Exercises Analytics refresh and reconnect.",
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  publicFixture.registerAgent(agent.agentId);
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve Analytics firewall auth",
-    modelProvider: "anthropic-api-key",
   });
-  const headers = fw.sandboxHeaders(actor, run.runId);
+  publicFixture.registerRun(run.runId);
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
+  publicFixture.registerClaim(run.runId, claim.sandboxToken);
+  const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-client-secret");
@@ -62,6 +69,8 @@ async function setupAnalyticsFirewall() {
       return HttpResponse.json({ id: identity, name: identity, email: null });
     }),
   );
+  const ownedAccountIds =
+    publicFixture.registerBuiltinConnector("google-analytics");
 
   async function connect(
     code: string,
@@ -93,6 +102,7 @@ async function setupAnalyticsFirewall() {
     if (!connected) {
       throw new Error("Expected the authorized Analytics account");
     }
+    ownedAccountIds.add(connected.id);
     return connected;
   }
 
@@ -127,188 +137,163 @@ describe("Google Analytics quiet refresh recovery", () => {
     { subtype: undefined, reason: "authorization_expired_or_revoked" },
     { subtype: "invalid_rapt", reason: "provider_session_expired" },
   ])(
-    "retries $reason quietly and recovers the exact account",
+    "retries $reason and recovers the exact account",
     async ({ subtype, reason }) => {
-      const analytics = await setupAnalyticsFirewall();
-      const siblingCode = randomUUID();
-      const sibling = await analytics.connect(siblingCode, { intent: "add" });
-      const started = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve(undefined);
-        }
-      });
-      let refreshCalls = 0;
-      server.use(
-        http.post(GOOGLE_TOKEN_URL, async ({ request }) => {
-          const body = new URLSearchParams(await request.clone().text());
-          if (body.get("grant_type") !== "refresh_token") {
-            return;
-          }
-          expect(body.get("refresh_token")).toBe(
-            `analytics-refresh-${analytics.code}`,
-          );
-          refreshCalls += 1;
-          if (!started.settled()) {
-            started.resolve(undefined);
-          }
-          await release.promise;
-          return HttpResponse.json(
-            {
-              error: "invalid_grant",
-              ...(subtype ? { error_subtype: subtype } : {}),
-            },
-            { status: 400 },
-          );
-        }),
-      );
-      context.mocks.sentry.captureException.mockClear();
+      const publicFixture = createPublicFirewallFixture(context);
+      await publicFixture.run(async () => {
+        const analytics = await setupAnalyticsFirewall(publicFixture);
+        const siblingCode = randomUUID();
+        const sibling = await analytics.connect(siblingCode, { intent: "add" });
+        let refreshCalls = 0;
+        server.use(
+          http.post(GOOGLE_TOKEN_URL, async ({ request }) => {
+            const body = new URLSearchParams(await request.clone().text());
+            if (body.get("grant_type") !== "refresh_token") {
+              return;
+            }
+            expect(body.get("refresh_token")).toBe(
+              `analytics-refresh-${analytics.code}`,
+            );
+            refreshCalls += 1;
+            return HttpResponse.json(
+              {
+                error: "invalid_grant",
+                ...(subtype ? { error_subtype: subtype } : {}),
+              },
+              { status: 400 },
+            );
+          }),
+        );
 
-      const first = analytics.request(analytics.account.id, true);
-      await started.promise;
-      const concurrent = analytics.request(analytics.account.id, true);
-      release.resolve(undefined);
-      const [firstFailure, concurrentFailure] = await Promise.all([
-        first,
-        concurrent,
-      ]);
-      // Existing request coalescing can reuse the first failure without its reason.
-      expect(concurrentFailure.status).toBe(502);
-      expect(concurrentFailure.body).toMatchObject({
-        error: {
-          code: "TOKEN_REFRESH_FAILED",
-          connectors: ["google-analytics"],
-        },
-      });
-      const callsBeforeRetries = refreshCalls;
-      const responses = [firstFailure];
-      await analytics.connectors.setDefaultBuiltinConnectorAccount(
-        analytics.actor,
-        "google-analytics",
-        sibling.id,
-      );
-      responses.push(await analytics.request(analytics.account.id, false));
-      responses.push(await analytics.request(analytics.account.id, true));
-      for (const response of responses) {
-        expect(response.status).toBe(502);
-        expect(response.body).toMatchObject({
-          error: {
-            code: "TOKEN_REFRESH_FAILED",
-            failureReason: "reconnect_required",
-            connectors: ["google-analytics"],
+        const responses = [await analytics.request(analytics.account.id, true)];
+        const callsBeforeRetries = refreshCalls;
+        await analytics.connectors.setDefaultBuiltinConnectorAccount(
+          analytics.actor,
+          "google-analytics",
+          sibling.id,
+        );
+        responses.push(await analytics.request(analytics.account.id, false));
+        responses.push(await analytics.request(analytics.account.id, true));
+        for (const response of responses) {
+          expect(response.status).toBe(502);
+          expect(response.body).toMatchObject({
+            error: {
+              code: "TOKEN_REFRESH_FAILED",
+              failureReason: "reconnect_required",
+              connectors: ["google-analytics"],
+            },
+          });
+        }
+        expect(refreshCalls).toBe(callsBeforeRetries + 2);
+        const accounts =
+          await analytics.connectors.listBuiltinConnectorAccounts(
+            analytics.actor,
+            "google-analytics",
+          );
+        expect(accounts).toStrictEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: analytics.account.id,
+              connectionStatus: "reconnect-required",
+              reconnectReason: reason,
+            }),
+            expect.objectContaining({
+              id: sibling.id,
+              connectionStatus: "connected",
+              reconnectReason: null,
+            }),
+          ]),
+        );
+        const siblingAuth = await analytics.request(sibling.id, false);
+        expect(siblingAuth.status).toBe(200);
+        expect(siblingAuth.body).toMatchObject({
+          headers: { Authorization: `Bearer analytics-access-${siblingCode}` },
+        });
+        expect(refreshCalls).toBe(callsBeforeRetries + 2);
+
+        // A later request can recover with the same refresh token, without OAuth.
+        server.use(
+          http.post(GOOGLE_TOKEN_URL, async ({ request }) => {
+            const body = new URLSearchParams(await request.text());
+            expect(body.get("refresh_token")).toBe(
+              `analytics-refresh-${analytics.code}`,
+            );
+            return HttpResponse.json({
+              access_token: "analytics-recovered-without-reconnect",
+              expires_in: 3600,
+              token_type: "Bearer",
+            });
+          }),
+        );
+        const retried = await analytics.request(analytics.account.id, false);
+        expect(retried.status).toBe(200);
+        expect(retried.body).toMatchObject({
+          headers: {
+            Authorization: "Bearer analytics-recovered-without-reconnect",
           },
         });
-      }
-      expect(refreshCalls).toBe(callsBeforeRetries + 2);
-      const accounts = await analytics.connectors.listBuiltinConnectorAccounts(
-        analytics.actor,
-        "google-analytics",
-      );
-      expect(accounts).toStrictEqual(
-        expect.arrayContaining([
+        await expect(
+          analytics.connectors.listBuiltinConnectorAccounts(
+            analytics.actor,
+            "google-analytics",
+          ),
+        ).resolves.toContainEqual(
           expect.objectContaining({
             id: analytics.account.id,
-            connectionStatus: "reconnect-required",
-            reconnectReason: reason,
-          }),
-          expect.objectContaining({
-            id: sibling.id,
             connectionStatus: "connected",
             reconnectReason: null,
           }),
-        ]),
-      );
-      const siblingAuth = await analytics.request(sibling.id, false);
-      expect(siblingAuth.status).toBe(200);
-      expect(siblingAuth.body).toMatchObject({
-        headers: { Authorization: `Bearer analytics-access-${siblingCode}` },
-      });
-      expect(refreshCalls).toBe(callsBeforeRetries + 2);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+        );
 
-      // A later request can recover with the same refresh token, without OAuth.
-      server.use(
-        http.post(GOOGLE_TOKEN_URL, async ({ request }) => {
-          const body = new URLSearchParams(await request.text());
-          expect(body.get("refresh_token")).toBe(
-            `analytics-refresh-${analytics.code}`,
-          );
-          return HttpResponse.json({
-            access_token: "analytics-recovered-without-reconnect",
-            expires_in: 3600,
-            token_type: "Bearer",
-          });
-        }),
-      );
-      const retried = await analytics.request(analytics.account.id, false);
-      expect(retried.status).toBe(200);
-      expect(retried.body).toMatchObject({
-        headers: {
-          Authorization: "Bearer analytics-recovered-without-reconnect",
-        },
-      });
-      await expect(
-        analytics.connectors.listBuiltinConnectorAccounts(
-          analytics.actor,
-          "google-analytics",
-        ),
-      ).resolves.toContainEqual(
-        expect.objectContaining({
+        // A real OAuth callback must clear the persisted reconnect state.
+        server.use(
+          http.post(GOOGLE_TOKEN_URL, () => {
+            return HttpResponse.json({
+              access_token: "analytics-reconnected",
+              refresh_token: "analytics-new-refresh",
+              expires_in: 3600,
+              token_type: "Bearer",
+              scope: "https://www.googleapis.com/auth/analytics.readonly",
+            });
+          }),
+          http.get("https://www.googleapis.com/oauth2/v2/userinfo", () => {
+            return HttpResponse.json({
+              id: analytics.account.externalId,
+              name: "Reconnected Analytics user",
+              email: null,
+            });
+          }),
+        );
+        const reconnected = await analytics.connect(analytics.code, {
+          intent: "reconnect",
+          connectionId: analytics.account.id,
+        });
+        expect(reconnected).toMatchObject({
           id: analytics.account.id,
           connectionStatus: "connected",
           reconnectReason: null,
-        }),
-      );
-
-      // A real OAuth callback must clear the persisted reconnect state.
-      server.use(
-        http.post(GOOGLE_TOKEN_URL, () => {
-          return HttpResponse.json({
-            access_token: "analytics-reconnected",
-            refresh_token: "analytics-new-refresh",
-            expires_in: 3600,
-            token_type: "Bearer",
-            scope: "https://www.googleapis.com/auth/analytics.readonly",
-          });
-        }),
-        http.get("https://www.googleapis.com/oauth2/v2/userinfo", () => {
-          return HttpResponse.json({
-            id: analytics.account.externalId,
-            name: "Reconnected Analytics user",
-            email: null,
-          });
-        }),
-      );
-      const reconnected = await analytics.connect(analytics.code, {
-        intent: "reconnect",
-        connectionId: analytics.account.id,
-      });
-      expect(reconnected).toMatchObject({
-        id: analytics.account.id,
-        connectionStatus: "connected",
-        reconnectReason: null,
-      });
-      const current = await analytics.request(analytics.account.id, false);
-      expect(current.status).toBe(200);
-      expect(current.body).toMatchObject({
-        headers: { Authorization: "Bearer analytics-reconnected" },
-      });
-      server.use(
-        http.post(GOOGLE_TOKEN_URL, async ({ request }) => {
-          const body = new URLSearchParams(await request.text());
-          expect(body.get("refresh_token")).toBe("analytics-new-refresh");
-          return HttpResponse.json({
-            access_token: "analytics-refreshed",
-            expires_in: 3600,
-            token_type: "Bearer",
-          });
-        }),
-      );
-      const recovered = await analytics.request(analytics.account.id, true);
-      expect(recovered.status).toBe(200);
-      expect(recovered.body).toMatchObject({
-        headers: { Authorization: "Bearer analytics-refreshed" },
+        });
+        const current = await analytics.request(analytics.account.id, false);
+        expect(current.status).toBe(200);
+        expect(current.body).toMatchObject({
+          headers: { Authorization: "Bearer analytics-reconnected" },
+        });
+        server.use(
+          http.post(GOOGLE_TOKEN_URL, async ({ request }) => {
+            const body = new URLSearchParams(await request.text());
+            expect(body.get("refresh_token")).toBe("analytics-new-refresh");
+            return HttpResponse.json({
+              access_token: "analytics-refreshed",
+              expires_in: 3600,
+              token_type: "Bearer",
+            });
+          }),
+        );
+        const recovered = await analytics.request(analytics.account.id, true);
+        expect(recovered.status).toBe(200);
+        expect(recovered.body).toMatchObject({
+          headers: { Authorization: "Bearer analytics-refreshed" },
+        });
       });
     },
   );
@@ -352,53 +337,57 @@ describe("Google Analytics quiet refresh recovery", () => {
   ])(
     "keeps $name observable and recoverable",
     async ({ status, error, subtype, failureReason }) => {
-      const analytics = await setupAnalyticsFirewall();
-      let refreshCalls = 0;
-      server.use(
-        http.post(GOOGLE_TOKEN_URL, () => {
-          refreshCalls += 1;
-          return HttpResponse.json(
-            { error, ...(subtype ? { error_subtype: subtype } : {}) },
-            { status },
-          );
-        }),
-      );
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const failed = await analytics.request(analytics.account.id, true);
-        expect(failed.status).toBe(502);
-        if (failed.status !== 502) {
-          throw new Error("Expected Analytics refresh failure");
+      const publicFixture = createPublicFirewallFixture(context);
+      await publicFixture.run(async () => {
+        const analytics = await setupAnalyticsFirewall(publicFixture);
+        let refreshCalls = 0;
+        server.use(
+          http.post(GOOGLE_TOKEN_URL, () => {
+            refreshCalls += 1;
+            return HttpResponse.json(
+              { error, ...(subtype ? { error_subtype: subtype } : {}) },
+              { status },
+            );
+          }),
+        );
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const failed = await analytics.request(analytics.account.id, true);
+          expect(failed.status).toBe(502);
+          if (failed.status !== 502) {
+            throw new Error("Expected Analytics refresh failure");
+          }
+          expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
+          expect(failed.body.error.failureReason).toBe(failureReason);
         }
-        expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-        expect(failed.body.error.failureReason).toBe(failureReason);
-      }
-      expect(refreshCalls).toBe(2);
-      const accounts = await analytics.connectors.listBuiltinConnectorAccounts(
-        analytics.actor,
-        "google-analytics",
-      );
-      expect(accounts).toContainEqual(
-        expect.objectContaining({
-          id: analytics.account.id,
-          reconnectReason:
-            error === "invalid_grant" && !subtype
-              ? "authorization_expired_or_revoked"
-              : null,
-        }),
-      );
-      server.use(
-        http.post(GOOGLE_TOKEN_URL, () => {
-          return HttpResponse.json({
-            access_token: "analytics-recovered",
-            expires_in: 3600,
-            token_type: "Bearer",
-          });
-        }),
-      );
-      const recovered = await analytics.request(analytics.account.id, true);
-      expect(recovered.status).toBe(200);
-      expect(recovered.body).toMatchObject({
-        headers: { Authorization: "Bearer analytics-recovered" },
+        expect(refreshCalls).toBe(2);
+        const accounts =
+          await analytics.connectors.listBuiltinConnectorAccounts(
+            analytics.actor,
+            "google-analytics",
+          );
+        expect(accounts).toContainEqual(
+          expect.objectContaining({
+            id: analytics.account.id,
+            reconnectReason:
+              error === "invalid_grant" && !subtype
+                ? "authorization_expired_or_revoked"
+                : null,
+          }),
+        );
+        server.use(
+          http.post(GOOGLE_TOKEN_URL, () => {
+            return HttpResponse.json({
+              access_token: "analytics-recovered",
+              expires_in: 3600,
+              token_type: "Bearer",
+            });
+          }),
+        );
+        const recovered = await analytics.request(analytics.account.id, true);
+        expect(recovered.status).toBe(200);
+        expect(recovered.body).toMatchObject({
+          headers: { Authorization: "Bearer analytics-recovered" },
+        });
       });
     },
   );

@@ -1,12 +1,11 @@
 import chalk from "chalk";
 import { Command } from "commander";
 
-import { listConnectorCatalogStatus } from "../../lib/api/domains/connectors";
+import { getConnectorCatalogStatus } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import { connectorActionUrl } from "../connector/action-url";
 import { resolveAgentContext } from "../connector/agent-context";
-import { findConnectorStatusItem } from "../connector/public-catalog";
 import {
   isRunBoundConnectorContext,
   resolveRunConnectorAccountView,
@@ -123,15 +122,14 @@ export const connectCommand = new Command()
         return;
       }
       const agentId = currentAgentId();
-      const [{ connectors }, agent, origin] = await Promise.all([
-        listConnectorCatalogStatus(),
+      const [connector, agent, origin] = await Promise.all([
+        getConnectorCatalogStatus(connectorSlug),
         resolveAgentContext(agentId),
         getPlatformOrigin(),
       ]);
       if (!agent) {
         throw new Error("Agent context could not be loaded");
       }
-      const connector = findConnectorStatusItem(connectors, connectorSlug);
       if (!connector) {
         throw new Error(`${provider} is not available`);
       }

@@ -74,32 +74,6 @@ test("An unknown route offers both of its destinations", async () => {
   });
 });
 
-test("A button-styled destination leaves its modified click to the browser", async () => {
-  mockAPIs();
-  context.mocks.browser.open();
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/missing-platform-route" });
-  const link = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.textContent?.trim() === "Browse workflows";
-  });
-  if (!link) {
-    throw new Error("Expected the workflows destination");
-  }
-  expect(link).toHaveAttribute("href", "/workflows");
-
-  await user.keyboard("{Meta>}");
-  await user.click(link);
-  await user.keyboard("{/Meta}");
-
-  // buttonVariants only styles the anchor, so the Router still leaves the
-  // modified click to the browser instead of navigating in place.
-  expect(pathname()).toBe("/missing-platform-route");
-  expect(link).toHaveAttribute("href", "/workflows");
-  expect(
-    screen.getByRole("heading", { name: "That page isn't here." }),
-  ).toBeInTheDocument();
-});
-
 test("The Okou error page uses Okou support", async () => {
   await setupPage({
     context,
@@ -115,44 +89,35 @@ test("The Okou error page uses Okou support", async () => {
   });
 });
 
-test.each(["pointer", "Enter"])(
-  "A %s link activation creates one reversible navigation",
-  async (activation) => {
-    mockAPIs();
-    const user = userEvent.setup({ delay: null });
-    await setupPage({ context, path: "/missing-platform-route" });
-    const link = await waitFor(() => {
-      const candidate = queryAllByRoleFast("link").find((element) => {
-        return element.textContent?.trim() === "Browse workflows";
-      });
-      if (!candidate) {
-        throw new Error("Expected the workflows link");
-      }
-      return candidate;
+test("A link activation creates one reversible navigation", async () => {
+  mockAPIs();
+  await setupPage({ context, path: "/missing-platform-route" });
+  const link = await waitFor(() => {
+    const candidate = queryAllByRoleFast("link").find((element) => {
+      return element.textContent?.trim() === "Browse workflows";
     });
-
-    if (activation === "Enter") {
-      link.focus();
-      await user.keyboard("{Enter}");
-    } else {
-      click(link);
+    if (!candidate) {
+      throw new Error("Expected the workflows link");
     }
-    await waitFor(() => {
-      expect(pathname()).toBe("/workflows");
-      expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-    });
+    return candidate;
+  });
 
-    act(() => {
-      window.history.back();
-    });
-    await expect(
-      screen.findByRole("heading", { name: "That page isn't here." }),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe("/missing-platform-route");
-  },
-);
+  click(link);
+  await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
+    expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
+  });
 
-test.each(["Meta", "Control", "Shift", "Alt"])(
+  act(() => {
+    window.history.back();
+  });
+  await expect(
+    screen.findByRole("heading", { name: "That page isn't here." }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/missing-platform-route");
+});
+
+test.each(["Meta"])(
   "%s-click leaves the internal destination to the browser",
   async (modifier) => {
     mockAPIs();

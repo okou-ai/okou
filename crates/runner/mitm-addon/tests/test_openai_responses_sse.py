@@ -6,24 +6,6 @@ import usage.openai_responses as openai_responses
 from usage import (
     create_openai_responses_sse_usage_extractor,
 )
-from usage.model_http import ModelHttpFailureEvidence
-
-
-class _IgnoringDeltaFailureObserver:
-    def __init__(self) -> None:
-        self.observed: list[ModelHttpFailureEvidence] = []
-
-    def needs_sse_event(self, event_name: str | None) -> bool:
-        return event_name != "response.output_text.delta"
-
-    def observe(self, evidence: ModelHttpFailureEvidence) -> None:
-        self.observed.append(evidence)
-
-    def observe_json(self, evidence: ModelHttpFailureEvidence) -> None:
-        self.observed.append(evidence)
-
-    def finish(self) -> None:
-        return None
 
 
 class TestOpenAIResponsesSseUsageExtractor:
@@ -94,31 +76,23 @@ class TestOpenAIResponsesSseUsageExtractor:
             "tokens.output": 0,
         }
 
-    def test_discarded_failure_event_emits_invalid_evidence_and_recovers(self):
-        failure_observer = _IgnoringDeltaFailureObserver()
-        parse, usage = create_openai_responses_sse_usage_extractor(
-            failure_observer=failure_observer
-        )
+    def test_discarded_terminal_event_recovers_for_next_event(self):
+        parse, usage = create_openai_responses_sse_usage_extractor()
 
         parse(
             b"event: response.failed\n"
             b'data: {"type":"response.failed","response":{\n' + b"x" * 4097 + b"\n\n"
             b"event: response.failed\n"
-            b'data: {"type":"response.failed","response":{'
-            b'"error":{"code":"server_error"}}}\n\n'
+            b'data: {"type":"response.failed","response":{"id":"resp_failed",'
+            b'"model":"gpt-5.5","usage":{"input_tokens":12,"output_tokens":0}}}\n\n'
         )
 
-        assert usage == {}
-        assert failure_observer.observed == [
-            ModelHttpFailureEvidence(event_name="response.failed"),
-            ModelHttpFailureEvidence(
-                event_name="response.failed",
-                payload_type="response.failed",
-                failure_codes=("server_error",),
-                has_error=True,
-                is_valid=True,
-            ),
-        ]
+        assert usage == {
+            "message_id": "resp_failed",
+            "model": "gpt-5.5",
+            "tokens.input": 12,
+            "tokens.output": 0,
+        }
 
     @pytest.mark.parametrize(
         ("event_type", "event_prefix"),
@@ -679,12 +653,11 @@ class TestOpenAIResponsesSseUsageExtractor:
         assert probed_prefixes == [payload]
 
     @pytest.mark.parametrize(
-        ("event_prefix", "payload", "expected_evidence"),
+        ("event_prefix", "payload"),
         [
             pytest.param(
                 b"",
                 b'{"type":"response.output_text.delta","delta":"hello"}',
-                [],
                 id="eventless-event-end",
             ),
             pytest.param(
@@ -692,19 +665,12 @@ class TestOpenAIResponsesSseUsageExtractor:
                 b'{"type":"response.output_text.delta","padding":"'
                 + b"x" * openai_responses._RESPONSES_EVENT_PREFILTER_MAX_BYTES
                 + b'"}',
-                [
-                    ModelHttpFailureEvidence(
-                        event_name="vendor.delta",
-                        payload_type="response.output_text.delta",
-                        is_valid=True,
-                    ),
-                ],
                 id="named-prefix-cap",
             ),
         ],
     )
-    def test_failure_filter_probes_known_non_usage_prefix_once(
-        self, event_prefix, payload, expected_evidence, monkeypatch
+    def test_known_non_usage_prefix_is_probed_once_and_discarded(
+        self, event_prefix, payload, monkeypatch
     ):
         real_probe = openai_responses._probe_responses_event_type
         probed_prefixes: list[bytes] = []
@@ -714,15 +680,11 @@ class TestOpenAIResponsesSseUsageExtractor:
             return real_probe(body)
 
         monkeypatch.setattr(openai_responses, "_probe_responses_event_type", track_probe)
-        failure_observer = _IgnoringDeltaFailureObserver()
-        parse, usage = create_openai_responses_sse_usage_extractor(
-            failure_observer=failure_observer
-        )
+        parse, usage = create_openai_responses_sse_usage_extractor()
         parse(event_prefix + b"data: " + payload + b"\n\n")
 
         assert probed_prefixes == [payload[: openai_responses._RESPONSES_EVENT_PREFILTER_MAX_BYTES]]
         assert usage == {}
-        assert failure_observer.observed == expected_evidence
 
     def test_eventless_incomplete_terminal_reports_parse_error(self):
         parse_errors: list[tuple[str, str]] = []

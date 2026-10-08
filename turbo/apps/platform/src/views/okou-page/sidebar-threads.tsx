@@ -1,4 +1,3 @@
-import type { MouseEvent } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -20,6 +19,8 @@ import {
   PinOff,
   Archive,
   ArchiveRestore,
+  BellOff,
+  Bell,
 } from "lucide-react";
 import {
   ChatThreadStateText,
@@ -79,11 +80,12 @@ import {
 } from "../../signals/agent-chat.ts";
 import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
+import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
 import {
-  setChatThreadArchivedFilter$,
-  setChatThreadUnreadFilter$,
-} from "../../signals/okou-page/chat-thread-filter.ts";
+  selectChatThreadFilter$,
+  type ChatThreadFilter,
+} from "../../signals/okou-page/chat-thread-filter-selection.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
@@ -152,6 +154,9 @@ function SessionStateIndicator({
   if (state === "running") {
     return <RunningIndicator />;
   }
+  if (state === "muted") {
+    return <BellOff size={16} className="opacity-35" />;
+  }
   if (state === "unread") {
     return <span className="h-2 w-2 rounded-full bg-sky-600" />;
   }
@@ -181,11 +186,6 @@ function ChatThreadListPaneIcon({
       <span className={pane === "sidebar" ? "bg-current" : "bg-transparent"} />
     </span>
   );
-}
-
-function preventChatThreadMenuNavigation(e: MouseEvent) {
-  e.preventDefault();
-  e.stopPropagation();
 }
 
 function ChatThreadMarkUnreadMenuItem({
@@ -230,6 +230,10 @@ function ChatThreadArchiveMenuItem({
 
   return (
     <DropdownMenuItem
+      aria-label={label}
+      aria-keyshortcuts={
+        GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.ariaKeyShortcuts
+      }
       onClick={() => {
         detach(toggleArchived(pageSignal), Reason.DomCallback);
       }}
@@ -238,6 +242,47 @@ function ChatThreadArchiveMenuItem({
         <ArchiveRestore size={16} className="mr-2" />
       ) : (
         <Archive size={16} className="mr-2" />
+      )}
+      {label}
+      <ChatThreadMenuShortcut
+        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.binding}
+      />
+    </DropdownMenuItem>
+  );
+}
+
+function ChatThreadMuteMenuItem({
+  signals,
+}: {
+  signals: SidebarChatThreadItemSignals;
+}) {
+  const { t } = useTranslation();
+  const muted = useGet(signals.muted$);
+  const toggleMuted = useSet(signals.toggleMuted$);
+  const pageSignal = useGet(pageSignal$);
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
+  if (!enabled) {
+    return null;
+  }
+  const label = muted
+    ? t(($) => {
+        return $.chat.sidebar.unmute;
+      })
+    : t(($) => {
+        return $.chat.sidebar.mute;
+      });
+  return (
+    <DropdownMenuItem
+      aria-label={label}
+      onClick={() => {
+        detach(toggleMuted(pageSignal), Reason.DomCallback);
+      }}
+    >
+      {muted ? (
+        <Bell size={16} className="mr-2" />
+      ) : (
+        <BellOff size={16} className="mr-2" />
       )}
       {label}
     </DropdownMenuItem>
@@ -306,8 +351,10 @@ function ChatThreadPinMenuItems({
 
 function ChatThreadMenu({
   signals,
+  touch = false,
 }: {
   signals: SidebarChatThreadItemSignals;
+  touch?: boolean;
 }) {
   const { t } = useTranslation();
   const isPinned = useGet(signals.pinned$);
@@ -334,10 +381,9 @@ function ChatThreadMenu({
           render={
             <Button
               type="button"
-              onClick={preventChatThreadMenuNavigation}
               variant="quiet"
               size="icon-2xs"
-              className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${
+              className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
                 hasRestingIndicator
                   ? ""
                   : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
@@ -396,11 +442,12 @@ function ChatThreadMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className="w-56"
+          className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
           data-chat-thread-menu-thread-id={signals.threadId}
         >
           <ChatThreadPinMenuItems signals={signals} />
           <ChatThreadMarkUnreadMenuItem signals={signals} />
+          <ChatThreadMuteMenuItem signals={signals} />
           <ChatThreadArchiveMenuSection signals={signals} />
           <DropdownMenuItem
             aria-label={renameLabel}
@@ -484,9 +531,11 @@ function ChatThreadItemTitle({ title }: { title: string }) {
 function ChatThreadItemLink({
   signals,
   shortcutNumber,
+  touch,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
+  touch: boolean;
 }) {
   const { t } = useTranslation();
   const title = useGet(signals.title$);
@@ -496,8 +545,6 @@ function ChatThreadItemLink({
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
   const isPinned = useGet(signals.pinned$);
   const select = useSet(signals.select$);
-  const openRename = useSet(signals.openRename$);
-  const pageSignal = useGet(pageSignal$);
 
   return (
     <Link
@@ -513,11 +560,7 @@ function ChatThreadItemLink({
           e.preventDefault();
         }
       }}
-      onDoubleClick={(e) => {
-        e.preventDefault();
-        detach(openRename(pageSignal), Reason.DomCallback);
-      }}
-      className={`col-span-2 col-start-1 row-start-1 grid h-8 grid-cols-subgrid items-center rounded-lg pl-2 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+      className={`col-span-2 col-start-1 row-start-1 grid grid-cols-subgrid items-center rounded-lg text-left leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${touch ? "h-14 pl-3 text-base" : "h-8 pl-2 text-sm"} ${
         isHighlighted
           ? "bg-state-selected text-sidebar-foreground font-medium"
           : isUnread
@@ -525,7 +568,12 @@ function ChatThreadItemLink({
             : "text-sidebar-foreground hover:bg-state-hover"
       }`}
     >
-      <span className="flex min-w-0 items-center gap-2 pr-8">
+      <span
+        className={cn(
+          "flex min-w-0 items-center gap-2",
+          touch ? "pr-12" : "pr-8",
+        )}
+      >
         <ChatThreadListPaneIcon signals={signals} />
         <ChatThreadItemTitle
           title={
@@ -546,18 +594,29 @@ function ChatThreadItemLink({
   );
 }
 
-function ChatThreadItem({
+export function ChatThreadItem({
   signals,
   shortcutNumber,
+  touch = false,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
+  touch?: boolean;
 }) {
   return (
     <div className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center">
-      <ChatThreadItemLink signals={signals} shortcutNumber={shortcutNumber} />
-      <div className="pointer-events-none relative col-start-1 row-start-1 flex h-8 w-8 items-center justify-center justify-self-end">
-        <ChatThreadMenu signals={signals} />
+      <ChatThreadItemLink
+        signals={signals}
+        shortcutNumber={shortcutNumber}
+        touch={touch}
+      />
+      <div
+        className={cn(
+          "pointer-events-none relative col-start-1 row-start-1 flex items-center justify-center justify-self-end",
+          touch ? "h-14 w-12" : "h-8 w-8",
+        )}
+      >
+        <ChatThreadMenu signals={signals} touch={touch} />
       </div>
     </div>
   );
@@ -750,9 +809,18 @@ export function ChatThreadDialogs() {
   );
 }
 
+function useSelectChatThreadFilter() {
+  const selectFilter = useSet(selectChatThreadFilter$);
+  const pageSignal = useGet(pageSignal$);
+
+  return (filter: ChatThreadFilter) => {
+    detach(selectFilter(filter, pageSignal), Reason.DomCallback);
+  };
+}
+
 function ShowAllChatsRow() {
   const { t } = useTranslation();
-  const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
+  const selectFilter = useSelectChatThreadFilter();
 
   return (
     <div data-testid="sidebar-chat-show-all-row" className="pb-1">
@@ -762,7 +830,7 @@ function ShowAllChatsRow() {
         size="sm"
         className="w-full justify-start px-2 font-normal leading-5 focus-visible:ring-inset focus-visible:ring-offset-0"
         onClick={() => {
-          setUnreadFilter(false);
+          selectFilter("all");
         }}
       >
         {t(($) => {
@@ -835,7 +903,7 @@ function VirtualizedChatThreads({
 
 function ArchivedChatThreadsEmptyState() {
   const { t } = useTranslation();
-  const setArchivedFilter = useSet(setChatThreadArchivedFilter$);
+  const selectFilter = useSelectChatThreadFilter();
 
   return (
     <div className="flex flex-col items-center px-2 py-6 text-center">
@@ -860,7 +928,7 @@ function ArchivedChatThreadsEmptyState() {
         variant="link"
         className="mt-1 h-auto p-0 text-xs"
         onClick={() => {
-          setArchivedFilter();
+          selectFilter("archived");
         }}
       >
         {t(($) => {
@@ -880,12 +948,25 @@ function ChatThreads({
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archivedOnly = useGet(chatThreadOnlyArchived$);
+  const mutedOnly = useGet(chatThreadOnlyMuted$);
   const threadCount = useGet(listSignals.count$);
   const hasHiddenArchivedThreads = useGet(
     listSignals.hasHiddenArchivedThreads$,
   );
 
   if (threadCount === 0) {
+    if (mutedOnly) {
+      return (
+        <div className="w-full">
+          <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
+            {t(($) => {
+              return $.chat.sidebar.noMuted;
+            })}
+          </p>
+          <ShowAllChatsRow />
+        </div>
+      );
+    }
     if (archiveEnabled && archivedOnly) {
       return (
         <div className="w-full">
@@ -966,8 +1047,10 @@ function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
   );
   const pageSignal = useGet(pageSignal$);
   const markingRead = markReadLoadable.state === "loading";
-  const visible =
-    showMarkAllRead &&
+  const visible = showMarkAllRead && currentChatAgentId !== null;
+  // Keep the item mounted and toggle availability so the menu layout does
+  // not jump when the unread state changes.
+  const hasUnread =
     currentChatAgentId !== null &&
     (unreadAgentIds?.has(currentChatAgentId) ?? false);
 
@@ -982,7 +1065,7 @@ function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
     );
   }
 
-  return { disabled: markingRead, onSelect, visible };
+  return { disabled: markingRead || !hasUnread, onSelect, visible };
 }
 
 function MarkAllReadMenuItem({
@@ -1008,8 +1091,10 @@ function ChatThreadFilterMenuItems() {
   const { t } = useTranslation();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
-  const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
-  const setArchivedFilter = useSet(setChatThreadArchivedFilter$);
+  const mutedOnly = useGet(chatThreadOnlyMuted$);
+  const muteEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
+  const selectFilter = useSelectChatThreadFilter();
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
 
@@ -1017,20 +1102,24 @@ function ChatThreadFilterMenuItems() {
     <>
       <DropdownMenuItem
         onClick={() => {
-          setUnreadFilter(false);
+          selectFilter("all");
         }}
       >
         <Check
           size={16}
-          className={`mr-2 ${unreadOnly || archivedOnly ? "invisible" : ""}`}
+          className={`mr-2 ${unreadOnly || archivedOnly || mutedOnly ? "invisible" : ""}`}
         />
-        {t(($) => {
-          return $.chat.sidebar.allChats;
-        })}
+        {archiveEnabled
+          ? t(($) => {
+              return $.chat.sidebar.inbox;
+            })
+          : t(($) => {
+              return $.chat.sidebar.allChats;
+            })}
       </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
-          setUnreadFilter(true);
+          selectFilter("unread");
         }}
         aria-keyshortcuts={
           GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
@@ -1047,7 +1136,7 @@ function ChatThreadFilterMenuItems() {
       {archiveEnabled ? (
         <DropdownMenuItem
           onClick={() => {
-            setArchivedFilter();
+            selectFilter("archived");
           }}
         >
           <Check
@@ -1059,14 +1148,28 @@ function ChatThreadFilterMenuItems() {
           })}
         </DropdownMenuItem>
       ) : null}
+      {muteEnabled ? (
+        <DropdownMenuItem
+          onClick={() => {
+            selectFilter("muted");
+          }}
+        >
+          <Check size={16} className={`mr-2 ${mutedOnly ? "" : "invisible"}`} />
+          {t(($) => {
+            return $.chat.sidebar.muted;
+          })}
+        </DropdownMenuItem>
+      ) : null}
     </>
   );
 }
 
-function ChatThreadsListMenu({
+export function ChatThreadsListMenu({
   showMarkAllRead,
+  touch = false,
 }: {
   showMarkAllRead: boolean;
+  touch?: boolean;
 }) {
   const { t } = useTranslation();
   const markAllReadAction = useMarkAllReadMenuAction(showMarkAllRead);
@@ -1080,7 +1183,7 @@ function ChatThreadsListMenu({
               variant="quiet"
               size="icon-sm"
               iconSize="md"
-              className="shrink-0"
+              className={cn("shrink-0", touch && "min-h-11 min-w-11")}
               aria-label={t(($) => {
                 return $.chat.sidebar.openListMenu;
               })}
@@ -1089,7 +1192,10 @@ function ChatThreadsListMenu({
         >
           <ChatThreadsListMenuTooltip />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuContent
+          align="end"
+          className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
+        >
           {markAllReadAction.visible ? (
             <>
               <MarkAllReadMenuItem {...markAllReadAction} />

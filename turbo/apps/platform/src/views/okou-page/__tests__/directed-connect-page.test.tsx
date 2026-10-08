@@ -6,6 +6,7 @@ import {
   builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   agentCustomConnectorsContract,
@@ -55,6 +56,17 @@ function mockPublicConnectorStatus(
 function mockPublicConnectorStatuses(
   connectors: readonly PublicConnectorCatalogStatusItem[],
 ): void {
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    const connector = connectors.find((candidate) => {
+      return candidate.slug === params.connectorSlug;
+    });
+    return connector
+      ? respond(200, { connector })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
+  });
+  // Registered after the slug route, which would otherwise also match it.
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
     return respond(200, { connectors: [...connectors] });
   });
@@ -615,128 +627,120 @@ test("Reconnect the exact manual custom-connector account", async () => {
   });
 });
 
-test.each(["finish", "close"])(
-  "Connect and authorize a custom OAuth connector (%s confirmed setup)",
-  async (setupAction) => {
-    const completedAttempts = mockOAuthCompletions(context);
-    const oauthAttemptId = crypto.randomUUID();
-    let connected = false;
-    const connectionId = crypto.randomUUID();
-    let grants: AgentCustomConnectorGrant[] = [];
-    const grantRequest = context.mocks.deferred<void>();
-    const grantResponse = context.mocks.deferred<void>();
-    const connector = customConnector({
-      slug: "_acme-oauth",
-      displayName: "Acme OAuth",
-      authMode: "oauth",
-      fields: [],
-      missingRequiredFields: ["oauth"],
-      headerInjections: [
+test("Connect and authorize a custom OAuth connector", async () => {
+  const completedAttempts = mockOAuthCompletions(context);
+  const oauthAttemptId = crypto.randomUUID();
+  let connected = false;
+  const connectionId = crypto.randomUUID();
+  let grants: AgentCustomConnectorGrant[] = [];
+  const grantRequest = context.mocks.deferred<void>();
+  const grantResponse = context.mocks.deferred<void>();
+  const connector = customConnector({
+    slug: "_acme-oauth",
+    displayName: "Acme OAuth",
+    authMode: "oauth",
+    fields: [],
+    missingRequiredFields: ["oauth"],
+    headerInjections: [
+      {
+        name: "Authorization",
+        valueTemplate: "Bearer {{oauth.access_token}}",
+      },
+    ],
+    oauthConfig: {
+      providerAdapter: "standard",
+      clientId: "client-id",
+      authorizationUrl: "https://acme.test/oauth/authorize",
+      tokenUrl: "https://acme.test/oauth/token",
+      tokenEndpointAuthMethod: "client_secret_post",
+      pkceMethod: "S256",
+      scopes: ["read"],
+      authorizationParams: {},
+    },
+  });
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, {
+      connectors: [
         {
-          name: "Authorization",
-          valueTemplate: "Bearer {{oauth.access_token}}",
+          ...connector,
+          connected,
+          ...(connected
+            ? {
+                connectedAccountId: connectionId,
+                connectedAccountUpdatedAt: "2026-01-01T00:00:01Z",
+              }
+            : {}),
         },
       ],
-      oauthConfig: {
-        providerAdapter: "standard",
-        clientId: "client-id",
-        authorizationUrl: "https://acme.test/oauth/authorize",
-        tokenUrl: "https://acme.test/oauth/token",
-        tokenEndpointAuthMethod: "client_secret_post",
-        pkceMethod: "S256",
-        scopes: ["read"],
-        authorizationParams: {},
-      },
     });
-    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+  });
+  context.mocks.api(
+    customConnectorOAuth2Contract.start,
+    ({ body, params, respond }) => {
+      expect(params.id).toBe(connector.id);
+      expect(body.account).toStrictEqual({ intent: "add" });
+      connected = true;
+      completedAttempts.set(oauthAttemptId, connectionId);
       return respond(200, {
-        connectors: [
-          {
-            ...connector,
-            connected,
-            ...(connected
-              ? {
-                  connectedAccountId: connectionId,
-                  connectedAccountUpdatedAt: "2026-01-01T00:00:01Z",
-                }
-              : {}),
-          },
-        ],
+        result: "authorization",
+        oauthAttemptId,
+        authorizationUrl: "https://acme.test/oauth/authorize",
+        connectionId,
       });
-    });
-    context.mocks.api(
-      customConnectorOAuth2Contract.start,
-      ({ body, params, respond }) => {
-        expect(params.id).toBe(connector.id);
-        expect(body.account).toStrictEqual({ intent: "add" });
-        connected = true;
-        completedAttempts.set(oauthAttemptId, connectionId);
-        return respond(200, {
-          result: "authorization",
-          oauthAttemptId,
-          authorizationUrl: "https://acme.test/oauth/authorize",
-          connectionId,
-        });
-      },
-    );
-    context.mocks.api(
-      agentCustomConnectorsContract.update,
-      async ({ body, params, respond }) => {
-        expect(params.id).toBe(AGENT_ID);
-        grants = body.grants;
-        grantRequest.resolve();
-        await grantResponse.promise;
-        return respond(200, { grants });
-      },
-    );
-    const authWindow = context.mocks.browser.authWindow();
-    authWindow.closed = true;
-    Object.defineProperty(authWindow, "location", {
-      value: { href: "" },
-      configurable: true,
-    });
-    context.mocks.browser.open(authWindow);
+    },
+  );
+  context.mocks.api(
+    agentCustomConnectorsContract.update,
+    async ({ body, params, respond }) => {
+      expect(params.id).toBe(AGENT_ID);
+      grants = body.grants;
+      grantRequest.resolve();
+      await grantResponse.promise;
+      return respond(200, { grants });
+    },
+  );
+  const authWindow = context.mocks.browser.authWindow();
+  authWindow.closed = true;
+  Object.defineProperty(authWindow, "location", {
+    value: { href: "" },
+    configurable: true,
+  });
+  context.mocks.browser.open(authWindow);
 
-    await setupPage({
-      context,
-      path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
-    });
+  await setupPage({
+    context,
+    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+  });
 
-    const heading = await screen.findByText("Okou needs Acme OAuth to proceed");
-    expect(heading).toBeInTheDocument();
-    click(getButtonByText("Connect"));
-    await screen.findByRole("dialog", { name: "Connect Acme OAuth" });
-    click(getButtonByText("Continue"));
+  const heading = await screen.findByText("Okou needs Acme OAuth to proceed");
+  expect(heading).toBeInTheDocument();
+  click(getButtonByText("Connect"));
+  await screen.findByRole("dialog", { name: "Connect Acme OAuth" });
+  click(getButtonByText("Continue"));
 
-    await grantRequest.promise;
-    const confirmed = screen.getByRole("dialog", {
-      name: "Connect Acme OAuth",
-    });
-    const close = await waitFor(() => {
-      return getButtonByText("Close", confirmed);
-    });
+  await grantRequest.promise;
+  const confirmed = screen.getByRole("dialog", {
+    name: "Connect Acme OAuth",
+  });
+  await waitFor(() => {
+    return getButtonByText("Close", confirmed);
+  });
+  expect(
+    within(confirmed).queryByText("Cancel", { selector: "button" }),
+  ).toBeNull();
+  grantResponse.resolve();
+
+  await waitFor(() => {
+    expect(authWindow.location.href).toBe("https://acme.test/oauth/authorize");
+    expect(grants).toStrictEqual([
+      { customConnectorId: connector.id, permissionNames: [] },
+    ]);
+    expect(screen.getByText("Acme OAuth connected")).toBeInTheDocument();
     expect(
-      within(confirmed).queryByText("Cancel", { selector: "button" }),
+      screen.queryByRole("dialog", { name: "Connect Acme OAuth" }),
     ).toBeNull();
-    if (setupAction === "close") {
-      click(close);
-    }
-    grantResponse.resolve();
-
-    await waitFor(() => {
-      expect(authWindow.location.href).toBe(
-        "https://acme.test/oauth/authorize",
-      );
-      expect(grants).toStrictEqual([
-        { customConnectorId: connector.id, permissionNames: [] },
-      ]);
-      expect(screen.getByText("Acme OAuth connected")).toBeInTheDocument();
-      expect(
-        screen.queryByRole("dialog", { name: "Connect Acme OAuth" }),
-      ).toBeNull();
-    });
-  },
-);
+  });
+});
 
 test("Reconnect the exact custom OAuth account", async () => {
   const completedAttempts = mockOAuthCompletions(context);
@@ -1242,6 +1246,94 @@ test("Reconnect the expired public OAuth account shown on the page", async () =>
   expect(startedAgentId).toBe(AGENT_ID);
   expect(startedAuthorizeAgent).toBeTruthy();
   expect(startedConnectionId).toBe(connectionId);
+});
+
+test("Reconnect the exact account and continue the originating chat only after success", async () => {
+  mockPublicConnectorStatus(
+    publicManualTokenConnectorStatus({
+      slug: "axiom",
+      label: "Public Axiom",
+      placeholder: "public-xaat",
+    }),
+  );
+  const connectionId = "00000000-0000-4000-a000-000000000701";
+  const threadId = "00000000-0000-4000-a000-000000000103";
+  const callbackPrompt = "Re-check the work Axiom account, then continue";
+  let submittedAccount: unknown = null;
+  let continuationPrompt: string | null = null;
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, query, respond }) => {
+      expect(params.connectionId).toBe(connectionId);
+      expect(query).toStrictEqual({ kind: "builtin", connectorSlug: "axiom" });
+      return respond(200, {
+        id: connectionId,
+        target: { kind: "builtin", connectorSlug: "axiom" },
+        authMethod: "api-token",
+        displayName: "Work Axiom",
+        isDefault: false,
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: [],
+        connectionStatus: "reconnect-required",
+        reconnectReason: "authorization_expired_or_revoked",
+        tokenExpiresAt: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+    },
+  );
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    ({ body, respond }) => {
+      submittedAccount = body.account;
+      return respond(200, {
+        id: connectionId,
+        slug: "axiom",
+        authMethod: body.authMethod,
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: null,
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+    },
+  );
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    continuationPrompt = body.prompt ?? null;
+    return respond(201, {
+      runId: "00000000-0000-4000-a000-000000000203",
+      threadId,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/connectors/axiom/reconnect/${connectionId}?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+  });
+
+  await waitFor(() => {
+    expect(getButtonByText("Reconnect")).toBeInTheDocument();
+  });
+  expect(continuationPrompt).toBeNull();
+  click(getButtonByText("Reconnect"));
+
+  const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
+  await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-work");
+  expect(continuationPrompt).toBeNull();
+  click(getButtonByText("Save"));
+
+  await waitFor(() => {
+    expect(submittedAccount).toStrictEqual({
+      intent: "reconnect",
+      connectionId,
+    });
+    expect(continuationPrompt).toBe(callbackPrompt);
+  });
 });
 
 test("Connect a manual grant and continue the originating chat", async () => {

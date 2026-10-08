@@ -16,7 +16,6 @@ export function sharedThread(
   return {
     id: SHARED_THREAD_ID,
     title: "Public launch plan",
-    publicBrand: "vm0",
     messages: [],
     ...overrides,
   };

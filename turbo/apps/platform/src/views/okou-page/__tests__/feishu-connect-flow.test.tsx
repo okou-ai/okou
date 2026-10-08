@@ -4,7 +4,7 @@ import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import { startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
@@ -43,18 +43,6 @@ describe.each(["feishu", "lark"] as const)(
         window.location.hash.split("?")[1],
       );
       expect(signInQuery.get("redirect_url")).toBe(returnUrl);
-    });
-
-    it("registration retains the signed connection destination", async () => {
-      await setupPage({
-        context,
-        host: "app.okou.ai",
-        path: `/sign-up?${new URLSearchParams({ redirect_url: returnUrl })}`,
-        auth: null,
-      });
-      await expect(
-        screen.findByTestId("clerk-sign-up"),
-      ).resolves.toHaveAttribute("data-clerk-force-redirect-url", returnUrl);
     });
 
     it("authenticated message links pass their signed identity to account connection", async () => {

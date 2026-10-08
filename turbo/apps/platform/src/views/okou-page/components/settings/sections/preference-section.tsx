@@ -1,10 +1,8 @@
-import { useGet, useSet, useLoadable } from "ccstate-react";
+import { useSet, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Sun, Moon, Monitor, Palette } from "lucide-react";
 import { surfaceVariants, ToggleButton } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { featureSwitch$ } from "../../../../../signals/external/feature-switch.ts";
 import {
   setTheme$,
   themePreference$,
@@ -18,7 +16,6 @@ import { AccountSection } from "./account-section.tsx";
 import { LanguageSettings } from "../language-settings.tsx";
 import { ColorThemeSettings } from "../color-theme-settings.tsx";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
-import { SendModePreference } from "./chat-section.tsx";
 
 const THEME_OPTIONS: readonly {
   value: ThemePreference;
@@ -88,9 +85,6 @@ function AppearanceBlock() {
 
 export function PreferenceSection() {
   const { t } = useTranslation();
-  const featureSwitches = useGet(featureSwitch$);
-  const chatPreferenceEnabled =
-    featureSwitches[FeatureSwitchKey.ChatPreference] ?? false;
 
   return (
     <div className="flex flex-col gap-8">
@@ -103,28 +97,26 @@ export function PreferenceSection() {
         <AccountSection />
       </section>
 
-      {featureSwitches[FeatureSwitchKey.MorningBrief] ? (
-        <section
-          className="flex flex-col gap-3"
-          aria-labelledby="email-subscriptions-heading"
-        >
-          <div id="email-subscriptions-heading">
-            <SettingsSectionHeading
-              title={t(($) => {
-                return $.settings.preferences.emailSubscription.sectionTitle;
-              })}
-            />
-          </div>
-          <div
-            className={surfaceVariants({
-              className: "overflow-hidden",
+      <section
+        className="flex flex-col gap-3"
+        aria-labelledby="email-subscriptions-heading"
+      >
+        <div id="email-subscriptions-heading">
+          <SettingsSectionHeading
+            title={t(($) => {
+              return $.settings.preferences.emailSubscription.sectionTitle;
             })}
-          >
-            <EmailSubscriptionSettings />
-            <MorningBriefSettings />
-          </div>
-        </section>
-      ) : null}
+          />
+        </div>
+        <div
+          className={surfaceVariants({
+            className: "overflow-hidden",
+          })}
+        >
+          <EmailSubscriptionSettings />
+          <MorningBriefSettings />
+        </div>
+      </section>
 
       <section className="flex flex-col gap-3">
         <SettingsSectionHeading
@@ -139,20 +131,6 @@ export function PreferenceSection() {
         <ColorThemeSettings />
         <LanguageSettings />
       </section>
-
-      {!chatPreferenceEnabled ? (
-        <section className="flex flex-col gap-3">
-          <SettingsSectionHeading
-            title={t(($) => {
-              return $.settings.preferences.send.sectionTitle;
-            })}
-            description={t(($) => {
-              return $.settings.preferences.send.description;
-            })}
-          />
-          <SendModePreference />
-        </section>
-      ) : null}
 
       <section className="flex flex-col gap-3">
         <SettingsSectionHeading

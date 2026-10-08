@@ -1,7 +1,8 @@
 import webpush, { WebPushError } from "web-push";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { pushSubscriptions } from "@okouai/db/schema/push-subscription";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -32,11 +33,27 @@ function notificationUrl(pathOrUrl: string) {
 export async function sendUserPushNotifications(args: {
   readonly db: Db;
   readonly userId: string;
+  readonly threadId: string;
   readonly notification: PushNotification;
 }): Promise<void> {
   const publicKey = optionalEnv("VAPID_PUBLIC_KEY");
   const privateKey = optionalEnv("VAPID_PRIVATE_KEY");
   if (!publicKey || !privateKey) {
+    return;
+  }
+
+  // Read at delivery time, not Run admission: the user may mute a running chat.
+  const [thread] = await args.db
+    .select({ muted: chatThreads.muted })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, args.threadId),
+        eq(chatThreads.userId, args.userId),
+      ),
+    )
+    .limit(1);
+  if (!thread || thread.muted) {
     return;
   }
 
@@ -52,8 +69,7 @@ export async function sendUserPushNotifications(args: {
     subscriptions.map(async (subscription) => {
       const payload = JSON.stringify({
         ...args.notification,
-        title:
-          args.notification.title ?? PUBLIC_BRAND_PRESENTATION.assistantName,
+        title: args.notification.title ?? BRAND_PRESENTATION.assistantName,
         url: notificationUrl(args.notification.url),
       });
       const result = await settle(
@@ -68,7 +84,7 @@ export async function sendUserPushNotifications(args: {
           payload,
           {
             vapidDetails: {
-              subject: `mailto:${PUBLIC_BRAND_PRESENTATION.contactEmail}`,
+              subject: `mailto:${BRAND_PRESENTATION.contactEmail}`,
               publicKey,
               privateKey,
             },

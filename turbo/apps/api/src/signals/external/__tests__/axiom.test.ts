@@ -15,6 +15,11 @@ import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../utils";
+import {
+  recordBillingOperationTimings,
+  recordClaimResponseJsonSerialization,
+  recordMcpClientNameLookup,
+} from "../sandbox-op-log";
 
 const context = testContext();
 
@@ -34,6 +39,174 @@ function sdkClientForDataset(
 }
 
 describe("shared SDK ingestion", () => {
+  it("records ID-free MCP name-lookup timings through the API operation interface", async () => {
+    // Telemetry-client suite exception: this event has no API read endpoint.
+    await recordMcpClientNameLookup({
+      outcome: "validated",
+      fetchInvoked: true,
+      startedAt: performance.now(),
+    });
+    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+      "vm0-sandbox-op-log-dev",
+      [
+        {
+          _time: expect.any(String),
+          source: "api",
+          op_type: "mcp_client_display_name_lookup",
+          operation_domain: "api",
+          duration_ms: expect.any(Number),
+          success: true,
+          lookup_outcome: "validated",
+          fetch_invoked: true,
+        },
+      ],
+    );
+  });
+
+  it("contains even an abort-shaped MCP timing sink error", async () => {
+    context.mocks.axiom.sdkIngest.mockImplementation(() => {
+      throw new DOMException("Telemetry rejected", "AbortError");
+    });
+    await expect(
+      recordMcpClientNameLookup({
+        outcome: "caller_cancelled",
+        fetchInvoked: true,
+        startedAt: performance.now(),
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("emits bounded claim JSON size without response content", () => {
+    // Telemetry-client suite exception: no API read endpoint exposes this event.
+    const runId = randomUUID();
+    for (const [byteLength, bucket] of [
+      [0, "lt_4_kib"],
+      [4 * 1024, "4_16_kib"],
+      [16 * 1024, "16_64_kib"],
+      [64 * 1024, "64_256_kib"],
+      [256 * 1024, "256_kib_1_mib"],
+      [1024 * 1024, "ge_1_mib"],
+    ] as const) {
+      recordClaimResponseJsonSerialization({
+        runId,
+        byteLength,
+        serializationDurationMs: 7,
+      });
+      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+        "vm0-sandbox-op-log-dev",
+        [
+          {
+            _time: expect.any(String),
+            source: "api",
+            op_type: "api_claim_response_json_serialize",
+            sandbox_type: "runner",
+            duration_ms: 7,
+            success: true,
+            run_id: runId,
+            serialized_json_size_bucket: bucket,
+          },
+        ],
+      );
+    }
+  });
+
+  it("emits ID-free billing timings through the existing operation dataset", () => {
+    // Telemetry-client suite exception: no API read endpoint exposes this event.
+    recordBillingOperationTimings([
+      {
+        actionType: "api_billing_settlement_work",
+        durationMs: 39,
+        success: true,
+        dimensions: {
+          timing_scope: "inline",
+          pending_events: 3,
+          compaction_lock_wait_ms: 0,
+          pending_read_ms: 4.2,
+          pricing_read_ms: 1.1,
+          pricing_calculation_ms: 0.08,
+          allowance_ms: 7.4,
+          allowance_allocation_read_ms: 1.1,
+          allowance_anchor_ms: 0.8,
+          allowance_window_lock_ms: 2.3,
+          allowance_window_issue_ms: 0,
+          allowance_allocate_ms: 0.1,
+          allowance_window_write_ms: 2.1,
+          allowance_allocation_write_ms: 0.6,
+          event_write_ms: 5.3,
+          grant_deduction_ms: 10.5,
+          org_credit_ms: 0,
+          org_balance_read_ms: 0,
+          org_expire_credits_ms: 0,
+          org_debit_ms: 0,
+          org_expiry_lot_deduction_ms: 0,
+        },
+      },
+      {
+        actionType: "api_billing_settlement_compaction_lock_wait",
+        durationMs: 0,
+        success: true,
+      },
+    ]);
+    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+      "vm0-sandbox-op-log-dev",
+      [
+        {
+          _time: expect.any(String),
+          source: "api",
+          op_type: "api_billing_settlement_work",
+          operation_domain: "billing",
+          duration_ms: 39,
+          success: true,
+          timing_scope: "inline",
+          pending_events: 3,
+          compaction_lock_wait_ms: 0,
+          pending_read_ms: 4.2,
+          pricing_read_ms: 1.1,
+          pricing_calculation_ms: 0.08,
+          allowance_ms: 7.4,
+          allowance_allocation_read_ms: 1.1,
+          allowance_anchor_ms: 0.8,
+          allowance_window_lock_ms: 2.3,
+          allowance_window_issue_ms: 0,
+          allowance_allocate_ms: 0.1,
+          allowance_window_write_ms: 2.1,
+          allowance_allocation_write_ms: 0.6,
+          event_write_ms: 5.3,
+          grant_deduction_ms: 10.5,
+          org_credit_ms: 0,
+          org_balance_read_ms: 0,
+          org_expire_credits_ms: 0,
+          org_debit_ms: 0,
+          org_expiry_lot_deduction_ms: 0,
+        },
+        {
+          _time: expect.any(String),
+          source: "api",
+          op_type: "api_billing_settlement_compaction_lock_wait",
+          operation_domain: "billing",
+          duration_ms: 0,
+          success: true,
+        },
+      ],
+    );
+  });
+
+  it("does not throw when billing timing ingestion fails synchronously", () => {
+    // Telemetry-client suite exception: the ingestion boundary is the subject.
+    context.mocks.axiom.sdkIngest.mockImplementationOnce(() => {
+      throw new Error("telemetry unavailable");
+    });
+    expect(() => {
+      recordBillingOperationTimings([
+        {
+          actionType: "api_billing_settlement_work",
+          durationMs: 8,
+          success: true,
+        },
+      ]);
+    }).not.toThrow();
+  });
+
   it("preserves archive diagnostics through the sandbox-operation SDK transport", async () => {
     // Logger-suite exception: ingestion is the subject and no read endpoint
     // exposes it. Use the real webhook to cover validation and projection.
@@ -45,15 +218,14 @@ describe("shared SDK ingestion", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: `Archive mismatch telemetry ${randomUUID()}`,
       visibility: "private",
     });
-    const { runId } = await runs.createRun(actor, {
+    const { runId } = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "check archive startup",
-      modelProvider: "anthropic-api-key",
     });
     const token = runs.sandboxTokenForRun(actor, runId);
     const operation = {
@@ -159,15 +331,14 @@ describe("shared SDK ingestion", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: `Workspace history telemetry ${randomUUID()}`,
       visibility: "private",
     });
-    const { runId } = await runs.createRun(actor, {
+    const { runId } = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "restore workspace history",
-      modelProvider: "anthropic-api-key",
     });
     const token = runs.sandboxTokenForRun(actor, runId);
     const ts = "2026-09-15T00:00:00Z";
@@ -252,6 +423,18 @@ describe("shared SDK ingestion", () => {
       session_history_wire_bytes: 288 * 1024 * 1024,
       session_history_write_requests: 18,
     } as const;
+    const storageBatch = {
+      ts,
+      action_type: "runner_storage_manifest_batch_apply",
+      duration_ms: 42,
+      success: true,
+      outcome: "dedicated_middle",
+      reason: "32_to_64_kib",
+      storage_batch_guest_duration_ms: 31,
+      storage_batch_outer_residual_ms: 11,
+      storage_batch_timing: "paired",
+      manifest_json: "must-not-reach-axiom",
+    } as const;
     const response = await accept(
       setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
         webhookTelemetryContract,
@@ -270,6 +453,7 @@ describe("shared SDK ingestion", () => {
             nativeZstdTransfer,
             failedTransfer,
             largeInlineTransfer,
+            storageBatch,
           ],
         },
       }),
@@ -314,6 +498,23 @@ describe("shared SDK ingestion", () => {
         [{ ...expected, ...fields, _time: transferTime, op_type: opType }],
       );
     }
+    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+      "vm0-sandbox-op-log-dev",
+      [
+        {
+          ...expected,
+          op_type: storageBatch.action_type,
+          duration_ms: storageBatch.duration_ms,
+          outcome: storageBatch.outcome,
+          reason: storageBatch.reason,
+          storage_batch_guest_duration_ms:
+            storageBatch.storage_batch_guest_duration_ms,
+          storage_batch_outer_residual_ms:
+            storageBatch.storage_batch_outer_residual_ms,
+          storage_batch_timing: storageBatch.storage_batch_timing,
+        },
+      ],
+    );
   });
 
   it("attributes dataset failures and flushes every selected client", async () => {

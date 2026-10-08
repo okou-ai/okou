@@ -12,13 +12,6 @@ from .json_selective import (
     ScalarField,
     json_nesting_within_limit,
 )
-from .model_http import (
-    ModelHttpFailureEvidence,
-    ModelHttpFailureObserver,
-    combined_scalar_fields,
-    combined_value_presence_paths,
-    failure_evidence_from_result,
-)
 from .model_tokens import (
     MODEL_USAGE_CATEGORIES,
     MODEL_USAGE_CATEGORY_CACHE_CREATION,
@@ -213,23 +206,11 @@ def _is_canonical_usage_free_delta(body: bytes) -> bool:
     return True
 
 
-def _new_extractor(
-    *,
-    include_usage: bool = True,
-    include_failure: bool = False,
-) -> JsonSelectiveExtractor:
+def _new_extractor() -> JsonSelectiveExtractor:
     return JsonSelectiveExtractor(
-        scalar_fields=combined_scalar_fields(
-            _CHAT_COMPLETIONS_SCALAR_FIELDS,
-            include_usage=include_usage,
-            include_failure=include_failure,
-        ),
-        object_presence_paths=set(_USAGE_PATHS) if include_usage else set(),
-        value_presence_paths=combined_value_presence_paths(
-            tuple(_USAGE_VALUE_PRESENCE_PATHS),
-            include_usage=include_usage,
-            include_failure=include_failure,
-        ),
+        scalar_fields=_CHAT_COMPLETIONS_SCALAR_FIELDS,
+        object_presence_paths=set(_USAGE_PATHS),
+        value_presence_paths=set(_USAGE_VALUE_PRESENCE_PATHS),
         max_number_bytes=_JSON_MAX_NUMBER_BYTES,
         max_work_units=_CHAT_COMPLETIONS_MAX_WORK_UNITS,
     )
@@ -310,19 +291,12 @@ class _OpenAIChatCompletionsSseUsageHandler:
         on_parse_error: _SseUsageParseErrorCallback | None = None,
         on_usage: Callable[[dict], None] | None = None,
         on_done: Callable[[], None] | None = None,
-        include_usage: bool = True,
-        failure_observer: ModelHttpFailureObserver | None = None,
     ) -> None:
         self._usage = usage
         self._on_parse_error = on_parse_error
         self._on_usage = on_usage
         self._on_done = on_done
-        self._include_usage = include_usage
-        self._failure_observer = failure_observer
-        self._extractor = _new_extractor(
-            include_usage=include_usage,
-            include_failure=failure_observer is not None,
-        )
+        self._extractor = _new_extractor()
         self._event_data = bytearray()
         self._using_extractor = False
 
@@ -358,26 +332,10 @@ class _OpenAIChatCompletionsSseUsageHandler:
             event_data = bytes(self._event_data)
             self._event_data.clear()
             if len(event_data) <= _DONE_PREFIX_MAX_BYTES and event_data.strip() == _DONE_SENTINEL:
-                if self._include_usage and self._on_done is not None:
+                if self._on_done is not None:
                     self._on_done()
-                if self._failure_observer is not None:
-                    self._failure_observer.observe(
-                        ModelHttpFailureEvidence(
-                            event_name=event_name,
-                            is_done=True,
-                            is_valid=True,
-                        )
-                    )
                 return
             if _is_canonical_usage_free_delta(event_data):
-                if self._failure_observer is not None:
-                    self._failure_observer.observe(
-                        ModelHttpFailureEvidence(
-                            event_name=event_name,
-                            has_choices=True,
-                            is_valid=True,
-                        )
-                    )
                 return
             self._extractor.feed(event_data)
         self._using_extractor = False
@@ -385,25 +343,9 @@ class _OpenAIChatCompletionsSseUsageHandler:
         result = self._extractor.finish()
         self._extractor.reset()
         if not result.complete:
-            if self._failure_observer is not None:
-                self._failure_observer.observe(
-                    failure_evidence_from_result(result, event_name=event_name)
-                )
-            if self._include_usage:
-                self._usage.clear()
-            if (
-                self._include_usage
-                and result.error is not None
-                and self._on_parse_error is not None
-            ):
+            self._usage.clear()
+            if result.error is not None and self._on_parse_error is not None:
                 self._on_parse_error(event_name or "eventless", result.error)
-            return
-
-        if self._failure_observer is not None:
-            self._failure_observer.observe(
-                failure_evidence_from_result(result, event_name=event_name)
-            )
-        if not self._include_usage:
             return
 
         snapshot = _usage_snapshot(result)
@@ -418,12 +360,9 @@ class _OpenAIChatCompletionsSseUsageHandler:
         self._extractor.reset()
         self._event_data.clear()
         self._using_extractor = False
-        if self._failure_observer is not None:
-            self._failure_observer.observe(ModelHttpFailureEvidence(event_name=event_name))
-        if self._include_usage:
-            self._usage.clear()
-            if self._on_parse_error is not None:
-                self._on_parse_error(event_name or "eventless", "sse event discarded")
+        self._usage.clear()
+        if self._on_parse_error is not None:
+            self._on_parse_error(event_name or "eventless", "sse event discarded")
 
 
 def create_openai_chat_completions_sse_usage_extractor(
@@ -431,8 +370,6 @@ def create_openai_chat_completions_sse_usage_extractor(
     *,
     on_usage: Callable[[dict], None] | None = None,
     on_done: Callable[[], None] | None = None,
-    include_usage: bool = True,
-    failure_observer: ModelHttpFailureObserver | None = None,
 ) -> tuple[SseUsageScanner, dict]:
     """Create an incremental usage parser for Chat Completions SSE bytes.
 
@@ -444,8 +381,8 @@ def create_openai_chat_completions_sse_usage_extractor(
     captured trailing event when the stream ends without a blank-line terminator.
 
     ``on_usage`` observes each valid snapshot before later frames can replace
-    it. ``on_done`` observes the protocol's end sentinel. Both are disabled
-    with usage extraction and do not change billing admission.
+    it. ``on_done`` observes the protocol's end sentinel. Neither changes
+    billing admission.
     """
     usage: dict = {}
     parser = SseUsageScanner(
@@ -454,8 +391,6 @@ def create_openai_chat_completions_sse_usage_extractor(
             on_parse_error=on_parse_error,
             on_usage=on_usage,
             on_done=on_done,
-            include_usage=include_usage,
-            failure_observer=failure_observer,
         ),
         capture_data_without_event=True,
     )

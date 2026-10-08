@@ -8,8 +8,8 @@ import { uploadedArtifactObject } from "./uploaded-artifact.service";
 
 /**
  * The parts of publishing a compiled template that do not depend on what the
- * template produces: resolving the run's own uploads, and turning its package
- * archive into validated files.
+ * template produces: resolving the run's own uploads, validating its pages,
+ * and turning its package archive into validated files.
  *
  * Presentation templates and user templates both receive a `.tar.gz` of
  * guidance from a reverse run, so this owns the archive's safety rules once.
@@ -18,7 +18,6 @@ import { uploadedArtifactObject } from "./uploaded-artifact.service";
  */
 export interface ResolvedUpload {
   readonly bucket: string;
-  readonly id: string;
   readonly storageKey: string;
   readonly filename: string;
   readonly contentType: string;
@@ -60,7 +59,6 @@ export const resolveTemplateUploads$ = command(
       if (object) {
         resolved.set(id, {
           bucket: object.bucket,
-          id,
           storageKey: object.key,
           filename: object.filename,
           contentType: object.contentType,
@@ -71,6 +69,35 @@ export const resolveTemplateUploads$ = command(
     return resolved;
   },
 );
+
+export function checkTemplatePages(
+  pages: readonly ResolvedUpload[],
+  policy: {
+    readonly contentType: string;
+    readonly maxPageBytes: number;
+    readonly maxTotalBytes: number;
+  },
+): string | null {
+  const wrongType = pages.findIndex((page) => {
+    return page.contentType !== policy.contentType;
+  });
+  if (wrongType !== -1) {
+    return `Page ${(wrongType + 1).toString()} must be a ${policy.contentType}`;
+  }
+  const oversized = pages.findIndex((page) => {
+    return page.sizeBytes > policy.maxPageBytes;
+  });
+  if (oversized !== -1) {
+    return `Page ${(oversized + 1).toString()} must be no larger than ${policy.maxPageBytes.toString()} bytes`;
+  }
+  const total = pages.reduce((sum, page) => {
+    return sum + page.sizeBytes;
+  }, 0);
+  if (total > policy.maxTotalBytes) {
+    return `Page images must total ${policy.maxTotalBytes.toString()} bytes or fewer`;
+  }
+  return null;
+}
 
 /**
  * `maxOutputLength` stops zlib at the cap instead of letting a small archive

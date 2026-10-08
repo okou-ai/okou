@@ -1072,11 +1072,19 @@ async fn wait_for_ready_retries_connection_refused_until_socket_is_rebound() {
     drop(stale_listener);
 
     let waiter_path = sock_path.clone();
+    let connection_refused_observed = Arc::new(Notify::new());
+    let waiter_observed = connection_refused_observed.clone();
     let waiter = tokio::spawn(async move {
-        let client = ApiClient::new(&waiter_path).unwrap();
+        let mut client = ApiClient::new(&waiter_path).unwrap();
+        client.connection_refused_observed = Some(waiter_observed);
         client.wait_for_ready(Duration::from_secs(2)).await
     });
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::timeout(
+        MOCK_REQUEST_READ_TIMEOUT,
+        connection_refused_observed.notified(),
+    )
+    .await
+    .expect("readiness did not observe a refused socket connection");
     assert!(
         !waiter.is_finished(),
         "ConnectionRefused should remain retryable"

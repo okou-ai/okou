@@ -3,7 +3,7 @@ import {
   bankingPublicContract,
   bankingUserContract,
 } from "@okouai/api-contracts/contracts/banking";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { command } from "ccstate";
@@ -223,7 +223,7 @@ const revokeAgentGrantInner$ = command(async ({ get, set }) => {
 });
 
 const connectReturn$ = command(() => {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   const html = `<!doctype html>
 <html lang="en">
   <head>

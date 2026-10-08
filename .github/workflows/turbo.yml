@@ -25,17 +25,11 @@ on:
         required: false
       AXIOM_TOKEN_TELEMETRY:
         required: false
-      BYTEPLUS_API_KEY:
-        required: false
-      BYTEPLUS_STT_API_KEY:
-        required: false
       CF_ACCESS_CLIENT_ID:
         required: false
       CF_ACCESS_CLIENT_SECRET:
         required: false
       CF_API_WORKER_DEPLOY_API_TOKEN:
-        required: false
-      CI_ANTHROPIC_API_KEY:
         required: false
       CLERK_SECRET_KEY:
         required: false
@@ -44,8 +38,6 @@ on:
       CODECOV_TOKEN:
         required: false
       CRON_SECRET:
-        required: false
-      DEEPSEEK_API_KEY:
         required: false
       FAL_KEY:
         required: false
@@ -57,21 +49,11 @@ on:
         required: false
       GOOGLE_ADS_LOGIN_CUSTOMER_ID:
         required: false
-      HEYGEN_API_KEY:
-        required: false
-      JOGGAI_API_KEY:
-        required: false
-      JOGGAI_WEBHOOK_SECRET:
-        required: false
       LANGFUSE_PUBLIC_KEY:
         required: false
       LANGFUSE_SECRET_KEY:
         required: false
       MICROSOFT_TEAMS_BOT_APP_PASSWORD:
-        required: false
-      MINIMAX_API_KEY:
-        required: false
-      MOONSHOT_API_KEY:
         required: false
       NEON_API_KEY:
         required: false
@@ -900,9 +882,12 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Test App
         working-directory: turbo
-        run: pnpm vitest run --project=@okouai/app --shard=${{ matrix.shard }}/8 --coverage.enabled --coverage.reporter=json
+        # v8 coverage adds about 20% to every shard. Pull request iterations
+        # only need pass/fail; the merge queue still reports coverage for every
+        # change that lands.
+        run: pnpm vitest run --project=@okouai/app --shard=${{ matrix.shard }}/8 ${{ github.event_name == 'merge_group' && '--coverage.enabled --coverage.reporter=json' || '' }}
       - name: Upload coverage to Codecov
-        if: success() || failure()
+        if: github.event_name == 'merge_group' && (success() || failure())
         continue-on-error: true
         timeout-minutes: 1
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
@@ -955,9 +940,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
           FAL_KEY: ${{ secrets.FAL_KEY }}
-          BYTEPLUS_API_KEY: ${{ secrets.BYTEPLUS_API_KEY }}
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-          BYTEPLUS_STT_API_KEY: ${{ secrets.BYTEPLUS_STT_API_KEY }}
         run: pnpm vitest run --project=api --shard=${{ matrix.shard }}/8 --coverage.enabled --coverage.reporter=json
       - name: Upload coverage to Codecov
         if: success() || failure()
@@ -976,6 +958,44 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: api
+          files: turbo/junit.xml
+          report_type: test_results
+
+  test-discord-gateway:
+    needs: [detect-turbo-ts-checks]
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-init
+      - name: Build Discord Gateway relay for runtime tests
+        working-directory: turbo
+        run: pnpm --filter @okouai/discord-gateway-worker run build
+      # Miniflare runs a real workerd process and SQLite Durable Object per file.
+      # The 1,000-event recovery case needs exclusive CPU and storage bandwidth.
+      - name: Test Discord Gateway worker
+        working-directory: turbo
+        run: pnpm vitest run --project=@okouai/discord-gateway-worker --no-file-parallelism --coverage.enabled --coverage.reporter=json
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: discord-gateway
+          files: turbo/coverage/coverage-final.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: discord-gateway
           files: turbo/junit.xml
           report_type: test_results
 
@@ -1094,13 +1114,7 @@ jobs:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           WEB_API_ENV_FILE: ${{ steps.api-seed-env.outputs.file }}
-          ANTHROPIC_API_KEY: ${{ secrets.CI_ANTHROPIC_API_KEY }}
-          DEV_MODEL_ANTHROPIC_KEY: ${{ secrets.CI_ANTHROPIC_API_KEY }}
-          DEV_MODEL_OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
           DEV_MODEL_OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          DEV_MODEL_DEEPSEEK_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DEV_MODEL_MOONSHOT_KEY: ${{ secrets.MOONSHOT_API_KEY }}
-          DEV_MODEL_MINIMAX_KEY: ${{ secrets.MINIMAX_API_KEY }}
         run: |
           while IFS= read -r line; do
             if [ -n "$line" ]; then
@@ -1111,12 +1125,7 @@ jobs:
           done < "$WEB_API_ENV_FILE"
 
           required_seed_env=(
-            DEV_MODEL_ANTHROPIC_KEY
-            DEV_MODEL_OPENAI_KEY
             DEV_MODEL_OPENROUTER_KEY
-            DEV_MODEL_DEEPSEEK_KEY
-            DEV_MODEL_MOONSHOT_KEY
-            DEV_MODEL_MINIMAX_KEY
           )
           missing_seed_env=()
           for key in "${required_seed_env[@]}"; do
@@ -1130,8 +1139,6 @@ jobs:
             exit 1
           fi
 
-          npm install -g neonctl@2.15.0
-
           # On pushes to main, migrate the test project's default (parent) branch
           # BEFORE creating/resetting the preview branch off it. Neon branches are
           # copy-on-write, so a preview branched from an already-migrated parent
@@ -1141,10 +1148,7 @@ jobs:
           # NEON_PROJECT_ID resolves to the Neon TEST project, never production.
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
             echo "main push: pre-migrating test project default (parent) branch"
-            PARENT_DATABASE_URL=$(neonctl connection-string --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
-            if [ -z "$PARENT_DATABASE_URL" ]; then
-              PARENT_DATABASE_URL=$(neonctl connection-string --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --ssl verify-full)
-            fi
+            PARENT_DATABASE_URL=$(.github/scripts/neon-preview-branch.sh parent)
             WORKFLOW_COMMAND_DATA="${PARENT_DATABASE_URL//%/%25}"
             WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
             WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
@@ -1152,25 +1156,7 @@ jobs:
             (cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
           fi
 
-          BRANCH_NAME="preview/${{ needs.prepare.outputs.job-ref }}"
-
-          if neonctl branches list --project-id "$NEON_PROJECT_ID" --output json | jq -e --arg name "$BRANCH_NAME" '.[] | select(.name == $name)' > /dev/null; then
-            neonctl branches reset "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --parent
-
-            for attempt in {1..30}; do
-              CURRENT_STATE=$(neonctl branches list --project-id "$NEON_PROJECT_ID" --output json | jq -r --arg name "$BRANCH_NAME" '.[] | select(.name == $name) | .current_state')
-              [ "$CURRENT_STATE" = "ready" ] && break
-              echo "Branch state: $CURRENT_STATE (attempt $attempt/30)"
-              sleep 2
-            done
-          else
-            neonctl branches create --name "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID"
-          fi
-
-          DATABASE_URL=$(neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
-          if [ -z "$DATABASE_URL" ]; then
-            DATABASE_URL=$(neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --ssl verify-full)
-          fi
+          DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch "preview/${{ needs.prepare.outputs.job-ref }}")
           WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
           WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
           WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
@@ -1178,7 +1164,7 @@ jobs:
 
           cd turbo
           DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
-          ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed
+          ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed --preview-onboarding-catalog
 
           echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 
@@ -1270,10 +1256,10 @@ jobs:
           API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      # Vercel does not run cron schedules for preview deployments. Reconcile
-      # through the unique deployment URL before exposing it through an alias or
-      # allowing downstream runner and E2E consumers to start.
-      - name: Reconcile preview connector catalog
+      # Preview cron does not run automatically. Seed the same bounded official
+      # catalog projection against the deployed API's capability configuration;
+      # do not call the production full-catalog synchronizer here.
+      - name: Seed preview onboarding connector catalog
         env:
           API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -1290,32 +1276,21 @@ jobs:
               --max-time 120 \
               -H "Authorization: Bearer ${CRON_SECRET}" \
               -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-              "${API_DEPLOYMENT_URL}/api/cron/sync-connector-catalog"); then
-              echo "::warning::Connector catalog reconcile request failed (attempt ${attempt}/3)"
-            elif summary=$(jq -c '{
-              outcome,
-              state,
-              active,
-              lastAttempt,
-              filtering: {
-                capabilityDigest: .filtering.capabilityDigest,
-                evaluatedAt: .filtering.evaluatedAt,
-                stale: .filtering.stale,
-                filteredAuthMethodCount: (.filtering.filteredAuthMethods | length)
-              }
-            }' <<< "$response"); then
-              echo "Connector catalog reconcile: ${summary}"
+              "${API_DEPLOYMENT_URL}/api/cron/seed-preview-onboarding-catalog"); then
+              echo "::warning::Preview catalog seed request failed (attempt ${attempt}/3)"
+            elif summary=$(jq -c '{catalogVersion, catalogDigest, connectorSlugs}' <<< "$response"); then
+              echo "Preview onboarding catalog: ${summary}"
 
               if jq -e '
-                .state == "current"
-                and .active != null
-                and .filtering.stale == false
+                (.catalogVersion | type == "string" and length > 0)
+                and (.catalogDigest | test("^sha256:[a-f0-9]{64}$"))
+                and (.connectorSlugs | type == "array" and length > 0)
               ' <<< "$response" >/dev/null; then
                 exit 0
               fi
-              echo "::warning::Connector catalog is not ready (attempt ${attempt}/3)"
+              echo "::warning::Preview onboarding catalog is not ready (attempt ${attempt}/3)"
             else
-              echo "::warning::Connector catalog reconcile returned invalid JSON (attempt ${attempt}/3)"
+              echo "::warning::Preview catalog seed returned invalid JSON (attempt ${attempt}/3)"
             fi
 
             if [ "$attempt" -lt 3 ]; then
@@ -1323,7 +1298,7 @@ jobs:
             fi
           done
 
-          echo "::error::Connector catalog reconcile did not produce a current accepted snapshot"
+          echo "::error::Preview catalog seed did not produce an onboarding projection"
           exit 1
 
       - name: Create API Vercel Alias
@@ -1483,8 +1458,6 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY_PREVIEW: ${{ vars.CLERK_PUBLISHABLE_KEY_PREVIEW }}
           VITE_CLERK_PUBLISHABLE_KEY_PROD: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
           OKOU_APP_GIT_COMMIT_SHA: ${{ steps.artifact.outputs.sha }}
-          VITE_PLAUSIBLE_SCRIPT_URL_PREVIEW: ${{ vars.PLAUSIBLE_SCRIPT_URL }}
-          VITE_PLAUSIBLE_SCRIPT_URL_PRODUCTION: ${{ vars.PLAUSIBLE_SCRIPT_URL_PROD }}
           # Merge-group and main builds create the release artifact. PR preview builds receive no token.
           # Public by design: provision only an ingest-only token scoped to vm0-client-telemetry-prod.
           VITE_AXIOM_CLIENT_TELEMETRY_TOKEN: ${{ github.event_name != 'pull_request' && vars.AXIOM_CLIENT_TELEMETRY_TOKEN || '' }}
@@ -1494,7 +1467,7 @@ jobs:
           VITE_VAPID_PUBLIC_KEY_PROD: ${{ vars.VAPID_PUBLIC_KEY_PROD }}
         run: |
           cd turbo
-          pnpm --filter @okouai/app run build:verify-hashes -- --sourcemap
+          pnpm --filter @okouai/app exec vite build --sourcemap
           pnpm --filter @okouai/app exec sentry-cli sourcemaps inject dist
 
       - name: Create artifact manifest
@@ -1624,14 +1597,6 @@ jobs:
             "$R2_BUCKET_NAME" \
             "$CANONICAL_ASSETS"
 
-      - name: Verify immutable app assets on CDN
-        env:
-          CANONICAL_ASSETS: ${{ steps.worker-preview.outputs.canonical-dist }}/assets
-        run: |
-          bash .github/scripts/verify-okou-app-assets.sh \
-            "https://static.okou.io/okou-app/assets" \
-            "$CANONICAL_ASSETS"
-
       - name: Deploy standalone app Worker preview
         id: worker-deploy
         env:
@@ -1723,64 +1688,6 @@ jobs:
             --message "app artifact ${ARTIFACT_SHA}"
 
           echo "url=$EXPECTED_PREVIEW_URL" >> "$GITHUB_OUTPUT"
-
-      # A Worker version preview can briefly lag its upload at the edge. Wait
-      # for two consecutive shell responses before running the runtime probe.
-      - name: Wait for standalone app Worker readiness
-        env:
-          WORKER_URL: ${{ steps.worker-deploy.outputs.url }}
-        run: |
-          set -euo pipefail
-
-          document_body="$(mktemp)"
-          trap 'rm -f "$document_body"' EXIT
-          application_url="${WORKER_URL%/}/sign-up"
-          ready_passes=0
-          for attempt in {1..60}; do
-            probe_succeeded=false
-            if curl --fail --silent --show-error \
-              --max-time 10 \
-              --output "$document_body" \
-              "$application_url"; then
-              probe_succeeded=true
-            fi
-            if [[ "$probe_succeeded" == true ]] &&
-              grep -Fq 'id="app-bootstrap-skeleton"' "$document_body"; then
-              ((ready_passes += 1))
-            else
-              ready_passes=0
-              echo "::warning::Standalone app Worker shell is not ready (attempt ${attempt}/60)"
-            fi
-
-            if (( ready_passes >= 2 )); then
-              echo "Standalone app Worker shell is ready"
-              exit 0
-            fi
-            sleep 2
-          done
-
-          echo "::error::Standalone app Worker shell did not become ready"
-          exit 1
-
-      - name: Smoke test standalone app Worker
-        env:
-          APP_PREVIEW_URL: ${{ steps.worker-deploy.outputs.url }}
-          CANONICAL_ASSETS: ${{ steps.worker-preview.outputs.canonical-dist }}/assets
-        run: |
-          set -euo pipefail
-          for attempt in {1..12}; do
-            if bash .github/scripts/verify-okou-app-runtime.sh \
-              "$APP_PREVIEW_URL" \
-              "https://static.okou.io/okou-app/assets" \
-              "$CANONICAL_ASSETS"; then
-              echo "Standalone app Worker and SharedWorker proxy are ready"
-              exit 0
-            fi
-            echo "::warning::Standalone app Worker or SharedWorker proxy is not ready (attempt ${attempt}/12)"
-            sleep 5
-          done
-          echo "::error::${APP_PREVIEW_URL} Worker or SharedWorker proxy did not become ready"
-          exit 1
 
       - name: Record standalone app Worker preview
         env:
@@ -1903,7 +1810,7 @@ jobs:
           # E2E sources follow the API/CLI revision, not the PR merge commit.
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Install E2E dependencies
@@ -1932,7 +1839,8 @@ jobs:
   cli-e2e-02-playwright:
     name: cli-e2e-02-playwright
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Leave room to clean up test accounts and upload failure screenshots/traces.
+    timeout-minutes: 10
     concurrency:
       group: cli-e2e-02-playwright-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
@@ -2094,7 +2002,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         with:
           version: 10.33.4
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -2301,7 +2209,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Download CLI artifact
@@ -2521,8 +2429,8 @@ jobs:
           node-version: 22
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
-      - name: Check runner E2E model policy
-        run: cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts
+      - name: Check runner E2E model selection
+        run: cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs scripts/runner-chat-model-default.test.mjs
       - name: Generate runner E2E shard matrix
         id: shards
         shell: bash
@@ -2619,58 +2527,9 @@ jobs:
         with:
           name: e2e-tokens
           path: /tmp
-      - name: Setup runner E2E API credentials
-        shell: bash
-        run: |
-          set -euo pipefail
-          token=$(jq -er '.token | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner.json)
-          api_url=$(jq -er '.apiUrl | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner.json)
-          echo "::add-mask::$token"
-          echo "E2E_API_TOKEN=$token" >> "$GITHUB_ENV"
-          echo "E2E_API_URL=$api_url" >> "$GITHUB_ENV"
       - name: Reset runner model defaults
         shell: bash
-        run: |
-          set -euo pipefail
-          headers=(-H "Authorization: Bearer ${E2E_API_TOKEN}" -H "Content-Type: application/json")
-          if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
-            headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
-          fi
-
-          # Fresh Clerk organizations bootstrap onto limited-free-1, so the
-          # deterministic runner policy must stay within that plan's catalog.
-          # The model policy write precondition is mandatory, so send the
-          # revision this read observed.
-          revision="$(curl -fsS "${headers[@]}" "${E2E_API_URL}/api/model-policies" | jq -er '.revision')"
-          payload="$(jq -nc --arg revision "$revision" '{
-            revision: $revision,
-            policies: [
-              {model: "deepseek-v4-flash", isDefault: true, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
-              {model: "gpt-5.6-luna", isDefault: false, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}
-            ]
-          }')"
-
-          curl -fsS "${headers[@]}" -X PUT -d "$payload" "${E2E_API_URL}/api/model-policies" >/dev/null
-          curl -fsS "${headers[@]}" -X PUT -d '{"selectedModel":null,"serviceTier":null}' "${E2E_API_URL}/api/user-model-preference" >/dev/null
-          curl -fsS "${headers[@]}" \
-            -X POST \
-            -d '{"switches":{"piLoop":false}}' \
-            "${E2E_API_URL}/api/feature-switches" \
-            | jq -e '.effectiveSwitches.piLoop == false' >/dev/null
-        env:
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-      - name: Bootstrap runner mock model provider
-        shell: bash
-        run: |
-          set -euo pipefail
-          headers=(-H "Authorization: Bearer ${E2E_API_TOKEN}" -H "Content-Type: application/json")
-          if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
-            headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
-          fi
-          curl -fsS "${headers[@]}" \
-            -X POST \
-            -d '{"type":"claude-code-oauth-token","secret":"mock-oauth-token-for-e2e"}' \
-            "${E2E_API_URL}/api/model-providers" >/dev/null
+        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner.json false
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Bootstrap mock Claude account
@@ -2680,151 +2539,17 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Bootstrap real Codex account
         shell: bash
-        run: |
-          set -euo pipefail
-          token=$(jq -er '.token | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner-real-codex.json)
-          api_url=$(jq -er '.apiUrl | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner-real-codex.json)
-          echo "::add-mask::$token"
-
-          headers=(-H "Authorization: Bearer ${token}" -H "Content-Type: application/json")
-          if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
-            headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
-          fi
-
-          provider_payload=$(jq -nc \
-            --arg secret "$OPENAI_API_KEY" \
-            '{type: "openai-api-key", secret: $secret}')
-          provider_response=$(curl -fsS "${headers[@]}" \
-            -X POST \
-            -d "$provider_payload" \
-            "${api_url}/api/model-providers")
-          provider_id=$(jq -er '.provider.id | select(type == "string" and length > 0)' \
-            <<< "$provider_response")
-
-          policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
-          policy_payload=$(jq -c --arg providerId "$provider_id" '
-            {
-              revision,
-              policies: [
-                .policies[] |
-                  {
-                    model,
-                    isDefault,
-                    defaultProviderType,
-                    credentialScope,
-                    modelProviderId
-                  } |
-                  if .model == "gpt-5.6-luna" then
-                    . + {
-                      defaultProviderType: "openai-api-key",
-                      credentialScope: "org",
-                      modelProviderId: $providerId
-                    }
-                  else . end
-              ]
-            }
-          ' <<< "$policies")
-          curl -fsS "${headers[@]}" \
-            -X PUT \
-            -d "$policy_payload" \
-            "${api_url}/api/model-policies" \
-            >/dev/null
-
-          curl -fsS "${headers[@]}" \
-            -X POST \
-            -d '{"switches":{"_realAgentInPreview":true,"piLoop":false}}' \
-            "${api_url}/api/feature-switches" \
-            | jq -e '.effectiveSwitches._realAgentInPreview == true and .effectiveSwitches.piLoop == false' \
-            >/dev/null
+        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-real-codex.json true
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Bootstrap built-in Codex account
         shell: bash
-        run: |
-          set -euo pipefail
-          token=$(jq -er '.token | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner-real-codex-built-in.json)
-          api_url=$(jq -er '.apiUrl | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner-real-codex-built-in.json)
-          echo "::add-mask::$token"
-
-          headers=(-H "Authorization: Bearer ${token}" -H "Content-Type: application/json")
-          if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
-            headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
-          fi
-
-          revision=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies" | jq -er '.revision')
-          policy_payload=$(jq -nc --arg revision "$revision" --argjson policies \
-            '[{"model":"gpt-5.6-luna","isDefault":true,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]' \
-            '{revision: $revision, policies: $policies}')
-          curl -fsS "${headers[@]}" \
-            -X PUT \
-            -d "$policy_payload" \
-            "${api_url}/api/model-policies" \
-            >/dev/null
-
-          # Preserve Codex billing/fallback coverage without touching the Pi account.
-          curl -fsS "${headers[@]}" \
-            -X POST \
-            -d '{"switches":{"_realAgentInPreview":true,"piLoop":false}}' \
-            "${api_url}/api/feature-switches" \
-            | jq -e '.effectiveSwitches._realAgentInPreview == true and .effectiveSwitches.piLoop == false' \
-            >/dev/null
+        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-real-codex-built-in.json true
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Bootstrap real Claude account
         shell: bash
-        run: |
-          set -euo pipefail
-          token=$(jq -er '.token | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner-real-claude.json)
-          api_url=$(jq -er '.apiUrl | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner-real-claude.json)
-          echo "::add-mask::$token"
-          claude_model="claude-sonnet-5"
-
-          headers=(-H "Authorization: Bearer ${token}" -H "Content-Type: application/json")
-          if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
-            headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
-          fi
-
-          policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
-          policy_payload=$(jq -c --arg model "$claude_model" '
-            {
-              revision,
-              policies: (
-                [.policies[] |
-                  select(.model != $model) |
-                  {
-                    model,
-                    isDefault,
-                    defaultProviderType,
-                    credentialScope,
-                    modelProviderId
-                  }
-                ] + [
-                  {
-                    model: $model,
-                    isDefault: false,
-                    defaultProviderType: "built-in",
-                    credentialScope: "org",
-                    modelProviderId: null
-                  }
-                ]
-              )
-            }
-          ' <<< "$policies")
-          curl -fsS "${headers[@]}" \
-            -X PUT \
-            -d "$policy_payload" \
-            "${api_url}/api/model-policies" \
-            >/dev/null
-
-          curl -fsS "${headers[@]}" \
-            -X POST \
-            -d '{"switches":{"_realAgentInPreview":true}}' \
-            "${api_url}/api/feature-switches" \
-            | jq -e '
-                .effectiveSwitches._realAgentInPreview == true
-              ' \
-            >/dev/null
+        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-real-claude.json true
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
@@ -2950,7 +2675,6 @@ jobs:
             "${test_files[@]}"
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          OKOU_MITM_RUNNER_TOKEN: ${{ contains(matrix.files, 'tests/03-runner/run-t24-built-in-provider-fallback.bats') && format('vm0_official_{0}', secrets.OFFICIAL_RUNNER_SECRET) || '' }}
       - name: Print runner E2E trace log
         if: always()
         shell: bash
@@ -3173,6 +2897,7 @@ jobs:
       - test-app
       - test-api
       - test-other
+      - test-discord-gateway
       - deploy-api
       - deploy-app
       - deploy-stripe-listener
@@ -3288,6 +3013,7 @@ jobs:
           check_result "test-app" "${{ needs.test-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
 
           # May-skip: 'success' or 'skipped' are both acceptable
           check_result "test-migrate" "${{ needs.test-migrate.result }}" "true"

@@ -32,11 +32,6 @@ const SCHEMA = {
   GCP_LLM_PROJECT_ID: z.string().optional(),
   GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: z.string().optional(),
   GCP_LLM_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
-  JOGGAI_API_KEY: z.string().min(1).optional(),
-  JOGGAI_WEBHOOK_SECRET: z.string().min(1).optional(),
-  BYTEPLUS_API_KEY: z.string().min(1).optional(),
-  MINIMAX_API_KEY: z.string().min(1).optional(),
-  BYTEPLUS_STT_API_KEY: z.string().min(1).optional(),
   OKOU_WEATHER_GOOGLE_WEATHER_TOKEN: z.string().min(1).optional(),
   OKOU_SCRAPE_FIRECRAWL_TOKEN: z.string().min(1).optional(),
   OKOU_WEB_SEARCH_PERPLEXITY_TOKEN: z.string().min(1).optional(),
@@ -80,6 +75,14 @@ const SCHEMA = {
     .email()
     .optional(),
   CRON_SECRET: z.string().min(1),
+  // Activate only after the entire API fleet understands expiry receipts.
+  WORKFLOW_SCHEDULE_EXPIRY_ENABLED: z.enum(["true", "false"]).default("false"),
+  MORNING_BRIEF_WORKER_CONCURRENCY: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .default(4),
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_ACCOUNT_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),
@@ -90,6 +93,9 @@ const SCHEMA = {
   R2_USER_ARTIFACTS_BUCKET_NAME: z.string().min(1),
   R2_USER_ARTIFACTS_ACCESS_KEY_ID: z.string().min(1),
   R2_USER_ARTIFACTS_SECRET_ACCESS_KEY: z.string().min(1),
+  // Link layouts (lib/link-layout.ts): OKOU_* origins serve the current
+  // layout; PUBLIC_ARTIFACTS_BASE_URL and ZERO_HOST_* only rebuild links for
+  // content stored in the read-only legacy layout.
   PUBLIC_ARTIFACTS_BASE_URL: z.url(),
   OKOU_PUBLIC_ARTIFACTS_BASE_URL: z.url(),
   PUBLIC_ARTIFACT_SHARES_BASE_URL: z.url().optional(),
@@ -100,7 +106,7 @@ const SCHEMA = {
   ARTIFACT_PREVIEW_WAF_SECRET: z.string().min(32).optional(),
   OKOU_PUBLIC_HOST_DOMAIN: z.string().min(1),
   OKOU_HOST_SCHEME: z.enum(["http", "https"]),
-  // Historical sites.vm0.io URLs retain their own domain and scheme.
+  // Legacy-layout sites.vm0.io URLs retain their own domain and scheme.
   ZERO_HOST_DOMAIN: z.string().min(1).default("sites.vm0.io"),
   ZERO_HOST_SCHEME: z.enum(["http", "https"]).default("https"),
   S3_ENDPOINT: z.url().optional(),
@@ -148,6 +154,17 @@ const SCHEMA = {
   TELEGRAM_OFFICIAL_BOT_USERNAME: z.string().optional(),
   TELEGRAM_OFFICIAL_WEBHOOK_SECRET: z.string().optional(),
   SLACK_OAUTH_CLIENT_ID: z.string().optional(),
+  DISCORD_BOT_TOKEN: z.string().min(1).optional(),
+  DISCORD_APPLICATION_ID: z
+    .string()
+    .regex(/^\d{17,20}$/)
+    .optional(),
+  DISCORD_PUBLIC_KEY: z
+    .string()
+    .regex(/^[a-fA-F0-9]{64}$/)
+    .optional(),
+  DISCORD_GATEWAY_SECRET: z.string().min(32).optional(),
+  DISCORD_MESSAGE_CONTENT_ENABLED: z.enum(["true", "false"]).default("false"),
   MICROSOFT_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   MICROSOFT_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   MICROSOFT_TEAMS_BOT_APP_ID: z.string().min(1).optional(),

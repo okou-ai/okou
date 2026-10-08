@@ -265,24 +265,6 @@ const categories: readonly Category[] = [
     id: "creative",
     cases: [
       {
-        id: "elevenlabs-audio-content",
-        prompt:
-          "Set up a workflow that takes blog posts from Notion, generates voice narration with ElevenLabs, and saves the audio to Google Drive",
-        connectorSlugs: ["elevenlabs", "notion", "google-drive"],
-      },
-      {
-        id: "heygen-video-from-script",
-        prompt:
-          "Set up a workflow that takes a script from Notion, generates a video with HeyGen, and sends a Slack notification when it's ready",
-        connectorSlugs: ["heygen", "notion", "slack"],
-      },
-      {
-        id: "runway-video-from-brief",
-        prompt:
-          "Take a creative brief from Notion and generate a short promotional video using Runway, then notify the team on Slack when ready",
-        connectorSlugs: ["runway", "notion", "slack"],
-      },
-      {
         id: "fal-ai-image-generation",
         prompt:
           "Set up a workflow that takes product descriptions from Notion, generates marketing images using Fal, and saves them to Google Drive",

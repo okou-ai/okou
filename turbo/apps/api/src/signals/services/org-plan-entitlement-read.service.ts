@@ -1,8 +1,8 @@
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 
 type ReadDb = Pick<Db, "select">;
 
@@ -14,16 +14,14 @@ export interface OrgPlanCapabilities {
   readonly canBuyCredits: boolean;
   readonly showUsagePack: boolean;
   readonly autoRechargeAllowed: boolean;
-  readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-  readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
   readonly audioDailyRateLimit: number;
   readonly audioDailyDurationSeconds: number;
 }
 
-const CAPABILITY_SELECTION = {
+export const ORG_PLAN_CAPABILITY_SELECTION = {
   planKey: orgPlanEntitlements.planKey,
   status: orgPlanEntitlements.status,
   baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
@@ -31,9 +29,7 @@ const CAPABILITY_SELECTION = {
   canBuyCredits: orgPlanEntitlements.canBuyCredits,
   showUsagePack: orgPlanEntitlements.showUsagePack,
   autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
-  supportByok: orgPlanEntitlements.supportByok,
   restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-  videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
   workflowWebhookAutomationAllowed:
     orgPlanEntitlements.workflowWebhookTriggerAllowed,
   audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
@@ -41,7 +37,7 @@ const CAPABILITY_SELECTION = {
   audioDailyDurationSeconds: orgPlanEntitlements.audioDailyDurationSeconds,
 } as const;
 
-function runtimeStatusForEntitlement(
+export function runtimeStatusForEntitlement(
   status: string,
 ): OrgPlanCapabilities["status"] {
   switch (status) {
@@ -65,7 +61,7 @@ export async function loadOrgPlanCapabilities(
   options?: { readonly forUpdate?: boolean },
 ): Promise<OrgPlanCapabilities | null> {
   const query = db
-    .select(CAPABILITY_SELECTION)
+    .select(ORG_PLAN_CAPABILITY_SELECTION)
     .from(orgPlanEntitlements)
     .where(eq(orgPlanEntitlements.orgId, orgId))
     .limit(1);
@@ -87,6 +83,19 @@ export async function loadOrgPlanCapabilities(
     throw new Error(`Missing org plan entitlement for ${orgId}`);
   }
 
+  return orgPlanCapabilitiesFromRow(capabilities, orgId);
+}
+
+export function orgPlanCapabilitiesFromRow(
+  capabilities: Omit<
+    OrgPlanCapabilities,
+    "status" | "restrictedBuiltInModels"
+  > & {
+    readonly status: string;
+    readonly restrictedBuiltInModels: boolean | null;
+  },
+  orgId: string,
+): OrgPlanCapabilities {
   if (capabilities.restrictedBuiltInModels === null) {
     throw new Error(
       `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
@@ -102,3 +111,32 @@ export async function loadOrgPlanCapabilities(
     status: runtimeStatusForEntitlement(capabilities.status),
   };
 }
+
+export const loadOrgPlanCapabilities$ = command(
+  async (
+    { set },
+    orgId: string,
+    abortSignal?: AbortSignal,
+  ): Promise<OrgPlanCapabilities | null> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select(ORG_PLAN_CAPABILITY_SELECTION)
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
+    abortSignal?.throwIfAborted();
+    if (row) {
+      return orgPlanCapabilitiesFromRow(row, orgId);
+    }
+    const [org] = await db
+      .select({ id: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    abortSignal?.throwIfAborted();
+    if (org) {
+      throw new Error(`Missing org plan entitlement for ${orgId}`);
+    }
+    return null;
+  },
+);

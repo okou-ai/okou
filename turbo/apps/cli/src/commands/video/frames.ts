@@ -32,8 +32,7 @@ Output:
     {"frames":[{"at":"00:21","path":"/tmp/video-frames-.../frame-001.jpg"}]}
 
 Tip:
-  Pair with "okou video transcribe": read the timestamped transcript to find the
-  moments that matter, then extract just those frames here for a closer look.
+  Extract frames at the moments that matter for a closer look.
 
 Notes:
   - Requires ffmpeg on PATH for frame extraction

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { linkLayoutSegmentSchema, type LinkLayoutSegment } from "./link-layout";
 import { artifactSharePolicySchema } from "./artifact-shares";
 
 const resourceTokenSchema = z
@@ -12,7 +13,8 @@ export const sharedThreadArtifactPolicySchema = z
     threadId: z.uuid(),
     ownerId: z.string().min(1),
     orgId: z.string().min(1),
-    publicBrand: z.enum(["vm0", "okou"]),
+    // Persisted link-layout marker (see link-layout.ts), not product identity.
+    publicBrand: linkLayoutSegmentSchema,
     status: z.enum(["preparing", "active", "revoked"]),
     resources: z.record(
       resourceTokenSchema,
@@ -66,8 +68,8 @@ export type SharedThreadArtifactPolicy = z.infer<
 >;
 
 export function sharedThreadArtifactPolicyKey(
-  publicBrand: "vm0" | "okou",
+  segment: LinkLayoutSegment,
   threadId: string,
 ): string {
-  return `shared-thread-artifacts/${publicBrand}/${threadId}.json`;
+  return `shared-thread-artifacts/${segment}/${threadId}.json`;
 }

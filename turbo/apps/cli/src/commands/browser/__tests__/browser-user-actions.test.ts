@@ -37,6 +37,7 @@ interface CdpOptions {
   readonly selectorCount?: number;
   readonly nodeName?: string;
   readonly oversizedResponseFor?: string;
+  readonly unavailableOtherTab?: boolean;
   readonly pageMarkerMatches?: boolean;
   readonly pageMarkerResponses?: readonly boolean[];
   readonly refObjectIds?: readonly string[];
@@ -98,11 +99,25 @@ function cdpCommandResult(
           type: "page",
           url: "https://example.com/login",
         },
+        ...(options.unavailableOtherTab
+          ? [
+              {
+                targetId: "other-page-target",
+                type: "page",
+                url: "https://example.com/other",
+              },
+            ]
+          : []),
       ],
     };
   }
   if (command.method === "Target.attachToTarget") {
-    return { sessionId: "page-session" };
+    return {
+      sessionId:
+        command.params.targetId === "other-page-target"
+          ? "other-page-session"
+          : "page-session",
+    };
   }
   if (command.method === "Runtime.evaluate") {
     return {
@@ -181,6 +196,17 @@ function installCdp(options: CdpOptions = {}): CdpCommand[] {
           client.send("x".repeat(65 * 1024));
           return;
         }
+        if (
+          options.unavailableOtherTab &&
+          command.method === "Runtime.callFunctionOn" &&
+          command.sessionId === "other-page-session" &&
+          String(command.params.functionDeclaration).includes(
+            "this[key]===value",
+          )
+        ) {
+          client.send(JSON.stringify({ id: command.id, error: {} }));
+          return;
+        }
         const result = cdpCommandResult(command, options, state);
         client.send(JSON.stringify({ id: command.id, result }));
       });
@@ -189,7 +215,7 @@ function installCdp(options: CdpOptions = {}): CdpCommand[] {
   return commands;
 }
 
-function actionResponse(kind: "input" | "direct_interaction") {
+function actionResponse() {
   const base = {
     requestToken: "opaque-action-token",
     state: "pending" as const,
@@ -207,34 +233,30 @@ function actionResponse(kind: "input" | "direct_interaction") {
       },
     },
   };
-  return kind === "input"
-    ? {
-        ...base,
-        kind,
-        siteOrigin: "https://example.com",
-        fields: [
-          {
-            key: "username",
-            label: "Email",
-            fieldKind: "username" as const,
-            required: true,
-          },
-        ],
-      }
-    : { ...base, kind, reason: "Complete the passkey prompt" };
+  return {
+    ...base,
+    kind: "input" as const,
+    siteOrigin: "https://example.com",
+    fields: [
+      {
+        key: "username",
+        label: "Email",
+        fieldKind: "username" as const,
+        required: true,
+        control: { tagName: "INPUT" as const, inputType: "email" as const },
+      },
+    ],
+  };
 }
 
-function installCreateRoute(
-  observe: (body: unknown) => void,
-  kind: "input" | "direct_interaction" = "input",
-): void {
+function installCreateRoute(observe: (body: unknown) => void): void {
   server.use(
     http.post(
       "http://localhost:3000/api/browser/user-actions",
       async ({ request }) => {
         observe(await request.json());
         return HttpResponse.json(
-          { actionUrl: ACTION_URL, action: actionResponse(kind) },
+          { actionUrl: ACTION_URL, action: actionResponse() },
           { status: 201 },
         );
       },
@@ -342,6 +364,213 @@ describe("okou browser user-action commands", () => {
     ).toBe(true);
   });
 
+  it("captures a number field without converting its semantic kind", async () => {
+    installCdp();
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "quantity",
+        label: "Quantity",
+        fieldKind: "number",
+        required: false,
+        target: "#quantity",
+      }),
+      "--callback-prompt",
+      "Continue after quantity entry",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "quantity", fieldKind: "number", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#quantity");
+  });
+
+  it("captures an exact native slider node without disclosing its selector or value", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "level",
+        label: "Level",
+        fieldKind: "range",
+        required: true,
+        target: "#private-level",
+      }),
+      "--callback-prompt",
+      "Continue after slider confirmation",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "level", fieldKind: "range", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-level");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-level",
+    );
+  });
+
+  it("captures a native color node without disclosing its selector or value", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "swatch",
+        label: "Swatch",
+        fieldKind: "color",
+        required: true,
+        target: "#private-swatch",
+      }),
+      "--callback-prompt",
+      "Continue after choosing a color",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "swatch", fieldKind: "color", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-swatch");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-swatch",
+    );
+  });
+
+  it("captures a native date/time field by node, leaving subtype discovery to the API", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "arrival",
+        label: "Arrival",
+        fieldKind: "date_time",
+        required: false,
+        target: "#private-arrival",
+      }),
+      "--callback-prompt",
+      "Continue after date entry",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "arrival", fieldKind: "date_time", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-arrival");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-arrival",
+    );
+  });
+
+  it("captures a native checkbox node without disclosing its selector or value", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "consent",
+        label: "Consent",
+        fieldKind: "checkbox",
+        required: false,
+        target: "#private-consent",
+      }),
+      "--callback-prompt",
+      "Continue after checkbox input",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "consent", fieldKind: "checkbox", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-consent");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-consent",
+    );
+  });
+
+  it("captures one radio target for server-side group discovery without exposing its selector", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "delivery",
+        label: "Delivery",
+        fieldKind: "radio",
+        required: false,
+        target: "#private-radio",
+      }),
+      "--callback-prompt",
+      "Continue after radio choice",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "delivery", fieldKind: "radio", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-radio");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-radio",
+    );
+  });
+
+  it("captures a native select by exact node identity without sending selector or option values", async () => {
+    installCdp({ nodeName: "SELECT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "region",
+        label: "Region",
+        fieldKind: "select",
+        required: true,
+        target: "#private-region",
+      }),
+      "--callback-prompt",
+      "Continue after region selection",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "region", fieldKind: "select", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-region");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-region",
+    );
+  });
+
   it("resolves an XPath target locally without sending it to the API", async () => {
     const cdpCommands = installCdp();
     let requestBody: unknown;
@@ -438,78 +667,6 @@ describe("okou browser user-action commands", () => {
     ).toHaveLength(2);
   });
 
-  it("creates direct interaction without contacting agent-browser or CDP", async () => {
-    let requestBody: unknown;
-    installCreateRoute((body) => {
-      requestBody = body;
-    }, "direct_interaction");
-
-    await browserCommand.parseAsync([
-      "node",
-      "okou",
-      "interaction-request",
-      "--reason",
-      "Complete the passkey prompt",
-      "--callback-prompt",
-      "Continue after the user completes the passkey prompt",
-    ]);
-
-    expect(requestBody).toStrictEqual({
-      kind: "direct_interaction",
-      reason: "Complete the passkey prompt",
-      callbackPrompt: "Continue after the user completes the passkey prompt",
-    });
-    expect(spawnSyncMock).not.toHaveBeenCalled();
-    expect(consoleLog.mock.calls.flat().join("\n")).toContain(ACTION_URL);
-  });
-
-  it("prints one values-free JSON document with the authoritative URL", async () => {
-    installCreateRoute(() => {}, "direct_interaction");
-
-    await browserCommand.parseAsync([
-      "node",
-      "okou",
-      "interaction-request",
-      "--reason",
-      "Complete the passkey prompt",
-      "--callback-prompt",
-      "Continue after the user completes the passkey prompt",
-      "--json",
-    ]);
-
-    const output = consoleLog.mock.calls.flat().join("\n");
-    expect(JSON.parse(output)).toStrictEqual({
-      actionUrl: ACTION_URL,
-      nextAction:
-        "Return this exact action URL in your final response, then stop using the Browser in this turn.",
-    });
-    expect(output).not.toContain("requestToken");
-  });
-
-  it("fails closed on a malformed successful API response", async () => {
-    server.use(
-      http.post("http://localhost:3000/api/browser/user-actions", () => {
-        return HttpResponse.json({ actionUrl: ACTION_URL }, { status: 201 });
-      }),
-    );
-
-    await expect(
-      browserCommand.parseAsync([
-        "node",
-        "okou",
-        "interaction-request",
-        "--reason",
-        "Complete the passkey prompt",
-        "--callback-prompt",
-        "Continue after the user completes the passkey prompt",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(spawnSyncMock).not.toHaveBeenCalled();
-    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
-    expect(consoleError.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
-  });
-
   it("rejects invalid field metadata before Browser or API access", async () => {
     let apiRequests = 0;
     installCreateRoute(() => {
@@ -538,6 +695,65 @@ describe("okou browser user-action commands", () => {
     expect(spawnSyncMock).not.toHaveBeenCalled();
     expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain("#email");
+    expect(consoleError.mock.calls.flat().join("\n")).toContain(
+      "--field 1: fieldKind must be text, username, password, one_time_code, number",
+    );
+  });
+
+  it("identifies the malformed --field position without echoing its value", async () => {
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--field",
+        "{private-target",
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("--field 2 must be valid JSON");
+    expect(output).not.toContain("private-target");
+    expect(spawnSyncMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing callback prompt as JSON before Browser access", async () => {
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toMatchObject({
+      error: {
+        code: "BROWSER_INPUT_INVALID_REQUEST",
+        message: "--callback-prompt must be 1-200 characters",
+        retryable: false,
+      },
+    });
+    expect(spawnSyncMock).not.toHaveBeenCalled();
   });
 
   it("rejects duplicate field keys before Browser access", async () => {
@@ -617,6 +833,14 @@ describe("okou browser user-action commands", () => {
           label: "Email",
           fieldKind: "username",
           required: true,
+          target: "@e1",
+        }),
+        "--field",
+        JSON.stringify({
+          key: "password",
+          label: "Password",
+          fieldKind: "password",
+          required: true,
           target: "#sensitive-field",
         }),
         "--callback-prompt",
@@ -626,11 +850,37 @@ describe("okou browser user-action commands", () => {
 
     expect(apiRequests).toBe(0);
     expect(consoleError.mock.calls.flat().join("\n")).toContain(
-      "missing or ambiguous",
+      "--field 2: the target matched 2 controls",
     );
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain(
       "#sensitive-field",
     );
+  });
+
+  it("distinguishes a missing selector from an ambiguous one", async () => {
+    installCdp({ selectorCount: 0 });
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "#private-selector",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("--field 1: the target matched no controls");
+    expect(output).not.toContain("#private-selector");
   });
 
   it("fails closed when two fields resolve to the same control", async () => {
@@ -668,7 +918,7 @@ describe("okou browser user-action commands", () => {
 
     expect(apiRequests).toBe(0);
     expect(consoleError.mock.calls.flat().join("\n")).toContain(
-      "different controls",
+      "--field 2 targets the same control as --field 1",
     );
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain(
       "#same-control",
@@ -702,7 +952,7 @@ describe("okou browser user-action commands", () => {
 
     expect(apiRequests).toBe(0);
     expect(consoleError.mock.calls.flat().join("\n")).toContain(
-      "top-level input and textarea",
+      "top-level input, textarea, and select controls",
     );
   });
 
@@ -735,6 +985,34 @@ describe("okou browser user-action commands", () => {
     expect(consoleError.mock.calls.flat().join("\n")).toContain(
       "could not be identified",
     );
+  });
+
+  it("uses the marked page when another tab cannot be inspected", async () => {
+    installCdp({ unavailableOtherTab: true });
+    let apiRequests = 0;
+    installCreateRoute(() => {
+      apiRequests += 1;
+    });
+
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "username",
+        label: "Email",
+        fieldKind: "username",
+        required: true,
+        target: "#email",
+      }),
+      "--callback-prompt",
+      "Continue",
+    ]);
+
+    expect(apiRequests).toBe(1);
+    expect(consoleLog.mock.calls.flat().join("\n")).toContain(ACTION_URL);
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   it("fails closed on an oversized CDP response", async () => {
@@ -800,6 +1078,55 @@ describe("okou browser user-action commands", () => {
     expect(apiRequests).toBe(0);
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain(CDP_URL);
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain("#email");
+  });
+
+  it("identifies an expired element ref without printing agent-browser stderr", async () => {
+    installCdp();
+    spawnSyncMock.mockImplementation(
+      (_command: string, args: readonly string[]) => {
+        if (args.at(-2) === "focus") {
+          return {
+            status: 1,
+            stdout: "",
+            stderr: "private-browser-page-data",
+          };
+        }
+        if (args.at(-2) === "get" && args.at(-1) === "cdp-url") {
+          return okAgentBrowser({ cdpUrl: CDP_URL });
+        }
+        if (args.at(-2) === "eval") {
+          return okAgentBrowser({
+            result: markerResult(String(args.at(-1))),
+          });
+        }
+        return okAgentBrowser();
+      },
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain(
+      "--field 1: the Browser element reference could not be focused",
+    );
+    expect(output).toContain("Take a new agent-browser snapshot");
+    expect(output).not.toContain("private-browser-page-data");
   });
 
   it("does not extend the capture deadline for fallback cleanup", async () => {
@@ -909,5 +1236,250 @@ describe("okou browser user-action commands", () => {
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain(
       "secret-cdp-token",
     );
+    expect(consoleError.mock.calls.flat().join("\n")).toContain("FORBIDDEN");
+    expect(consoleError.mock.calls.flat().join("\n")).toContain(
+      "Use direct Browser takeover",
+    );
+  });
+
+  it("shows the API's safe field mismatch and a corrective next action", async () => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
+              message:
+                "--field 1: fieldKind 'password' does not match the observed input type 'email'; use text or username",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "password",
+          label: "Password",
+          fieldKind: "password",
+          required: true,
+          target: "#private-selector",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("BROWSER_USER_ACTION_UNSUPPORTED_CONTROL");
+    expect(output).toContain("--field 1: fieldKind 'password'");
+    expect(output).toContain(
+      "Choose a supported control and matching fieldKind",
+    );
+    expect(output).not.toContain("#private-selector");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
+  });
+
+  it("tells the agent to reconnect when its run has no live Browser", async () => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
+              message: "The current chat run has no live managed Browser",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("BROWSER_USER_ACTION_BROWSER_NOT_LIVE");
+    expect(output).toContain("Run `okou browser use`");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
+  });
+
+  it("gives page-specific guidance for an unsupported Browser page", async () => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USER_ACTION_UNSUPPORTED_PAGE",
+              message: "The selected Browser page is not an HTTP or HTTPS page",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("BROWSER_USER_ACTION_UNSUPPORTED_PAGE");
+    expect(output).toContain("Open an HTTP or HTTPS page");
+    expect(output).not.toContain(ACTION_URL);
+  });
+
+  it("emits a single structured retryable error under --json", async () => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USE_TIMEOUT",
+              message: "Provider token should not be printed: private-token",
+            },
+          },
+          { status: 503 },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "#private-selector",
+        }),
+        "--callback-prompt",
+        "Continue",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toStrictEqual({
+      error: {
+        code: "BROWSER_USE_TIMEOUT",
+        message: "The managed Browser inspection timed out",
+        nextAction:
+          "Check that the Browser is live, then retry this request once.",
+        retryable: true,
+      },
+    });
+    expect(consoleLog).not.toHaveBeenCalled();
+    expect(consoleError.mock.calls.flat().join("\n")).not.toContain(
+      "private-token",
+    );
+  });
+
+  it.each([
+    {
+      code: "BROWSER_USE_NOT_CONFIGURED",
+      status: 503,
+      providerMessage: "Managed browser provider is not configured",
+      message: "Managed Browser access is not configured",
+      nextAction:
+        "Stop this request and ask the Okou team to configure managed Browser access.",
+    },
+    {
+      code: "BROWSER_USE_OUTPUT_TOO_LARGE",
+      status: 502,
+      providerMessage: "Managed browser provider response is too large",
+      message:
+        "The managed Browser provider response exceeded the supported size",
+      nextAction:
+        "Stop this request and ask the Okou team to inspect the Browser provider response.",
+    },
+  ])("stops on a managed Browser provider failure: $code", async (failure) => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: failure.code,
+              message: failure.providerMessage,
+            },
+          },
+          { status: failure.status },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--callback-prompt",
+        "Continue",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toStrictEqual({
+      error: {
+        code: failure.code,
+        message: failure.message,
+        nextAction: failure.nextAction,
+        retryable: false,
+      },
+    });
+    expect(consoleLog).not.toHaveBeenCalled();
   });
 });

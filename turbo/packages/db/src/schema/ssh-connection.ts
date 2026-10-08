@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
@@ -25,6 +26,7 @@ export const sshConnections = pgTable(
     port: integer("port").notNull().default(22),
     credentialId: uuid("credential_id").notNull(),
     cloudflareAccessId: uuid("cloudflare_access_id"),
+    needsRebind: boolean("needs_rebind").default(false).notNull(),
     learnedHostKeyAlgorithm: varchar("learned_host_key_algorithm", {
       length: 64,
     }),
@@ -32,6 +34,9 @@ export const sshConnections = pgTable(
       length: 64,
     }),
     generation: integer("generation").notNull().default(1),
+    defaultEnabledForChats: boolean("default_enabled_for_chats")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -43,12 +48,11 @@ export const sshConnections = pgTable(
         table.userId,
       ),
       foreignKey({
-        name: "ssh_connections_cloudflare_access_owner_fk",
-        columns: [table.cloudflareAccessId, table.orgId, table.userId],
+        name: "ssh_connections_cloudflare_access_org_fk",
+        columns: [table.cloudflareAccessId, table.orgId],
         foreignColumns: [
           cloudflareAccessConfigs.id,
           cloudflareAccessConfigs.orgId,
-          cloudflareAccessConfigs.userId,
         ],
       }).onDelete("restrict"),
       index("idx_ssh_connections_cloudflare_access").on(
@@ -57,7 +61,11 @@ export const sshConnections = pgTable(
       ),
       check(
         "chk_ssh_connections_cloudflare_access_destination",
-        sql`${table.cloudflareAccessId} IS NULL OR (${table.port} = 443 AND ${table.host} ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND ${table.host} !~ '^[0-9.]+$')`,
+        sql`(${table.cloudflareAccessId} IS NULL AND NOT ${table.needsRebind}) OR (${table.port} = 443 AND ${table.host} ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND ${table.host} !~ '^[0-9.]+$')`,
+      ),
+      check(
+        "chk_ssh_connections_needs_rebind_unbound",
+        sql`NOT ${table.needsRebind} OR ${table.cloudflareAccessId} IS NULL`,
       ),
       foreignKey({
         name: "ssh_connections_credential_owner_fk",

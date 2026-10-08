@@ -25,6 +25,8 @@ import {
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
+  CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
+  CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
   connectorCheckContract,
   connectorCheckDiagnosticResultSchema,
   connectorCheckTargetAwareDiagnosticResultSchema,
@@ -170,6 +172,32 @@ export async function listConnectorCatalog(): Promise<ConnectorCatalogListRespon
   handleError(result, "Failed to list connector catalog");
 }
 
+/**
+ * Get one catalog connector with its connection status.
+ * Returns null when the catalog has no connector with this slug.
+ */
+export async function getConnectorCatalogStatus(
+  connectorSlug: ConnectorSlug,
+): Promise<ConnectorCatalogStatus | null> {
+  const config = await getClientConfig();
+  const client = initClient(connectorCatalogContract, config);
+
+  const result = await client.get({ headers: {}, params: { connectorSlug } });
+
+  if (result.status === 200) {
+    return result.body.connector;
+  }
+
+  if (result.status === 404) {
+    return null;
+  }
+
+  handleError(
+    result,
+    `Failed to get connector catalog item "${connectorSlug}"`,
+  );
+}
+
 export async function listConnectorCatalogStatus(): Promise<ConnectorCatalogStatusResponse> {
   const config = await getClientConfig();
   const client = initClient(connectorCatalogContract, config);
@@ -237,9 +265,14 @@ function normalizeBuiltinDiagnostic(
   return diagnostic;
 }
 
-export async function diagnoseConnectorCheck(
+export interface ConnectorCheckWithContext {
+  readonly diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+  readonly awsContextIncomplete: boolean;
+}
+
+export async function diagnoseConnectorCheckWithContext(
   request: ConnectorCheckRequestBody,
-): Promise<ConnectorCheckTargetAwareDiagnosticResult> {
+): Promise<ConnectorCheckWithContext> {
   const config = await getClientConfig();
   const client = initClient(connectorCheckContract, {
     ...config,
@@ -249,15 +282,27 @@ export async function diagnoseConnectorCheck(
   const result = await client.check({ body: request });
 
   if (result.status === 200) {
-    if ("target" in request || "includeCustomConnectors" in request) {
-      return connectorCheckTargetAwareDiagnosticResultSchema.parse(result.body);
-    }
-    return normalizeBuiltinDiagnostic(
-      connectorCheckDiagnosticResultSchema.parse(result.body),
-    );
+    const diagnostic =
+      "target" in request || "includeCustomConnectors" in request
+        ? connectorCheckTargetAwareDiagnosticResultSchema.parse(result.body)
+        : normalizeBuiltinDiagnostic(
+            connectorCheckDiagnosticResultSchema.parse(result.body),
+          );
+    return {
+      diagnostic,
+      awsContextIncomplete:
+        result.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER) ===
+        CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
+    };
   }
 
   handleError(result, "Failed to diagnose connector");
+}
+
+export async function diagnoseConnectorCheck(
+  request: ConnectorCheckRequestBody,
+): Promise<ConnectorCheckTargetAwareDiagnosticResult> {
+  return (await diagnoseConnectorCheckWithContext(request)).diagnostic;
 }
 
 /**

@@ -1,52 +1,50 @@
+import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
+import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
-  NATIVE_CLAUDE_OPUS_5_5_HEADER,
-  NATIVE_GPT_6_SOL_HEADER,
-  NATIVE_GPT_6_LUNA_HEADER,
   claimCompatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   elapsedSinceApiStartMs,
   RESUME_SESSION_HISTORY_MAX_BYTES,
-  runnersActiveInputsContract,
-  runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
+  runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
   runnersModelProviderFailuresContract,
   runnersPollContract,
+  runnersSteerContract,
   runnerVersionSchema,
+  STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
+  STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
   storedConnectorPermissionBaselineSchema,
   type ClaimCompatibleStoredExecutionContext,
   type ExecutionContext,
   type HeldSandboxState,
   type HeldWorkspaceState,
   type PiModelConfig,
-  type RunnerPreference,
-  type RunnerPreferenceClaimState,
   type RunnerClaimCapabilities,
   type RunnerInstalledVersions,
+  type RunnerPreference,
+  type RunnerPreferenceClaimState,
   type SessionHistoryDownloadSource,
   type StoredConnectorPermissionBaseline,
   type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import { command } from "ccstate";
-import { activePiMemoryPhase2MaintenanceRunCondition } from "../services/pi-memory-phase2-maintenance.service";
-import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
   runStatusSchema,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
-import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
+import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import {
   runnerState,
   type RunnerHeldSandboxState as PersistedRunnerHeldSandboxState,
   type RunnerHeldWorkspaceState as PersistedRunnerHeldWorkspaceState,
 } from "@okouai/db/schema/runner-state";
+import { command } from "ccstate";
 import {
   and,
   desc,
@@ -54,7 +52,7 @@ import {
   gt,
   inArray,
   isNotNull,
-  exists,
+  isNull,
   lt,
   lte,
   notInArray,
@@ -63,87 +61,81 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
-
-import { authContext$ } from "../auth/auth-context";
-import { authRoute } from "../auth/auth-route";
-import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
-import { authorization$, request$ } from "../context/hono";
-import { bodyResultOf, pathParamsOf } from "../context/request";
-import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$, type Db } from "../external/db";
-import {
-  generatePresignedGetUrl,
-  publicS3DownloadSource,
-  S3ObjectSizeLimitError,
-  s3ObjectContentLength,
-} from "../external/s3";
-import {
-  createRunnerGroupRealtimeToken,
-  publishChatThreadMessageCreatedSafely,
-} from "../external/realtime";
-import { recordSandboxOperations } from "../external/sandbox-op-log";
-import { now, nowDate } from "../../lib/time";
-import { env } from "../../lib/env";
-import { badRequestMessage, notFound } from "../../lib/error";
-import {
-  prepareAgentClaimAdmission,
-  prepareComputeRunAdmission,
-  validateComputeRunAdmission,
-  stopClosedComputeCandidate,
-  withComputeOwnershipRetry,
-  type ComputeRunAdmission,
-  type ComputeRunOwner,
-} from "../services/compute-erasure-admission.service";
-import { logger } from "../../lib/log";
 import { executeRawRows } from "../../lib/db-raw-rows";
-import type { Tx } from "../../lib/db-types";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
+import { env } from "../../lib/env";
+import { badRequestMessage, notFound } from "../../lib/error";
+import { logger } from "../../lib/log";
+import { now, nowDate } from "../../lib/time";
+import { authContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
+import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
 import { generateSandboxToken } from "../auth/tokens";
-import { decryptPersistentSecretsMap } from "../services/crypto.utils";
+import { authorization$, request$ } from "../context/hono";
+import { bodyResultOf, pathParamsOf } from "../context/request";
+import type { JsonResponseObserver } from "../context/route";
+import { waitUntil } from "../context/wait-until";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
-  COMPUTE_CLOSURE_ERROR,
-  transitionAgentRunsToTerminal,
-} from "../services/agent-run-terminal-transition.service";
-import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
-import { historyGenerationRunIdForStoredExecutionContext } from "../services/agent-run-queue-payload.service";
-import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
-import { reportBuiltInModelProviderFailure } from "../services/built-in-model-provider-failure.service";
+  createRunnerGroupRealtimeToken,
+  publishChatThreadMessageCreatedSafely,
+} from "../external/realtime";
 import {
-  recordActiveInputDeliveryReceipt,
-  reserveActiveInputDelivery,
+  generatePresignedGetUrl,
+  publicS3DownloadSource,
+  s3ObjectContentLength,
+  S3ObjectSizeLimitError,
+} from "../external/s3";
+import {
+  recordClaimResponseJsonSerialization,
+  recordSandboxOperations,
+} from "../external/sandbox-op-log";
+import type { RouteEntry } from "../route-entry";
+import {
+  declareSteeredInput,
+  loadNextSteerableInput$,
 } from "../services/active-input-delivery.service";
-import { notifyRunningChatRunOfPendingInput } from "../services/chat-thread-queue-drain.service";
-import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
+import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
+import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
+import {
+  releaseNeverStartedRunSlots,
+  transitionAgentRunsToTerminal,
+  type ReleasedRunSlot,
+} from "../services/agent-run-terminal-transition.service";
+import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
+import { loadConnectorRuntimeSlugSelection } from "../services/connector-catalog-slug-source.service";
 import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets } from "../services/connector-runtime-sync.service";
+import { decryptPersistentSecretsMap } from "../services/crypto.utils";
+import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
+import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import {
-  networkPolicyRefreshesRecord,
-  mergeNetworkPolicyRefreshes,
-  networkPolicyRefreshConnectorSlugs,
-  resolveActiveNetworkPolicyRefreshes,
-  resolveActiveNetworkPolicyRefreshesFromBaseline,
-} from "../services/user-permission-grants.service";
+  resolveRunnerReusePreference,
+  runnerPreferenceTelemetryDimensions,
+  runnerPreferenceTelemetryResolution,
+  runnerReuseKeyTelemetryKind,
+  runnerReusePreferenceLookupError,
+  runnerReusePreferencePollPriority,
+  type RunnerPreferenceTelemetryResolution,
+} from "../services/runner-reuse-preference";
 import {
-  type CompressedSessionHistoryBlobEncoding,
   resumeSessionHistoryBlobKey,
   resumeSessionHistoryRawBlobKey,
   SESSION_HISTORY_ENCODING_IDENTITY,
   tryNormalizeSessionHistoryBlobEncoding,
+  type CompressedSessionHistoryBlobEncoding,
 } from "../services/session-history-blobs";
 import {
-  runnerPreferenceTelemetryResolution,
-  runnerPreferenceTelemetryDimensions,
-  runnerReuseKeyTelemetryKind,
-  runnerReusePreferenceLookupError,
-  runnerReusePreferencePollPriority,
-  resolveRunnerReusePreference,
-  type RunnerPreferenceTelemetryResolution,
-} from "../services/runner-reuse-preference";
-import type { RouteEntry } from "../route-entry";
+  mergeNetworkPolicyRefreshes,
+  networkPolicyRefreshConnectorSlugs,
+  networkPolicyRefreshesRecord,
+  resolveActiveNetworkPolicyRefreshes,
+  resolveActiveNetworkPolicyRefreshesFromBaseline,
+} from "../services/user-permission-grants.service";
 import { settle, tapError } from "../utils";
 
 const L = logger("Runners");
@@ -224,6 +216,7 @@ interface ClaimFailedSideEffectArgs {
   readonly runId: string;
   readonly orgId: string;
   readonly error: string;
+  readonly releasedSlots: readonly ReleasedRunSlot[];
 }
 
 class ResumeSessionHistoryLoadError extends Error {
@@ -541,6 +534,11 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   const admittableProfiles = body.data.admittableProfiles;
   const currentDate = nowDate();
+  // User PAT heartbeats are valid for their existing Runner flows, but cannot
+  // assert a host ingress signal used to authorize WSS ticket issuance.
+  const wssIngressServiceActive =
+    auth.type === "official-runner" &&
+    body.data.wssIngressServiceActive === true;
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
     sequence: body.data.snapshotSequence,
@@ -562,7 +560,9 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       admittableProfiles,
       heldSandboxStates,
       heldWorkspaceStates,
+      activeReuseProducers: body.data.activeReuseProducers,
       mode: body.data.mode,
+      wssIngressServiceActive,
       lastSeenAt: currentDate,
     })
     .onConflictDoUpdate({
@@ -577,10 +577,15 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         allocatedVcpu: body.data.allocatedVcpu,
         allocatedMemoryMb: body.data.allocatedMemoryMb,
         runningCount: body.data.runningCount,
-        admittableProfiles,
-        heldSandboxStates,
-        heldWorkspaceStates,
+        // A fresh heartbeat still advances the ordered scalar state below.
+        // Reuse stored TOAST values for unchanged JSONB snapshots instead of
+        // rewriting them on every heartbeat.
+        admittableProfiles: sql`CASE WHEN ${runnerState.admittableProfiles} IS DISTINCT FROM excluded.admittable_profiles THEN excluded.admittable_profiles ELSE ${runnerState.admittableProfiles} END`,
+        heldSandboxStates: sql`CASE WHEN ${runnerState.heldSandboxStates} IS DISTINCT FROM excluded.held_sandbox_states THEN excluded.held_sandbox_states ELSE ${runnerState.heldSandboxStates} END`,
+        heldWorkspaceStates: sql`CASE WHEN ${runnerState.heldWorkspaceStates} IS DISTINCT FROM excluded.held_workspace_states THEN excluded.held_workspace_states ELSE ${runnerState.heldWorkspaceStates} END`,
+        activeReuseProducers: sql`CASE WHEN ${runnerState.activeReuseProducers} IS DISTINCT FROM excluded.active_reuse_producers THEN excluded.active_reuse_producers ELSE ${runnerState.activeReuseProducers} END`,
         mode: body.data.mode,
+        wssIngressServiceActive,
         lastSeenAt: currentDate,
       },
       setWhere: or(
@@ -720,21 +725,14 @@ async function resolvePollRunnerReusePreference(
   return resolution ?? runnerReusePreferenceLookupError();
 }
 
-function pendingRunnerJobs(
-  executor: Pick<Db, "select">,
-  args: {
-    readonly conditions: readonly SQL[];
-    readonly priorityOrder: readonly SQL[];
-    readonly currentDate: Date;
-  },
+async function findPendingRunnerJob(
+  db: Pick<Db, "select">,
+  conditions: readonly SQL[],
+  priorityOrder: readonly SQL[],
 ) {
-  return executor
+  const [pendingJob] = await db
     .select({
       runId: runnerJobQueue.runId,
-      launchSnapshot: agentRuns.launchSnapshot,
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      agentId: agentSessions.agentId,
       prompt: agentRuns.prompt,
       appendSystemPrompt: agentRuns.appendSystemPrompt,
       vars: agentRuns.vars,
@@ -749,77 +747,9 @@ function pendingRunnerJobs(
     })
     .from(runnerJobQueue)
     .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .where(
-      and(
-        ...args.conditions,
-        or(
-          isNotNull(agentSessions.agentId),
-          exists(
-            executor
-              .select({ id: piMemoryPhase2Jobs.memoryStorageId })
-              .from(piMemoryPhase2Jobs)
-              .where(
-                activePiMemoryPhase2MaintenanceRunCondition(executor, {
-                  runId: agentRuns.id,
-                  userId: agentRuns.userId,
-                  orgId: agentRuns.orgId,
-                  currentTime: args.currentDate,
-                }),
-              ),
-          ),
-        ),
-      ),
-    )
-    .orderBy(
-      ...args.priorityOrder,
-      runnerJobQueue.createdAt,
-      runnerJobQueue.runId,
-    );
-}
-
-type PendingRunnerJob = Awaited<ReturnType<typeof pendingRunnerJobs>>[number];
-async function admitPendingRunnerJob(
-  db: Db,
-  candidates: readonly PendingRunnerJob[],
-  whereConditions: SQL[],
-  reusePreferencePriorityOrder: SQL[],
-  currentDate: Date,
-) {
-  let pendingJob: PendingRunnerJob | undefined;
-  for (const candidate of candidates) {
-    const owner = candidate;
-    pendingJob = await withComputeOwnershipRetry(() => {
-      return db.transaction(async (tx) => {
-        const admission = await prepareComputeRunAdmission(
-          tx,
-          candidate.runId,
-          owner,
-        );
-        if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
-          return undefined;
-        }
-        if (admission.closed) {
-          await stopClosedComputeCandidate(tx, admission);
-          return undefined;
-        }
-        const [job] = await pendingRunnerJobs(tx, {
-          conditions: [
-            ...whereConditions,
-            eq(runnerJobQueue.runId, candidate.runId),
-          ],
-          priorityOrder: reusePreferencePriorityOrder,
-          currentDate,
-        })
-          .for("share", { of: runnerJobQueue })
-          .limit(1);
-        return job;
-      });
-    });
-    if (pendingJob) {
-      break;
-    }
-  }
+    .where(and(...conditions))
+    .orderBy(...priorityOrder, runnerJobQueue.createdAt, runnerJobQueue.runId)
+    .limit(1);
   return pendingJob;
 }
 
@@ -844,38 +774,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     eq(agentRuns.status, "pending"),
   ];
 
-  if (get(request$).header(NATIVE_GPT_6_SOL_HEADER) !== "1") {
-    // Filter before the bounded candidate lookup so an unsupported Sol job
-    // cannot hide existing models behind it from an older Runner.
-    whereConditions.push(sql`(
-      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "codex")}
-      AND ${inArray(
-        sql`${runnerJobQueue.executionContext}->'environment'->>'OPENAI_MODEL'`,
-        ["gpt-6-sol", "openai/gpt-6-sol"],
-      )}
-    ) IS NOT TRUE`);
-  }
-  if (get(request$).header(NATIVE_CLAUDE_OPUS_5_5_HEADER) !== "1") {
-    // The logical billing identity remains stable across direct, gateway and
-    // opaque cloud deployment model IDs.
-    whereConditions.push(sql`(
-      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "claude-code")}
-      AND ${eq(
-        sql`${runnerJobQueue.executionContext}->>'modelUsageProvider'`,
-        "claude-opus-5-5",
-      )}
-    ) IS NOT TRUE`);
-  }
-  if (get(request$).header(NATIVE_GPT_6_LUNA_HEADER) !== "1") {
-    // Filter before the bounded lookup, including during Runner rollback.
-    whereConditions.push(sql`(
-      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "codex")}
-      AND ${inArray(
-        sql`${runnerJobQueue.executionContext}->'environment'->>'OPENAI_MODEL'`,
-        ["gpt-6-luna", "openai/gpt-6-luna"],
-      )}
-    ) IS NOT TRUE`);
-  }
   if (auth.type === "official-runner") {
     if (!isOfficialRunnerGroup(group)) {
       return forbidden("Official runners can only poll vm0/* groups");
@@ -899,18 +797,10 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     runnerGroup: group,
     currentDate,
   });
-  const candidates = await pendingRunnerJobs(db, {
-    conditions: whereConditions,
-    priorityOrder: reusePreferencePriorityOrder,
-    currentDate,
-  }).limit(8);
-  signal.throwIfAborted();
-  const pendingJob = await admitPendingRunnerJob(
+  const pendingJob = await findPendingRunnerJob(
     db,
-    candidates,
     whereConditions,
     reusePreferencePriorityOrder,
-    currentDate,
   );
   signal.throwIfAborted();
   const pendingJobLookupFinishedAtMs = now();
@@ -963,9 +853,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const claimBody$ = bodyResultOf(runnersJobClaimContract.claim);
-const modelProviderFailureBody$ = bodyResultOf(
-  runnersModelProviderFailuresContract.report,
-);
 const connectorRuntimeSyncBody$ = bodyResultOf(
   runnersConnectorRuntimeSyncContract.sync,
 );
@@ -986,7 +873,6 @@ interface ClaimedRun {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string | null;
-  readonly resourceOwner?: ComputeRunOwner["resourceOwner"];
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
@@ -1077,20 +963,23 @@ async function getClaimableJob(
         appendSystemPrompt: agentRuns.appendSystemPrompt,
         vars: agentRuns.vars,
       },
-      maintenanceRunId: piMemoryPhase2Jobs.maintenanceRunId,
-      resourceOwner: { userId: agents.owner, orgId: agents.orgId },
     })
     .from(runnerJobQueue)
     .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .leftJoin(agents, eq(agents.id, agentSessions.agentId))
-    .leftJoin(
-      piMemoryPhase2Jobs,
+    .innerJoin(
+      agentSessions,
       and(
-        eq(piMemoryPhase2Jobs.maintenanceRunId, agentRuns.id),
-        eq(piMemoryPhase2Jobs.orgId, agentRuns.orgId),
-        eq(piMemoryPhase2Jobs.userId, agentRuns.userId),
-        eq(piMemoryPhase2Jobs.status, "leased"),
+        eq(agentSessions.id, agentRuns.sessionId),
+        or(
+          isNotNull(agentSessions.agentId),
+          // An unbound session belongs directly to the run's owner. Its
+          // producer owns admission and lifecycle fencing, not runner claim.
+          and(
+            eq(agentSessions.orgId, agentRuns.orgId),
+            eq(agentSessions.userId, agentRuns.userId),
+            isNull(agentRuns.chatThreadId),
+          ),
+        ),
       ),
     )
     .where(
@@ -1102,16 +991,10 @@ async function getClaimableJob(
     .limit(1);
   signal.throwIfAborted();
 
-  if (
-    jobWithRun &&
-    (jobWithRun.run.agentId !== null || jobWithRun.maintenanceRunId === runId)
-  ) {
+  if (jobWithRun) {
     return {
       job: jobWithRun.job,
-      run: {
-        ...jobWithRun.run,
-        resourceOwner: jobWithRun.resourceOwner ?? undefined,
-      },
+      run: jobWithRun.run,
     };
   }
   return notFound("Job not found in queue");
@@ -1230,7 +1113,6 @@ function buildClaimTransitionSql(
               ${agentRuns.status} AS "status"
             FROM ${agentRuns}
             WHERE ${eq(agentRuns.id, runId)}
-              AND ${agentRuns.triggerSource} IS DISTINCT FROM 'goal'
             FOR UPDATE
           ),
           locked_job AS MATERIALIZED (
@@ -1260,7 +1142,6 @@ function buildClaimTransitionSql(
             SET
               status = 'running',
               started_at = claim_clock."claimedAt",
-              last_heartbeat_at = claim_clock."claimedAt",
               cancellation_recovery_completed = false,
               runner_id = ${runnerId},
               runner_heartbeat_generation = ${runnerHeartbeatGeneration},
@@ -1325,91 +1206,13 @@ function buildClaimTransitionSql(
           `;
 }
 
-async function deleteStaleClaimJob(
-  db: Pick<Db, "delete" | "select">,
-  args: {
-    readonly runId: string;
-    readonly owner: ComputeRunOwner;
-    readonly sessionId: string;
-  },
-): Promise<void> {
-  // Preserve legacy stale-job cleanup without locking the no-longer-pending
-  // run or its Session. Queued runs may still be promoted; erasure-stopped
-  // payloads must remain available for capture.
-  await db.delete(runnerJobQueue).where(
-    and(
-      eq(runnerJobQueue.runId, args.runId),
-      exists(
-        db
-          .select({ id: agentRuns.id })
-          .from(agentRuns)
-          .where(
-            and(
-              eq(agentRuns.id, args.runId),
-              eq(agentRuns.userId, args.owner.userId),
-              eq(agentRuns.orgId, args.owner.orgId),
-              eq(agentRuns.sessionId, args.sessionId),
-              notInArray(agentRuns.status, ["queued", "pending"]),
-              sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
-            ),
-          ),
-      ),
-    ),
-  );
-}
-
-async function prepareClaimTransitionAdmission(
-  tx: Tx,
-  args: {
-    readonly runId: string;
-    readonly owner: ComputeRunOwner;
-  },
-): Promise<ComputeRunAdmission | undefined> {
-  const { runId, owner } = args;
-  const ordinaryAgentClaim = owner.agentId !== null;
-  const agentClaimAdmission = ordinaryAgentClaim
-    ? await prepareAgentClaimAdmission(tx, runId, {
-        ...owner,
-        agentId: owner.agentId,
-      })
-    : undefined;
-  const admission = ordinaryAgentClaim
-    ? agentClaimAdmission?.admission
-    : await prepareComputeRunAdmission(tx, runId, owner);
-  if (!admission) {
-    return undefined;
-  }
-  const valid = ordinaryAgentClaim
-    ? agentClaimAdmission?.valid === true
-    : await validateComputeRunAdmission(tx, admission, "pending");
-  if (!valid) {
-    if (!admission.closed) {
-      await deleteStaleClaimJob(tx, {
-        runId,
-        owner,
-        sessionId: admission.sessionId,
-      });
-    }
-    return undefined;
-  }
-  if (admission.closed) {
-    await stopClosedComputeCandidate(tx, admission);
-    return undefined;
-  }
-  return admission;
-}
-
 async function transitionClaimedJobToRunning(
   db: Db,
-  args: {
-    readonly runId: string;
-    readonly owner: ComputeRunOwner;
-  },
+  runId: string,
   runnerAttribution: RunnerClaimAttribution | undefined,
   signal: AbortSignal,
   timing: ClaimRouteTimingCollector,
 ): Promise<ClaimTransitionResult> {
-  const { runId } = args;
   const query = buildClaimTransitionSql(
     runId,
     runnerAttribution?.runnerIdentity.runnerId ?? null,
@@ -1417,27 +1220,29 @@ async function transitionClaimedJobToRunning(
     runnerAttribution?.runnerHostname ?? null,
     runnerAttribution?.runnerVersion ?? null,
   );
-  return await withComputeOwnershipRetry(() => {
-    return db.transaction(async (tx) => {
-      const admission = await prepareClaimTransitionAdmission(tx, args);
-      if (!admission) {
-        return { status: "run-not-found" as const };
-      }
-      const result = await timing.measure(
-        "claim_route_transition_execute",
-        "nested",
-        async () => {
-          return await executeRawRows(tx, query, claimTransitionSqlRowSchema);
-        },
-      );
-      signal.throwIfAborted();
-      return decodeClaimTransitionResult(result);
-    });
-  });
+  const result = await timing.measure(
+    "claim_route_transition_execute",
+    "nested",
+    async () => {
+      return await executeRawRows(db, query, claimTransitionSqlRowSchema);
+    },
+  );
+  const transition = decodeClaimTransitionResult(result);
+  if (transition.status === "claimed") {
+    await db
+      .update(activeAgentRuns)
+      .set({ lastHeartbeatAt: transition.claimedAt })
+      .where(eq(activeAgentRuns.runId, runId));
+  }
+  signal.throwIfAborted();
+  return transition;
 }
 
 type PoisonJobResult =
-  | { readonly status: "failed" }
+  | {
+      readonly status: "failed";
+      readonly releasedSlots: readonly ReleasedRunSlot[];
+    }
   | { readonly status: "job-not-found" }
   | { readonly status: "run-not-found" };
 type FailedPoisonJobResult = Exclude<
@@ -1455,56 +1260,45 @@ function poisonJobErrorResponse(result: FailedPoisonJobResult) {
 async function failPoisonQueuedJob(
   db: Db,
   runId: string,
-  owner: ComputeRunOwner,
   errorMessage: string,
   signal: AbortSignal,
 ): Promise<PoisonJobResult> {
-  return await withComputeOwnershipRetry(() => {
-    return db.transaction(async (tx) => {
-      const admission = await prepareComputeRunAdmission(tx, runId, owner);
-      if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
-        return { status: "run-not-found" as const };
-      }
-      if (admission.closed) {
-        await stopClosedComputeCandidate(tx, admission);
-        return { status: "run-not-found" as const };
-      }
-      const run = await lockClaimRun(tx, runId);
-      signal.throwIfAborted();
-      if (!run) {
-        return { status: "run-not-found" };
-      }
-      if (run.status !== "pending") {
-        await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
-        signal.throwIfAborted();
-        return { status: "run-not-found" };
-      }
-
-      const job = await lockRunnerJob(tx, runId);
-      signal.throwIfAborted();
-      if (!job || job.isExpired) {
-        return { status: "job-not-found" };
-      }
-
-      const failedAt = nowDate();
-      const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
-        values: {
-          status: "failed",
-          completedAt: failedAt,
-          error: errorMessage,
-        },
-        conditions: [eq(agentRuns.id, runId), eq(agentRuns.status, "pending")],
-      });
-      signal.throwIfAborted();
-      if (!updatedRun) {
-        throw new Error("Locked pending run was not failed");
-      }
-
+  return await db.transaction(async (tx) => {
+    const run = await lockClaimRun(tx, runId);
+    signal.throwIfAborted();
+    if (!run) {
+      return { status: "run-not-found" };
+    }
+    if (run.status !== "pending") {
       await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
       signal.throwIfAborted();
+      return { status: "run-not-found" };
+    }
 
-      return { status: "failed" as const };
+    const job = await lockRunnerJob(tx, runId);
+    signal.throwIfAborted();
+    if (!job || job.isExpired) {
+      return { status: "job-not-found" };
+    }
+
+    const failedAt = nowDate();
+    const transitions = await transitionAgentRunsToTerminal(tx, {
+      values: {
+        status: "failed",
+        completedAt: failedAt,
+        error: errorMessage,
+      },
+      conditions: [eq(agentRuns.id, runId), eq(agentRuns.status, "pending")],
     });
+    signal.throwIfAborted();
+    if (transitions.length === 0) {
+      throw new Error("Locked pending run was not failed");
+    }
+
+    await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
+    signal.throwIfAborted();
+    const releasedSlots = await releaseNeverStartedRunSlots(tx, transitions);
+    return { status: "failed" as const, releasedSlots };
   });
 }
 
@@ -1697,8 +1491,9 @@ async function refreshClaimNetworkPolicies(args: {
     const fullRefresh = async (
       path: Extract<ClaimNetworkPolicyRefreshPath, `full_${string}`>,
     ) => {
-      const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(
+      const connectorCatalogSnapshot = await loadConnectorRuntimeSlugSelection(
         args.db,
+        { connectorSlugs: builtinConnectorSlugs },
       );
       const connectorSlugs = networkPolicyRefreshConnectorSlugs(
         connectorCatalogSnapshot.serverFirewalls,
@@ -1784,7 +1579,7 @@ function assertClaimConnectorIdentity(
     storedContext.connectorRuntimeTargets.length > 0
   ) {
     throw new Error(
-      "Private Pi memory maintenance run cannot use connector runtime targets",
+      "Runs without an agent cannot use connector runtime targets",
     );
   }
 }
@@ -2597,8 +2392,8 @@ function claimTimingOperation(
 }
 
 const scheduleClaimFailedSideEffects$ = command(
-  ({ set }, args: ClaimFailedSideEffectArgs): void => {
-    const backgroundSignal = new AbortController().signal;
+  ({ set }, args: ClaimFailedSideEffectArgs, signal: AbortSignal): void => {
+    set(scheduleReleasedSlotPicks$, args.releasedSlots, signal);
     waitUntil(
       tapError(
         set(
@@ -2610,7 +2405,7 @@ const scheduleClaimFailedSideEffects$ = command(
             status: "failed",
             error: args.error,
           },
-          backgroundSignal,
+          signal,
         ),
         (error) => {
           L.error("dispatchCompleteSideEffects failed", {
@@ -2626,7 +2421,6 @@ const scheduleClaimFailedSideEffects$ = command(
 async function failClaimForResumeSessionHistoryLoad(
   args: {
     readonly db: Db;
-    readonly owner: ComputeRunOwner;
     readonly runId: string;
     readonly orgId: string;
     readonly hash: string;
@@ -2647,7 +2441,6 @@ async function failClaimForResumeSessionHistoryLoad(
   const poisonResult = await failPoisonQueuedJob(
     args.db,
     args.runId,
-    args.owner,
     args.errorMessage,
     signal,
   );
@@ -2658,6 +2451,7 @@ async function failClaimForResumeSessionHistoryLoad(
     runId: args.runId,
     orgId: args.orgId,
     error: args.errorMessage,
+    releasedSlots: poisonResult.releasedSlots,
   });
   return badRequestMessage(args.errorMessage);
 }
@@ -2665,7 +2459,6 @@ async function failClaimForResumeSessionHistoryLoad(
 async function failClaimForInvalidStoredExecutionContext(
   args: {
     readonly db: Db;
-    readonly owner: ComputeRunOwner;
     readonly runId: string;
     readonly orgId: string;
     readonly scheduleFailedSideEffects: (
@@ -2677,7 +2470,6 @@ async function failClaimForInvalidStoredExecutionContext(
   const poisonResult = await failPoisonQueuedJob(
     args.db,
     args.runId,
-    args.owner,
     INVALID_EXECUTION_CONTEXT_ERROR,
     signal,
   );
@@ -2688,6 +2480,7 @@ async function failClaimForInvalidStoredExecutionContext(
     runId: args.runId,
     orgId: args.orgId,
     error: INVALID_EXECUTION_CONTEXT_ERROR,
+    releasedSlots: poisonResult.releasedSlots,
   });
   return badRequestMessage("Job missing execution context");
 }
@@ -2711,7 +2504,6 @@ async function claimResponseBuildErrorResponse(
     {
       db: args.db,
       runId: args.runId,
-      owner: args.run,
       hash: args.error.hash,
       orgId: args.run.orgId,
       errorMessage: args.error.message,
@@ -2725,14 +2517,10 @@ async function claimResponseBuildErrorResponse(
 async function resolveStoredExecutionContextForClaim(
   args: {
     readonly db: Db;
-    readonly owner: ComputeRunOwner;
     readonly runId: string;
     readonly orgId: string;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
-    readonly supportsNativeGpt6Sol: boolean;
-    readonly supportsNativeClaudeOpus55: boolean;
-    readonly supportsNativeGpt6Luna: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2761,50 +2549,10 @@ async function resolveStoredExecutionContextForClaim(
       response: await failClaimForInvalidStoredExecutionContext(args, signal),
     };
   }
-  const storedContext = storedContextResult.data;
-  const nativeModel = storedContext.environment?.OPENAI_MODEL;
-  if (
-    !args.supportsNativeGpt6Sol &&
-    storedContext.cliAgentType === "codex" &&
-    (nativeModel === "gpt-6-sol" || nativeModel === "openai/gpt-6-sol")
-  ) {
-    // Old Runner artifacts bundle a Guest that rejects Sol's native effort.
-    // Keep the job queued for a capable claimant, including during rollback.
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
-    };
-  }
-  if (
-    !args.supportsNativeClaudeOpus55 &&
-    storedContext.cliAgentType === "claude-code" &&
-    storedContext.modelUsageProvider === "claude-opus-5-5"
-  ) {
-    // Old Runner artifacts bundle a Guest that rejects Opus 5.5's native
-    // effort. Keep the job queued for a capable claimant during rollout and
-    // rollback, independent of the provider's concrete runtime model ID.
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
-    };
-  }
-  if (
-    !args.supportsNativeGpt6Luna &&
-    storedContext.cliAgentType === "codex" &&
-    (nativeModel === "gpt-6-luna" || nativeModel === "openai/gpt-6-luna")
-  ) {
-    // Older Runner artifacts bundle a Guest without Luna native support.
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
-    };
-  }
   const piModelConfigResolution = resolvePiModelConfigForClaim({
     cliAgentType: storedContextResult.data.cliAgentType,
     modelConfig: storedContextResult.data.piModelConfig,
     capabilities: args.capabilities,
-    environment: storedContextResult.data.environment,
-    firewalls: storedContextResult.data.firewalls,
   });
   if (piModelConfigResolution.status === "unsupported") {
     return {
@@ -2840,9 +2588,6 @@ const claimAuthorizedJob$ = command(
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
-      readonly supportsNativeGpt6Sol: boolean;
-      readonly supportsNativeClaudeOpus55: boolean;
-      readonly supportsNativeGpt6Luna: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2857,16 +2602,12 @@ const claimAuthorizedJob$ = command(
       {
         db,
         runId,
-        owner: run,
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
-        supportsNativeGpt6Sol: args.supportsNativeGpt6Sol,
-        supportsNativeClaudeOpus55: args.supportsNativeClaudeOpus55,
-        supportsNativeGpt6Luna: args.supportsNativeGpt6Luna,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
-          set(scheduleClaimFailedSideEffects$, failedArgs);
+          set(scheduleClaimFailedSideEffects$, failedArgs, signal);
         },
       },
       signal,
@@ -2900,7 +2641,7 @@ const claimAuthorizedJob$ = command(
           runId,
           error: responseBodyResult.error,
           scheduleFailedSideEffects(failedArgs) {
-            set(scheduleClaimFailedSideEffects$, failedArgs);
+            set(scheduleClaimFailedSideEffects$, failedArgs, signal);
           },
         },
         signal,
@@ -2919,7 +2660,7 @@ const claimAuthorizedJob$ = command(
       async () => {
         return await transitionClaimedJobToRunning(
           db,
-          { runId, owner: run },
+          runId,
           args.runnerAttribution,
           signal,
           claimRouteTiming,
@@ -3026,12 +2767,6 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       authType: auth.type,
       runnerAttribution,
       capabilities: body.data.capabilities,
-      supportsNativeGpt6Sol:
-        get(request$).header(NATIVE_GPT_6_SOL_HEADER) === "1",
-      supportsNativeClaudeOpus55:
-        get(request$).header(NATIVE_CLAUDE_OPUS_5_5_HEADER) === "1",
-      supportsNativeGpt6Luna:
-        get(request$).header(NATIVE_GPT_6_LUNA_HEADER) === "1",
       jobWithRun,
       telemetry: body.data.telemetry,
       claimRequestStartedAtMs,
@@ -3041,57 +2776,16 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 });
 
+// Built-in model cooldown is retired. Runners released before its removal still
+// report model provider failures; authenticate and ignore them until they drain.
 const modelProviderFailureInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const receivedAt = nowDate();
     const auth = await set(runnerAuth$, get(authorization$), signal);
     signal.throwIfAborted();
     if (!auth) {
       return unauthorizedAuthenticationRequired;
     }
-    if (auth.type !== "official-runner") {
-      return forbidden(
-        "Only official runners can report model provider failures",
-      );
-    }
-
-    const body = await get(modelProviderFailureBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-
-    const runId = get(
-      pathParamsOf(runnersModelProviderFailuresContract.report),
-    ).runId;
-    const db = set(writeDb$);
-    const transition = await reportBuiltInModelProviderFailure(db, {
-      runId,
-      receivedAt,
-      ...body.data,
-    });
-    signal.throwIfAborted();
-    if (transition.outcome === "recorded" && transition.cooldown) {
-      const cooldown = transition.cooldown;
-      const logLevels = {
-        authentication: "warn",
-        billing: "warn",
-        rate_limit: "info",
-        provider_unavailable: "info",
-        timeout: "info",
-        connection: "info",
-      } as const satisfies Record<typeof cooldown.failureKind, "info" | "warn">;
-      L[logLevels[cooldown.failureKind]](
-        "Built-in model provider failure report recorded",
-        {
-          type: "built_in_model_provider_cooldown",
-          runId,
-          ...cooldown,
-          unavailableUntil: cooldown.unavailableUntil.toISOString(),
-        },
-      );
-    }
-    return { status: 200 as const, body: { outcome: transition.outcome } };
+    return { status: 200 as const, body: { outcome: "ignored" as const } };
   },
 );
 
@@ -3230,88 +2924,72 @@ const builtinFirewallsResolveInner$ = command(
   },
 );
 
-const activeInputReserveBody$ = bodyResultOf(
-  runnersActiveInputsContract.reserve,
-);
-const activeInputReceiptBody$ = bodyResultOf(
-  runnersActiveInputsContract.receipt,
-);
+const steeredInputBody$ = bodyResultOf(runnersSteerContract.steered);
 
-const reserveActiveInputsInner$ = command(
+const nextSteerableInputInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
-    const { runId } = get(pathParamsOf(runnersActiveInputsContract.reserve));
+    const { runId } = get(pathParamsOf(runnersSteerContract.next));
     if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
-      return forbidden("Active input delivery is not available");
+      return forbidden("Steering is not available");
     }
-    const body = await get(activeInputReserveBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-    const result = await reserveActiveInputDelivery(
+    const result = await set(
+      loadNextSteerableInput$,
       set(writeDb$),
-      {
-        runId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      },
+      { runId, userId: auth.userId, orgId: auth.orgId },
       signal,
     );
     if (result.outcome === "forbidden") {
-      return forbidden("Active input delivery is not available");
+      return forbidden("Steering is not available");
     }
-    if (result.outcome === "reserved") {
-      return {
-        status: 200 as const,
-        body: {
-          outcome: result.outcome,
-          deliveryId: result.deliveryId,
-          eventIds: [result.sourceEventId],
-          prompt: result.prompt,
-        },
-      };
-    }
-    if (result.outcome === "held") {
-      return {
-        status: 200 as const,
-        body: {
-          outcome: result.outcome,
-          deliveryId: result.deliveryId,
-          eventIds: [result.sourceEventId],
-        },
-      };
-    }
-    return { status: 200 as const, body: result };
+    return { status: 200 as const, body: { input: result.input } };
   },
 );
 
-const recordActiveInputDeliveryReceiptInner$ = command(
+const declareSteeredInputInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
-    const { runId, deliveryId } = get(
-      pathParamsOf(runnersActiveInputsContract.receipt),
-    );
+    const { runId, eventId } = get(pathParamsOf(runnersSteerContract.steered));
     if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
-      return forbidden("Active input delivery is not available");
+      return forbidden("Steering is not available");
     }
-    const body = await get(activeInputReceiptBody$);
+    const body = await get(steeredInputBody$);
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
     }
-    const result = await recordActiveInputDeliveryReceipt(
+    const result = await declareSteeredInput(
       set(writeDb$),
-      {
-        runId,
-        deliveryId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      },
+      { runId, eventId, userId: auth.userId, orgId: auth.orgId },
       signal,
     );
-    if (result.outcome === "forbidden") {
-      return forbidden("Active input delivery is not available");
+    switch (result.outcome) {
+      case "forbidden": {
+        return forbidden("Steering is not available");
+      }
+      case "not_found": {
+        return notFound("Steerable input not found");
+      }
+      case "conflict": {
+        return {
+          status: 409 as const,
+          body: {
+            error:
+              result.reason === "run_not_running"
+                ? {
+                    code: STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
+                    message: "Run is not running",
+                  }
+                : {
+                    code: STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
+                    message: "Input was already consumed",
+                  },
+          },
+        };
+      }
+      case "steered": {
+        break;
+      }
     }
     if (result.replacementsAppended) {
       await publishChatThreadMessageCreatedSafely({
@@ -3320,15 +2998,31 @@ const recordActiveInputDeliveryReceiptInner$ = command(
         threadId: result.chatThreadId,
       });
       signal.throwIfAborted();
-      await notifyRunningChatRunOfPendingInput(
-        set(writeDb$),
+      await set(
+        notifyRunningChatRunOfPendingInput$,
         result.chatThreadId,
+        signal,
       );
       signal.throwIfAborted();
     }
-    return { status: 200 as const, body: { outcome: result.outcome } };
+    return { status: 200 as const, body: { outcome: "steered" as const } };
   },
 );
+
+const observeClaimJsonResponse: JsonResponseObserver = (
+  context,
+  observation,
+) => {
+  const runId = context.req.param("id");
+  if (runId === undefined) {
+    throw new Error("Validated claim route is missing run ID");
+  }
+  recordClaimResponseJsonSerialization({
+    runId,
+    byteLength: observation.byteLength,
+    serializationDurationMs: observation.serializationDurationMs,
+  });
+};
 
 export const runnersRoutes: readonly RouteEntry[] = [
   {
@@ -3342,23 +3036,24 @@ export const runnersRoutes: readonly RouteEntry[] = [
   {
     route: runnersJobClaimContract.claim,
     handler: claimInner$,
+    observeJsonResponse: observeClaimJsonResponse,
   },
   {
     route: runnersModelProviderFailuresContract.report,
     handler: modelProviderFailureInner$,
   },
   {
-    route: runnersActiveInputsContract.reserve,
+    route: runnersSteerContract.next,
     handler: authRoute(
       { accept: ["sandbox"], acceptAnySandboxCapability: true },
-      reserveActiveInputsInner$,
+      nextSteerableInputInner$,
     ),
   },
   {
-    route: runnersActiveInputsContract.receipt,
+    route: runnersSteerContract.steered,
     handler: authRoute(
       { accept: ["sandbox"], acceptAnySandboxCapability: true },
-      recordActiveInputDeliveryReceiptInner$,
+      declareSteeredInputInner$,
     ),
   },
   {

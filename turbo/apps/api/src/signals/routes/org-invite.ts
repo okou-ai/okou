@@ -1,10 +1,14 @@
 import {
-  invalidateGetStartedInvitationClaim,
-  linkGetStartedInvitation,
-  prepareGetStartedInvitation,
-  revokeGetStartedInvitation,
+  invalidateGetStartedInvitationClaim$,
+  linkGetStartedInvitation$,
+  prepareGetStartedInvitation$,
+  revokeGetStartedInvitation$,
 } from "../services/get-started-invitation.service";
 import { command } from "ccstate";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
+import { and, desc, eq, isNotNull, notInArray } from "drizzle-orm";
 import type { UsagePackUsd } from "@okouai/api-contracts/contracts/billing";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import type { OrgRole } from "@okouai/api-contracts/contracts/org-members";
@@ -26,12 +30,14 @@ import { clerk$, clerkOrganizationInvitationConflict } from "../external/clerk";
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { getStripeClient } from "../external/stripe-client";
 import { parseBillingPaymentMethodPreviewToken } from "../services/billing-purchase-preview-token.service";
-import { loadOrgPlanCapabilities } from "../services/org-plan-entitlement-read.service";
 import {
-  confirmUsagePackInvitationPurchase,
-  createUsagePackInvitationPreview,
-  revokeUsagePackInvitationPurchase,
-  usagePackInvitationPurchaseSchemaAvailable,
+  loadOrgPlanCapabilities,
+  runtimeStatusForEntitlement,
+} from "../services/org-plan-entitlement-read.service";
+import {
+  confirmUsagePackInvitationPurchase$,
+  createUsagePackInvitationPreview$,
+  revokeUsagePackInvitationPurchase$,
   type UsagePackInvitationPurchaseConflictReason,
 } from "../services/usage-pack-invitation-purchase.service";
 import { activeUsagePackBillingContext } from "../services/usage-pack-subscription.service";
@@ -43,7 +49,6 @@ import {
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 import { withBillingClerkRateLimit } from "./billing-clerk-rate-limit";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const log = logger("api:org-invite");
 
@@ -243,10 +248,14 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   // Clerk side effect: sends the invitation email server-side.
   const client = get(clerk$);
-  const rewardClaim = await prepareGetStartedInvitation(set(writeDb$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
+  const rewardClaim = await set(
+    prepareGetStartedInvitation$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   const invitationResult = await settle(
     client.organizations.createOrganizationInvitation({
@@ -255,9 +264,7 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       inviterUserId: auth.userId,
       role: body.data.role === "admin" ? "org:admin" : "org:member",
       redirectUrl: env("APP_URL"),
-      ...(rewardClaim
-        ? { privateMetadata: { getStartedClaimId: rewardClaim.id } }
-        : {}),
+      privateMetadata: { getStartedClaimId: rewardClaim.id },
     }),
     signal,
   );
@@ -265,28 +272,24 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     const conflictReason = clerkOrganizationInvitationConflict(
       invitationResult.error,
     );
-    if (rewardClaim) {
-      await invalidateGetStartedInvitationClaim(set(writeDb$), {
+    await set(
+      invalidateGetStartedInvitationClaim$,
+      {
         claimId: rewardClaim.id,
         reason: conflictReason
           ? "invitee_unavailable"
           : "invitation_create_failed",
-      });
-      signal.throwIfAborted();
-    }
+      },
+      signal,
+    );
+    signal.throwIfAborted();
     if (conflictReason) {
       return invitationConflictError(conflictReason);
     }
     throw invitationResult.error;
   }
   const invitation = invitationResult.value;
-  if (rewardClaim) {
-    await linkGetStartedInvitation(
-      set(writeDb$),
-      rewardClaim.id,
-      invitation.id,
-    );
-  }
+  await set(linkGetStartedInvitation$, rewardClaim.id, invitation.id, signal);
   signal.throwIfAborted();
 
   return {
@@ -310,12 +313,21 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const client = get(clerk$);
-  const readDb = get(db$);
-  if (await usagePackInvitationPurchaseSchemaAvailable(readDb)) {
-    signal.throwIfAborted();
-    const result = await revokeUsagePackInvitationPurchase(
-      set(writeDb$),
-      client,
+  const result = await set(
+    revokeUsagePackInvitationPurchase$,
+    {
+      orgId: auth.orgId,
+      invitationId: body.data.invitationId,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (result.status === "accepted") {
+    return conflict("The invitation has already been accepted");
+  }
+  if (result.status === "revoked") {
+    await set(
+      revokeGetStartedInvitation$,
       {
         orgId: auth.orgId,
         invitationId: body.data.invitationId,
@@ -323,20 +335,10 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
     signal.throwIfAborted();
-    if (result.status === "accepted") {
-      return conflict("The invitation has already been accepted");
-    }
-    if (result.status === "revoked") {
-      await revokeGetStartedInvitation(set(writeDb$), {
-        orgId: auth.orgId,
-        invitationId: body.data.invitationId,
-      });
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: { message: "Invitation revoked and refund initiated" },
-      };
-    }
+    return {
+      status: 200 as const,
+      body: { message: "Invitation revoked and refund initiated" },
+    };
   }
 
   // Legacy invitations remain a direct Clerk operation.
@@ -345,10 +347,14 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     invitationId: body.data.invitationId,
   });
   signal.throwIfAborted();
-  await revokeGetStartedInvitation(set(writeDb$), {
-    orgId: auth.orgId,
-    invitationId: body.data.invitationId,
-  });
+  await set(
+    revokeGetStartedInvitation$,
+    {
+      orgId: auth.orgId,
+      invitationId: body.data.invitationId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
 
   return {
@@ -356,6 +362,71 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: { message: "Invitation revoked" },
   };
 });
+
+const invitationPurchasePlanActive$ = command(
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [capabilities] = await db
+      .select({
+        status: orgPlanEntitlements.status,
+        restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+      })
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!capabilities) {
+      const [org] = await db
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, orgId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (org) {
+        throw new Error(`Missing org plan entitlement for ${orgId}`);
+      }
+      return false;
+    }
+    if (capabilities.restrictedBuiltInModels === null) {
+      throw new Error(
+        `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
+      );
+    }
+    return runtimeStatusForEntitlement(capabilities.status) === "active";
+  },
+);
+
+const invitationPurchaseBilling$ = command(
+  async ({ set }, orgId: string, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const [subscription] = await db
+      .select({
+        stripeCustomerId: usagePackSubscriptions.stripeCustomerId,
+        stripeSubscriptionId: usagePackSubscriptions.stripeSubscriptionId,
+      })
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          eq(usagePackSubscriptions.orgId, orgId),
+          isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+          notInArray(usagePackSubscriptions.subscriptionStatus, [
+            "canceled",
+            "incomplete_expired",
+            "invalid",
+          ]),
+        ),
+      )
+      .orderBy(desc(usagePackSubscriptions.updatedAt))
+      .limit(1);
+    signal.throwIfAborted();
+    return subscription?.stripeSubscriptionId
+      ? {
+          stripeCustomerId: subscription.stripeCustomerId,
+          stripeSubscriptionId: subscription.stripeSubscriptionId,
+        }
+      : null;
+  },
+);
 
 const purchasePreviewBody$ = bodyResultOf(orgInviteContract.previewPurchase);
 
@@ -369,14 +440,8 @@ const purchasePreviewInner$ = command(
       return providerUnavailable("Billing not configured");
     }
     signal.throwIfAborted();
-    const db = get(db$);
-    const capabilities = await loadOrgPlanCapabilities(db, auth.orgId);
-    signal.throwIfAborted();
-    if (capabilities?.status !== "active") {
+    if (!(await set(invitationPurchasePlanActive$, auth.orgId, signal))) {
       return activePlanRequired;
-    }
-    if (!(await usagePackInvitationPurchaseSchemaAvailable(db))) {
-      return providerUnavailable("Usage pack invitations are not ready");
     }
     signal.throwIfAborted();
     const body = await get(purchasePreviewBody$);
@@ -394,16 +459,14 @@ const purchasePreviewInner$ = command(
       );
     }
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
-    const result = await createUsagePackInvitationPreview(
-      set(writeDb$),
-      get(clerk$),
+    const result = await set(
+      createUsagePackInvitationPreview$,
       {
         orgId: auth.orgId,
         inviterUserId: auth.userId,
         email: body.data.email,
         role: body.data.role,
         usagePackUsd: body.data.usagePackUsd,
-        publicBrand: PUBLIC_BRAND,
       },
       readSignal,
     );
@@ -429,7 +492,7 @@ const purchasePreviewInner$ = command(
       });
     }
     if (previewEnabled && body.data.returnUrl) {
-      const billing = await activeUsagePackBillingContext(db, auth.orgId);
+      const billing = await set(invitationPurchaseBilling$, auth.orgId, signal);
       signal.throwIfAborted();
       if (!billing) {
         return invitationPurchaseError({
@@ -536,9 +599,6 @@ const purchaseConfirmInner$ = command(
     if (capabilities?.status !== "active") {
       return activePlanRequired;
     }
-    if (!(await usagePackInvitationPurchaseSchemaAvailable(db))) {
-      return providerUnavailable("Usage pack invitations are not ready");
-    }
     const body = await get(bodyResultOf(orgInviteContract.confirmPurchase));
     signal.throwIfAborted();
     if (!body.ok) {
@@ -567,9 +627,8 @@ const purchaseConfirmInner$ = command(
       paymentMethod = revalidated.paymentMethod;
     }
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
-    const result = await confirmUsagePackInvitationPurchase(
-      set(writeDb$),
-      get(clerk$),
+    const result = await set(
+      confirmUsagePackInvitationPurchase$,
       { orgId: auth.orgId, purchaseId, paymentMethod },
       readSignal,
     );

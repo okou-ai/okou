@@ -9,7 +9,7 @@ import {
   upsertConnectorOwnedSecret,
   upsertConnectorOwnedVariable,
 } from "./connector-credential-storage-write.service";
-import { prepareConnectorAccountDeletion } from "./connector-account-lifecycle.service";
+import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 
 export type PreparedCustomConnectorValue =
   | {
@@ -133,7 +133,7 @@ export async function deleteCustomConnectorMemberConnectionExact(
       readonly promotedDefaultConnectionId: string | null;
     }
 > {
-  const deletion = await prepareConnectorAccountDeletion(
+  const deletion = await prepareConnectorAccountDeletionWithTargetLocked(
     db,
     {
       orgId: args.orgId,
@@ -147,14 +147,15 @@ export async function deleteCustomConnectorMemberConnectionExact(
   if (deletion.kind !== "ready") {
     return deletion;
   }
-  await deleteConnectorCredentialStorageConnection(
+  const lateSelectionCount = await deleteConnectorCredentialStorageConnection(
     db,
     { connectorId: args.memberConnectorId },
     signal,
   );
   return {
     kind: "deleted",
-    resolvedSelectionCount: deletion.resolvedSelectionCount,
+    resolvedSelectionCount:
+      deletion.resolvedSelectionCount + lateSelectionCount,
     promotedDefaultConnectionId: deletion.promotedDefaultConnectionId,
   };
 }

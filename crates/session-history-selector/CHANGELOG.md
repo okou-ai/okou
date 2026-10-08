@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.3.135](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.134...session-history-selector-v0.3.135) (2026-10-07)
+
+## [0.3.134](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.133...session-history-selector-v0.3.134) (2026-10-07)
+
+## [0.3.133](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.132...session-history-selector-v0.3.133) (2026-10-07)
+
+## [0.3.132](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.131...session-history-selector-v0.3.132) (2026-10-02)
+
+## [0.3.131](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.130...session-history-selector-v0.3.131) (2026-10-01)
+
+## [0.3.130](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.129...session-history-selector-v0.3.130) (2026-09-30)
+
+## [0.3.129](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.128...session-history-selector-v0.3.129) (2026-09-30)
+
+## [0.3.128](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.127...session-history-selector-v0.3.128) (2026-09-30)
+
+## [0.3.127](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.126...session-history-selector-v0.3.127) (2026-09-29)
+
+## [0.3.126](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.125...session-history-selector-v0.3.126) (2026-09-29)
+
+## [0.3.125](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.124...session-history-selector-v0.3.125) (2026-09-28)
+
+## [0.3.124](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.123...session-history-selector-v0.3.124) (2026-09-28)
+
+
+### Bug Fixes
+
+* **guest-agent:** checkpoint bounded pi compact history ([#37106](https://github.com/okou-ai/okou/issues/37106)) ([06b651a](https://github.com/okou-ai/okou/commit/06b651ad612ab9d0002f54bd87ad281447407c26))
+
+## [0.3.123](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.122...session-history-selector-v0.3.123) (2026-09-28)
+
+## [0.3.122](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.121...session-history-selector-v0.3.122) (2026-09-27)
+
+## [0.3.121](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.120...session-history-selector-v0.3.121) (2026-09-26)
+
+## [0.3.120](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.119...session-history-selector-v0.3.120) (2026-09-25)
+
+## [0.3.119](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.118...session-history-selector-v0.3.119) (2026-09-25)
+
+## [0.3.118](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.117...session-history-selector-v0.3.118) (2026-09-24)
+
+## [0.3.117](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.116...session-history-selector-v0.3.117) (2026-09-23)
+
+## [0.3.116](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.115...session-history-selector-v0.3.116) (2026-09-23)
+
 ## [0.3.115](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.114...session-history-selector-v0.3.115) (2026-09-22)
 
 ## [0.3.114](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.113...session-history-selector-v0.3.114) (2026-09-22)

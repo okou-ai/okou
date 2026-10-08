@@ -6,6 +6,12 @@ import {
   vncCredentialSelectionSchema,
 } from "./vnc-credentials";
 
+import {
+  vncRsaAesSecuritySchema,
+  vncRsaAesAuthenticationMethodSchema,
+  VNC_RSA_PUBLIC_KEY_MAX_BYTES,
+} from "./vnc-rsa-aes";
+
 export const VNC_HOST_MAX_LENGTH = 253;
 export const VNC_CA_BUNDLE_MAX_LENGTH = 65_536;
 export const VNC_CA_CERTIFICATES_MAX_COUNT = 8;
@@ -37,6 +43,13 @@ export const vncTrustSchema = z.discriminatedUnion("mode", [
     .strict(),
 ]);
 
+const vncX509NoneSecurityVariantSchema = z
+  .object({
+    type: z.literal("x509_none"),
+    trust: vncTrustSchema,
+    serverName: hostSchema.optional(),
+  })
+  .strict();
 const vncX509VncSecurityVariantSchema = z
   .object({
     type: z.literal("x509_vnc"),
@@ -51,6 +64,25 @@ const vncX509PlainSecurityVariantSchema = z
     serverName: hostSchema.optional(),
   })
   .strict();
+const vncQemuX509SaslSecurityVariantSchema = z
+  .object({
+    type: z.literal("qemu_x509_sasl"),
+    trust: vncTrustSchema,
+    serverName: hostSchema.optional(),
+  })
+  .strict();
+const vncAppleVncPasswordSecurityVariantSchema = z
+  .object({ type: z.literal("apple_vnc_password") })
+  .strict();
+const vncAppleDhSecurityVariantSchema = z
+  .object({ type: z.literal("apple_dh") })
+  .strict();
+const vncAppleSrpSecurityVariantSchema = z
+  .object({ type: z.literal("apple_srp") })
+  .strict();
+const vncAppleRsaSrpSecurityVariantSchema = z
+  .object({ type: z.literal("apple_rsa_srp") })
+  .strict();
 // Keep current-only Runner schemas as one-variant discriminated unions so the
 // Rust generator preserves the existing enum-shaped wire type.
 export const vncX509VncSecuritySchema = z.discriminatedUnion("type", [
@@ -59,9 +91,32 @@ export const vncX509VncSecuritySchema = z.discriminatedUnion("type", [
 export const vncX509PlainSecuritySchema = z.discriminatedUnion("type", [
   vncX509PlainSecurityVariantSchema,
 ]);
-export const vncSecuritySchema = z.discriminatedUnion("type", [
+const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
+  ...vncRsaAesSecuritySchema.options,
+  vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
   vncX509PlainSecurityVariantSchema,
+  vncQemuX509SaslSecurityVariantSchema,
+  vncAppleVncPasswordSecurityVariantSchema,
+  vncAppleDhSecurityVariantSchema,
+  vncAppleSrpSecurityVariantSchema,
+  vncAppleRsaSrpSecurityVariantSchema,
+]);
+export const vncSecuritySchema = z.discriminatedUnion("type", [
+  ...vncRsaAesSecuritySchema.options,
+  vncX509NoneSecurityVariantSchema,
+  vncX509VncSecurityVariantSchema,
+  vncX509PlainSecurityVariantSchema,
+  vncQemuX509SaslSecurityVariantSchema,
+  vncAppleVncPasswordSecurityVariantSchema,
+  vncAppleDhSecurityVariantSchema,
+  vncAppleSrpSecurityVariantSchema,
+  vncAppleRsaSrpSecurityVariantSchema,
+]);
+
+export const vncConnectionCredentialSchema = z.union([
+  vncCredentialSelectionSchema,
+  z.object({ type: z.literal("none") }).strict(),
 ]);
 
 export const createVncConnectionRequestSchema = z
@@ -70,7 +125,7 @@ export const createVncConnectionRequestSchema = z
     displayName: displayNameSchema,
     host: hostSchema,
     port: portSchema.default(5900),
-    credential: vncCredentialSelectionSchema,
+    credential: vncConnectionCredentialSchema,
     security: vncSecuritySchema,
     transport: vncTransportSchema.optional(),
   })
@@ -82,7 +137,7 @@ export const updateVncConnectionRequestSchema = z
     displayName: displayNameSchema.optional(),
     host: hostSchema.optional(),
     port: portSchema.optional(),
-    credential: vncCredentialSelectionSchema.optional(),
+    credential: vncConnectionCredentialSchema.optional(),
     security: vncSecuritySchema.optional(),
     transport: vncTransportSchema.optional(),
   })
@@ -113,16 +168,28 @@ export const vncConnectionMetadataSchema = z
     port: portSchema,
     credentialId: z.uuid(),
     credentialName: z.string(),
-    security: vncSecuritySchema,
+    rsaAesAuthentication: vncRsaAesAuthenticationMethodSchema.optional(),
+    clientCertificateAuthentication: z
+      .enum(["client_certificate", "client_certificate_vnc_password"])
+      .optional(),
+    security: vncCredentialSecuritySchema,
     generation: generationSchema,
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
   .strict();
 
+const vncCredentiallessMetadataSchema = vncConnectionMetadataSchema
+  .omit({ credentialId: true, credentialName: true, security: true })
+  .extend({
+    credential: z.object({ type: z.literal("none") }).strict(),
+    security: vncX509NoneSecurityVariantSchema,
+  });
 export const vncConnectionResponseSchema = z.union([
   vncConnectionMetadataSchema,
   vncConnectionMetadataSchema.extend({ transport: sshTransportSchema }),
+  vncCredentiallessMetadataSchema,
+  vncCredentiallessMetadataSchema.extend({ transport: sshTransportSchema }),
 ]);
 
 export const vncConnectionsListResponseSchema = z
@@ -143,6 +210,31 @@ const errors = {
 };
 
 export const vncConnectionsContract = c.router({
+  inspectRsaKey: {
+    method: "POST",
+    path: "/api/vnc/rsa-key-pin",
+    headers: authHeadersSchema,
+    body: z
+      .object({
+        publicKeyPem: z.string().min(1).max(VNC_RSA_PUBLIC_KEY_MAX_BYTES),
+      })
+      .strict(),
+    responses: {
+      200: z
+        .object({
+          serverKeySha256: z.string().regex(/^[a-f0-9]{64}$/u),
+          modulusBits: z.union([
+            z.literal(2048),
+            z.literal(3072),
+            z.literal(4096),
+          ]),
+        })
+        .strict(),
+      ...errors,
+    },
+    summary:
+      "Convert an independently obtained RSA public key to its full RFB wire pin",
+  },
   list: {
     method: "GET",
     path: "/api/vnc/connections",

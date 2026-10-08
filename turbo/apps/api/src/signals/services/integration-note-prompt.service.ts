@@ -31,7 +31,7 @@ function privateArtifactFinalReplyLine(args: {
   readonly surface: string;
   readonly uploadCommand: string;
 }): string {
-  return `- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private \`/artifacts/...\` address is not openable from ${args.surface}, so a link alone shows the user nothing. When you judge that ${args.surface} can display that kind of file — a hosted website or HTML page never qualifies — upload it with \`${args.uploadCommand}\` so the user has something they can open there. If you upload it, also keep the original private artifact address in the final reply so the owner can open it after returning to the web app.`;
+  return `- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in ${args.surface}. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to ${args.surface} unless the user explicitly requests it. A private \`/artifacts/...\` address is not openable from ${args.surface}, so a link alone shows the user nothing. When you judge that ${args.surface} can display that kind of file — a hosted website or HTML page never qualifies — upload it with \`${args.uploadCommand}\` so the user has something they can open there. If you upload it, also keep the original private \`/artifacts/...\` address from before the upload in the final reply, not the address returned by \`${args.uploadCommand}\`, so the owner can open the original artifact after returning to the web app.`;
 }
 
 function integrationNoteLines(
@@ -42,7 +42,7 @@ function integrationNoteLines(
     case "agent": {
       return [
         "- Web chat files: use `okou web download-file -h` when a web chat message includes a `[Web file]` block. `okou web upload-file -h` can share a local file back to the web chat user when file delivery is needed.",
-        `- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: \`okou feishu message send --help\` for chats, DMs, and replies.${args.larkEnabled ? " Lark: `okou lark message send --help` for chats, DMs, and replies." : ""} Microsoft Teams: \`okou teams message send --help\` for conversations and thread replies. Telegram: \`okou telegram bot list\` to choose the bot, then \`okou telegram message send --help\` for chats, replies, and forum topics. AgentPhone/SMS: \`okou phone message --help\`. GitHub does not currently have a dedicated Okou message-send command, so do not invent \`okou github message\` commands.`,
+        `- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: \`okou feishu message send --help\` for chats, DMs, and replies.${args.larkEnabled ? " Lark: `okou lark message send --help` for chats, DMs, and replies." : ""} Microsoft Teams: \`okou teams message send --help\` for conversations and thread replies. Telegram: \`okou telegram message send --help\` for chats, replies, and forum topics through the official Okou bot. Phone/SMS: \`okou phone message --help\`. GitHub does not currently have a dedicated Okou message-send command, so do not invent \`okou github message\` commands.`,
         "- Email from web chat: use the Gmail skill and `GMAIL_TOKEN` to create the draft directly in Gmail. Before composing, list `GET /gmail/v1/users/me/settings/sendAs`; select the entry matching the message's From address, or the `isDefault` entry when no From address is specified. Include a `multipart/alternative` body with plain-text and HTML versions. Keep each plain-text paragraph on one logical line, never hard-wrap prose to a fixed column width, and use HTML paragraph elements so Gmail wraps the message naturally. If the selected entry has a non-empty HTML `signature`, append that signature exactly once to the HTML body and include a readable text equivalent in the plain-text body. For attachments, upload a valid RFC822 multipart message through Gmail's draft media-upload endpoint. Never call `messages.send` or `drafts.send`. After Gmail returns the draft ID, run `okou mail link <gmail-draft-id>` and return the link from the command to the user.",
         "- Email draft revisions: a linked draft stays editable until the user sends it. When the user asks to change the sender, add or remove attachments, or rewrite the content, update that same Gmail draft in place with `PUT /gmail/v1/users/me/drafts/<gmail-draft-id>` and reuse the existing link instead of creating a second draft. When you hand a draft over, tell the user they can ask you for those changes.",
         "- Email send handoff: after `okou mail link` returns the review URL, share it and end the turn so the user can review and send the draft. Do not add a mail callback prompt.",
@@ -65,12 +65,25 @@ function integrationNoteLines(
           : []),
       ];
     }
+    case "discord": {
+      return [
+        "- Discord messaging and files: only your final reply is delivered to the Discord channel or thread in the integration context, so do not duplicate it with `okou discord message send`; nothing you produce while the run is in progress reaches Discord on its own. Use Discord commands only for a different channel or thread, or for an explicit extra message or file. Files attached to the Discord message arrive as canonical `[Web file]` blocks; read them with `okou web download-file -h`. Use `okou discord download-file -h` for another guild channel or thread attachment identified by its channel, message, and attachment IDs; bot DM content, including earlier DM messages and their attachments, is not readable. `okou discord upload-file -h` can attach a local file to a Discord channel or thread when file delivery is needed; use the Channel ID from the integration context to deliver into this conversation.",
+        ...(args.privateArtifactsEnabled
+          ? [
+              privateArtifactFinalReplyLine({
+                surface: "Discord",
+                uploadCommand: "okou discord upload-file",
+              }),
+            ]
+          : []),
+      ];
+    }
     case "feishu":
     case "lark": {
       const platform = args.triggerSource;
       const providerName = FEISHU_PLATFORMS[platform].name;
       return [
-        `- ${providerName} messaging and files: use \`okou ${platform} --help\`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress reaches ${providerName} on its own, so ${providerName} commands are for a different chat, DM, reply target, or explicit extra message/file. Use \`okou ${platform} message send --help\` for extra messages, \`okou ${platform} download-file -h\` for \`[${providerName} file]\` blocks, and \`okou ${platform} upload-file -h\` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify \`--installation\` when the organization has multiple ${providerName} bots.`,
+        `- ${providerName} messaging and files: use \`okou ${platform} --help\`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress reaches ${providerName} on its own, so ${providerName} commands are for a different chat, DM, reply target, or explicit extra message/file. Use \`okou ${platform} message send --help\` for extra messages, \`okou ${platform} download-file -h\` for \`[${providerName} file]\` blocks, and \`okou ${platform} upload-file -h\` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify the installation (\`--as <installation-id>\` for \`message send\` and \`upload-file\`, \`--installation\` for \`download-file\`) when the organization has multiple ${providerName} bots.`,
         ...(args.privateArtifactsEnabled
           ? [
               privateArtifactFinalReplyLine({
@@ -109,7 +122,7 @@ function integrationNoteLines(
     }
     case "telegram": {
       return [
-        "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram bot list` to inspect available bots, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. When sending or uploading, explicitly choose the bot with `--bot-id`; if you do not know which bot to use, ask the user before sending.",
+        "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram message send -h` for extra messages, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. All Telegram commands use the official Okou bot.",
         ...(args.privateArtifactsEnabled
           ? [
               privateArtifactFinalReplyLine({
@@ -122,7 +135,7 @@ function integrationNoteLines(
     }
     case "agentphone": {
       return [
-        "- AgentPhone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[AgentPhone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
+        "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
         ...(args.privateArtifactsEnabled
           ? [
               privateArtifactFinalReplyLine({
@@ -141,7 +154,7 @@ function integrationNoteLines(
 
 /**
  * A run whose trigger source has no conversational surface — webhooks,
- * automations, goals — never renders `# Current Integration`, so it keeps its
+ * automations — never renders `# Current Integration`, so it keeps its
  * fallback delivery guidance in `# Agent Tools` instead.
  */
 export function hasIntegrationNote(triggerSource: TriggerSource): boolean {

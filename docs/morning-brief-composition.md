@@ -7,7 +7,7 @@ and finalization are described in
 what happens to the evidence in between, and which language the result is
 written in.
 
-`simpleMorningBrief` is default-off and enabled for the staff org allowlist
+`FeatureSwitchKey.NativeMorningBrief` is default-off and enabled for the staff org allowlist
 only.
 
 ## Source-neutral evidence

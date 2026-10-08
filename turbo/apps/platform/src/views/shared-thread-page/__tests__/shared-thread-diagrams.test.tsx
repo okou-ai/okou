@@ -1,7 +1,5 @@
-import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { screen, waitFor, within } from "@testing-library/react";
-import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -18,9 +16,6 @@ const context = testContext();
 
 warmMermaidParser();
 
-const FILE_ID = "f0000000-0000-4000-a000-000000000943";
-const NOTE = "https://app.okou.ai/artifacts/diagnote01.md";
-const NOTE_URL = "https://artifacts.example.com/diagram-note.md";
 const DIAGRAM = "```mermaid\nflowchart LR\n  Draft --> Review\n```";
 
 function actionNames(container: ParentNode): readonly string[] {
@@ -44,8 +39,8 @@ function getButtonByName(name: string, container: ParentNode): HTMLElement {
   return button;
 }
 
-function getExpandButton(container: ParentNode = document.body): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
+function getExpandButton(): HTMLElement {
+  const button = queryAllByRoleFast("button").find((candidate) => {
     return candidate.getAttribute("aria-label") === "Expand diagram";
   });
   if (!button) {
@@ -117,57 +112,4 @@ test("a diagram in a shared conversation expands in the conversation", async () 
   expect(browser.downloads[0]?.url).toBe(source);
   expect(browser.downloads[0]?.filename).toBe("diagram.svg");
   await expect(browser.downloads[0]?.blob?.text()).resolves.toContain("<svg");
-});
-
-test("a diagram inside a shared Markdown artifact expands in the conversation", async () => {
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(200, {
-      url: NOTE_URL,
-      filename: "diagram-note.md",
-      contentType: "text/markdown",
-      expiresAt: "2099-01-01T00:00:00Z",
-      sharedThreadSnapshot: true,
-      target: { kind: "file", id: FILE_ID },
-    });
-  });
-  context.mocks.http.get(NOTE_URL, () => {
-    return HttpResponse.text(`Review the flow.\n\n${DIAGRAM}`, {
-      headers: { "Content-Type": "text/markdown" },
-    });
-  });
-  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(
-      200,
-      sharedThread({
-        messages: [
-          {
-            messageIndex: 0,
-            role: "assistant",
-            content: `![Review notes](${NOTE})`,
-            runIndex: 0,
-          },
-        ],
-      }),
-    );
-  });
-
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
-  click(await screen.findByTestId("markdown-artifact-preview-markdown"));
-
-  const noteDialog = await screen.findByRole("dialog");
-  await expect(
-    within(noteDialog).findByText("Review the flow."),
-  ).resolves.toBeInTheDocument();
-  const expand = await waitFor(() => {
-    return getExpandButton(noteDialog);
-  });
-  await waitFor(() => {
-    expect(expand).toBeEnabled();
-  });
-
-  click(expand);
-
-  const dialog = await findDiagramDialog();
-  expect(within(dialog).getByText("diagram.svg")).toBeInTheDocument();
 });

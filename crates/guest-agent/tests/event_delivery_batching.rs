@@ -1,4 +1,4 @@
-//! Healthy CLI backlog should drain in ordered count- and byte-bounded batches.
+//! Healthy CLI backlog above 16 MiB should drain in ordered count- and byte-bounded batches.
 
 mod common;
 
@@ -10,6 +10,7 @@ use std::time::Duration;
 
 const SMALL_EVENT_COUNT: usize = 70;
 const LARGE_EVENT_BYTES: usize = 2 * 1024 * 1024;
+const LARGE_EVENT_COUNT: usize = 10;
 const MAX_BATCH_EVENTS: usize = 32;
 const MAX_BATCH_BYTES: usize = 4 * 1024 * 1024;
 
@@ -70,25 +71,18 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
     prompt_lines.extend((0..SMALL_EVENT_COUNT).map(|index| {
         json!({ "type": "assistant", "index": index, "content": "small" }).to_string()
     }));
-    prompt_lines.push(
+    // Hold more than 16 MiB, but less than 32 MiB, behind the first HTTP response.
+    prompt_lines.extend((0..LARGE_EVENT_COUNT).map(|index| {
         json!({
             "type": "assistant",
-            "marker": "large-a",
-            "content": "a".repeat(LARGE_EVENT_BYTES),
+            "marker": format!("large-{index}"),
+            "content": "x".repeat(LARGE_EVENT_BYTES),
         })
-        .to_string(),
-    );
-    prompt_lines.push(
-        json!({
-            "type": "assistant",
-            "marker": "large-b",
-            "content": "b".repeat(LARGE_EVENT_BYTES),
-        })
-        .to_string(),
-    );
+        .to_string()
+    }));
     prompt_lines.push(json!({ "type": "result", "marker": "batching-sentinel" }).to_string());
     let prompt = prompt_lines.join("\n");
-    let total_events = SMALL_EVENT_COUNT + 3;
+    let total_events = SMALL_EVENT_COUNT + LARGE_EVENT_COUNT + 1;
 
     unsafe {
         common::setup_env(&mock_cli, tmp.path(), &prompt, 3, 1)?;
@@ -167,17 +161,22 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
         assert!(batch.conservative_bytes <= MAX_BATCH_BYTES);
         assert!(batch.body_bytes <= MAX_BATCH_BYTES);
     }
-    let large_a_batch = batches
-        .iter()
-        .position(|batch| batch.sequences.contains(&(SMALL_EVENT_COUNT as u32)))
-        .expect("large-a event should be delivered");
-    let large_b_batch = batches
-        .iter()
-        .position(|batch| batch.sequences.contains(&((SMALL_EVENT_COUNT + 1) as u32)))
-        .expect("large-b event should be delivered");
-    assert_ne!(
-        large_a_batch, large_b_batch,
-        "two individually valid large events should split at the 4 MiB conservative boundary"
+    let large_event_batches = (0..LARGE_EVENT_COUNT)
+        .map(|index| {
+            batches
+                .iter()
+                .position(|batch| {
+                    batch
+                        .sequences
+                        .contains(&((SMALL_EVENT_COUNT + index) as u32))
+                })
+                .expect("every large event should be delivered")
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        large_event_batches.len(),
+        LARGE_EVENT_COUNT,
+        "individually valid large events should split at the 4 MiB conservative boundary"
     );
     assert!(batches.len() < total_events);
 

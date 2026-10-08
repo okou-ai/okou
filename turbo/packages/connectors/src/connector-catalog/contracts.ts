@@ -13,7 +13,6 @@ export const CONNECTOR_CATALOG_VALIDATION_FAILURE_CODES = [
   "invalid-artifact",
   "public-leakage",
   "relationship-mismatch",
-  "invalid-compression",
 ] as const;
 
 export const connectorCatalogValidationFailureCodeSchema = z.enum(

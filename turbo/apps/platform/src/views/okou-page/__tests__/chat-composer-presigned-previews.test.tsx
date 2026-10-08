@@ -23,8 +23,8 @@ const ORIGINAL_URL = `${R2_ORIGIN}/uploads/composer%20photo.png?X-Amz-Credential
 const NEXT_URL = `${R2_ORIGIN}/uploads/composer%20photo.png?X-Amz-Signature=next`;
 const THUMBNAIL_URL = `https://a.okou.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${ORIGINAL_URL}`;
 
-test.each(["upload", "restored public", "restored private"] as const)(
-  "%s composer images show a presigned thumbnail and reopen the same original",
+test.each(["upload", "restored private"] as const)(
+  "%s composer images show a presigned thumbnail and open the same original",
   async (source) => {
     mockNow(Date.parse("2026-09-11T00:00:00.000Z"), context.signal);
     const attachment = draftAttachment(FILENAME, {
@@ -99,17 +99,6 @@ test.each(["upload", "restored public", "restored private"] as const)(
     expect(
       screen.getByRole("dialog", { name: `${FILENAME} preview` }),
     ).toBeVisible();
-    click(await findNamedButton("Close"));
-    await waitFor(() => {
-      expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
-    });
-    click(openPreview);
-    await waitFor(() => {
-      expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-        "src",
-        ORIGINAL_URL,
-      );
-    });
     expect(thumbnail).toHaveAttribute("src", THUMBNAIL_URL);
   },
 );

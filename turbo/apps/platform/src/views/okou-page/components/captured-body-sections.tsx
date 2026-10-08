@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { CopyButton } from "@okouai/ui";
+import { cn, CopyButton } from "@okouai/ui";
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
 import { useTranslation } from "react-i18next";
 import { formatSize, InlineBadge } from "./network-badge.tsx";
@@ -65,9 +65,14 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <details className="group">
-      <summary className="cursor-pointer list-none w-full text-left">
-        <div className="flex items-center gap-2">
+    <div className="relative isolate">
+      <details className="group">
+        <summary
+          className={cn(
+            "flex min-h-6 items-center gap-2 cursor-pointer list-none w-full text-left rounded-md hover:bg-state-hover",
+            copyText && "pr-8",
+          )}
+        >
           <ChevronRight
             size={14}
             className="transition-transform group-open:rotate-90 shrink-0"
@@ -75,20 +80,14 @@ function CollapsibleSection({
           <span className="text-xs font-medium text-foreground">{title}</span>
           {badge && <InlineBadge color="muted">{badge}</InlineBadge>}
           <TruncationBadge truncated={truncated} />
-          {copyText && (
-            <span
-              className="ml-auto"
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
-            >
-              <CopyButton text={copyText} className="p-1" />
-            </span>
-          )}
-        </div>
-      </summary>
-      <div className="mt-2 ml-5">{children}</div>
-    </details>
+        </summary>
+        <div className="mt-2 ml-5">{children}</div>
+      </details>
+      {/* The sibling action paints in the reserved header space, including when closed. */}
+      {copyText && (
+        <CopyButton text={copyText} className="absolute right-0 top-0 p-1" />
+      )}
+    </div>
   );
 }
 

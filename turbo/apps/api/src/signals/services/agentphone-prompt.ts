@@ -14,12 +14,12 @@ export function buildAgentPhonePrompt(
   threadContext: string,
 ): string {
   const headerParts = [
-    "# Current Integration\nYou are currently running inside: AgentPhone",
+    "# Current Integration\nYou are currently running inside: Phone text messaging (iMessage/SMS)",
   ];
-  headerParts.push(`Shared AgentPhone number: ${opts.sharedNumber}`);
+  headerParts.push(`Shared phone number: ${opts.sharedNumber}`);
   headerParts.push(`User phone handle: ${opts.phoneHandle}`);
   if (opts.agentphoneAgentId) {
-    headerParts.push(`AgentPhone Agent ID: ${opts.agentphoneAgentId}`);
+    headerParts.push(`Phone agent ID: ${opts.agentphoneAgentId}`);
   }
   if (opts.channel) {
     headerParts.push(`Channel: ${opts.channel}`);

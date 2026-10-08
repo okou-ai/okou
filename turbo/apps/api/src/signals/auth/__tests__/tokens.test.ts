@@ -113,7 +113,6 @@ describe("auth tokens", () => {
       {
         computerUseHostId,
         cloudBrowserEnabled: true,
-        imageRecognitionAvailable: true,
         customConnectorSourceIds: {
           [customConnectorId]: customConnectorSourceId,
         },
@@ -136,7 +135,6 @@ describe("auth tokens", () => {
         "browser:read",
         "browser:write",
         "computer-use:write",
-        "image-recognition:write",
       ]),
       iat: expect.any(Number),
       exp: expect.any(Number),
@@ -238,6 +236,8 @@ describe("auth tokens", () => {
     [FeatureSwitchKey.PrivateArtifacts, "artifact:write"],
     [FeatureSwitchKey.Banking, "banking:read"],
     [FeatureSwitchKey.LarkIntegration, "lark:write"],
+    [FeatureSwitchKey.DiscordIntegration, "discord:read"],
+    [FeatureSwitchKey.DiscordIntegration, "discord:write"],
     [FeatureSwitchKey.VncAccess, "vnc:read"],
     [FeatureSwitchKey.VncAccess, "vnc:write"],
   ] as const)(
@@ -259,6 +259,15 @@ describe("auth tokens", () => {
         capability,
       );
       expect(verifyOkouToken(enabledToken)?.capabilities).toContain(capability);
+    },
+  );
+
+  it.each(["subscription:read", "subscription:switch"] as const)(
+    "grants %s by default",
+    (capability) => {
+      const token = generateOkouToken("user_okou", "run_okou", "org_okou");
+
+      expect(verifyOkouToken(token)?.capabilities).toContain(capability);
     },
   );
 
@@ -319,28 +328,6 @@ describe("auth tokens", () => {
     );
   });
 
-  it("gates image recognition on run eligibility", () => {
-    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-    const ineligibleToken = generateOkouToken(
-      "user_okou",
-      "run_okou",
-      staffOrgId,
-    );
-    const eligibleToken = generateOkouToken(
-      "user_okou",
-      "run_okou",
-      staffOrgId,
-      undefined,
-      { imageRecognitionAvailable: true },
-    );
-    expect(verifyOkouToken(ineligibleToken)?.capabilities).not.toContain(
-      "image-recognition:write",
-    );
-    expect(verifyOkouToken(eligibleToken)?.capabilities).toContain(
-      "image-recognition:write",
-    );
-  });
-
   it("gates browser capabilities on thread access", () => {
     const defaultToken = generateOkouToken("user_okou", "run_okou", "org_okou");
     const enabledToken = generateOkouToken(
@@ -363,18 +350,14 @@ describe("auth tokens", () => {
     });
   });
 
-  it("ignores retired capabilities in a signed mixed legacy token", () => {
-    const retired = [
-      "goal:read",
-      "goal:agent-result:write",
-      "goal:user-control:write",
-    ];
+  it("filters a signed token to registered capabilities", () => {
+    const unregistered = ["unregistered:read", "unregistered:write"];
     const token = signSandboxJwtForTests({
       scope: "okou",
       userId: "user_okou",
       runId: "run_okou",
       orgId: "org_okou",
-      capabilities: [...retired, "chat-thread:read", "file:write"],
+      capabilities: [...unregistered, "chat-thread:read", "file:write"],
       iat: currentSecond(),
       exp: currentSecond() + 60,
     });
@@ -382,11 +365,6 @@ describe("auth tokens", () => {
       "chat-thread:read",
       "file:write",
     ]);
-    const fresh = generateOkouToken("user_okou", "run_okou", "org_okou");
-    const payload = decodeOkouTokenPayloadForTest(fresh);
-    for (const capability of retired) {
-      expect(payload.capabilities).not.toContain(capability);
-    }
   });
 
   it("gates computer-use capability on an explicit host grant", () => {

@@ -13,13 +13,13 @@ import {
   skillImportSessionsContract,
   skillImportSkillsContract,
   type SkillImportRequest,
+  type SkillImportSessionRequest,
   type SkillImportSessionResponse,
 } from "@okouai/api-contracts/contracts/skill-import";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -32,7 +32,6 @@ import {
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -141,21 +140,6 @@ function skillBody(
   };
 }
 
-/**
- * The import rolls out with the onboarding step it serves, so every case that
- * exercises the service enables that switch for its own user first.
- */
-async function setSkillImportSwitch(
-  actor: OrgActor,
-  enabled: boolean,
-): Promise<void> {
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-    { [FeatureSwitchKey.OnboardingSourcesFirst]: enabled },
-  );
-}
-
 async function bootstrapActor(): Promise<{
   readonly actor: OrgActor;
   readonly agentId: string;
@@ -176,16 +160,17 @@ async function bootstrapActor(): Promise<{
   };
 }
 
-async function openSession(): Promise<{
+async function openSession(
+  body: SkillImportSessionRequest = { provider: "claudeCode" },
+): Promise<{
   readonly actor: OrgActor;
   readonly agentId: string;
   readonly session: SkillImportSessionResponse;
 }> {
   const { actor, agentId } = await bootstrapActor();
-  await setSkillImportSwitch(actor, true);
 
   const response = await accept(
-    sessionsClient().create({ headers: clerkHeaders(actor) }),
+    sessionsClient().create({ headers: clerkHeaders(actor), body }),
     [200],
   );
 
@@ -206,16 +191,42 @@ describe("POST /api/skill-import/sessions", () => {
     expect(remainingMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
   });
 
-  it("refuses a caller whose onboarding flow switch is off", async () => {
+  it("rejects a tool the import does not write prompts for", async () => {
     const { actor } = await bootstrapActor();
+    const request = setupRawAppRequest({ context, routes: skillImportRoutes });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
-    const response = await accept(
-      sessionsClient().create({ headers: clerkHeaders(actor) }),
-      [403],
-    );
+    const response = await request("/api/skill-import/sessions", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer clerk-session",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ provider: "cursor" }),
+    });
 
+    expect(response.status).toBe(400);
     expectApiError(response.body);
-    expect(response.body.error.code).toBe("FORBIDDEN");
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+  });
+
+  it("rejects a session request that names no tool", async () => {
+    const { actor } = await bootstrapActor();
+    const request = setupRawAppRequest({ context, routes: skillImportRoutes });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const response = await request("/api/skill-import/sessions", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer clerk-session",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(400);
+    expectApiError(response.body);
+    expect(response.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("refuses an unauthenticated caller", async () => {
@@ -224,7 +235,10 @@ describe("POST /api/skill-import/sessions", () => {
     });
 
     const response = await accept(
-      sessionsClient().create({ headers: { authorization: "Bearer nope" } }),
+      sessionsClient().create({
+        headers: { authorization: "Bearer nope" },
+        body: { provider: "claudeCode" },
+      }),
       [401],
     );
 
@@ -289,6 +303,34 @@ describe("POST /api/skill-import/skills", () => {
         id: created.body.workflowId,
         name: "release-notes",
         visibility: "private",
+      }),
+    );
+  });
+
+  it("tags the workflow with the tool the session was opened for", async () => {
+    const { actor, agentId, session } = await openSession({
+      provider: "codex",
+    });
+
+    const created = await accept(
+      uploadClient().upload({
+        headers: tokenHeaders(session.token),
+        body: skillBody(),
+      }),
+      [201],
+    );
+
+    const listed = await accept(
+      workflowListClient().list({
+        headers: clerkHeaders(actor),
+        query: { agentId },
+      }),
+      [200],
+    );
+    expect(listed.body).toContainEqual(
+      expect.objectContaining({
+        id: created.body.workflowId,
+        importSource: "codex",
       }),
     );
   });
@@ -390,22 +432,6 @@ describe("POST /api/skill-import/skills", () => {
     expect(response.body.error.code).toBe("BINARY_FILE_UNSUPPORTED");
   });
 
-  it("stops an open session once the switch is turned off", async () => {
-    const { actor, session } = await openSession();
-    await setSkillImportSwitch(actor, false);
-
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody(),
-      }),
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("FORBIDDEN");
-  });
-
   it("rejects metadata that carries binary content", async () => {
     const { session } = await openSession();
 
@@ -463,6 +489,7 @@ describe("POST /api/skill-import/skills", () => {
       userId: actor.userId,
       orgId: actor.orgId,
       agentId,
+      provider: "claudeCode",
       iat: issuedAt,
       exp: issuedAt + 60 * 60,
     });
@@ -502,6 +529,7 @@ describe("POST /api/skill-import/skills", () => {
       userId: actor.userId,
       orgId: actor.orgId,
       agentId: randomUUID(),
+      provider: "claudeCode",
       iat: issuedAt,
       exp: issuedAt + 60 * 60,
     });

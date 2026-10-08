@@ -5,30 +5,22 @@ import {
 } from "@okouai/core/frameworks";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
 
-import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import {
-  commitPreparedVolumeServerSide,
-  ensureVolumeStorage$,
-  prepareVolumeServerSideWithDb$,
+  prepareVolumeServerSide$,
+  type PreparedServerSideVolume,
+  type ServerSideVolumeStorage,
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
-import {
-  completePiStableContextPublication,
-  lockPiStableContextPublication,
-  refreshPiStableContextStorageDemands,
-  type PiStableContextPublicationFence,
-} from "./pi-stable-context-generation.service";
 
 interface WriteAgentInstructionsStorageArgs {
   readonly orgId: string;
   readonly agentName: string;
   readonly instructions: string;
   readonly framework?: string;
-  readonly stableContextPublication?: PiStableContextPublicationFence;
 }
 
 function instructionFilesForFramework(args: {
@@ -54,33 +46,12 @@ function instructionVolumeInput(args: WriteAgentInstructionsStorageArgs) {
     orgId: args.orgId,
     storageName: getInstructionsStorageName(args.agentName.toLowerCase()),
     piResourceIndex: true as const,
-    ...(args.stableContextPublication
-      ? { stableContextPublication: args.stableContextPublication }
-      : {}),
     files: instructionFilesForFramework({
       content: args.instructions,
       framework: args.framework,
     }),
   };
 }
-
-export const ensureAgentInstructionsStorage$ = command(
-  async (
-    { set },
-    args: Pick<WriteAgentInstructionsStorageArgs, "orgId" | "agentName">,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await set(
-      ensureVolumeStorage$,
-      {
-        orgId: args.orgId,
-        storageName: getInstructionsStorageName(args.agentName.toLowerCase()),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-  },
-);
 
 /** Persist application-owned Agent instructions without composing a version. */
 export const writeAgentInstructionsStorage$ = command(
@@ -94,55 +65,27 @@ export const writeAgentInstructionsStorage$ = command(
   },
 );
 
-export const writeAgentInstructionsStorageInTransaction$ = command(
+/** Prepare and upload without borrowing a caller's transaction. */
+export const prepareAgentInstructionsStorage$ = command(
   async (
     { set },
-    args: WriteAgentInstructionsStorageArgs & { readonly tx: Tx },
+    args: WriteAgentInstructionsStorageArgs & {
+      readonly storage?: ServerSideVolumeStorage;
+    },
     signal: AbortSignal,
-  ): Promise<void> => {
-    const volume = await set(
-      prepareVolumeServerSideWithDb$,
-      { db: args.tx, input: instructionVolumeInput(args) },
+  ): Promise<PreparedServerSideVolume> => {
+    return await set(
+      prepareVolumeServerSide$,
+      {
+        ...instructionVolumeInput(args),
+        ...(args.storage ? { storage: args.storage } : {}),
+      },
       signal,
     );
-    if (
-      args.stableContextPublication &&
-      !(await lockPiStableContextPublication(
-        args.tx,
-        args.stableContextPublication,
-      ))
-    ) {
-      throw new Error(
-        "Stable-context publication was superseded before Storage HEAD commit",
-      );
-    }
-    await commitPreparedVolumeServerSide({ db: args.tx, volume }, signal);
-    if (args.stableContextPublication) {
-      await refreshPiStableContextStorageDemands(
-        args.tx,
-        args.stableContextPublication,
-        {
-          storageId: volume.version.storageId,
-          versionId: volume.version.versionId,
-          archiveSize: volume.version.archiveSize,
-          fileCount: volume.version.fileCount,
-        },
-      );
-      signal.throwIfAborted();
-      if (
-        !(await completePiStableContextPublication(
-          args.tx,
-          args.stableContextPublication,
-        ))
-      ) {
-        throw new Error(
-          "Stable-context publication fence changed while locked",
-        );
-      }
-    }
-    signal.throwIfAborted();
   },
 );
+
+/** DB-only publication; the caller revalidates source authority and Storage. */
 
 export const deleteAgentInstructionsStorage$ = command(
   async (

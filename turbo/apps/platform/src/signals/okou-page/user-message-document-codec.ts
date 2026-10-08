@@ -17,7 +17,6 @@ import { i18n } from "../../i18n/index.ts";
 import type { RestorableAttachment } from "./chat-draft.ts";
 import { formatFeedbackPrompt, type FeedbackSource } from "./chat-feedback.ts";
 import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
-import { avatarTemplateSelection } from "./avatar-template-selection.ts";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import {
   serializeAgentMention,
@@ -497,7 +496,7 @@ export function textToMessageDocument(
 }
 
 function templateAttachmentType(template: GenerationTemplateRequest): string {
-  return avatarTemplateSelection(template) ? "avatar" : template.type;
+  return template.type;
 }
 
 function templateCategory(template: GenerationTemplateRequest): string {
@@ -508,10 +507,9 @@ function templateCategory(template: GenerationTemplateRequest): string {
 function templatePreviewImageUrl(
   template: GenerationTemplateRequest,
 ): string | null {
-  if (template.type === "presentation") {
-    return template.selection.previewUrl ?? null;
-  }
-  return avatarTemplateSelection(template)?.previewUrl ?? null;
+  return template.type === "presentation"
+    ? (template.selection.previewUrl ?? null)
+    : null;
 }
 
 function templateNode(part: Extract<UserMessagePart, { type: "template" }>) {
@@ -762,21 +760,44 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
 }
 
 /**
- * Restores the editor-owned portion of a business document. File parts stay in
- * the existing external attachment state and therefore do not become Tiptap
- * nodes. Newlines are canonically restored as paragraph boundaries.
+ * Restores editable draft content from a saved draft or copied message. File
+ * parts stay in external attachment state and do not become Tiptap nodes.
+ * Newlines are canonically restored as paragraph boundaries.
+ * Immutable history keeps its original template parts; an editable document
+ * drops retired video and avatar templates while preserving text and
+ * attachments. Current clients can copy old messages, so this policy is not
+ * rollout-limited.
  */
-export function messageDocumentToEditorDoc(value: unknown): JSONContent | null {
-  const parsed = userMessageDocumentSchema.safeParse(value);
-  return parsed.success ? restoredEditorDoc(parsed.data) : null;
-}
-
-/** Restores only the persisted user message portion of a composer draft. */
 export function draftToEditorDoc(userMessage: unknown): JSONContent | null {
   const parsedUserMessage = userMessageDocumentSchema.safeParse(userMessage);
-  return parsedUserMessage.success
-    ? restoredEditorDoc(parsedUserMessage.data)
-    : null;
+  if (!parsedUserMessage.success) {
+    return null;
+  }
+  return restoredEditorDoc({
+    ...parsedUserMessage.data,
+    parts: parsedUserMessage.data.parts.flatMap((part): UserMessagePart[] => {
+      if (part.type === "template") {
+        return isRetiredTemplate(part.template) ? [] : [part];
+      }
+      if (part.type === "feedback") {
+        return [
+          {
+            ...part,
+            note: part.note.filter((note) => {
+              return (
+                note.type !== "template" || !isRetiredTemplate(note.template)
+              );
+            }),
+          },
+        ];
+      }
+      return [part];
+    }),
+  });
+}
+
+function isRetiredTemplate(template: GenerationTemplateRequest): boolean {
+  return template.type === "video" || template.type === "intro-video";
 }
 
 /** Serializes the business document to the same plain prompt representation. */
@@ -884,7 +905,6 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
     if (
       part.type === "source" ||
       part.type === "automation" ||
-      part.type === "goal" ||
       part.type === "model" ||
       part.type === "additional_info"
     ) {

@@ -45,9 +45,6 @@ import { setupGithubConnectPage$ } from "./okou-page/github-connect-page.ts";
 import { setupTeamsConnectPage$ } from "./okou-page/teams-connect-page.ts";
 import { setupTelegramConnectPage$ } from "./okou-page/telegram-connect-page.ts";
 import { setupTelegramSettingsPage$ } from "./okou-page/telegram-settings-page.ts";
-import { setupSshConnectorPage$ } from "./okou-page/ssh-connector-page.ts";
-import { setupVncConnectorPage$ } from "./okou-page/vnc-connector-page.ts";
-import { setupCloudflareAccessConnectorPage$ } from "./okou-page/cloudflare-access-connector-page.ts";
 import { setupFeishuSettingsPage$ } from "./okou-page/feishu-settings-page.ts";
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
@@ -64,16 +61,6 @@ import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
 import {
-  setupOnboardingImageRunPage$,
-  setupOnboardingImageTemplatePage$,
-  setupOnboardingPresentationRunPage$,
-  setupOnboardingPresentationTemplatePage$,
-  setupOnboardingVideoRunPage$,
-  setupOnboardingVideoTemplatePage$,
-  setupOnboardingWorkflowPickerPage$,
-  setupOnboardingWorkflowRunPage$,
-} from "./onboarding/onboarding-page-setup.ts";
-import {
   setupOnboardingEntryPage$,
   setupOnboardingExperiencePage$,
   setupOnboardingSourcesPage$,
@@ -87,6 +74,8 @@ import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
 import { setupBrowserAuthorizationPage$ } from "./browser-authorization/browser-authorization-page-setup.ts";
 import { setupBrowserSessionPage$ } from "./browser-session/browser-session-page-setup.ts";
+import { setupMailDraftPage$ } from "./mail-draft/mail-draft-page-setup.ts";
+import { setupSubscriptionResetPage$ } from "./subscription-reset/subscription-reset-page-setup.ts";
 import { setupBrowserUserActionPage$ } from "./browser-user-action/browser-user-action-page-setup.ts";
 import { setupDirectedConnectPage$ } from "./connectors-page/directed-connect-page-setup.ts";
 import { setupDirectedAuthorizePage$ } from "./connectors-page/directed-authorize-page-setup.ts";
@@ -105,7 +94,7 @@ import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
 import { setupExportPage$ } from "./export-page/export-page-setup.ts";
 import { initSlackOrg$ as handleSlackRedirect$ } from "./okou-page/slack.ts";
 import { setupSkeletonPage$, setupErrorPage$ } from "./skeleton-page-setup.ts";
-import { hideAppSkeleton$, initBootstrapSkeleton$ } from "./app-skeleton.ts";
+import { hideAppSkeleton$ } from "./app-skeleton.ts";
 import { setupRedeemCampaignPage$ } from "./redeem-campaign/redeem-campaign-page-setup.ts";
 import { updatePage$ } from "./react-router.ts";
 import { setupLegacySettingsRedirect$ } from "./okou-page/settings/legacy-settings-redirect.ts";
@@ -114,6 +103,7 @@ import { setupSharedArtifact$ } from "./shared-artifact.ts";
 import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-setup.ts";
 
 import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
+import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-selection.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import {
   applyFeatureSwitches$,
@@ -126,6 +116,11 @@ import {
 } from "./connection-diagnostics.ts";
 import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog.ts";
 import { captureInvitationRedirect$ } from "./invitation-redirect.ts";
+import {
+  pwaNavigationEnabled$,
+  setupPwaNavigation$,
+} from "./okou-page/pwa-navigation.ts";
+import { setupPwaMePage$ } from "./okou-page/pwa-me-page-setup.ts";
 import {
   initBootstrapPhaseTiming$,
   markBootstrapLocaleInitCompleted$,
@@ -180,7 +175,17 @@ function setupAuthSidebarPageWrapper(
   return setupAuthPageWrapper(setupSettingsParamAfterStableRoute(setupPage));
 }
 
-const SOURCES_FIRST_ONBOARDING_PAGE_GROUP = "sources-first-onboarding";
+const setupAuthenticatedPwaMePage$ =
+  setupAuthSidebarPageWrapper(setupPwaMePage$);
+
+const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
+  await set(
+    get(pwaNavigationEnabled$)
+      ? setupAuthenticatedPwaMePage$
+      : setupNotFoundPage$,
+    signal,
+  );
+});
 
 const ROUTE_CONFIG = [
   {
@@ -256,6 +261,14 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupBrowserSessionPage$),
   },
   {
+    path: ROUTES.mailDraft,
+    setup: setupAuthPageWrapper(setupMailDraftPage$),
+  },
+  {
+    path: ROUTES.subscriptionReset,
+    setup: setupAuthPageWrapper(setupSubscriptionResetPage$),
+  },
+  {
     path: ROUTES.browserUserAction,
     setup: setupAuthPageWrapper(setupBrowserUserActionPage$),
   },
@@ -324,16 +337,8 @@ const ROUTE_CONFIG = [
     setup: setupAuthSidebarPageWrapper(setupConnectorsPage$),
   },
   {
-    path: ROUTES.connectorSsh,
-    setup: setupAuthSidebarPageWrapper(setupSshConnectorPage$),
-  },
-  {
-    path: ROUTES.connectorVnc,
-    setup: setupAuthSidebarPageWrapper(setupVncConnectorPage$),
-  },
-  {
-    path: ROUTES.connectorCloudflareAccess,
-    setup: setupAuthSidebarPageWrapper(setupCloudflareAccessConnectorPage$),
+    path: ROUTES.me,
+    setup: setupPwaMeRoute$,
   },
   {
     path: ROUTES.agentIdeas,
@@ -446,69 +451,30 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.onboarding,
     setup: setupAuthPageWrapper(setupOnboardingEntryPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingSources,
     setup: setupAuthPageWrapper(setupOnboardingSourcesPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingTeam,
     setup: setupAuthPageWrapper(setupOnboardingTeamPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingExperience,
     setup: setupAuthPageWrapper(setupOnboardingExperiencePage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingSkills,
     setup: setupAuthPageWrapper(setupOnboardingSkillsPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingSlack,
     setup: setupAuthPageWrapper(setupOnboardingSlackPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingReady,
     setup: setupAuthPageWrapper(setupOnboardingReadyPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
-  },
-  {
-    path: ROUTES.onboardingWorkflowPicker,
-    setup: setupAuthPageWrapper(setupOnboardingWorkflowPickerPage$),
-  },
-  {
-    path: ROUTES.onboardingWorkflowRun,
-    setup: setupAuthPageWrapper(setupOnboardingWorkflowRunPage$),
-  },
-  {
-    path: ROUTES.onboardingPresentationTemplate,
-    setup: setupAuthPageWrapper(setupOnboardingPresentationTemplatePage$),
-  },
-  {
-    path: ROUTES.onboardingPresentationRun,
-    setup: setupAuthPageWrapper(setupOnboardingPresentationRunPage$),
-  },
-  {
-    path: ROUTES.onboardingImageTemplate,
-    setup: setupAuthPageWrapper(setupOnboardingImageTemplatePage$),
-  },
-  {
-    path: ROUTES.onboardingImageRun,
-    setup: setupAuthPageWrapper(setupOnboardingImageRunPage$),
-  },
-  {
-    path: ROUTES.onboardingVideoTemplate,
-    setup: setupAuthPageWrapper(setupOnboardingVideoTemplatePage$),
-  },
-  {
-    path: ROUTES.onboardingVideoRun,
-    setup: setupAuthPageWrapper(setupOnboardingVideoRunPage$),
   },
   {
     path: ROUTES.signInToken,
@@ -629,6 +595,7 @@ const completeBootstrap$ = command(
     signal.throwIfAborted();
     set(markBootstrapLocaleInitCompleted$);
     set(initTheme$, signal);
+    set(setupPwaNavigation$, signal);
 
     render();
 
@@ -660,6 +627,7 @@ const completeBootstrap$ = command(
       set(setupNotificationListener$, signal),
 
       set(setupGlobalKeyboardShortcuts$, signal),
+      set(setupChatThreadFilterShortcut$, signal),
       set(watchOrgSwitch$, signal),
       set(syncInitialPreferences$, signal),
     ]);
@@ -680,7 +648,6 @@ export const bootstrap$ = command(
     set(captureInvitationRedirect$);
     set(markBootstrapLocaleInitStarted$);
     set(setRootSignal$, signal);
-    set(initBootstrapSkeleton$);
     // Claims `clerkUser$` in this synchronous pass. The daemons and route
     // setups below read it, and without an owner it never settles.
     const clerkIdentitySetup = set(setupClerkUser$, signal);

@@ -567,6 +567,9 @@ async fn run_supervisor(config: SupervisorTaskConfig) {
             result = recv_retry(&mut ably_retry.handle) => {
                 match handle_ably_connect_result(result, &mut ably, &mut ably_retry) {
                     Ok(()) => {
+                        // `subscribe` queues `Event::Connected` as the new
+                        // subscription's first event; its handler wakes the
+                        // active-input readers once.
                         disconnect.mark_connected();
                         config.poll_wakeups.mark_ably_connected();
                     }
@@ -635,11 +638,11 @@ async fn handle_ably_event(
             .await;
         }
         Some(ably_subscriber::Event::Connected) => {
-            if !disconnect.is_connected() {
-                info!("ably reconnected");
-            }
-            disconnect.mark_connected();
-            config.poll_wakeups.mark_ably_connected();
+            handle_ably_connected(
+                disconnect,
+                &config.poll_wakeups,
+                &config.active_input_notifications,
+            );
         }
         Some(ably_subscriber::Event::Disconnected { reason }) => {
             let reason = reason.unwrap_or_else(|| "unknown".to_string());
@@ -662,6 +665,22 @@ async fn handle_ably_event(
             ably_retry.schedule();
         }
     }
+}
+
+// Every subscription and every reconnect, resumed or fresh, emits
+// `Event::Connected`. An `active-input` push published while disconnected is
+// lost, so each active run reads its next steerable input once.
+fn handle_ably_connected(
+    disconnect: &mut AblyDisconnectState,
+    poll_wakeups: &PollWakeups,
+    active_input_notifications: &ActiveInputNotifications,
+) {
+    if !disconnect.is_connected() {
+        info!("ably reconnected");
+    }
+    disconnect.mark_connected();
+    poll_wakeups.mark_ably_connected();
+    active_input_notifications.notify_all();
 }
 
 #[cfg(test)]
@@ -1102,7 +1121,7 @@ fn handle_ably_connect_result(
         Err(e) => {
             let next_secs = retry.backoff().as_secs();
             let _ = retry.on_failure();
-            warn!(
+            info!(
                 error = %e,
                 failures = retry.consecutive_failures(),
                 next_attempt_secs = next_secs,
@@ -1178,6 +1197,9 @@ impl AblyDisconnectState {
 mod tests {
     use super::*;
     use crate::provider::{RunnerPreference, RunnerPreferenceTier};
+    use tracing::Level;
+    use tracing_subscriber::prelude::*;
+    use tracing_test_support::CapturedEvents;
 
     fn make_message(name: Option<&str>, data: serde_json::Value) -> ably_subscriber::Message {
         ably_subscriber::Message {
@@ -1221,6 +1243,44 @@ mod tests {
 
     fn default_profiles() -> Vec<String> {
         vec![crate::profile::DEFAULT_PROFILE.to_string()]
+    }
+
+    #[test]
+    fn retryable_connect_failure_logs_info_with_retry_details() {
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+
+        tracing::subscriber::with_default(subscriber, || {
+            let mut ably = None;
+            let mut retry = RetryState::new(ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX, None);
+            let error = "token exchange transport failed".to_string();
+
+            assert_eq!(
+                handle_ably_connect_result(Err(error.clone()), &mut ably, &mut retry),
+                Err(error)
+            );
+            assert!(ably.is_none());
+            assert_eq!(retry.consecutive_failures(), 1);
+            assert!(retry.restart_at.is_some());
+        });
+
+        let events = captured.entries();
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.level, Level::INFO);
+        assert_eq!(
+            event.fields.get("message").map(String::as_str),
+            Some("ably connect failed")
+        );
+        assert_eq!(
+            event.fields.get("error").map(String::as_str),
+            Some("token exchange transport failed")
+        );
+        assert_eq!(event.fields.get("failures").map(String::as_str), Some("1"));
+        assert_eq!(
+            event.fields.get("next_attempt_secs").map(String::as_str),
+            Some("5")
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -1294,6 +1354,30 @@ mod tests {
 
         wakeups.record_poll_result(due, PollOutcome::Failure, Duration::from_secs(5));
         assert!(wakeups.snapshot().wakeup_retry_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn ably_connected_wakes_every_active_input_reader_once() {
+        let notifications = ActiveInputNotifications::new();
+        let mut first = notifications.subscribe(RunId::new_v4());
+        let mut second = notifications.subscribe(RunId::new_v4());
+        let wakeups = PollWakeups::new(false);
+        let mut disconnect = AblyDisconnectState::disconnected("transport lost".to_string());
+
+        handle_ably_connected(&mut disconnect, &wakeups, &notifications);
+
+        assert!(disconnect.is_connected());
+        for subscription in [&mut first, &mut second] {
+            tokio::time::timeout(Duration::from_secs(5), subscription.wait())
+                .await
+                .expect("reconnect wakes every active run");
+            assert!(
+                tokio::time::timeout(Duration::from_millis(20), subscription.wait())
+                    .await
+                    .is_err(),
+                "one reconnect wakes each run once"
+            );
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -1747,6 +1831,24 @@ mod tests {
         state.record_disconnected("new window".to_string());
         assert!(!state.error_logged);
         assert!(state.error_deadline().is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn quick_reconnect_clears_error_deadline_but_persistent_disconnect_reaches_it() {
+        let mut state = AblyDisconnectState::disconnected("connecting".to_string());
+        let deadline = state.error_deadline().unwrap();
+
+        tokio::time::advance(ABLY_BACKOFF_INITIAL).await;
+        assert!(tokio::time::Instant::now() < deadline);
+        state.mark_connected();
+        assert!(state.error_deadline().is_none());
+
+        state.record_disconnected("new disconnect".to_string());
+        let deadline = state.error_deadline().unwrap();
+        tokio::time::advance(ABLY_DISCONNECT_ERROR_AFTER - Duration::from_millis(1)).await;
+        assert!(tokio::time::Instant::now() < deadline);
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert!(tokio::time::Instant::now() >= deadline);
     }
 
     #[tokio::test]

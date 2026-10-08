@@ -4,12 +4,11 @@ import { useTranslation } from "react-i18next";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import {
-  connectorCatalogStatus$,
-  reloadBuiltinConnectors$,
-} from "../../signals/external/connectors.ts";
+import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
+import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import {
   sendSourcesFirstInvite$,
+  sourcesFirstInviteEmailValid,
   sourcesFirstInviteSendable,
 } from "../../signals/onboarding/onboarding-sources-first-invite.ts";
 import {
@@ -29,7 +28,10 @@ import {
   type SourcesFirstInvite,
   type SubscriptionProvider,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
-import { waitForSourcesFirstCatalog$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
+import {
+  onboardingSourceConnectors$,
+  waitForSourcesFirstCatalog$,
+} from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import {
   connectOnboardingSubscription$,
   onboardingSubscriptionStatus$,
@@ -51,7 +53,7 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 export function OnboardingIndustryPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
-  const catalog = useLastLoadable(connectorCatalogStatus$);
+  const catalog = useLastLoadable(onboardingSourceConnectors$);
   const pageSignal = useGet(pageSignal$);
   const [catalogWait, waitForCatalog] = useLoadableSet(
     waitForSourcesFirstCatalog$,
@@ -76,6 +78,7 @@ export function OnboardingIndustryPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.industry.copy;
       })}
+      supplement={<OnboardingCompliance />}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -248,6 +251,83 @@ function InviteList({
   );
 }
 
+/** The address field and its send, with the hint for a malformed address. */
+function InviteEmailForm({
+  malformed,
+  sendable,
+  onInvite,
+}: {
+  readonly malformed: boolean;
+  readonly sendable: boolean;
+  readonly onInvite: () => void;
+}) {
+  const { t } = useTranslation();
+  const ui = useGet(sourcesFirstUi$);
+  const updateUi = useSet(updateSourcesFirstUi$);
+
+  return (
+    <div className="px-5 py-4">
+      <label
+        htmlFor="onboarding-invite-email"
+        className="block text-sm font-medium text-foreground"
+      >
+        {t(($) => {
+          return $.onboarding.sourcesFirst.team.label;
+        })}
+      </label>
+      {/* The hint belongs to the address, so it sits under the field
+          even where the send action stacks below it. */}
+      <div className="mt-2 flex items-start gap-2 max-sm:flex-col max-sm:items-stretch">
+        <div className="min-w-0 flex-1">
+          <Input
+            id="onboarding-invite-email"
+            className="max-sm:h-12 max-sm:text-base max-sm:placeholder:text-base"
+            type="email"
+            autoComplete="off"
+            value={ui.inviteEmail}
+            placeholder={t(($) => {
+              return $.onboarding.sourcesFirst.team.placeholder;
+            })}
+            aria-invalid={malformed}
+            aria-describedby={
+              malformed ? "onboarding-invite-email-error" : undefined
+            }
+            onChange={(event) => {
+              updateUi({
+                inviteEmail: event.target.value,
+                inviteEmailLeft: false,
+              });
+            }}
+            onBlur={() => {
+              updateUi({ inviteEmailLeft: true });
+            }}
+          />
+          {malformed ? (
+            <p
+              id="onboarding-invite-email-error"
+              className="mt-1.5 text-xs leading-5 text-destructive"
+            >
+              {t(($) => {
+                return $.onboarding.sourcesFirst.team.invalidEmail;
+              })}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          onClick={onInvite}
+          disabled={!sendable}
+          className="max-sm:h-12 max-sm:text-base"
+        >
+          {t(($) => {
+            return $.onboarding.sourcesFirst.team.invite;
+          })}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function OnboardingTeamPage() {
   const { t } = useTranslation();
   const captureInviteAdded = useSet(captureSourceOnboardingInviteAdded$);
@@ -258,6 +338,15 @@ export function OnboardingTeamPage() {
   const pageSignal = useGet(pageSignal$);
   const address = ui.inviteEmail.trim();
   const sendable = sourcesFirstInviteSendable(flow.draft.invites, address);
+  // Named only once the field is left, so the hint never argues with an
+  // address that is still being typed.
+  const malformed =
+    ui.inviteEmailLeft &&
+    address !== "" &&
+    !sourcesFirstInviteEmailValid(address);
+  const invited = flow.draft.invites.some((entry) => {
+    return entry.status === "invited";
+  });
 
   const invite = (): void => {
     if (!sendable) {
@@ -270,7 +359,7 @@ export function OnboardingTeamPage() {
     });
     // The address moves into the list, so the field is free for the next one
     // while the API is still answering for this one.
-    updateUi({ inviteEmail: "" });
+    updateUi({ inviteEmail: "", inviteEmailLeft: false });
     detach(sendInvite(address, pageSignal), Reason.DomCallback);
     // The funnel counts invitees; the addresses themselves stay in the draft.
     captureInviteAdded(
@@ -291,7 +380,9 @@ export function OnboardingTeamPage() {
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
+      // Continue waits for an accepted invite; Not now leaves without one.
       onPrimary={flow.goNext}
+      primaryDisabled={!invited}
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.notNow;
       })}
@@ -306,35 +397,11 @@ export function OnboardingTeamPage() {
           return $.onboarding.sourcesFirst.team.note;
         })}
       >
-        <div className="px-5 py-4">
-          <label
-            htmlFor="onboarding-invite-email"
-            className="block text-sm font-medium text-foreground"
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.team.label;
-            })}
-          </label>
-          <div className="mt-2 flex gap-2">
-            <Input
-              id="onboarding-invite-email"
-              type="email"
-              autoComplete="off"
-              value={ui.inviteEmail}
-              placeholder={t(($) => {
-                return $.onboarding.sourcesFirst.team.placeholder;
-              })}
-              onChange={(event) => {
-                updateUi({ inviteEmail: event.target.value });
-              }}
-            />
-            <Button type="button" onClick={invite} disabled={!sendable}>
-              {t(($) => {
-                return $.onboarding.sourcesFirst.team.invite;
-              })}
-            </Button>
-          </div>
-        </div>
+        <InviteEmailForm
+          malformed={malformed}
+          sendable={sendable}
+          onInvite={invite}
+        />
         {flow.draft.invites.length > 0 ? (
           <InviteList invites={flow.draft.invites} />
         ) : (
@@ -472,11 +539,12 @@ function SubscriptionConnect({
   const connecting = status === "connecting";
 
   return (
-    <div className="mx-auto flex w-full max-w-[600px] flex-col gap-2">
+    // Spans the answer grid above it, so the action shares the cards' edges.
+    <div className="flex w-full flex-col gap-2">
       <Button
         type="button"
         variant={connected ? "outline" : "neutral"}
-        className="w-full gap-2"
+        className="w-full gap-2 max-sm:h-12 max-sm:text-base"
         disabled={connected || connecting}
         aria-busy={connecting}
         onClick={() => {
@@ -533,6 +601,11 @@ export function OnboardingExperiencePage() {
         description={t(($) => {
           return $.onboarding.sourcesFirst.experience.copy;
         })}
+        trustPoints={[
+          t(($) => {
+            return $.onboarding.sourcesFirst.experience.trust;
+          }),
+        ]}
         primaryLabel={t(($) => {
           return $.onboarding.sourcesFirst.common.continue;
         })}
@@ -542,7 +615,7 @@ export function OnboardingExperiencePage() {
         primaryDisabled={experienced === null}
         onBack={flow.goBack}
       >
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 max-sm:gap-3">
           <RadioGroup
             value={experienced === false ? "no" : (provider ?? "")}
             onValueChange={(value) => {
@@ -559,8 +632,19 @@ export function OnboardingExperiencePage() {
               updateDraft(answer);
               captureExperienceAnswered(answer.experienced, answer.provider);
             }}
-            className="grid gap-4 sm:grid-cols-3"
+            className="grid gap-3 sm:grid-cols-3 sm:gap-4"
           >
+            <OnboardingPosterCard
+              value="no"
+              selected={experienced === false}
+              mark={<OnboardingIllustration name="new" alt="" size="choice" />}
+              title={t(($) => {
+                return $.onboarding.sourcesFirst.experience.no;
+              })}
+              description={t(($) => {
+                return $.onboarding.sourcesFirst.experience.noCopy;
+              })}
+            />
             <OnboardingPosterCard
               value="codex"
               selected={experienced === true && provider === "codex"}
@@ -588,17 +672,6 @@ export function OnboardingExperiencePage() {
               })}
               description={t(($) => {
                 return $.onboarding.sourcesFirst.subscription.rowCopy;
-              })}
-            />
-            <OnboardingPosterCard
-              value="no"
-              selected={experienced === false}
-              mark={<OnboardingIllustration name="new" alt="" size="choice" />}
-              title={t(($) => {
-                return $.onboarding.sourcesFirst.experience.no;
-              })}
-              description={t(($) => {
-                return $.onboarding.sourcesFirst.experience.noCopy;
               })}
             />
           </RadioGroup>

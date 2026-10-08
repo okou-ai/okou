@@ -22,7 +22,9 @@ mod control;
 mod dns_readiness;
 mod error;
 mod factory;
+mod guest_duplex;
 mod guest_rpc;
+pub mod helper_exec;
 mod runtime;
 mod sandbox;
 mod snapshot;
@@ -46,6 +48,7 @@ pub use factory::{
     SandboxCreateObserver, SandboxCreateStage, SandboxFactory, SandboxNbdCowCreateOutcome,
     SandboxNbdCowCreateStage, SandboxNbdNetlinkConnectStage,
 };
+pub use guest_duplex::{AcceptedGuestDuplex, GuestDuplexAcceptor, GuestDuplexStream};
 pub use guest_rpc::{AcceptedGuestRpc, GuestRpcAcceptor, GuestRpcStream};
 pub use runtime::{RuntimeProvider, SandboxRuntime};
 pub use sandbox::{

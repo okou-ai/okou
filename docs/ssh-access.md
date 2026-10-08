@@ -2,37 +2,25 @@
 
 SSH is generally available as a standalone capability, including Direct and
 Cloudflare Access transports. There is no rollout switch or staff-membership
-gate. Owner, Agent grant and Run authorization checks remain mandatory.
+gate. Owner, chat-thread host selection and Run authorization checks remain mandatory.
 SSH uses neither connector accounts nor connector permissions.
 
 ## Owner setup
 
-Open **Connectors -> Remote access -> SSH** (`/connectors/ssh`) to manage hosts for your
-current organization and user, without selecting or creating an Agent. The SSH
-card uses the same presentation as connector cards: no hosts shows the service
-description and add affordance; one configured host shows its display name and
-multiple hosts show their count. Hosts without a reported failure use a green dot;
-current failures use an amber dot and `failed/total need attention`, including
-`1/1 need attention` for a single failed host. The footer keeps **Add access** or
-**Used by** Agent authorization. The authorization
-dialog lists your currently visible Agents with search and the same switches as
-Connector access management, while writing only the standalone SSH grant API.
-The count is configuration, not tested connectivity. It participates in
-search and category navigation. Connection-status filters mean configured or
-not configured for SSH; an Agent filter uses its independent SSH grant, even
-when no hosts are configured. SSH never opens generic connector account or
-permission dialogs.
+Open **Connectors -> Remote control** (`/connectors?scope=remote-control&type=ssh`) to manage hosts for your
+current organization and user, without selecting or creating an Agent. While
+any host reports a current failure, the host list shows how many SSH hosts need
+attention, and each failed host explains its failure. Each host has a chat
+default, and each chat can explicitly allow or deny that exact host; see [Chat remote access](thread-remote-access.md).
+SSH never opens generic connector account or permission dialogs.
 
-The zero-host card enters `/connectors/ssh?add=1`. The page consumes this intent
-once, checks the current inventory and opens **Add host** only if it is still
-empty. Cancelling, refreshing, or receiving a notification does not reopen it.
+While no host is configured, the chat composer's connector directory offers an
+SSH card with the service description and an add affordance. It participates in
+search and in the Remote access category, and opens the Remote control scope
+with the SSH type selected. Use **Add host** there to create a host. Host
+management remains independent of chat host selections.
 
-The management page follows the Agent and Workflow detail-page layout, with
-**Connectors / SSH** breadcrumbs on desktop and mobile. Use the Connectors
-breadcrumb to return to the directory. Host management remains independent of
-Agent grants.
-
-The **Hosts** view configures a display name, public hostname or IP, port, and a
+The **Connections** view configures a display name, public hostname or IP, port, and a
 credential. Select an existing credential or create a named credential inline with
 the host. The **Credentials** view manages reusable logins owned by the same
 organization and user. Each credential contains an SSH username and either a
@@ -82,7 +70,7 @@ UUID `id`, stored as the existing resource's primary key. The first successful
 create returns `201`. A same-ID request reaching the write transaction returns
 `204` with no body when the resource already belongs to the same organization and
 user. It does not overwrite metadata or secrets, create more inline resources, or
-repeat grants and notifications. First commit wins even if the payload differs.
+repeat notifications. First commit wins even if the payload differs.
 An ID belonging to another owner returns an opaque `SSH_RESOURCE_ID_CONFLICT`;
 it never acknowledges or exposes that resource.
 
@@ -126,7 +114,7 @@ records of the schema they migrated, not an inventory of current encrypted field
 
 Migration `1113_reusable_ssh_credentials` implements the explicitly approved
 pre-GA reset: it deletes old SSH hosts, their bound credentials, observations and
-learned pins. Agent SSH grants and unrelated data are retained. There is no
+learned pins. Unrelated data is retained. There is no
 backfill, legacy writer or rollback restoration; old hosts must be configured
 again. Applying this migration is destructive. A production cutover must stop
 outgoing owner API writers before applying the migration and starting the new
@@ -134,39 +122,18 @@ API; ordinary overlapping API deployment is not supported for this reset.
 Already-loaded staff pages must reload. This is separate from the Runner's
 existing support for both key and password authority responses.
 
-Enable the **SSH** row in **Agent -> Authorization**, alongside connector rows
-with the same search and loading switch, not in Profile. The description explains
-the all-host grant; there is no information tooltip, permission-sliders or
-host-management button in that row. With no hosts, the SSH
-row is hidden without clearing grants. Adding the first host automatically
-authorizes all Agents currently visible to you, including other users' public
-Agents in the same workspace. Host creation and these grants commit together.
-Adding more hosts preserves manually disabled grants. Deleting every host and
-adding one again repeats automatic authorization, just like connecting the first
-Connector account; Agents created afterward are not automatically authorized.
-
-You can grant or revoke your own SSH access for any currently visible Agent.
-The grant covers all your current and future hosts in that workspace, only for
-your Runs. An Agent's creator or another user does not receive your credentials
-or your grant. Agents cannot grant themselves access. This is not limited to
-chat-triggered Runs.
-
-Chat's services popover shows SSH alongside configured Connectors, with the
-same authorization switch and an enabled trigger icon, without a host-management
-action. Manage hosts through the global SSH card.
-Both the service list and trigger icons order built-in Connectors before SSH,
-then custom Connectors. The trigger keeps its three-icon limit and existing
-computer/browser slots; SSH no longer displaces built-in Connector icons.
-It always uses that composer's Agent, including split-pane chats. No hosts hides
-the SSH row; **Add connectors** offers the same zero-host setup entry.
-Both the legacy dialog and the Discover directory include this entry when
-no hosts are configured. In Discover, it appears after
-built-in shelves and under **Remote access**, participates in search, and stays
-out of the Custom tab. Its link also supports normal keyboard activation.
-Opening the popover refreshes SSH reads without dropping the last confirmed
-display for the same user/workspace. Its switch waits for the refreshed result.
-Changing owner discards that retained display, and each composer selects only
-its own Agent's grant.
+Configure each saved host's chat default in Remote control; choose `On`,
+`Off`, or `Use default` per host from the chat's Remote access menu. A new
+host's chat default is off, so creating a host does not enable chat access by
+itself. **Add connectors** continues to offer zero-host SSH setup.
+The Connectors dialog and Discover directory include this setup entry when
+no hosts are configured. In Discover, it appears after built-in shelves and
+under **Remote access**, participates in search, and stays out of the Custom
+tab. Its link also supports normal keyboard activation. Opening the chat's
+Remote access menu refreshes the host choices without dropping the last
+confirmed display for the same user/workspace. Changing owner discards that
+retained display; draft choices belong to the new-chat composer, and saved
+choices belong to the exact chat thread.
 
 Owner API business errors use stable `SSH_*` codes. Platform translates them,
 including recovery guidance for invalid input, stale generations and unavailable
@@ -175,14 +142,14 @@ from unavailability returned by an older API during deployment. There is no
 persistent Refresh button and background
 failures do not show raw server-message toasts.
 
-Successful host and grant changes publish best-effort `ssh:changed` on the owner's
-user channel with only `{ orgId }`. Learning a new host key also refreshes the
-browser. Platform checks the workspace and invalidates host, summary and grant
-reads. Initial subscription also refreshes them; reconnect and foreground events
-do not trigger extra reads. These refreshes do not close dialogs, clear unsaved
-keys or automatically grant access. Browser notifications are separate from
-Runner authority invalidation and do not tighten
-the accepted Run-lifetime cache window.
+Successful host changes publish best-effort `ssh:changed` on
+the owner's user channel with only `{ orgId }`. Learning a new host key also
+refreshes the browser. Platform checks the workspace and invalidates host and
+summary reads. Initial subscription also refreshes them; reconnect and
+foreground events do not trigger extra reads. These refreshes do not close
+dialogs, clear unsaved keys or change chat host permissions. Browser
+notifications are separate from Runner authority invalidation and do not
+tighten the accepted Run-lifetime cache window.
 
 ## Cloudflare Access for SSH
 
@@ -205,7 +172,7 @@ before key/password login. Rejected Access connections never retry as Direct.
 Existing CLI commands use the saved connection ID with no proxy/token options.
 For a protected host, the hostname and port in `okou ssh host list` identify the
 gateway, not the origin SSH port. Exec, Sessions and SFTP share this transport and
-retain their existing limits. Ask the owner to inspect `/connectors/ssh` diagnostics
+retain their existing limits. Ask the owner to inspect `/connectors?scope=remote-control&type=ssh` diagnostics
 when connection setup fails. An Access rejection can mean policy or token scope,
 not necessarily an expired token; gateway TLS/protocol failures remain distinct
 from SSH authentication and host-key failures.
@@ -217,26 +184,24 @@ updates/deletion require the expected edit revision, and referenced deletion is
 rejected. Names may change without invalidating Runs. Token replacement advances
 a separate authority generation and all referencing SSH host generations.
 Configurations have no separate enabled state; the saved host binding selects
-Access, and the existing SSH Agent grant authorizes use. Switching to Direct is
-not a way to disable a protected host.
+Access, and the Run's current chat permission for that host authorizes use.
+Switching to Direct is not a way to disable a protected host.
 
 An SSH host explicitly selects a same-owner configuration, published DNS hostname
 and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
 a configuration across hosts does not share it across users or workspaces.
-Protected execution uses the existing SSH Agent grant; there is no separate
-Access grant. Creating or changing an Access configuration does not create a
-host, grant SSH or restore a manual denial. Existing first-SSH-host onboarding
-remains unchanged, and later Agents can use bound configurations once authorized
-for SSH. SSH username/key/password and server host-key trust remain independent
-of the Service Token.
+Protected execution uses the same chat SSH host permission as Direct; there is
+no separate Access grant. Creating or changing an Access configuration does
+not create a host or change chat permissions. Any visible Agent with a Run in an authorized chat can use the bound host owned by
+that Run's user. SSH username/key/password and server host-key trust remain
+independent of the Service Token.
 
-Cloudflare Access also has its own Connector entry after SSH and VNC at
-`/connectors/cloudflare-access`; see [Cloudflare Access](cloudflare-access.md).
-It is owner configuration rather than a directly usable Agent service, so the
-standalone entry has no Agent grant, connector account, chat trigger or direct
-command. `/connectors/ssh` contains only **Hosts** and **Credentials**; the
-standalone entry is the sole management surface for adding, editing and deleting
-Cloudflare Access configurations. Referenced configurations cannot be deleted
+Cloudflare Access also has a Connector card that opens
+`/connectors?scope=private-network`; see [Cloudflare Access](cloudflare-access.md).
+It is owner configuration rather than a directly usable Agent service, so it
+has no connector account, chat trigger or direct command. The
+**Private network** scope manages Cloudflare Access configurations; the
+**Remote control** scope manages SSH and, when enabled, VNC. Referenced configurations cannot be deleted
 until their hosts are rebound or deleted. Client ID and Client Secret are never
 read back, including when replacing a token. Resource editors show public metadata
 and an explicit replacement checkbox: **Replace authentication** for an SSH
@@ -305,27 +270,24 @@ does not promise immediate revocation.
 After an actual SSH attempt, the host card can show the last reported connection
 failure, its observation time, and localized recovery guidance. The directory
 card uses the same status-dot and attention-ratio presentation as Connector
-cards. Chat service rows and compact icons do not add SSH-only warning badges,
-matching Connector presentation. Multiple hosts retain independent observations;
-a healthy sibling cannot clear another host's warning. Grants, service order
-and the compact icon limit are unchanged.
+cards. The chat Remote access menu does not add SSH-only warning badges. Multiple
+hosts retain independent observations; a healthy sibling cannot clear another
+host's warning.
 
 Only credential parsing, destination, network, host identity, authentication and
 pre-authentication handshake/timeout failures are connection failures. A verified
 host key followed by successful SSH authentication clears the previous warning,
 even if the command is rejected, returns nonzero, disconnects or times out later.
 Command outcomes, cancellation, admission and authority failures do not create
-host warnings. No command is retried and no trust or grant is changed.
+host warnings. No command is retried and no trust or chat permission is changed.
 
 Saving or editing a host is not a connection test. Any configuration generation
 change hides observations for the previous configuration without claiming success.
-No observation means unknown connectivity. A green directory dot means configured
-with no currently reported failure, not a verified live connection; the UI does
+No observation means unknown connectivity. A host without a warning has no
+currently reported failure, which is not a verified live connection; the UI does
 not add an untested status line. A failed/unavailable diagnostic read is shown
 separately and leaves host management available. Observations refresh through
-the existing owner notification. A single-host name uses the existing owner-scoped
-host-list read; while that name is unavailable, the configured count is the
-presentational fallback.
+the existing owner notification.
 
 This is best-effort recent evidence, not continuous monitoring. Reports may be
 missed, arrive late or be rejected after a Run ends or authority changes. There
@@ -341,11 +303,21 @@ okou ssh exec <connection-id> --command 'uname -a' --json
 ```
 
 Use the exact UUID from the live inventory, not the display name or hostname.
-List again after an unavailable or unknown ID; never invent IDs or automatically
-replay a command whose effects are unknown.
-The inventory requires a current running Run, an Agent visible to its user, a current grant,
-and `ssh:read`. An authorized empty inventory is distinct from unavailable
-authority. Execution requires `ssh:write`. Both capabilities are minted only
+Each listed host has `availability: { "status": "ready" }` or
+`availability: { "status": "blocked", "reason": "needs_rebind" }`.
+`ready` means the host is configured and eligible to attempt, not that a live
+connection has been tested. A blocked host is visible for diagnosis only:
+the owner must explicitly rebind it to a permitted Cloudflare Access configuration
+or choose Direct in the Remote control tab of `/connectors`. Do not execute a
+blocked ID; Runner resolution and pinning still return unavailable before
+credentials are decrypted. List again after an unavailable or unknown ID; never
+invent IDs or automatically replay a command whose effects are unknown.
+The inventory requires a current running Run, an Agent visible to its user,
+`ssh:read`, and the Run's current chat-level permission for each host.
+A Run without a valid chat thread is denied. A `hosts: []` result means no
+hosts are visible to this Run; it does not prove the owner has none saved.
+An authorized empty inventory is distinct from unavailable authority.
+Execution requires `ssh:write`. Both capabilities are minted only
 for feature-enabled Runs; newly eligible Runs must start with a fresh token.
 These commands are Run-only, not PAT commands. Agents cannot grant themselves
 access or send target addresses, credentials or host keys to the helper.
@@ -447,7 +419,8 @@ okou ssh upload <connection-id> <local-file> <remote-file> --json
 okou ssh download <connection-id> <remote-file> <local-file> --json
 ```
 
-Both commands require the existing SSH grant and `ssh:write` Run capability.
+Both commands require the Run's current chat permission for the exact SSH host
+and `ssh:write` Run capability.
 Credentials remain outside the sandbox. They transfer one regular file via the
 Runner's verified SFTP connection, without shell/scp fallback. Paths are literal:
 no expansion, recursion, resume, final symlinks or automatic creation of missing
@@ -494,17 +467,18 @@ independently verify the new identity before using **Reset host key**; that
 explicit confirmation allows a later connection to trust and learn a new key.
 Never reset automatically. For credential failures, ask the owner to review the
 supported key format and replace credentials. For `unavailable`, check the
-feature, owner grant, host and Run lifetime. For `unsafe_destination` or
-`network_failure`, check the public endpoint and reachability. Capacity or
+Run's chat-thread host selection, owner, host and Run lifetime. For
+`unsafe_destination` or `network_failure`, check the public endpoint and
+reachability. Capacity or
 timeout failures do not justify replay when effects are unknown.
 
 Inventory and owner configuration are live reads. Execution authority uses the
-existing Run-lifetime Runner cache while notifications are connected. Host edits,
-rotation, deletion, reset and Agent grant changes publish invalidation notices.
-Grant notices use `{ runId, connectionId: null }` for active Runs of that exact
-owner/Agent, including after deleting the grant. Notification failure does not
-roll back a committed edit. A missed notice can leave cached authority until the
-Run ends. End affected active Runs when immediate revocation is necessary.
+existing Run-lifetime Runner cache while notifications are connected. Host
+edits, rotation, deletion, reset and chat default or override changes publish
+invalidation notices; creating a host targets its own connection ID.
+Notification failure does not roll back a committed edit. A missed notice can
+leave cached authority until the Run ends. End affected active Runs when
+immediate revocation is necessary.
 
 See [Runner authority](runner-ssh-authority.md) for authorization and cache
 semantics, [SSH execution](runner-ssh-execution.md) for supported keys, network

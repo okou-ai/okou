@@ -59,6 +59,7 @@ const materializeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       operationId: bodyResult.data.operationId,
       runId,
       userId: auth.userId,
+      orgId: auth.orgId,
     },
     signal,
   );

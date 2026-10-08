@@ -8,19 +8,18 @@ import { IMAGE_MODEL_CONFIGS, resolveImageModel } from "./image-model-catalog";
  */
 const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   // Okou built-in aliases
-  "okou-1.0": "Okou 1.0",
-  "okou-1.0-pro": "Okou 1.0 Pro",
-  "okou-1.0-max": "Okou 1.0 Max",
-  // Anthropic direct (claude-code-oauth-token, anthropic-api-key, built-in)
+  "okou-1.0": "Auto",
+  // Anthropic direct (claude-code-oauth-token, built-in)
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
   "claude-opus-5-5": "Claude Opus 5.5",
   "claude-opus-5": "Claude Opus 5",
+  "claude-sonnet-5-5": "Claude Sonnet 5.5",
   "claude-sonnet-5": "Claude Sonnet 5",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-haiku-4-5": "Claude Haiku 4.5",
-  // Anthropic via OpenRouter / Vercel AI Gateway
+  // Vendor-prefixed Anthropic IDs recorded on historical runs
   "anthropic/claude-fable-5.1": "Claude Fable 5.1",
   "anthropic/claude-fable-5": "Claude Fable 5",
   "anthropic/claude-opus-5.5": "Claude Opus 5.5",
@@ -35,19 +34,20 @@ const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   "deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
   "deepseek-v4-flash": "DeepSeek V4 Flash",
   "deepseek-v4-pro": "DeepSeek V4 Pro",
-  // MiniMax via shared gateways
+  "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
+  // Vendor-prefixed MiniMax IDs recorded on historical runs
   "minimax/minimax-m2.5": "MiniMax M2.5",
-  // Minimax via OpenRouter
   "minimax/minimax-m2.7": "MiniMax M2.7",
   // OpenAI / Codex
   "gpt-6-astra": "GPT 6 Astra",
   "openai/gpt-6-astra": "GPT 6 Astra",
+  "gpt-6.1-sol": "GPT 6.1 Sol",
+  "openai/gpt-6.1-sol": "GPT 6.1 Sol",
   "gpt-6-sol": "GPT 6 Sol",
   "openai/gpt-6-sol": "GPT 6 Sol",
   "gpt-6-luna": "GPT 6 Luna",
   "openai/gpt-6-luna": "GPT 6 Luna",
   "gpt-5.6-sol": "GPT 5.6 Sol",
-  "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-luna": "GPT 5.6 Luna",
   "gpt-5.5": "GPT 5.5",
   "openai/gpt-5.5": "GPT 5.5",

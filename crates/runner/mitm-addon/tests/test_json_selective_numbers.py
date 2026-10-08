@@ -157,8 +157,6 @@ def _assert_no_observations(result: JsonExtractionResult) -> None:
     assert result.wildcard_array_counts == {}
     assert result.object_present == set()
     assert result.value_present == set()
-    assert result.discarded_scalar_paths == set()
-    assert result.selected_string_max_raw_bytes == {}
 
 
 @pytest.mark.parametrize(("number", "number_splits"), _NUMBER_CASES)

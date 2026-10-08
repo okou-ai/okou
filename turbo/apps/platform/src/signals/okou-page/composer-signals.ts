@@ -8,20 +8,22 @@ import {
   type ComposerVoiceInputSignals,
 } from "./composer-voice-input.ts";
 import type {
-  ChatRunVideoOptionsRequest,
   GenerationTemplateRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
-import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
-import { checkPaidToolForCreation$, templatePaidTool } from "./paid-tools.ts";
+import {
+  checkPaidToolForCreation$,
+  templatePaidTool,
+  type AvailablePaidToolId,
+} from "./paid-tools.ts";
 import { i18n } from "../../i18n/index.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { ImageModel } from "@okouai/core/image-model-catalog";
-import type { VideoModel } from "@okouai/core/video-model-catalog";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import {
+  createPendingRemoteAccessSignals,
+  threadRemoteAccess$,
+} from "../remote-access.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import type { DraftSignals, ChatAttachment } from "./chat-draft.ts";
 import { createComposerFeedbackModel } from "./chat-feedback.ts";
@@ -59,18 +61,12 @@ import {
   createComposerUiSignals,
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
-import { videoRunOptionsForSend } from "./video-run-options.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import {
   createImageAnnotationSignals,
   type ImageAnnotationSignals,
 } from "./image-annotation.ts";
-import {
-  CREATE_WORKFLOW_WITH_CHAT_PROMPT,
-  replaceWorkflowPromptDraftTarget$,
-  setReplaceWorkflowPromptDraftTarget$,
-} from "../chat-page/workflow-prompt-action.ts";
 
 type ComposerEditorSignals = Pick<
   WorkflowComposerSignals,
@@ -124,18 +120,12 @@ type ComposerTemplateEditorSignals = Pick<
 >;
 
 type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
-type ComposerVideoOptionsSignals = ComposerUiSignalGroups["videoOptions"];
 type ComposerTemplateUiSignals = ComposerUiSignalGroups["template"];
 
 export interface ComposerSubmission {
   readonly prompt: string;
   readonly generationTemplate: GenerationTemplateRequest | undefined;
   readonly editorDocument: WorkflowComposerSubmissionSnapshot["editorDocument"];
-  /**
-   * Video parameters for composers outside the Create rollout. Enabled
-   * composers carry their settings in the message's additional_info part.
-   */
-  readonly videoRunOptions: ChatRunVideoOptionsRequest | undefined;
   /**
    * What the composer is set to make. A send inside a thread keeps it, so a
    * send that creates one hands it to the thread it opens.
@@ -154,13 +144,6 @@ export interface ComposerPendingEvent {
   readonly kind: "message" | "automation";
   readonly id: string;
   readonly text: string;
-}
-
-interface ComposerWorkflowSignals extends ComposerWorkflowEditorSignals {
-  readonly createWorkflowPrompt$: Command<Promise<void>, [AbortSignal]>;
-  readonly replaceWorkflowPromptOpen$: Computed<boolean>;
-  readonly confirmReplaceWorkflowPrompt$: Command<Promise<void>, [AbortSignal]>;
-  readonly setReplaceWorkflowPromptOpen$: Command<void, [boolean]>;
 }
 
 interface ComposerDraftSignals {
@@ -183,7 +166,8 @@ interface ComposerDraftSignals {
 }
 
 interface ComposerModelSignals extends ComposerModelUiSignals {
-  readonly temporaryModelNoticeEnabled$: Computed<boolean>;
+  /** New chats offer to keep a chat-only model for future chats. */
+  readonly temporaryModelNoticeEnabled: boolean;
   readonly modelSelection$: Computed<Promise<ModelProviderSelection | null>>;
   readonly runningModelSelection$: Computed<
     Promise<ChatRunModelSelection | null>
@@ -194,37 +178,6 @@ interface ComposerModelSignals extends ComposerModelUiSignals {
     [ModelProviderSelection | null, AbortSignal]
   >;
   readonly configureSelectedModel$: Command<Promise<void>, [AbortSignal]>;
-}
-
-/** Video model selected for the composer, when that surface supports it. */
-export interface ComposerVideoModelSignals {
-  readonly selectedVideoModel$: Computed<
-    VideoModel | null | Promise<VideoModel | null>
-  >;
-  /**
-   * The model a video run started from this composer would actually use, with
-   * the thread pin, the member default and the system default already folded
-   * in. `selectedVideoModel$` is the pin alone, which is null far more often
-   * than the run is unconfigured, so it cannot answer "which values does the
-   * parameter panel offer".
-   */
-  readonly effectiveVideoModel$: Computed<VideoModel | Promise<VideoModel>>;
-  readonly setVideoModel$: Command<
-    Promise<void>,
-    [VideoModel | null, AbortSignal]
-  >;
-}
-
-/** Image model selected for a composer that supports image generation. */
-export interface ComposerImageModelSignals {
-  readonly selectedImageModel$: Computed<
-    ImageModel | null | Promise<ImageModel | null>
-  >;
-  readonly effectiveImageModel$: Computed<ImageModel | Promise<ImageModel>>;
-  readonly setImageModel$: Command<
-    Promise<void>,
-    [ImageModel | null, AbortSignal]
-  >;
 }
 
 interface ComposerComputerSignals {
@@ -283,21 +236,23 @@ interface ComposerTemplateSignals
 }
 
 export interface ComposerSignals {
-  readonly paidToolHints$: Computed<readonly PaidToolId[]>;
+  readonly paidToolHints$: Computed<readonly AvailablePaidToolId[]>;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
+  readonly threadId?: string;
+  readonly remoteAccess$: ReturnType<typeof threadRemoteAccess$>;
+  readonly pendingRemoteAccess: ReturnType<
+    typeof createPendingRemoteAccessSignals
+  >;
   readonly editor: ComposerEditorSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly feedback: WorkflowComposerSignals["feedback"];
-  readonly workflow: ComposerWorkflowSignals;
+  readonly workflow: ComposerWorkflowEditorSignals;
   readonly suggestion: ComposerSuggestionSignals;
   readonly connector: ComposerConnectorSignals;
   readonly draft: ComposerDraftSignals;
   readonly model: ComposerModelSignals;
-  readonly imageModel?: ComposerImageModelSignals;
-  readonly videoModel?: ComposerVideoModelSignals;
-  readonly videoOptions: ComposerVideoOptionsSignals;
   readonly computer: ComposerComputerSignals;
   readonly submission: ComposerSubmissionSignals;
   readonly queue: ComposerQueueSignals;
@@ -318,6 +273,9 @@ interface CreateComposerSignalsOptions {
   };
   readonly chatEvents$: Computed<ChatEvent[]>;
   readonly threadId?: string;
+  readonly pendingRemoteAccess?: ReturnType<
+    typeof createPendingRemoteAccessSignals
+  >;
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
@@ -326,8 +284,6 @@ interface CreateComposerSignalsOptions {
   readonly selectedModelOauthAvailable$: ComposerModelSignals["selectedModelOauthAvailable$"];
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
   readonly configureSelectedModel$: ComposerModelSignals["configureSelectedModel$"];
-  readonly imageModel?: ComposerImageModelSignals;
-  readonly videoModel?: ComposerVideoModelSignals;
   readonly computerUseHostId$: ComposerComputerSignals["computerUseHostId$"];
   readonly cloudBrowserEnabled$: ComposerComputerSignals["cloudBrowserEnabled$"];
   readonly setComputerUseHostId$: ComposerComputerSignals["setComputerUseHostId$"];
@@ -446,70 +402,6 @@ function createComputerUseUiSignals(): Pick<
   };
 }
 
-function createComposerWorkflowPromptSignals(
-  options: CreateComposerSignalsOptions,
-  workflowComposer: WorkflowComposerSignals,
-  taskChips: ComposerTaskChipsSignals,
-): Pick<
-  ComposerWorkflowSignals,
-  | "createWorkflowPrompt$"
-  | "replaceWorkflowPromptOpen$"
-  | "confirmReplaceWorkflowPrompt$"
-  | "setReplaceWorkflowPromptOpen$"
-> {
-  const draft = options.draft.signals;
-  const draftTarget = `composer:${options.threadId ?? "new-thread"}`;
-  const replaceWorkflowPromptOpen$ = computed((get): boolean => {
-    return get(replaceWorkflowPromptDraftTarget$) === draftTarget;
-  });
-  const applyWorkflowPrompt$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
-      if (options.threadId !== undefined) {
-        set(draft.clear$);
-      }
-      set(draft.setInput$, CREATE_WORKFLOW_WITH_CHAT_PROMPT);
-      // The prompt and the Workflow chip start the same job, so the row leaves
-      // the composer where that chip would: the task selected and its ideas
-      // open. Where the chips are switched off there is nothing to select, and
-      // `openTask$` is a no-op.
-      set(taskChips.openTask$, "workflow");
-      await set(options.draft.save$, signal);
-      if (options.threadId !== undefined) {
-        set(workflowComposer.focus$);
-      }
-    },
-  );
-  const createWorkflowPrompt$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const hasDraft =
-        set(draft.readInput$).trim().length > 0 ||
-        (options.threadId !== undefined && get(draft.attachments$).length > 0);
-      if (hasDraft) {
-        set(setReplaceWorkflowPromptDraftTarget$, draftTarget);
-        return;
-      }
-      await set(applyWorkflowPrompt$, signal);
-    },
-  );
-  const confirmReplaceWorkflowPrompt$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
-      set(setReplaceWorkflowPromptDraftTarget$, null);
-      await set(applyWorkflowPrompt$, signal);
-    },
-  );
-  const setReplaceWorkflowPromptOpen$ = command(
-    ({ set }, open: boolean): void => {
-      set(setReplaceWorkflowPromptDraftTarget$, open ? draftTarget : null);
-    },
-  );
-  return {
-    createWorkflowPrompt$,
-    replaceWorkflowPromptOpen$,
-    confirmReplaceWorkflowPrompt$,
-    setReplaceWorkflowPromptOpen$,
-  };
-}
-
 function createRemoveQueuedMessage(
   removeQueuedMessage$: CreateComposerSignalsOptions["removeQueuedMessage$"],
   workflowComposer: WorkflowComposerSignals,
@@ -520,17 +412,6 @@ function createRemoveQueuedMessage(
       set(workflowComposer.focus$);
     },
   );
-}
-
-function createTemporaryModelNoticeEnabled(
-  options: CreateComposerSignalsOptions,
-): Computed<boolean> {
-  return computed((get): boolean => {
-    return (
-      options.threadId === undefined &&
-      (get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false)
-    );
-  });
 }
 
 function composerDraftSignals(
@@ -578,12 +459,11 @@ function createPaidToolHints(
   create: ComposerCreateSignals,
   draft: DraftSignals,
   composer: WorkflowComposerSignals,
-  ui: ComposerUiSignalGroups,
 ) {
   return computed((get) => {
     const mode = get(create.mode$);
-    const tools = new Set<PaidToolId>();
-    if (mode === "image" || get(ui.model.mediaModelCategory$) === "image") {
+    const tools = new Set<AvailablePaidToolId>();
+    if (mode === "image") {
       tools.add("image-generation");
     }
     const selectedTemplate = get(draft.generationTemplate$);
@@ -600,6 +480,14 @@ function createPaidToolHints(
   });
 }
 
+function composerRemoteAccessSignals(options: CreateComposerSignalsOptions) {
+  return {
+    remoteAccess$: threadRemoteAccess$(options.threadId ?? ""),
+    pendingRemoteAccess:
+      options.pendingRemoteAccess ?? createPendingRemoteAccessSignals(),
+  };
+}
+
 export function createComposerSignals(
   options: CreateComposerSignalsOptions,
 ): ComposerSignals {
@@ -608,9 +496,6 @@ export function createComposerSignals(
   const agentId$ = computed((): string => {
     return options.agentId;
   });
-  const feedback = createComposerFeedbackModel();
-  const temporaryModelNoticeEnabled$ =
-    createTemporaryModelNoticeEnabled(options);
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(
     draft,
@@ -622,12 +507,9 @@ export function createComposerSignals(
         ? { feedbackPlaceholder: forwardFeedbackPlaceholder }
         : {}),
     },
-    feedback,
+    createComposerFeedbackModel(),
   );
-  const create = createComposerCreateSignals(workflowComposer, ui, {
-    image: options.imageModel !== undefined,
-    video: options.videoModel !== undefined,
-  });
+  const create = createComposerCreateSignals(workflowComposer, ui);
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
     insertPrompt$: workflowComposer.replacePromptText$,
@@ -644,15 +526,9 @@ export function createComposerSignals(
     options,
     eventSignals,
     workflowComposer,
-    ui.videoOptions,
     { voice, create, taskChips },
   );
   const fileInput = createComposerFileInputSignals();
-  const workflowPrompt = createComposerWorkflowPromptSignals(
-    options,
-    workflowComposer,
-    taskChips,
-  );
   const imageAnnotation = createImageAnnotationSignals();
   /**
    * Teardown owner for the annotation session and its in-flight derivative
@@ -681,19 +557,17 @@ export function createComposerSignals(
       );
     }),
   );
-
   return {
     agentId: options.agentId,
-    paidToolHints$: createPaidToolHints(create, draft, workflowComposer, ui),
+    threadId: options.threadId,
+    ...composerRemoteAccessSignals(options),
+    paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
     editor: composerEditorSignals(workflowComposer, options),
     voice,
     feedback: workflowComposer.feedback,
-    workflow: {
-      ...composerWorkflowSignals(workflowComposer),
-      ...workflowPrompt,
-    },
+    workflow: composerWorkflowSignals(workflowComposer),
     suggestion: composerSuggestionSignals(workflowComposer),
     connector:
       options.connector ??
@@ -701,16 +575,13 @@ export function createComposerSignals(
     draft: composerDraftSignals(options.draft, fileInput),
     model: {
       ...ui.model,
-      temporaryModelNoticeEnabled$,
+      temporaryModelNoticeEnabled: options.threadId === undefined,
       modelSelection$: options.modelSelection$,
       runningModelSelection$: eventSignals.runningModelSelection$,
       selectedModelOauthAvailable$: options.selectedModelOauthAvailable$,
       setModelSelection$: options.setModelSelection$,
       configureSelectedModel$: options.configureSelectedModel$,
     },
-    ...(options.imageModel ? { imageModel: options.imageModel } : {}),
-    ...(options.videoModel ? { videoModel: options.videoModel } : {}),
-    videoOptions: ui.videoOptions,
     computer: {
       ...createComputerUseUiSignals(),
       computerUseHostId$: options.computerUseHostId$,
@@ -810,6 +681,9 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
     await get(hasEvents$);
     return false;
   });
+  // Queue order is FIFO by seqId: chatEvents$ lists persisted events by seqId,
+  // then still-sending optimistic events in their local order. Prompts and
+  // automation inputs share one order and must not be regrouped by kind.
   const pendingEvents$ = computed(
     (get): Promise<readonly ComposerPendingEvent[]> => {
       return Promise.resolve(
@@ -839,26 +713,6 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
     pendingEvents$,
     hasEvents$,
   };
-}
-
-/**
- * Resolved at send rather than held settled, so the parameters follow a video
- * model the user changed after setting them. Creative Video sends every
- * displayed parameter, including the model's defaults.
- */
-function createVideoRunOptionsSignal(
-  videoModel: ComposerVideoModelSignals | undefined,
-  videoOptions: ComposerVideoOptionsSignals,
-): Command<Promise<ChatRunVideoOptionsRequest | undefined>, [AbortSignal]> {
-  return command(async ({ get }, signal: AbortSignal) => {
-    if (!videoModel) {
-      return undefined;
-    }
-    const patch = get(videoOptions.videoRunOptions$);
-    const model = await get(videoModel.effectiveVideoModel$);
-    signal.throwIfAborted();
-    return videoRunOptionsForSend(patch, model);
-  });
 }
 
 function createComposerPrimaryActionSignal(args: {
@@ -915,24 +769,18 @@ function joinAdditionalInfo(
 function createSubmitCurrentInput({
   options,
   workflowComposer,
-  videoOptions,
   voice,
   create,
   taskChips,
 }: {
   readonly options: CreateComposerSignalsOptions;
   readonly workflowComposer: WorkflowComposerSignals;
-  readonly videoOptions: ComposerVideoOptionsSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
 }) {
   const draft = options.draft.signals;
   const voiceState$ = voice.state$;
-  const readVideoRunOptions$ = createVideoRunOptionsSignal(
-    options.videoModel,
-    videoOptions,
-  );
   return command(
     async (
       { get, set },
@@ -965,21 +813,13 @@ function createSubmitCurrentInput({
         return false;
       }
       const mode = get(create.mode$);
-      const videoRunOptions = get(create.creativeVideo$)
-        ? await set(readVideoRunOptions$, signal)
-        : undefined;
-      signal.throwIfAborted();
-      // Keep the new persisted part within the existing Create rollout.
-      const composerAdditionalInfo = get(create.enabled$)
-        ? buildComposerAdditionalInfo(
-            mode,
-            videoRunOptions,
-            get(create.presentationSlideCount$),
-            get(taskChips.task$) === "visualization"
-              ? get(taskChips.visualization.preferences$)
-              : undefined,
-          )
-        : undefined;
+      const composerAdditionalInfo = buildComposerAdditionalInfo(
+        mode,
+        get(create.presentationSlideCount$),
+        get(taskChips.task$) === "visualization"
+          ? get(taskChips.visualization.preferences$)
+          : undefined,
+      );
       const additionalInfo = joinAdditionalInfo(
         callerAdditionalInfo,
         composerAdditionalInfo,
@@ -996,11 +836,6 @@ function createSubmitCurrentInput({
         prompt: visiblePrompt,
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
-        // Read from the composer's own block rather than the joined text: the
-        // video parameters are only inside that one, so a caller's context
-        // must not be what drops the structured field a composer outside the
-        // rollout still depends on.
-        videoRunOptions: composerAdditionalInfo ? undefined : videoRunOptions,
         taskSelection: {
           task: get(taskChips.task$) ?? mode,
           presentationSlideCount: get(create.presentationSlideCount$),
@@ -1011,16 +846,7 @@ function createSubmitCurrentInput({
         return false;
       }
       signal.throwIfAborted();
-      const submitted = await set(
-        options.submitMessage$,
-        action,
-        nextSubmission,
-        signal,
-      );
-      if (submitted) {
-        set(videoOptions.resetVideoRunOptions$);
-      }
-      return submitted;
+      return set(options.submitMessage$, action, nextSubmission, signal);
     },
   );
 }
@@ -1029,7 +855,6 @@ function createComposerSubmissionSignals(
   options: CreateComposerSignalsOptions,
   eventSignals: ReturnType<typeof createComposerChatEventSignals>,
   workflowComposer: WorkflowComposerSignals,
-  videoOptions: ComposerVideoOptionsSignals,
   {
     voice,
     create,
@@ -1058,7 +883,6 @@ function createComposerSubmissionSignals(
   const submitCurrentInput$ = createSubmitCurrentInput({
     options,
     workflowComposer,
-    videoOptions,
     voice,
     create,
     taskChips,

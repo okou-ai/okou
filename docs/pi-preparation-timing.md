@@ -1,223 +1,180 @@
 # Pi preparation timing
 
-This runbook covers the instrumentation from [#33730](https://github.com/vm0-ai/vm0/issues/33730)
-and the launch-preparation overlap in [#33764](https://github.com/vm0-ai/vm0/issues/33764),
-the first two slices of [#33703](https://github.com/vm0-ai/vm0/issues/33703).
-These measurements are not a production acceptance result. The historical English DeepSeek V4 Flash cohort averaged
-639.6 ms before transport, including an unattributed 63.8 ms between KMS and
-the ownership transaction. Neither interval is established as SDK CPU time.
+Current Pi preparation measures Sandbox session startup.
+Every foreground Pi provider turn runs in the Sandbox. API-first activation,
+provider ownership, compaction-preflight and credential-revalidation phases are
+retired and are no longer part of the runtime phase vocabulary.
 
 ## Delivery and fields
 
-The API adapter in
-[`pi-preparation-timing.service.ts`](../turbo/apps/api/src/signals/services/pi-preparation-timing.service.ts)
-uses the existing sandbox-operation writer and its `waitUntil` ownership.
-Each actually started phase emits one completion observation to
-`vm0-sandbox-op-log-prod`, including work that finishes after attempt cancellation.
-There is no new telemetry queue, timer, cancellation listener, provider owner,
-network await before transport, or change to session disposal. Delivery remains
-best effort; missing telemetry is not a zero-duration phase or proof of success.
-
-The optional synchronous observer and fixed phase vocabulary live in
+Sandbox session observations use the CLI/Guest preparation event boundary: the
+Guest records `pi_prepare_<phase>` to `vm0-sandbox-op-log-prod`. The runtime
+observer and clock helpers live in
 [`preparation-timing.ts`](../turbo/packages/pi-agent-runtime/src/preparation-timing.ts).
-Its clock/measurement helpers are exported through the runtime `/api` entry for
-the API preparation owner as well. They contain no API service or transport
-dependency. Observer exceptions are contained; the original result/error and
-existing cancellation/recovery owner remain authoritative. The observation
-signal only labels completion; it does not add cancellation to SDK bootstrap.
 
-| Field                                  | Meaning                                                                                                                                                                                  |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `op_type`                              | `pi_prepare_` followed by one phase below; never a resource name.                                                                                                                        |
-| `duration_ms`                          | Monotonic `performance.now()` difference around executable work.                                                                                                                         |
-| `started_at`, `finished_at`            | Separately sampled UTC wall boundaries; use for correlation, not as a replacement for monotonic duration.                                                                                |
-| `_time`                                | `finished_at`, not ingestion time.                                                                                                                                                       |
-| `outcome`                              | `success` when work returned, `error` when it threw, or `cancelled` when its existing signal was aborted at completion. Canonical cancellation at the provider gate is also `cancelled`. |
-| `success`                              | Whether `outcome` is `success`; a preparation success does not assert run success or that transport started.                                                                             |
-| `run_id`, `trace_id`, `api_commit_sha` | Captured run, active API trace when available, normalized build revision when configured. Missing trace/revision fails a production correlation claim.                                   |
-| `source`, `sandbox_type`, `span_kind`  | `api`, `runner`, `nested`, matching the existing operation pipeline.                                                                                                                     |
+The API no longer emits `pi_prepare_*` launch observations (`launch`,
+`launch_resume`, `launch_memory`, `launch_manifest_sign`, `launch_session_sign`,
+`launch_identity`). Their API adapter was retired with the legacy agent-run
+execution graph (#37431). API launch work is observed through the
+`api_dispatch_*` dispatch timings, for example
+`api_dispatch_prepare_pi_launch_resume_session` and the storage manifest
+timings.
 
-No prompt/history, credentials, signed URLs, raw errors, resource identifiers,
-per-resource events, or arbitrary labels enter these observations. Existing
-dispatch process-age/ordinal buckets and catalog/snapshot cache dimensions remain
-on their original records; join them by run and preparation occurrence rather
-than creating another dispatch ordinal or inferring that the process was warm.
+Observer exceptions cannot replace the execution result or own cancellation.
+Missing observations are not zero-duration phases. `duration_ms` is monotonic;
+`started_at` and `finished_at` are UTC wall boundaries for correlation. An
+aborted caller signal labels completion `cancelled`, without adding cancellation
+to SDK bootstrap. No prompt/history, credential, signed URL, raw error or
+resource identifier enters a phase observation.
 
-## Executable boundaries and nesting
+## Current phases
 
-The phase names below omit the common `pi_prepare_` prefix.
+| Phase              | Executable boundary                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `resources_prompt` | Registry, memory recall/tool metadata, harness prompt, resource options and catalog selection. |
+| `model_runtime`    | Explicit credential-store selection and model-runtime registration.                            |
+| `session_services` | Official foreground services and resource-loader options.                                      |
+| `resource_loader`  | Resource-option assembly within `session_services`.                                            |
+| `session_create`   | Official AgentSession construction with captured thinking level and tools.                     |
+| `session_finalize` | Persisting the effective configured thinking level.                                            |
 
-| Phase                                         | Exact work / parent                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `launch`                                      | `preparePiLaunchResources` around the existing measured launch body. Covers the same work as legacy `api_dispatch_prepare_pi_launch_resources`; never add both.                                                                                                                                                                                                                                                                          |
-| `launch_resume`                               | `resolveLatestPiResumeSession`; child of `launch` and the legacy resume measurement. Absent for maintenance.                                                                                                                                                                                                                                                                                                                             |
-| `launch_memory`                               | `resolvePiMemoryRecall` with captured mounts and versions; child of `launch`. Absent for maintenance.                                                                                                                                                                                                                                                                                                                                    |
-| `launch_manifest_sign`, `launch_session_sign` | The two `generatePresignedGetUrl` reads; overlapping children of `launch`, started alongside resume lookup and canonical Storage planning.                                                                                                                                                                                                                                                                                               |
-| `launch_identity`                             | Resource digest, base-session identity, deadline and unchanged final launch-object assembly; synchronous child of `launch`.                                                                                                                                                                                                                                                                                                              |
-| `activation_authorize`                        | The dispatched turn's trigger-source authority read in `runPiApiFirstTurn$`; leaf, and the first executable step after the atomic-launch commit returns. Absent when no API-first turn is dispatched.                                                                                                                                                                                                                                    |
-| `h0_metadata_preflight`                       | `readResumeSessionMetadata` for blob-backed history during v4 sandbox-first publication. Absent for new or inline sessions; API resource and credential preparation do not start for continuations.                                                                                                                                                                                                                                      |
-| `resource_snapshot`                           | API `loadApiFirstTurnResource$`, including validation. Existing `pi_resource_snapshot_prepare` is nested and supplies cache/index dimensions.                                                                                                                                                                                                                                                                                            |
-| `credentials_route`                           | Route normalization and `apiFirstTurnModelConfig`: subscription lookup or decryption, credential resolution and direct-route materialization. KMS HTTP is a nested transport span, not the whole phase.                                                                                                                                                                                                                                  |
-| `history`                                     | Runtime `MemoryPiSession` parsing/creation and launch-session ID validation, before SDK shell creation.                                                                                                                                                                                                                                                                                                                                  |
-| `runtime_initialize`                          | `createPiAgentSessionForRuntime`, including its in-memory SessionManager argument; parent of the following runtime initialization phases.                                                                                                                                                                                                                                                                                                |
-| `resources_prompt`                            | Registry initialization, memory recall, memory tool metadata, harness/append prompt preparation, resource options and catalog model resolution, in their original order.                                                                                                                                                                                                                                                                 |
-| `model_runtime`                               | `createPiModelRuntime` and explicit credential-store argument: fixed SDK bootstrap and provider registration.                                                                                                                                                                                                                                                                                                                            |
-| `session_services`                            | `createAgentSessionServices`, including its settings/resource-loader arguments.                                                                                                                                                                                                                                                                                                                                                          |
-| `resource_loader`                             | `piPreheatedResourceLoaderOptions`; synchronous child of `session_services`, after ModelRuntime as before.                                                                                                                                                                                                                                                                                                                               |
-| `session_create`                              | `createAgentSessionFromServices`, including thinking-level/tool arguments.                                                                                                                                                                                                                                                                                                                                                               |
-| `session_finalize`                            | Existing configured-thinking-level recording after SDK session creation.                                                                                                                                                                                                                                                                                                                                                                 |
-| `compaction_preflight`                        | `assertPiApiFirstTurnCompactionSafe` and compaction settings read, after the shell is ready.                                                                                                                                                                                                                                                                                                                                             |
-| `credentials_revalidate`                      | `validateApiFirstTurnCredentialSources` before the model turn: captured subscription and model-provider source revalidation, including its KMS decryption. Leaf, and never nested with `credentials_route`, which measures the separate route preparation inside `prepareApiFirstTurnInputs$`. Absent when native-input/resume-history transfer, an earlier preparation failure, or cancellation ends the attempt before the model turn. |
-| `model_context`                               | Native history preparation, user-message append, context build and conversion to model messages/tools, before the durable provider gate.                                                                                                                                                                                                                                                                                                 |
-| `provider_boundary`                           | Start of `withApiFirstTurnLifecycle` through transaction return/throw, including lock, eligibility, active input and ownership marking. **Not HTTP transport start.**                                                                                                                                                                                                                                                                    |
+## S4 startup decomposition
 
-### Previously unattributed steps after the atomic-launch commit
+The Guest keeps the original `pi_startup` monotonic start and first projected
+`system/init` completion (the official host's `get_state` response). It records
+these additive, mutually exclusive `pi_startup_*` segments on the same clock:
 
-Between `api_dispatch_insert_run_with_concurrency` returning and
-`provider_boundary` starting, two executable steps had no leaf phase, so
-[#36082](https://github.com/okou-ai/okou/issues/36082) measured that window's
-remainder at p50 158 ms of a p50 336 ms window. `activation_authorize` and
-`credentials_revalidate` close both; the endpoints themselves are unchanged, so
-old and new rows stay comparable.
+| Operation                       | Boundary                                                                |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `pi_startup_guest_setup`        | Original startup start to immediately before process spawn.             |
+| `pi_startup_process_spawn`      | Process spawn call to successful return.                                |
+| `pi_startup_spawn_to_cli_entry` | Spawn return to receipt of the first CLI bootstrap observation.         |
+| `pi_startup_cli_initialize`     | CLI entry receipt to receipt of SessionManager completion.              |
+| `pi_startup_session_prepare`    | SessionManager receipt to official runtime initialization receipt.      |
+| `pi_startup_runtime_ready`      | Runtime initialization receipt to the unchanged first projected record. |
 
-Two further intervals in that window deliberately gain no phase. The atomic
-commit returning through same-thread marker recording and the `waitUntil`
-dispatch entry is in-process telemetry and response assembly with no IO, and its
-endpoints are already exposed by `runner_notification_same_thread_markers_complete`
-and `...activation_entry`; adding a phase there would duplicate those rows. The
-adoption join that waits for prepared inputs also gains none, because the work it
-waits for is already the preparation's own leaf phases and a phase around it
-would nest over them. Use the preparation leaves and the overlapping
-`pi_admission_preparation` records for that wait, never a new wrapper.
+Checkpoints are bounded and flushed at the existing completion boundary. Late
+stderr checkpoints beyond that boundary are ignored, so stdout/stderr scheduling
+cannot move the root endpoint or inflate the partition. Independently truncated
+integer milliseconds can leave less than one millisecond per emitted segment.
+If a CLI milestone is missing (old CLI, observation failure, or early process
+failure), the currently open segment ends at startup completion instead. Missing
+later segments are **not zero**; detailed attribution is unavailable in that
+case. The original root success/failure and exactly-once contract are unchanged.
 
-Launch preparation now joins all started Storage, encrypted-context and Pi
-branches before propagating an error. Storage errors retain precedence over
-context errors, then Pi errors; within Pi, resume and memory errors retain their
-previous precedence over signing failures. Signing batches also settle all
-started siblings. Prepared work may end as `cancelled` even when an
-uncooperative dependency eventually returns. Phases skipped by native-input/resume-history transfer or
-earlier failures have no fabricated observations.
+The CLI adds `pi_prepare_` observations for `cli_node_bootstrap`,
+`cli_initial_imports`, `cli_instrument`, `cli_entry_imports`, `cli_proxy`,
+`cli_command_import`, `cli_config`, `cli_launch_payload`, `cli_credentials`,
+`cli_session_file`, `session_manager`, and `runtime_initialize`.
+`cli_node_bootstrap` uses Node's native `bootstrapComplete` timestamp;
+`cli_initial_imports` covers bootstrap completion through the start of the
+existing instrumentation module, including initial ESM graph loading/evaluation.
+`cli_entry_imports` covers the remainder through the original main-module body;
+`cli_command_import` observes the existing requested-command dynamic import.
+No bootstrap loader, imports, credentials, session validation or readiness
+checks are bypassed or reordered.
 
-Reconstruct serial boundaries rather than summing every row. In particular,
-exclude the runtime children when counting `runtime_initialize`, exclude
-`resource_loader` when counting `session_services`, and take the union of URL
-signing intervals rather than their sum. Leave measured gaps visible, including
-observer/adapter overhead. Wall time has millisecond resolution and may move;
-do not silently clamp or reinterpret it as monotonic CPU time.
+`cli_config` contains `cli_launch_payload` and `cli_credentials`;
+`runtime_initialize` contains the existing session-preparation phases;
+`session_services` contains `resource_loader`. Only sum the Guest partition,
+or select exclusive child intervals. Do not add either set to its parent.
+The child carries bounded wall-clock correlation fields, while the Guest still
+owns the stored observation timestamp. Node process-relative durations cannot
+be subtracted from Guest instants: receipt-time parent boundaries include IPC
+and scheduling, and Node initialization can overlap the parent's spawn return.
+Any detailed-child residual must be shown rather than clamped or called CPU time.
 
-## Launch dependency graph
+Timing envelopes use a bounded, synchronous diagnostic-FD write with exceptions
+silently ignored; they do not invoke the CLI's stderr EPIPE/exit handler.
+There is no new network call, awaited I/O, retry, timer, startup loader or cache.
+Only the opted-in private `__agent-loop` process emits CLI-entry observations;
+ordinary CLI tool processes stay silent. Runtime observer exceptions retain the
+existing best-effort behavior. Test coverage enters through a real CLI process,
+a real SDK RPC host, and the Guest process-to-operation-log boundary.
 
-Each preparation attempt captures a fresh canonical Storage plan. Request
-mounts and persisted session writeback mounts resolve concurrently. Their join
-fixes ownership, exact versions, empty semantics, overlay winners/order and
-writeback lineage before Pi can freeze recall. The metadata projection and
-complete mount builder share the same identity and overlay functions; no HEAD
-lookup occurs during URL materialization.
+### Version and rollout ownership
+
+Preview CLI artifacts are immutable **commit-SHA** packages, and the Preview
+runner image installs that exact package. They do not publish a versioned CLI
+release. This instrumentation does not change session-construction semantics or
+compatibility floors. New CLI/old Guest keeps existing phases; unknown additive
+phases are ignored by the closed parser. Old CLI/new Guest keeps the original
+root and reports only the available checkpoint partition.
+
+Use a visible conventional `feat(cli)` commit for the CLI, Runtime and Guest
+source changes. Release-please owns their package/Cargo versions and workspace
+propagation; do not manually desynchronize package versions from its manifest.
+Before any separately authorized release, the generated release must advance the
+CLI version beyond the currently published version and also include Runtime and
+Guest version updates. The immutable versioned-artifact publisher still rejects
+same-version/different-content bundles. A green SHA Preview is not evidence that
+a versioned release was published or that all runners have updated.
+
+Reconstruct serial boundaries instead of summing parents and children. Use the
+union of concurrent signing intervals. Leave observation overhead and gaps
+visible; wall-time differences are not SDK CPU time.
+
+## Launch ownership
+
+Canonical Storage planning fixes mount ownership, exact versions and overlay
+order. Resume lookup, run-object signing and encrypted-context preparation may
+proceed concurrently. Pi memory selection depends on the resolved mount plan.
+All started work is settled before launch failure propagates; no previous
+attempt's identity is reused after session validation requires a fresh plan.
 
 ```mermaid
 flowchart LR
-  A[Authoritative run and session inputs] --> B[Canonical Storage plan]
-  A --> C[Encrypted context draft]
-  A --> D[Pi resume lookup]
-  A --> E[Pi manifest and session URL signing]
-  B --> F[Archive URL materialization]
-  B --> G[Frozen memory recall]
-  D --> H[Pi identity assembly]
-  E --> H
-  G --> H
-  F --> I[Join complete context and Pi launch]
-  C --> I
-  H --> I
-  I --> J[Existing atomic commit and session validation]
-  J --> K[Existing API-first activation and Runner preheat]
+  A[Captured run and session] --> B[Canonical Storage plan]
+  A --> C[Encrypted context]
+  A --> D[Resume lookup and run-object signing]
+  B --> E[Frozen memory and archive URLs]
+  D --> F[Pi launch identity]
+  E --> F
+  C --> G[Complete context and atomic launch]
+  F --> G
+  G --> H[Runner and Sandbox startup]
+  H --> I[Official session and provider request]
 ```
 
-`api_dispatch_prepare_storage_manifest` retains the complete Storage interval.
-The bounded `api_dispatch_prepare_storage_manifest_resolve_plan` child ends
-only after both canonical branches and their metadata assembly finish.
-`...build_entries` now measures URL materialization and full entry construction;
-its per-category `...generate_*_urls` children still overlap. Continued sessions
-can emit one `...build_entries` interval per requested/session-writeback
-materializer; those intervals overlap and must not be added. The
-`...build_*_entries` and `...resolve_*_versions` observations describe resolution
-inside the plan interval. Resolve and generate windows are each emitted once. Storage dispatch records
-retain completion `_time` and monotonic duration; they do not gain Pi's explicit
-wall-clock boundary fields. Treat a derived Storage start as an approximation,
-not an independently observed wall-clock instant.
+A preparation success does not establish provider transport, a first response or
+run completion. The current provider request starts inside the Sandbox; old API
+HTTP spans must not be used as a current foreground transport boundary. Runner
+notification is likewise separate from provider start. Inspect the deployed
+revision and actual span contract before making a latency claim.
 
-`pi_prepare_launch` starts alongside Storage and context drafting, so it now
-includes the wait for canonical metadata. Resume lookup and both Pi signatures
-can overlap that wait. Memory selection and identity assembly can overlap archive
-signing. Maintenance still skips resume/memory; non-Pi launches skip Pi work.
-A stale session validation repeats the whole preparation with new plans and
-promises; no previous attempt's Pi identity is reused.
+## Launch commit and first-output boundaries
 
-The launch critical path is the latest of complete Storage materialization,
-context encryption, and Pi assembly, followed by the unchanged commit and
-activation path. Pi assembly waits for resume, both run-object signatures and
-plan-dependent memory selection. Compare interval unions and actual boundaries;
-never add these concurrent parent/child durations or interpret the former Pi
-launch interval as guaranteed end-to-end savings.
+`committedAtomicLaunchResponse` still checkpoints
+`api_dispatch_phase_queue_insert` at `runnerJobCreatedAt`, the logical row
+creation time. This is not commit completion: `api_dispatch_phase_commit`
+ends when the launch transaction returns. The additive
+`logical_queue_created_at` and `boundary_at` fields on Runner notification
+milestones identify their endpoints; compare boundaries or subtract cumulative
+values instead of summing them. Existing `api_to_*`, first-assistant publication
+and dispatch phase definitions remain unchanged.
 
-All persisted contexts and Runner claims still contain the existing full
-schemas, including real URLs for nonempty mounts. API/Runner cross-version
-readers, queued activation, provider ownership and immediate preheat therefore
-retain their existing contracts. No claim-time signature dependency is added.
+Guest startup, first model output, WebSocket delivery and API ingestion have
+separate owners. See [chat-first-output-latency.md](chat-first-output-latency.md)
+for their exact event and observation boundaries. These observations do not
+restore an API-side provider turn; every foreground provider request starts in
+the Sandbox.
 
-The completed five-attempt instrumentation cohort is frozen. It must not be
-expanded or relabeled as the controlled baseline for this behavior change.
-The controller collects the separately defined matched before/after cohorts,
-including failures and first-tool readiness, before/after an authorized release.
+## Observation and historical evidence
 
-## Admission, activation and actual transport
+The original instrumentation was delivered under
+[#33730](https://github.com/vm0-ai/vm0/issues/33730) and launch overlap under
+[#33764](https://github.com/vm0-ai/vm0/issues/33764), within
+[#33703](https://github.com/vm0-ai/vm0/issues/33703).
+[#36082](https://github.com/okou-ai/okou/issues/36082) subsequently measured the
+former API activation window. Its API-first phase names and the original
+five-attempt cohort are historical records. That cohort averaged 639.6 ms before
+API transport, including 63.8 ms unattributed between KMS and ownership. Neither
+number measures the current sandbox-first flow or establishes SDK CPU time.
 
-[`committedAtomicLaunchResponse`](../turbo/apps/api/src/signals/services/agent-run-create.service.ts)
-still checkpoints `api_dispatch_phase_queue_insert` at `runnerJobCreatedAt`, the
-logical row creation time. It is not commit completion. Existing `api_to_*`,
-first-assistant publication and dispatch phase definitions are unchanged.
-
-[`runner-dispatch.service.ts`](../turbo/apps/api/src/signals/services/runner-dispatch.service.ts)
-already reports cumulative `runner_notification_queue_to_commit_return`,
-`...activation_scheduled`, `...activation_entry`, `...same_thread_markers_complete`
-and `...database_ready`. Their `duration_ms` remains the legacy wall elapsed
-time from logical runner-job creation, and `_time` remains delivery time. The
-additive `logical_queue_created_at` and `boundary_at` fields expose their exact
-endpoints. Subtract cumulative values or compare `boundary_at`; do not sum them.
-The same fields cover `activation_origin=direct` and `promotion`.
-
-Direct commit return is sampled immediately after `db.transaction` returns.
-Promotion samples it in `finalizePromoteQueuedCandidate` after its transaction.
-Activation entry is sampled on entry to `activatePendingRun$`. The API turn is
-started between same-thread markers and database-ready, while Runner notification
-continues independently; notification completion is not the API-turn start.
-These milestone rows are delivered after notification work and can be missing
-when that existing path fails; a reached milestone is not a notification-success
-claim. Initially queued admission is distinct from the later promotion commit.
-
-For actual provider request start, use the existing HTTP client span from
-`vm0-traces-prod`, linked by `trace_id` and the recorded wall interval. For the
-fixed direct DeepSeek fixture, select the first request to
-`https://api.deepseek.com/responses` after `provider_boundary` returns. Inspect
-the dataset's current field metadata before selecting HTTP destination/start
-fields. Project only span ID, trace ID, start/end or duration, status and API
-service revision; do not export headers, bodies, or arbitrary URL fields.
-Verify exactly one matching request and the deployed revision. The remaining
-boundary-return-to-HTTP-start interval includes request construction/scheduling;
-do not label it ownership time or infer it when the transport span is absent.
-An HTTP client span marks the instrumented request start, not first byte on the
-wire, provider TTFT, or completion of a streamed response.
-
-## Bounded production acceptance
-
-Controller acceptance is separate from implementation merge. Verify a deployed
-API revision containing this PR before collecting the exact English fixture in
-#33703, with the same agent, DeepSeek V4 Flash route, normal priority, chat-send
-transport and reported reasoning configuration. Keep all attempts, failures and
-extra outputs. This PR neither runs the fixture nor releases production.
-
-Supply the fixture's exact run IDs and a fixed UTC `startTime`/`endTime` in the
-APL request envelope. The following metadata-only query selects observations
-and the existing cache/process/milestone context without reading run contents:
+Use exact run IDs, a fixed UTC window and deployed revision when selecting
+current observations. Inspect dataset metadata and pagination/truncation state;
+project bounded metadata only. API launch and Sandbox startup have different
+owners and must not be treated as one population.
 
 ```kusto
 ['vm0-sandbox-op-log-prod']
@@ -229,7 +186,6 @@ and the existing cache/process/milestone context without reading run contents:
     or op_type == 'api_dispatch_build_stored_execution_context'
     or op_type startswith 'api_dispatch_connector_catalog_'
     or op_type startswith 'runner_notification_queue_to_'
-    or op_type == 'pi_resource_snapshot_prepare'
 | project _time, run_id, op_type, duration_ms, success, outcome,
     started_at, finished_at, trace_id, api_commit_sha,
     logical_queue_created_at, boundary_at, activation_origin,
@@ -241,15 +197,7 @@ and the existing cache/process/milestone context without reading run contents:
 | limit 1000
 ```
 
-Check the response's completeness/truncation metadata and row count. Narrow the
-window or split the explicitly named runs if the cap is reached. Use the
-catalog's bounded cache-outcome and observation fields when forming matched
-cohorts, without exporting catalog data.
-Do not equate a full snapshot hit with a catalog hit or a warm API process.
-
-For each complete attempt, verify revision and trace linkage, map each observed
-phase to this table, correlate actual provider start, and reconcile the serial
-preparation interval without double counting. Include cancellation/error and
-missing-telemetry counts. Production observation, overhead measurement and a
-larger matched comparison remain controller work; a historical five-run mean
-does not establish a new p95/p99 or expected speedup.
+Keep failures and missing observations in any controlled comparison. Match the
+agent, route, priority, reasoning configuration and cold/warm conditions. Code
+merge, CI and historical measurements do not establish production acceptance;
+release and bounded production observation remain separate controller work.

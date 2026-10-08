@@ -3,6 +3,7 @@ import type { SystemSkillStorageResolution } from "../signals/context/system-ski
 import type { RouteEntry } from "../signals/route-entry";
 import { setupAppWithRoutes, setupRawAppRequestWithRoutes } from "./test-app";
 import type { TestContext } from "./test-context";
+import { initializeCaseDatabase } from "../test-fixtures/case-database";
 
 interface SetupRawAppOptions {
   readonly context: TestContext;
@@ -11,30 +12,39 @@ interface SetupRawAppOptions {
 }
 
 interface SetupAppOptions extends SetupRawAppOptions {
+  readonly isolatePg?: boolean;
   readonly baseUrl?: string;
   readonly rethrowErrors?: boolean;
   readonly usagePricingResolution?: UsagePricingResolution;
   readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
 }
 
+type AppClientFactory = ReturnType<typeof setupAppWithRoutes>;
+
+export function setupApp(
+  options: SetupAppOptions & { readonly isolatePg: true },
+): Promise<AppClientFactory>;
+export function setupApp(
+  options: SetupAppOptions & { readonly isolatePg?: false },
+): AppClientFactory;
+export function setupApp(
+  options: SetupAppOptions,
+): AppClientFactory | Promise<AppClientFactory>;
 export function setupApp({
-  baseUrl = "http://api.test",
-  context,
-  routes,
-  signal,
-  rethrowErrors,
-  usagePricingResolution,
-  systemSkillStorageResolution,
-}: SetupAppOptions) {
-  return setupAppWithRoutes({
-    baseUrl,
-    context,
-    routes,
-    signal,
-    rethrowErrors,
-    usagePricingResolution,
-    systemSkillStorageResolution,
-  });
+  isolatePg = false,
+  ...options
+}: SetupAppOptions): AppClientFactory | Promise<AppClientFactory> {
+  if (isolatePg) {
+    return setupIsolatedApp(options);
+  }
+  return setupAppWithRoutes(options);
+}
+
+async function setupIsolatedApp(
+  options: SetupAppOptions,
+): Promise<AppClientFactory> {
+  await initializeCaseDatabase();
+  return setupAppWithRoutes(options);
 }
 
 /**

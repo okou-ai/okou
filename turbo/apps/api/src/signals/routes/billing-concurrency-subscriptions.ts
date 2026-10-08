@@ -225,6 +225,11 @@ const confirmConcurrencySubscriptionChangeAuthed$ = command(
 
     if (!result.ok) {
       switch (result.reason) {
+        case "billing_changed": {
+          return conflict(
+            "Billing changed while updating concurrency; refresh and try again",
+          );
+        }
         case "not_found": {
           return notFound("Concurrency subscription not found");
         }
@@ -295,6 +300,11 @@ const cancelConcurrencySubscriptionAuthed$ = command(
 
     if (!result.ok) {
       switch (result.reason) {
+        case "billing_changed": {
+          return conflict(
+            "Billing changed while updating concurrency; refresh and try again",
+          );
+        }
         case "not_found": {
           return notFound("Concurrency subscription not found");
         }
@@ -361,6 +371,11 @@ const restoreConcurrencySubscriptionAuthed$ = command(
 
     if (!result.ok) {
       switch (result.reason) {
+        case "billing_changed": {
+          return conflict(
+            "Billing changed while updating concurrency; refresh and try again",
+          );
+        }
         case "not_found": {
           return notFound("Concurrency subscription not found");
         }

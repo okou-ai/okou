@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { isEditableTarget } from "@okouai/ui";
 import { detachedNavigateTo$, pathParams$ } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
 import { ROUTES, type RouteKey } from "../route-paths.ts";
@@ -17,6 +16,7 @@ import {
   setChatThreadUnreadFilter$,
   toggleChatThreadUnreadFilter$,
 } from "./chat-thread-filter.ts";
+import { pwaNavigationEnabled$ } from "./pwa-navigation.ts";
 
 type PinnedAgentShortcutDirection = "prev" | "next";
 
@@ -35,6 +35,9 @@ const navigateToNewChat$ = command(
     }
     set(detachedNavigateTo$, "/agents/:agentId/chat", {
       pathParams: { agentId },
+      searchParams: get(pwaNavigationEnabled$)
+        ? new URLSearchParams({ compose: "1" })
+        : undefined,
     });
   },
 );
@@ -122,17 +125,8 @@ export const toggleSidebarOff$ = command(({ get, set }) => {
   set(internalSidebarOff$, !get(internalSidebarOff$));
 });
 
-function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
+export function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
   return !event.repeat && !event.isComposing && event.keyCode !== 229;
-}
-
-function shouldHandleUnreadOnlyShortcut(event: KeyboardEvent): boolean {
-  if (!shouldHandleShortcutPress(event)) {
-    return false;
-  }
-  return !(
-    /Linux/u.test(navigator.userAgent) && isEditableTarget(event.target)
-  );
 }
 
 export const setupGlobalKeyboardShortcuts$ = command(
@@ -145,13 +139,6 @@ export const setupGlobalKeyboardShortcuts$ = command(
           allowInEditableTarget: true,
           run: () => {
             set(toggleSidebarOff$);
-          },
-        },
-        [GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding]: {
-          allowInEditableTarget: true,
-          shouldHandle: shouldHandleUnreadOnlyShortcut,
-          run: () => {
-            set(toggleChatThreadUnreadFilter$);
           },
         },
         "mod+l": {

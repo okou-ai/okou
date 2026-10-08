@@ -183,6 +183,45 @@ describe("social collection checkpoints through the CLI", () => {
     },
   );
 
+  it("retains Instagram provider outcome through checkpoint resume", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests += 1;
+        const page = response(["one", "two"], "next");
+        const providerOutcome = {
+          collectionStatus: "partial",
+          stopReason: "requested_limit",
+        };
+        return HttpResponse.json({
+          ...page,
+          collection: { ...page.collection, providerOutcome },
+          result: { ...page.result, ...providerOutcome },
+        });
+      }),
+    );
+
+    const first = await start("1");
+    expect(first.code, first.errors).toBe(0);
+    expect(first.result).toHaveProperty(
+      "collection.providerOutcome.stopReason",
+      "requested_limit",
+    );
+    const resumed = await invoke([
+      "resume",
+      checkpoint,
+      "--limit",
+      "1",
+      "--json",
+    ]);
+    expect(resumed.code, resumed.errors).toBe(0);
+    expect(resumed.result).toHaveProperty(
+      "collection.providerOutcome.stopReason",
+      "requested_limit",
+    );
+    expect(requests).toBe(1);
+  });
+
   it("exports one partial receipt and resumes the failed page", async () => {
     let requests = 0;
     server.use(
@@ -618,6 +657,55 @@ describe("social collection checkpoints through the CLI", () => {
       expect(await readFile(checkpoint, "utf8")).not.toContain(token);
     },
   );
+
+  it("preserves an unknown cumulative charge through checkpoint tail replay and another billed page", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(endpoint, async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json(
+          requests.length === 1
+            ? {
+                ...response(["one", "two", "three"], "next"),
+                creditsCharged: null,
+              }
+            : response(["four"]),
+        );
+      }),
+    );
+    const first = await start();
+    expect(first.code, first.errors).toBe(0);
+    expect(first.result).toMatchObject({
+      data: { items: [{ id: "one" }, { id: "two" }] },
+      billing: { quantity: 1, creditsCharged: null },
+      collection: {
+        cumulative: { pages: 1, itemsReturned: 2, creditsCharged: null },
+        continuation: { available: true, bufferedItems: 1 },
+      },
+    });
+    const tail = await invoke(["resume", checkpoint, "--limit", "1", "--json"]);
+    expect(tail.code, tail.errors).toBe(0);
+    expect(tail.result).toMatchObject({
+      data: { items: [{ id: "three" }] },
+      billing: { quantity: 0, creditsCharged: 0 },
+      collection: {
+        cumulative: { pages: 1, itemsReturned: 3, creditsCharged: null },
+      },
+    });
+    expect(requests).toHaveLength(1);
+    const next = await invoke(["resume", checkpoint, "--limit", "5", "--json"]);
+    expect(next.code, next.errors).toBe(0);
+    expect(next.result).toMatchObject({
+      data: { items: [{ id: "four" }] },
+      billing: { quantity: 1, creditsCharged: 3 },
+      collection: {
+        state: "complete",
+        cumulative: { pages: 2, itemsReturned: 4, creditsCharged: null },
+      },
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toHaveProperty("input.cursor", "next");
+  });
 
   it("reports lock cleanup failure even when collection and checkpoint publication succeed", async () => {
     server.use(

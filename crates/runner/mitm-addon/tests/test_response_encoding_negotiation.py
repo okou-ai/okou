@@ -13,9 +13,12 @@ import response_encoding_negotiation
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.requestheaders_helpers import await_requestheaders_result
 
-_MODEL_PROVIDER_FIREWALL_NAME = "model-provider:anthropic-api-key"
-_MODEL_PROVIDER_HOST = "api.anthropic.com"
-_MODEL_PROVIDER_PATH = "/v1/messages"
+_MODEL_PROVIDER_FIREWALL_NAME = "model-provider:openrouter-codex"
+_MODEL_PROVIDER_HOST = "openrouter.ai"
+_MODEL_PROVIDER_PATH = "/api/v1/responses"
+_SUBSCRIPTION_FIREWALL_NAME = "model-provider:claude-code-oauth-token"
+_SUBSCRIPTION_HOST = "api.anthropic.com"
+_SUBSCRIPTION_PATH = "/v1/messages"
 _X_FIREWALL_NAME = "x"
 _X_HOST = "api.x.com"
 _X_PATH = "/2/users/by"
@@ -399,11 +402,14 @@ def test_wildcard_expansion_uses_stream_decoder_capability_order(headers) -> Non
 def _model_provider_registry(
     tmp_path: Path,
     *,
-    model_usage_provider: object = "claude-sonnet-4-6",
+    model_usage_provider: object = "gpt-5.5",
     billable: bool = True,
     capture_network_bodies: bool = False,
     rule_method: str = "POST",
 ) -> Path:
+    firewall_name = _MODEL_PROVIDER_FIREWALL_NAME if billable else _SUBSCRIPTION_FIREWALL_NAME
+    host = _MODEL_PROVIDER_HOST if billable else _SUBSCRIPTION_HOST
+    path = _MODEL_PROVIDER_PATH if billable else _SUBSCRIPTION_PATH
     sandbox_fields: dict[str, object] = {}
     if model_usage_provider is not None:
         sandbox_fields["modelUsageProvider"] = model_usage_provider
@@ -414,21 +420,19 @@ def _model_provider_registry(
         tmp_path,
         sandbox_info=_single_firewall_sandbox(
             tmp_path,
-            firewall_name=_MODEL_PROVIDER_FIREWALL_NAME,
+            firewall_name=firewall_name,
             api_entry={
-                "base": f"https://{_MODEL_PROVIDER_HOST}",
-                "auth": {"headers": {"x-api-key": "test-key"}},
-                "permissions": [
-                    {"name": "messages", "rules": [f"{rule_method} {_MODEL_PROVIDER_PATH}"]}
-                ],
+                "base": f"https://{host}",
+                "auth": {"headers": {"Authorization": "Bearer test-key"}},
+                "permissions": [{"name": "inference", "rules": [f"{rule_method} {path}"]}],
             },
             network_policy={
-                "allow": ["messages"],
+                "allow": ["inference"],
                 "deny": [],
                 "ask": [],
                 "unknownPolicy": "deny",
             },
-            billable_firewalls=[_MODEL_PROVIDER_FIREWALL_NAME] if billable else None,
+            billable_firewalls=[firewall_name] if billable else None,
             sandbox_fields=sandbox_fields,
         ),
     )
@@ -665,12 +669,12 @@ async def test_non_billable_model_provider_keeps_accept_encoding(
     mitm_ctx,
     fake_firewall_headers,
 ) -> None:
-    reg_path = _model_provider_registry(tmp_path, billable=False)
+    reg_path = _model_provider_registry(tmp_path, billable=False, model_usage_provider=None)
     flow = _request_flow(
         real_flow,
         headers,
-        host=_MODEL_PROVIDER_HOST,
-        path=_MODEL_PROVIDER_PATH,
+        host=_SUBSCRIPTION_HOST,
+        path=_SUBSCRIPTION_PATH,
         method="POST",
         accept_encoding="gzip, zstd, br",
     )
@@ -933,11 +937,11 @@ async def test_model_provider_websocket_upgrade_injects_auth_and_keeps_accept_en
     fake_firewall_headers,
     extra_headers: tuple[tuple[str, str], ...],
 ) -> None:
-    firewall_name = "model-provider:openai-api-key"
-    host = "api.openai.com"
+    firewall_name = "model-provider:openrouter-codex"
+    host = "openrouter.ai"
     # Match the generated OpenAI model-provider firewall; upstream endpoint
     # WebSocket validity is outside the request-hook auth injection boundary.
-    path = "/v1/responses"
+    path = "/api/v1/responses"
     reg_path = _write_registry(
         tmp_path,
         sandbox_info=_single_firewall_sandbox(

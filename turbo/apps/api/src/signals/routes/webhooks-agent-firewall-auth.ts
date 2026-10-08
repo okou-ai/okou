@@ -7,7 +7,11 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { isSandboxToken, verifySandboxToken } from "../auth/tokens";
-import { resolveFirewallAuth } from "../services/agent-webhook-firewall-auth.service";
+import {
+  resolveBillableFirewallCacheExpiry$,
+  prepareFirewallAuthResponse,
+  admitPreparedFirewallAuthResponse$,
+} from "../services/agent-webhook-firewall-auth.service";
 
 const firewallAuthBody$ = bodyResultOf(webhookFirewallAuthContract.resolve);
 
@@ -65,7 +69,23 @@ const firewallAuthRoute$ = command(
       return invalidBodyResponse;
     }
 
-    return await resolveFirewallAuth(set(writeDb$), auth, bodyResult.data);
+    const billableCacheExpiry = await set(
+      resolveBillableFirewallCacheExpiry$,
+      { auth, firewallBillable: bodyResult.data.firewallBillable },
+      signal,
+    );
+    const prepared = await prepareFirewallAuthResponse(
+      set(writeDb$),
+      auth,
+      bodyResult.data,
+      billableCacheExpiry,
+    );
+    signal.throwIfAborted();
+    return await set(
+      admitPreparedFirewallAuthResponse$,
+      { auth, response: prepared },
+      signal,
+    );
   },
 );
 

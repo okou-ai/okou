@@ -1,7 +1,7 @@
 import Foundation
 
 enum ChatEventProjection {
-  static func history(rows: [ChatEventRow], recovering: Bool) throws -> ChatHistory {
+  static func history(rows: [ChatEvent], recovering: Bool) throws -> ChatHistory {
     let revoked = Set(rows.compactMap(\.revokesEventId))
     let terminated = Set(rows.filter { $0.eventType.isTerminal }.compactMap(\.runId))
     let interrupted = Set(rows.filter { $0.eventType == .controlInterrupt }.compactMap(\.runId))
@@ -12,7 +12,14 @@ enum ChatEventProjection {
       }.compactMap(\.runId)
     ).subtracting(terminated)
     let queuedInputs = rows.filter {
-      $0.eventType == .inputPrompt && $0.runId == nil && !revoked.contains($0.id)
+      ($0.eventType == .inputPrompt || $0.eventType == .inputAutomation)
+        && $0.runId == nil && !revoked.contains($0.id)
+    }.sorted { left, right in
+      let leftIsPrompt = left.eventType == .inputPrompt
+      let rightIsPrompt = right.eventType == .inputPrompt
+      if leftIsPrompt != rightIsPrompt { return leftIsPrompt }
+      if left.createdAt != right.createdAt { return left.createdAt < right.createdAt }
+      return left.id < right.id
     }.map(\.id)
 
     var messages: [ChatMessage] = []
@@ -24,7 +31,7 @@ enum ChatEventProjection {
       case .inputPrompt, .inputRejected, .inputAutomation:
         if row.eventType == .inputAutomation && row.payload?.userMessage == nil { continue }
         guard let document = row.payload?.userMessage, document.version == 1 else {
-          throw ChatServiceError.invalidContract("Unsupported user message document.")
+          throw ChatError.invalidContract("Unsupported user message document.")
         }
         let body = document.parts.compactMap { part -> String? in
           switch part.type {
@@ -44,7 +51,7 @@ enum ChatEventProjection {
         isError = row.eventType == .inputRejected
       case .outputMessage:
         guard let content = row.payload?.content else {
-          throw ChatServiceError.invalidContract("Assistant output is missing its content.")
+          throw ChatError.invalidContract("Assistant output is missing its content.")
         }
         text = visibleOutput(content)
         role = .assistant

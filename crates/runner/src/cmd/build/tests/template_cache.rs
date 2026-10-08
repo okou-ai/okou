@@ -3,6 +3,9 @@ use super::*;
 
 use aws_smithy_mocks::mock;
 use tokio::io::AsyncReadExt;
+use tracing::instrument::WithSubscriber;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_test_support::CapturedEvents;
 
 #[tokio::test]
 async fn best_effort_upload_allows_missing_r2_cache() {
@@ -34,6 +37,8 @@ async fn full_image_r2_hit_materializes_without_local_build() {
     let (_scripts, work_dir) = fake_rootfs_scripts().await;
     let attempt_dir = rootfs.dir().join("attempt.tmp");
     let staging = rootfs.rootfs_staging();
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
 
     materialize_template_from_r2_or_build(
         &input,
@@ -41,8 +46,30 @@ async fn full_image_r2_hit_materializes_without_local_build() {
         &work_dir,
         TemplateMaterializationTarget::RootfsStaging(&staging),
     )
+    .with_subscriber(subscriber)
     .await
     .unwrap();
+
+    let events = captured.entries();
+    let downloads = events
+        .iter()
+        .filter(|event| {
+            event.fields.get("message").is_some_and(|message| {
+                message.starts_with("[OK] template downloaded from R2 into staging:")
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(downloads.len(), 1);
+    assert_eq!(downloads[0].level, tracing::Level::INFO);
+    assert_eq!(
+        downloads[0].fields.get("r2_key").map(String::as_str),
+        Some("runner-templates/test-template-hash.tar.zst")
+    );
+    assert!(
+        events.iter().all(
+            |event| event.level == tracing::Level::INFO || !event.fields.contains_key("r2_key")
+        )
+    );
 
     let mut downloaded = tokio::fs::File::open(&staging).await.unwrap();
     let mut prefix = vec![0u8; b"downloaded-template".len()];

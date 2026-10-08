@@ -14,10 +14,10 @@ import {
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogAuthMethodDetail,
-  type PublicConnectorCatalogCategoryMetadata,
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -31,6 +31,7 @@ import {
   customConnectorsContract,
   customConnectorHttpResponseSchema,
   customConnectorValuesContract,
+  isIntegrationManagedCustomConnector,
   type CustomConnectorHttpResponse,
   type CustomConnectorMcpResponse,
   type CustomConnectorResponse,
@@ -51,7 +52,6 @@ import {
 export const SCOUT_AGENT_ID = MESSAGE_EXPERIENCE_AGENT_ID;
 export const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000000061";
 export const SCOUT_THREAD_ID = "b0000000-0000-4000-a000-000000000061";
-export const SECOND_SCOUT_THREAD_ID = "b0000000-0000-4000-a000-000000000063";
 export const OTHER_THREAD_ID = "b0000000-0000-4000-a000-000000000062";
 export const ACME_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000061";
 export const DEEPWIKI_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000062";
@@ -73,8 +73,6 @@ interface ConnectorFixtureOptions {
   readonly featuredConnectorSlugs?: readonly ConnectorSlug[];
   /** Category totals discovery reports, so a shelf can close on a real count. */
   readonly categoryConnectorCounts?: Readonly<Record<string, number>>;
-  /** The catalog's own category names, as discovery returns them. */
-  readonly categoryMetadata?: PublicConnectorCatalogCategoryMetadata;
   readonly customConnectors?: readonly CustomConnectorResponse[];
   readonly builtinAuthorizations?: Readonly<
     Record<string, readonly ConnectorSlug[]>
@@ -143,6 +141,11 @@ interface ComposerConnectorFixture {
   readonly createdThreadRequests: readonly {
     readonly threadId: string | undefined;
     readonly connectorSelections: readonly ConnectorAccountSelection[];
+    readonly initialRemoteAccessOverrides?: readonly {
+      protocol: "ssh" | "vnc";
+      connectionId: string;
+      enabled: boolean;
+    }[];
   }[];
   readonly lifecycle: ReturnType<typeof installMessageExperienceChat>;
 }
@@ -284,13 +287,25 @@ export function installComposerConnectorFixture(
   const createdThreadRequests: {
     threadId: string | undefined;
     connectorSelections: ConnectorAccountSelection[];
+    initialRemoteAccessOverrides?: readonly {
+      protocol: "ssh" | "vnc";
+      connectionId: string;
+      enabled: boolean;
+    }[];
   }[] = [];
   const lifecycle = installMessageExperienceChat({
     threadId: fixtureThreadId,
-    onThreadCreate: ({ clientThreadId, connectorSelections }) => {
+    onThreadCreate: ({
+      clientThreadId,
+      connectorSelections,
+      initialRemoteAccessOverrides,
+    }) => {
       createdThreadRequests.push({
         threadId: clientThreadId,
         connectorSelections: [...(connectorSelections ?? [])],
+        ...(initialRemoteAccessOverrides === undefined
+          ? {}
+          : { initialRemoteAccessOverrides }),
       });
     },
   });
@@ -360,9 +375,6 @@ export function installComposerConnectorFixture(
         ...(options.categoryConnectorCounts === undefined
           ? {}
           : { categoryConnectorCounts: options.categoryConnectorCounts }),
-        ...(options.categoryMetadata === undefined
-          ? {}
-          : { categoryMetadata: options.categoryMetadata }),
       });
     },
   );
@@ -380,6 +392,70 @@ export function installComposerConnectorFixture(
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: customConnectors });
   });
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+    return respond(200, {
+      builtinConnectors: catalog
+        .filter((connector) => {
+          return connector.connected;
+        })
+        .map((connector) => {
+          return {
+            slug: connector.slug,
+            label: connector.label,
+            icon: connector.icon,
+            hasPermissions: connector.permissionSummary.hasPermissions,
+          };
+        }),
+      customConnectors: customConnectors
+        .filter((connector) => {
+          return connector.connected;
+        })
+        .map((connector) => {
+          return {
+            id: connector.id,
+            slug: connector.slug,
+            displayName: connector.displayName,
+            permissionBundleRef: connector.permissionBundleRef ?? null,
+            integrationManaged: isIntegrationManagedCustomConnector(connector),
+          };
+        }),
+      accountSummaries: (options.accountSummaries ?? []).map((summary) => {
+        const account = summary.defaultConnection;
+        return {
+          target: summary.target,
+          accountCount: summary.accountCount,
+          attentionCount: summary.attentionCount,
+          defaultConnection: account
+            ? {
+                id: account.id,
+                authMethod: account.authMethod,
+                displayName: account.displayName,
+                externalId: account.externalId,
+                externalUsername: account.externalUsername,
+                externalEmail: account.externalEmail,
+                connectionStatus: account.connectionStatus,
+              }
+            : null,
+        };
+      }),
+      computerUseHosts: [],
+      cloudBrowserEnabledByDefault: true,
+    });
+  });
+  context.mocks.api(
+    connectorOverviewContract.agent,
+    async ({ params, respond }) => {
+      await options.authorizationGates?.[params.id];
+      return respond(200, {
+        enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
+        customConnectorIds: (customAuthorizations.get(params.id) ?? []).map(
+          (grant) => {
+            return grant.customConnectorId;
+          },
+        ),
+      });
+    },
+  );
   context.mocks.api(
     userBuiltinConnectorsContract.get,
     async ({ params, respond }) => {

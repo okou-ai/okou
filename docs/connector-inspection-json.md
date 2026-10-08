@@ -78,6 +78,30 @@ evidence. `account` is run-bound; `connection` is current-context data. Environm
 entries contain only names and presence booleans, never values. URL userinfo is
 rejected, and query strings/fragments are stripped before transport and output.
 
+AWS URL checks may include a bounded `request.aws` selector object, supplied by
+`--aws-service` with optional `--aws-action`, `--aws-target`, repeated
+`--aws-query-param`, and repeated `--aws-header-present` CLI options. An action,
+including a query `Action`, cannot be combined with a target. S3 header
+selectors are limited to the allowlisted permission-selector names. These selectors classify the intended
+operation only: they do not validate a SigV4 signature or send a request to
+AWS. The raw URL query and fragment remain stripped. AWS rules that do not
+match the explicit selectors remain unmatched and use the configured unknown-
+endpoint policy. SigV4 credential, security-token, and signature query keys are
+rejected. Other selector values are included in JSON and generated follow-up
+commands, so never supply credentials or other secrets as selectors.
+
+When an AWS-aware rule on the selected base could match the method/path but the
+diagnostic lacks selectors needed to identify the operation, the API retains
+the same `unknown-endpoint` response body and policy and sets
+`X-Okou-Connector-Check-Aws-Context: insufficient`. Current CLI human and JSON
+output explain the missing context and do not offer a builtin `__unknown__`
+permission-request action from that incomplete check. Add `--aws-service` and
+the applicable action, target, S3 query, or header selectors, then retry.
+Fully described but unmatched operations keep the normal unknown-endpoint
+action. The response body stays unchanged for strict older CLI decoders; an
+older CLI ignores the header, while a newer CLI with an older API lacks this
+guardrail until the API is updated.
+
 Check's `actions` contain commands, links, or guidance. Builtin permission
 requests are offered only for denied/ask outcomes from a URL diagnostic.
 Custom connectors retain their settings-based remediation; unknown custom

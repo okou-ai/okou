@@ -65,15 +65,9 @@ export async function deleteRunConversations(
 export async function deleteLockedRuns(tx: Tx, runIds: readonly string[]) {
   let deletedRuns = 0;
   for (let offset = 0; offset < runIds.length; offset += DELETION_BATCH_SIZE) {
+    const batch = runIds.slice(offset, offset + DELETION_BATCH_SIZE);
     const result = await contentFreeDatabaseOperation(
-      tx
-        .delete(agentRuns)
-        .where(
-          inArray(
-            agentRuns.id,
-            runIds.slice(offset, offset + DELETION_BATCH_SIZE),
-          ),
-        ),
+      tx.delete(agentRuns).where(inArray(agentRuns.id, batch)),
     );
     if (result.rowCount === null) {
       throw new Error("Conversation deletion returned no run count");

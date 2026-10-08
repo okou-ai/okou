@@ -1,7 +1,7 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { command } from "ccstate";
 
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { deleteSharedThread$ } from "../services/shared-thread-artifacts.service";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -13,7 +13,6 @@ import {
   readSharedThreadMeta$,
 } from "../services/shared-thread.service";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const createBody$ = bodyResultOf(sharedThreadsContract.create);
 
@@ -51,7 +50,6 @@ const createSharedThreadInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const creationSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const body = await get(createBody$);
     signal.throwIfAborted();
     creationSignal.throwIfAborted();
@@ -67,7 +65,7 @@ const createSharedThreadInner$ = command(
         userId: auth.userId,
         threadId: params.threadId,
         eventIds: body.data.eventIds,
-        publicBrand,
+        ...(body.data.id === undefined ? {} : { id: body.data.id }),
         canReadAttachments:
           auth.tokenType !== "agent" ||
           auth.capabilities?.includes("file:read") === true,
@@ -92,6 +90,9 @@ const createSharedThreadInner$ = command(
       return badRequestMessage(
         "A selected artifact or hosted dependency is unavailable for sharing",
       );
+    }
+    if (result.kind === "id-conflict") {
+      return conflict("A shared conversation with this ID already exists");
     }
     return { status: 201 as const, body: { id: result.id } };
   },
@@ -126,7 +127,7 @@ const getSharedThreadMeta$ = command(
     );
     return {
       status: 200 as const,
-      body: { title: row.title, publicBrand: row.publicBrand },
+      body: { title: row.title },
     };
   },
 );

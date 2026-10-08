@@ -1,4 +1,4 @@
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import type {
   SlackAnyBlock,
@@ -16,14 +16,12 @@ interface AppHomeViewOptions {
   readonly userId?: string;
   readonly userEmail?: string;
   readonly agentName?: string;
-  readonly isOverrideActive?: boolean;
-  readonly canSwitch?: boolean;
   readonly loginUrl?: string;
   readonly botUserId: string;
 }
 
 function appHomeIntroBlocks(): SlackAnyBlock[] {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "header",
@@ -76,7 +74,7 @@ function disconnectedAppHomeBlocks(
 }
 
 function connectedStatusBlock(options: AppHomeViewOptions): SlackKnownBlock {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return {
     type: "section",
     text: {
@@ -87,9 +85,7 @@ function connectedStatusBlock(options: AppHomeViewOptions): SlackKnownBlock {
 }
 
 function appHomeAgentBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
-  const agentHeading = options.isOverrideActive
-    ? ":robot_face: *Your Agent*"
-    : ":robot_face: *Workspace Agent*";
+  const agentHeading = ":robot_face: *Workspace Agent*";
   const blocks: SlackAnyBlock[] = [
     {
       type: "section",
@@ -125,28 +121,14 @@ function appHomeAgentBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
       type: "mrkdwn",
       text: `AgentName: *${options.agentName}*`,
     },
-    ...(options.canSwitch ? {} : { accessory: settingsButton }),
+    accessory: settingsButton,
   };
   blocks.push(agentBlock);
-  if (options.canSwitch) {
-    blocks.push({
-      type: "actions",
-      elements: [
-        {
-          type: "button",
-          text: { type: "plain_text", text: "Switch" },
-          action_id: "home_switch_agent",
-          style: "primary",
-        },
-        settingsButton,
-      ],
-    });
-  }
   return blocks;
 }
 
 function appHomeHelpBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   const botMention = officialSlackBotMention(options.botUserId);
   return [
     {
@@ -174,7 +156,7 @@ function appHomeHelpBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
 }
 
 function disconnectAccountBlock(): SlackKnownBlock {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return {
     type: "section",
     text: {

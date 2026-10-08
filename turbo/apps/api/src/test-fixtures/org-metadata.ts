@@ -4,10 +4,8 @@
  * The tier/credit combinations the generation tests exercise cannot be
  * constructed through product APIs: the Stripe webhook path only produces
  * "pro"/"team" orgs with fixed subscription credit grants, "limited-free-1"
- * is only set by the Clerk org-creation bootstrap (which also provisions a
- * default agent/compose), and the legacy "free" tier — still present in
- * production data and load-bearing for voice-io quota limits — has no
- * creation path at all. Exact credit balances (e.g. 0 or 1000) are equally
+ * is set by organization bootstrap paths that also provision an Agent and
+ * onboarding credits. Exact credit balances (e.g. 0 or 1000) are equally
  * unreachable because product grants come in fixed subscription amounts.
  * The legacy onboarding-payment-pending state also has no write path after
  * removing the retired onboarding setup endpoint, but billing must continue
@@ -15,7 +13,6 @@
  * for those persisted states.
  */
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { createStore } from "ccstate";
@@ -52,24 +49,6 @@ export async function upsertOrgMetadataFixture(values: {
     });
 }
 
-export async function expireAtomGrantFixture(values: {
-  readonly orgId: string;
-  readonly expiredAt: Date;
-}): Promise<void> {
-  const db = createStore().set(writeDb$);
-  await db
-    .update(orgMetadata)
-    .set({
-      currentPeriodEnd: values.expiredAt,
-      updatedAt: values.expiredAt,
-    })
-    .where(eq(orgMetadata.orgId, values.orgId));
-  await db
-    .update(creditExpiresRecord)
-    .set({ expiresAt: values.expiredAt })
-    .where(eq(creditExpiresRecord.orgId, values.orgId));
-}
-
 /**
  * Repoint the org default Agent.
  *
@@ -93,24 +72,26 @@ export async function setOrgDefaultAgentFixture(values: {
 }
 
 /**
- * Read back the field the source-first onboarding flow answered.
- *
- * Completion is the only writer and no product API returns the value, so a
- * test asserting that the answer was persisted has to read the column.
+ * Operator-only OpenRouter preset configuration has no product write API.
+ * This narrow exception configures only a test-owned org; route tests still
+ * observe the selected model through the Runner claim endpoint.
  */
-export async function readOnboardingIndustryFixture(
-  orgId: string,
-): Promise<string | null> {
-  const [row] = await createStore()
+export async function setOrgOpenrouterPresetFixture(values: {
+  readonly orgId: string;
+  readonly openrouterPreset: string | null;
+}): Promise<void> {
+  const rows = await createStore()
     .set(writeDb$)
-    .select({ onboardingIndustry: orgMetadata.onboardingIndustry })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  if (!row) {
-    throw new Error(`No org metadata row for ${orgId}`);
+    .update(orgMetadata)
+    .set({
+      openrouterPreset: values.openrouterPreset,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(orgMetadata.orgId, values.orgId))
+    .returning({ orgId: orgMetadata.orgId });
+  if (rows.length !== 1) {
+    throw new Error("Expected one org metadata row to configure");
   }
-  return row.onboardingIndustry;
 }
 
 export async function setOnboardingPaymentPendingFixture(values: {

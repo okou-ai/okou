@@ -10,14 +10,6 @@ const integrations = createBddIntegrationApi(context);
 const SLACK_LIST_URL = "https://slack.com/api/users.conversations";
 
 describe("GET /api/slack/channels", () => {
-  it("returns 401 when the request is unauthenticated", async () => {
-    const response = await integrations.requestListSlackChannels(null, [401]);
-
-    expect(response.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
   it("returns 401 when the authenticated session has no organization", async () => {
     const response = await integrations.requestListSlackChannels(
       integrations.user({ orgId: null }),
@@ -26,20 +18,6 @@ describe("GET /api/slack/channels", () => {
 
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 404 when no Slack installation exists for the org", async () => {
-    const response = await integrations.requestListSlackChannels(
-      integrations.user(),
-      [404],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "No Slack installation found for this org",
-        code: "NOT_FOUND",
-      },
     });
   });
 

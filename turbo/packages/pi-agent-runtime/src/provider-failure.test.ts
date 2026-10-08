@@ -22,7 +22,7 @@ describe("provider failure contract shared with guest-agent", () => {
       expect(
         formatRunBalanceError({
           failureReason,
-          modelProvider: "openai-api-key",
+          modelProvider: "codex-oauth-token",
         }),
       ).toBe(PROVIDER_INSUFFICIENT_CREDITS_MESSAGE);
     },

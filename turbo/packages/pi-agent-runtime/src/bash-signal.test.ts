@@ -17,8 +17,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { resumePiApiFirstTurn } from "./rpc";
-
 describe.each(["prompt", "pending-tools"] as const)(
   "Pi Bash signal recovery through %s",
   (entry) => {
@@ -113,7 +111,7 @@ describe.each(["prompt", "pending-tools"] as const)(
           if (entry === "prompt") {
             await session.prompt("Continue after the tool is interrupted.");
           } else {
-            await resumePiApiFirstTurn(session);
+            await session.continuePendingTools();
           }
         } finally {
           session.dispose();

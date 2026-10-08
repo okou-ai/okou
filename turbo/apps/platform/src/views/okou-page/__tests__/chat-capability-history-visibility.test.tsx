@@ -30,73 +30,11 @@ import {
   installRunChat,
   promptEvent,
   RUN_THREAD_ID,
-  thinkingEvent,
 } from "./chat-run-test-fixtures.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 
 const BASE_TIME = "2026-08-01T10:00:00.000Z";
 const COMPLETED_THREAD_ID = "b0000000-0000-4000-a000-000000000842";
-
-function rejectedInput(
-  id: string,
-  error: string,
-  userMessage: UserMessageDocument,
-  seqId: number,
-): MockChatEventInput {
-  return {
-    id,
-    role: "user",
-    eventType: "input.rejected",
-    content: null,
-    error,
-    userMessage,
-    seqId,
-    createdAt: `2026-08-01T10:00:0${String(seqId)}.000Z`,
-  };
-}
-
-function rejectedHistory(
-  generatedDocument: UserMessageDocument,
-): MockChatEventInput[] {
-  return [
-    {
-      id: "rejected-history-prompt",
-      role: "user",
-      content: "Review the deployment plan",
-      runId: "d0000000-0000-4000-a000-000000000821",
-      seqId: 1,
-      createdAt: BASE_TIME,
-    },
-    {
-      id: "rejected-history-response",
-      role: "assistant",
-      content: "The deployment plan is ready for review.",
-      runId: "d0000000-0000-4000-a000-000000000821",
-      seqId: 2,
-      createdAt: "2026-08-01T10:00:02.000Z",
-    },
-    rejectedInput(
-      "rejected-generated-continuation",
-      "SYSTEM_CONTINUATION_REJECTION_DETAIL",
-      generatedDocument,
-      3,
-    ),
-    rejectedInput(
-      "rejected-user-prompt",
-      "USER_PROMPT_REJECTION_DETAIL",
-      {
-        version: 1,
-        parts: [
-          {
-            type: "text",
-            text: "Keep this rejected prompt visible",
-          },
-        ],
-      },
-      4,
-    ),
-  ];
-}
 
 test("Keep a generic assistant failure readable", async () => {
   installCapabilityChat({
@@ -146,35 +84,6 @@ test("Keep a generic assistant failure readable", async () => {
   );
   expect(
     within(errorMessage).queryByText(/## Release failed/u),
-  ).not.toBeInTheDocument();
-});
-
-test("Hide rejected system-generated goal and workflow continuations", async () => {
-  installCapabilityChat({
-    events: rejectedHistory({
-      version: 1,
-      parts: [
-        {
-          type: "goal",
-          goalBrief: "Continue the hidden deployment goal",
-        },
-      ],
-    }),
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const surroundingResponse = await screen.findByText(
-    "The deployment plan is ready for review.",
-  );
-  expect(surroundingResponse).toBeVisible();
-  expect(screen.getByText("Keep this rejected prompt visible")).toBeVisible();
-  expect(
-    screen.queryByText("Continue the hidden deployment goal"),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText("SYSTEM_CONTINUATION_REJECTION_DETAIL"),
   ).not.toBeInTheDocument();
 });
 
@@ -259,12 +168,6 @@ test("Show only the selected conversation when switching chats", async () => {
       seqId: 1,
       text: "Running conversation prompt",
     }),
-    thinkingEvent({
-      id: "switch-running-progress",
-      runId: activeRunId,
-      seqId: 2,
-      text: "Reviewing the running conversation",
-    }),
   ];
   const completedRunId = "d0000000-0000-4000-a000-000000000843";
   const completedEvents = [
@@ -345,9 +248,6 @@ test("Show only the selected conversation when switching chats", async () => {
     expect(window.location.pathname).toBe(`/chats/${COMPLETED_THREAD_ID}`);
     expect(
       screen.queryByText("Running conversation prompt"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByLabelText("Reviewing the running conversation"),
     ).not.toBeInTheDocument();
     expect(
       queryAllByRoleFast("button").some((button) => {

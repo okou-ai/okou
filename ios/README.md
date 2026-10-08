@@ -8,9 +8,17 @@ require XcodeGen, CocoaPods, or a pnpm workspace wrapper.
 
 The app uses existing production APIs for native authentication, workspace
 selection, chat lists, conversation history, creating chats, sending text,
-retrying uncertain sends, and stopping work. New chats use the workspace's
-default agent and the existing saved model preference. Workspace setup and
-account management remain on the web.
+retrying uncertain sends, and stopping work. Its home screen follows the mobile
+web agent-chat structure with an agent avatar, greeting, and composer; focusing
+the compact composer animates it into a multiline field. The ChatGPT-style
+sliding sidebar contains pinned agents and recent chats scoped to the selected
+agent, with workspace switching at the top and a bottom new-chat action. Its
+settings menu provides account actions. Native list actions support pinning,
+archiving, and renaming chats; archive controls follow the existing
+`chatThreadArchiving` feature switch. Opening a new chat is local and immediate;
+the thread is created when the first message is sent. New chats use the selected
+agent and the existing saved model preference. Workspace setup and account
+management remain on the web.
 
 Conversation history renders durable user messages and assistant results using
 Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
@@ -93,8 +101,12 @@ Associated-domain setup remains outstanding. Team `C5UWSXYB67` is configured for
 a later device build. Device signing, provisioning, and TestFlight distribution
 have not been validated.
 
-This local implementation does not add release CI, TestFlight groups, an
-App Store Connect app record, or an independent iOS minimum-build gate. Existing
+Internal TestFlight publication is integrated with release-please and the existing
+production approval. See [TestFlight releases](TESTFLIGHT.md) for the one-time
+App Store Connect group, signing, and credential setup. A successful signed CI
+upload and TestFlight installation have not yet been verified.
+
+This implementation does not add an independent iOS minimum-build gate. Existing
 HTTP 426 responses show a blocking update screen, but enforcing an iOS build
 floor requires the separately planned API middleware change. Old API-version
 compatibility and the future OpenAPI v1 migration are outside this MVP.
@@ -116,10 +128,9 @@ runtime Emoji-rendering bug; the forum reports iOS 26.1 as a working fallback
 and iOS 26.4 as a fix. See the
 [Apple developer discussion](https://developer.apple.com/forums/thread/817957).
 
-For this host, a separate iOS 26.1 simulator is the current acceptance fallback.
-Its approximately 8.3 GB runtime download was in progress at the verification
-checkpoint below; installation and visual verification on that runtime were not
-yet complete. The existing iOS 26.3.1 device and its login state are retained.
+For this host, a separate iOS 26.1 simulator is available as an acceptance
+fallback; visual verification on that device is still pending. The existing
+iOS 26.3.1 device and its login state are retained.
 To install the fallback runtime through Xcode's supported command-line path:
 
 ```sh
@@ -167,9 +178,12 @@ long-history performance checks remain outside the completed interactive sample.
 The transcript now uses a separate native `List` row for each message, instead
 of eagerly laying out the entire history in a `VStack`. Markdown, message
 grouping, context-menu copying, and the composer remain unchanged. Initial
-positioning follows the bottom while Markdown changes row heights; starting a
-manual scroll stops this following. A new message requests bottom positioning
-again. Keep these behaviors in local acceptance when changing the container.
+positioning targets the latest prepared messages; starting a manual scroll stops
+automatic following. Incoming messages preserve the reading position, while a
+local send or the bottom button requests bottom positioning. Keep these behaviors
+in local acceptance when changing the container. See
+[Chat UI architecture](CHAT_UI_ARCHITECTURE.md) for the Telegram reference and
+the presentation pipeline.
 
 A local investigation of a long conversation observed approximately 1.3 GB of
 process physical footprint with the eager stack and approximately 269 MB with

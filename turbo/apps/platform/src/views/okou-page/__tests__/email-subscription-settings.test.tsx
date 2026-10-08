@@ -3,15 +3,10 @@ import {
   type EmailSubscriptionResponse,
 } from "@okouai/api-contracts/contracts/email-subscription";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -32,55 +27,11 @@ async function openPreferences() {
         email: "alex@example.test",
       },
     },
-    featureSwitches: { [FeatureSwitchKey.MorningBrief]: true },
   });
   return await screen.findByRole("region", { name: "Email subscriptions" });
 }
 
-function retryButton(region: HTMLElement) {
-  const button = queryAllByRoleFast("button", region).find((candidate) => {
-    return candidate.textContent?.trim() === "Retry";
-  });
-  if (!button) {
-    throw new Error("Expected an email subscription retry button");
-  }
-  return button;
-}
-
 describe("email subscription settings", () => {
-  it("refreshes an external opt-out when Settings is reopened", async () => {
-    let subscribed = true;
-    context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-      return respond(200, { ...emailPreference, subscribed });
-    });
-    const region = await openPreferences();
-    await expect(
-      within(region).findByRole("switch", { name: "Email updates" }),
-    ).resolves.toBeChecked();
-    const dialog = screen.getByRole("dialog", { name: "Settings" });
-    click(within(dialog).getByLabelText("Close"));
-    await waitFor(() => {
-      return expect(dialog).not.toBeInTheDocument();
-    });
-    subscribed = false;
-    const account = queryAllByRoleFast("button").find((button) => {
-      return (
-        button.getAttribute("aria-label") === "Alex Rivera" ||
-        button.textContent?.includes("Alex Rivera")
-      );
-    });
-    if (!account) {
-      throw new Error("Expected account menu trigger");
-    }
-    click(account);
-    const menu = await screen.findByRole("menu");
-    click(within(menu).getByText("Settings"));
-    const reopenedToggle = await screen.findByRole("switch", {
-      name: "Email updates",
-    });
-    expect(reopenedToggle).not.toBeChecked();
-  });
-
   it("lets a user restore email without changing brief generation, then pause the brief independently", async () => {
     let subscribed = false;
     let briefEnabled = true;
@@ -95,8 +46,6 @@ describe("email subscription settings", () => {
       return respond(200, {
         enabled: briefEnabled,
         status: briefEnabled ? "enabled" : "paused",
-        nextRunAt: briefEnabled ? "2030-01-02T23:00:00.000Z" : null,
-        timezone: "Asia/Shanghai",
         unavailableReason: null,
       });
     });
@@ -107,15 +56,18 @@ describe("email subscription settings", () => {
         return respond(200, {
           enabled: briefEnabled,
           status: briefEnabled ? "enabled" : "paused",
-          nextRunAt: null,
-          timezone: "Asia/Shanghai",
           unavailableReason: null,
         });
       },
     );
 
     const region = await openPreferences();
-    await expect(within(region).findByText("Chat only")).resolves.toBeVisible();
+    const brief = await within(region).findByRole("switch", {
+      name: "Morning brief",
+    });
+    await waitFor(() => {
+      expect(brief).toBeChecked();
+    });
     expect(
       within(region).queryByText(
         "Email is off. Your brief will still appear in Chat.",
@@ -129,20 +81,18 @@ describe("email subscription settings", () => {
     const emails = within(region).getByRole("switch", {
       name: "Email updates",
     });
-    const brief = within(region).getByRole("switch", { name: "Morning brief" });
     expect(emails).not.toBeChecked();
-    expect(brief).toBeChecked();
 
     click(emails);
-    await expect(
-      within(region).findByText("Chat + email"),
-    ).resolves.toBeVisible();
-    expect(emails).toBeChecked();
+    await waitFor(() => {
+      expect(emails).toBeChecked();
+    });
     expect(brief).toBeChecked();
 
     click(brief);
-    await expect(within(region).findByText("Paused")).resolves.toBeVisible();
-    expect(brief).not.toBeChecked();
+    await waitFor(() => {
+      expect(brief).not.toBeChecked();
+    });
     expect(emails).toBeChecked();
 
     click(emails);
@@ -150,169 +100,91 @@ describe("email subscription settings", () => {
       expect(emails).not.toBeChecked();
     });
     click(brief);
-    await expect(within(region).findByText("Chat only")).resolves.toBeVisible();
-    expect(emails).not.toBeChecked();
-    expect(brief).toBeChecked();
-  });
-
-  it("shows unknown subscription while loading instead of an off switch", async () => {
-    const response = context.mocks.deferred<EmailSubscriptionResponse>();
-    context.mocks.api(emailSubscriptionContract.get, async ({ respond }) => {
-      return respond(200, await response.promise);
+    await waitFor(() => {
+      expect(brief).toBeChecked();
     });
-    const region = await openPreferences();
-    expect(
-      within(region).getByText("Checking email subscription…"),
-    ).toBeVisible();
-    expect(
-      within(region).queryByRole("switch", {
-        name: "Email updates",
-      }),
-    ).not.toBeInTheDocument();
-    response.resolve(emailPreference);
-    await expect(
-      within(region).findByRole("switch", {
-        name: "Email updates",
-      }),
-    ).resolves.toBeChecked();
+    expect(emails).not.toBeChecked();
   });
 
-  it("keeps the saved value and disables repeated changes while saving", async () => {
-    const saved = context.mocks.deferred<void>();
-    let subscribed = true;
+  it("keeps the previous email setting after a failed save so the user can toggle again", async () => {
+    let subscribed = false;
+    let failNextUpdate = true;
+    const releaseFailure = context.mocks.deferred<void>();
     context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
       return respond(200, { ...emailPreference, subscribed });
     });
     context.mocks.api(
       emailSubscriptionContract.update,
       async ({ body, respond }) => {
-        await saved.promise;
+        if (failNextUpdate) {
+          failNextUpdate = false;
+          await releaseFailure.promise;
+          return respond(500, {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Email preference is temporarily unavailable.",
+            },
+          });
+        }
         subscribed = body.subscribed;
         return respond(200, { subscribed });
       },
     );
+    context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+      return respond(200, {
+        enabled: true,
+        status: "enabled",
+        unavailableReason: null,
+      });
+    });
+
     const region = await openPreferences();
-    const toggle = await within(region).findByRole("switch", {
+    const emails = await within(region).findByRole("switch", {
       name: "Email updates",
     });
-    click(toggle);
-    await expect(within(region).findByText("Saving…")).resolves.toBeVisible();
-    expect(toggle).toBeChecked();
-    expect(toggle).toHaveAttribute("aria-disabled", "true");
-    saved.resolve();
     await waitFor(() => {
-      expect(toggle).not.toBeChecked();
+      expect(emails).not.toBeChecked();
     });
-    expect(within(region).queryByText("Saving…")).not.toBeInTheDocument();
-    expect(toggle).not.toHaveAttribute("aria-disabled", "true");
+
+    click(emails);
+    await waitFor(() => {
+      expect(emails).toHaveAttribute("aria-disabled", "true");
+    });
+    releaseFailure.resolve();
+    await waitFor(() => {
+      expect(emails).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(emails).not.toBeChecked();
+
+    click(emails);
+    await waitFor(() => {
+      expect(emails).toBeChecked();
+    });
   });
 
-  it("retries a failed read without fabricating a subscription value", async () => {
-    let failed = true;
+  it("explains missing email delivery", async () => {
     context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-      if (failed) {
-        return respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Unable to load email subscription",
-          },
-        });
-      }
-      return respond(200, emailPreference);
+      return respond(200, {
+        ...emailPreference,
+        deliveryStatus: "no-email",
+        email: null,
+      });
+    });
+    context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+      return respond(200, {
+        enabled: true,
+        status: "enabled",
+        unavailableReason: null,
+      });
     });
     const region = await openPreferences();
     await expect(
-      within(region).findByText(
-        "Could not save or load your email subscription. Try again.",
-      ),
+      within(region).findByText("Email unavailable"),
     ).resolves.toBeVisible();
     expect(
-      within(region).queryByRole("switch", {
+      within(region).getByRole("switch", {
         name: "Email updates",
       }),
-    ).not.toBeInTheDocument();
-    failed = false;
-    click(retryButton(region));
-    await expect(
-      within(region).findByRole("switch", { name: "Email updates" }),
-    ).resolves.toBeChecked();
+    ).toBeChecked();
   });
-
-  it("preserves the previous value after a failed save and retries the requested change", async () => {
-    let subscribed = true;
-    let failed = true;
-    context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-      return respond(200, { ...emailPreference, subscribed });
-    });
-    context.mocks.api(emailSubscriptionContract.update, ({ body, respond }) => {
-      if (failed) {
-        return respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Unable to save email subscription",
-          },
-        });
-      }
-      subscribed = body.subscribed;
-      return respond(200, { subscribed });
-    });
-    const region = await openPreferences();
-    const toggle = await within(region).findByRole("switch", {
-      name: "Email updates",
-    });
-    click(toggle);
-    await expect(
-      within(region).findByText(
-        "Could not save or load your email subscription. Try again.",
-      ),
-    ).resolves.toBeVisible();
-    expect(toggle).toBeChecked();
-    failed = false;
-    click(retryButton(region));
-    await waitFor(() => {
-      return expect(toggle).not.toBeChecked();
-    });
-    expect(
-      within(region).queryByText(
-        "Could not save or load your email subscription. Try again.",
-      ),
-    ).not.toBeInTheDocument();
-  });
-
-  it.each(["suppressed", "no-email"] as const)(
-    "explains %s delivery without promising an email",
-    async (deliveryStatus) => {
-      context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-        return respond(200, {
-          ...emailPreference,
-          deliveryStatus,
-          email: deliveryStatus === "no-email" ? null : emailPreference.email,
-        });
-      });
-      context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
-        return respond(200, {
-          enabled: true,
-          status: "enabled",
-          nextRunAt: "2030-01-02T07:00:00.000Z",
-          timezone: "UTC",
-          unavailableReason: null,
-        });
-      });
-      const region = await openPreferences();
-      await expect(
-        within(region).findByText("Email unavailable"),
-      ).resolves.toBeVisible();
-      await expect(
-        within(region).findByText("Chat only"),
-      ).resolves.toBeVisible();
-      expect(
-        within(region).getByRole("switch", {
-          name: "Email updates",
-        }),
-      ).toBeChecked();
-      expect(
-        within(region).queryByText("Chat + email"),
-      ).not.toBeInTheDocument();
-    },
-  );
 });

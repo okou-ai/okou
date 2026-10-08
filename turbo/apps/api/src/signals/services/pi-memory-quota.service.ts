@@ -10,7 +10,7 @@ import {
 import { readPiMemoryBuiltinQuota } from "./pi-memory-builtin-quota.service";
 
 export type PiMemoryQuotaSource =
-  | { readonly providerClass: "builtin" | "api_key" }
+  | { readonly providerClass: "builtin" }
   | {
       readonly providerClass: "codex";
       readonly accessToken: string;
@@ -28,7 +28,6 @@ export interface PiMemoryQuotaDecision {
     | "metadata_unrecognized"
     | "metadata_read_failed"
     | "metadata_timeout"
-    | "not_supported"
     | "cash_percentage_unknown"
     | "entitlement_stale";
   readonly bucket?:
@@ -196,9 +195,7 @@ export async function checkPiMemoryQuota(
   const decision =
     args.source.providerClass === "codex"
       ? await readCodexQuota(args.source, signal)
-      : args.source.providerClass === "builtin"
-        ? await readPiMemoryBuiltinQuota(db, args, nowDate(), signal)
-        : ({ decision: "unknown", reason: "not_supported" } as const);
+      : await readPiMemoryBuiltinQuota(db, args, nowDate(), signal);
   signal.throwIfAborted();
   log.info("Pi memory quota admission", {
     stage: args.stage,

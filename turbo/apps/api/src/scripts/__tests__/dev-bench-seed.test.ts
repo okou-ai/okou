@@ -58,7 +58,6 @@ function runMetadata(row: ProfileRunMetadataRow) {
     modelProviderCredentialScope: row.modelProviderCredentialScope,
     selectedModel: row.selectedModel,
     codexServiceTier: row.codexServiceTier,
-    selectedVideoModel: row.selectedVideoModel,
     selectedImageModel: row.selectedImageModel,
     chatThreadId: row.chatThreadId,
     apiStartedAt: row.apiStartedAt,
@@ -91,7 +90,7 @@ describe("dev bench seed profile rows", () => {
         expect(runMetadata(runRow)).toStrictEqual(
           expect.objectContaining({
             triggerSource: expect.any(String),
-            autonomyBudget: 10,
+            autonomyBudget: 32,
             selectedImageModel: null,
           }),
         );

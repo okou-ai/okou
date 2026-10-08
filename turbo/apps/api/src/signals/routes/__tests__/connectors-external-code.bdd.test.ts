@@ -25,7 +25,7 @@ import {
   mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const connectorsApi = createConnectorBddApi(context);
 
 const AWS_REDIRECT_URI =

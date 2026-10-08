@@ -19,12 +19,17 @@ members = [
     "guest-write-file",
     "guest-workspace-mount",
     "linux-mountinfo",
+    "kerberos-credentials",
     "nbd-cow",
     "runner",
+    "runner-executor",
     "runner-host",
+    "runner-lifecycle",
     "runner-network",
     "runner-provider",
+    "runner-remote",
     "runner-storage",
+    "runner-supervisor",
     "runner-types",
     "sandbox",
     "sandbox-firecracker",
@@ -63,11 +68,16 @@ guest-state-restore = { path = "guest-state-restore" }
 guest-write-file = { path = "guest-write-file" }
 guest-workspace-mount = { path = "guest-workspace-mount" }
 linux-mountinfo = { path = "linux-mountinfo" }
+kerberos-credentials = { path = "kerberos-credentials" }
 nbd-cow = { path = "nbd-cow" }
 runner-host = { path = "runner-host" }
+runner-executor = { path = "runner-executor" }
+runner-lifecycle = { path = "runner-lifecycle" }
 runner-network = { path = "runner-network" }
 runner-provider = { path = "runner-provider" }
+runner-remote = { path = "runner-remote" }
 runner-storage = { path = "runner-storage" }
+runner-supervisor = { path = "runner-supervisor" }
 runner-types = { path = "runner-types" }
 sandbox = { path = "sandbox" }
 sandbox-firecracker = { path = "sandbox-firecracker" }
@@ -82,6 +92,7 @@ guest-control-proto = { path = "guest-control-proto" }
 
 # External dependencies
 # Keep versions here and select features explicitly in each consuming crate.
+aes = { version = "0.9", default-features = false }
 aho-corasick = { version = "1", default-features = false }
 async-trait = { version = "0.1", default-features = false }
 aws-sdk-s3 = { version = "1", default-features = false }
@@ -91,9 +102,12 @@ bitvec = { version = "1", default-features = false }
 bytes = { version = "1", default-features = false }
 chrono = { version = "0.4", default-features = false }
 clap = { version = "4", default-features = false }
+crypto-bigint = { version = "0.7", default-features = false }
 des = { version = "0.9", default-features = false }
+eax = { version = "0.6.1", default-features = false }
 flate2 = { version = "1", default-features = false }
 futures-util = { version = "0.3", default-features = false }
+getrandom = { version = "0.4", default-features = false }
 hex = { version = "0.4", default-features = false }
 hmac = { version = "0.13.0", default-features = false }
 http-body = { version = "1", default-features = false }
@@ -102,6 +116,7 @@ hyper = { version = "1", default-features = false }
 idna = { version = "1", default-features = false }
 libc = { version = "0.2", default-features = false }
 log = { version = "0.4", default-features = false }
+md-5 = { version = "0.11", default-features = false }
 nix = { version = "0.31", default-features = false }
 pin-project-lite = { version = "0.2", default-features = false }
 pkcs5 = { version = "0.8", default-features = false }
@@ -117,13 +132,16 @@ roxmltree = { version = "0.21", default-features = false }
 rsa = { version = "=0.10.0-rc.18", default-features = false }
 russh = { version = "=0.63.3", default-features = false }
 rustix = { version = "1", default-features = false }
+rsasl = { version = "2.3.1", default-features = false, features = ["std", "config_builder", "provider", "scram-sha-2"] }
 rustls = { version = "0.23", default-features = false }
 sentry = { version = "0.49", default-features = false }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }
 serde_path_to_error = { version = "0.1", default-features = false }
 serde_yaml_ng = { version = "0.10", default-features = false }
+sha1 = { version = "0.11", default-features = false }
 sha2 = { version = "0.11", default-features = false }
+subtle = { version = "2.6", default-features = false }
 tar = { version = "0.4", default-features = false }
 tempfile = { version = "3", default-features = false }
 thiserror = { version = "2", default-features = false }
@@ -148,11 +166,16 @@ zeroize = { version = "1", default-features = false }
 zstd = { version = "0.14", default-features = false }
 
 # Keep routine local validation usable in constrained environments while
-# retaining source locations in backtraces.
+# retaining workspace source locations in backtraces.
 [profile.local]
 inherits = "dev"
 debug = "line-tables-only"
 incremental = false
+
+# Preserve workspace source lines in local backtraces, but avoid emitting debug
+# metadata for non-workspace dependencies in the large native test build.
+[profile.local.package."*"]
+debug = 0
 
 [profile.release]
 lto = true

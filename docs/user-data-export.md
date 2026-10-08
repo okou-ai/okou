@@ -100,7 +100,7 @@ The maximum archive size is 16 MiB times 10,000 multipart parts, approximately
 
 Thread metadata preserves IDs, user and agent/organization associations, title,
 schedule origin, timestamps, pin order, composer draft and attachment metadata,
-and saved model/image/video/service-tier preferences. Attachment metadata does
+and saved model/image/service-tier preferences. Attachment metadata does
 not include attachment binaries.
 
 ### Reconstruct a conversation
@@ -163,13 +163,22 @@ historical memory versions, and memory processing jobs/candidates/provenance.
 Canonical chat payload references remain in the event records, without fetching
 those referenced files.
 
+Discord conversations use these same canonical event records and preserve their
+Discord source metadata. Private Discord context snapshots, inbound Gateway
+payloads, and outbound delivery attempts are operational records and are not
+separate export content. The canonical row's context pointer does not include
+the private snapshot or provider credentials.
+
 The source cursor and ZIP inventory live in PostgreSQL, and payloads stay in R2.
 The worker never holds the entire account or final ZIP in memory. Agent
 instructions prefer the validated exact-version Pi text index. A legacy
 volume without usable indexed text has explicit limits: a 16 MiB manifest,
 32 MiB compressed archive, and 64 MiB expanded archive. A volume exceeding those
 limits fails explicitly, preserving the checkpoint for a later retry; it never
-publishes truncated instructions or exposes unrelated volume files. Chat
+publishes truncated instructions or exposes unrelated volume files. For legacy
+agent instructions, the registered gzip length is only a hint: the actual
+archive download is bounded, its declared transfer length is checked, and the
+extracted instruction is verified against the manifest's size and hash. Chat
 snapshots and memory archives are copied without whole-object decompression.
 
 ## Deployment compatibility

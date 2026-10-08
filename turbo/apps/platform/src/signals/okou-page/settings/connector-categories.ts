@@ -1,5 +1,17 @@
-import { command, computed, state } from "ccstate";
-import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
+/** Display names for the category ids that catalog entries carry. */
+export interface ConnectorCategoryLabels {
+  readonly categories: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly menuLabel: string;
+    readonly groupId: string | null;
+  }[];
+  readonly groups: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly menuLabel: string;
+  }[];
+}
 
 export interface ConnectorCategorySection<T> {
   category: string;
@@ -17,7 +29,7 @@ export interface ConnectorCategoryGroup<T> {
   sections: [ConnectorCategorySection<T>, ...ConnectorCategorySection<T>[]];
 }
 
-function fallbackCategoryLabel(category: string): string {
+export function fallbackCategoryLabel(category: string): string {
   const label = category
     .split(/[-_\s]+/)
     .filter((part) => {
@@ -66,7 +78,7 @@ export function groupConnectorsByCategory<
   },
 >(
   connectors: readonly T[],
-  categoryMetadata: PublicConnectorCatalogCategoryMetadata | undefined,
+  categoryMetadata: ConnectorCategoryLabels | undefined,
   otherCategoryLabel = "Other",
 ): ConnectorCategoryGroup<T>[] {
   const grouped = new Map<string, T[]>();
@@ -164,89 +176,3 @@ export function groupConnectorsByCategory<
 
   return groups;
 }
-
-export function getConnectorCategorySectionId(category: string): string {
-  return `connector-category-${category}`;
-}
-
-export function scrollToConnectorCategory(category: string): void {
-  document
-    .getElementById(getConnectorCategorySectionId(category))
-    ?.scrollIntoView({ block: "start", behavior: "smooth" });
-}
-
-const SECTION_ID_PREFIX = "connector-category-";
-
-function getActiveConnectorCategoryId(
-  scrollContainer: HTMLElement,
-): string | null {
-  const sections = Array.from(
-    document.querySelectorAll<HTMLElement>(`[id^="${SECTION_ID_PREFIX}"]`),
-  ).filter((element) => {
-    return scrollContainer.contains(element);
-  });
-  if (sections.length === 0) {
-    return null;
-  }
-  let activeId: string | null =
-    sections[0]?.id.slice(SECTION_ID_PREFIX.length) ?? null;
-  const anchorY = scrollContainer.getBoundingClientRect().top + 120;
-
-  for (const section of sections) {
-    if (section.getBoundingClientRect().top <= anchorY) {
-      activeId = section.id.slice(SECTION_ID_PREFIX.length);
-      continue;
-    }
-    break;
-  }
-
-  return activeId;
-}
-
-// ---------------------------------------------------------------------------
-// Scroll-driven active category tracking
-// ---------------------------------------------------------------------------
-
-const internalActiveConnectorCategoryId$ = state<string | null>(null);
-
-export const activeConnectorCategoryId$ = computed((get) => {
-  return get(internalActiveConnectorCategoryId$);
-});
-
-const setActiveConnectorCategoryId$ = command(
-  ({ get, set }, nextActiveId: string | null) => {
-    const previous = get(internalActiveConnectorCategoryId$);
-    if (previous !== nextActiveId) {
-      set(internalActiveConnectorCategoryId$, nextActiveId);
-    }
-  },
-);
-
-export const resetActiveConnectorCategory$ = command(({ set }) => {
-  set(internalActiveConnectorCategoryId$, null);
-});
-
-/**
- * Attach scroll/resize listeners to update the active category indicator.
- * Returns a cleanup function that removes the listeners. Call from a React
- * callback ref inside an effect-equivalent lifecycle (e.g. component mount).
- */
-export const attachConnectorCategoryScrollTracking$ = command(
-  ({ set }, scrollContainer: HTMLElement): (() => void) => {
-    const updateActiveCategory = () => {
-      const nextActiveId = getActiveConnectorCategoryId(scrollContainer);
-      set(setActiveConnectorCategoryId$, nextActiveId);
-    };
-
-    updateActiveCategory();
-    scrollContainer.addEventListener("scroll", updateActiveCategory, {
-      passive: true,
-    });
-    window.addEventListener("resize", updateActiveCategory);
-
-    return () => {
-      scrollContainer.removeEventListener("scroll", updateActiveCategory);
-      window.removeEventListener("resize", updateActiveCategory);
-    };
-  },
-);

@@ -83,38 +83,30 @@ class TestReportModelProviderUsage:
             uuid.UUID(event["idempotencyKey"])
 
     @pytest.mark.parametrize(
-        ("provider", "input_tokens", "expected_suffix"),
-        [
-            ("gpt-6-astra", 272_001, ".long_context"),
-            ("gpt-5.5", 272_000, ""),
-            ("gpt-5.5", 272_001, ".long_context"),
-            ("gpt-5.6-sol", 272_001, ".long_context"),
-            ("gpt-5.6-terra", 272_001, ".long_context"),
-            ("gpt-5.6-luna", 272_001, ".long_context"),
-            ("claude-opus-4-6", 300_000, ""),
-        ],
+        ("input_tokens", "expected_suffix"),
+        [(272_000, ""), (272_001, ".long_context")],
     )
     def test_classifies_long_context_usage_at_model_boundary(
         self,
         tmp_path,
         real_flow,
         usage_webhook_api,
-        provider,
         input_tokens,
         expected_suffix,
     ):
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
-            model_usage_provider=provider,
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
+            model_usage_provider="catalog-model-pricing",
             usage={
                 "tokens.input": input_tokens,
                 "tokens.output": 7,
             },
         )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
 
         with usage_webhook_api() as webhook:
             usage.report_model_provider_usage(flow, "run-abc-123")
@@ -135,9 +127,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="gpt-5.6-sol",
             usage={
                 "service_tier": "priority",
@@ -147,6 +139,7 @@ class TestReportModelProviderUsage:
                 "tokens.cache_creation": 2_001,
             },
         )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
 
         with usage_webhook_api() as webhook:
             usage.report_model_provider_usage(flow, "run-abc-123")
@@ -159,39 +152,123 @@ class TestReportModelProviderUsage:
             "tokens.cache_creation.long_context.fast": 2_001,
         }
 
-    def test_output_without_input_skips_unclassifiable_terminal_billing(
+    @pytest.mark.parametrize(
+        ("service_tier", "input_tokens", "expected_suffix"),
+        [
+            (None, 400_000, ""),
+            ("priority", 400_000, ".fast"),
+            (None, 400_001, ".long_context"),
+            ("priority", 400_001, ".long_context.fast"),
+        ],
+    )
+    def test_unmapped_provider_uses_captured_route_threshold(
+        self,
+        tmp_path,
+        real_flow,
+        usage_webhook_api,
+        service_tier,
+        input_tokens,
+        expected_suffix,
+    ):
+        """A provider absent from the generated map classifies by the captured threshold.
+
+        The provider id, model and threshold are all unknown to the generated
+        map; the threshold is the one the API captured from the run's route.
+        Total input counts uncached input plus cache reads.
+        """
+        flow = make_model_provider_usage_reporting_flow(
+            real_flow,
+            tmp_path,
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
+            model_usage_provider="catalog-new-model-pricing",
+            usage={
+                "model": "catalog-new-upstream",
+                **({"service_tier": service_tier} if service_tier else {}),
+                "tokens.input": input_tokens - 1_000,
+                "tokens.output": 7,
+                "tokens.cache_read": 1_000,
+            },
+        )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 400_001
+
+        with usage_webhook_api() as webhook:
+            usage.report_model_provider_usage(flow, "run-new-model")
+            usage.flush_usage_events(trigger="test")
+
+        assert {
+            (event["provider"], event["category"]): event["quantity"]
+            for event in webhook.usage_events()
+        } == {
+            ("catalog-new-model-pricing", f"tokens.input{expected_suffix}"): input_tokens - 1_000,
+            ("catalog-new-model-pricing", f"tokens.output{expected_suffix}"): 7,
+            ("catalog-new-model-pricing", f"tokens.cache_read{expected_suffix}"): 1_000,
+        }
+
+    def test_registry_threshold_overrides_generated_threshold(
         self,
         tmp_path,
         real_flow,
         usage_webhook_api,
     ):
-        proxy_log = tmp_path / "proxy-run-abc-123.jsonl"
+        """The API-captured threshold is authoritative for a mapped provider too."""
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
-            model_usage_provider="gpt-5.5",
-            proxy_log_path=proxy_log,
-            usage={"tokens.output": 12},
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
+            model_usage_provider="gpt-6-luna",
+            usage={"tokens.input": 200_001, "tokens.output": 7},
         )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 200_001
 
         with usage_webhook_api() as webhook:
-            accepted = usage.report_model_provider_usage(flow, "run-abc-123")
+            usage.report_model_provider_usage(flow, "run-explicit-threshold")
             usage.flush_usage_events(trigger="test")
 
-        assert accepted is False
-        assert webhook.usage_events() == []
-        [entry] = [
-            entry
-            for entry in read_jsonl_entries_after_flush(proxy_log)
-            if entry.get("type") == "usage_underbilling"
-        ]
-        assert entry["reason"] == "model_long_context_tier_unresolved"
-        assert entry["underbilling_class"] == "risk"
-        assert entry["run_id"] == "run-abc-123"
-        assert entry["provider"] == "gpt-5.5"
+        assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
+            "tokens.input.long_context": 200_001,
+            "tokens.output.long_context": 7,
+        }
+
+    @pytest.mark.parametrize(
+        ("service_tier", "expected_suffix"),
+        [(None, ""), ("priority", ".fast")],
+    )
+    def test_explicit_single_tier_does_not_use_generated_threshold(
+        self,
+        tmp_path,
+        real_flow,
+        usage_webhook_api,
+        service_tier,
+        expected_suffix,
+    ):
+        """A single-tier route bills base categories at any input length."""
+        flow = make_model_provider_usage_reporting_flow(
+            real_flow,
+            tmp_path,
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
+            model_usage_provider="gpt-6-luna",
+            usage={
+                **({"service_tier": service_tier} if service_tier else {}),
+                "tokens.input": 300_000,
+                "tokens.output": 7,
+            },
+        )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 0
+
+        with usage_webhook_api() as webhook:
+            usage.report_model_provider_usage(flow, "run-explicit-single-tier")
+            usage.flush_usage_events(trigger="test")
+
+        assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
+            f"tokens.input{expected_suffix}": 300_000,
+            f"tokens.output{expected_suffix}": 7,
+        }
 
     def test_aggregate_buffer_keeps_base_and_long_context_items_separate(
         self,
@@ -204,12 +281,13 @@ class TestReportModelProviderUsage:
             flow = make_model_provider_usage_reporting_flow(
                 real_flow,
                 tmp_path,
-                host="api.openai.com",
-                original_url="https://api.openai.com/v1/responses",
-                firewall_name="model-provider:openai-api-key",
+                host="openrouter.ai",
+                original_url="https://openrouter.ai/api/v1/responses",
+                firewall_name="model-provider:openrouter-codex",
                 model_usage_provider="gpt-5.5",
                 usage={"tokens.input": input_tokens},
             )
+            flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
             flows.append(flow)
 
         with usage_webhook_api() as webhook:
@@ -303,7 +381,7 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            firewall_name="model-provider:vm0",
+            firewall_name="model-provider:openrouter-codex",
             usage={
                 "message_id": "msg-built-in-usage-1",
                 "tokens.input": 100,
@@ -326,7 +404,7 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            firewall_name="model-provider:vm0",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider=None,
             usage={
                 "model": "claude-sonnet-4-6",
@@ -426,7 +504,7 @@ class TestReportModelProviderUsage:
         assert entry["underbilling_class"] == "confirmed"
         assert entry["component"] == "mitm_addon"
         assert entry["run_id"] == "run-abc-123"
-        assert entry["firewall_name"] == "model-provider:anthropic-api-key"
+        assert entry["firewall_name"] == "model-provider:openrouter-codex"
         assert entry["missing_sandbox_token"] is True
         assert entry["missing_api_url"] is False
 
@@ -453,7 +531,7 @@ class TestReportModelProviderUsage:
         assert entry["underbilling_class"] == "confirmed"
         assert entry["component"] == "mitm_addon"
         assert entry["run_id"] == "run-abc-123"
-        assert entry["firewall_name"] == "model-provider:anthropic-api-key"
+        assert entry["firewall_name"] == "model-provider:openrouter-codex"
         assert entry["missing_sandbox_token"] is False
         assert entry["missing_api_url"] is True
 
@@ -486,7 +564,7 @@ class TestReportModelProviderUsage:
             tmp_path,
             usage={
                 "model": "claude-sonnet-4-6",
-                "message_id": "msg_real_anthropic_id",
+                "message_id": "resp_real_provider_id",
                 "tokens.input": 10,
             },
         )
@@ -506,9 +584,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="gpt-5.5",
             usage_sources={
                 "resp_ws_1": {
@@ -552,9 +630,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider=None,
             usage_sources={
                 "resp_ws_1": {
@@ -592,9 +670,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="gpt-5.5",
         )
         flow.id = "flow-uuid-xyz-123"
@@ -649,7 +727,7 @@ class TestReportModelProviderUsage:
             tmp_path,
             usage={
                 "model": "claude-sonnet-4-6",
-                "message_id": "msg_real_anthropic_id",
+                "message_id": "resp_real_provider_id",
                 "tokens.input": 10,
             },
         )
@@ -659,7 +737,7 @@ class TestReportModelProviderUsage:
             tmp_path,
             usage={
                 "model": "claude-sonnet-4-6",
-                "message_id": "msg_real_anthropic_id",
+                "message_id": "resp_real_provider_id",
                 "tokens.input": 10,
             },
         )

@@ -2,29 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  piApiFirstTurnConfigSchema,
+  piInstalledCliRequirementSchema,
   releaseVersionSchema,
   runnerInstalledVersionsSchema,
   runnersJobClaimContract,
 } from "../runners";
 
-const API_FIRST_TURN = {
-  schemaVersion: 1,
-  resourceSnapshotDigest: "a".repeat(64),
-  manifestUrl: "https://handoff.example/manifest.json",
-  sessionUrl: "https://handoff.example/session.jsonl",
-  deadlineAt: 5_000,
-  baseSession: {
-    sessionId: "11111111-1111-4111-8111-111111111111",
-    sha256: null,
-  },
-  sandboxEventSequenceStart: 1,
-} as const;
-
 describe("release versions", () => {
   it("accepts only MAJOR.MINOR.PATCH", () => {
-    expect(releaseVersionSchema.safeParse("9.352.7").success).toBe(true);
-    for (const invalid of ["9.352", "v9.352.7", "9.352.7-rc.1", "latest", ""]) {
+    expect(releaseVersionSchema.safeParse("9.368.2").success).toBe(true);
+    for (const invalid of ["9.368", "v9.368.2", "9.368.2-rc.1", "latest", ""]) {
       expect(releaseVersionSchema.safeParse(invalid).success).toBe(false);
     }
     expect(
@@ -34,42 +21,27 @@ describe("release versions", () => {
   });
 });
 
-describe("Pi API first-turn runtime requirements", () => {
-  it("stays optional for launch configs captured before versioned artifacts", () => {
-    expect(piApiFirstTurnConfigSchema.safeParse(API_FIRST_TURN).success).toBe(
-      true,
-    );
-  });
+describe("Pi installed-CLI requirement", () => {
+  const requirement = {
+    requiredPiAgentRuntimeVersion: "1.36.0",
+    minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+    requiredPiSessionConstructionDigest: "c".repeat(64),
+  } as const;
 
-  it("carries the exact runtime version and the CLI floor", () => {
-    const parsed = piApiFirstTurnConfigSchema.parse({
-      ...API_FIRST_TURN,
-      requiredPiAgentRuntimeVersion: "1.36.0",
-      minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-    });
-    expect(parsed.requiredPiAgentRuntimeVersion).toBe("1.36.0");
-    expect(parsed.minCliVersion).toBe(PI_SANDBOX_INSTALLED_CLI_MIN_VERSION);
+  it("carries the exact runtime version, the CLI floor and the parity digest", () => {
+    expect(piInstalledCliRequirementSchema.parse(requirement)).toStrictEqual(
+      requirement,
+    );
     expect(
-      piApiFirstTurnConfigSchema.safeParse({
-        ...API_FIRST_TURN,
+      piInstalledCliRequirementSchema.safeParse({
+        ...requirement,
         requiredPiAgentRuntimeVersion: "1.36",
       }).success,
     ).toBe(false);
-  });
-
-  it("carries the session construction digest as the parity key", () => {
-    const digest = "c".repeat(64);
-    const parsed = piApiFirstTurnConfigSchema.parse({
-      ...API_FIRST_TURN,
-      requiredPiAgentRuntimeVersion: "1.36.0",
-      minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-      requiredPiSessionConstructionDigest: digest,
-    });
-    expect(parsed.requiredPiSessionConstructionDigest).toBe(digest);
     for (const invalid of ["C".repeat(64), "c".repeat(63), ""]) {
       expect(
-        piApiFirstTurnConfigSchema.safeParse({
-          ...API_FIRST_TURN,
+        piInstalledCliRequirementSchema.safeParse({
+          ...requirement,
           requiredPiSessionConstructionDigest: invalid,
         }).success,
       ).toBe(false);
@@ -80,7 +52,7 @@ describe("Pi API first-turn runtime requirements", () => {
 describe("runner claim installed versions", () => {
   it("is an optional top-level claim body field", () => {
     const body = runnersJobClaimContract.claim.body;
-    const capabilities = { piModelConfigGenerations: [1, 2, 3, 4] };
+    const capabilities = { piModelConfigGenerations: [1, 2, 3] };
     expect(body.safeParse({ capabilities }).success).toBe(true);
     const parsed = body.parse({
       capabilities,

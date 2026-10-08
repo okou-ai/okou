@@ -1,8 +1,8 @@
 # Saved Social data jobs
 
-Saved jobs add bounded public-data collection to `okou social`. The
-`socialDataJobs` feature switch defaults to off. Commands without job controls
-continue using their existing protocol.
+Saved jobs provide bounded public-data collection through `okou social` in
+all workspaces. Commands without job controls continue using their existing
+protocol.
 
 ```sh
 okou social comments 'https://www.youtube.com/watch?v=VIDEO_ID' --limit 20 --dry-run --json
@@ -105,9 +105,10 @@ Apply the generated migration before deploying the API. Provision
 the operational configuration process. No production tariffs or credentials
 are seeded by this change.
 
-Keep the feature disabled until every serving API and settlement
-worker has the new implementation. See the [deployment compatibility
-boundary](deployment-compatibility.md#saved-social-data-jobs) before activation
+The rollout switch has been removed; quotes and job creation no longer have
+an account-level rollout gate. Schema, credential and pricing prerequisites
+still apply. See the [deployment compatibility
+boundary](deployment-compatibility.md#saved-social-data-jobs) before deployment
 or rollback. Public tool inspection informed the catalog; mocked integration
 tests do not establish live paid-provider availability. A bounded live smoke
-test is still required during activation.
+test is still required when provisioning a provider.

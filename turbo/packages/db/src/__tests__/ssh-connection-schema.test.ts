@@ -2,8 +2,6 @@ import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import { schema } from "../index";
-import { agentSshAccess } from "../schema/agent-ssh-access";
-import { agents } from "../schema/agent";
 import { sshCredentials } from "../schema/ssh-credential";
 import { sshConnections } from "../schema/ssh-connection";
 import { cloudflareAccessConfigs } from "../schema/cloudflare-access-config";
@@ -12,7 +10,6 @@ describe("SSH connection schema", () => {
   it("exports the standalone SSH tables", () => {
     expect(schema.sshConnections).toBe(sshConnections);
     expect(schema.sshCredentials).toBe(sshCredentials);
-    expect(schema.agentSshAccess).toBe(agentSshAccess);
     expect(schema.cloudflareAccessConfigs).toBe(cloudflareAccessConfigs);
   });
 
@@ -31,9 +28,11 @@ describe("SSH connection schema", () => {
       "port",
       "credential_id",
       "cloudflare_access_id",
+      "needs_rebind",
       "learned_host_key_algorithm",
       "learned_host_key_fingerprint",
       "generation",
+      "default_enabled_for_chats",
       "created_at",
       "updated_at",
     ]);
@@ -58,6 +57,7 @@ describe("SSH connection schema", () => {
     );
     expect(Object.keys(checks)).toStrictEqual([
       "chk_ssh_connections_cloudflare_access_destination",
+      "chk_ssh_connections_needs_rebind_unbound",
       "chk_ssh_connections_display_name",
       "chk_ssh_connections_host",
       "chk_ssh_connections_port",
@@ -69,6 +69,32 @@ describe("SSH connection schema", () => {
     expect(checks.chk_ssh_connections_learned_host_key_pair).toContain(
       "IS NULL",
     );
+  });
+
+  it("preserves personal ownership while allowing same-organization Access", () => {
+    const connectionConfig = getTableConfig(sshConnections);
+    const accessForeignKey = connectionConfig.foreignKeys.find((key) => {
+      return key.getName() === "ssh_connections_cloudflare_access_org_fk";
+    });
+    expect(accessForeignKey?.onDelete).toBe("restrict");
+    expect(
+      accessForeignKey?.reference().columns.map((column) => {
+        return column.name;
+      }),
+    ).toStrictEqual(["cloudflare_access_id", "org_id"]);
+    expect(
+      accessForeignKey?.reference().foreignColumns.map((column) => {
+        return column.name;
+      }),
+    ).toStrictEqual(["id", "org_id"]);
+    expect(sshConnections.needsRebind.notNull).toBe(true);
+    expect(cloudflareAccessConfigs.scope.default).toBe("personal");
+    expect(cloudflareAccessConfigs.userId.notNull).toBe(false);
+    expect(
+      getTableConfig(cloudflareAccessConfigs).checks.map((check) => {
+        return check.name;
+      }),
+    ).toContain("chk_cloudflare_access_configs_scope_owner");
   });
 
   it("requires a same-owner credential and restricts deletion while referenced", () => {
@@ -90,26 +116,5 @@ describe("SSH connection schema", () => {
         return check.name;
       }),
     ).toContain("chk_ssh_credentials_auth");
-  });
-
-  it("keys sparse SSH access by user and cascades from the referenced Agent", () => {
-    const accessConfig = getTableConfig(agentSshAccess);
-    expect(accessConfig.primaryKeys[0]?.getName()).toBe(
-      "agent_ssh_access_pkey",
-    );
-    expect(
-      accessConfig.primaryKeys[0]?.columns.map((column) => {
-        return column.name;
-      }),
-    ).toStrictEqual(["org_id", "user_id", "agent_id"]);
-    const agentForeignKey = accessConfig.foreignKeys[0];
-    expect(agentForeignKey?.getName()).toBe("agent_ssh_access_agent_fk");
-    expect(agentForeignKey?.onDelete).toBe("cascade");
-    expect(agentForeignKey?.reference().foreignTable).toBe(agents);
-    expect(
-      agentForeignKey?.reference().columns.map((column) => {
-        return column.name;
-      }),
-    ).toStrictEqual(["agent_id"]);
   });
 });

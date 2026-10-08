@@ -1,5 +1,6 @@
 import { Ban, Check, Contrast } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@okouai/ui";
 
 type PermissionPolicyToggleValue = "allow" | "deny";
 type PermissionPolicyToggleState =
@@ -30,11 +31,11 @@ function permissionPolicyButtonClass({
   disabled?: boolean;
   tone: PermissionPolicyToggleValue;
 }): string {
-  return `flex h-7 items-center gap-1 px-2.5 text-xs font-medium transition-colors ${
+  return `gap-1 rounded-none text-xs focus-visible:ring-inset focus-visible:ring-offset-0 disabled:opacity-100 [&_svg]:size-3 ${
     active
       ? tone === "allow"
-        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-        : "bg-rose-500/10 text-rose-700 dark:text-rose-400"
+        ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-700 active:bg-emerald-500/10 dark:text-emerald-400 dark:hover:text-emerald-400"
+        : "bg-rose-500/10 text-rose-700 hover:bg-rose-500/10 hover:text-rose-700 active:bg-rose-500/10 dark:text-rose-400 dark:hover:text-rose-400"
       : disabled
         ? "text-muted-foreground/50"
         : "text-muted-foreground hover:text-foreground hover:bg-state-hover"
@@ -55,8 +56,10 @@ export function PermissionPolicyToggle({
   const { t } = useTranslation();
   return (
     <span className="inline-flex shrink-0 overflow-hidden rounded-md text-xs font-medium border border-surface-border">
-      <button
+      <Button
         type="button"
+        variant="quiet"
+        size="xs"
         disabled={disabled}
         aria-pressed={policy === "allow"}
         onClick={onAllow}
@@ -70,26 +73,25 @@ export function PermissionPolicyToggle({
         {t(($) => {
           return $.connectors.permissions.actions.allow;
         })}
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
+        variant="quiet"
+        size="xs"
         disabled={disabled}
         aria-pressed={policy === "deny"}
-        style={{
-          borderLeft: "var(--border-width-surface) solid hsl(var(--gray-400))",
-        }}
         onClick={onDeny}
-        className={permissionPolicyButtonClass({
+        className={`${permissionPolicyButtonClass({
           active: policy === "deny",
           disabled,
           tone: "deny",
-        })}
+        })} border-l-(length:--border-width-surface) border-l-surface-border`}
       >
         <Ban size={12} />
         {t(($) => {
           return $.connectors.permissions.actions.deny;
         })}
-      </button>
+      </Button>
     </span>
   );
 }

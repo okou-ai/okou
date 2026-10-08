@@ -38,10 +38,10 @@ import {
 } from "../services/connector-action-resolver.service";
 import {
   getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeConnector,
-  type ConnectorRuntimeSnapshot,
+  type ConnectorRuntimeSelection,
 } from "../services/connector-catalog-runtime.service";
+import { loadConnectorRuntimeSlugSelection } from "../services/connector-catalog-slug-source.service";
 import {
   connectorConnectionWriteFailureMessage,
   upsertBuiltinConnectorTokenConnection$,
@@ -297,7 +297,7 @@ async function verifyOpenIdForConnector(
 }
 
 function resolveConnectorWithGrant(args: {
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeSelection;
   readonly connectorSlug: ConnectorSlug;
   readonly grantKind: "auth-code" | "openid-auth";
   readonly origin: string;
@@ -882,7 +882,7 @@ const handleOpenIdConnectorCallback$ = command(
       readonly connectorSlug: ConnectorSlug;
       readonly query: ConnectorCallbackQuery;
       readonly origin: string;
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
     },
     signal: AbortSignal,
   ): Promise<Response> => {
@@ -987,7 +987,7 @@ async function authCodeCallbackPreflight(
     readonly query: ConnectorCallbackQuery;
     readonly request: Request;
     readonly origin: string;
-    readonly snapshot: ConnectorRuntimeSnapshot;
+    readonly snapshot: ConnectorRuntimeSelection;
   },
   signal: AbortSignal,
 ): Promise<Response | null> {
@@ -1120,7 +1120,7 @@ const handleAuthCodeConnectorCallback$ = command(
       readonly query: ConnectorCallbackQuery;
       readonly request: Request;
       readonly origin: string;
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
     },
     signal: AbortSignal,
   ): Promise<Response> => {
@@ -1233,7 +1233,9 @@ const callbackBuiltinConnectorInner$ = command(
     const query = get(queryOf(builtinConnectorsSlugCallbackContract.callback));
     const request = get(request$).raw;
     const origin = getBuiltinConnectorOAuthOrigin(request);
-    const snapshot = await loadConnectorRuntimeSnapshot(get(db$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(get(db$), {
+      connectorSlugs: [connectorSlug],
+    });
     signal.throwIfAborted();
 
     const response = hasOpenIdCallbackFields(query)

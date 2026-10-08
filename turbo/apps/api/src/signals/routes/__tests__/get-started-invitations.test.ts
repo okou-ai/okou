@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
@@ -10,13 +11,15 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { getStartedRoutes } from "../get-started";
 import { orgInviteRoutes } from "../org-invite";
 import { testUsageSettlementRoutes } from "../test-usage-settlement";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { setGetStartedEnabled } from "./helpers/get-started";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const mocks = createRouteMocks(context);
 
 class ClerkInvitationTestError extends Error {
   static readonly kind = "ClerkAPIResponseError";
@@ -63,7 +66,7 @@ async function org(userId = `user_${randomUUID()}`) {
     ).setup({ body: { org_id: orgId, credits: 0 } }),
     [200],
   );
-  await setGetStartedEnabled(context, { userId, orgId });
+  mocks.clerk.session(userId, orgId);
   return { userId, orgId };
 }
 
@@ -93,6 +96,7 @@ function accepted(
   orgId: string,
   invitation: { id: string; claimId: string },
   userId: string,
+  statuses: readonly (200 | 503)[] = [200],
 ) {
   const body = JSON.stringify({
     type: "organizationInvitation.accepted",
@@ -118,8 +122,28 @@ function accepted(
         "svix-signature": new Webhook(secret).sign(id, at, body),
       },
     }),
-    [200],
+    statuses,
   );
+}
+
+type Delivery = Parameters<typeof accepted>;
+
+/**
+ * Concurrent deliveries may lose an invitation slot race; that delivery gets
+ * 503 and Clerk redelivers it. Redeliveries run after the concurrent batch.
+ */
+async function acceptedConcurrently(deliveries: readonly Delivery[]) {
+  const responses = await Promise.all(
+    deliveries.map(([orgId, invitation, userId]) => {
+      return accepted(orgId, invitation, userId, [200, 503]);
+    }),
+  );
+  for (const [index, response] of responses.entries()) {
+    const delivery = deliveries[index];
+    if (response.status === 503 && delivery) {
+      await accepted(delivery[0], delivery[1], delivery[2]);
+    }
+  }
 }
 
 async function progress() {
@@ -132,6 +156,17 @@ async function progress() {
   return status.body.quests.find((q) => {
     return q.key === "invite";
   });
+}
+
+async function credits() {
+  return (
+    await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers }),
+      [200],
+    )
+  ).body;
 }
 
 test.each([
@@ -201,7 +236,7 @@ test("keeps unrelated Clerk invitation failures as server errors", async () => {
 });
 
 test("revoking an invitation removes pending progress without consuming a reward slot", async () => {
-  const actor = await org();
+  await org();
   const invitation = await sendInvitation();
   await expect(progress()).resolves.toMatchObject({
     claimedCount: 0,
@@ -210,7 +245,6 @@ test("revoking an invitation removes pending progress without consuming a reward
   context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValueOnce(
     {},
   );
-  await setGetStartedEnabled(context, actor, false);
   await accept(
     setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).revoke({
       headers,
@@ -218,28 +252,8 @@ test("revoking an invitation removes pending progress without consuming a reward
     }),
     [200],
   );
-  await setGetStartedEnabled(context, actor);
   await expect(progress()).resolves.toMatchObject({
     claimedCount: 0,
-    pendingCount: 0,
-  });
-});
-
-test("invitation rewards follow the inviter's shared switch and remain idempotent after re-enabling", async () => {
-  const actor = await org();
-  const invitation = await sendInvitation();
-  const invitedUser = `user_${randomUUID()}`;
-  await setGetStartedEnabled(context, actor, false);
-  await accepted(actor.orgId, invitation, invitedUser);
-  await setGetStartedEnabled(context, actor);
-  await expect(progress()).resolves.toMatchObject({
-    claimedCount: 0,
-    pendingCount: 1,
-  });
-  await accepted(actor.orgId, invitation, invitedUser);
-  await accepted(actor.orgId, invitation, invitedUser);
-  await expect(progress()).resolves.toMatchObject({
-    claimedCount: 1,
     pendingCount: 0,
   });
 });
@@ -275,17 +289,22 @@ test("acceptance racing the Clerk send response retains attribution and webhook 
   });
 });
 
-test("the 14-to-15 boundary is serialized across organizations and pending invitations never consume slots", async () => {
+test("concurrent acceptances fill all 15 global invitation slots while pending invitations consume none", async () => {
   const first = await org();
   const sameInvitee = `user_${randomUUID()}`;
+  const initialInvitations = [];
   for (let i = 0; i < 14; i++) {
-    const invitation = await sendInvitation();
-    await accepted(
-      first.orgId,
-      invitation,
-      i === 0 ? sameInvitee : `user_${randomUUID()}`,
-    );
+    initialInvitations.push(await sendInvitation());
   }
+  await acceptedConcurrently(
+    initialInvitations.map((invitation, index): Delivery => {
+      return [
+        first.orgId,
+        invitation,
+        index === 0 ? sameInvitee : `user_${randomUUID()}`,
+      ];
+    }),
+  );
   const pendingA = await sendInvitation();
   const second = await org(first.userId);
   const pendingB = await sendInvitation();
@@ -294,9 +313,9 @@ test("the 14-to-15 boundary is serialized across organizations and pending invit
     claimedCount: 14,
     pendingCount: 3,
   });
-  await Promise.all([
-    accepted(first.orgId, pendingA, `user_${randomUUID()}`),
-    accepted(second.orgId, pendingB, `user_${randomUUID()}`),
+  await acceptedConcurrently([
+    [first.orgId, pendingA, `user_${randomUUID()}`],
+    [second.orgId, pendingB, `user_${randomUUID()}`],
   ]);
   await expect(progress()).resolves.toMatchObject({
     claimedCount: 15,
@@ -304,6 +323,21 @@ test("the 14-to-15 boundary is serialized across organizations and pending invit
     canEarnMore: false,
     pendingCount: 1,
   });
+  const balances = [];
+  for (const actor of [first, second]) {
+    mocks.clerk.session(actor.userId, actor.orgId);
+    balances.push(await credits());
+  }
+  expect(
+    balances.reduce((total, balance) => {
+      return total + balance.bonusCredits;
+    }, 0),
+  ).toBe(1500);
+  expect(
+    balances.flatMap((balance) => {
+      return balance.creditGrants;
+    }),
+  ).toHaveLength(15);
   await accepted(second.orgId, pendingC, sameInvitee);
   // The cap never prevents another normal invitation.
   await sendInvitation();
@@ -318,6 +352,36 @@ test("the 14-to-15 boundary is serialized across organizations and pending invit
     claimedCount: 0,
     pendingCount: 0,
   });
+});
+
+test("concurrent invitations of the same account across organizations award only one inviter", async () => {
+  const first = await org();
+  const firstInvitation = await sendInvitation();
+  const second = await org();
+  const secondInvitation = await sendInvitation();
+  const invitee = `user_${randomUUID()}`;
+
+  await acceptedConcurrently([
+    [first.orgId, firstInvitation, invitee],
+    [second.orgId, secondInvitation, invitee],
+    [first.orgId, firstInvitation, invitee],
+    [second.orgId, secondInvitation, invitee],
+  ]);
+
+  const claimedCounts = [];
+  for (const actor of [first, second]) {
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const quest = await progress();
+    if (!quest) {
+      throw new Error("Invitation quest is missing");
+    }
+    expect(quest.pendingCount).toBe(0);
+    claimedCounts.push(quest.claimedCount);
+    const balance = await credits();
+    expect(balance.bonusCredits).toBe(quest.claimedCount * 100);
+    expect(balance.creditGrants).toHaveLength(quest.claimedCount);
+  }
+  expect(claimedCounts.sort()).toStrictEqual([0, 1]);
 });
 
 test("self-invitations and unrelated accepted invitations do not award credits", async () => {

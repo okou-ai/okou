@@ -84,13 +84,9 @@
           "guidance": "まずクレジット診断を実行してください。現在のプランで購入できる場合にのみクレジットを購入し、それ以外の場合はプランのアップグレードリンクを返してください。",
           "title": "クレジットが枯渇しました"
         },
-        "modelProviderUnavailable": {
-          "guidance": "このスレッドで使用されているモデルプロバイダーは削除されました。続行するには、新しいチャット スレッドを開始してください。",
-          "title": "モデルプロバイダーが利用できません"
-        },
         "noModelProvider": {
-          "guidance": "エージェントを実行するには、モデルプロバイダーを設定してください。",
-          "title": "モデルプロバイダーが設定されていません"
+          "guidance": "しばらくしてからもう一度お試しいただくか、設定で個人の Claude Code または Codex サブスクリプションを接続してください。",
+          "title": "この実行に使用できるモデルプロバイダーがありません"
         },
         "paidPlanRequired": {
           "guidance": "組み込みのビデオ生成は、現在のプランでは利用できません。",
@@ -347,13 +343,13 @@
     },
     "sources": {
       "agent": "エージェント",
-      "agentphone": "エージェントフォン",
+      "agentphone": "iMessage",
       "automationEvent": "オートメーションイベント",
       "automationSchedule": "オートメーションスケジュール",
+      "discord": "Discord",
       "email": "メール",
       "feishu": "Feishu",
       "github": "GitHub",
-      "goal": "目標",
       "lark": "Lark",
       "slack": "Slack",
       "teams": "チーム",
@@ -373,6 +369,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "エージェントを読み込めませんでした",
+      "backToChats": "チャット一覧に戻る",
+      "chatListUnavailable": "チャットを読み込めませんでした",
+      "chats": "チャット",
+      "me": "自分",
+      "navigation": "メインナビゲーション",
+      "searchAgents": "エージェントを検索",
+      "switchAgent": "エージェントを切り替え"
+    },
     "shortcutHelp": {
       "close": "キーボードショートカットを閉じる",
       "description": "このページで利用可能なショートカット",
@@ -570,7 +576,8 @@
       "video": "ビデオ"
     },
     "metadata": {
-      "generated": "{{date}} が生成されました"
+      "generated": "{{date}} が生成されました",
+      "updated": "{{date}} に更新"
     },
     "preview": {
       "audioLabel": "{{filename}} のオーディオ プレビュー",
@@ -620,24 +627,8 @@
       "activeHtmlPreview": "{{title}} アクティブな HTML プレビュー",
       "all": "すべて",
       "avatar": "アバター",
-      "avatarWithId": "アバター {{id}}",
-      "backToAvatars": "アバターに戻る",
       "categories": "テンプレートのカテゴリ",
       "category": "テンプレートカテゴリ",
-      "chooseVoice": "{{title}}の音声を選択",
-      "filters": {
-        "age": "年齢",
-        "all": "すべて",
-        "aspectRatio": "アスペクト比",
-        "clear": "クリア",
-        "ethnicity": "民族",
-        "gender": "性別",
-        "language": "言語",
-        "scene": "シーン",
-        "style": "スタイル",
-        "title": "フィルター",
-        "useCase": "用途"
-      },
       "fullPreview": "{{title}} Web サイトの完全なプレビュー",
       "htmlPreview": "{{title}} HTML プレビュー",
       "illustration": "イラストレーション",
@@ -648,25 +639,18 @@
       "importedSlides_other": "{{count}} 枚",
       "importFile": "テンプレートをインポート",
       "multiAccent": "マルチアクセント",
-      "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
       "noMatches": "一致しません",
       "placeholder": "{{title}} Web サイトのプレビュー プレースホルダー",
-      "playVideo": "ビデオ テンプレートのプレビューを再生 {{title}}",
-      "previewAvatarVideo": "アバター動画{{title}}をプレビュー",
       "previewCurrentSlide": "現在のスライドで {{title}} をプレビューする",
       "previewSlide": "スライドのプレビュー {{slideNumber}}",
-      "previewVoice": "音声{{title}}を試聴",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previousSlide": "前のスライドをプレビューする",
-      "recommended": "おすすめ",
       "renameImportedTemplate": "テンプレート名を変更",
       "searchConnector": "テンプレートを検索",
       "searchConnectors": "テンプレートを検索",
       "selectStyle": "スタイル {{style}} を選択してください",
       "selectTemplate": "テンプレート {{title}} を選択します",
-      "selectVideo": "ビデオ テンプレート {{title}} を選択してください",
-      "selectVoice": "音声{{title}}を選択",
       "selectWebsite": "Web サイト テンプレート {{title}} を選択してください",
       "selectWorkflow": "ワークフロー テンプレート {{title}} を選択します",
       "showVariant": "バリアント {{variantNumber}} を表示",
@@ -699,7 +683,6 @@
       "tryDifferentSearch": "別の検索を試してください。",
       "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
-      "viewVideoPlans": "動画テンプレート {{title}} のプランを表示",
       "visibility": {
         "change": "変更",
         "changeLabel": "テンプレートの公開範囲を変更",
@@ -1165,9 +1148,6 @@
       "downgradesOn": "{{date}} の {{plan}} にダウングレード",
       "downgradeTo": "{{plan}} にダウングレード",
       "endsOn": "{{date}} に終了",
-      "features": {
-        "byok": "独自の LLM キーを持参する"
-      },
       "free": {
         "name": "無料"
       },
@@ -1182,18 +1162,13 @@
         "everythingInBuiltForTeams": "{{plan}} の全機能をチーム向けに",
         "included": "含まれるもの",
         "liveBrowser": "エージェントのライブブラウザを見て操作を奪う",
-        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4 Pro",
         "moreConnectorsChannels": "カスタムコネクターとチャネル連携をより多く",
         "supportEmail": "メールサポート",
         "supportPriority": "優先サポート",
-        "videoGeneration": "動画とアバターの生成",
         "voiceInput": "音声入力 1 日 {{requests}} 回・{{minutes}} 分",
         "webhookAutomations": "Webhook 一発でどのシステムからでも実行を開始"
       },
       "legacy": "旧プラン",
-      "limitedFree": {
-        "name": "限定無料"
-      },
       "loadError": "請求ステータスを読み込めませんでした。",
       "namedPlan": "{{plan}} プラン",
       "noActivePlan": "有効なプランはありません",
@@ -1410,6 +1385,7 @@
       "rename": "名前の変更",
       "saving": "保存中...",
       "send": "送信",
+      "shareMessage": "メッセージを共有",
       "stop": "停止",
       "view": "見る"
     },
@@ -1419,7 +1395,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} 件追加済み",
         "checkedIn": "チェックイン済み",
         "checkin": {
           "action": "チェックイン",
@@ -1433,8 +1408,12 @@
           "name": "ツールを接続",
           "unit": "コネクタごと"
         },
-        "earned": "{{amount}} 獲得",
         "howRewardsWork": "報酬の仕組み",
+        "imessage": {
+          "action": "追加",
+          "description": "iPhone から {{assistantName}} にメッセージ",
+          "name": "iMessage に追加"
+        },
         "inReview": "確認中",
         "intro": {
           "checkin": {
@@ -1480,6 +1459,9 @@
         "pendingState": "{{amount}} 件承諾待ち",
         "rejected": {
           "alreadyRedeemed": "投稿は使用済み",
+          "authorAlreadyRewarded": "このアカウントは報酬受取済み",
+          "authorUnavailable": "投稿者を確認できません",
+          "officialAccount": "{{assistantName}} 公式の投稿は対象外",
           "postMustMention": "{{assistantName}} に触れる必要あり"
         },
         "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
@@ -1490,7 +1472,6 @@
         },
         "shareDialog": {
           "description": "公開投稿を送信して審査を受けます。報酬の獲得は1人1回です。",
-          "draft": "毎週月曜の競合レポートを{{assistantName}}に任せています。情報源を読んで、表にまとめて返してくれます。",
           "helper": "投稿は公開で、{{assistantName}} に触れている必要があります。",
           "inputLabel": "投稿のリンク",
           "openX": "X を開く",
@@ -1505,7 +1486,8 @@
           "stepPaste": "リンクを貼る",
           "stepWrite": "投稿を書く",
           "submit": "送信",
-          "title": "{{assistantName}} を X でシェア"
+          "title": "{{assistantName}} を X でシェア",
+          "writingPrompt": "{{assistantName}}で実際に試したことを、自分の言葉で書いてください。"
         },
         "slack": {
           "action": "追加",
@@ -1728,21 +1710,22 @@
       "applyFailed": "情報を追加できませんでした。入力内容は保持されています。もう一度お試しください。",
       "applying": "情報を追加しています",
       "applyingDescription": "ブラウザでこのリクエストを完了しています。",
-      "callbackFailed": "エージェントに通知できませんでした。もう一度「続行」をお試しください。",
+      "callbackFailed": "エージェントに通知できませんでした。",
       "cancel": "キャンセル",
       "cancelFailed": "リクエストをキャンセルできませんでした。もう一度お試しください。",
       "cancelled": "リクエストをキャンセルしました",
-      "cancelledDescription": "情報は追加されていません。続行してエージェントに通知してください。",
       "cancelling": "キャンセルしています…",
+      "checkFailed": "ブラウザーを確認できませんでした。入力内容は保持されています。送信前に再試行してください。",
       "completed": "情報を追加しました",
-      "completedDescription": "ブラウザに情報を追加しました。続行してエージェントに通知してください。",
-      "continue": "続行",
-      "continuing": "続行しています…",
+      "confirmRangeValue": "現在の値を使用",
+      "continue": "エージェントに通知",
+      "continuing": "通知しています…",
       "delivered": "エージェントに通知しました",
-      "deliveredDescription": "エージェントは作業を続行できます。",
-      "description": "このサイトで求められている情報を入力してください。",
       "expired": "リクエストの有効期限が切れました",
       "expiredDescription": "ブラウザが閉じられたか、このリクエストは無効になりました。",
+      "fileLeave": "ウェブサイトのファイルを変更しない",
+      "fileLimit": "最大3ファイル（単一ファイルの場合は1ファイル）、合計10 MiBまで選択できます。",
+      "fileNotice": "ブラウザーに追加すると、選択したファイルがこのサイトに転送されます。ファイル選択の変更時にサイトがアップロードや送信を行う場合があります：",
       "loadFailed": "このリクエストを読み込めませんでした",
       "loadFailedDescription": "しばらくしてからもう一度お試しください。",
       "loadingDescription": "リクエストを確認しています…",
@@ -1760,31 +1743,6 @@
       "uncertain": "ブラウザを確認してください",
       "uncertainDescription": "ブラウザが情報を受け取った可能性があります。再試行する前にエージェントに確認を依頼してください。"
     },
-    "browserInteraction": {
-      "applying": "ブラウザ操作を完了しています",
-      "applyingDescription": "ブラウザでこのリクエストを完了しています。",
-      "callbackFailed": "エージェントに通知できませんでした。もう一度［続行］を選択してください。",
-      "cancel": "キャンセル",
-      "cancelFailed": "このリクエストをキャンセルできませんでした。もう一度お試しください。",
-      "cancelled": "リクエストをキャンセルしました",
-      "cancelledDescription": "ブラウザの引き継ぎをキャンセルしました。エージェントに通知するには続行してください。",
-      "cancelling": "キャンセルしています…",
-      "completed": "ブラウザ操作が完了しました",
-      "completedDescription": "ブラウザ操作を記録しました。エージェントに通知するには続行してください。",
-      "completeFailed": "このリクエストを完了できませんでした。もう一度お試しください。",
-      "completing": "完了しています…",
-      "continue": "続行",
-      "continuing": "続行しています…",
-      "delivered": "エージェントに通知しました",
-      "deliveredDescription": "エージェントは処理を続行できます。",
-      "description": "ブラウザを開いてこの手順を完了し、［完了］を選択してください。",
-      "done": "完了",
-      "stale": "ブラウザは利用できません",
-      "staleDescription": "エージェントに新しいリクエストの作成を依頼してください。",
-      "title": "ブラウザを引き継ぐ",
-      "uncertain": "ブラウザを確認してください",
-      "uncertainDescription": "操作が完了している可能性があります。再試行する前にエージェントに確認を依頼してください。"
-    },
     "cards": {
       "viewDetails": "詳細を表示"
     },
@@ -1797,13 +1755,10 @@
         "addTemplate": "テンプレートを追加",
         "imagePlaceholder": "作成したい画像を説明してください…",
         "presentationPlaceholder": "プレゼンテーションのテーマは何ですか？",
-        "settingsAdjusted": "このモデルに合わせて一部の動画設定を調整しました",
         "slideCount": "スライド数",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
       },
-      "createWorkflow": "ワークフローの作成",
-      "imageModelForThisChat": "このチャットの画像モデル",
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
@@ -1818,12 +1773,10 @@
       "temporarilySwitchTo": "一時的な切り替え先",
       "threadSuggestions": "チャットスレッド",
       "useForFutureChats": "今後のチャットでも使用",
-      "videoModelForThisChat": "このチャットの動画モデル",
       "workflows": {
         "empty": "一致するワークフローがありません",
         "loading": "ワークフローを読み込んでいます...",
-        "title": "ワークフロー",
-        "viewAll": "すべてのワークフローを表示"
+        "title": "ワークフロー"
       }
     },
     "computerUse": {
@@ -1861,8 +1814,6 @@
       "add": "{{connectorName}} を追加",
       "addConnectors": "コネクタの追加",
       "authorized": "{{connectorName}} が接続され、{{agentName}} に対して承認されました",
-      "available_one": "接続可能なコネクタ ({{count}})",
-      "available_other": "接続可能なコネクタ ({{count}})",
       "back": "戻る",
       "configurePermissions": "{{connectorName}} 権限を構成する",
       "customAuthorizeDescription": "エージェント用のこのカスタム コネクタを確認、接続、承認します。",
@@ -1907,38 +1858,63 @@
     "errors": {
       "genericTitle": "この実行を完了できませんでした",
       "loadMessages": "メッセージの読み込みに失敗しました",
-      "noModelProviderAction": "ワークスペース設定で設定します",
-      "noModelProviderPrefix": "モデルプロバイダーがまだ構成されていません。",
-      "noModelProviderSuffix": "始めるために。",
-      "providerDeletedAction": "新しいチャット スレッドを開始する",
-      "providerDeletedPrefix": "このスレッドで使用されているモデルプロバイダーは削除されました。",
-      "providerDeletedSuffix": "続けます。",
+      "noModelProviderAction": "サブスクリプションを管理",
+      "noModelProviderPrefix": "この実行に使用できるモデルプロバイダーがありません。もう一度お試しいただくか、個人サブスクリプションを接続してください。",
       "providerIncompatibleAction": "新しいセッションを開始する",
       "providerIncompatiblePrefix": "このセッションは別のモデル プロバイダーで開始されたため、現在のモデル プロバイダーでは続行できません。",
       "recovery": {
+        "accessProgramDescription": "少し時間をおいて再試行してください。このチャットは開いたままにできます。",
+        "accessProgramTitle": "Codex へのアクセスは一時的に利用できません",
         "autonomyLimitDescription": "連続自動実行の上限に達しました。続行するには確認が必要です。",
         "autonomyLimitTitle": "自動実行の上限に達しました",
-        "capacityDescription": "少ししてからもう一度試すか、別のモデルに切り替えてください。",
+        "capacityDescription": "少し待ってから再試行するか、別のモデルで続けてください。",
         "capacityTitle": "このモデルは現在混雑しています",
         "claudeCode": "Claude Code",
         "codex": "Codex",
+        "connectionLostTitle": "応答が途中で途切れました",
+        "contextWindowTitle": "このチャットは長すぎます",
         "continue": "続ける",
-        "newRunCurrentSettings": "続行すると、現在の設定で新しい実行が開始されます。",
-        "originalAccount": "この実行では、あなたの個人サブスクリプション（{{account}}）が使用されました。",
-        "originalAccountUnavailable": "この実行では個人サブスクリプションが使用されました。元のアカウントは現在接続されていません。",
-        "originalAccountUnknown": "この実行では個人サブスクリプションが使用されました。元のアカウントを確認できませんでした。",
-        "resetAndTryAgain": "リセットして再試行",
+        "filesystemFullDescription": "この実行ではこれ以上ファイルを保存できません。再試行して続けてください。",
+        "filesystemFullTitle": "この実行の保存容量が足りません",
+        "fiveHourReset": "5時間の上限は {{time}} にリセット",
+        "inputTooLargeDescription": "メッセージを短くして、もう一度送信してください。",
+        "inputTooLargeTitle": "メッセージが大きすぎます",
+        "invalidApiKeyTitle": "サブスクリプションのサインインを更新する必要があります",
+        "invalidCredentialsTitle": "モデルとの接続を確認してください",
+        "newChat": "新しいチャット",
+        "newChatDescription": "新しいチャットを始め、引き継ぎたい大切な情報を含めてください。",
+        "openClaude": "Claude を開く",
+        "outputLimitDescription": "応答が完了する前に止まりました。「続ける」を選ぶと続きから生成できます。",
+        "outputLimitTitle": "応答が長さの上限に達しました",
+        "personalAccount": "個人サブスクリプション {{account}}",
+        "personalAccountDisconnected": "個人サブスクリプションの接続が切れています",
+        "providerBalanceDescription": "サブスクリプションアカウントの使用量またはクレジット残高を確認してから、もう一度お試しください。",
+        "providerBalanceTitle": "サブスクリプションアカウントのクレジットが不足しています",
+        "providerConnectionDescription": "「設定 > モデル」でアカウントを再接続または更新してから、再試行してください。",
+        "providerQueueTimeoutTitle": "モデルの起動が間に合いませんでした",
+        "providerRateLimitedTitle": "モデルへのリクエストが多すぎます",
+        "providerServerErrorTitle": "モデルプロバイダーで一時的なエラーが発生しました",
+        "providerStreamTimeoutTitle": "モデルの応答がタイムアウトしました",
+        "reconnectTitle": "モデルアカウントを再接続",
         "resetsAt": "{{time}} にリセット",
+        "resetUsageRemaining": "リセット · 残り {{value}}",
+        "safetyDescription": "このリクエストはモデルの安全基準を満たしませんでした。表現を変えるか、別のモデルを選んでください。",
+        "safetyTitle": "モデルはこのリクエストに対応できませんでした",
         "selectModel": "モデルを切り替える",
-        "timeoutDescription": "この実行は時間制限に達しました。続行して作業を続けてください。",
+        "sessionHistoryTitle": "このチャットは上限に達しました",
+        "termsDescription": "Claude で最新の利用規約に同意してから、こちらで再試行してください。",
+        "termsTitle": "Claude の規約への同意が必要です",
+        "timeoutDescription": "停止したところから続けられます。",
         "timeoutTitle": "時間制限に達しました",
         "tryAgain": "もう一度試す",
-        "unavailableDescription": "このモデルは接続中の ChatGPT アカウントではサポートされていません。続行するには別のモデルに切り替えてください。",
+        "unavailableDescription": "このプロバイダーアカウントで使える別のモデルを選んでください。",
         "unavailableTitle": "選択したモデルは利用できません",
         "usageDescription": "使用制限がリセットされた後に続行するか、今すぐ別のモデルに切り替えられます。",
-        "usageTitle": "{{framework}} の使用制限に達しました"
+        "usageFallbackTitle": "モデルプロバイダーの上限に達しました",
+        "usageTitle": "{{framework}} の使用制限に達しました",
+        "weeklyReset": "週間上限は {{time}} にリセット"
       },
-      "runCancelled": "考えの途中で一時停止しました。いつでも元に戻してください。"
+      "runCancelled": "実行を一時停止しました。再開できます。"
     },
     "feedback": {
       "emailDraftDescription": "メールの下書き",
@@ -1977,6 +1953,10 @@
       "newTasksAvailable": "新しいタスクがあります",
       "newThread": "新しいチャット",
       "reload": "タスクを再読み込み"
+    },
+    "lastReadMarker": {
+      "previouslyRead": "前回ここまで読みました",
+      "unread": "未読メッセージ"
     },
     "mail": {
       "bcc": "BCC",
@@ -2017,11 +1997,13 @@
     "newChat": "新しいチャット",
     "origins": {
       "agentphone": "iMessage",
+      "discord": "Discord",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "オープンチャット",
       "openChatIn": "{{integration}}でチャットを開く",
+      "openDiscordMessage": "Discord で元のメッセージを開く",
       "openFeishuChat": "Feishu で元のチャットを開く",
       "openGithubMessage": "GitHub で元の Issue または Pull Request を開く",
       "openLarkChat": "Lark で元のチャットを開く",
@@ -2061,24 +2043,32 @@
       "aboutAutomationEvent": "このオートメーションイベントについて",
       "aboutQueuedMessage": "このキューに入れられたメッセージについて",
       "automationEvent": "オートメーションイベント",
-      "automationEventDescription": "キューに入れられたメッセージの後ろで待機し、現在の実行が終了すると実行されます。",
+      "automationEventDescription": "列に並んで待機し、開始できるようになると自動的に実行されます。",
       "cancellationRecoveryPending": "キュー内の作業を続行する前に、キャンセルされた実行の終了処理を行っています。",
       "event_one": "{{count}} イベント",
       "event_other": "{{count}} イベント",
-      "goal": "目標",
       "itemsWaiting": "{{items}} 待機中",
       "itemsWaitingTogether": "{{messages}} と {{events}} が待機中です",
       "message_one": "{{count}} メッセージ",
       "message_other": "{{count}} メッセージ",
       "pendingAutomationEvent": "保留中のオートメーションイベント",
       "queuedMessage": "キューに入れられたメッセージ",
-      "queuedMessageDescription": "列に並んで待機し、現在の実行が終了したら送信します。",
+      "queuedMessageDescription": "列に並んで待機し、開始できるようになると自動的に送信されます。",
       "removeQueuedMessage": "キューに入れられたメッセージを削除する",
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
-    "replaceDraft": {
-      "description": "続行すると、現在のコンポーザーの下書きが消去され、ワークフローのプロンプトが開始されます。",
-      "title": "コンポーザーの下書きを置き換えますか？"
+    "remoteAccess": {
+      "default": "既定",
+      "defaultEnabled": "チャットで既定で有効",
+      "enabledCount_other": "{{count}} 件有効",
+      "loadFailed": "リモートアクセスを読み込めませんでした。",
+      "loading": "リモートアクセスを読み込み中…",
+      "off": "オフ",
+      "on": "オン",
+      "requiresSsh": "SSH ホスト {{name}} へのアクセスも必要です。",
+      "retry": "再試行",
+      "title": "リモートアクセス",
+      "unavailableSsh": "利用できない SSH ホスト"
     },
     "run": {
       "collapseWorkHistory": "作業履歴を折りたたむ",
@@ -2095,12 +2085,13 @@
         "wrappedUp": "{{time}} で終了"
       },
       "duration": {
-        "hoursShort_one": "{{count}}h",
-        "hoursShort_other": "{{count}}h",
-        "minutesShort_one": "{{count}}m",
-        "minutesShort_other": "{{count}}m",
-        "secondsShort_one": "{{count}}s",
-        "secondsShort_other": "{{count}}s"
+        "hoursMinutesShort": "{{hours}}時間{{minutes}}分",
+        "hoursShort_one": "{{count}}時間",
+        "hoursShort_other": "{{count}}時間",
+        "minutesShort_one": "{{count}}分",
+        "minutesShort_other": "{{count}}分",
+        "secondsShort_one": "{{count}}秒",
+        "secondsShort_other": "{{count}}秒"
       },
       "expandWorkHistory": "作業履歴を展開",
       "fastModelName": "{{model}} Fast",
@@ -2118,24 +2109,14 @@
       "relatedArtifacts": "関連するアーティファクト",
       "selectedModelAppliesAfterCurrentRun": "選択した{{model}}モデルはこの実行後に適用されます",
       "thinking": {
-        "assembling": "部品を組み立て中...",
-        "brewing": "返答を作成中...",
-        "default": "考え中...",
-        "mapping": "それをマッピングする...",
-        "onIt": "その上で...",
-        "piecingTogether": "物事をつなぎ合わせる...",
-        "shaping": "応答を形成中...",
-        "sketching": "詳細をスケッチ中...",
-        "spinningUp": "スピンアップ中...",
-        "tuningIn": "チューニング中...",
-        "wiring": "配線を合わせてみると・・・"
+        "default": "考え中..."
       },
       "viewActivityLogs": "アクティビティログを表示する",
       "viewLangfuseTrace": "Langfuse トレースを表示",
       "viewLogs": "実行ログを表示する",
       "waitingIn": "待機中",
-      "workedFor": "{{duration}} で働いていました",
-      "workingFor": "{{duration}} 作業中"
+      "workedFor": "{{duration}}で働いていました",
+      "workingFor": "{{duration}}作業中"
     },
     "sharing": {
       "cancel": "キャンセル",
@@ -2146,10 +2127,12 @@
       "createFailed": "共有された会話を作成できませんでした。もう一度お試しください。",
       "deselectGroup": "メッセージグループの選択を解除",
       "linkCopied": "リンクをコピーしました",
+      "messageShareFailed": "共有リンクを作成できませんでした。もう一度お試しください。",
       "publicDescription": "選択したメッセージと添付ファイルが公開されます。",
       "selectedCount_other": "{{count}}件選択中",
       "selectGroup": "メッセージグループを選択",
       "shareLink": "共有された会話のリンク",
+      "shareLinkCopied": "共有リンクをコピーしました",
       "start": "メッセージを共有",
       "tooLarge": "共有するメッセージを減らしてください"
     },
@@ -2169,11 +2152,15 @@
       "deleteTitle": "チャットを削除しますか?",
       "draft": "草案",
       "empty": "会話を開始するとここに表示されます",
+      "inbox": "受信トレイ",
       "markUnread": "未読にする",
       "movePinDown": "下に移動",
       "movePinUp": "上に移動",
+      "mute": "チャットをミュート",
+      "muted": "ミュート中",
       "newChatWith": "{{agentName}} との新しいチャット",
       "noArchived": "アーカイブ済みのチャットはありません",
+      "noMuted": "ミュート中のチャットはありません",
       "noUnread": "未読のチャットはありません",
       "openChatMenu": "チャットメニューを開く",
       "openListMenu": "チャットリストメニューを開く",
@@ -2185,17 +2172,13 @@
       "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
       "unarchive": "アーカイブを解除",
+      "unmute": "ミュートを解除",
       "unpin": "チャットの固定を解除する",
       "unread": "未読",
       "unreadOnly": "未読"
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "次のコンテンツ用のプレゼンターを作る",
-          "prompt": "次の動画用に話すアバターのプレゼンターを作ってください。",
-          "title": "アバターを作る"
-        },
         "illustration": {
           "description": "好きなスタイルで仕上がったビジュアルを作る",
           "prompt": "指定するスタイルでイラストを作ってください。",
@@ -2206,11 +2189,6 @@
           "prompt": "渡すトピックや資料からプレゼン資料を作ってください。",
           "title": "プレゼン資料を作る"
         },
-        "video": {
-          "description": "アイデアや素材から完成した動画を作る",
-          "prompt": "私のアイデアや素材から完成した動画を作ってください。",
-          "title": "動画を作る"
-        },
         "website": {
           "description": "共有できるページを作って公開する",
           "prompt": "共有できるウェブページを作って公開してください。",
@@ -2219,7 +2197,36 @@
       },
       "openTemplatesAria": "テンプレートを見る",
       "startWithPrompt": "作成",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Claude Max 5x/20x や Codex のプランで",
+        "openSettingsAria": "モデル設定を開く",
+        "title": "タスクを無料で実行"
+      },
       "templates": "テンプレート"
+    },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "このリセット要求はすでに使用されています。",
+      "confirm_other": "{{count}} 回のリセット",
+      "confirmation": "リセットにはクレジットを1回分使用します。「リセット」をクリックした場合にのみ要求を送信します。",
+      "confirmUnknown": "— 回のリセット",
+      "credits_other": "残りのリセット回数：{{count}}",
+      "creditsUnknown": "残りのリセット回数：不明",
+      "error": "リセットに失敗しました。同じ要求を再試行してください。",
+      "expiresAt": "クレジットの有効期限：{{time}}",
+      "loadFailed": "サブスクリプションの使用量を読み取れませんでした。",
+      "loading": "サブスクリプションを読み込み中…",
+      "noCredit": "利用可能なリセットクレジットがありません。",
+      "nothingToReset": "リセットが必要な使い切った使用枠はありません。",
+      "reconnect": "「設定 > モデル」でこのサブスクリプションを再接続してください。",
+      "reset": "使用量をリセットしました。",
+      "resetting": "リセット中…",
+      "title": "Reset card",
+      "unavailable": "現在のワークスペースではこのサブスクリプションを利用できません。",
+      "unknown": "不明",
+      "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
     "taskChips": {
       "chooseTask": "タスクを選ぶ",
@@ -2546,7 +2553,7 @@
         "back": "ワークフローを見る",
         "browse": "ワークフローを見る",
         "close": "閉じる",
-        "contextPrefix": "重視したいこと：{{context}}",
+        "contextPrefix": "重視したいこと：{{preference}}",
         "items": {
           "competitors": {
             "cadence": "毎日または毎週",
@@ -2837,29 +2844,17 @@
       "importedLoading": "アップロード済みテンプレートを読み込み中…",
       "importedUnavailable": "アップロード済みテンプレートは一時的に利用できません。",
       "previewTemplate": "プレビュー テンプレート {{title}}",
-      "previewVideo": "プレビュービデオテンプレート {{title}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previewWorkflow": "ワークフロー テンプレートのプレビュー {{title}}",
       "removeTemplate": "テンプレート {{title}} を削除します",
-      "removeVideo": "ビデオ テンプレート {{title}} を削除します",
       "removeWebsite": "Web サイト テンプレート {{title}} を削除します",
       "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します",
-      "retry": "再試行",
-      "videoOptions": "動画オプション",
-      "videoOptionsAudio": "音声を生成",
-      "videoOptionsAudioOff": "音声オフ",
-      "videoOptionsAudioOn": "音声オン",
-      "videoOptionsDuration": "長さ",
-      "videoOptionsLabel": "動画オプション {{spec}}",
-      "videoOptionsModel": "モデル",
-      "videoOptionsRatio": "比率",
-      "videoOptionsResolution": "解像度"
+      "retry": "再試行"
     },
     "thread": {
       "ariaLabel": "チャットスレッド",
       "changeIcon": "アイコンの変更",
       "emoji": {
-        "archive": "アーカイブ",
         "done": "完了",
         "idea": "アイデア",
         "no": "いいえ",
@@ -2898,6 +2893,7 @@
       "checkingLimit": "音声入力制限を確認する",
       "cleanupFailed": "テキストは追加されましたが、保存済みの録音を削除できませんでした。",
       "confirmRecording": "完了",
+      "detectionFailed": "音声検出を利用できません。録音は保存されています。再試行してください。",
       "discarding": "音声の下書きを削除中...",
       "input": "音声入力",
       "inputLimitReached": "音声入力の制限に達しました。より高い制限を得るには、Pro または Team にアップグレードしてください。",
@@ -2906,6 +2902,7 @@
       "inputLimitReachedProMember": "音声入力の制限に達しました。より高い制限を得るには、ワークスペース管理者に Team へのアップグレードを依頼してください。",
       "inputLimitReachedReset": "音声入力の制限に達しました。制限がリセットされるまでお待ちください。",
       "microphoneAccessDenied": "マイクへのアクセスが拒否されました。マイクへのアクセスを許可して、再試行してください。",
+      "noSpeechDetected": "発話が検出されませんでした。もう一度録音してください。",
       "openingMicrophone": "マイクを開いて...",
       "removeDraft": "音声の下書きを削除",
       "restoreFailed": "音声の下書きを読み込めませんでした。再試行してください。",
@@ -2927,6 +2924,7 @@
   },
   "cloudflareAccess": {
     "add": "Cloudflare Access を追加",
+    "affectedMembers_other": "{{count}} 人のメンバー",
     "cancel": "キャンセル",
     "changed": "編集中にこの Cloudflare Access が変更されました。保存する前に最新の設定を確認してください。",
     "clientId": "Service Token のクライアント ID",
@@ -2934,38 +2932,56 @@
     "clientSecret": "Service Token のクライアントシークレット",
     "clientSecretPlaceholder": "Service Token の Client Secret を貼り付け",
     "configuration": "Cloudflare Access",
+    "convert": "個人用に変更",
+    "convertHelp": "この組織の Cloudflare Access は、作成者が別の人でも、操作しているあなた自身の個人用設定になります。Service Token はそのままで、自分の SSH ホストは接続を維持できます。",
+    "convertUncertain": "変更を確認できませんでした。再試行する前に最新の設定を確認してください。",
     "createNew": "新しい Cloudflare Access を作成",
     "delete": "Cloudflare Access を削除",
-    "deleteHelp": "未使用の Cloudflare Access を削除しますか？保存された Service Token は復元できません。",
-    "description": "Cloudflare Access サービストークンで保護されたアプリケーションにアクセスします。",
+    "deleteHelp": "この Cloudflare Access を削除しますか？保存された Service Token は復元できません。自分のホストは先に再バインドしてください。",
+    "deleteUncertain": "削除結果を確認できませんでした。再試行する前に最新の影響を確認してください。",
     "edit": "Cloudflare Access を編集",
-    "empty": "Cloudflare Access はまだありません。サービストークンを追加して保護されたアプリケーションにアクセスします。",
     "failed": "Cloudflare Accessの変更を保存できませんでした。再試行してください。",
-    "inUse": "この Cloudflare Access はホストが使用しています。対象ホストを確認し、先に別の設定に変更するか削除してください。",
-    "inUseHelp": "この Cloudflare Access を削除する前に、対象ホストに別の Cloudflare Access を選択するか、明示的に直接接続に切り替えるか、ホストを削除してください。",
+    "forbidden": "共有 Cloudflare Access を変更できるのは組織の管理者だけです。",
+    "hostCount_other": "SSH ホスト {{count}} 台",
+    "impactChanged": "この変更で影響を受けるホストが変わりました。再度確認する前に最新の影響を確認してください。",
+    "impactConfirm": "これらのメンバーの SSH ホストは保存されたままですが、所有者が再設定するか明示的に直接接続を選ぶまで接続できないことを理解しました。",
+    "impactSummary": "影響範囲：{{members}}、{{hosts}}。SSH ホストは保存されますが、所有者が再設定するか明示的に直接接続を選ぶまで接続できません。自動的に直接接続には切り替わりません。",
+    "inUse": "SSH ホストがこの Cloudflare Access を使用しています。ホストの所有者が先に別の設定へ再接続するか、ホストを削除する必要があります。",
+    "inUseHelp": "自分の SSH ホストがまだこの設定を使用しています。別の設定に再バインドするか、明示的に直接接続を選択するか、先にホストを削除してください。",
     "invalidInput": "一部のCloudflare Access設定が無効です。入力内容を確認して再試行してください。",
     "keepChanges": "このバージョンに自分の変更を適用",
     "latest": "最後に保存された設定",
     "loadFailed": "Cloudflare Access を読み込めませんでした。もう一度お試しください。",
     "loading": "Cloudflare Access を読み込み中…",
-    "manage": "Cloudflare Access を管理",
+    "memberIdentifier": "（ID {{identifier}}）",
     "missing": "この Cloudflare Access は利用できなくなりました。別のものを選択するか作成してください。",
     "name": "名前",
     "namePlaceholder": "例: 本番環境へのアクセス",
+    "nameUnavailable": "名前を取得できません",
+    "organization": "組織",
+    "organizationHelp": "この組織のメンバー全員がこのサービストークンを使用できます。変更できるのは管理者だけです。",
+    "personal": "個人",
+    "promote": "組織用に変換",
+    "promoteConfirm": "組織の全メンバーがこの Service Token を使用できるようになることを理解しました。",
+    "promoteHelp": "個人用 Cloudflare Access を組織と共有します。Service Token と自分の SSH ホストのバインドは維持されます。",
+    "promoteUncertain": "変換結果を確認できませんでした。この画面を閉じ、最新の設定を確認してから再試行してください。",
     "replace": "Service Token を置換",
     "resourceIdConflict": "このリソース ID は使用できません。フォームを閉じて開き直し、もう一度お試しください。",
     "retry": "再試行",
     "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
+    "reviewLatest": "最新の影響を確認",
     "revisionExhausted": "これ以上更新できません。新しく作成してください。",
     "save": "保存",
     "saveUncertain": "変更が保存されたか確認できませんでした。同じ内容で保存を再試行するか、閉じて一覧を確認してから追加し直してください。",
+    "scope": "使用できるユーザー",
+    "sectionEmpty": "ここにはまだ設定がありません。",
     "select": "Cloudflare Access を選択",
     "summary_other": "{{count}} 件の Cloudflare Access を設定済み",
     "title": "Cloudflare Access",
     "tokenHelp": "Cloudflare Access サービストークンで保護されたアプリケーションにアクセスします。",
     "unavailable": "このアカウントでは Cloudflare Access を利用できません。",
-    "unused": "使用中のホストはありません",
-    "usedBy_other": "{{count}} 台のホストが使用："
+    "unused": "あなたのホストでは使用されていません",
+    "usedBy_other": "あなたのホスト {{count}} 台が使用："
   },
   "connectors": {
     "access": {
@@ -3075,7 +3091,6 @@
       "connectAria": "{{connector}} を接続します",
       "connected": "接続済み",
       "connectionExpired": "接続が期限切れになりました",
-      "connectToContinue": "続行するにはこのアカウントを接続してください",
       "managePermissions": "権限の管理",
       "managePermissionsFor": "{{connector}} 権限を管理する",
       "optional": "オプション",
@@ -3145,7 +3160,6 @@
           "menu": "販売と事業"
         }
       },
-      "categoriesAria": "コネクタのカテゴリ",
       "description": "エージェントが使用できるようにサードパーティのサービスを接続します。",
       "descriptionWithCount": "エージェントが使用できる{{value}}個のサービスを接続します。",
       "directory": {
@@ -3164,8 +3178,6 @@
       "empty": {
         "agent": "このエージェントにはコネクタがありません",
         "connected": "コネクタが接続されていません",
-        "matching": "{{message}} が「{{search}}」に一致",
-        "notConnected": "接続するコネクタが残っていない",
         "search": "「{{search}}」に一致するコネクタはありません",
         "unshared": "すべてのコネクタがいずれかのエージェントと共有されています"
       },
@@ -3175,14 +3187,10 @@
         "all": "すべて",
         "allAgents": "すべてのエージェント",
         "aria": "フィルターコネクター",
-        "connected": "接続済み",
-        "notConnected": "接続されていません",
-        "status": "ステータス",
         "unshared": "どのエージェントとも共有されていません"
       },
       "filterWith": "フィルタ: {{category}}",
       "iconUnavailable": "コネクタアイコンが使用不可",
-      "newConnector": "新しいコネクタ",
       "noConnectorsAlt": "コネクターなし",
       "otherCategory": "その他",
       "remoteAccess": "リモートアクセス",
@@ -3209,10 +3217,6 @@
         "seeMore_one": "{{names}} ほか {{count}} 件を見る",
         "seeMore_other": "{{names}} ほか {{count}} 件を見る",
         "top": "人気のコネクタ"
-      },
-      "tabs": {
-        "builtin": "内蔵",
-        "custom": "カスタム"
       },
       "title": "コネクター",
       "unnamedAgent": "無名"
@@ -3353,7 +3357,6 @@
       "edit": {
         "title": "カスタムコネクタの編集"
       },
-      "emptyAdmin": "カスタム コネクタはまだありません。すべてのメンバーが使用する API を登録するために作成します。",
       "emptyMember": "組織はまだカスタム コネクタを登録していません。",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -3438,7 +3441,7 @@
         "invalidSignature": "このリンクの署名は無効です。",
         "invalidTimestamp": "このリンクのタイムスタンプは無効です。",
         "invalidTitle": "接続リンクが無効です",
-        "risk": "SMS および MMS の返信は確実に配信されない可能性があります。最も信頼性の高いエクスペリエンスを得るには、この AgentPhone 番号で iMessage を使用してください。",
+        "risk": "SMS および MMS の返信は確実に配信されない可能性があります。最も信頼性の高いエクスペリエンスを得るには、この番号で iMessage を使用してください。",
         "successDescription": "{{phone}} が接続されています。テキスト メッセージを送信して、{{assistantName}} とのチャットを開始します。",
         "successTitle": "接続された電話番号"
       },
@@ -3521,21 +3524,12 @@
         "alreadyDescriptionNamed": "すでに {{bot}} に接続されています。 Telegram でメッセージを送信してチャットを開始してください。",
         "alreadyTitle": "すでに Telegram に接続されています",
         "back": "Telegram 設定に戻る",
-        "botFallback": "このボット",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Telegram 接続を確認するまでお待ちください。",
         "checkingConnectionTitle": "接続を確認しています...",
-        "checkingDomain": "ドメインのステータスを確認しています...",
         "checkingSession": "{{brandName}} セッションを確認するまでお待ちください。",
         "connectDescription": "アカウントをこの Telegram ボットにリンクすると、Telegram からエージェントと直接対話できるようになります。",
         "connectTitle": "Telegram に接続します",
         "continue": "Telegram に進みます",
-        "domainDescription": "Telegram Web ログインは {{bot}} に対して有効になっていません。",
-        "domainIn": "で ",
-        "domainInstructionsAfter": "、ボットを選択し、ドメインを次のように設定します。",
-        "domainKeepOpen": "ドメインを保存した後、このページを開いたままにしてください。 /connect を使用して Telegram から接続することもできます。",
-        "domainSend": "、送信します ",
-        "domainTitle": "Telegram ログイン ドメインを設定する",
         "errorFallback": "Telegram に接続できませんでした。 Telegram から再試行してください。",
         "invalidSignature": "このリンクの署名は無効です。",
         "invalidTimestamp": "このリンクのタイムスタンプは無効です。",
@@ -3545,9 +3539,7 @@
         "linkIncomplete": "Telegram から新しい /connect リンクを開いて、再試行してください。",
         "linkIncompleteTitle": "接続リンクが不完全です",
         "open": "Telegram を開く",
-        "openBotFather": "BotFatherを開く",
         "refresh": "このページを更新して、もう一度お試しください。",
-        "setDomainCommand": "/setdomain",
         "signInButton": "{{brandName}} にサインインします",
         "signInCheckFailed": "サインインを確認できませんでした",
         "signInDescription": "この Telegram ユーザーに接続する前に、{{brandName}} アカウントを使用してください。",
@@ -3560,9 +3552,10 @@
       "agentphone": {
         "authorizedSender": "承認された送信者",
         "codeExpiry": "10分後に期限切れになります",
+        "codeLabel": "コード",
         "connectAria": "電話を接続する",
-        "connectDescription": "コードをスキャンするか「メッセージ」を開き、入力済みのコードを送信してください。",
-        "connectTitle": "電話を接続する",
+        "connectDescription": "カメラでスキャンし、入力済みのコードを送信してください。",
+        "connectTitle": "iPhone から {{assistantName}} にメッセージ",
         "copyAria": "{{phone}} をコピーします",
         "copyCodeAria": "接続コード {{code}} をコピー",
         "copyCodeError": "接続コードをコピーできませんでした",
@@ -3573,80 +3566,16 @@
         "creatingCode": "接続コードを作成中…",
         "description": "{{assistantName}} へのテキスト メッセージ アクセス",
         "destination": "iMessage または SMS で",
-        "manualSend": "または",
-        "manualSendTo": "を次の番号に送信：",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
         "qrTitle": "スキャンして、接続コードが入力された「メッセージ」を開く",
         "risk": "可能な場合は iMessage を使用してください。SMS および MMS の返信は確実に届かないことがあります。",
+        "sendToLabel": "送信先",
         "tryAgain": "もう一度試す"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activated": "アクティブ化された",
-          "activeCatalogDigest": "アクティブなカタログダイジェスト",
-          "activeVersion": "アクティブなバージョン",
-          "evaluated": "評価済み",
-          "evaluation": "評価",
-          "executableCapabilityDigest": "実行可能機能のダイジェスト",
-          "failureCode": "障害コード",
-          "filteredAuthMethods": "フィルタリングされた認証方法",
-          "lastAttempt": "最後の試み",
-          "lastAttemptAt": "最後の試み",
-          "lastSuccess": "最後の成功",
-          "missingVersions": "欠落しているバージョン",
-          "rejectedCatalogDigest": "拒否されたカタログダイジェスト",
-          "rejectedVersion": "拒否されたバージョン",
-          "rejectingBackend": "バックエンドを拒否しています",
-          "rejectionCache": "拒否キャッシュ",
-          "rejectionFailure": "拒否失敗",
-          "syncState": "同期状態",
-          "unownedSecrets": "所有されていないシークレット",
-          "unownedVariables": "所有されていない変数",
-          "unresolvedBridgeCredentials": "未解決のブリッジ認証情報"
-        },
-        "loading": "読み込み中",
-        "none": "なし",
-        "notReused": "再利用されない",
-        "reused": "再利用",
-        "sections": {
-          "compatibility": "互換性",
-          "credentialStorage": "認証情報のストレージ",
-          "rejectedCandidate": "拒否された候補者"
-        },
-        "title": "コネクタカタログ",
-        "unavailable": "利用不可",
-        "values": {
-          "accepted": "承認されました",
-          "current": "現在",
-          "digestMismatch": "ダイジェストの不一致",
-          "invalidArtifact": "無効なアーティファクト",
-          "invalidCompression": "無効な圧縮",
-          "invalidJson": "無効な JSON",
-          "invalidPointer": "無効なポインタ",
-          "invalidReference": "無効な参照",
-          "missingAccessProvider": "アクセスプロバイダーがありません",
-          "missingGrantProvider": "助成金提供者が不足している",
-          "missingPlatformConfiguration": "プラットフォーム構成がありません",
-          "missingRevokeProvider": "取り消しプロバイダーがありません",
-          "neverSynced": "決して同期しない",
-          "objectTooLarge": "オブジェクトが大きすぎます",
-          "providerContractMismatch": "プロバイダ契約の不一致",
-          "publicLeakage": "公然漏洩",
-          "rejected": "拒否されました",
-          "relationshipMismatch": "関係の不一致",
-          "sourceUnavailable": "ソースが利用できません",
-          "stale": "古い",
-          "unchanged": "変わらない",
-          "unsupportedProtocol": "サポートされていないプロトコル",
-          "unsupportedSchema": "サポートされていないスキーマ"
-        }
-      },
       "errors": {
-        "githubAuthorizationWindow": "認証ウィンドウを開けませんでした",
-        "telegramDomain": "ドメインはまだ Telegram に表示されていません。 BotFather を確認して再試行してください。",
-        "telegramPrivacy": "プライバシーモードはまだオンになっているようです。 BotFather でこれをオフにして、もう一度試してください。"
+        "githubAuthorizationWindow": "認証ウィンドウを開けませんでした"
       },
       "feishu": {
         "addBot": "ボットの追加",
@@ -3914,83 +3843,21 @@
         "uninstallTitle": "Lark ボットをアンインストールしますか?"
       },
       "telegram": {
-        "addBot": "ボットの追加",
-        "addDescription": "BotFather の各手順を完了してから、ワークスペース ボットを作成します。",
-        "adding": "追加中...",
-        "addTitle": "Telegram ボットを追加",
-        "agentAria": "{{bot}} のデフォルト エージェント",
         "backToIntegrations": "統合に戻る",
         "botFallback": "Telegram ボット",
-        "bots": "Telegram ボット",
-        "botToken": "ボットトークン",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "確認中...",
-        "copied": "コピーしました！",
-        "copyAria": "{{value}} をコピーします",
-        "copyTitle": "クリックしてコピー",
-        "create": {
-          "description": "{{brandName}} は、このボットを登録し、その Webhook を構成します。セットアップ後、グループ内でボットにメンションするか、DM を送信して、選択したエージェントと会話します。",
-          "descriptionNamed": "{{brandName}} は {{bot}} を登録し、その Webhook を構成します。セットアップ後、グループ内でボットにメンションするか、DM を送信して、選択したエージェントと会話します。",
-          "title": "統合を作成する準備ができました"
-        },
-        "defaultAgent": "デフォルトエージェント",
         "disconnectAria": "{{bot}} を切断します",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "ドメインが検出されました",
-          "instructionAfter": "、このボットを選択し、ドメインを次のように設定します。 ",
-          "instructionEnd": "。 Telegram は、このドメインを使用して、このボットの接続フローを許可します。",
-          "instructionStart": "{{botFather}} で、送信します ",
-          "title": "Telegram ログイン ドメインを設定する"
-        },
-        "emptyDescription": "ボット トークンを追加して、Telegram メッセージのエージェントへのルーティングを開始します。",
-        "emptyTitle": "Telegram ボットはまだありません",
-        "invalidTokenDescription": "BotFather からの新しいトークンを使用してボットを再インストールします。",
         "loadError": "Telegram 設定を読み込めませんでした。",
         "moreOptions": "{{bot}} のその他のオプション",
-        "newBotToken": "新しいボットトークン",
         "notConnected": "接続されていません",
         "officialBot": "Telegram 公式ボット",
         "officialDescription": "{{brandName}} が提供する公式 bot。",
         "officialMissing": "公式ボット設定がありません。",
-        "pageDescription": "このワークスペースのボット ルーティングを管理する",
-        "privacy": {
-          "instructionAfter": "、このボットを選択し、プライバシー モードを無効にします。これにより、エージェントはメンションや返信に関するグループのコンテキストを読み取ることができます。",
-          "instructionStart": "{{botFather}} で、送信します ",
-          "off": "プライバシーモードがオフになっています",
-          "title": "オプション: プライバシー モードをオフにする"
-        },
-        "registerAria": "Telegram ボットを登録する",
-        "reinstall": "再インストール",
-        "reinstallDescription": "{{bot}} の新しい BotFather トークンを貼り付けます。トークンはこの同じボットに属している必要があります。",
-        "reinstalling": "再インストール中...",
-        "reinstallTargetFallback": "このボット",
-        "reinstallTitle": "Telegram ボットを再インストールします",
-        "selectAgent": "エージェントの選択",
-        "steps": {
-          "back": "戻る",
-          "create": "作成",
-          "domain": "ドメイン",
-          "next": "次へ",
-          "privacy": "プライバシー",
-          "token": "トークン"
-        },
-        "token": {
-          "instructionAfter": "、名前とユーザー名を選択し、以下のトークンを貼り付けます。",
-          "open": "開く ",
-          "send": "、送信します ",
-          "title": "BotFather でボット トークンを作成する",
-          "verified": "トークンが検証されました"
-        },
-        "tokenInvalid": "トークンが無効です",
-        "uninstallAria": "{{bot}} をアンインストールします",
-        "uninstallDescription": "これにより、ワークスペースから {{bot}} が削除され、それを使用するユーザーの Telegram アクセスが切断されます。この操作は元に戻すことができません。",
-        "uninstallTargetFallback": "このボット",
-        "uninstallTitle": "Telegram ボットをアンインストールしますか?"
+        "pageDescription": "このワークスペースのボット ルーティングを管理する"
       },
       "toasts": {
-        "agentphoneConnected": "エージェントフォンが接続されました",
-        "agentphoneDisconnected": "AgentPhone が切断されました",
+        "agentphoneConnected": "電話番号が接続されました",
+        "agentphoneDisconnected": "電話番号の接続が解除されました",
         "slackConnected": "Slack は正常に接続されました",
         "slackDisconnected": "Slack から切断されました",
         "slackInstalled": "Slack は正常にインストールされました",
@@ -4002,12 +3869,7 @@
         "teamsInstalled": "Microsoft Teams は正常にインストールされました",
         "teamsUninstalled": "Microsoft Teams 統合がアンインストールされました",
         "teamsUpdated": "Microsoft Teams が更新されました",
-        "telegramAgentUpdated": "デフォルトエージェントが更新されました",
-        "telegramBotAdded": "Telegram ボットが追加されました",
-        "telegramBotReinstalled": "Telegram ボットが再インストールされました",
-        "telegramBotUninstalled": "Telegram ボットがアンインストールされました",
-        "telegramDisconnected": "Telegram アカウントが切断されました",
-        "telegramUpdatingAgent": "デフォルトのエージェントを更新しています..."
+        "telegramDisconnected": "Telegram アカウントが切断されました"
       },
       "works": {
         "connected": "接続済み",
@@ -4032,9 +3894,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "リクエストが失敗しました"
-    },
-    "realtime": {
-      "degraded": "ライブアップデートで問題が発生しました。ページを更新してください。"
     }
   },
   "invitationRedirect": {
@@ -4115,131 +3974,66 @@
     }
   },
   "onboarding": {
-    "categories": {
-      "ceo": {
-        "description": "説明会と全体像",
-        "title": "代表取締役社長"
-      },
-      "data": {
-        "description": "ダッシュボード、メトリクス、クエリ",
-        "title": "データ"
-      },
-      "engineering": {
-        "description": "コードの出荷、デバッグ、自動化",
-        "title": "エンジニア"
-      },
-      "everyone": {
-        "description": "メール、カレンダー、会議",
-        "title": "すべて"
-      },
-      "marketing": {
-        "description": "コンテンツ、SEO、キャンペーン",
-        "title": "マーケティング"
-      },
-      "operations": {
-        "description": "プロジェクト、スケジュール設定、同期",
-        "title": "運営"
-      },
-      "product": {
-        "description": "仕様、リリース、フィードバック",
-        "title": "プロダクト"
-      },
-      "sales": {
-        "description": "パイプラインとアウトリーチ",
-        "title": "セールス"
-      },
-      "support": {
-        "description": "チケットとカスタマーサポート",
-        "title": "サポート"
-      }
-    },
     "common": {
-      "back": "戻る",
-      "continue": "続ける",
-      "dialogPreview": "{{title}} プレビュー",
-      "gotIt": "わかりました",
       "next": "次へ",
-      "previewWorkflowDetails": "ワークフローの詳細をプレビューする",
-      "selectTemplate": "このテンプレートを選択してください",
-      "selectThisTemplate": "このテンプレートを選択してください",
       "stepProgress": "ステップ {{current}}/{{total}}"
     },
     "documentTitles": {
-      "chooseImage": "画像スタイルを選択してください",
-      "choosePresentation": "プレゼンテーションテンプレートを選択してください",
-      "chooseVideo": "ビデオスタイルを選択してください",
-      "chooseWorkflow": "ワークフローを選択する",
-      "make": "{{brandName}} へようこそ",
-      "runImage": "最初のイメージを作成する",
-      "runPresentation": "最初のプレゼンテーションを作成する",
-      "runVideo": "初めてのビデオを作成する",
-      "runWorkflow": "最初のワークフローを実行する"
+      "make": "{{brandName}} へようこそ"
     },
     "make": {
-      "description": "開始点を選択すれば、他のことは後で行うことができます。",
-      "options": {
-        "explore": {
-          "description": "私のツールに接続するだけです",
-          "title": "自分で調べてみます"
-        },
-        "images": {
-          "description": "高品質のビジュアルを作成する",
-          "title": "画像の生成"
-        },
-        "presentation": {
-          "description": "スライドとスピーカーを生成する",
-          "title": "プレゼンテーションを生成する"
-        },
-        "slack": {
-          "description": "ワークスペースでAIチームメイトとチャット",
-          "title": "SlackでOkouとチャット"
-        },
-        "video": {
-          "description": "あなたのアイデアをビデオに変換しましょう",
-          "title": "映像制作"
-        },
-        "website": {
-          "description": "共有できるページを作って公開する",
-          "title": "ウェブサイトを作る"
-        },
-        "workflow": {
-          "description": "プリセットテンプレートから探索する",
-          "title": "ワークフローのオートメーション"
-        }
-      },
-      "projectTypeLabel": "最初のプロジェクトの種類",
       "promptDescription": "以下で調整するか、そのまま実行します。 {{assistantName}} はここから取得します。ツールはサンドボックスに保たれ、ワークスペースから何も出なくなります。",
       "promptLabel": "オンボーディングプロンプト",
-      "promptTitle": "このプロンプトを試してください",
-      "title": "最初に何を作りたいですか"
-    },
-    "runAction": {
-      "checkingPlan": "計画の確認",
-      "runNow": "今すぐ実行",
-      "upgradePro": "実行するには Pro をアップグレードしてください"
+      "promptTitle": "このプロンプトを試してください"
     },
     "sourcesFirst": {
+      "chatChannels": {
+        "connectedTitle": "チャットが接続されました",
+        "copy": "Okou に直接メッセージを送るか、チームのチャットに追加しましょう。使い慣れた方法を選べます。",
+        "imessageConnected": "iMessage が接続されました",
+        "imessageCopy": "メッセージひとつで仕事を進められます。",
+        "imessageExpired": "接続コードの有効期限が切れました。",
+        "imessageRefresh": "新しいコードを取得",
+        "imessageScan": "iPhone のカメラで読み取り、入力済みのメッセージを送信してください。",
+        "imessageTitle": "iMessage で Okou とチャット",
+        "othersLabel": "こちらでも利用できます",
+        "title": "メッセージで Okou とつながる"
+      },
       "common": {
         "back": "戻る",
         "continue": "次へ",
-        "finish": "セットアップを完了",
-        "notNow": "後で",
-        "skip": "今はスキップ"
+        "notNow": "後で"
+      },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "セキュリティの詳細",
+        "status": {
+          "aligned": "整合",
+          "compliant": "準拠",
+          "inProgress": "進行中"
+        },
+        "title": "安心して使えるための、Okou のコンプライアンス"
       },
       "documentTitles": {
         "experience": "AI の利用経験",
         "industry": "分野を選ぶ",
         "ready": "Okou の準備ができました",
         "skills": "スキルをインポート",
-        "slack": "Okou を Slack に追加",
         "sources": "仕事をつなぐ",
-        "team": "メンバーを招待"
+        "team": "チームメンバーを招待"
       },
       "experience": {
-        "copy": "すでに払っているプランをつなげば、仕事は Okou クレジットではなくそちらで動きます。",
-        "no": "いいえ、はじめてです",
-        "noCopy": "Okou が最初のタスクを選びます。",
-        "title": "Codex か Claude Code を使ったことはありますか？"
+        "copy": "ガイド付きで始めるか、利用中の Codex または Claude Code のプランを使えます。",
+        "no": "AI エージェントは初めてです",
+        "noCopy": "Okou が役立つ最初のタスク選びをお手伝いします。",
+        "title": "Okou をどう使い始めますか？",
+        "trust": "タスクは Okou クレジットではなく、お使いの Codex または Claude Code のプランで実行されるため、使用量を気にせず活用できます。今でも後からでも接続できます。"
       },
       "industries": {
         "coaching": {
@@ -4288,23 +4082,58 @@
         }
       },
       "industry": {
-        "copy": "最初のタスクと、その出発点になるデータソースを選ぶために使います。",
+        "copy": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。分野を選ぶと、合った最初のタスクを提案します。",
         "title": "どんな仕事をしていますか？"
+      },
+      "prompt": {
+        "intro": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。"
       },
       "skills": {
         "copied": "コピーしました",
-        "copy": "このプロンプトを自分の {{provider}} のセッションに貼り付けると、手元のスキルが Okou に取り込まれます。",
+        "copy": "{{provider}} でこのプロンプトを実行して作成済みのスキルを取り込むと、Okou ですぐに使えます。",
         "copyError": "プロンプトをコピーできませんでした。",
         "copyPrompt": "プロンプトをコピー",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Claude アプリを開き、{{control}} タブに切り替える",
+            "openAppNote": "Code はお使いのコンピューター上で動くため、スキルのフォルダを読み取れます。",
+            "stayLocal": "セッションを {{control}} のままにする",
+            "stayLocalNote": "Chat やクラウドのセッションからは、お使いのコンピューター上のファイルは見えません。"
+          },
+          "codex": {
+            "keepOpen": "スキルが下に表示されるまで開いたままにする",
+            "openApp": "Codex アプリを開き、{{control}} を始める",
+            "openAppNote": "スキルのフォルダを読み取れるよう、お使いのコンピューター上のアプリを使ってください。"
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "プロンプトをコピーする",
+          "label": "プロンプトを実行する場所",
+          "paste": "プロンプトを貼り付けて送信する",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "プロンプト全文を隠す",
         "importedCopy": "Okou のワークフローとしてインポートしました。",
+        "importedCount_other": "{{count}} 件インポート済み · 続きを待っています",
         "importedLabel": "インポートしたスキル",
         "importedTitle": "スキルが Okou に入りました",
         "preparing": "インポートセッションを開いています…",
         "promptCopy": "手元のスキルを読み取り、Okou に書き込みます。",
         "promptLabel": "スキルインポート用プロンプト",
         "promptTitle": "{{provider}} で実行してください",
+        "showFullPrompt": "プロンプト全文を表示",
         "startError": "インポートセッションを開けませんでした。",
-        "title": "すでに書いたスキルを持ち込む。",
+        "title": "作成済みのスキルを Okou に取り込む",
         "tryAgain": "もう一度試す",
         "waiting": "インポートされたスキルは、届き次第ここに表示されます。"
       },
@@ -4313,44 +4142,18 @@
         "channelAdminRequired": "{{channel}} に Okou を追加するよう、ワークスペースの管理者に依頼してください。",
         "channelUnavailable": "{{channel}} はこのワークスペースではまだ利用できません。",
         "connectAction": "Slack に接続",
-        "connectedCopy": "Slack で @Okou とメンションすれば仕事を任せられます。",
         "connectedStatus": "ワークスペースに追加済み",
-        "connectedTitle": "Slack に接続しました",
-        "copy": "一度追加すれば、仕事が動いている場所で @Okou と呼ぶだけです。",
         "name": "Slack",
         "otherAdded": "追加済み",
         "otherImessage": "iMessage",
-        "othersLabel": "後からでも、今でも追加できます",
         "otherTeams": "Teams",
-        "otherTelegram": "Telegram",
-        "previewAppBadge": "APP",
-        "previewAsk": "先週の登録数をソース別に集めて、広告アカウントと突き合わせて、表をスプレッドシートにまとめて。",
-        "previewAskAuthor": "Mia Chen",
-        "previewChannel": "# growth",
-        "previewChannelGeneral": "# general",
-        "previewChannelLaunch": "# launch",
-        "previewChannelsLabel": "チャンネル",
-        "previewChannelTopic": "今週の数字と次にリリースするもの",
-        "previewComposer": "#growth へのメッセージ",
-        "previewContext": "取締役会は木曜なのに、先週の数字をまだ出せていません。",
-        "previewContextAuthor": "Dan Rivera",
-        "previewContextTime": "9:06 AM",
-        "previewDirectMessagesLabel": "ダイレクトメッセージ",
-        "previewMention": "@Okou",
-        "previewReplies": "返信 3 件",
-        "previewReply": "先週の登録は 1,284 件、前週の 1,088 件から 18% 増です。シートはスレッドにあります。",
-        "previewReplyAuthor": "Okou",
-        "previewReplyTime": "9:16 AM",
-        "previewTime": "9:14 AM",
-        "previewWorkspace": "Northwind",
-        "rowCopy": "追加したチャンネルならどこでも動きます。",
-        "rowTitle": "Okou for Slack",
-        "title": "Slack から離れずに Okou へ仕事を任せる。"
+        "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "クラウドで、チームがすでに使っているツールから動きます。成果は 10 倍、運用の手間は少なく、コストは低く。まずはソースを 1 つつないでください。",
-        "note": "どのアカウントをつなぐかはあなたが選びます。",
-        "title": "Okou はあなたのため、そしてチーム全員で使うためのものです。"
+        "copy": "Okou はあなたの仕事を知るほど賢くなります。毎日使うツールを接続して、実際の仕事に基づいたタスクから始めましょう。",
+        "permissions": "Okou は最初のタスクを最適化するために少量の情報を使います。Agent に何をどのくらいの期間任せるかは、あなたが決められます。",
+        "securityLink": "Okouのデータ保護について",
+        "title": "仕事のツールを接続"
       },
       "startingPrompt": {
         "exact": {
@@ -4684,1213 +4487,39 @@
         "connecting": "接続中…",
         "failedNote": "{{provider}} をつなげませんでした。もう一度試すか、あとでつなげます。",
         "retry": "もう一度試す",
-        "rowCopy": "Okou クレジットではなく、このプランで動きます。",
+        "rowCopy": "接続すると、Okouクレジットではなく自分のプランで実行できます。",
         "unconfirmedNote": "{{provider}} の接続を確認できませんでした。もう一度試すか、あとでつなげます。"
       },
       "team": {
-        "copy": "今すぐ誘っても、後からワークスペースのメニューで誘ってもかまいません。",
+        "copy": "チームメンバーを招待してワークフローを共有しましょう。ツールはそれぞれが自分で接続します。",
+        "invalidEmail": "有効なメールアドレスを入力してください",
         "invite": "招待を送る",
         "invited": "招待済み",
-        "label": "メンバーのメールアドレス",
-        "note": "このワークスペースに参加します。相手のアカウントは相手のものです。",
+        "label": "チームメンバーのメールアドレス",
+        "note": "すぐに Okou を使い始められます。",
         "notSent": "未送信",
-        "panelTitle": "メンバーを招待",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "チームメンバーを招待",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "相手のつないだアカウントは相手のもの。本人の許可なく共有されません。",
-          "workflows": "ここにいる人は、このワークスペースのワークフローを実行できます。",
-          "workspace": "このワークスペースに参加し、いま接続したソースをそのまま使えます。"
+          "accounts": "必要に応じて自分のツールを接続します。",
+          "workflows": "チームが作成したワークフローをすべて実行できます。",
+          "workspace": "あなたのワークスペースに参加します。"
         },
         "sending": "送信中…",
-        "title": "この仕事をしている人たちを一緒に。"
+        "title": "チーム全員で Okou を活用しましょう"
       },
       "welcome": {
-        "copy": "いま接続した仕事に合わせて選んだ、最初のタスクから始めましょう。",
-        "offerTitle": "最初の 1 時間のコンサルティングは無料、さらに最大 100 クレジット —",
+        "copy": "仕事に合わせた提案を確認し、目的に合わせて調整してから Okou に任せましょう。",
         "promptLabel": "最初のプロンプト",
         "start": "Okou を使い始める",
-        "title": "Okou の準備ができました"
-      }
-    },
-    "templatePicker": {
-      "image": {
-        "description": "作りたいイメージの参考にしてください。",
-        "selectTemplate": "{{title}} イラスト テンプレートを選択します",
-        "showVariant": "{{title}} バリアント {{variant}} を表示",
-        "title": "開始するイラストのテンプレートを選択してください"
-      },
-      "presentation": {
-        "description": "作成したいデッキの参考にしてください。",
-        "nextSlide": "次のスライドを表示",
-        "previousSlide": "前のスライドを表示",
-        "selectTemplate": "{{title}} プレゼンテーション テンプレートを選択します",
-        "showSlide": "スライドを表示 {{slide}}",
-        "slideAlt": "{{title}} スライド {{slide}}",
-        "title": "開始するプレゼンテーション テンプレートを選択してください",
-        "viewTemplate": "{{title}} プレゼンテーションを表示する"
-      },
-      "video": {
-        "description": "作成したい動画の参考にしてください。",
-        "selectTemplate": "{{title}} ビデオ テンプレートを選択します",
-        "title": "開始するビデオテンプレートを選択してください"
-      }
-    },
-    "templateRun": {
-      "image": {
-        "noteLabel": "カスタムイラストシーン",
-        "notePlaceholder": "カスタムシーンを追加して、独自のイラストとリミックスします",
-        "previewLabel": "イラストテンプレートのプレビュー",
-        "title": "試してみたいオートメーションを 1 つ選択してください"
-      },
-      "presentation": {
-        "noteLabel": "プレゼンテーションの内容と指示",
-        "notePlaceholder": "プレゼンテーションの内容と説明を追加します",
-        "previewLabel": "プレゼンテーションテンプレートのプレビュー",
-        "title": "プレゼンテーションを充実させる"
-      },
-      "video": {
-        "noteLabel": "カスタムビデオプロンプト",
-        "notePlaceholder": "カスタム プロンプトを追加して、独自のビデオとリミックスします",
-        "previewLabel": "ビデオテンプレートのプレビュー",
-        "title": "ビデオをカスタマイズする"
-      }
-    },
-    "templates": {
-      "illustration": {
-        "cozy-parlor": "コージーパーラー",
-        "crowd-ink": "クラウドインク",
-        "editorial-flatfolk": "社説フラットフォーク",
-        "emboss-deboss": "エンボス＆デボス",
-        "endpaper": "見返し",
-        "flat-poster": "フラットポスター",
-        "folk-muse": "フォークミューズ",
-        "folk-storybook": "民話の本",
-        "grain-poster": "穀物ポスター",
-        "grainy-duotone": "粒子の粗いデュオトーン",
-        "iberian-vignette": "イベリコのビネット",
-        "ink-mascot": "インクマスコット",
-        "ink-storefront": "インクの店頭",
-        "inkdab": "インクダブ",
-        "inkstomp": "インクストンプ",
-        "iso-scene": "イソシーン",
-        "jade-blockprint": "翡翠のブロックプリント",
-        "light-pop-portrait": "ライトポップポートレート",
-        "loose-contour": "緩やかな輪郭",
-        "mellow-pop": "メロウポップ",
-        "mosaic-still-life": "モザイク静物画",
-        "notion-illustration": "Notionの図",
-        "op-ed-cover": "論説表紙",
-        "painterly-botanical": "絵画的な植物",
-        "papernook": "ペーパーヌック",
-        "postcard-illustration": "ポストカードイラスト",
-        "riso-relic": "リソレリック",
-        "shadow-pop": "シャドウポップ",
-        "soft-vector": "ソフトベクトル",
-        "sticker-sheet": "ステッカーシート",
-        "sunlit-gouache": "サンライトガッシュ",
-        "tiny-wanderer": "小さな放浪者"
-      },
-      "presentation": {
-        "bloom-pitch": "ペタルピッチ",
-        "blueprint-academy": "製図キャンパス",
-        "botane-organic-deck": "モーブガーデン",
-        "business-data-presentation": "ベリーダッシュボード",
-        "crayon-learning-deck": "クレヨンの落書き",
-        "creative-agency-presentation": "紅葉ギャラリー",
-        "data-report-presentation": "キャンディチャート",
-        "editorial-magazine-deck": "紙の雑誌",
-        "landing-consulting-deck": "ネオンブラウザ",
-        "lumina-creative-studio": "ブラシステッカー",
-        "meridian": "コバルトブロック",
-        "mosaic-geometric-pitch": "バウハウスタイル",
-        "neo-brutalism": "シャドウショップ",
-        "nocturne": "ミッドナイトステージ",
-        "pixel-glitch": "アーケードピクセル",
-        "playful-launch-presentation": "サンバーストプレイルーム",
-        "playful-pop-deck": "ネオンキャンディー",
-        "prospectus": "ホームページピッチ",
-        "schoolhouse": "クラフトポスター",
-        "sticker-scrapbook": "ステッカーノート",
-        "strata": "赤い階段",
-        "taped-consulting": "ポラロイドウォール",
-        "vantage": "番号付き会議室"
-      },
-      "video": {
-        "chinese-ink-art": "中国の水墨画",
-        "cyberpunk-anime": "サイバーパンクアニメ",
-        "epic-grandeur": "壮大な壮大さ",
-        "fashion-editorial": "ファッション社説",
-        "gourmet-documentary": "グルメドキュメンタリー",
-        "hand-drawn-fantasy-anime": "手描きファンタジーアニメ",
-        "japanese-wabi-sabi": "日本のわびさび",
-        "luxury-product": "高級品マクロ",
-        "shortform-viral": "短編バイラル",
-        "sports-performance-ad": "スポーツパフォーマンス広告"
-      }
-    },
-    "workflowDiagram": {
-      "preparedDescription": "{{assistantName}} は、ツールから次のステップを準備します。",
-      "preparedTitle": "ワークフローが準備されました",
-      "reviewDescription": "{{assistantName}} はワークフローを完了し、結果を返します。",
-      "reviewTitle": "レビューの準備ができました",
-      "source": "ソース"
-    },
-    "workflowPicker": {
-      "categoryDescription": "すぐに実行できるセットアップなので、ツールや目標に合わせて調整できます。",
-      "categoryTitle": "{{category}} ワークフロー",
-      "customDescription": "必要なものを説明すると、{{assistantName}} が一緒にそれを構築します。",
-      "customTitle": "{{assistantName}} と話し、自分のものを作成してください",
-      "description": "役割を選択すると、適切なワークフローが表示されます。いつでも切り替えることができます。",
-      "title": "何に取り組んでいますか?",
-      "workflowCardLabel": "{{title}} {{description}}"
-    },
-    "workflowPreview": {
-      "howItWorks": "仕組み",
-      "whatItDoes": "何をするのか"
-    },
-    "workflowRun": {
-      "continueWithAssistant": "{{assistantName}} に進みます",
-      "createWorkflow": "ワークフローの作成",
-      "customNoteLabel": "ワークフローを説明する",
-      "customNotePlaceholder": "{{assistantName}} で構築したいものを説明してください",
-      "customTitle": "ワークフローを説明する",
-      "noteLabel": "他に何か追加したいことはありますか?",
-      "notePlaceholder": "他に何か追加したいことはありますか?",
-      "reviewTitle": "ワークフローの下書きを確認する"
-    },
-    "workflows": {
-      "alert-metric-moves-slack": {
-        "description": "物質的なウェブサイトの変化を見つけ、可能性のある原因を説明する。",
-        "scenario": "メトリクスの急激な変化は、そのコンテキストが伴うとき特に重要である。{{assistantName}}はGoogle アナリティクスを監視し、検索または有料チャネルの証拠が接続されている場合はそれを追加する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は選択された交通量と変換のメトリクスを読み取る。",
-            "title": "キーのメトリクスがチェックされる"
-          },
-          "three": {
-            "description": "{{assistantName}}は可能性のある原因と次の診断ステップを返す。",
-            "title": "変化が説明される"
-          },
-          "two": {
-            "description": "{{assistantName}}は現在の値と期待される範囲を比較する。",
-            "title": "不審な動きが見つかる"
-          }
-        },
-        "title": "交通量と変換の変化に警報を発する"
-      },
-      "auto-merge-github-prs": {
-        "description": "準備好的プルリクエストを確認し、CIの結果を待って、承認された変更をマージします。",
-        "scenario": "プルリクエストをマージするには、チェックを確認し、差分を再読む必要があります。{{assistantName}}は、準備好的マージラベルを拾い、変更を確認し、CIが通過した後に承認したルールに基づいてのみマージします。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は準備好的マージラベルを検出します。",
-            "title": "プルリクエストは準備完了です"
-          },
-          "three": {
-            "description": "{{assistantName}}は承認された安全条件が通過した後にのみマージします。",
-            "title": "承認したルールに基づいてマージされました"
-          },
-          "two": {
-            "description": "{{assistantName}}は差分を確認し、必要なCIを待っています。",
-            "title": "{{assistantName}}は変更を確認します"
-          }
-        },
-        "title": "GitHub PRの自動マージ"
-      },
-      "blog-posts-to-x": {
-        "description": "衰退しているページを見つけて、優先順位付けされた更新要項を作成する。\\n",
-        "scenario": "既存のコンテンツは新しい記事よりも多くの上昇余地があることが多い。{{assistantName}}はFirecrawlとDataForSEOを使用して、パフォーマンスが低下しているページを見つけ、現在の需要をマッピングし、焦点を絞った更新を推奨する。\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はサイトをクロールし、リフレッシュ候補を特定する。\\n",
-            "title": "既存のページがレビューされる\\n"
-          },
-          "three": {
-            "description": "{{assistantName}}はページを優先順位付けし、必要な更新を指定する。\\n",
-            "title": "リフレッシュ要項が作成される\\n"
-          },
-          "two": {
-            "description": "{{assistantName}}は検索結果、キーワード、競合他社のカバレッジを確認する。\\n",
-            "title": "現在の需要がマッピングされる\\n"
-          }
-        },
-        "title": "SEOコンテンツのリフレッシュ計画を作成する\\n"
-      },
-      "build-weekly-deck-gamma": {
-        "description": "シートで収益、費用、受取払い、キャッシュフローを追跡する。",
-        "scenario": "財務レビューは、手作業で数字を再構築する必要があるとき遅くなる。{{assistantName}}は承認されたQuickBooks メトリクスを引き出し、Google シートで決定可能なダッシュボードを維持する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は収益、費用、受取払い、キャッシュフローを読み取る。",
-            "title": "財務データを収集する"
-          },
-          "three": {
-            "description": "{{assistantName}}は現在の財務ビューをGoogle シートに記入する。",
-            "title": "ダッシュボードは更新される"
-          },
-          "two": {
-            "description": "{{assistantName}}はトレンド、例外、報告合計を計算する。",
-            "title": "メトリクスが整理される"
-          }
-        },
-        "title": "クイックブック財務ダッシュボードを作成する"
-      },
-      "business-review-gamma": {
-        "description": "財務、成長、運営データを一つのレビューに組み込む。",
-        "scenario": "月次レビューはビジネスを説明するべきで、ダッシュボードを単に繰り返すべきではありません。{{assistantName}}はQuickBooks、Google Analytics、Google Sheetsを組み合わせ、HubSpotのコンテキストが利用可能な場合にそれを追加します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は財務、成長、運営指標を読み取ります。",
-            "title": "ビジネスデータが収集されます"
-          },
-          "three": {
-            "description": "{{assistantName}}はコンパクトで決定に備えた月次レビューを返します。",
-            "title": "レビューが準備されます"
-          },
-          "two": {
-            "description": "{{assistantName}}はトレンド、計画の乖離、勝利、リスクをつなげます。",
-            "title": "行動が分析されます"
-          }
-        },
-        "title": "月次ビジネスレビューを作成する"
-      },
-      "catch-calendar-conflicts": {
-        "description": "予定の重複や難しいスケジューリングウィンドウを早期に検出する。",
-        "scenario": "カレンダーの衝突は、ミーティングの日付以前に解決するのが最も簡単である。{{assistantName}}は新規イベントを重複、旅行、準備の衝突をチェックし、オプションを説明する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はイベントと周囲のカレンダースケジュールを読み取る。",
-            "title": "新規イベントがチェックされる"
-          },
-          "three": {
-            "description": "{{assistantName}}は衝突を説明し、オプションをドラフトするメールで説明する。",
-            "title": "解決オプションが返される"
-          },
-          "two": {
-            "description": "{{assistantName}}は重複と不可能な移行ウィンドウを検出する。",
-            "title": "冲突が特定される"
-          }
-        },
-        "title": "グーグルカレンダーの衝突をキャッチする"
-      },
-      "catch-leads-gmail": {
-        "description": "ステージ移動、停滞した取引、リスク、および見通しの変更を要約する。",
-        "scenario": "パイプラインレビューは、ミーティング前に変更が届くと明確になります。{{assistantName}}は現在のHubSpotパイプラインと過去のスナップショットを比較し、簡潔な週次要約を返します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は取引、ステージ、所有者、日付、活動を収集します。",
-            "title": "パイプラインが読みられます"
-          },
-          "three": {
-            "description": "{{assistantName}}は次のアクションを返し、必要に応じてGoogleスプレッドシートを更新します。",
-            "title": "要約が作成されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は変更、停滞した取引、ブロッカー、見通しの逸脱を見つけます。",
-            "title": "移動とリスクが分析されます"
-          }
-        },
-        "title": "HubSpotパイプラインの週次要約を作成する"
-      },
-      "chase-overdue-asana-tasks": {
-        "description": "オーナーごとのリマインダーを作成し、自動送信しないでおく。",
-        "scenario": "遅延作業にはコンテキストが必要であり、一般的なアドバイスでは不十分である。{{assistantName}}は過去の遅延アサナタスクを所有者ごとにグループ化し、各人に対して簡潔なグーグルメールリマインダーを作成する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は過去の遅延アサナタスクを読み取る。",
-            "title": "遅延作業が特定される"
-          },
-          "three": {
-            "description": "{{assistantName}}はリマインダーを作成し、人間の確認のために送信しない。",
-            "title": "グーグルメールドラフトが作成される"
-          },
-          "two": {
-            "description": "{{assistantName}}は関連するプロジェクトとブロッカーのコンテキストを準備する。",
-            "title": "タスクが所有者ごとにグループ化される"
-          }
-        },
-        "title": "グーグルメールのリマインダーをアサナの遅延タスクにドラフトする"
-      },
-      "check-posthog-signup-funnel": {
-        "description": "Google AdsとMeta Adsのパフォーマンスを同じ基準で比較する。",
-        "scenario": "有料チャネルを比較するのは難しい場合があり、各プラットフォームが異なる報告を行っている。{{assistantName}}はGoogle AdsとMeta Adsの両方のプラットフォームで、同じレポートウィンドウで支出、変換、CPA、ROASを正規化する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は両方のプラットフォームで同じレポートウィンドウを読み取る。",
-            "title": "アドデータを収集する"
-          },
-          "three": {
-            "description": "{{assistantName}}は効率性、ペースを強調し、オプションでシートを更新する。",
-            "title": "チャネルの違いが説明される"
-          },
-          "two": {
-            "description": "{{assistantName}}は比較可能な支出、変換、CPA、ROASのメトリクスを計算する。",
-            "title": "パフォーマンスが正規化される"
-          }
-        },
-        "title": "有料獲得チャネルを比較する"
-      },
-      "compare-google-ads-last-month": {
-        "description": "支出、変換、CPA、ROASなどの有料メディアの効率性、ペース、パフォーマンスの逸脱を追跡する。\\n",
-        "scenario": "バジェットはキャンペーンオーナーが気づく前に逸脱する可能性がある。{{assistantName}}は選択された期間のGoogle AdsとMeta Adsの支出、変換、CPA、ROASを比較し、必要なアクションを指摘する。\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は選択された期間の両方の広告プラットフォームを読み取る。\\n",
-            "title": "キャンペーンデータが収集される\\n"
-          },
-          "three": {
-            "description": "{{assistantName}}は比較を返し、オプションでSheetsを更新する。\\n",
-            "title": "アクションが推奨される\\n"
-          },
-          "two": {
-            "description": "{{assistantName}}はパフォーマンスを正規化し、重要な逸脱を特定する。\\n",
-            "title": "效率が比較される\\n"
-          }
-        },
-        "title": "Google AdsとMeta Adsを比較する\\n"
-      },
-      "daily-company-brief-slack": {
-        "description": "創growth、パイプライン、およびオプションの財務コンテキストを組み合わせる。",
-        "scenario": "会社の画像は複数のシステムにわたっています。{{assistantName}}はGoogle AnalyticsとHubSpotを組み合わせ、QuickBooksのコンテキストが利用可能の場合にそれを追加し、重要な勝利、リスク、決定を返します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は成長、パイプライン、利用可能な財務データを読み取ります。",
-            "title": "会社のシグナルは集められます"
-          },
-          "three": {
-            "description": "{{assistantName}}は自動化スレッドで優先順位を要約します。",
-            "title": "パルスが返されます"
-          },
-          "two": {
-            "description": "{{assistantName}}はビジネス全体の動きをつなげます。",
-            "title": "勝利とリスクが識別されます"
-          }
-        },
-        "title": "毎日の会社のパルスを作成する"
-      },
-      "daily-industry-news-slack": {
-        "description": "QuickBooksの現金ポジションと受取リスクをモニターする。",
-        "scenario": "現金フローの問題は、緊急事態になる前に解決するのが安上がりです。{{assistantName}}はQuickBooksの現金フローと未払い請求書をチェックし、重要なリスクを説明し、レビューのためにフォローアップメールを草稿で作成します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は現金フロー、受取、未払い請求書を読み取ります。",
-            "title": "財務リスクがチェックされます"
-          },
-          "three": {
-            "description": "{{assistantName}}はリスクを説明し、Gmailのフォローアップメールを準備できます。",
-            "title": "アラートが返されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は老齢残高と現金圧力のシグナルをマークします。",
-            "title": "重要な変化が識別されます"
-          }
-        },
-        "title": "現金フローと未払い請求書のアラートを設定する"
-      },
-      "draft-github-release-notes-notion": {
-        "description": "マージされたプルリクエストを明確なユーザー向けリリースノートに変換します。",
-        "scenario": "リリースノートは手動でコミットログを翻訳する必要はありません。{{assistantName}}は、前のリリース以来にマージされたプルリクエストを集め、Notionで簡潔な変更ログを作成します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は前のリリース以来にマージされたプルリクエストを収集します。",
-            "title": "マージされた作業が収集されました"
-          },
-          "three": {
-            "description": "{{assistantName}}はNotionでリリースノートのドラフトを作成します。",
-            "title": "ノートが保存されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は作業をグループ化し、ユーザーへの影響を説明します。",
-            "title": "変更が翻訳されます"
-          }
-        },
-        "title": "NotionでGitHubリリースノートをドラフトする"
-      },
-      "draft-newsletter-mailchimp": {
-        "description": "アナリティクスとSearch Consoleを一つの有機レポートに組み込む。\\n",
-        "scenario": "有機成長はトラフィックと検索データにわたる。{{assistantName}}はGoogle AnalyticsとSearch Consoleを組み合わせ、動きと機会を説明し、オプションでNotionに後続の作業を記録する。\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はサイトの行動と検索パフォーマンスを読み取る。\\n",
-            "title": "有機データが収集される\\n"
-          },
-          "three": {
-            "description": "{{assistantName}}は優先順位を返し、オプションでNotionに保存する。\\n",
-            "title": "要項が作成される\\n"
-          },
-          "two": {
-            "description": "{{assistantName}}は着地点ページ、クエリ、変換、トレンドを接続する。\\n",
-            "title": "成長が分析される\\n"
-          }
-        },
-        "title": "有機成長要項を作成する\\n"
-      },
-      "draft-replies-notion-faq": {
-        "description": "サポートメールのドラフトは承認されたNotionのFAQに基づいて作成します。",
-        "scenario": "大部分のサポート質問には既に承認された回答があります。{{assistantName}}はメールを読み、関連するNotionのガイダンスを見つけて、レビューのために grounded レスポンスをドラフトします。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はGmailの会話と顧客のコンテキストを確認します。",
-            "title": "サポート質問が到着します"
-          },
-          "three": {
-            "description": "{{assistantName}}は応答を準備し、自動的に送信しません。",
-            "title": "レスポンスがドラフトされます"
-          },
-          "two": {
-            "description": "{{assistantName}}は関連する承認されたガイダンスを見つけてNotionに保存します。",
-            "title": "FAQが確認されます"
-          }
-        },
-        "title": "FAQに基づく回答のドラフトを作成する"
-      },
-      "file-gmail-invoices-drive": {
-        "description": "請求書ファイルを保管し、対応する会計項目を記録する。",
-        "scenario": "請求書がファイルと会計記録とで離れていくと、整理作業が発生する。{{assistantName}}はグーグルメールの添付ファイルをドライブに保管し、請求または費用をクイックブックに記録し、調整シートを更新することもできる。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は選択されたグーグルメールのメッセージと添付ファイルを読み取る。",
-            "title": "請求書メールが特定される"
-          },
-          "three": {
-            "description": "{{assistantName}}はアイテムを記録し、オプションでGoogleスプレッドシートを更新する。",
-            "title": "クイックブックが更新される"
-          },
-          "two": {
-            "description": "{{assistantName}}はドライブに文書を保存し、会計データを抽出する。",
-            "title": "ファイルと詳細がキャプチャされる"
-          }
-        },
-        "title": "グーグルメールの請求書をドライブとクイックブックに保管する"
-      },
-      "file-sentry-crashes-github": {
-        "description": "新しいクラッシュを影響順にランク付けし、アクション可能な問題を報告します。",
-        "scenario": "高い影響のクラッシュは、エラーフィードに静かに積み重なって見えます。{{assistantName}}は新しいSentryの失敗をレビューし、 Severityと影響を受けているユーザーに基づいてランク付けし、エンジニアリング作業が必要なものを報告します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は未解決のエラーと影響シグナルをSentryから収集します。",
-            "title": "{{assistantName}}は新しいクラッシュを読み取ります"
-          },
-          "three": {
-            "description": "{{assistantName}}はアクション可能な問題を作成し、必要に応じてLinearにリンクします。",
-            "title": "GitHubの問題は報告されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は緊急のリグレッションと低い影響のノイズを分離します。",
-            "title": "影響はランク付けされます"
-          }
-        },
-        "title": "SentryでファイルがGitHubの問題としてクラッシュする"
-      },
-      "fixes-to-notion-help-docs": {
-        "description": "承認されたGitHubの修正を再利用可能なNotionのガイダンスに変換する。",
-        "scenario": "同じサポート質問が修正が記録されていない場合、同じサポート質問が再発します。{{assistantName}}は解決済みのGitHubのissueと修正を読み、承認された解決策を明確なNotionのヘルプ記事に変換します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はGitHubのissue、修正、ユーザーの影響を確認します。",
-            "title": "解決されたバグが選択されます"
-          },
-          "three": {
-            "description": "{{assistantName}}はNotionで再利用可能なドラフトを書きます。",
-            "title": "ヘルプ記事が保存されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は解決策を明確なトラブルシューティング手順に変換します。",
-            "title": "ガイダンスがドラフトされます"
-          }
-        },
-        "title": "解決されたバグをヘルプドキュメントに変換する"
-      },
-      "flag-figma-designs-no-task": {
-        "description": "承認された製品仕様をスコープされたLinear作業に変換する。",
-        "scenario": "承認された仕様はまだ実行可能な作業に変換される必要があります。{{assistantName}} はノティョンの仕様を読み、目標、スコープされた問題、依存関係、および承認基準を持つLinearプロジェクトを作成します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} は承認されたノティョン製品仕様を読みます。",
-            "title": "仕様がレビューされます"
-          },
-          "three": {
-            "description": "{{assistantName}} はプロジェクトを作成し、必要に応じてGitHubのコンテキストをリンクします。",
-            "title": "Linearプロジェクトが作成されます"
-          },
-          "two": {
-            "description": "{{assistantName}} は目標、問題、依存関係、基準を特定します。",
-            "title": "作業が構造化されます"
-          }
-        },
-        "title": "ノティョン仕様をLinearプロジェクトに変換する"
-      },
-      "flagged-gmail-todoist-tasks": {
-        "description": "選択されたラベルのメッセージから実行可能なタスクを作成する。",
-        "scenario": "重要なメールは、インボックスからクリアなタスクとして完了するのを容易にする。{{assistantName}}はラベル付きギマエルメッセージをTodoistアイテムに変換し、期日とソースコンテキストを含む。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は選択されたラベルを検出し、メッセージを読み込む。",
-            "title": "ギマエルメッセージがフラグ付けされる"
-          },
-          "three": {
-            "description": "{{assistantName}}はタスクを作成し、ソースリンクを含む。",
-            "title": "Todoistタスクが作成される"
-          },
-          "two": {
-            "description": "{{assistantName}}はタスク、期日、支援コンテキストを特定する。",
-            "title": "行動が抽出される"
-          }
-        },
-        "title": "フラグ付きギマエルをTodoistタスクに変換する"
-      },
-      "github-idea-to-notion-spec": {
-        "description": "ラベル付きギブハブのアイデアを構造化された製品仕様に拡張する。",
-        "scenario": "よいアイデアはしばしば短い問題説明で止まってしまう。{{assistantName}} はギブハブのラベル付きアイデアをノティョン仕様に変換し、問題、証拠、範囲、指標、リスク、および開かれた質問を明確にします。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} はラベル付きギブハブの問題を読みます。",
-            "title": "アイデアが選択されます"
-          },
-          "three": {
-            "description": "{{assistantName}} はノティョンで構造化されたドラフトを書きます。",
-            "title": "仕様が保存されます"
-          },
-          "two": {
-            "description": "{{assistantName}} は問題、範囲、成功基準、リスクを拡張します。",
-            "title": "仕様が開発されます"
-          }
-        },
-        "title": "ギブハブのアイデアをノティョン仕様に変換する"
-      },
-      "gmail-followups-auto": {
-        "description": "人間のレビューのためにコンテキストのある販売フォローアップを準備する。",
-        "scenario": "良いフォローアップには取引レコードと関連するガーメイルスレッドが必要です。{{assistantName}}はHubSpotのコンテキストと関連するガーメイルスレッドを組み合わせ、簡潔な応答を草稿にしますが、送信しません。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はHubSpotのレコードと最近の活動を読みます。",
-            "title": "取引のコンテキストが確認されます"
-          },
-          "three": {
-            "description": "{{assistantName}}は人間のレビューのためにガーメイルの草稿を準備します。",
-            "title": "フォローアップが草稿に作成されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は開かれた質問、コミットメント、およびスケジュールを特定します。",
-            "title": "メールスレッドが確認されます"
-          }
-        },
-        "title": "HubSpotからガーメイルのフォローアップを草稿にする"
-      },
-      "gmail-reconnect-reminders": {
-        "description": "連絡が途絶えた重要な連絡先を見つけ、連絡を草稿で作成する。",
-        "scenario": "重要な関係は、誰も静寂を気づかない場合に衰退します。{{assistantName}}はGmailを確認し、カレンダーヒストリーが利用可能な場合にそれを追加し、思いやりのある再連絡メッセージを草稿で作成します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は最近のGmailの活動と連絡先のコンテキストを確認します。",
-            "title": "関係の歴史がレビューされます"
-          },
-          "three": {
-            "description": "{{assistantName}}は人間のレビューのために個人的なメッセージを草稿で作成します。",
-            "title": "再連絡の草稿が準備されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は最近の連絡がなかった価値のある連絡先を識別します。",
-            "title": "静寂の関係がランク付けされます"
-          }
-        },
-        "title": "連絡を取り戻す関係を表面化する"
-      },
-      "highlight-key-emails-gmail": {
-        "description": "最も経営者からの返信が必要なGmailのメッセージを見つけます。",
-        "scenario": "経営者のインボックスは重要な決定と一般的なトラフィックのミックスです。{{assistantName}}は重要なメッセージを識別し、なぜそれが重要なのかを説明し、送信せずに返信の草稿を作成します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は最近のGmailのメッセージと利用可能なカレンダーコンテキストを読み取ります。",
-            "title": "インボックスがレビューされます"
-          },
-          "three": {
-            "description": "{{assistantName}}は各項目を要約し、レビューのために返信の草稿を作成します。",
-            "title": "返信が準備されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は決定、コミットメント、敏感なリクエストを優先化します。",
-            "title": "重要なメッセージがランク付けされます"
-          }
-        },
-        "title": "キーのメールをハイライトする"
-      },
-      "investor-update-google-docs": {
-        "description": "財務と成長データをGoogle Docsの草稿に組み込む。",
-        "scenario": "投資家向けの更新は時間がかかるため、ストーリーと数字は別々に存在します。{{assistantName}}はQuickBooksとGoogle Analyticsを組み合わせ、HubSpotのコンテキストが利用可能な場合にそれを追加し、Google Docsで更新を草稿に作成します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は財務、成長、利用可能なパイプラインデータを読み取ります。",
-            "title": "現在のメトリクスが収集されます"
-          },
-          "three": {
-            "description": "{{assistantName}}は投資家向けの更新をGoogle Docsで作成します。",
-            "title": "更新が草稿になります"
-          },
-          "two": {
-            "description": "{{assistantName}}は進行状況、教訓、リスク、次の優先順位をつなげます。",
-            "title": "ナレッジが開発されます"
-          }
-        },
-        "title": "投資家向けの更新を草稿にする"
-      },
-      "log-gong-calls-hubspot": {
-        "description": "ミーティングのテキストをCRMの決定と次のアクションに変換する。",
-        "scenario": "重要な電話の詳細は、メモがCRMの外に残されるときに失われます。{{assistantName}}はグーグルミーティングのテキストを決定、反論、コミットメント、およびアクションアイテムとしてHubSpotに記録します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は最新のテキストとミーティングのコンテキストを読みます。",
-            "title": "ミーティングのテキストが到着します"
-          },
-          "three": {
-            "description": "{{assistantName}}は要約をログインし、必要に応じてガーメイルのフォローアップを草稿にします。",
-            "title": "HubSpotが更新されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は決定、反論、コミットメント、所有者を特定します。",
-            "title": "売上シグナルが抽出されます"
-          }
-        },
-        "title": "グーグルミーティングのアクションアイテムをHubSpotにログインする"
-      },
-      "meeting-notes-asana-tasks": {
-        "description": "ミーティングのテキストから割り当てられたプロジェクトの作業を作成する。",
-        "scenario": "ミーティングのアクションが消えてしまうと、メモの中に残っていると見えない。{{assistantName}}はグーグルミートのテキストを読み取り、約束事と所有者を特定し、明確なアサナのタスクを作成する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はミーティングのテキストとカレンダーコンテキストを読み取る。",
-            "title": "ミーティングのテキストが届く"
-          },
-          "three": {
-            "description": "{{assistantName}}はソースコンテキストをもとに割り当てられた作業を作成する。",
-            "title": "アサナのタスクが作成される"
-          },
-          "two": {
-            "description": "{{assistantName}}はタスク、所有者、期限、依存関係を特定する。",
-            "title": "アクションが抽出される"
-          }
-        },
-        "title": "グーグルミートのメモをアサナのタスクに変換する"
-      },
-      "meeting-recaps-slack": {
-        "description": "ミーティングのテキストを簡潔なレポートとアクションアイテムに変換する。",
-        "scenario": "ミーティングの決定は、テキストが処理されることなく失われる。{{assistantName}}はGoogle Meetのテキストを読み取り、重要な決定、アクション、所有者をGoogleドキュメントに記述する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はテキストと利用可能なカレンダーコンテキストを読み込む。",
-            "title": "ミーティングのテキストが到着する"
-          },
-          "three": {
-            "description": "{{assistantName}}は構造化されたレポートをGoogleドキュメントに記述する。",
-            "title": "レポートが保存される"
-          },
-          "two": {
-            "description": "{{assistantName}}は結果、所有者、期限、開いた質問を特定する。",
-            "title": "決定とアクションが抽出される"
-          }
-        },
-        "title": "Google MeetのレポートをGoogleドキュメントに保存する"
-      },
-      "morning-brief-slack": {
-        "description": "重要なメール、今日のスケジュール、オプションのNotionの文脈を組み合わせる。",
-        "scenario": "有用な朝の計画にはインボックスとカレンダーの両方が必要である。{{assistantName}}はギマيلとGoogleカレンダーをレビューし、Notionの文脈が利用可能であればそれを追加し、短い日常の概要を返す。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は重要なメールと今日のカレンダーを読み込む。",
-            "title": "今日の入力が集まる"
-          },
-          "three": {
-            "description": "{{assistantName}}は自動化スレッドで集中した計画を作成する。",
-            "title": "概要が返される"
-          },
-          "two": {
-            "description": "{{assistantName}}は承認事項、準備、フォローアップを特定する。",
-            "title": "優先順位が結びつく"
-          }
-        },
-        "title": "朝の概要を作成する"
-      },
-      "new-gmail-contacts-hubspot": {
-        "description": "関連するメール会話からCRM連絡先を作成または充実させる。",
-        "scenario": "新しい関係はしばしばインボックスにとどまっています。{{assistantName}}は関連するガーメイルの相手を特定し、HubSpotで重複を確認し、連絡先レコードを作成または充実させる。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は関連するガーメイルの会話を見ます。",
-            "title": "新しい相手が特定されます"
-          },
-          "three": {
-            "description": "{{assistantName}}はHubSpotのレコードを作成または充実させます。",
-            "title": "連絡先は更新されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は既存のレコードと欠落した詳細を見つけます。",
-            "title": "HubSpotが確認されます"
-          }
-        },
-        "title": "ガーメイルの連絡先をHubSpotに追加する"
-      },
-      "onboard-new-hires-asana": {
-        "description": "承認された入力提出をアサナのオンボーディング計画に変換する。",
-        "scenario": "新入社員のセットアップがより信頼性が高いのは、承認されたすべての入力が同じ計画に従うからである。{{assistantName}}はグーグルフォームの提出を読み取り、アサナのタスクを作成し、ドライブにドキュメントをファイル保存することもできる。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は新入社員フォームと必要な詳細を読み取る。",
-            "title": "提出が承認される"
-          },
-          "three": {
-            "description": "{{assistantName}}は計画を作成し、オプションでドライブのドキュメントをファイル保存する。",
-            "title": "アサナが更新される"
-          },
-          "two": {
-            "description": "{{assistantName}}は役割と開始日をタスクと所有者にマッピングする。",
-            "title": "オンボーディング計画が作成される"
-          }
-        },
-        "title": "グーグルフォームから新入社員をオンボーディングする"
-      },
-      "post-daily-metrics-slack": {
-        "description": "交通量、獲得、変換、特に変化を要約する。",
-        "scenario": "毎日のウェブサイトの動きは、複数のレポートを開く必要がない。{{assistantName}}はGoogle アナリティクスを読み、Search Console のコンテキストが利用可能な場合はそれを追加し、自動化スレッドに簡潔なレポートを返す。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は交通量、獲得、変換のメトリクスを読み取る。",
-            "title": "ウェブサイトのデータを収集する"
-          },
-          "three": {
-            "description": "{{assistantName}}は変化した点と注意が必要な点を要約する。",
-            "title": "レポートは返される"
-          },
-          "two": {
-            "description": "{{assistantName}}はパフォーマンスを比較し、意味のある動きを強調する。",
-            "title": "動きが特定される"
-          }
-        },
-        "title": "毎日のウェブサイトメトリクスレポートを作成する"
-      },
-      "post-github-updates-slack": {
-        "description": "クラウドアクセス、サービスアカウント、公開サービスを確認します。",
-        "scenario": "プロジェクトが成長するにつれて、クラウド権限は逸脱します。{{assistantName}}はGoogle Cloud IAM、サービスアカウント、キー、有効サービス、公開暴露をレビューし、読み取り専用のリスクレポートを返します。その中には明確な改善策が含まれています。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はIAMバインディング、アカウント、キー、サービスを調査します。",
-            "title": "クラウドアクセスが確認されます"
-          },
-          "three": {
-            "description": "{{assistantName}}は修正を推奨し、必要に応じてGitHubの問題を草案します。",
-            "title": "改正が準備されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は余分な権限、古い資格情報、公開暴露を指摘します。",
-            "title": "リスクが評価されます"
-          }
-        },
-        "title": "Google Cloud IAMとサービスの監査"
-      },
-      "post-release-notes-slack": {
-        "description": "最近のリリースされたギブハブの作業を承認された変更ログに変換する。",
-        "scenario": "リリースされた作業はプルリクエストの中で簡単に失われがちです。{{assistantName}} は最近のギブハブの変更を収集し、読みやすくしたリリースノートを書き、承認されたバージョンをノティョンに公開します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} は最近マージされたギブハブの変更を収集します。",
-            "title": "リリースされた作業が収集されます"
-          },
-          "three": {
-            "description": "{{assistantName}} は最終的なリリースノートをノティョンに保存します。",
-            "title": "承認されたドラフトが公開されます"
-          },
-          "two": {
-            "description": "{{assistantName}} は変更をグループ化し、ユーザーへの影響を説明します。",
-            "title": "リリースノートが書かれます"
-          }
-        },
-        "title": "リリースノートをノティョンに公開する"
-      },
-      "prep-google-calendar-meetings": {
-        "description": "今後の外部ミーティングのために焦点を絞った準備をする。",
-        "scenario": "ミーティング準備は、電話の5分前から始めるべきではありません。{{assistantName}}はカレンダーイベントを確認し、連絡先とCRMのコンテキストが利用可能であればそれを追加します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は選択されたGoogleカレンダーのウィンドウを読みます。",
-            "title": "今後のミーティングが見つかります"
-          },
-          "three": {
-            "description": "{{assistantName}}は目標、コンテキスト、リスク、および提案された質問を返します。",
-            "title": "議事録が準備されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は接続されている場合にHubSpotを確認します。",
-            "title": "出席者のコンテキストが集められます"
-          }
-        },
-        "title": "グーグルカレンダーのミーティング準備"
-      },
-      "publish-scheduled-posts-buffer": {
-        "description": "競合他社と比較し、機会をランク付けする。\\n",
-        "scenario": "コンテンツ計画は、実際の検索ギャップから始めるときが最も良い。{{assistantName}}はFirecrawlとDataForSEOを使用して、ユーザーのサイトと名付けられた競合他社をクロールし、意図と価値に基づいて欠けているトピックをランク付けする。\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はユーザーのサイトと選択された競合他社をクロールする。\\n",
-            "title": "サイトが比較される\\n"
-          },
-          "three": {
-            "description": "{{assistantName}}は優先順位付けされたコンテンツ機会リストを返す。\\n",
-            "title": "機会はランク付けされる\\n"
-          },
-          "two": {
-            "description": "{{assistantName}}は欠けているキーワード、トピック、および意図を発見する。\\n",
-            "title": "検索ギャップが特定される\\n"
-          }
-        },
-        "title": "キーワードとコンテンツのギャップを見つける\\n"
-      },
-      "report-ai-model-costs-slack": {
-        "description": "トラフィックまたはセキュリティ事象と次の対応を説明します。",
-        "scenario": "Cloudflareの事象は、ノイズが必要になる前に文脈が必要です。{{assistantName}}はトラフィック、セキュリティイベント、サービスの健康状態をレビューし、可能性のある影響を説明し、自動化スレッドで次のアクションを返します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はサービスの健康状態、トラフィックのシフト、セキュリティイベントをレビューします。",
-            "title": "Cloudflareがチェックされます"
-          },
-          "three": {
-            "description": "{{assistantName}}は対応を推奨し、必要に応じてGitHubの問題を草案します。",
-            "title": "次のアクションが返されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は確認された事象と通常の変動を分離します。",
-            "title": "影響が説明されます"
-          }
-        },
-        "title": "Cloudflareの事象に警告する"
-      },
-      "research-calendar-meetings": {
-        "description": "カレンダーやメールの文脈から簡潔な概要を作成する。",
-        "scenario": "会議の準備は、出席者と会話の歴史が既に接続されている場合に早くなる。{{assistantName}}は予定されているカレンダーイベントをレビューし、Gmailの文脈が利用可能であればそれを追加する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は選択されたGoogleカレンダーのウィンドウを読み込む。",
-            "title": "予定会議が見つかる"
-          },
-          "three": {
-            "description": "{{assistantName}}は目標、文脈、推奨される質問を返す。",
-            "title": "概要が作成される"
-          },
-          "two": {
-            "description": "{{assistantName}}は関連するGmailスレッドを確認する。",
-            "title": "出席者の文脈が集まる"
-          }
-        },
-        "title": "予定会議の準備をする"
-      },
-      "research-new-signups-apollo": {
-        "description": "Xからクリエイターのリードを見つけて選別します。",
-        "scenario": "リストが古くなるとアウトバウンドは停滞します。{{assistantName}}はターゲット像に合うクリエイターや見込み客をXで見つけ、組み込みの人物検索とFirecrawlで選別し、優先順位を付けたアプローチリストを返します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はターゲット像に合うアカウントをXで検索します。",
-            "title": "Xで候補が見つかる"
-          },
-          "three": {
-            "description": "{{assistantName}}は適合度を評価し、初回メッセージを作成し、必要に応じてHubSpotに保存します。",
-            "title": "アプローチリストが順位付けされる"
-          },
-          "two": {
-            "description": "{{assistantName}}は組み込みのリサーチで役割、会社、影響力を確認します。",
-            "title": "各リードが選別される"
-          }
-        },
-        "title": "Xでクリエイターのリードを見つける"
-      },
-      "run-daily-query-sheets": {
-        "description": "検索の可視性とクエリの動きをGoogle シートに記入する。",
-        "scenario": "オーガニックパフォーマンスは、一貫した履歴があるとより行動しやすい。{{assistantName}}はSearch Console メトリクスを引き出し、Analytics コンテキストが利用可能な場合はそれを追加し、レポートシートを更新する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はクリック数、インプレッション数、CTR、位置、クエリを読み取る。",
-            "title": "検索データを収集する"
-          },
-          "three": {
-            "description": "{{assistantName}}は正規化された結果をGoogle シートに記入する。",
-            "title": "シートは更新される"
-          },
-          "two": {
-            "description": "{{assistantName}}は優れた、減少している、または発展している検索需要を特定する。",
-            "title": "動きが分析される"
-          }
-        },
-        "title": "オーガニック検索パフォーマンスをシートに記録する"
-      },
-      "send-bugs-github-slack": {
-        "description": "再現可能なバグ報告を構造化されたエンジニアリングの仕事に変換する。",
-        "scenario": "バグ報告は、証拠がインボックスに残っていると価値を失います。{{assistantName}}は再現可能なサポート問題を特定し、影響と手順を抽出し、構造化されたGitHubのissueを作成します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はサポートメールを再現可能な製品の失敗にレビューします。",
-            "title": "バグ報告が特定されます"
-          },
-          "three": {
-            "description": "{{assistantName}}はissueを作成し、リンケージにリンクできます。",
-            "title": "GitHubのissueが作成されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は影響、手順、期待される動作、コンテキストを抽出します。",
-            "title": "証拠が構造化されます"
-          }
-        },
-        "title": "サポートメールをGitHubのissueに変換する"
-      },
-      "sort-gmail-draft-replies": {
-        "description": "新着メールを優先順に整理し、人間のレビューに備える準備をする。",
-        "scenario": "忙しいインボックスは緊急のリクエストと簡単な返信を隠してしまう。{{assistantName}}は新着ギマيلメッセージを緊急度とアクションに分類し、返信をドラフトに作成するが、送信はしない。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は選択されたギマيلインボックスやラベルを読み込む。",
-            "title": "新着メールのレビュー"
-          },
-          "three": {
-            "description": "{{assistantName}}は返信を準備する。",
-            "title": "返信がドラフト作成される"
-          },
-          "two": {
-            "description": "{{assistantName}}はメールを緊急度、リクエスト、次のアクションに分類する。",
-            "title": "メールが優先順位付けされる"
-          }
-        },
-        "title": "ギマيلを整理し、返信のドラフトを作成する"
-      },
-      "sort-route-zendesk-tickets": {
-        "description": "サポートメールを分類し、アクション可能なリンケージの課題を作成する。",
-        "scenario": "サポートメールには一貫した優先順位と所有者が必要です。{{assistantName}}は新しいGmailの会話を読み、問題の種類と緊急性を特定し、アクションが必要なアイテムを作成したリンケージの仕事を作成します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は新しい会話と利用可能なコンテキストを確認します。",
-            "title": "サポートメールが読み取られます"
-          },
-          "three": {
-            "description": "{{assistantName}}はアクション可能な課題を作成し、支援する証拠をリンクします。",
-            "title": "リンケージの仕事は作成されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は緊急性、トピック、責任チームを分類します。",
-            "title": "優先順位と所有者が設定されます"
-          }
-        },
-        "title": "リンケージにサポートメールをトリアージする"
-      },
-      "spot-churn-risk-stripe-zendesk": {
-        "description": "支援のボリューム、リスク、テーマ、未解決の作業を要約する。",
-        "scenario": "支援キューは重要な変更が見えると管理しやすくなります。{{assistantName}}はGmailの会話を見直し、緊急性または再発する問題をハイライトし、関連するリンケージまたはGitHubの作業をリンクします。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は新しい未解決のGmailの会話を見ます。",
-            "title": "支援活動が集まります"
-          },
-          "three": {
-            "description": "{{assistantName}}は自動化スレッドで優先順位を要約します。",
-            "title": "ダイジェストが返されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は再発する問題をグループ化し、緊急なフォローアップをフラグ付けします。",
-            "title": "リスクとテーマが特定されます"
-          }
-        },
-        "title": "日常のサポートダイジェストを作成する"
-      },
-      "summarize-gmail-newsletters": {
-        "description": "選択されたニュースレターを一つの有用なリピーティングダイジェストに変換する。",
-        "scenario": "ニュースレターの価値は、毎回の発行がインボックスの注意を競い合うときに失われる。{{assistantName}}は選択されたギマエルニュースレターをテーマ、有用なリンク、および推奨される読み物に要約する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は選択された送信者やラベルからメッセージを読み込む。",
-            "title": "ニュースレターが集まる"
-          },
-          "three": {
-            "description": "{{assistantName}}は要約を返し、Notionに保存することもできる。",
-            "title": "ダイジェストが作成される"
-          },
-          "two": {
-            "description": "{{assistantName}}はテーマをグループ化し、最も強いリンクを特定する。",
-            "title": "有用なコンテンツが凝縮される"
-          }
-        },
-        "title": "ギマエルニュースレターを要約する"
-      },
-      "summarize-user-feedback-notion": {
-        "description": "新しいフォームの回答をランク付けされた製品インサイトに分類する。",
-        "scenario": "フィードバックはパターンが見えるときに有用になります。{{assistantName}} はGOOGLEフォームの回答をレビューし、再発する痛み点と要求をグループ化し、見つけた見解をランク付けし、ノティョンで要約します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} は最新のGOOGLEフォームの提出を読みます。",
-            "title": "回答が収集されます"
-          },
-          "three": {
-            "description": "{{assistantName}} は優先順位付けされた要約をノティョンに書きます。",
-            "title": "インサイトが保存されます"
-          },
-          "two": {
-            "description": "{{assistantName}} は痛み点、要求、感情を分類します。",
-            "title": "テーマがランク付けされます"
-          }
-        },
-        "title": "ゴOGLEフォームのフィードバックをノティョンに要約する"
-      },
-      "summarize-zendesk-tickets-daily": {
-        "description": "内蔵のアバター機能を使用して承認されたサポートビデオを作成する。",
-        "scenario": "一部のサポート回答は短いプレゼンタービデオでよりわかりやすい場合があります。{{assistantName}}は承認されたFAQの内容をスクリプトとストーリーボードに変換し、レビュー後、内蔵のアバタービデオ機能を使用してビデオを作成します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は承認された回答とターゲットアudienceを特定します。",
-            "title": "FAQの内容が選択されます"
-          },
-          "three": {
-            "description": "{{assistantName}}はユーザーがドラフトを承認した後に生成します。",
-            "title": "アバタービデオが生成されます"
-          },
-          "two": {
-            "description": "{{assistantName}}は明確で正確なサポートビデオ計画を作成します。",
-            "title": "スクリプトとストーリーボードがドラフトされます"
-          }
-        },
-        "title": "FAQをデジタルヒューマンサポートビデオに変換する"
-      },
-      "sync-asana-projects-notion": {
-        "description": "ノティオンのプロジェクト概要をアサナの最新状態で更新する。",
-        "scenario": "タスクのステータスが変更されると、プロジェクトの要約がずれてしまう。{{assistantName}}は選択されたアサナのプロジェクトを読み取り、対応するノティオンの概要を更新する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はステータス、所有者、期限、障害を確認する。",
-            "title": "アサナのプロジェクトが読み取られる"
-          },
-          "three": {
-            "description": "{{assistantName}}は概要を更新し、変更点をハイライトする。",
-            "title": "ノティオンが同期される"
-          },
-          "two": {
-            "description": "{{assistantName}}は現在のプロジェクト状態と以前のビューを比較する。",
-            "title": "意味のある変更が特定される"
-          }
-        },
-        "title": "アサナのプロジェクトをノティオンに同期する"
-      },
-      "sync-linear-roadmap-notion": {
-        "description": "現在、次、後でロードマップをノティョンで最新に保つ。",
-        "scenario": "ロードマップは配信状況が他で変更されるときに逸脱します。{{assistantName}} は選択されたLinearプロジェクトと問題を読み、それらを現在、次、後でマッピングし、ノティョンのロードマップを最新に保ちます。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} は選択されたプロジェクト、問題、およびミッションステートメントをレビューします。",
-            "title": "Linearの状況が読み取られます"
-          },
-          "three": {
-            "description": "{{assistantName}} はロードマップを更新し、意味のある変更をハイライトします。",
-            "title": "ノティョンが更新されます"
-          },
-          "two": {
-            "description": "{{assistantName}} は配信状況を現在、次、後でに変換します。",
-            "title": "ロードマップの段階がマッピングされます"
-          }
-        },
-        "title": "Linearロードマップをノティョンに同期する"
-      },
-      "track-feature-usage-posthog": {
-        "description": "週間の最大の変化を製品の採用に表面化する。",
-        "scenario": "機能の採用はダッシュボードのレビューを逃れる前に変化します。{{assistantName}} は最新のGOOGLEアナリティクスの使用シグナルを比較し、意味のある動きを特定し、必要に応じてノティョンに決定を記録します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} は選択された機能と観客のシグナルを収集します。",
-            "title": "采用データが読み取られます"
-          },
-          "three": {
-            "description": "{{assistantName}} は何が動いたのか、次に調査すべき何がいるのかを説明します。",
-            "title": "見解が返されます"
-          },
-          "two": {
-            "description": "{{assistantName}} は最大の獲得、減少、セグメントの違いを見つけます。",
-            "title": "変化が比較されます"
-          }
-        },
-        "title": "ゴOGLEアナリティクスを使用して機能の採用を追跡する"
-      },
-      "track-keyword-ranks-ahrefs": {
-        "description": "サイトをクロールし、優先順位付けされた技術的なSEOの問題リストを返す。\\n",
-        "scenario": "技術的なSEOの問題は数百のページに隠されている。{{assistantName}}はFirecrawlとDataForSEOを使用して、クロール可能性、インデックス可能性、内部リンク、およびライブ検索の可視性を検査し、コネクタを必要とせずに。\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はFirecrawlを使用してページと内部リンクを検査する。\\n",
-            "title": "サイトがクロールされる\\n"
-          },
-          "three": {
-            "description": "{{assistantName}}は最高の影響を与える修正とその証拠を返す。\\n",
-            "title": "問題は優先順位付けされる\\n"
-          },
-          "two": {
-            "description": "{{assistantName}}はDataForSEOを使用して可視性とインデックス化シグナルを検証する。\\n",
-            "title": "検索の証拠がチェックされる\\n"
-          }
-        },
-        "title": "ウェブサイトの技術的なSEOを調査する\\n"
-      },
-      "track-signup-sources-sheets": {
-        "description": "Google Cloudのデータをクエリし、更新可能な分析を公開する。",
-        "scenario": "重要な運用データはしばしばBigQueryにあり、使いやすい再発生ビューがない。{{assistantName}}は承認されたクエリを実行し、トレンドと異常を特定し、結果のテーブルと要約をGoogle シートに記入する。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はBigQueryの範囲と分析の質問を確認する。",
-            "title": "データセットとクエリを選択する"
-          },
-          "three": {
-            "description": "{{assistantName}}は更新可能なテーブルと決定可能な要約を公開する。",
-            "title": "結果がシートに記入される"
-          },
-          "two": {
-            "description": "{{assistantName}}はクエリを実行し、トレンド、セグメント、異常を確認する。",
-            "title": "クラウドデータが分析される"
-          }
-        },
-        "title": "BigQueryデータをシートで分析する"
-      },
-      "watch-brand-mentions": {
-        "description": "承認されたビデオをプラットフォムネイティブの投稿とスレッドに変換する。\\n",
-        "scenario": "強いビデオは1つのチャンネル以上でサポートできる。{{assistantName}}は選択されたYouTubeビデオをレビューし、Xの投稿とスレッドのドラフトを作成し、承認された計画をオプションでNotionに保存する。\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}はYouTubeビデオ、字幕、コンテキストを読み取る。\\n",
-            "title": "ビデオが選択される\\n"
-          },
-          "three": {
-            "description": "{{assistantName}}は計画を保存し、承認なしで公開しない。\\n",
-            "title": "コンテンツが承認のために準備される\\n"
-          },
-          "two": {
-            "description": "{{assistantName}}は簡潔なXの投稿とスレッドオプションを作成する。\\n",
-            "title": "ソーシャルのバリエーションがドラフトされる"
-          }
-        },
-        "title": "YouTubeビデオをXに再利用する\\n"
-      },
-      "watch-sentry-after-release": {
-        "description": "リリース後の安定性と前の基準を比較します。",
-        "scenario": "リリースは健康に見えても、リグレッションは静かに積み重なって見えます。{{assistantName}}は最新のSentryのシグナルと前の基準を比較し、監視を続けるべきか、直ちに修正すべきか、またはロールバックすべきかを説明します。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}は最新のリリースとその比較ウィンドウを見つけます。",
-            "title": "リリースが特定されました"
-          },
-          "three": {
-            "description": "{{assistantName}}は影響と最も安全な次のアクションを要約します。",
-            "title": "レスポンスが推奨されます"
-          },
-          "two": {
-            "description": "{{assistantName}}はクラッシュフリーレートと新しいリグレッションを基準と比較します。",
-            "title": "安定性が比較されます"
-          }
-        },
-        "title": "リリース後Sentryを監視する"
+        "title": "意味のあるタスクから始めましょう"
       }
     }
   },
   "queue": {
     "concurrentRuns_one": "{{count}} 同時実行",
     "concurrentRuns_other": "{{count}} 同時実行数",
-    "description": "キュー内の自分の位置を確認し、アップグレードして待ち時間をスキップします。",
+    "description": "使用中の同時実行数を確認し、アップグレードして待ち時間をスキップします。",
     "perMonth": "/月",
     "pricePerMonth": "{{price}}/月",
     "purchase": {
@@ -5915,7 +4544,6 @@
     "tiers": {
       "custom": "カスタム",
       "free": "無料",
-      "limitedFree": "限定無料",
       "pro": "プロ",
       "team": "チーム"
     },
@@ -5925,7 +4553,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} クレジット / 月",
         "emailSupport": "メールサポート",
-        "ownKeys": "独自の LLM キーを持参する",
         "payAsYouGo": "その後は従量料金を支払う",
         "prioritySupport": "優先サポート",
         "unlimitedAgents": "無制限の合計エージェント"
@@ -5938,17 +4565,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "クレジットを追加",
-      "openModelProviders": "モデルプロバイダーを開く",
-      "reconnectClaude": "Claude Code を再接続",
-      "shareWithAdmin": "管理者に共有"
+      "openModelSettings": "モデル設定を開く",
+      "reconnectClaude": "Claude Code を再接続"
     },
-    "anthropicKeyAdmin": "設定された Anthropic API キーで Claude Code を認証できませんでした。モデルプロバイダーで API キーを更新または置き換えてから、もう一度お試しください。",
-    "anthropicKeyMember": "設定された Anthropic API キーで Claude Code を認証できませんでした。ワークスペースの管理者に API キーの更新または置き換えを依頼してください。",
     "askAdmin": "ワークスペースの管理者にクレジットの追加またはプランのアップグレードを依頼してください。",
-    "claudeReconnect": "Claude Code サブスクリプションの認証に失敗しました。モデルプロバイダーで Claude Code を再接続してから、もう一度お試しください。",
-    "claudeTerms": "Claude Code を利用するには、更新された利用規約とプライバシーポリシーへの同意が必要です。モデルプロバイダーに接続した Claude アカウントで https://claude.ai にログインし、更新内容に同意してから、もう一度お試しください。",
+    "claudeReconnect": "Claude Code サブスクリプションの認証に失敗しました。「設定 > モデル」で Claude Code を再接続してから、もう一度お試しください。",
+    "claudeTerms": "Claude Code を利用するには、更新された利用規約とプライバシーポリシーへの同意が必要です。「設定 > モデル」で接続した Claude アカウントで https://claude.ai にログインし、更新内容に同意してから、もう一度お試しください。",
     "codexOverloaded": "選択したモデルは混雑しています。別のモデルをお試しください。",
-    "codexReconnect": "ChatGPT セッションの再接続が必要です。モデルプロバイダーで ChatGPT (Codex) を再接続してから、もう一度お試しください。",
+    "codexReconnect": "ChatGPT セッションの再接続が必要です。「設定 > モデル」で ChatGPT (Codex) を再接続してから、もう一度お試しください。",
     "contentPolicyRejected": "モデルプロバイダーのコンテンツ安全ポリシーにより、このリクエストは拒否されました。同じ入力で再試行しても失敗します。リクエストを言い換えるか、新しい会話を始めるか、別のモデルに切り替えてください。",
     "executionTimeout": "この実行は時間制限に達しました。",
     "failed": "実行に失敗しました",
@@ -5956,9 +4580,9 @@
     "modelTemporarilyUnavailable": "モデルは一時的に利用できません",
     "modelUnavailable": "現在のモデルは利用できません。",
     "overloaded": "{{model}} は混雑しています。数分待ってからもう一度試すか、別のモデルに切り替えてください。",
-    "providerBalance": "接続されているモデルプロバイダーのアカウント残高が不足しています。",
+    "providerBalance": "接続されたサブスクリプションアカウントの残高が不足しています。",
     "transient": "エラーが発生しました。しばらくしてからもう一度お試しください。",
-    "vm0Credits": "クレジットが不足しています。続行するにはクレジットを追加するか、ご自身の API キーを設定してください。"
+    "vm0Credits": "クレジットが不足しています。続行するにはクレジットを追加するか、個人の Codex または Claude サブスクリプションを接続してください。"
   },
   "serviceStatus": {
     "dismiss": "サービス更新を閉じる",
@@ -6034,7 +4658,7 @@
           "title": "請求書"
         },
         "model": {
-          "description": "ワークスペースと実行で使用する AI モデルを選択します。",
+          "autoDescription": "Okou がタスクごとにモデルを選びます。",
           "title": "モデル"
         },
         "people": {
@@ -6124,110 +4748,61 @@
     },
     "models": {
       "actions": {
-        "addModel": "モデルの追加",
-        "deleteModel": "モデルの削除",
-        "editModel": "モデルの編集",
-        "resetUsage": "使用量をリセットする",
-        "upgradePro": "Pro をアップグレードして使用する",
-        "upgradeToPro": "プロにアップグレード"
+        "resetUsage": "使用量をリセットする"
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "承認ページを開けませんでした。リンクを手動で使用し、ここにコードを貼り付けます。",
           "authorizationCode": "認証コード",
           "codePlaceholder": "Claude からコードを貼り付けます",
-          "codeRequired": "Claude Codeの認証コードを貼り付けて続行します。",
-          "connectedToast": "Claude Codeが接続されました",
-          "connectTitle": "Claude Codeを接続する",
-          "error": "Claude Codeの接続に失敗しました。もう一度やり直してください。",
-          "expired": "Claude Codeの接続セッションの有効期限が切れました。もう一度やり直してください。",
+          "codeRequired": "Claudeの認証コードを貼り付けて続行します。",
+          "connectedToast": "Claudeが接続されました",
+          "connectTitle": "Claudeを接続する",
+          "error": "Claudeの接続に失敗しました。もう一度やり直してください。",
+          "expired": "Claudeの接続セッションの有効期限が切れました。もう一度やり直してください。",
           "instructions": "まず、[Claude 承認ページを開く] をクリックします。次に、Claude の {{brandName}} を承認し、承認後に表示される認証コードをコピーします。最後にそのコードをここに貼り付けて、「接続」をクリックします。",
           "openApproval": "Claude 承認ページを開く",
           "preparing": "準備中...",
-          "reconnectAction": "Claude Codeを再接続する",
-          "reconnectTitle": "Claude Codeを再接続",
+          "reconnectAction": "Claudeを再接続する",
+          "reconnectTitle": "Claudeを再接続",
           "signIn": "Claude でサインインします",
-          "submit": "接続する"
+          "submit": "接続する",
+          "usageNotice": "Claudeのサブスクリプションでログインすると、Claude Codeを基盤とするエージェントでClaudeモデルを利用できます。"
         },
         "codex": {
-          "approvalOpened": "承認ページが開きました。承認する前にデバイスコードをコピーしてください。",
-          "codeCopied": "デバイスコードがコピーされました。承認を待っています...",
-          "codeCopiedRetry": "デバイスコードがコピーされました。もう一度承認ページを開いてみてください。",
           "connectedToast": "ChatGPT が接続されました",
           "connectTitle": "Codex を接続します",
-          "copyAndOpen": "コードをコピーして承認ページを開く",
-          "copyAndOpenError": "デバイスコードをコピーできなかったか、承認ページを開けませんでした。コードを手動でコピーして、再試行してください。",
-          "copyError": "承認ページが開きましたが、デバイス コードがコピーされませんでした。承認する前に手動でコピーしてください。",
           "deviceCode": "デバイスコード",
           "error": "ChatGPT 接続に失敗しました。もう一度やり直してください。",
           "expired": "Codex 接続セッションの有効期限が切れました。もう一度やり直してください。",
           "freePlanRejected": "無料の ChatGPT プランでは、{{brandName}} 経由で Codex を使用できません。 Plus または Pro にアップグレードして、もう一度試してください。",
-          "instructions": "まず、「コードをコピーして承認ページを開く」をクリックします。次に、プロンプトが表示されたら、デバイス コードを OpenAI に貼り付けます。最後にアクセスを承認し、{{brandName}} が接続を完了するまでこのダイアログを開いたままにします。",
+          "instructions": "まず、コピーボタンでデバイス コードをコピーし、承認ページを開きます。次に、プロンプトが表示されたら、デバイス コードを OpenAI に貼り付けます。最後にアクセスを承認し、{{brandName}} が接続を完了するまでこのダイアログを開いたままにします。",
           "invalidTokenFormat": "Codex は、{{brandName}} が認識できない形式のログイン トークンを生成しました。 Codex を更新して、再試行してください。",
-          "openError": "デバイスコードはコピーされましたが、承認ページを開けませんでした。もう一度やり直してください。",
+          "openApproval": "承認ページを開く",
           "preparing": "準備中...",
           "reconnectAction": "ChatGPT を再接続する",
           "reconnectTitle": "Codex を再接続します",
           "signIn": "ChatGPT でサインインする"
         }
       },
-      "gateways": {
-        "actions": "ゲートウェイの操作",
-        "add": "プロバイダーを追加",
-        "addTitle": "モデルプロバイダーを追加",
-        "apiBaseUrl": "API ベース URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "API キー",
-        "deleteConfirm": "このモデルプロバイダー接続を削除しますか？これを使用しているモデルルートは利用できなくなります。",
-        "description": "Anthropic Messages、OpenAI Responses、またはその両方を介して、管理者が管理するゲートウェイに接続します。",
-        "dialogDescription": "Claude Code または Codex で使用する API ベース URL をプロトコルごとに設定します。",
-        "editTitle": "モデルプロバイダーを編集",
-        "empty": "カスタムモデルプロバイダーは設定されていません。",
-        "errors": {
-          "invalidMappings": "モデルマッピングは、値がアップストリームのモデル名である JSON オブジェクトである必要があります。",
-          "missingProtocol": "少なくとも 1 つのプロトコルを有効にしてください。",
-          "missingSecret": "API キーを入力してください。"
-        },
-        "headerName": "認証ヘッダー",
-        "headerValue": "ヘッダー値テンプレート",
-        "keepKey": "現在のキーを保持する場合は空欄にしてください",
-        "modelMappings": "モデルマッピング（JSON）",
-        "name": "名前",
-        "presets": {
-          "custom": "カスタム",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "リクエスト",
-        "title": "プロバイダー接続"
-      },
       "personal": {
         "accountFallback": "アカウント {{number}}",
-        "accountsDescription": "新しい実行で各プロバイダーが使用するアカウントを選択します。",
-        "accountsSectionTitle": "個人アカウント",
-        "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "使用中",
-        "addAccount": "アカウントを追加",
-        "claudeDescription": "Claudeベースのモデルルートで使用するClaude Codeログインを接続します。",
-        "claudeTitle": "Claude Code OAuth",
-        "codexDescription": "Codex をサポートするモデル ルートの Codex デバイス ログインを使用して接続します。",
+        "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
+        "autoTitle": "より多くのモデルを使う",
+        "claudeTitle": "Claude",
         "codexTitle": "ChatGPT (Codex)",
-        "description": "自分の実行でのみ、自分の資格情報を使用して使用されます。",
+        "connectAccount": "アカウントを接続",
         "disconnectAccount": "アカウントの接続を解除",
         "disconnectDescription": "このアカウントをOkouから削除します。プロバイダーとのサブスクリプションは解約されません。",
         "disconnecting": "接続を解除中…",
         "disconnectTitle": "{{account}}の接続を解除しますか？",
+        "loadError": "アカウントを読み込めませんでした。",
+        "loadingAccounts": "アカウントを読み込み中…",
         "noAccounts": "接続済みのアカウントはありません。",
         "reconnectAccount": "再接続",
-        "sectionTitle": "個人的な",
+        "retry": "再試行",
         "status": {
           "connected": "接続済み",
-          "connectedWithDetail": "接続されました ({{detail}})",
           "fiveHour": "5時間",
           "left": "{{percent}} 残り",
           "stale": "注意",
@@ -6236,125 +4811,51 @@
         "useAccount": "使用"
       },
       "picker": {
-        "builtInModel": "内蔵モデル",
-        "byokHelp": "設定されたプロバイダーを使用します",
-        "categoryChat": "チャット",
-        "categoryImage": "画像",
-        "categoryVideo": "動画",
+        "auto": "Auto",
         "chatModels": "チャットモデル",
         "effort": "強度",
         "effortScale": {
           "faster": "速さ",
+          "higherUsage": "使用量が多い",
+          "lowerUsage": "使用量が少ない",
           "smarter": "賢さ"
         },
         "fast": "速い",
         "fastImpact": {
-          "apiCost": "APIトークン料金 2×",
-          "chatGptUsage": "ChatGPT使用量 2.5×",
-          "fasterResponses": "モデルの応答が高速化",
-          "modelSpeed": "モデル速度 {{multiplier}}×",
-          "okouCredits": "Okouモデルクレジット消費 2×",
-          "providerSpeed": "速度はプロバイダーに依存",
           "providerUsage": "使用量はプロバイダーに依存",
-          "solApiSpeed": "モデル速度 最大2.5×",
-          "summary": "{{speed}} · {{usage}}"
+          "subscriptionUsage": "サブスクリプション使用量 {{multiplier}} 倍"
         },
+        "fastMode": "高速モード",
         "generationPriceTiers": {
           "higher": "1 回の生成あたりのコストは高め",
           "highest": "1 回の生成あたりのコストが最も高い",
           "lowest": "1 回の生成あたりのコストが最も低い",
           "typical": "1 回の生成あたりの標準的なコスト"
         },
-        "imageModels": "画像モデル",
-        "inheritDefault": "組織のデフォルトから継承",
+        "inheritDefault": "デフォルト（Auto）",
         "loadError": "モデルをロードできません。",
         "loading": "モデルをロード中...",
-        "menu": {
-          "backToModels": "モデルに戻る",
-          "changeModel": "{{category}}モデルを変更、{{model}}"
-        },
         "models": "モデル",
         "noConfiguredModels": "設定されたモデルはありません",
-        "priceTiers": {
-          "balanced": "バランスの取れたコストとパフォーマンス",
-          "economy": "日常の単純なタスク向けのエコノミー層",
-          "frontier": "フロンティアフラッグシップモデル",
-          "premium": "最も困難なタスクに対応するプレミアムフロンティアモデル"
-        },
         "pro": "プロ",
-        "providerLabels": {
-          "azureFoundryPortal": "Azure ファウンドリ ポータル",
-          "claudeCodeOauth": "Claude Code（OAuthトークン）",
-          "deepseek": "ディープシーク"
-        },
-        "standard": "標準",
-        "videoModels": "動画モデル"
-      },
-      "policies": {
-        "actionsFor": "{{model}} のアクション",
-        "apiKey": "APIキー",
-        "apiKeyDescription": "共有ワークスペースキー。チームが 1 つのアカウントを通じて請求する場合に最適です。",
-        "apiKeyPlaceholder": "API キーを入力してください",
-        "apiKeyRequired": "APIキーが必要です",
-        "availableModels": "利用可能なモデル",
-        "builtIn": "内蔵",
-        "builtInDescription": "ワークスペース クレジットで使用量がカバーされます。",
-        "claudeSubscription": "Claude サブスクリプション",
-        "claudeSubscriptionDescription": "各メンバーは、独自の Pro、Max、または Team プランを接続します。",
-        "codexSubscription": "Codex サブスクリプション",
-        "codexSubscriptionDescription": "各メンバーは独自のプロまたはチーム プランを接続します。",
-        "defaultModel": "デフォルトモデル",
-        "defaultModelDescription": "タスクが独自のモデルを選択しない場合に使用されます。",
-        "dialogDescription": "メンバーがこのモデルにアクセスする方法を決定します。",
-        "gateway": "カスタムゲートウェイ",
-        "gatewayDescription": "管理者が定義したプロバイダー接続を経由してルーティングします。",
-        "gatewayProvider": "プロバイダー接続",
-        "getKey": "鍵を入手する",
-        "invalidRoute": "無効なルート",
-        "missingProvider": "プロバイダーがありません",
-        "model": "モデル",
-        "noAvailableModels": "利用可能なモデルはありません",
-        "noMappedGateway": "このモデルにマッピングされたプロバイダー接続はありません。",
-        "pricing": "料金",
-        "providedBy": "提供元",
-        "provider": "プロバイダー",
-        "providerApiKey": "{{provider}} API キー",
-        "runsThrough": "実行経路",
-        "secretStored": "ワークスペースのシークレットに保存されます。",
-        "selectDefaultModel": "デフォルトのモデルを選択してください",
-        "selectGateway": "プロバイダー接続を選択してください",
-        "selectModel": "モデルを選択してください",
-        "selectProvider": "プロバイダーを選択してください",
-        "workspaceDescription": "このワークスペース内の全員が利用できます。"
+        "standard": "標準"
       },
       "reset": {
-        "confirmDescription": "{{provider}}リセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
+        "confirmDescription": "Codexリセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
         "progress": "リセット中...",
         "remaining_one": "リセット残り{{value}}回",
         "remaining_other": "リセット残り{{value}}回",
         "remainingUnavailable": "残りのリセット回数を取得できません",
         "remainingUnknown": "リセット —",
         "remainingWithExpiry_other": "リセット残り{{value}}回 · 有効期限{{expiry}}",
-        "title": "{{provider}}の使用量をリセットしますか？"
-      },
-      "stale": {
-        "claudeExpired": "Claude Codeセッションの有効期限が切れました。続行するには再接続してください。",
-        "claudeFailed": "Claude Codeの更新に失敗しました。再接続してもう一度お試しください。",
-        "claudeTitle": "Claude Codeセッションの再接続が必要です",
-        "codexExpired": "ChatGPT セッションの有効期限が切れました。続行するには再接続してください。",
-        "codexFailed": "ChatGPT の更新に失敗しました。再接続して再試行してください。",
-        "codexInvalidated": "ChatGPT セッションが取り消されました。再接続します。",
-        "codexReused": "ChatGPT セッションが他の場所で使用されました。再接続します。",
-        "codexTitle": "ChatGPTセッションは再接続が必要です"
+        "title": "Codexの使用量をリセットしますか？"
       },
       "toasts": {
         "accountDisconnected": "アカウントの接続を解除しました",
         "accountSwitched": "使用するアカウントを切り替えました",
-        "disconnected": "{{provider}} が切断されました",
-        "policiesUpdated": "モデルプロバイダーの設定が更新されました",
-        "reset": "{{provider}} 使用量のリセット",
-        "resetUnavailable": "{{provider}} 使用状況のリセットは利用できません",
-        "resetUnneeded": "{{provider}} の使用状況は現時点ではリセットする必要はありません"
+        "reset": "Codex 使用量のリセット",
+        "resetUnavailable": "Codex 使用状況のリセットは利用できません",
+        "resetUnneeded": "Codex の使用状況は現時点ではリセットする必要はありません"
       },
       "usage": {
         "inDays": "{{days}}日後",
@@ -6371,8 +4872,13 @@
       }
     },
     "paidTools": {
-      "description": "Okou がタスクで使用できる有料ツールを選択します。使用するたびにクレジットを消費します。",
+      "description": "これらのツールは組み込みクレジットを消費し、Okou はタスクの実行中に必要に応じて自動で使用します。オフにしたツールは使用されません。",
       "disabledForCreation": "{{tool}}はあなたの設定でオフです",
+      "imageModel": {
+        "description": "組み込みの画像生成は、あなたのタスクでこのモデルを使用します。",
+        "label": "モデル",
+        "saveError": "画像モデルを保存できませんでした。"
+      },
       "loadError": "ツールの設定を読み込めませんでした。",
       "loading": "ツールの設定を読み込み中…",
       "openSettings": "設定を開く",
@@ -6381,12 +4887,8 @@
       "saving": "保存中…",
       "scope": "この設定は {{workspace}} のあなたにのみ適用されます。",
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
-      "title": "有料ツール",
+      "title": "組み込みツール",
       "tools": {
-        "avatar-video-generation": {
-          "description": "話すアバターの動画を生成します。",
-          "name": "アバター動画生成"
-        },
         "finance": {
           "description": "企業、株価、市場データを調べます。",
           "name": "金融データ"
@@ -6394,10 +4896,6 @@
         "image-generation": {
           "description": "組み込みモデルで画像を生成します。",
           "name": "画像生成"
-        },
-        "image-recognition": {
-          "description": "画像を読み取り、分析します。",
-          "name": "画像認識"
         },
         "maps": {
           "description": "場所、住所、経路を検索します。",
@@ -6418,14 +4916,6 @@
         "social": {
           "description": "公開投稿を調べ、メディアを収集します。",
           "name": "ソーシャル調査"
-        },
-        "video-generation": {
-          "description": "組み込みモデルで動画を生成します。",
-          "name": "動画生成"
-        },
-        "voice-generation": {
-          "description": "組み込みの音声で読み上げを生成します。",
-          "name": "音声生成"
         },
         "web-search": {
           "description": "ウェブで最新の情報を検索します。",
@@ -6476,26 +4966,6 @@
         "sectionTitle": "チャット"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "クールダウンを解除",
-          "cancelDescription": "このグローバルクールダウンを解除すると、このルートがすべてのワークスペースで直ちに利用可能になります。",
-          "cancelling": "解除しています...",
-          "cancelTitle": "グローバルクールダウンを解除しますか？",
-          "cancelWarning": "後で対象となる障害が発生すると、このルートは再びクールダウンに入ることがあります。",
-          "description": "フォールバック選択から一時的に除外されている内蔵モデルルートを確認します。",
-          "empty": "現在、グローバルクールダウン中の内蔵モデルルートはありません。",
-          "globalActive": "有効なグローバルクールダウン",
-          "globalExplanation": "クールダウンはグローバルな運用状態であり、内蔵モデルを使用するすべてのワークスペースに影響します。",
-          "keepCooldown": "クールダウンを維持",
-          "loading": "内蔵モデルのクールダウン診断を読み込んでいます...",
-          "providerType": "プロバイダータイプ",
-          "refresh": "更新",
-          "selectedModel": "選択されたモデル",
-          "title": "内蔵モデルのフォールバック",
-          "unavailable": "内蔵モデルのクールダウン診断は利用できません。",
-          "unavailableUntil": "利用不可期限",
-          "upstreamModel": "アップストリームモデル"
-        },
         "capture": {
           "disabled": "障害者",
           "enabled_one": "次回の {{count}} の実行で有効になります",
@@ -6540,20 +5010,6 @@
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
         },
-        "morningBriefTrigger": {
-          "description": "実際の Morning Brief を今すぐ実行します。自分の次回実行を通常のスケジューラのキューに入れ、1 分以内に実際のブリーフと実際のメールが配信されます。毎日の配信時刻より前に実行すると、その朝はブリーフが 2 回届きます。",
-          "failed": "Morning Brief をキューに追加できませんでした。もう一度お試しください。",
-          "queued": "キューに追加しました。1 分以内にスケジューラがブリーフを配信します。",
-          "title": "Morning Brief",
-          "trigger": "Morning Brief を今すぐ実行",
-          "triggering": "キューに追加中…"
-        },
-        "voiceInput": {
-          "default": "デフォルト（{{model}}）",
-          "description": "音声入力 v2 のモデルを選択します。文字起こしモデルは {{model}} で文章を整えます。",
-          "title": "音声入力モデル",
-          "unavailable": "利用できないモデル（{{model}}）"
-        },
         "welcomeThread": {
           "create": "ウェルカムチャットを作成",
           "creating": "作成中…",
@@ -6565,9 +5021,6 @@
       "emailSubscription": {
         "description": "ブリーフ、リマインダー、その他のワークスペース更新をメールで受け取ります。",
         "descriptionWithEmail": "{{email}} でブリーフ、リマインダー、その他のワークスペース更新を受け取ります。",
-        "loading": "メール配信設定を確認中…",
-        "retryMessage": "メール配信設定を保存または読み込めませんでした。もう一度お試しください。",
-        "saving": "保存中…",
         "sectionTitle": "メール配信設定",
         "title": "メール通知",
         "unavailable": "メールを利用できません",
@@ -6593,16 +5046,10 @@
         "title": "言語"
       },
       "morningBrief": {
-        "chatAndEmail": "チャット＋メール",
-        "chatOnly": "チャットのみ",
-        "checkEmailSubscription": "上のメール配信設定で配信状況を確認してください。",
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
         "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
-        "loading": "Morning Brief の設定を読み込んでいます...",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "nextBrief": "次のブリーフ {{date}}",
-        "paused": "一時停止中",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
         "retry": "再試行",
@@ -6612,10 +5059,8 @@
       "send": {
         "cmdEnter": "⌘ 入力してください",
         "cmdEnterDescription": "⌘/Ctrl+Enter を押して送信し、Enter を押して改行します",
-        "description": "チャットでメッセージを送信する方法を選択します。",
         "enter": "入力してください",
         "enterDescription": "Enter を押して送信し、Shift+Enter を押して改行します",
-        "sectionTitle": "入力してください",
         "title": "メッセージを送信する"
       },
       "timezone": {
@@ -6652,17 +5097,12 @@
     "shared": {
       "cancel": "キャンセル",
       "close": "閉じる",
-      "connect": "接続する",
       "connecting": "接続中...",
       "delete": "削除",
       "discard": "破棄",
-      "disconnect": "切断する",
-      "edit": "編集",
       "loading": "読み込み中",
       "moreOptions": "その他のオプション",
-      "reconnect": "再接続",
       "remove": "削除",
-      "replace": "交換する",
       "save": "保存",
       "saveChanges": "変更を保存する",
       "saving": "保存中..."
@@ -6834,8 +5274,6 @@
     "tryItYourself": "自分で試す"
   },
   "ssh": {
-    "accessDescription": "SSHホストを使用できるエージェントを選択してください。",
-    "accessHelp": "この Agent が、現在および今後設定するすべての SSH ホストでコマンドを実行できるようにします。コネクタの権限とは別の設定です。",
     "add": "ホストを追加",
     "cancel": "キャンセル",
     "chooseFile": "ファイルを選択",
@@ -6845,8 +5283,10 @@
       "keepChanges": "このバージョンに自分の変更を適用",
       "latest": "最後に保存された設定",
       "mode": "接続",
+      "needsRebind": "このホストは Cloudflare Access の再設定が必要です。編集して別の設定に紐付けるか、直接接続を選んでください。それまでは接続できません。",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "公開ホスト名",
+      "rebindHelp": "このホストを復旧するには、使用可能な Cloudflare Access 設定または直接接続を選んで保存してください。保存するまで接続方法は変わりません。",
       "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
       "title": "Cloudflare Access",
       "unavailable": "このアカウントでは Cloudflare Access を利用できません。"
@@ -6889,16 +5329,14 @@
       "unused": "使用中のホストはありません"
     },
     "credentialsHelp": "認証情報は書き込み専用で、サンドボックスの外部に保持されます。鍵全体を貼り付けてください。空白はそのまま保持されます。フォームを閉じたときに入力欄を消去します。",
-    "credentialsTab": "認証情報",
     "delete": "ホストを削除",
     "deleteHelp": "このホストを削除しますか？認証情報は保持されます。Agent のホスト一覧には表示されなくなります。",
     "description": "エージェントがリモートコマンドを実行できる SSH ホストを設定します。",
     "displayName": "表示名",
     "edit": "ホストを編集",
     "editHelp": "別の認証情報を選ぶと、このホストだけが変更されます。直接接続先の変更は保存済みホスト鍵を消去します。Cloudflare Access が関係する変更では保持されます。",
-    "empty": "SSH ホストが設定されていません。ホストを追加すると、SSH アクセスを持つ Agent が利用できます。",
+    "empty": "SSH ホストが設定されていません。ホストを追加して、既定で、または個別のチャットで有効にしてください。",
     "errors": {
-      "agentUnavailable": "このエージェントは利用できなくなりました。別のエージェントを選択してください。",
       "configurationChanged": "編集中にこのホストが変更されました。入力内容は保持されています。最新の設定を確認してから変更を適用してください。",
       "credentialChanged": "編集中にこの認証情報が変更されました。入力内容は保持されています。保存する前に最新の設定と影響を受けるホストを確認してください。",
       "credentialInUse": "この認証情報は使用中です。先に対象ホストに別の認証情報を割り当てるか、対象ホストを削除してください。",
@@ -6916,11 +5354,9 @@
     "fingerprint": "記憶したホスト鍵",
     "host": "公開ホスト名または IP アドレス",
     "hostSection": "ホスト",
-    "hostsTab": "ホスト",
     "label": "SSH",
     "loadFailed": "SSH設定を読み込めませんでした。再試行してください。",
     "loading": "SSH ホストを読み込み中…",
-    "loadingAccess": "エージェントのアクセスを読み込み中…",
     "manage": "SSH ホストを管理",
     "notLearned": "ホスト鍵はまだ記憶されていません",
     "passphrase": "パスフレーズ（任意）",
@@ -6945,7 +5381,10 @@
     },
     "summary_one": "{{count}} 台のホストを設定済み",
     "summary_other": "{{count}} 台のホストを設定済み",
-    "title": "SSH ホスト",
+    "tailscale": {
+      "editUnavailable": "このホストは現在 Tailscale を使用しています。ここでは Tailscale の編集と再紐付けはまだ利用できません。保存された接続方式を維持するには、この編集をキャンセルしてください。",
+      "needsRebind": "このホストには新しい Tailscale 設定が必要です。Tailscale のセットアップと再紐付けは、ここではまだ利用できません。"
+    },
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
@@ -7038,15 +5477,20 @@
     }
   },
   "vnc": {
-    "accessDescription": "VNC デスクトップを表示・操作できる Agent を選択します。SSH とは別の権限です。",
-    "accessHelp": "この Agent が、現在および今後設定するすべての VNC デスクトップを表示・操作できるようにします。",
     "add": "ホストを追加",
     "cancel": "キャンセル",
     "close": "閉じる",
     "configured": "設定済み",
     "credential": {
       "add": "認証情報を追加",
+      "appleDhFieldHelp": "各項目は UTF-8 で 1～63 バイトです。NUL は使用できません。",
+      "appleDhMethod": "Apple DH のユーザー名とパスワード",
+      "appleRsaSrpMethod": "Apple RSA/SRP のユーザー名とパスワード",
+      "appleRsaSrpUsernameHelp": "RSA/SRP のユーザー名は UTF-8 で 1～234 バイトです。NUL は使用できません。",
+      "appleSrpMethod": "Apple Direct SRP のユーザー名とパスワード",
       "authentication": "認証方式",
+      "certificateChain": "クライアント証明書チェーン (PEM)",
+      "clientKeyHelp": "1～8 件の証明書と対応する秘密鍵を貼り付けます。保存時に暗号化されます。更新時は両方を交換してください。鍵は再表示されません。",
       "createNew": "新しい認証情報を作成",
       "delete": "認証情報を削除",
       "deleteHelp": "未使用の認証情報を削除しますか？元に戻せません。",
@@ -7060,6 +5504,9 @@
       "password": "VNC パスワード",
       "passwordHelp": "従来の VNC パスワードは印字可能な ASCII 文字 1～8 文字です。空白は保持されます。",
       "passwordHint": "サーバーの VNC パスワードを入力",
+      "privateKey": "暗号化されていない PKCS#8 秘密鍵 (PEM)",
+      "qemuScramPasswordHelp": "印字可能なASCII文字1～1023文字。空白は保持されます。",
+      "qemuScramUsernameHelp": "印字可能なASCII文字1～255文字。空白、カンマ、等号は使用できません。",
       "replace": "認証情報を置き換える",
       "replaceHelp": "オフのままなら保存済みの認証情報を保持します。置き換えると、この認証情報を使うすべてのホストに影響します。",
       "select": "認証情報を選択",
@@ -7075,7 +5522,6 @@
       "usernamePasswordHint": "このユーザー名のパスワードを入力",
       "usernamePasswordMethod": "ユーザー名とパスワード"
     },
-    "credentialsTab": "認証情報",
     "delete": "ホストを削除",
     "deleteHelp": "このホストを削除しますか？再利用可能な認証情報は保持されます。",
     "description": "Agent がリモートデスクトップを表示・操作できるようにします。",
@@ -7093,19 +5539,37 @@
       "invalidHost": "URL、ユーザー名、ポートを含めず、有効なホスト名または IP アドレスを入力してください。",
       "invalidInput": "VNC 設定を確認して再試行してください。",
       "invalidTrust": "最大 8 件、64 KiB 以下の有効な公開 CA 証明書を入力してください。",
-      "ownerChanged": "ワークスペースへのアクセスが変更されました。更新してから続行してください。",
       "revisionExhausted": "これ以上更新できません。新しく作成してください。"
     },
     "host": "ホスト名または IP アドレス",
     "hostHint": "例：desktop.example.com",
-    "hostsTab": "ホスト",
     "label": "VNC",
     "loadFailed": "VNC 設定を読み込めませんでした。",
     "loading": "VNC 設定を読み込み中…",
-    "loadingAccess": "エージェントのアクセスを読み込み中…",
     "manage": "VNC を管理",
     "port": "ポート",
     "retry": "再試行",
+    "rsaAes": {
+      "fieldHelp": "各項目は 1～255 UTF-8 バイトで、NUL は不可。空白は保持されます。従来の 8 バイト VNC パスワードとは異なります。",
+      "fullHelp": "RA2 と RA2_256 は RFB セッション全体を EAX で暗号化します。サーバーの完全な RSA ワイヤー鍵 pin を独立に確認してください。CA 信頼で代用できません。",
+      "importHelp": "信頼できるサーバー管理経路から PUBLIC KEY または RSA PUBLIC KEY PEM を取得してください。秘密鍵／証明書を貼り付けたり、接続先の鍵を自動的に信頼したりしないでください。変換は身元の証明や保存を行いません。完全な pin を確認して明示的に保存してください。",
+      "importKey": "信頼できる公開鍵をインポート",
+      "modulusBits": "インポートした公開鍵の長さ：{{bits}} ビット",
+      "neHelp": "RSA-AES は認証のみを暗号化します。検証済みの保存 SSH とサーバーのリテラルループバックが必須です。SSH はその区間のみを保護し、後段のプロキシでは平文 RFB が露出する可能性があります。",
+      "passwordMethod": "RSA-AES パスワード",
+      "pin": "サーバー RSA ワイヤー鍵 SHA256",
+      "pinHelp": "独立した信頼できる経路で取得した完全な 64 桁の16進 pin を入力：U32 ビッグエンディアンの法ビット数と、同じ固定幅の法・指数の SHA256 です。PEM／SPKI ハッシュや短い指紋ではありません。交換後に明示的に保存すると信頼が更新され、セッションが無効になります。",
+      "publicKey": "独立に信頼を確認した RSA 公開 PEM（任意）",
+      "ra2256Password": "RA2_256 · AES-256 · パスワード",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · ユーザー名／パスワード",
+      "ra2ne256Password": "RA2ne_256 · 認証のみ暗号化 · パスワード",
+      "ra2ne256UsernamePassword": "RA2ne_256 · 認証のみ暗号化 · ユーザー名／パスワード",
+      "ra2nePassword": "RA2ne · 認証のみ暗号化 · パスワード",
+      "ra2neUsernamePassword": "RA2ne · 認証のみ暗号化 · ユーザー名／パスワード",
+      "ra2Password": "RA2 · AES-128 · パスワード",
+      "ra2UsernamePassword": "RA2 · AES-128 · ユーザー名／パスワード",
+      "usernamePasswordMethod": "RSA-AES ユーザー名／パスワード"
+    },
     "save": "保存",
     "saveRecovery": {
       "resourceIdConflict": "作成できませんでした。この画面を閉じて再試行してください。",
@@ -7114,16 +5578,31 @@
     },
     "saving": "保存中…",
     "security": {
+      "appleDh": "Mac VNC (Apple DH)",
+      "appleDhHelp": "保存済みの SSH 接続経由で Mac の VNC サービスを使用します。macOS の独立した「画面共有」モードは未検証です。RFB の接続先はその Mac の 127.0.0.1 または ::1 に限られます。SSH が VNC セッション全体を保護します。管理下の Mac SSH ホストを使用してください。ホスト鍵だけでは先へのプロキシ転送を否定できません。",
+      "appleRsaSrp": "Mac VNC (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "保存済みの Mac への SSH 接続と RFB 接続先 127.0.0.1 または ::1 が必要です。RFB から受け取る RSA 鍵だけではホストの身元を証明できません。SRP はアカウントとサーバーの証明を検証し、SSH はセッション全体を保護します。SSH ホスト鍵も先へのプロキシ転送は否定できません。",
+      "appleSrp": "Mac VNC (Apple Direct SRP)",
+      "appleSrpHelp": "保存済みの Mac への SSH 接続と、RFB 接続先 127.0.0.1 または ::1 が必要です。SRP はアカウントとサーバーの証明を検証し、SSH は VNC セッション全体を保護します。SSH ホスト鍵は選択した接続先を識別しますが、先へのプロキシ転送は否定できません。",
+      "appleVncPassword": "Mac VNC（従来の VNC パスワード）",
+      "appleVncPasswordHelp": "Mac の任意設定の VNC パスワードは印字可能な ASCII 1～8 バイトです。type 2 単体ではサーバーの身元を検証せず、画面通信も暗号化しません。検証済み SSH が保護するのはこの Okou セッションであり、Mac の待受ポートではありません。ネットワーク設定によっては他のクライアントも 5900 番ポートに接続できます。リスクを理解したうえで Mac 側の設定を自分で有効にしてください。",
       "caBundle": "CA 証明書（PEM）",
       "caHelp": "CA 証明書は最大 8 件、合計 64 KiB です。秘密鍵やサーバー証明書は貼り付けないでください。",
       "caHint": "サーバー証明書を発行した公開 CA 証明書を貼り付けてください",
+      "clientCertificateHelp": "TLS 接続の成功だけではサーバー側のクライアント証明書検証は証明できません。サーバーの CA 検証とネットワーク制限を別途確認してください。SSH は中継先のみを認証します。",
+      "clientCertificateNone": "VNC パスワードなしのクライアント証明書 (X509None)",
+      "clientCertificateVnc": "VNC パスワード付きクライアント証明書 (X509Vnc)",
       "custom": "カスタム認証局",
       "profileLabel": "セキュリティプロファイル",
+      "qemuX509Sasl": "QEMU SCRAM-SHA-256（X509SASL）",
+      "qemuX509SaslHelp": "QEMUサブタイプ263のみ。SCRAMの前にTLSでサーバーを検証し、PLAINやサブタイプ264にはフォールバックしません。",
       "serverName": "TLS証明書の識別名",
       "serverNameHelp": "任意です。空欄の場合、RFB接続先ホストに対して証明書を検証します。証明書が別のDNS名を使用する場合のみ設定してください。",
       "serverNameHint": "例: desktop.internal.example.com",
       "system": "システムの認証局",
       "title": "サーバー証明書の信頼",
+      "x509None": "VNC パスワードなしで暗号化（X509None）",
+      "x509NoneHelp": "TLS はサーバーを検証して通信を暗号化しますが、VNC サーバーに対して利用者を認証しません。サーバーに到達できる他の人もデスクトップを操作できる可能性があります。SSH が保護するのは選択した SSH ホストまでで、他のクライアントやその先への転送は防ぎません。管理下の接続先にのみ選択してください。",
       "x509Plain": "暗号化されたユーザー名とパスワード（X509Plain）",
       "x509PlainHelp": "VeNCrypt X509Plain が必要です。TLS はユーザー名とパスワードを送信する前にサーバーを検証します。",
       "x509Vnc": "暗号化 VNC（X509Vnc）",
@@ -7131,19 +5610,26 @@
     },
     "summary_one": "設定済みホスト {{count}} 台",
     "summary_other": "設定済みホスト {{count}} 台",
-    "title": "VNC リモートアクセス",
     "transport": {
+      "appleDhDestinationHelp": "Apple DH には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
+      "appleRsaSrpDestinationHelp": "Apple RSA/SRP には、選択した SSH ホスト経由で到達する Mac 自身の 127.0.0.1 または ::1 を入力してください。",
+      "appleSrpDestinationHelp": "Apple Direct SRP には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
+      "appleVncPasswordDestinationHelp": "Mac の従来の VNC パスワードでは、保存済み SSH 接続先 Mac の 127.0.0.1 または ::1 を指定してください。",
       "destination": "RFB接続先",
       "destinationHelp": "SSHルートでは、このホストとポートへRunnerから直接ではなく、選択したSSHサーバーから接続します。",
       "direct": "Runnerから直接",
       "empty": "保存済みSSHホストがありません。このルートを使用する前にSSH設定で追加してください。",
       "loadFailed": "保存済みSSHホストを読み込めませんでした。",
       "loading": "保存済みSSHホストを読み込み中…",
+      "privateDirectHelp": "プライベート IP またはループバック IP には保存済み SSH ホストが必要です。上で SSH 経由を選んでください。接続方法は自動では変更されません。",
       "select": "保存済みSSHホストを選択",
       "selectionUnavailable": "選択したSSHホストは利用できません。別のホストを選択するか、明示的に直接接続へ切り替えてください。",
       "ssh": "保存済みSSHホスト経由",
       "sshConnection": "SSHホスト",
-      "sshHelp": "SSHはRunnerからSSHサーバーまでを保護します。そのサーバーからRFB接続先へ到達できる必要があります。AgentにはVNCとSSHの両方のアクセス権が必要です。",
+      "sshHelp": "SSHはRunnerからSSHサーバーまでを保護します。そのサーバーからRFB接続先へ到達できる必要があります。チャットでこのルートを使用するには、そのSSHホストも有効にする必要があります。",
+      "sshNeedsRebind": "この VNC 接続の SSH ホストは Cloudflare Access の再設定が必要です。接続する前に SSH 設定で再紐付けするか、明示的に直接接続を選んでください。",
+      "sshNeedsRebindStatus": "SSH の再紐付けが必要",
+      "sshTailscaleNeedsRebind": "この VNC 接続の SSH ホストには新しい Tailscale 設定が必要です。ここでは Tailscale の設定と再紐付けはまだ利用できません。",
       "title": "接続ルート",
       "unavailable": "このアカウントではSSH設定を利用できません。",
       "via": "SSHホスト:"
@@ -7863,6 +6349,18 @@
       "uninstallTitle": "公式ワークフローをアンインストール",
       "viewAndInstall": "表示してインストール",
       "yes": "はい"
+    },
+    "skillImport": {
+      "action": "スキルをインポート",
+      "description": "スキルがある環境でこのプロンプトを実行してください。各スキルは非公開のワークフローになります。",
+      "emptyAction": "Claude Code または Codex からインポート",
+      "providerLabel": "インポート元",
+      "source": {
+        "claudeCode": "Claude Code からインポート",
+        "codex": "Codex からインポート"
+      },
+      "title": "スキルをインポート",
+      "viewWorkflows": "ワークフローを表示"
     }
   },
   "works": {
@@ -7879,6 +6377,27 @@
     },
     "connected": "接続済み",
     "connectedWithDetail": "接続されました ({{detail}})",
+    "discord": {
+      "accountSetup": "アカウントが接続されていません。新しい Discord アカウントの接続はまだ利用できません。",
+      "adminSetup": "サーバーのセットアップはまだ利用できません。検証済みの既存の設定では、引き続き Discord を利用できます。",
+      "chooseDmServer": "サーバーを選択",
+      "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
+      "disconnect": "Discord の接続を解除",
+      "dmServer": "ダイレクトメッセージの既定のサーバー",
+      "limitedContext": "コンテキストの制限: Okou は通常のチャンネルメッセージを受信できない場合があります。Okou にメンションし、必要な詳細情報を含めてください。",
+      "loadError": "Discord の状態を読み込めませんでした。",
+      "loading": "Discord の状態を読み込み中…",
+      "memberSetup": "Discord へのアクセスについては、組織の管理者にお問い合わせください。サーバーのセットアップはまだ利用できません。",
+      "moreOptions": "その他の Discord オプション",
+      "retry": "再試行",
+      "server": "サーバー: {{name}}",
+      "suspended": "Discord は一時的に利用できません。既存の接続は保持されます。",
+      "title": "Discord",
+      "unconfigured": "この組織では、Discord はまだ利用できません。",
+      "uninstall": "Discord を削除",
+      "uninstallDescription": "この組織の全員が Discord から切断されます。他の組織の接続は維持されます。",
+      "uninstallTitle": "この組織から Discord を削除しますか？"
+    },
     "documentTitle": "連携先",
     "feishuConnected": "Feishu は正常に接続されました",
     "github": {

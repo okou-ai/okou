@@ -1,18 +1,16 @@
 use std::{future::Future, time::Duration};
 
-use flate2::{Decompress, FlushDecompress, Status};
-use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
-    time::Instant,
-};
-use tokio_rustls::client::TlsStream;
-
 use crate::{
-    Authenticated, Error, SharingMode,
+    Authenticated, AuthenticatedStream, Error, SharingMode,
     memory::{Budget, Buffer, Reservation},
     pixels::{Frame, Rect},
     wire::{Wire, validate_format},
     zrle,
+};
+use flate2::{Decompress, FlushDecompress, Status};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    time::Instant,
 };
 
 const MAX_COMPRESSED: usize = 40 * 1024 * 1024;
@@ -62,7 +60,7 @@ impl Cursor {
 /// reconnects. Updates consume ownership so failure or cancellation cannot leave
 /// a partially decoded connection available to a caller.
 pub struct FramebufferConnection<S> {
-    pub(crate) stream: TlsStream<S>,
+    pub(crate) stream: AuthenticatedStream<S>,
     frame: Frame,
     cursor: Option<Cursor>,
     inflater: Decompress,
@@ -313,7 +311,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> FramebufferConnection<S> {
 }
 
 async fn initialize<S: AsyncRead + AsyncWrite + Unpin>(
-    mut stream: TlsStream<S>,
+    mut stream: AuthenticatedStream<S>,
     sharing_mode: SharingMode,
 ) -> Result<FramebufferConnection<S>, Error> {
     let shared_flag = match sharing_mode {

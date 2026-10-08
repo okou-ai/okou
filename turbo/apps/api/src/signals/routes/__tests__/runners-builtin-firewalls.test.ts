@@ -16,12 +16,12 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { API_TEST_CONNECTOR_FIREWALL_CONFIGS } from "../../../test-fixtures/connector-catalog";
 import { runnersRoutes } from "../runners";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
-const OPENAI_API_KEY_AUTH_HEADER = [
+const CLAUDE_CODE_OAUTH_TOKEN_AUTH_HEADER = [
   "Bearer $",
-  "{{ secrets.OPENAI_API_KEY }}",
+  "{{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
 ].join("");
 const CHATGPT_ACCESS_TOKEN_AUTH_HEADER = [
   "Bearer $",
@@ -122,7 +122,7 @@ describe("runner builtin firewall resolver", () => {
       client().resolve({
         headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
         body: {
-          names: ["github", "github", "model-provider:openai-api-key"],
+          names: ["github", "github", "model-provider:claude-code-oauth-token"],
         },
       }),
       [200],
@@ -137,23 +137,23 @@ describe("runner builtin firewall resolver", () => {
     );
     expect(Object.keys(body.firewalls).sort()).toStrictEqual([
       "github",
-      "model-provider:openai-api-key",
+      "model-provider:claude-code-oauth-token",
     ]);
     expect(body.firewalls.github?.name).toBe("github");
     expect(
-      body.firewalls["model-provider:openai-api-key"]?.apis[0],
+      body.firewalls["model-provider:claude-code-oauth-token"]?.apis[0],
     ).toStrictEqual({
-      base: "https://api.openai.com/v1/responses",
+      base: "https://api.anthropic.com/v1/messages",
       auth: {
         headers: {
-          Authorization: OPENAI_API_KEY_AUTH_HEADER,
+          Authorization: CLAUDE_CODE_OAUTH_TOKEN_AUTH_HEADER,
         },
       },
       permissions: [],
     });
   });
 
-  it("publishes the Codex workspace discovery firewall to Runner", async () => {
+  it("publishes the Codex OAuth backend API firewall to Runner", async () => {
     const name = "model-provider:codex-oauth-token";
     const response = await accept(
       client().resolve({
@@ -163,21 +163,28 @@ describe("runner builtin firewall resolver", () => {
       [200],
     );
 
-    expect(response.body.firewalls[name]?.apis[1]).toStrictEqual({
-      base: "https://chatgpt.com/backend-api/wham/accounts/check",
-      auth: {
-        headers: {
-          Authorization: CHATGPT_ACCESS_TOKEN_AUTH_HEADER,
-          "ChatGPT-Account-ID": CHATGPT_ACCOUNT_ID_AUTH_HEADER,
+    expect(response.body.firewalls[name]?.apis).toStrictEqual([
+      {
+        base: "https://chatgpt.com/backend-api",
+        auth: {
+          headers: {
+            Authorization: CHATGPT_ACCESS_TOKEN_AUTH_HEADER,
+            "ChatGPT-Account-ID": CHATGPT_ACCOUNT_ID_AUTH_HEADER,
+          },
         },
+        permissions: [
+          {
+            name: "codex:api",
+            rules: ["GET /{path*}", "POST /{path*}"],
+          },
+        ],
       },
-      permissions: [
-        {
-          name: "codex:workspace-routing",
-          rules: ["GET /"],
-        },
-      ],
-    });
+      {
+        base: "https://auth.openai.com",
+        auth: { headers: {} },
+        permissions: [],
+      },
+    ]);
   });
 
   it("handles concurrent full generated builtin firewall catalog resolves", async () => {
@@ -227,8 +234,8 @@ describe("runner builtin firewall resolver", () => {
         JSON.parse(bodyBytes.toString("utf8")),
       );
     expect(body.firewalls.github?.name).toBe("github");
-    expect(body.firewalls["model-provider:openai-api-key"]?.name).toBe(
-      "model-provider:openai-api-key",
+    expect(body.firewalls["model-provider:claude-code-oauth-token"]?.name).toBe(
+      "model-provider:claude-code-oauth-token",
     );
     expect(bodyBytes.byteLength).toBeLessThanOrEqual(
       BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
@@ -261,12 +268,12 @@ describe("runner builtin firewall resolver", () => {
     ]);
     expect(body.firewalls.github?.name).toBe("github");
     expect(
-      body.firewalls["model-provider:openai-api-key"]?.apis[0],
+      body.firewalls["model-provider:claude-code-oauth-token"]?.apis[0],
     ).toStrictEqual({
-      base: "https://api.openai.com/v1/responses",
+      base: "https://api.anthropic.com/v1/messages",
       auth: {
         headers: {
-          Authorization: OPENAI_API_KEY_AUTH_HEADER,
+          Authorization: CLAUDE_CODE_OAUTH_TOKEN_AUTH_HEADER,
         },
       },
       permissions: [],

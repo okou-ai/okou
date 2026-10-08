@@ -121,8 +121,14 @@ export interface ConnectorServerFirewallCatalog extends ConnectorServerFirewallS
   getFixedHostOwner(host: string): ConnectorServerFirewallHostOwner | null;
 }
 
+/** Server firewall facts never need skills, auth methods, or display copy. */
+type ConnectorServerFirewallSource = Pick<
+  ConnectorCatalogArtifactConnector,
+  "slug" | "label" | "mcp" | "firewall"
+>;
+
 interface AcceptedConnectorServerFirewallEntry {
-  readonly connector: ConnectorCatalogArtifactConnector;
+  readonly connector: ConnectorServerFirewallSource;
   readonly runtimeMethods: () => readonly ConnectorAuthMethodRuntimeConfig[];
   firewall: AcceptedServerFirewall | undefined;
   routing: ConnectorCatalogFirewallRouting | undefined;
@@ -143,6 +149,7 @@ interface FirewallRoutingIndexApiMetadata {
 
 interface FirewallRoutingApiMetadata {
   readonly base: string;
+  readonly usesAwsSigv4: boolean;
   readonly environmentNames: readonly string[];
   readonly routes: readonly FirewallRoutingRouteMetadata[];
 }
@@ -404,6 +411,7 @@ function acceptedRoutingMetadata(args: {
     apis: args.routing.apis.map((api) => {
       return {
         base: api.base,
+        usesAwsSigv4: api.usesAwsSigv4,
         environmentNames: api.environmentNames,
         routes: api.routes,
       };
@@ -412,7 +420,7 @@ function acceptedRoutingMetadata(args: {
 }
 
 function acceptedEntries(args: {
-  readonly connectors: readonly ConnectorCatalogArtifactConnector[];
+  readonly connectors: readonly ConnectorServerFirewallSource[];
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];
@@ -569,7 +577,7 @@ function acceptedFixedHostOwners(
 }
 
 export function createAcceptedConnectorServerFirewallCatalog(args: {
-  readonly artifact: ConnectorCatalogArtifact;
+  readonly artifact: Pick<ConnectorCatalogArtifact, "connectors">;
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];
@@ -581,7 +589,7 @@ export function createAcceptedConnectorServerFirewallCatalog(args: {
 }
 
 export function createAcceptedConnectorServerFirewallCatalogFromConnectors(args: {
-  readonly connectors: readonly ConnectorCatalogArtifactConnector[];
+  readonly connectors: readonly ConnectorServerFirewallSource[];
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];

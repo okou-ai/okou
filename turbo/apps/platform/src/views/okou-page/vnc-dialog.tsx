@@ -31,9 +31,12 @@ import {
   VncCredentialFields,
   VncCredentialImpact,
   VncCredentialSelection,
+  VncDisplayNameField,
   VncEndpointFields,
-  VncSecurityFields,
+  VncSecurityProfileField,
+  VncTlsFields,
   VncTransportFields,
+  isPrivateVncLiteral,
 } from "./vnc-fields.tsx";
 
 function useDialogCopy(kind: VncDialogState["kind"] | undefined) {
@@ -140,15 +143,16 @@ function useSaveBlocked(dialog: VncDialogState) {
   }
   if (dialog.kind === "create" || dialog.kind === "edit") {
     const credentialBlocked =
-      credentials.state !== "hasData" ||
-      credentials.data === null ||
-      (editor.selection !== "new" &&
-        !credentials.data.some((credential) => {
-          return (
-            credential.id === editor.selection &&
-            vncCredentialMatchesProfile(credential, editor.profile)
-          );
-        }));
+      editor.profile !== "x509_none" &&
+      (credentials.state !== "hasData" ||
+        credentials.data === null ||
+        (editor.selection !== "new" &&
+          !credentials.data.some((credential) => {
+            return (
+              credential.id === editor.selection &&
+              vncCredentialMatchesProfile(credential, editor.profile)
+            );
+          })));
     const transportBlocked =
       editor.transport === "ssh" &&
       (sshConnections.state !== "hasData" ||
@@ -156,7 +160,10 @@ function useSaveBlocked(dialog: VncDialogState) {
         !sshConnections.data.some((connection) => {
           return connection.id === editor.sshConnectionId;
         }));
-    return credentialBlocked || transportBlocked;
+    const destinationBlocked =
+      editor.transport === "direct" &&
+      isPrivateVncLiteral(editor.destinationHost);
+    return credentialBlocked || transportBlocked || destinationBlocked;
   }
   return (
     dialog.kind === "delete-credential" &&
@@ -232,6 +239,8 @@ function VncForm({
   const uncertain = useGet(vncSaveUncertain$);
   const conflict = useGet(vncConflict$);
   const mount = useSet(mountVncForm$);
+  const editor = useGet(vncEditor$);
+  const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const blocked = useSaveBlocked(dialog);
   const { title } = useDialogCopy(dialog.kind);
@@ -257,13 +266,24 @@ function VncForm({
           <fieldset disabled={disabled} className="grid min-w-0 gap-5">
             {hostEditor ? (
               <>
-                <VncEndpointFields connection={dialog.connection} />
-                <VncTransportFields disabled={disabled} />
-                <VncSecurityFields
-                  connection={dialog.connection}
-                  disabled={disabled}
-                />
-                <VncCredentialSelection disabled={disabled} />
+                <fieldset className="grid min-w-0 gap-4">
+                  <legend className="mb-3 text-sm font-semibold">
+                    {t(($) => {
+                      return $.ssh.hostSection;
+                    })}
+                  </legend>
+                  <VncDisplayNameField connection={dialog.connection} />
+                  <VncSecurityProfileField
+                    profile={editor.profile}
+                    disabled={disabled}
+                  />
+                  <VncTransportFields disabled={disabled} />
+                  <VncEndpointFields connection={dialog.connection} />
+                  <VncTlsFields disabled={disabled} />
+                </fieldset>
+                {editor.profile !== "x509_none" && (
+                  <VncCredentialSelection disabled={disabled} />
+                )}
               </>
             ) : (
               <VncCredentialFields

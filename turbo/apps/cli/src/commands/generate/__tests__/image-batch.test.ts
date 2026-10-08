@@ -45,8 +45,7 @@ const IMAGE_STATUS_URL = `http://localhost:3000/api/built-in-generations/${IMAGE
 
 interface CapturedImageRequest {
   readonly prompt: string;
-  readonly model: string;
-  readonly size: string;
+  readonly size?: string;
   readonly quality: string;
   readonly background: string;
   readonly outputFormat: string;
@@ -174,7 +173,6 @@ describe("okou generate image-batch command", () => {
     expect(attempts.get("Dog running through grass")).toBe(2);
     expect(requests.get("Dog collar detail")).toEqual({
       prompt: "Dog collar detail",
-      model: "seedream4",
       size: "1024x1024",
       quality: "low",
       background: "auto",
@@ -184,8 +182,6 @@ describe("okou generate image-batch command", () => {
     });
     expect(requests.get("Four dogs together")).toEqual({
       prompt: "Four dogs together",
-      model: "seedream4",
-      size: "816x816",
       quality: "low",
       background: "auto",
       outputFormat: "png",
@@ -194,7 +190,6 @@ describe("okou generate image-batch command", () => {
     });
     expect(requests.get("Dog asleep by a window")).toEqual({
       prompt: "Dog asleep by a window",
-      model: "seedream4",
       size: "2048x1024",
       quality: "low",
       background: "auto",
@@ -877,13 +872,34 @@ describe("okou generate image-batch command", () => {
       await writeFile(manifestPath, "hero\tA happy dog\n", "utf8");
       await writeFile(
         fixturePath,
-        `import { readFile, writeFile } from "node:fs/promises";
+        `import { watch } from "node:fs";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 const [, , , manifestPath, stateDirectory, ...options] = process.argv.slice(2);
+const releasePath = join(stateDirectory, "release-worker");
+async function waitForRelease() {
+  await new Promise((resolve, reject) => {
+    const watcher = watch(stateDirectory, (_event, filename) => {
+      if (filename === "release-worker") {
+        watcher.close();
+        resolve();
+      }
+    });
+    access(releasePath).then(
+      () => { watcher.close(); resolve(); },
+      (error) => {
+        if (error.code !== "ENOENT") {
+          watcher.close();
+          reject(error);
+        }
+      },
+    );
+  });
+}
 await writeFile(join(stateDirectory, "worker-options.json"), JSON.stringify(options), "utf8");
 const manifest = await readFile(manifestPath, "utf8");
 const id = manifest.split("\\t", 1)[0];
-await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+await waitForRelease();
 await writeFile(join(stateDirectory, "results.tsv"), id + "\\thttps://cdn.example/dog.png\\n", "utf8");
 await writeFile(join(stateDirectory, "done"), "0\\n", "utf8");
 `,
@@ -910,15 +926,33 @@ await writeFile(join(stateDirectory, "done"), "0\\n", "utf8");
         }
       }
 
-      await generateCommand.parseAsync([
-        "node",
-        "cli",
-        "image-batch",
-        "wait",
-        stateDirectory,
-        "--timeout",
-        "5",
-      ]);
+      const releasePath = join(stateDirectory, "release-worker");
+      try {
+        await vi.waitFor(async () => {
+          expect(
+            await readFile(join(stateDirectory, "worker-options.json"), "utf8"),
+          ).toBe(
+            JSON.stringify(visibility ? ["--visibility", visibility] : []),
+          );
+        });
+        await expect(
+          readFile(join(stateDirectory, "done"), "utf8"),
+        ).rejects.toMatchObject({ code: "ENOENT" });
+        await Promise.all([
+          generateCommand.parseAsync([
+            "node",
+            "cli",
+            "image-batch",
+            "wait",
+            stateDirectory,
+            "--timeout",
+            "5",
+          ]),
+          writeFile(releasePath, "", "utf8"),
+        ]);
+      } finally {
+        await writeFile(releasePath, "", "utf8");
+      }
 
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(stdout).toContain(`Image batch started: ${stateDirectory}`);

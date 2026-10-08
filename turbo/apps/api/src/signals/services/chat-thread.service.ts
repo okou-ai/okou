@@ -1,3 +1,5 @@
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command, computed, type Computed } from "ccstate";
 import {
   type ChatThreadDraft,
@@ -9,33 +11,30 @@ import {
   type Indicator,
   type Indicators,
   persistedAttachmentSchema,
-  indicatorSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  modelProviderCredentialScopeSchema,
-  modelProviderTypeSchema,
-  type ModelProviderCredentialScope,
-  type ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
 import {
   type HostedArtifactKind,
   hostedArtifactKindSchema,
 } from "@okouai/api-contracts/contracts/host";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
+import {
+  chatEventTerminalPredicate,
+  chatEvents,
+} from "@okouai/db/schema/chat-event";
 import {
   chatEventSearchMessages,
   chatEventSearchMessageWatermarks,
 } from "@okouai/db/schema/chat-event-search";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import {
   CANONICAL_ASSET_VERSION,
   runUploadedFiles,
 } from "@okouai/db/schema/run-uploaded-file";
 import { agents } from "@okouai/db/schema/agent";
-import { unionAll } from "drizzle-orm/pg-core";
 import {
   and,
   asc,
@@ -47,53 +46,55 @@ import {
   inArray,
   isNotNull,
   isNull,
-  notExists,
+  max,
   or,
-  type SQL,
   sql,
 } from "drizzle-orm";
+import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
-import {
-  nullableDriverValueDecoder,
-  zodEnumDriverValueDecoder,
-} from "../../lib/db-structured-result";
-import type { Tx } from "../../lib/db-types";
-import { now, nowDate } from "../../lib/time";
-import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { settle } from "../utils";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
+import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
+import { now, nowDate } from "../../lib/time";
+import { db$, writeDb$ } from "../external/db";
+import { prepareChatEvent } from "./chat-event.service";
+import { appendCanonicalChatEventsSql } from "./chat-event-append.service";
 import { inferMimetype } from "./chat-event-shared.service";
-import { latestReadWatermarkEventSubquery } from "./chat-thread-read-state-query";
-import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
-import { revokeMorningBriefNativeThreadAuthority } from "./morning-brief-native-schedule.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import {
-  appendChatThreadEvent,
-  chatThreadServiceTierFromCodex,
-} from "./chat-thread-event.service";
-import { withChatThreadContentWrite } from "./chat-thread-content-erasure-admission.service";
-import { persistChatThreadDraftRow } from "./chat-thread-draft-write.service";
-import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-import { cancelRun$, type CancelRunResult } from "./run-cancel.service";
+  deleteChatThreadDraft$,
+  persistChatThreadDraft$,
+} from "./chat-thread-draft-write.service";
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
+import {
+  cancelRun$,
+  type CancelRunResult,
+} from "./agent-run-terminal-transition.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 import { cancellationRecoveryPendingForThread } from "./chat-active-run.service";
-import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
-import { disableThreadBoundWorkflowAutomations } from "./workflow-user-automation-thread.service";
+import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
+import { threadBoundWorkflowAutomationsPredicate } from "./workflow-user-automation-thread.service";
 import {
-  insertInitialChatThreadConnectorSelections,
-  prepareChatThreadConnectorSelections,
+  initialChatThreadConnectorSelectionStatements,
+  selectionParentMissing,
+  prepareChatThreadConnectorSelections$,
   type PreparedChatThreadConnectorSelection,
 } from "./chat-thread-connector-selection.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
-import { ORDINARY_CHAT_THREAD_PROVENANCE } from "./morning-brief-thread-provenance.service";
+import {
+  chatThreadCreatedEventSql,
+  prepareChatThreadInsert,
+  createdChatThreadFromRow,
+} from "./chat-thread-create.service";
+import {
+  initialRemoteAccessOwnershipPredicate,
+  initialRemoteAccessValues,
+} from "./chat-remote-access.service";
 
 type ChatThreadRow = {
   readonly id: string;
   readonly title: string | null;
   readonly agentId: string;
-  readonly draftUserMessage: UserMessageInputDocument | null;
-  readonly draftAttachments: readonly PersistedAttachment[] | null;
-  readonly modelProviderId: string | null;
-  readonly modelProviderType: ModelProviderType | null;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
@@ -172,13 +173,8 @@ function ownedChatThread(
         id: chatThreads.id,
         title: chatThreads.title,
         agentId: agents.id,
-        draftUserMessage: chatThreads.draftUserMessage,
-        draftAttachments: chatThreads.draftAttachments,
         computerUseHostId: chatThreads.computerUseHostId,
         cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-        modelProviderId: chatThreads.modelProviderId,
-        modelProviderType: chatThreads.modelProviderType,
-        modelProviderCredentialScope: chatThreads.modelProviderCredentialScope,
         codexServiceTier: chatThreads.codexServiceTier,
         orgId: agents.orgId,
         lastReadAt: chatThreads.lastReadAt,
@@ -201,21 +197,8 @@ function ownedChatThread(
       id: thread.id,
       title: thread.title,
       agentId: thread.agentId,
-      draftUserMessage: thread.draftUserMessage ?? null,
-      draftAttachments: persistedAttachmentSchema
-        .array()
-        .nullable()
-        .parse(thread.draftAttachments ?? null),
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      modelProviderId: thread.modelProviderId,
-      modelProviderType:
-        thread.modelProviderType === null
-          ? null
-          : modelProviderTypeSchema.parse(thread.modelProviderType),
-      modelProviderCredentialScope: modelProviderCredentialScopeSchema
-        .nullable()
-        .parse(thread.modelProviderCredentialScope),
       codexServiceTier: thread.codexServiceTier ?? null,
       orgId: thread.orgId ?? null,
       lastReadAt: thread.lastReadAt,
@@ -228,21 +211,37 @@ function ownedChatThread(
   });
 }
 
+/**
+ * The caller's saved draft for one thread, read from `chat_thread_drafts` alone
+ * by thread id and owner. A thread the caller does not own, a missing thread
+ * and a thread without a draft all read as the empty draft; clients already
+ * treat that the same as the former 404.
+ */
 export function chatThreadDraft(args: {
   readonly threadId: string;
   readonly userId: string;
-}): Computed<Promise<ChatThreadDraft | null>> {
-  return computed(async (get): Promise<ChatThreadDraft | null> => {
-    const thread = await get(ownedChatThread(args.threadId, args.userId));
-    if (!thread) {
-      return null;
-    }
-
+}): Computed<Promise<ChatThreadDraft>> {
+  return computed(async (get): Promise<ChatThreadDraft> => {
+    const db = get(db$);
+    const [draft] = await db
+      .select({
+        draftUserMessage: chatThreadDrafts.draftUserMessage,
+        draftAttachments: chatThreadDrafts.draftAttachments,
+      })
+      .from(chatThreadDrafts)
+      .where(
+        and(
+          eq(chatThreadDrafts.chatThreadId, args.threadId),
+          eq(chatThreadDrafts.userId, args.userId),
+        ),
+      )
+      .limit(1);
     return {
-      draftUserMessage: thread.draftUserMessage,
-      draftAttachments: thread.draftAttachments
-        ? [...thread.draftAttachments]
-        : null,
+      draftUserMessage: draft?.draftUserMessage ?? null,
+      draftAttachments: persistedAttachmentSchema
+        .array()
+        .nullable()
+        .parse(draft?.draftAttachments ?? null),
     };
   });
 }
@@ -251,25 +250,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
+const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
+const INDICATOR_AGENT_LIMIT = 128;
+const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
-const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
-const indicatorDecoder = zodEnumDriverValueDecoder(indicatorSchema);
-
-function noActiveRunsForCurrentThreadCondition(db: Pick<Db, "select">): SQL {
-  return notExists(
-    db
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.chatThreadId, chatThreads.id),
-          inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
-          isNotNull(agentRuns.triggerSource),
-        ),
-      ),
-  );
-}
+/** Unread candidates read per request: the newest threads within the lookback. */
+export const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
+export const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
 function ownedChatThreadDetail(
   threadId: string,
@@ -298,15 +285,14 @@ export function chatThreadDetail(args: {
   readonly threadId: string;
   readonly userId: string;
 }): Computed<Promise<ChatThreadDetail | null>> {
+  const thread$ = ownedChatThreadDetail(args.threadId, args.userId);
+  const recoveryPending$ = cancellationRecoveryPendingForThread(args);
   return computed(async (get): Promise<ChatThreadDetail | null> => {
-    const thread = await get(ownedChatThreadDetail(args.threadId, args.userId));
+    const thread = await get(thread$);
     if (!thread) {
       return null;
     }
-    const cancellationRecoveryPending =
-      await cancellationRecoveryPendingForThread(get(db$), {
-        threadId: args.threadId,
-      });
+    const cancellationRecoveryPending = await get(recoveryPending$);
 
     return {
       lastReadAt: thread.lastReadAt?.toISOString() ?? null,
@@ -314,161 +300,217 @@ export function chatThreadDetail(args: {
     };
   });
 }
-
-/**
- * The user's unread threads under an agent, each with the creation time of
- * the latest run-finish marker. A thread is unread only when it has at least
- * one run-finish marker and that marker is newer than the read watermark.
- */
-export function chatThreadUnreads(args: {
+type IndicatorOwner = {
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
-}): Computed<Promise<readonly { threadId: string; unreadAt: string }[]>> {
-  return computed(async (get) => {
-    const db = get(db$);
-    const latestReadWatermark = latestReadWatermarkEventSubquery(
-      db,
-      chatThreads.id,
-    );
-    const rows = await db
-      .select({
-        threadId: chatThreads.id,
-        unreadAt: latestReadWatermark.createdAt,
-      })
-      .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .crossJoinLateral(latestReadWatermark)
+};
+type IndicatorThreadRow = {
+  readonly threadId: string;
+  readonly agentId: string | null;
+};
+type UnreadIndicatorRow = IndicatorThreadRow & {
+  readonly unreadAt: Date;
+};
+
+function indicatorAgentIds(args: IndicatorOwner) {
+  return computed(async (get): Promise<readonly string[]> => {
+    const rows = await get(db$)
+      .select({ id: agents.id })
+      .from(agents)
       .where(
         and(
-          eq(chatThreads.userId, args.userId),
           eq(agents.orgId, args.orgId),
-          eq(chatThreads.agentId, args.agentId),
-          or(
-            isNull(chatThreads.lastReadAt),
-            gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
-          ),
-          noActiveRunsForCurrentThreadCondition(db),
+          or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
         ),
-      );
+      )
+      .orderBy(desc(agents.updatedAt), desc(agents.id))
+      .limit(INDICATOR_AGENT_LIMIT);
     return rows.map((row) => {
-      return { threadId: row.threadId, unreadAt: row.unreadAt.toISOString() };
+      return row.id;
     });
   });
 }
 
-/**
- * Active and unread indicators for the user's agents and threads in the
- * current organization. Active threads are complete; unread threads are the
- * latest 50 terminal markers from the last seven days. Active threads are
- * computed once and reused to keep unread classification within one database
- * snapshot. Unread agent aggregates take precedence so unread actions remain
- * available while another thread for the same agent is active.
- */
-export function chatIndicators(args: {
-  readonly userId: string;
-  readonly orgId: string;
-}): Computed<Promise<Indicators>> {
-  return computed(async (get): Promise<Indicators> => {
-    const db = get(db$);
-    const unreadCutoff = new Date(now() - INDICATOR_UNREAD_LOOKBACK_MS);
-    const activeThreads = db.$with("active_threads").as(
-      db
-        .selectDistinct({
-          threadId: chatThreads.id,
-          agentId: chatThreads.agentId,
-        })
+function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
+  rows.sort((left, right) => {
+    const byTime = right.unreadAt.getTime() - left.unreadAt.getTime();
+    if (byTime !== 0) {
+      return byTime;
+    }
+    return right.threadId < left.threadId ? -1 : 1;
+  });
+  return rows.slice(0, INDICATOR_UNREAD_LIMIT);
+}
+
+function createIndicatorRows(args: IndicatorOwner) {
+  const agentIds$ = indicatorAgentIds(args);
+  const activeRows$ = computed(
+    async (get): Promise<readonly IndicatorThreadRow[]> => {
+      const agentIds = await get(agentIds$);
+      if (agentIds.length === 0) {
+        return [];
+      }
+      return await get(db$)
+        .select({ threadId: chatThreads.id, agentId: chatThreads.agentId })
         .from(agentRuns)
         .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .where(
           and(
-            eq(chatThreads.userId, args.userId),
-            eq(agents.orgId, args.orgId),
+            eq(agentRuns.userId, args.userId),
+            eq(agentRuns.orgId, args.orgId),
             inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
             isNotNull(agentRuns.triggerSource),
+            eq(chatThreads.userId, args.userId),
+            inArray(chatThreads.agentId, agentIds),
           ),
-        ),
-    );
-    const latestReadWatermark = latestReadWatermarkEventSubquery(
-      db,
-      chatThreads.id,
-    );
-    const unreadThreads = db.$with("unread_threads").as(
-      db
+        )
+        .groupBy(chatThreads.id, chatThreads.agentId)
+        .orderBy(desc(max(agentRuns.createdAt)))
+        .limit(INDICATOR_ACTIVE_LIMIT);
+    },
+  );
+  const unreadRows$ = computed(
+    async (get): Promise<readonly UnreadIndicatorRow[]> => {
+      const agentIds = await get(agentIds$);
+      if (agentIds.length === 0) {
+        return [];
+      }
+      const db = get(db$);
+      const unreadCutoff = new Date(now() - INDICATOR_UNREAD_LOOKBACK_MS);
+      // The newest threads with messages after their read watermark are the only
+      // candidates, so the per-thread reads below have a fixed upper bound.
+      const candidates = await db
         .select({
           threadId: chatThreads.id,
           agentId: chatThreads.agentId,
-          unreadAt: latestReadWatermark.createdAt,
+          lastReadAt: chatThreads.lastReadAt,
         })
         .from(chatThreads)
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-        .leftJoin(activeThreads, eq(activeThreads.threadId, chatThreads.id))
-        .crossJoinLateral(latestReadWatermark)
         .where(
           and(
             eq(chatThreads.userId, args.userId),
-            eq(agents.orgId, args.orgId),
-            isNull(activeThreads.threadId),
+            inArray(chatThreads.agentId, agentIds),
+            eq(chatThreads.muted, false),
             gte(chatThreads.lastMessageAt, unreadCutoff),
             or(
               isNull(chatThreads.lastReadAt),
               gt(chatThreads.lastMessageAt, chatThreads.lastReadAt),
             ),
-            gte(latestReadWatermark.createdAt, unreadCutoff),
-            or(
-              isNull(chatThreads.lastReadAt),
-              gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
-            ),
           ),
         )
-        .orderBy(desc(latestReadWatermark.createdAt), desc(chatThreads.id))
-        .limit(INDICATOR_UNREAD_LIMIT),
-    );
-    const indicatorRows = db.$with("indicator_rows").as(
-      unionAll(
+        .orderBy(desc(chatThreads.lastMessageAt), desc(chatThreads.id))
+        .limit(INDICATOR_UNREAD_CANDIDATE_LIMIT);
+      if (candidates.length === 0) {
+        return [];
+      }
+      const candidateIds = candidates.map((row) => {
+        return row.threadId;
+      });
+
+      const [terminalRows, activeRows] = await Promise.all([
         db
-          .select({
-            threadId: activeThreads.threadId,
-            agentId: activeThreads.agentId,
-            indicator: sql`'active'`.mapWith(indicatorDecoder).as("indicator"),
-            unreadAt: sql`NULL`
-              .mapWith(nullableDriverValueDecoder(chatEvents.createdAt))
-              .as("unread_at"),
+          .selectDistinctOn([chatEvents.chatThreadId], {
+            threadId: chatEvents.chatThreadId,
+            createdAt: chatEvents.createdAt,
           })
-          .from(activeThreads),
+          .from(chatEvents)
+          .where(
+            and(
+              inArray(chatEvents.chatThreadId, candidateIds),
+              chatEventTerminalPredicate(chatEvents.eventType),
+              gte(chatEvents.createdAt, unreadCutoff),
+            ),
+          )
+          .orderBy(
+            chatEvents.chatThreadId,
+            desc(chatEvents.createdAt),
+            desc(chatEvents.id),
+          ),
         db
-          .select({
-            threadId: unreadThreads.threadId,
-            agentId: unreadThreads.agentId,
-            indicator: sql`'unread'`.mapWith(indicatorDecoder).as("indicator"),
-            unreadAt: unreadThreads.unreadAt,
-          })
-          .from(unreadThreads),
-      ),
-    );
-    const rows = await db
-      .with(activeThreads, unreadThreads, indicatorRows)
-      .select()
-      .from(indicatorRows);
+          .selectDistinct({ threadId: agentRuns.chatThreadId })
+          .from(agentRuns)
+          .where(
+            and(
+              inArray(agentRuns.chatThreadId, candidateIds),
+              inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+              isNotNull(agentRuns.triggerSource),
+            ),
+          ),
+      ]);
+
+      const latestTerminalAt = new Map<string, Date>();
+      for (const row of terminalRows) {
+        latestTerminalAt.set(row.threadId, row.createdAt);
+      }
+      const activeIds = new Set(
+        activeRows.map((row) => {
+          return row.threadId;
+        }),
+      );
+
+      const unreadRows: UnreadIndicatorRow[] = [];
+      for (const candidate of candidates) {
+        const unreadAt = latestTerminalAt.get(candidate.threadId);
+        if (
+          unreadAt === undefined ||
+          activeIds.has(candidate.threadId) ||
+          (candidate.lastReadAt !== null &&
+            unreadAt.getTime() <= candidate.lastReadAt.getTime())
+        ) {
+          continue;
+        }
+        unreadRows.push({
+          threadId: candidate.threadId,
+          agentId: candidate.agentId,
+          unreadAt,
+        });
+      }
+      return newestUnreadIndicators(unreadRows);
+    },
+  );
+  return { activeRows$, unreadRows$ };
+}
+
+/**
+ * Active and unread indicators for up to 128 visible agents in the current
+ * organization. Agent IDs are loaded first and passed to the bounded thread
+ * reads, so those reads do not join against or correlate to the agents table.
+ * Each indicator source returns at most 50 rows. Only Run terminal markers
+ * contribute unread indicators; they are resolved for at most 128 candidate
+ * threads with uncorrelated reads. Unread agent state takes precedence over
+ * active state.
+ */
+export function chatIndicators(args: {
+  readonly userId: string;
+  readonly orgId: string;
+}): Computed<Promise<Indicators>> {
+  const { activeRows$, unreadRows$ } = createIndicatorRows(args);
+  return computed(async (get): Promise<Indicators> => {
+    const [activeRows, unreadRows] = await Promise.all([
+      get(activeRows$),
+      get(unreadRows$),
+    ]);
 
     const agentIndicators: Record<string, Indicator> = {};
     const threads: Record<string, Indicator> = {};
     const unreadAt: Record<string, string> = {};
-    for (const row of rows) {
-      threads[row.threadId] = row.indicator;
-      if (row.indicator === "unread") {
-        if (row.unreadAt === null) {
-          throw new Error("Unread indicator is missing its read watermark");
-        }
-        unreadAt[row.threadId] = row.unreadAt.toISOString();
+    for (const row of activeRows) {
+      threads[row.threadId] = "active";
+      if (row.agentId !== null) {
+        agentIndicators[row.agentId] = "active";
       }
-      if (
-        row.agentId !== null &&
-        (row.indicator === "unread" ||
-          agentIndicators[row.agentId] === undefined)
-      ) {
-        agentIndicators[row.agentId] = row.indicator;
+    }
+    for (const row of unreadRows) {
+      // The unread reads already exclude threads with active Runs, but they
+      // run concurrently with the active read and can observe a newer Run
+      // state; the active indicator wins either way.
+      if (threads[row.threadId] === "active") {
+        continue;
+      }
+      threads[row.threadId] = "unread";
+      unreadAt[row.threadId] = row.unreadAt.toISOString();
+      if (row.agentId !== null) {
+        agentIndicators[row.agentId] = "unread";
       }
     }
     return { agents: agentIndicators, threads, unreadAt };
@@ -485,81 +527,78 @@ export function chatThreadDraftIds(args: {
   return computed(async (get): Promise<readonly string[]> => {
     const db = get(db$);
     const rows = await db
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.userId, args.userId),
-          isNotNull(chatThreads.draftUserMessage),
-        ),
-      );
+      .select({ id: chatThreadDrafts.chatThreadId })
+      .from(chatThreadDrafts)
+      .where(eq(chatThreadDrafts.userId, args.userId));
     return rows.map((row) => {
       return row.id;
     });
   });
 }
-
-function loadChatThreadArtifactRows(
-  db: ReadonlyDb,
-  args: { readonly threadId: string; readonly userId: string },
-) {
-  return db
-    .select({
-      assetId: runUploadedFiles.id,
-      assetVersion: runUploadedFiles.assetVersion,
-      runId: runUploadedFiles.runId,
-      externalId: runUploadedFiles.externalId,
-      filename: runUploadedFiles.filename,
-      contentType: runUploadedFiles.contentType,
-      sizeBytes: runUploadedFiles.sizeBytes,
-      url: runUploadedFiles.url,
-      previewImageUrl: runUploadedFiles.previewImageUrl,
-      metadata: runUploadedFiles.metadata,
-      classification: runUploadedFiles.classification,
-      accessLevel: runUploadedFiles.accessLevel,
-      materializationStatus: runUploadedFiles.materializationStatus,
-      materializationError: runUploadedFiles.materializationError,
-      provenance: runUploadedFiles.provenance,
-      createdAt: runUploadedFiles.createdAt,
-    })
-    .from(runUploadedFiles)
-    .innerJoin(agentRuns, eq(agentRuns.id, runUploadedFiles.runId))
-    .where(
-      and(
-        eq(runUploadedFiles.userId, args.userId),
-        isNotNull(agentRuns.triggerSource),
-        or(
-          eq(agentRuns.chatThreadId, args.threadId),
-          exists(
-            db
-              .select({ id: chatEvents.id })
-              .from(chatEvents)
-              .where(
-                runOwnedChatEventForRunCondition({
-                  runId: runUploadedFiles.runId,
-                  chatThreadId: args.threadId,
-                }),
-              ),
+function chatThreadArtifactRows(args: {
+  readonly threadId: string;
+  readonly userId: string;
+}) {
+  return computed(async (get) => {
+    const db = get(db$);
+    return await db
+      .select({
+        assetId: runUploadedFiles.id,
+        assetVersion: runUploadedFiles.assetVersion,
+        runId: runUploadedFiles.runId,
+        externalId: runUploadedFiles.externalId,
+        filename: runUploadedFiles.filename,
+        contentType: runUploadedFiles.contentType,
+        sizeBytes: runUploadedFiles.sizeBytes,
+        url: runUploadedFiles.url,
+        previewImageUrl: runUploadedFiles.previewImageUrl,
+        metadata: runUploadedFiles.metadata,
+        classification: runUploadedFiles.classification,
+        accessLevel: runUploadedFiles.accessLevel,
+        materializationStatus: runUploadedFiles.materializationStatus,
+        materializationError: runUploadedFiles.materializationError,
+        provenance: runUploadedFiles.provenance,
+        createdAt: runUploadedFiles.createdAt,
+      })
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.userId, args.userId),
+          isNotNull(runUploadedFiles.runId),
+          or(
+            eq(runUploadedFiles.chatThreadId, args.threadId),
+            exists(
+              db
+                .select({ id: chatEvents.id })
+                .from(chatEvents)
+                .where(
+                  runOwnedChatEventForRunCondition({
+                    runId: runUploadedFiles.runId,
+                    chatThreadId: args.threadId,
+                  }),
+                ),
+            ),
           ),
         ),
-      ),
-    )
-    .orderBy(asc(agentRuns.createdAt), asc(runUploadedFiles.createdAt));
+      )
+      .orderBy(asc(runUploadedFiles.createdAt), asc(runUploadedFiles.id));
+  });
 }
 
 export function chatThreadArtifacts(args: {
   readonly threadId: string;
   readonly userId: string;
 }): Computed<Promise<readonly ChatThreadArtifactRun[] | null>> {
+  const thread$ = ownedChatThread(args.threadId, args.userId);
+  const rows$ = chatThreadArtifactRows(args);
   return computed(
     async (get): Promise<readonly ChatThreadArtifactRun[] | null> => {
-      const thread = await get(ownedChatThread(args.threadId, args.userId));
+      const thread = await get(thread$);
       if (!thread) {
         return null;
       }
 
-      const db = get(db$);
-      const rows = await loadChatThreadArtifactRows(db, args);
+      const rows = await get(rows$);
 
       const visibleRows = rows.filter((row) => {
         return row.runId !== null;
@@ -648,42 +687,27 @@ export interface ExistingChatThread {
   readonly selectedModel: string | null;
   readonly codexServiceTier: CodexServiceTier | null;
 }
+const existingClientThreadSelection = Object.freeze({
+  id: chatThreads.id,
+  createdAt: chatThreads.createdAt,
+  title: chatThreads.title,
+  selectedModel: chatThreads.selectedModel,
+  codexServiceTier: chatThreads.codexServiceTier,
+});
 
-/**
- * The thread a repeated create request already owns, read inside the same
- * transaction that lost the insert conflict. Ownership stays scoped to the
- * caller and the requested agent, so an id held by another member, org, or
- * agent resolves to a conflict the route answers without disclosing it.
- */
-async function resolveExistingClientThread(
-  tx: Tx,
-  args: {
-    readonly clientThreadId: string;
-    readonly userId: string;
-    readonly agentId: string;
-  },
-): Promise<ExistingChatThread | { readonly kind: "client_thread_conflict" }> {
-  const [existingThread] = await tx
-    .select({
-      id: chatThreads.id,
-      createdAt: chatThreads.createdAt,
-      title: chatThreads.title,
-      selectedModel: chatThreads.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
-    })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, args.clientThreadId),
-        eq(chatThreads.userId, args.userId),
-        eq(chatThreads.agentId, args.agentId),
-      ),
-    )
-    .limit(1);
-  if (!existingThread) {
-    return { kind: "client_thread_conflict" as const };
+function existingClientThreadCondition(args: {
+  readonly clientThreadId: string | undefined;
+  readonly userId: string;
+  readonly agentId: string;
+}) {
+  if (args.clientThreadId === undefined) {
+    return sql`false`;
   }
-  return { kind: "existing" as const, ...existingThread };
+  return and(
+    eq(chatThreads.id, args.clientThreadId),
+    eq(chatThreads.userId, args.userId),
+    eq(chatThreads.agentId, args.agentId),
+  );
 }
 
 interface CreateChatThreadArgs {
@@ -693,43 +717,24 @@ interface CreateChatThreadArgs {
   readonly title: string | undefined;
   readonly clientThreadId: string | undefined;
   readonly eventId: string | undefined;
-  readonly modelProviderId: string | null;
-  readonly modelProviderType: string | null;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly selectedModel: string | null;
   readonly modelSettings?: ModelSettings;
+  readonly cloudBrowserEnabled?: boolean;
   readonly codexServiceTier: CodexServiceTier | null;
-  readonly selectedVideoModel: string | null;
-  readonly selectedImageModel: ImageModelId | null;
   readonly connectorSelections?: readonly PreparedChatThreadConnectorSelection[];
+  readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
+  /** Welcome delivery seeds one immutable message only for the winning INSERT. */
+  readonly initialAssistantMessage?: string;
+  readonly replayExisting?: false;
 }
 
-/** Compose ordinary thread initialization inside a caller-owned transaction. */
-export async function createChatThreadInTransaction(
-  tx: Tx,
-  args: CreateChatThreadArgs,
-) {
-  const modelSettings =
-    args.modelSettings ??
-    (await loadNewChatThreadModelSettings(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-    }));
-  const preparedConnectorSelections =
-    await prepareChatThreadConnectorSelections(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-      selections: args.connectorSelections ?? [],
-      missingAccountPolicy: "omit",
-    });
-  if (preparedConnectorSelections.kind === "invalid") {
-    return {
-      kind: "invalid_connector_selection" as const,
-      message: preparedConnectorSelections.message,
-    };
-  }
-  const insert = tx.insert(chatThreads).values({
+function canReplayClientThread(args: CreateChatThreadArgs) {
+  return args.clientThreadId !== undefined && args.replayExisting !== false;
+}
+
+function ordinaryChatThreadInsertPlan(args: CreateChatThreadArgs) {
+  return prepareChatThreadInsert({
+    orgId: args.orgId,
     ...(args.clientThreadId !== undefined ? { id: args.clientThreadId } : {}),
     userId: args.userId,
     agentId: args.agentId,
@@ -737,77 +742,195 @@ export async function createChatThreadInTransaction(
     // Positive classification belongs to the INSERT itself. A conflicting
     // replay below returns the existing row without writing this value, so a
     // client id that already names an unknown or excluded thread keeps it.
-    provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
     lastReadAt: sql`NOW()`,
-    modelProviderId: args.modelProviderId,
-    modelProviderType:
-      args.modelProviderType === null
-        ? null
-        : modelProviderTypeSchema.parse(args.modelProviderType),
-    modelProviderCredentialScope: args.modelProviderCredentialScope,
     selectedModel: args.selectedModel,
-    modelSettings,
+    modelSettings: args.modelSettings,
+    cloudBrowserEnabled: args.cloudBrowserEnabled,
     codexServiceTier: args.codexServiceTier,
-    selectedVideoModel: args.selectedVideoModel,
-    selectedImageModel: args.selectedImageModel,
   });
-  // Tolerate only the primary key. Each caller owns its replay policy; every
-  // other database fault still propagates and rolls back initialization.
-  const [createdThread] = await insert
-    .onConflictDoNothing({ target: chatThreads.id })
-    .returning({
-      id: chatThreads.id,
-      createdAt: chatThreads.createdAt,
-    });
-  if (!createdThread) {
-    return { kind: "client_thread_conflict" as const };
-  }
-  await insertInitialChatThreadConnectorSelections(tx, {
-    chatThreadId: createdThread.id,
-    selections: preparedConnectorSelections.selections,
-  });
-  await appendChatThreadEvent(tx, {
-    kind: "created",
-    userId: args.userId,
-    orgId: args.orgId,
-    chatThreadId: createdThread.id,
-    agentId: args.agentId,
-    eventId: args.eventId,
-    title: args.title ?? null,
-    selectedModel: args.selectedModel,
-    modelSettings,
-    serviceTier: chatThreadServiceTierFromCodex(args.codexServiceTier),
-    computerUseHostId: null,
-    cloudBrowserEnabled: false,
-    selectedVideoModel: args.selectedVideoModel,
-    selectedImageModel: args.selectedImageModel,
-    createdAt: createdThread.createdAt,
-  });
-  return { kind: "created" as const, ...createdThread };
 }
 
+function initialThreadWritePlan(
+  args: CreateChatThreadArgs,
+  thread: ReturnType<typeof createdChatThreadFromRow>,
+  selections: readonly PreparedChatThreadConnectorSelection[],
+) {
+  return {
+    connectors: initialChatThreadConnectorSelectionStatements({
+      chatThreadId: thread.id,
+      selections,
+    }),
+    remote: initialRemoteAccessValues(
+      thread.id,
+      args.initialRemoteAccessOverrides ?? [],
+    ),
+    created: chatThreadCreatedEventSql({
+      orgId: args.orgId,
+      eventId: args.eventId,
+      thread,
+    }),
+    welcome:
+      args.initialAssistantMessage === undefined
+        ? null
+        : welcomeSeedStatement(thread.id, args.initialAssistantMessage),
+  };
+}
+
+function createdThreadResult(thread: {
+  readonly id: string;
+  readonly createdAt: Date;
+}): CreatedChatThread {
+  return { kind: "created", id: thread.id, createdAt: thread.createdAt };
+}
+
+function welcomeSeedStatement(chatThreadId: string, content: string) {
+  const seed = prepareChatEvent({
+    chatThreadId,
+    eventType: "output.message",
+    content,
+    createdAt: nowDate(),
+  });
+  return appendCanonicalChatEventsSql([seed.row], "none");
+}
+
+function initialConnectorSelectionInput(args: CreateChatThreadArgs) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    agentId: args.agentId,
+    selections: args.connectorSelections ?? [],
+    missingAccountPolicy: "omit" as const,
+  };
+}
+
+/** Initialization and the ordered created event commit together. */
 export const createChatThread$ = command(
   async ({ set }, args: CreateChatThreadArgs, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const preparedConnectorSelections = await set(
+      prepareChatThreadConnectorSelections$,
+      initialConnectorSelectionInput(args),
+      signal,
+    );
+    if (preparedConnectorSelections.kind === "invalid") {
+      return {
+        kind: "invalid_connector_selection" as const,
+        message: preparedConnectorSelections.message,
+      };
+    }
     const thread = await set(writeDb$).transaction(async (tx) => {
-      const result = await createChatThreadInTransaction(tx, args);
-      if (result.kind !== "client_thread_conflict") {
-        return result;
+      const initialRemoteAccessOverrides =
+        args.initialRemoteAccessOverrides ?? [];
+      const [remoteOwnership] =
+        initialRemoteAccessOverrides.length > 0
+          ? await tx
+              .select({
+                owned: initialRemoteAccessOwnershipPredicate(
+                  args,
+                  initialRemoteAccessOverrides,
+                ).mapWith(pgBooleanDecoder),
+              })
+              .from(sql`(SELECT 1) AS initial_remote_ownership`)
+          : [{ owned: true }];
+      signal.throwIfAborted();
+      if (!remoteOwnership) {
+        throw new Error("Initial remote access ownership result is missing");
       }
-      // Preserve ordinary creation's same-transaction, owner-and-agent-scoped
-      // replay. Welcome creation answers 404 on a conflict and never replays.
-      if (args.clientThreadId === undefined) {
-        return undefined;
+      if (!remoteOwnership.owned) {
+        // A retry may arrive after a host was deleted. Preserve the already-created
+        // chat without accepting that stale host for a new chat.
+        if (canReplayClientThread(args)) {
+          const [replay] = await tx
+            .select(existingClientThreadSelection)
+            .from(chatThreads)
+            .where(existingClientThreadCondition(args))
+            .limit(1);
+          signal.throwIfAborted();
+          if (replay) {
+            return { kind: "existing" as const, ...replay };
+          }
+        }
+        return {
+          kind: "invalid_remote_access_selection" as const,
+          message: "Remote access host not found",
+        };
       }
-      return await resolveExistingClientThread(tx, {
-        clientThreadId: args.clientThreadId,
-        userId: args.userId,
-        agentId: args.agentId,
-      });
+      const createdThreadPlan = ordinaryChatThreadInsertPlan(args);
+      const [createdThreadRow] = await tx
+        .with(...createdThreadPlan.defaults)
+        .insert(chatThreads)
+        .values(createdThreadPlan.values)
+        .onConflictDoNothing()
+        .returning({
+          id: chatThreads.id,
+          userId: chatThreads.userId,
+          title: chatThreads.title,
+          selectedModel: chatThreads.selectedModel,
+          modelSettings: chatThreads.modelSettings,
+          codexServiceTier: chatThreads.codexServiceTier,
+          computerUseHostId: chatThreads.computerUseHostId,
+          cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+          createdAt: chatThreads.createdAt,
+        });
+      signal.throwIfAborted();
+      const createdThread = createdThreadRow
+        ? createdChatThreadFromRow(
+            createdThreadRow,
+            createdThreadPlan.values.agentId,
+          )
+        : undefined;
+      if (!createdThread) {
+        if (canReplayClientThread(args)) {
+          const [existing] = await tx
+            .select(existingClientThreadSelection)
+            .from(chatThreads)
+            .where(existingClientThreadCondition(args))
+            .limit(1);
+          signal.throwIfAborted();
+          if (existing) {
+            return { kind: "existing" as const, ...existing };
+          }
+        }
+        return { kind: "client_thread_conflict" as const };
+      }
+      const initialWrites = initialThreadWritePlan(
+        args,
+        createdThread,
+        preparedConnectorSelections.selections,
+      );
+      for (const statement of initialWrites.connectors) {
+        const inserted = await settle(
+          tx.transaction(async (sp) => {
+            await sp.execute(statement);
+            signal.throwIfAborted();
+          }),
+        );
+        signal.throwIfAborted();
+        if (
+          !inserted.ok &&
+          selectionParentMissing(inserted.error) !== "account"
+        ) {
+          throw inserted.error;
+        }
+      }
+      const remoteValues = initialWrites.remote;
+      if (remoteValues.ssh.length) {
+        await tx.insert(chatThreadSshAccessOverrides).values(remoteValues.ssh);
+        signal.throwIfAborted();
+      }
+      if (remoteValues.vnc.length) {
+        await tx.insert(chatThreadVncAccessOverrides).values(remoteValues.vnc);
+        signal.throwIfAborted();
+      }
+      await tx.execute(initialWrites.created);
+      signal.throwIfAborted();
+      if (initialWrites.welcome !== null) {
+        await tx.execute(initialWrites.welcome);
+        signal.throwIfAborted();
+      }
+      return createdThreadResult(createdThread);
     });
     signal.throwIfAborted();
-    if (!thread) {
-      throw new Error("Failed to create chat thread");
-    }
     return thread;
   },
 );
@@ -817,6 +940,177 @@ interface ThreadRunToCancel {
   readonly orgId: string;
 }
 
+interface DeleteChatThreadArgs {
+  readonly threadId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly eventId?: string;
+}
+
+/** Pure child-lock statement, reused before and after the parent attach fence. */
+function attachedRunFenceSql(threadId: string) {
+  return new QueryBuilder()
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(eq(agentRuns.chatThreadId, threadId))
+    .orderBy(asc(agentRuns.id))
+    .for("no key update")
+    .getSQL();
+}
+
+const disabledAutomationSelection = Object.freeze({
+  orgId: workflowAutomations.orgId,
+  ownerUserId: workflowAutomations.ownerUserId,
+  eventType: workflowAutomations.eventType,
+  eventConfig: workflowAutomations.eventConfig,
+  eventConnectorId: workflowAutomations.eventConnectorId,
+});
+
+/** The attach fence and deletion tombstone commit together. */
+const deleteChatThreadContent$ = command(
+  async ({ set }, args: DeleteChatThreadArgs, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const result = await set(writeDb$).transaction(async (tx) => {
+      signal.throwIfAborted();
+
+      const ownedThreadCondition = and(
+        eq(chatThreads.id, args.threadId),
+        eq(chatThreads.userId, args.userId),
+        chatThreadOrganizationPredicate(args.orgId),
+      );
+      const [authorizedThread] = await tx
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(ownedThreadCondition);
+      signal.throwIfAborted();
+      if (!authorizedThread) {
+        return {
+          deleted: false,
+          activeRuns: [] as readonly ThreadRunToCancel[],
+          disabledAutomations: [],
+        };
+      }
+
+      // Output owns its run before reserving event IDs; an ordinary append owns
+      // the sequence before checking the thread FK. Take both children first so
+      // cascading deletion cannot invert either order. Lock every attached run:
+      // ON DELETE SET NULL also updates terminal runs.
+      await tx.execute(attachedRunFenceSql(args.threadId));
+      signal.throwIfAborted();
+      await tx
+        .select({ id: chatEventSequences.chatThreadId })
+        .from(chatEventSequences)
+        .where(eq(chatEventSequences.chatThreadId, args.threadId))
+        .for("update");
+      signal.throwIfAborted();
+
+      // Deletion waits for a writer that already owns the thread. A writer that
+      // then waits on a locked run or sequence forms a cycle that PostgreSQL's
+      // deadlock detector aborts; the deletion request surfaces that failure.
+      const [ownedThread] = await tx
+        .select({ id: chatThreads.id, agentId: chatThreads.agentId })
+        .from(chatThreads)
+        .where(ownedThreadCondition)
+        .for("update");
+      signal.throwIfAborted();
+      if (!ownedThread?.agentId) {
+        return {
+          deleted: false,
+          activeRuns: [] as readonly ThreadRunToCancel[],
+          disabledAutomations: [],
+        };
+      }
+
+      // Include an attachment committed between discovery and the strong fence;
+      // the thread lock above waited for any uncommitted attachment.
+      await tx.execute(attachedRunFenceSql(ownedThread.id));
+      signal.throwIfAborted();
+
+      // Capture related active runs while the thread row blocks new FK attaches.
+      // Terminal runs (completed/failed/cancelled) are left untouched; only
+      // queued/pending/running runs need stopping.
+      const activeRuns = await tx
+        .select({ runId: agentRuns.id, orgId: agentRuns.orgId })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.chatThreadId, ownedThread.id),
+            eq(agentRuns.userId, args.userId),
+            inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+            isNotNull(agentRuns.triggerSource),
+          ),
+        );
+      signal.throwIfAborted();
+
+      const disabledAutomations = await tx
+        .update(workflowAutomations)
+        .set({ enabled: false, nextRunAt: null, updatedAt: nowDate() })
+        .where(
+          threadBoundWorkflowAutomationsPredicate({
+            userId: args.userId,
+            chatThreadId: ownedThread.id,
+          }),
+        )
+        .returning(disabledAutomationSelection);
+      signal.throwIfAborted();
+
+      // Search rows are an eventually consistent derived projection without a
+      // parent FK. Remove the normal-path rows synchronously; the projection
+      // cron repairs only writes that race this transaction. Delete the
+      // watermark first so any later projector write also restores the cleanup
+      // anchor.
+      await tx
+        .delete(chatEventSearchMessageWatermarks)
+        .where(
+          eq(chatEventSearchMessageWatermarks.chatThreadId, ownedThread.id),
+        );
+      signal.throwIfAborted();
+      await tx
+        .delete(chatEventSearchMessages)
+        .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
+      signal.throwIfAborted();
+
+      await tx.execute(purgeRetiredMorningBriefEmailSql());
+      signal.throwIfAborted();
+
+      // Delete the thread after cleanup under its row lock. Cascades chat_events.
+      // Captured active runs lose their canonical chatThreadId, while any retained legacy
+      // row is independently nulled by its own foreign key.
+      const [deletedThread] = await tx
+        .delete(chatThreads)
+        .where(eq(chatThreads.id, ownedThread.id))
+        .returning({ id: chatThreads.id });
+      signal.throwIfAborted();
+
+      if (deletedThread) {
+        // Acquire the user/org event sequence only after all cleanup and
+        // cascading deletes. A blocked child row must not hold this shared
+        // lock and stall events for other threads. Keep the tombstone in this
+        // transaction so deletion and its ordered event become visible
+        // together.
+        await tx.execute(
+          chatThreadEventInsertSql({
+            kind: "deleted",
+            userId: args.userId,
+            orgId: args.orgId,
+            chatThreadId: ownedThread.id,
+            agentId: ownedThread.agentId,
+            eventId: args.eventId,
+          }),
+        );
+        signal.throwIfAborted();
+      }
+
+      return {
+        deleted: Boolean(deletedThread),
+        activeRuns,
+        disabledAutomations,
+      };
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 /**
  * Delete a chat thread after winding down everything attached to it. Deleting a
  * thread on its own leaves the linked automations firing and any in-flight runs
@@ -838,138 +1132,21 @@ interface ThreadRunToCancel {
 export const deleteChatThread$ = command(
   async (
     { set },
-    args: {
-      readonly threadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly eventId?: string;
-    },
+    args: DeleteChatThreadArgs,
     signal: AbortSignal,
   ): Promise<{
     readonly deleted: boolean;
     readonly cancelledRuns: readonly CancelRunResult[];
   }> => {
-    const writeDb = set(writeDb$);
-
-    const deletion = await writeDb.transaction(async (tx) => {
-      // Native authority is always fenced before the destination row. A
-      // delivery that already owns the schedule lock therefore commits first;
-      // this delete then bumps the epoch before the thread cascade is allowed.
-      await revokeMorningBriefNativeThreadAuthority(
-        tx,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          chatThreadId: args.threadId,
-        },
-        nowDate(),
-      );
-
-      const [ownedThread] = await tx
-        .select({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-        })
-        .from(chatThreads)
-        .where(
-          and(
-            eq(chatThreads.id, args.threadId),
-            eq(chatThreads.userId, args.userId),
-            chatThreadOrganizationCondition(tx, args.orgId),
-          ),
-        )
-        .for("update");
-      if (!ownedThread?.agentId) {
-        return {
-          deleted: false,
-          activeRuns: [] as readonly ThreadRunToCancel[],
-          disabledAutomations: [],
-        };
-      }
-
-      // Capture related active runs while the thread row blocks new FK attaches.
-      // Terminal runs (completed/failed/cancelled) are left untouched; only
-      // queued/pending/running runs need stopping.
-      const activeRuns = await tx
-        .select({ runId: agentRuns.id, orgId: agentRuns.orgId })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.chatThreadId, ownedThread.id),
-            eq(agentRuns.userId, args.userId),
-            inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
-            isNotNull(agentRuns.triggerSource),
-          ),
-        );
-
-      const disabledAutomations = await disableThreadBoundWorkflowAutomations(
-        tx,
-        {
-          userId: args.userId,
-          chatThreadId: ownedThread.id,
-          currentTime: nowDate(),
-        },
-      );
-
-      // Search rows are an eventually consistent derived projection without a
-      // parent FK. Remove them synchronously under the thread lock taken above:
-      // the projector now takes a conflicting KEY SHARE on this same row and
-      // revalidates the thread inside its transaction, so it either commits
-      // before this delete removes its rows or finds the thread gone and writes
-      // nothing. Delete the watermark first so the bounded orphan repair, which
-      // still covers pre-fence rows and older producers, keeps its anchor.
-      await tx
-        .delete(chatEventSearchMessageWatermarks)
-        .where(
-          eq(chatEventSearchMessageWatermarks.chatThreadId, ownedThread.id),
-        );
-      await tx
-        .delete(chatEventSearchMessages)
-        .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
-
-      // A native Morning Brief delivery cascades away with this thread, and it
-      // is the only association to its still-unsent mail. Remove both here, so
-      // the cascade cannot orphan content-bearing email.
-      await revokeMorningBriefDeliveryOwnership(tx, {
-        kind: "thread",
-        chatThreadId: ownedThread.id,
-      });
-
-      // Delete the thread after cleanup under its row lock. Cascades chat_events.
-      // Captured active runs lose their canonical chatThreadId, while any retained legacy
-      // row is independently nulled by its own foreign key.
-      const [deletedThread] = await tx
-        .delete(chatThreads)
-        .where(eq(chatThreads.id, ownedThread.id))
-        .returning({ id: chatThreads.id });
-
-      if (deletedThread) {
-        // Acquire the user/org event sequence only after all cleanup and
-        // cascading deletes. A blocked child row must not hold this shared
-        // lock and stall events for other threads. Keep the tombstone in this
-        // transaction so deletion and its ordered event become visible
-        // together.
-        await appendChatThreadEvent(tx, {
-          kind: "deleted",
-          userId: args.userId,
-          orgId: args.orgId,
-          chatThreadId: ownedThread.id,
-          agentId: ownedThread.agentId,
-          eventId: args.eventId,
-        });
-      }
-
-      return {
-        deleted: Boolean(deletedThread),
-        activeRuns,
-        disabledAutomations,
-      };
-    });
+    const deletion = await set(deleteChatThreadContent$, args, signal);
     signal.throwIfAborted();
     if (!deletion.deleted) {
       return { deleted: false, cancelledRuns: [] };
     }
-
+    // `chat_thread_drafts` has no foreign key to the thread, so remove its row
+    // here with one statement after the deletion commits.
+    await set(deleteChatThreadDraft$, args.threadId, signal);
+    signal.throwIfAborted();
     const cancelledRuns: CancelRunResult[] = [];
     for (const run of deletion.activeRuns) {
       const result = await set(
@@ -990,59 +1167,24 @@ export const deleteChatThread$ = command(
         cancelledRuns.push(result);
       }
     }
-
-    await reconcileAutomationEventWatches(
-      { db: writeDb, automations: deletion.disabledAutomations },
+    await set(
+      reconcileAutomationEventWatches$,
+      { automations: deletion.disabledAutomations },
       signal,
     );
     signal.throwIfAborted();
-
     return { deleted: true, cancelledRuns };
   },
 );
 
 /**
- * The legacy draft `UPDATE` matched no owned thread.
+ * Save or clear the caller's composer draft for one thread.
  *
- * `chat_threads.user_id` is not a key column, so the retained `FOR KEY SHARE`
- * lock does not conflict with a concurrent non-key `UPDATE` that moves the
- * thread to another account, and under READ COMMITTED the legacy statement then
- * re-evaluates its predicate against the moved row and matches nothing. The
- * child row staged earlier in the same transaction must not survive that, so
- * this rolls the whole write back and the route keeps its existing 404.
- */
-class ChatThreadDraftNotWritten extends Error {
-  constructor() {
-    super("Chat thread draft write matched no owned thread");
-    this.name = "ChatThreadDraftNotWritten";
-  }
-}
-
-/**
- * Update a chat thread's draft content + attachments.
- *
- * Ownership check via the WHERE clause; missing or cross-user thread → returns
- * `{ updated: false }` so the route handler emits the correct 404. Draft
- * changes do not publish `threadListChanged`: the editing client updates its
- * own sidebar locally, and other clients pick the dot up from the drafts
- * endpoint on their next list reload.
- *
- * A draft and its attachment descriptors are account content, so the write now
- * runs under the shared B1 admission and the canonical Agent/thread locks in
- * {@link withChatThreadContentWrite}. B1 closure reuses the same
- * `{ updated: false }` 404 disposition, which keeps the endpoint non-oracular.
- * This route deliberately requires no organization and accepts a thread without
- * an Agent, so a legal null-Agent thread keeps its thread-user-only subject.
- *
- * The draft is written to `chat_thread_drafts` and to the legacy `chat_threads`
- * columns in this one transaction, so the two can never disagree about an
- * accepted or a rejected write. Every reader still serves the legacy columns;
- * moving them onto the child row is the next, separately released slice of
- * #36173. The child upsert deliberately runs first: the legacy `UPDATE` is what
- * upgrades the hot parent row to `FOR NO KEY UPDATE`, and running it last keeps
- * that exclusive lock held for the shortest part of the transaction. It does
- * not remove the wait — this path still contends for the same thread row that
- * event projection and the read cursor write.
+ * One statement on `chat_thread_drafts`, keyed by the thread and the caller.
+ * Nothing reads or locks `chat_threads`: a write for a thread the caller does
+ * not own, or for a missing thread, lands in a row keyed to the caller that no
+ * reader ever serves for anyone else. Draft changes do not publish
+ * `threadListChanged`; other clients pick the dot up from the drafts endpoint.
  */
 export const updateChatThreadDraft$ = command(
   async (
@@ -1054,57 +1196,19 @@ export const updateChatThreadDraft$ = command(
       readonly draftAttachments: readonly PersistedAttachment[] | null;
     },
     signal: AbortSignal,
-  ): Promise<{ readonly updated: boolean }> => {
-    const writeDb = set(writeDb$);
-    const draftAttachments = args.draftAttachments
-      ? [...args.draftAttachments]
-      : null;
-    const result = await settle(
-      withChatThreadContentWrite(
-        writeDb,
-        {
-          chatThreadId: args.threadId,
-          authorize: (identity) => {
-            return identity.userId === args.userId;
-          },
-        },
-        async (tx) => {
-          await persistChatThreadDraftRow(tx, {
-            chatThreadId: args.threadId,
-            draftUserMessage: args.draftUserMessage,
-            draftAttachments,
-          });
-          const updated = await tx
-            .update(chatThreads)
-            .set({
-              draftUserMessage: args.draftUserMessage,
-              draftAttachments,
-            })
-            .where(
-              and(
-                eq(chatThreads.id, args.threadId),
-                eq(chatThreads.userId, args.userId),
-              ),
-            )
-            .returning({ id: chatThreads.id });
-          if (updated.length === 0) {
-            throw new ChatThreadDraftNotWritten();
-          }
-        },
-        signal,
-      ),
+  ): Promise<void> => {
+    await set(
+      persistChatThreadDraft$,
+      {
+        chatThreadId: args.threadId,
+        userId: args.userId,
+        draftUserMessage: args.draftUserMessage,
+        draftAttachments: args.draftAttachments
+          ? [...args.draftAttachments]
+          : null,
+      },
+      signal,
     );
     signal.throwIfAborted();
-    if (!result.ok) {
-      // The legacy statement matched no owned thread, so the transaction rolled
-      // back with the child row it had already staged and the route keeps its
-      // existing 404. Every other failure propagates unchanged.
-      if (result.error instanceof ChatThreadDraftNotWritten) {
-        return { updated: false };
-      }
-      throw result.error;
-    }
-
-    return { updated: result.value.outcome === "written" };
   },
 );

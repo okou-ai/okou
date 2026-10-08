@@ -2,10 +2,6 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import {
-  chatThreadByIdContract,
-  chatThreadEventsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -14,24 +10,14 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
-import {
-  chatEventRowsResponse,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
-import {
-  mockChatEventRows,
-  normalizeMockChatEvents,
-  type MockChatEventInput,
-} from "./chat-event-test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000901";
-const OPEN_EVENT_ID = "b0000000-0000-4000-a000-000000000902";
-const CLOSE_EVENT_ID = "b0000000-0000-4000-a000-000000000903";
 const LIVE_BROWSER_TITLE = "Live browser: research";
 
 function liveBrowserSession(
@@ -84,16 +70,13 @@ function mockBrowserApi(
         })
       : respond(200, { browser: currentSession });
   });
-  context.mocks.api(browserContract.open, ({ body, respond }) => {
+  context.mocks.api(browserContract.open, ({ respond }) => {
     currentSession = liveBrowserSession();
-    return respond(200, {
-      browser: currentSession,
-      lifecycleEventId: body.eventId,
-    });
+    return respond(200, { browser: currentSession });
   });
-  context.mocks.api(browserContract.close, ({ body, respond }) => {
+  context.mocks.api(browserContract.close, ({ respond }) => {
     closeRequestCount += 1;
-    return respond(200, { lifecycleEventId: body.eventId });
+    return respond(200, {});
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return currentSession === null
@@ -147,28 +130,6 @@ function mockBrowserApi(
   };
 }
 
-function browserOpenEvent(seqId = 1): MockChatEventInput {
-  return {
-    id: OPEN_EVENT_ID,
-    eventType: "browser.open",
-    content: null,
-    runId: undefined,
-    seqId,
-    createdAt: "2026-09-01T12:00:03.000Z",
-  };
-}
-
-function browserCloseEvent(seqId = 2): MockChatEventInput {
-  return {
-    id: CLOSE_EVENT_ID,
-    eventType: "browser.close",
-    content: null,
-    runId: undefined,
-    seqId,
-    createdAt: "2026-09-01T12:00:04.000Z",
-  };
-}
-
 function completedConversationEvents(): MockChatEventInput[] {
   return [
     {
@@ -205,10 +166,6 @@ function mockWideScreen(): void {
       query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
     );
   });
-}
-
-function mockNarrowScreen(): void {
-  context.mocks.browser.matchMedia(false);
 }
 
 function openConversation(chatEvents: MockChatEventInput[]): Promise<void> {
@@ -318,104 +275,13 @@ function installViewportGeometry(
   };
 }
 
-test("Automatically show a browser that starts in the background", async () => {
-  mockWideScreen();
-  const chatEvents = completedConversationEvents();
-  const browser = mockBrowserApi(null);
-  await openConversation(chatEvents);
-  await expectConversationReady();
-  expect(
-    screen.queryByRole("complementary", { name: "Live browser" }),
-  ).toBeNull();
-
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription(
-        `chatThreadDetailChanged:${THREAD_ID}`,
-      ),
-    ).toBeTruthy();
-    expect(
-      context.mocks.ably.hasSubscription("browserSessionChanged"),
-    ).toBeTruthy();
-  });
-
-  const updateStarted = context.mocks.deferred<void>();
-  const finishUpdate = context.mocks.deferred<void>();
-  context.mocks.api(chatThreadByIdContract.get, async ({ respond }) => {
-    updateStarted.resolve(undefined);
-    await finishUpdate.promise;
-    return respond(200, {
-      lastReadAt: "2026-09-01T12:00:00.000Z",
-      cancellationRecoveryPending: false,
-    });
-  });
-  context.mocks.ably.trigger(`chatThreadDetailChanged:${THREAD_ID}`, {
-    threadId: THREAD_ID,
-  });
-  await updateStarted.promise;
-
-  browser.setSession(liveBrowserSession());
-  context.mocks.ably.trigger("browserSessionChanged", {
-    threadId: THREAD_ID,
-  });
-  await waitFor(() => {
-    expect(browser.liveSessionWasRead()).toBeTruthy();
-  });
-  const backgroundRows = mockChatEventRows(
-    normalizeMockChatEvents(
-      [
-        browserOpenEvent(4),
-        {
-          id: "background-browser-report",
-          role: "assistant",
-          content: "The browser started in the background.",
-          runId: "background-browser-run",
-          seqId: 5,
-          createdAt: "2026-09-01T12:00:04.000Z",
-        },
-      ],
-      THREAD_ID,
-    ),
-  );
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    const rows = backgroundRows.filter((row) => {
-      return row.seqId > query.sinceSeqId;
-    });
-    return respond(200, chatEventRowsResponse(rows, query));
-  });
-  createChatEvent(THREAD_ID);
-
-  await expect(
-    screen.findByText("The browser started in the background."),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(buttonByName("Open browser")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-  await expect(screen.findByTitle(LIVE_BROWSER_TITLE)).resolves.toBeVisible();
-  expect(finishUpdate.settled()).toBeFalsy();
-  finishUpdate.resolve(undefined);
-});
-
-test("Do not reopen a browser whose latest activity is closed", async () => {
-  mockWideScreen();
-  mockBrowserApi(liveBrowserSession());
-  await openConversation([browserOpenEvent(1), browserCloseEvent(2)]);
-
-  await expectConversationReady();
-  expect(
-    screen.queryByRole("complementary", { name: "Live browser" }),
-  ).toBeNull();
-  expect(screen.queryByTitle(LIVE_BROWSER_TITLE)).toBeNull();
-});
-
 test("Fit a live browser when the available sidebar space changes", async () => {
   mockWideScreen();
   const browser = mockBrowserApi(liveBrowserSession());
-  await openConversation([browserOpenEvent()]);
+  await openConversation(completedConversationEvents());
+  await expectConversationReady();
 
+  click(buttonByName("Open browser"));
   const liveFrame = await screen.findByTitle(LIVE_BROWSER_TITLE);
   expect(liveFrame).toBeVisible();
   const viewport = document.querySelector<HTMLElement>(
@@ -452,39 +318,6 @@ test("Fit a live browser when the available sidebar space changes", async () => 
   expect(screen.queryByText("Browser unavailable")).toBeNull();
 });
 
-test("Respect a user's decision to close an auto-opened browser", async () => {
-  mockWideScreen();
-  const chatEvents = [browserOpenEvent(1)];
-  const browser = mockBrowserApi(liveBrowserSession());
-  await openConversation(chatEvents);
-
-  await expect(screen.findByTitle(LIVE_BROWSER_TITLE)).resolves.toBeVisible();
-  click(buttonByName("Close live browser", liveBrowserSidebar()));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("complementary", { name: "Live browser" }),
-    ).toBeNull();
-  });
-  expect(browser.closeRequests()).toBe(1);
-
-  chatEvents.push({
-    id: "navigation-browser-progress",
-    role: "assistant",
-    content: `The same browser is still working: /browsers/${THREAD_ID}`,
-    runId: "navigation-browser-progress-run",
-    seqId: 2,
-    createdAt: "2026-09-01T12:00:05.000Z",
-  });
-  createChatEvent(THREAD_ID);
-
-  await waitFor(() => {
-    expect(buttonByName("Open research browser")).toBeVisible();
-  });
-  expect(
-    screen.queryByRole("complementary", { name: "Live browser" }),
-  ).toBeNull();
-});
-
 test("Start and close a browser from the thread sidebar", async () => {
   mockWideScreen();
   const browser = mockBrowserApi(null);
@@ -508,27 +341,6 @@ test("Start and close a browser from the thread sidebar", async () => {
   });
   expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
   expect(browser.closeRequests()).toBe(1);
-});
-
-test("Keep the browser closed when the screen cannot show split view", async () => {
-  mockNarrowScreen();
-  mockBrowserApi(liveBrowserSession());
-  await openConversation([browserOpenEvent()]);
-
-  await expectConversationReady();
-  expect(
-    screen.queryByRole("complementary", { name: "Live browser" }),
-  ).toBeNull();
-  expect(screen.queryByTitle(LIVE_BROWSER_TITLE)).toBeNull();
-});
-
-test("Automatically show a running thread browser on a wide screen", async () => {
-  mockWideScreen();
-  mockBrowserApi(liveBrowserSession());
-  await openConversation([browserOpenEvent()]);
-
-  await expect(screen.findByTitle(LIVE_BROWSER_TITLE)).resolves.toBeVisible();
-  expect(liveBrowserSidebar()).toBeVisible();
 });
 
 test("Open a stopped browser card and offer a new session", async () => {

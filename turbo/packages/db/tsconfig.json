@@ -11,6 +11,7 @@
     "scripts/migrations/00*",
     "scripts/migrations/010*",
     "scripts/migrations/011*",
-    "scripts/migrations/012*"
+    "scripts/migrations/012*",
+    "scripts/migrations/014-goal-archive-search"
   ]
 }

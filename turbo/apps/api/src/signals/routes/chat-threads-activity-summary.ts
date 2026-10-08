@@ -32,12 +32,6 @@ const summarize$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result.kind === "not-found") {
     return notFound("Chat run not found");
   }
-  if (result.kind === "disabled") {
-    return {
-      status: 403 as const,
-      body: { error: { code: "FORBIDDEN", message: "Feature not available" } },
-    };
-  }
   return { status: 200 as const, body: result.response };
 });
 export const chatThreadActivitySummaryRoutes: readonly RouteEntry[] = [

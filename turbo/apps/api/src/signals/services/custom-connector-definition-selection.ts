@@ -1,4 +1,31 @@
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import type {
+  CustomConnectorHttpRow,
+  CustomConnectorMcpRow,
+  CustomConnectorOAuthConfigRow,
+} from "./custom-connector.service";
+
+export type CustomConnectorExecutionOAuthConfig = Omit<
+  CustomConnectorOAuthConfigRow,
+  "connectorId" | "orgId" | "createdAt" | "updatedAt"
+>;
+
+type ExecutionDefinitionFields =
+  | "enabled"
+  | "createdBy"
+  | "createdAt"
+  | "updatedAt"
+  | "oauthConfig";
+
+/** Execution configuration excludes definition audit data and stored user tokens. */
+export type CustomConnectorExecutionDefinition =
+  | (Omit<CustomConnectorHttpRow, ExecutionDefinitionFields> & {
+      readonly oauthConfig: CustomConnectorExecutionOAuthConfig | null;
+    })
+  | (Omit<
+      CustomConnectorMcpRow,
+      ExecutionDefinitionFields | "permissionBundleRef"
+    > & { readonly oauthConfig: CustomConnectorExecutionOAuthConfig | null });
 
 export function customConnectorDefinitionSelection() {
   return {

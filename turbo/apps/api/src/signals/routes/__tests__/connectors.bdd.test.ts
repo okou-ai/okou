@@ -1,7 +1,4 @@
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { readGetStartedStatus } from "./helpers/get-started";
 /**
  * helper gap:
  * - Expired OAuth states, stale/hidden legacy connector rows, stale OAuth scope
@@ -16,6 +13,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
 
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
@@ -28,13 +26,9 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { extractFileFromTarGz } from "../../../lib/tar";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import {
-  installApiTestConnectorCatalog,
-  replaceApiTestConnectorCatalogFilteredAuthMethods,
-} from "../../../test-fixtures/connector-catalog";
 import { generateOkouToken } from "../../auth/tokens";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -76,26 +70,15 @@ import {
   setCustomConnectorCredentialStorageState,
 } from "./helpers/connector-credential-storage-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { holdSecretKms } from "./helpers/hold-secret-kms";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { connectorCatalogRoutes } from "../connector-catalog";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const connectorsApi = createConnectorBddApi(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const storagesApi = createStoragesBddApi(context);
-
-async function installCatalogWithUnavailableMethods(args: {
-  readonly capabilityIdentityEnvName: string;
-  readonly filteredAuthMethods: Parameters<
-    typeof replaceApiTestConnectorCatalogFilteredAuthMethods
-  >[0];
-}): Promise<void> {
-  mockOptionalEnv(args.capabilityIdentityEnvName, undefined);
-  await installApiTestConnectorCatalog();
-  await replaceApiTestConnectorCatalogFilteredAuthMethods(
-    args.filteredAuthMethods,
-  );
-}
 
 function mockAuthoritativeOrganizationMembers(
   actors: readonly ApiTestUser[],
@@ -114,7 +97,10 @@ function clearConnectorInvalidationMocks(): void {
   context.mocks.ably.publish.mockClear();
 }
 
-function expectCustomConnectorInvalidations(userIds: readonly string[]): void {
+function expectCustomConnectorInvalidations(
+  userIds: readonly string[],
+  agentChange?: { readonly userId: string; readonly agentId: string },
+): void {
   expect(
     context.mocks.ably.channelGet.mock.calls
       .map(([channelName]) => {
@@ -122,16 +108,32 @@ function expectCustomConnectorInvalidations(userIds: readonly string[]): void {
       })
       .sort(),
   ).toStrictEqual(
-    userIds
+    [...userIds, ...(agentChange ? [agentChange.userId] : [])]
       .map((userId) => {
         return `user:${userId}`;
       })
       .sort(),
   );
-  expect(context.mocks.ably.publish).toHaveBeenCalledTimes(userIds.length);
-  for (const call of context.mocks.ably.publish.mock.calls) {
-    expect(call).toStrictEqual(["customConnectorListChanged", null]);
-  }
+  expect(
+    context.mocks.ably.publish.mock.calls
+      .map((call) => {
+        return JSON.stringify(call);
+      })
+      .sort(),
+  ).toStrictEqual(
+    [
+      ...userIds.map(() => {
+        return ["customConnectorListChanged", null];
+      }),
+      ...(agentChange
+        ? [["composerAgentConnectorsChanged", { agentId: agentChange.agentId }]]
+        : []),
+    ]
+      .map((call) => {
+        return JSON.stringify(call);
+      })
+      .sort(),
+  );
 }
 
 function uniqueSlug(prefix: string): string {
@@ -263,7 +265,6 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
   it("keeps a manual-grant connection and authorization when realtime publishing fails", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
-    await setGetStartedEnabled(context, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Manual Connector Agent",
     });
@@ -598,7 +599,6 @@ describe("CONN-02: OAuth start and callback", () => {
 
     const bdd = createBddApi(context);
     const actor = bdd.user();
-    await setGetStartedEnabled(context, actor);
     const initialStart = await connectorsApi.startOauth(
       actor,
       "github",
@@ -811,68 +811,6 @@ describe("CONN-02: OAuth start and callback", () => {
 });
 
 describe("CONN-02: OAuth device authorization", () => {
-  it("returns 403 when the selected device-auth runtime method is unavailable", async () => {
-    await installCatalogWithUnavailableMethods({
-      capabilityIdentityEnvName: "CAL_COM_OAUTH_CLIENT_ID",
-      filteredAuthMethods: [
-        {
-          connectorSlug: "test-oauth-device",
-          authMethodId: "oauth",
-          reasons: ["missing-grant-provider"],
-        },
-      ],
-    });
-    const actor = createBddApi(context).user();
-
-    const response = await connectorsApi.requestDeviceAuthStart(
-      actor,
-      "test-oauth-device",
-      "oauth",
-      undefined,
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error).toStrictEqual({
-      message: "test-oauth-device connector is not available",
-      code: "FORBIDDEN",
-    });
-  });
-
-  it("returns 403 when a device-auth runtime becomes unavailable before polling", async () => {
-    mockTestOAuthDeviceConnectorProvider({ deviceCode: "pending" });
-    const actor = createBddApi(context).user();
-    const session = await connectorsApi.startDeviceAuth(
-      actor,
-      "test-oauth-device",
-      "oauth",
-    );
-    await installCatalogWithUnavailableMethods({
-      capabilityIdentityEnvName: "DEEL_OAUTH_CLIENT_ID",
-      filteredAuthMethods: [
-        {
-          connectorSlug: "test-oauth-device",
-          authMethodId: "oauth",
-          reasons: ["missing-grant-provider"],
-        },
-      ],
-    });
-
-    const response = await connectorsApi.requestDeviceAuthPoll(
-      actor,
-      "test-oauth-device",
-      session.sessionId,
-      session.sessionToken,
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error).toStrictEqual({
-      message: "test-oauth-device connector is not available",
-      code: "FORBIDDEN",
-    });
-  });
-
   it("starts and completes a device authorization session, with state visible through connector APIs", async () => {
     const provider = mockTestOAuthDeviceConnectorProvider({
       tokenScope: "read provider-added",
@@ -1722,14 +1660,14 @@ describe("CONN-02: OAuth device authorization", () => {
     await connectorsApi.deleteFeatureSwitches(actor);
   });
 
-  it("reclaims a stale device poll while its original request is pending", async () => {
+  it("keeps the completed reclaimed device account when its stale poll returns", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     await connectorsApi.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.TestOauthConnector]: true,
     });
 
-    mockTestOAuthDeviceConnectorProvider({ deviceCode: "pending" });
+    mockTestOAuthDeviceConnectorProvider();
     const staleDeferred = mockDeferredTestOAuthTokenEndpoint(context.signal);
     const stale = await connectorsApi.startDeviceAuth(
       actor,
@@ -1746,6 +1684,9 @@ describe("CONN-02: OAuth device authorization", () => {
       (async () => {
         await staleDeferred.started;
         mockNow(now() + 31_000);
+        const reclaimedProvider = mockTestOAuthDeviceConnectorProvider({
+          tokenScope: "read reclaimed",
+        });
 
         const reclaimedPoll = await connectorsApi.pollDeviceAuth(
           actor,
@@ -1753,11 +1694,37 @@ describe("CONN-02: OAuth device authorization", () => {
           stale.sessionId,
           stale.sessionToken,
         );
-        expect(reclaimedPoll).toStrictEqual({ status: "pending", interval: 0 });
-        expect(staleDeferred.calls()).toBe(2);
+        if (reclaimedPoll.status !== "complete") {
+          throw new Error(
+            `Expected reclaimed completion, received ${reclaimedPoll.status}`,
+          );
+        }
+        expect(reclaimedPoll.connector.oauthScopes).toStrictEqual([
+          "read",
+          "reclaimed",
+        ]);
+        expect(reclaimedProvider.tokenBodies).toHaveLength(1);
         staleDeferred.release();
         const stalePoll = await stalePollPromise;
         expect(stalePoll).toStrictEqual({ status: "pending", interval: 0 });
+        const rePoll = await connectorsApi.pollDeviceAuth(
+          actor,
+          "test-oauth-device",
+          stale.sessionId,
+          stale.sessionToken,
+        );
+        expect(rePoll).toStrictEqual(reclaimedPoll);
+        const accounts = await connectorsApi.listBuiltinConnectorAccounts(
+          actor,
+          "test-oauth-device",
+        );
+        expect(accounts).toHaveLength(1);
+        expect(accounts[0]).toMatchObject({
+          id: reclaimedPoll.connector.id,
+          oauthScopes: ["read", "reclaimed"],
+        });
+        expect(staleDeferred.calls()).toBe(1);
+        expect(reclaimedProvider.tokenBodies).toHaveLength(1);
       })().finally(() => {
         staleDeferred.release();
         clearMockNow();
@@ -1770,6 +1737,182 @@ describe("CONN-02: OAuth device authorization", () => {
       }
     }
     await connectorsApi.deleteFeatureSwitches(actor);
+  });
+
+  it("does not publish a device account when its poll is reclaimed during token encryption", async () => {
+    const actor = createBddApi(context).user();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.TestOauthConnector]: true,
+    });
+    mockTestOAuthDeviceConnectorProvider({ tokenScope: "read stale" });
+    const session = await connectorsApi.startDeviceAuth(
+      actor,
+      "test-oauth-device",
+      "oauth",
+    );
+
+    // Session setup has finished; only the first token-encryption KMS response
+    // is held while another production poll reclaims the expired claim.
+    const kms = holdSecretKms(1, context.signal);
+    const stalePollPromise = connectorsApi.pollDeviceAuth(
+      actor,
+      "test-oauth-device",
+      session.sessionId,
+      session.sessionToken,
+    );
+    const pollResults = await Promise.allSettled([
+      (async () => {
+        await kms.entered;
+        mockNow(now() + 31_000);
+        const reclaimedProvider = mockDeferredTestOAuthTokenEndpoint(
+          context.signal,
+        );
+        const reclaimedPollPromise = connectorsApi.pollDeviceAuth(
+          actor,
+          "test-oauth-device",
+          session.sessionId,
+          session.sessionToken,
+        );
+        const reclaimedResults = await Promise.allSettled([
+          (async () => {
+            await reclaimedProvider.started;
+            kms.release();
+            await expect(stalePollPromise).resolves.toStrictEqual({
+              status: "pending",
+              interval: 0,
+            });
+            await expect(
+              connectorsApi.listBuiltinConnectorAccounts(
+                actor,
+                "test-oauth-device",
+              ),
+            ).resolves.toHaveLength(0);
+
+            reclaimedProvider.release();
+            const reclaimedPoll = await reclaimedPollPromise;
+            if (reclaimedPoll.status !== "complete") {
+              throw new Error(
+                `Expected reclaimed completion, received ${reclaimedPoll.status}`,
+              );
+            }
+            expect(reclaimedPoll.connector.oauthScopes).toStrictEqual(["read"]);
+            await expect(
+              connectorsApi.listBuiltinConnectorAccounts(
+                actor,
+                "test-oauth-device",
+              ),
+            ).resolves.toStrictEqual([
+              expect.objectContaining({
+                id: reclaimedPoll.connector.id,
+                oauthScopes: ["read"],
+              }),
+            ]);
+            await expect(
+              connectorsApi.pollDeviceAuth(
+                actor,
+                "test-oauth-device",
+                session.sessionId,
+                session.sessionToken,
+              ),
+            ).resolves.toStrictEqual(reclaimedPoll);
+          })().finally(() => {
+            reclaimedProvider.release();
+          }),
+          reclaimedPollPromise,
+        ]);
+        for (const result of reclaimedResults) {
+          if (result.status === "rejected") {
+            throw result.reason;
+          }
+        }
+      })().finally(() => {
+        kms.release();
+        clearMockNow();
+      }),
+      stalePollPromise,
+    ]);
+    for (const result of pollResults) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }
+    await connectorsApi.deleteFeatureSwitches(actor);
+  });
+
+  it("awards each connector once when different device connections and reconnects complete concurrently", async () => {
+    const actor = createBddApi(context).user();
+    mockBase44OAuthProvider();
+    mockSlockOAuthProvider();
+
+    const connections = await Promise.all(
+      (["base44", "slock"] as const).map(async (connectorSlug) => {
+        const session = await connectorsApi.startDeviceAuth(
+          actor,
+          connectorSlug,
+          "oauth",
+        );
+        const completed = await connectorsApi.pollDeviceAuth(
+          actor,
+          connectorSlug,
+          session.sessionId,
+          session.sessionToken,
+        );
+        if (completed.status !== "complete") {
+          throw new Error(
+            `Expected ${connectorSlug} completion, received ${completed.status}`,
+          );
+        }
+        return { connectorSlug, connector: completed.connector };
+      }),
+    );
+    await Promise.all(
+      connections.map(async ({ connectorSlug, connector }) => {
+        const session = await connectorsApi.startDeviceAuth(
+          actor,
+          connectorSlug,
+          "oauth",
+          undefined,
+          { intent: "reconnect", connectionId: connector.id },
+        );
+        await expect(
+          connectorsApi.pollDeviceAuth(
+            actor,
+            connectorSlug,
+            session.sessionId,
+            session.sessionToken,
+          ),
+        ).resolves.toMatchObject({
+          status: "complete",
+          connector: { id: connector.id },
+        });
+      }),
+    );
+
+    expect(
+      (await readGetStartedStatus(context, actor)).quests.find((quest) => {
+        return quest.key === "connector";
+      })?.claimedCount,
+    ).toBe(2);
+    const balance = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(balance.body.bonusCredits).toBe(200);
+    expect(balance.body.creditGrants).toHaveLength(2);
+    expect(balance.body.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 100,
+        remaining: 100,
+      }),
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 100,
+        remaining: 100,
+      }),
+    ]);
   });
 
   it("completes Base44 and Slock device sessions with provider metadata visible through connector reads", async () => {
@@ -1956,65 +2099,6 @@ describe("CONN-02: OAuth device authorization", () => {
 });
 
 describe("CONN-02: external-code authorization", () => {
-  it("returns 403 when the external-code runtime method is unavailable", async () => {
-    await installCatalogWithUnavailableMethods({
-      capabilityIdentityEnvName: "CANVA_OAUTH_CLIENT_ID",
-      filteredAuthMethods: [
-        {
-          connectorSlug: "aws",
-          authMethodId: "cli",
-          reasons: ["missing-grant-provider"],
-        },
-      ],
-    });
-    const actor = createBddApi(context).user();
-
-    const response = await connectorsApi.requestExternalCodeStart(
-      actor,
-      "aws",
-      "cli",
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error).toStrictEqual({
-      message: "aws connector is not available",
-      code: "FORBIDDEN",
-    });
-  });
-
-  it("returns 403 when an external-code runtime becomes unavailable before completion", async () => {
-    const actor = createBddApi(context).user();
-    const session = await connectorsApi.startExternalCode(actor, "aws", "cli");
-    await installCatalogWithUnavailableMethods({
-      capabilityIdentityEnvName: "DOCUSIGN_OAUTH_CLIENT_ID",
-      filteredAuthMethods: [
-        {
-          connectorSlug: "aws",
-          authMethodId: "cli",
-          reasons: ["missing-grant-provider"],
-        },
-      ],
-    });
-
-    const response = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: session.sessionId,
-        sessionToken: session.sessionToken,
-        code: "bdd-code",
-      },
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error).toStrictEqual({
-      message: "aws connector is not available",
-      code: "FORBIDDEN",
-    });
-  });
-
   it("validates external-code auth, grant, and session boundaries without using rollout as authorization", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
@@ -2648,7 +2732,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         code: "bdd-custom-oauth-code",
         state: oauthState,
       });
-    expectCustomConnectorInvalidations([member.userId]);
+    expectCustomConnectorInvalidations([member.userId], {
+      userId: member.userId,
+      agentId: agent.agentId,
+    });
     expect(callback.body).toStrictEqual({
       status: "success",
       username: null,
@@ -3765,6 +3852,160 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
   });
 
   it.each([
+    { issuedUnit: "seconds", expiresUnit: "seconds" },
+    { issuedUnit: "milliseconds", expiresUnit: "milliseconds" },
+    { issuedUnit: "milliseconds", expiresUnit: "absent" },
+    { issuedUnit: "milliseconds", expiresUnit: "seconds" },
+    { issuedUnit: "seconds", expiresUnit: "milliseconds" },
+  ] as const)(
+    "accepts Automatic DCR $issuedUnit issuance and $expiresUnit expiry",
+    async ({ issuedUnit, expiresUnit }) => {
+      mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+      mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const issuedAt = now() - 1000;
+      const expiresAt = now() + 60 * 60 * 1000;
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "dcr",
+        dcrClientIdIssuedAt:
+          issuedUnit === "milliseconds"
+            ? issuedAt
+            : Math.floor(issuedAt / 1000),
+        ...(expiresUnit === "absent"
+          ? {}
+          : {
+              dcrClientSecretExpiresAt:
+                expiresUnit === "milliseconds"
+                  ? expiresAt
+                  : Math.floor(expiresAt / 1000),
+            }),
+      });
+      const admin = createBddApi(context).user({ orgRole: "org:admin" });
+      const connector = await connectorsApi.createCustomConnector(admin, {
+        kind: "mcp",
+        displayName: "BDD Automatic DCR Lifetime",
+        endpoint: provider.endpoint,
+        transport: "streamable-http",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+        authMode: "automatic",
+      });
+      const first = await connectorsApi.startCustomConnectorOAuth2(
+        admin,
+        connector.id,
+      );
+      await connectorsApi.completeCustomConnectorOAuth2Callback({
+        code: "automatic-dcr-lifetime-first-code",
+        state: stateFromAuthorizationUrl(first),
+        iss: provider.issuer,
+      });
+      const second = await connectorsApi.startCustomConnectorOAuth2(
+        admin,
+        connector.id,
+        undefined,
+        { intent: "add", displayName: "Second" },
+      );
+      await connectorsApi.completeCustomConnectorOAuth2Callback({
+        code: "automatic-dcr-lifetime-second-code",
+        state: stateFromAuthorizationUrl(second),
+        iss: provider.issuer,
+      });
+      expect(provider.registrationBodies).toHaveLength(1);
+      await expect(
+        connectorsApi.listCustomConnectorAccounts(admin, connector.id),
+      ).resolves.toHaveLength(2);
+      await connectorsApi.deleteCustomConnector(admin, connector.id);
+    },
+  );
+
+  it("accepts absent issuance and zero non-expiring DCR secret", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      dcrClientIdIssuedAt: null,
+      dcrClientSecretExpiresAt: 0,
+    });
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const connector = await connectorsApi.createCustomConnector(admin, {
+      kind: "mcp",
+      displayName: "BDD Automatic DCR Without Lifetime",
+      endpoint: provider.endpoint,
+      transport: "streamable-http",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      authMode: "automatic",
+    });
+    const authorization = await connectorsApi.startCustomConnectorOAuth2(
+      admin,
+      connector.id,
+    );
+    await connectorsApi.completeCustomConnectorOAuth2Callback({
+      code: "automatic-dcr-no-lifetime-code",
+      state: stateFromAuthorizationUrl(authorization),
+      iss: provider.issuer,
+    });
+    expect(provider.registrationBodies).toHaveLength(1);
+    await connectorsApi.deleteCustomConnector(admin, connector.id);
+  });
+
+  it.each([
+    {
+      reason: "stale issuance",
+      field: "issued",
+      millisecondsOffset: -30 * 24 * 60 * 60 * 1000,
+    },
+    {
+      reason: "expired secret",
+      field: "expires",
+      millisecondsOffset: -60 * 1000,
+    },
+    {
+      reason: "unbounded secret lifetime",
+      field: "expires",
+      millisecondsOffset: 200 * 366 * 24 * 60 * 60 * 1000,
+    },
+  ] as const)(
+    "rejects $reason in Automatic DCR milliseconds before persistence",
+    async ({ field, millisecondsOffset }) => {
+      mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+      mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "dcr",
+        ...(field === "issued"
+          ? { dcrClientIdIssuedAt: now() + millisecondsOffset }
+          : { dcrClientSecretExpiresAt: now() + millisecondsOffset }),
+      });
+      const admin = createBddApi(context).user({ orgRole: "org:admin" });
+      const connector = await connectorsApi.createCustomConnector(admin, {
+        kind: "mcp",
+        displayName: "BDD Automatic DCR Invalid Lifetime",
+        endpoint: provider.endpoint,
+        transport: "streamable-http",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+        authMode: "automatic",
+      });
+      const rejected = await connectorsApi.requestStartCustomConnectorOAuth2(
+        admin,
+        connector.id,
+        [400],
+      );
+      expectApiError(rejected.body);
+      expect(rejected.body.error.code).toBe(
+        CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.CLIENT_REGISTRATION_INVALID,
+      );
+      expect(provider.tokenBodies).toHaveLength(0);
+      await connectorsApi.deleteCustomConnector(admin, connector.id);
+    },
+  );
+
+  it.each([
     {
       tokenEndpointAuthMethod: "none" as const,
       expectedAuthorization: null,
@@ -3860,37 +4101,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       state: stateFromAuthorizationUrl(authorizationUrl.toString()),
     });
     expect(provider.tokenBodies).toHaveLength(1);
-
-    await connectorsApi.deleteCustomConnector(admin, connector.id);
-  });
-
-  it("serializes concurrent first Automatic DCR registrations", async () => {
-    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const provider = mockAutomaticMcpOAuthProvider(context, {
-      registration: "dcr",
-      synchronizeAuthorizationServerDiscovery: true,
-    });
-    const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    const connector = await connectorsApi.createCustomConnector(admin, {
-      kind: "mcp",
-      displayName: "BDD Concurrent Automatic DCR",
-      endpoint: provider.endpoint,
-      transport: "streamable-http",
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
-      authMode: "automatic",
-    });
-
-    const authorizationUrls = await Promise.all([
-      connectorsApi.startCustomConnectorOAuth2(admin, connector.id),
-      connectorsApi.startCustomConnectorOAuth2(admin, connector.id),
-    ]);
-    expect(authorizationUrls).toHaveLength(2);
-    expect(provider.authorizationServerDiscoveryCalls()).toBe(2);
-    expect(provider.registrationBodies).toHaveLength(1);
 
     await connectorsApi.deleteCustomConnector(admin, connector.id);
   });
@@ -5823,11 +6033,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       agentId: agent.agentId,
     });
 
-    expectCustomConnectorInvalidations([
-      admin.userId,
-      member.userId,
-      admin.userId,
-    ]);
+    expectCustomConnectorInvalidations(
+      [admin.userId, member.userId, admin.userId],
+      { userId: admin.userId, agentId: agent.agentId },
+    );
     expect(saved.authorizedAgentId).toBe(agent.agentId);
     expect(saved.connector).toMatchObject({
       displayName: "BDD Proposal API",
@@ -6370,17 +6579,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(autoSlug.prefixTemplates).toStrictEqual([`https://api.${host}/v1/`]);
     expect(autoSlug.connected).toBeFalsy();
 
-    const duplicateAutoSlug = await connectorsApi.requestCreateCustomConnector(
+    const sharedPrefix = await connectorsApi.createCustomConnector(
       admin,
       manualHttpCustomConnectorCreateBody({
-        displayName: "BDD Duplicate Auto Slug",
+        displayName: "BDD Shared Prefix",
         prefixTemplates: [`https://api.${host}/v1`],
       }),
-      [400],
     );
-    expectApiError(duplicateAutoSlug.body);
-    expect(duplicateAutoSlug.body.error.message).toContain(
-      `"${autoSlug.displayName}"`,
+    expect(sharedPrefix.id).not.toBe(autoSlug.id);
+    expect(sharedPrefix.slug).not.toBe(autoSlug.slug);
+    expect(sharedPrefix.prefixTemplates).toStrictEqual(
+      autoSlug.prefixTemplates,
     );
 
     const wildcard = await connectorsApi.createCustomConnector(
@@ -6424,19 +6633,15 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       "https://api.github.com/v3/",
     ]);
 
-    const builtinTrailingDotOverlap =
-      await connectorsApi.requestCreateCustomConnector(
-        admin,
-        manualHttpCustomConnectorCreateBody({
-          displayName: "Custom GitHub Trailing Dot",
-          prefixTemplates: ["https://api.github.com./v3/"],
-        }),
-        [400],
-      );
-    expectApiError(builtinTrailingDotOverlap.body);
-    expect(builtinTrailingDotOverlap.body.error.message).toContain(
-      `"${builtinOverlap.displayName}"`,
+    const builtinTrailingDotOverlap = await connectorsApi.createCustomConnector(
+      admin,
+      manualHttpCustomConnectorCreateBody({
+        displayName: "Custom GitHub Trailing Dot",
+        prefixTemplates: ["https://api.github.com./v3/"],
+      }),
     );
+    expect(builtinTrailingDotOverlap.id).not.toBe(builtinOverlap.id);
+    expect(builtinTrailingDotOverlap.slug).not.toBe(builtinOverlap.slug);
 
     const listed = await connectorsApi.listCustomConnectors(admin);
     expect(
@@ -6445,9 +6650,22 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           return connector.id;
         })
         .sort(),
-    ).toStrictEqual([autoSlug.id, wildcard.id, builtinOverlap.id].sort());
+    ).toStrictEqual(
+      [
+        autoSlug.id,
+        sharedPrefix.id,
+        wildcard.id,
+        builtinOverlap.id,
+        builtinTrailingDotOverlap.id,
+      ].sort(),
+    );
 
     await connectorsApi.deleteCustomConnector(admin, autoSlug.id);
+    await connectorsApi.deleteCustomConnector(admin, sharedPrefix.id);
+    await connectorsApi.deleteCustomConnector(
+      admin,
+      builtinTrailingDotOverlap.id,
+    );
     await connectorsApi.deleteCustomConnector(admin, wildcard.id);
     await connectorsApi.deleteCustomConnector(admin, builtinOverlap.id);
     await expect(
@@ -7101,7 +7319,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).resolves.toMatchObject({ versionId: updatedHead.versionId });
   });
 
-  it("rejects prefix collisions introduced by edits", async () => {
+  it("allows an edited definition to share a prefix without changing identity", async () => {
     const admin = createBddApi(context).user();
     const original = await connectorsApi.createCustomConnector(admin, {
       ...customConnectorBody(uniqueSlug("bdd-prefix-original")),
@@ -7116,7 +7334,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       throw new Error("Expected the original connector to have a prefix");
     }
 
-    const collision = await connectorsApi.requestUpdateCustomConnector(
+    const updated = await connectorsApi.requestUpdateCustomConnector(
       admin,
       editable.id,
       {
@@ -7127,21 +7345,23 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         queryInjections: editable.queryInjections,
         authMode: editable.authMode,
       },
-      [400],
+      [200],
     );
-    expectApiError(collision.body);
-    expect(collision.body.error.message).toContain(`"${original.displayName}"`);
+    expect(updated.body).toMatchObject({
+      id: editable.id,
+      slug: editable.slug,
+    });
     expect(
       (await connectorsApi.listCustomConnectors(admin)).find((connector) => {
         return connector.id === editable.id;
       })?.prefixTemplates,
-    ).toStrictEqual(editable.prefixTemplates);
+    ).toStrictEqual(original.prefixTemplates);
 
     await connectorsApi.deleteCustomConnector(admin, original.id);
     await connectorsApi.deleteCustomConnector(admin, editable.id);
   });
 
-  it("serializes concurrent creates for the same normalized prefix", async () => {
+  it("publishes independent identities for concurrent equivalent prefixes", async () => {
     const admin = createBddApi(context).user();
     const rand = randomUUID().replace(/-/g, "").slice(0, 8);
     const prefix = `https://concurrent-${rand}.example.test/v1/`;
@@ -7153,7 +7373,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           displayName: "BDD Concurrent Prefix A",
           prefixTemplates: [prefix],
         },
-        [201, 400],
+        [201],
       ),
       connectorsApi.requestCreateCustomConnector(
         admin,
@@ -7162,7 +7382,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           displayName: "BDD Concurrent Prefix B",
           prefixTemplates: [prefix.slice(0, -1)],
         },
-        [201, 400],
+        [201],
       ),
     ]);
 
@@ -7172,20 +7392,35 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           return response.status;
         })
         .sort(),
-    ).toStrictEqual([201, 400]);
-    const created = responses.find((response) => {
-      return response.status === 201;
+    ).toStrictEqual([201, 201]);
+    const created = responses.map((response) => {
+      if (response.status !== 201) {
+        throw new Error("Expected both connector definitions to be created");
+      }
+      return response.body;
     });
-    const rejected = responses.find((response) => {
-      return response.status === 400;
-    });
-    if (created?.status !== 201 || rejected?.status !== 400) {
-      throw new Error("Expected one created and one rejected connector");
+    expect(
+      new Set(
+        created.map((definition) => {
+          return definition.id;
+        }),
+      ).size,
+    ).toBe(2);
+    expect(
+      new Set(
+        created.map((definition) => {
+          return definition.slug;
+        }),
+      ).size,
+    ).toBe(2);
+    expect(
+      created.map((definition) => {
+        return definition.prefixTemplates;
+      }),
+    ).toStrictEqual([[prefix], [prefix]]);
+    for (const definition of created) {
+      await connectorsApi.deleteCustomConnector(admin, definition.id);
     }
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toContain("is already used");
-
-    await connectorsApi.deleteCustomConnector(admin, created.body.id);
   });
 
   it("scopes custom connector deletion to org admins and same-org ids", async () => {

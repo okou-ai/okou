@@ -52,7 +52,6 @@ import {
 import { env } from "../../lib/env";
 import { recordConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
 import { connectorConnectionWriteFailureMessage } from "../services/connector-data.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   okouMcpOAuthClientMetadata,
   okouMcpOAuthDynamicClientMetadata,
@@ -136,7 +135,6 @@ const startOAuth2Inner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!agentTarget.ok) {
     return badRequestMessage(agentTarget.message);
   }
-  const publicBrand = PUBLIC_BRAND;
   const redirectUri = new URL(
     CUSTOM_CONNECTOR_OAUTH_CALLBACK_PATH,
     appOrigin(),
@@ -149,7 +147,6 @@ const startOAuth2Inner$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: auth.userId,
       connectorId: params.id,
       redirectUri,
-      publicBrand,
       automaticOAuthClient: {
         redirectUri: okouOAuthRedirectUri(get(request$).raw),
         cimdClientId: okouClientMetadata.client_id,

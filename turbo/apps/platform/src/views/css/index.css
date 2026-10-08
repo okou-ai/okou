@@ -780,7 +780,7 @@ body {
   --okou-card-radius: 1.25rem;
   /* Cards rendered inside a chat message sit one level in from the page, so
      they take one step down the radius scale. */
-  --okou-chat-card-radius: 0.75rem;
+  --okou-chat-card-radius: 1rem;
   --okou-card-shadow:
     0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025);
   /* A card inside a message is not elevated off the page the way a page-level
@@ -1549,4 +1549,65 @@ details > summary {
       )
       14%
   );
+}
+
+/* PWA page navigation. The route sets the transition type: "push" slides a
+   nested page in over its tab root, "pop" slides it out to reveal the root.
+   The bottom tab bar stays in place. */
+html:active-view-transition-type(push, pop) {
+  &::view-transition-old(root),
+  &::view-transition-new(root) {
+    animation-duration: 320ms;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    animation-fill-mode: both;
+    mix-blend-mode: normal;
+  }
+
+  &::view-transition-group(pwa-tab-bar),
+  &::view-transition-old(pwa-tab-bar),
+  &::view-transition-new(pwa-tab-bar) {
+    animation: none;
+  }
+}
+
+html:active-view-transition-type(push) {
+  &::view-transition-old(root) {
+    animation-name: none;
+  }
+
+  &::view-transition-new(root) {
+    animation-name: okou-page-slide-in;
+  }
+}
+
+html:active-view-transition-type(pop) {
+  &::view-transition-old(root) {
+    z-index: 1;
+    animation-name: okou-page-slide-out;
+  }
+
+  &::view-transition-new(root) {
+    animation-name: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:active-view-transition-type(push, pop) {
+    &::view-transition-old(root),
+    &::view-transition-new(root) {
+      animation: none;
+    }
+  }
+}
+
+@keyframes okou-page-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes okou-page-slide-out {
+  to {
+    transform: translateX(100%);
+  }
 }

@@ -1,8 +1,6 @@
-import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
+import { mockClerkUsers } from "./clerk-users";
 
-import type StripeSDK from "stripe";
-import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 import { bankingContract } from "@okouai/api-contracts/contracts/banking";
 import {
   billingAutoRechargeContract,
@@ -25,6 +23,7 @@ import {
 import { builtInGenerationContract } from "@okouai/api-contracts/contracts/built-in-generation";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
+import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
   mapsContract,
   type MapsSearchRequest,
@@ -34,23 +33,17 @@ import {
   usageRecordContract,
   type UsageRecordRange,
 } from "@okouai/api-contracts/contracts/usage-record";
-import { videoIoGenerateContract } from "@okouai/api-contracts/contracts/video-io-generate";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { voiceIoSpeechContract } from "@okouai/api-contracts/contracts/voice-io-speech";
-import { voiceIoSttContract } from "@okouai/api-contracts/contracts/voice-io-stt";
+import type StripeSDK from "stripe";
 
-import { mockEnv } from "../../../../lib/env";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
+import { mockEnv } from "../../../../lib/env";
 import {
   mockListStripeInvoices,
   mockStripeClient,
 } from "../../../external/stripe-client";
-import { testUsageSettlementRoutes } from "../../test-usage-settlement";
-import type { ApiTestUser } from "./api-bdd";
-import { mockGoogleMapsGrounding } from "./google-maps-grounding";
-import { createRouteMocks } from "./route-test";
 import { bankingRoutes } from "../../banking";
 import { billingAutoRechargeRoutes } from "../../billing-auto-recharge";
 import { billingCheckoutRoutes } from "../../billing-checkout";
@@ -68,10 +61,11 @@ import { imageIoGenerateRoutes } from "../../image-io-generate";
 import { mapsRoutes } from "../../maps";
 import { usageMembersRoutes } from "../../usage-members";
 import { usageRecordRoutes } from "../../usage-record";
-import { videoIoGenerateRoutes } from "../../video-io-generate";
+import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { voiceIoQuotaRoutes } from "../../voice-io-quota";
-import { voiceIoSpeechRoutes } from "../../voice-io-speech";
-import { voiceIoSttRoutes } from "../../voice-io-stt";
+import type { ApiTestUser } from "./api-bdd";
+import { mockGoogleMapsGrounding } from "./google-maps-grounding";
+import { createRouteMocks } from "./route-test";
 
 type ClerkOrgRole = "org:admin" | "org:member";
 
@@ -132,8 +126,6 @@ interface AutoRechargeUpdateBody {
 type CheckoutStatus = 200 | 400 | 401 | 403 | 500 | 503;
 type BillingMutationStatus = 200 | 400 | 401 | 403 | 409 | 500 | 503;
 type ImageIoStatus = 200 | 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
-type VideoIoStatus = 200 | 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503 | 504;
-type VoiceSpeechStatus = 200 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
 type MapsStatus = 200 | 400 | 401 | 402 | 403 | 502 | 503;
 
 function authHeaders(actor: ApiTestUser | null): AuthHeaders {
@@ -400,7 +392,7 @@ export function createBillingMediaApi(context: TestContext) {
     async downgradeBilling(
       actor: ApiTestUser,
       body: {
-        readonly targetTier: "limited-free-1" | "pro-suspend" | "pro";
+        readonly targetTier: "limited-free-1" | "pro";
         readonly returnUrl?: string;
       },
       statuses: readonly BillingMutationStatus[],
@@ -493,7 +485,7 @@ export function createBillingMediaApi(context: TestContext) {
       );
     },
 
-    async readUsageRecord(actor: ApiTestUser) {
+    async readUsageRecord(actor: ApiTestUser, range: UsageRecordRange = "24h") {
       const client = setupApp({ context, routes: usageRecordRoutes })(
         usageRecordContract,
       );
@@ -504,28 +496,10 @@ export function createBillingMediaApi(context: TestContext) {
             page: 1,
             pageSize: 20,
             scope: "mine",
-            range: "24h",
+            range,
             tz: "UTC",
           },
         }),
-        [200],
-      );
-    },
-
-    async processOrgUsageEvents(
-      actor: ApiTestUser,
-      usagePricingResolution?: UsagePricingResolution,
-    ) {
-      if (!actor.orgId) {
-        throw new Error("Cannot process usage without an organization");
-      }
-      const client = setupApp({
-        context,
-        routes: testUsageSettlementRoutes,
-        usagePricingResolution,
-      })(testUsageSettlementContract);
-      return await accept(
-        client.process({ body: { org_id: actor.orgId } }),
         [200],
       );
     },
@@ -553,35 +527,28 @@ export function createBillingMediaApi(context: TestContext) {
       return await accept(client.get({ headers: authenticate(actor) }), [200]);
     },
 
-    async requestVoiceStt(
-      actor: ApiTestUser | null,
-      formData: FormData,
-      statuses: readonly (200 | 400 | 401 | 402 | 403 | 429 | 500)[],
-    ) {
-      const client = setupApp({ context, routes: voiceIoSttRoutes })(
-        voiceIoSttContract,
+    /**
+     * Image generation uses the member's image model setting. Echoes the
+     * stored run preference so only the image model changes.
+     */
+    async selectImageModel(actor: ApiTestUser, model: ImageModelId) {
+      const client = setupApp({ context, routes: userModelPreferenceRoutes })(
+        userModelPreferenceContract,
+      );
+      const stored = await accept(
+        client.get({ headers: authenticate(actor) }),
+        [200],
       );
       return await accept(
-        client.post({ headers: authenticate(actor), body: formData }),
-        statuses,
-      );
-    },
-
-    async requestVoiceSpeech(
-      actor: ApiTestUser | null,
-      body: {
-        readonly text?: string;
-        readonly voice?: string;
-        readonly instructions?: string;
-      },
-      statuses: readonly VoiceSpeechStatus[],
-    ) {
-      const client = setupApp({ context, routes: voiceIoSpeechRoutes })(
-        voiceIoSpeechContract,
-      );
-      return await accept(
-        client.post({ headers: authenticate(actor), body }),
-        statuses,
+        client.update({
+          headers: authenticate(actor),
+          body: {
+            selectedModel: stored.body.selectedModel,
+            serviceTier: stored.body.serviceTier,
+            selectedImageModel: model,
+          },
+        }),
+        [200],
       );
     },
 
@@ -609,36 +576,6 @@ export function createBillingMediaApi(context: TestContext) {
     ) {
       const client = setupApp({ context, routes: imageIoGenerateRoutes })(
         imageIoGenerateContract,
-      );
-      return await accept(
-        client.post({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
-    async requestVideoIoGenerate(
-      actor: ApiTestUser | null,
-      body: {
-        readonly prompt?: string;
-        readonly model?: string;
-        readonly aspectRatio?: string;
-        readonly duration?: string;
-        readonly resolution?: string;
-        readonly generateAudio?: boolean;
-        readonly negativePrompt?: string;
-        readonly seed?: number;
-        readonly autoFix?: boolean;
-        readonly safetyTolerance?: string;
-        readonly imageUrls?: readonly string[];
-        readonly videoUrls?: readonly string[];
-        readonly audioUrls?: readonly string[];
-        readonly firstFrameImageUrl?: string;
-        readonly lastFrameImageUrl?: string;
-      },
-      statuses: readonly VideoIoStatus[],
-    ) {
-      const client = setupApp({ context, routes: videoIoGenerateRoutes })(
-        videoIoGenerateContract,
       );
       return await accept(
         client.post({ headers: authenticate(actor), body }),

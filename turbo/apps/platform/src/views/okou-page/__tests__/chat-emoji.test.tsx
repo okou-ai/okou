@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -10,6 +11,8 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import emojiGroupsUrl from "../../../data/chat-thread-emoji.json?url";
+import { CHAT_THREAD_EMOJI_FIXTURE } from "../../../mocks/handlers/chat-thread-emoji.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
@@ -43,14 +46,15 @@ function buttonByLabel(label: string): HTMLButtonElement {
   return button;
 }
 
-function categoryTab(label: string): HTMLButtonElement {
-  const tab = queryAllByRoleFast("tab").find((candidate) => {
+function categoryButton(label: string): HTMLButtonElement {
+  const toolbar = screen.getByRole("toolbar", { name: "Emoji categories" });
+  const button = queryAllByRoleFast("button", toolbar).find((candidate) => {
     return candidate.getAttribute("aria-label") === label;
   });
-  if (!(tab instanceof HTMLButtonElement)) {
-    throw new Error(`Emoji category tab not found: ${label}`);
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`Emoji category button not found: ${label}`);
   }
-  return tab;
+  return button;
 }
 
 function emojiButton(label: string): HTMLButtonElement {
@@ -83,6 +87,8 @@ async function openEmojiPicker(): Promise<HTMLInputElement> {
   if (!(searchInput instanceof HTMLInputElement)) {
     throw new Error("Emoji search is not an input");
   }
+  // The category sections arrive with the emoji data fetched on open.
+  await screen.findByText("Smileys & Emotion");
   return searchInput;
 }
 
@@ -106,8 +112,8 @@ function nextAnimationFrame(): Promise<void> {
   return frame.promise;
 }
 
-test("Keep the check-mark thread icon Done when archiving is disabled", async () => {
-  await setupEmojiPage("Emoji planning", false);
+test("Keep the check-mark thread icon Done when archiving is enabled", async () => {
+  await setupEmojiPage("Emoji planning", true);
   await waitFor(() => {
     expect(buttonByLabel("Change icon")).toBeInTheDocument();
   });
@@ -121,8 +127,13 @@ test("Keep the check-mark thread icon Done when archiving is disabled", async ()
   ).not.toBeInTheDocument();
 });
 
-test("Name the check-mark thread icon Archive when archiving is enabled", async () => {
-  await setupEmojiPage("Emoji planning", true);
+test("Show frequently used emoji while the full emoji set loads", async () => {
+  const emojiData = context.mocks.deferred<void>();
+  context.mocks.http.get(emojiGroupsUrl, async () => {
+    await emojiData.promise;
+    return HttpResponse.json(CHAT_THREAD_EMOJI_FIXTURE);
+  });
+  await setupEmojiPage();
   await waitFor(() => {
     expect(buttonByLabel("Change icon")).toBeInTheDocument();
   });
@@ -130,10 +141,13 @@ test("Name the check-mark thread icon Archive when archiving is enabled", async 
   click(buttonByLabel("Change icon"));
   await screen.findByLabelText("Search emoji");
 
-  expect(emojiButton("Archive")).toHaveTextContent("✅");
-  expect(
-    document.querySelector('[data-chat-thread-emoji][aria-label="Done"]'),
-  ).not.toBeInTheDocument();
+  expect(screen.getByText("Frequently used")).toBeInTheDocument();
+  expect(screen.queryByText("Smileys & Emotion")).toBeNull();
+
+  emojiData.resolve();
+
+  await screen.findByText("Smileys & Emotion");
+  expect(emojiButton("grinning face")).toHaveTextContent("😀");
 });
 
 test("Retain a thread icon when resizing from mobile to desktop", async () => {
@@ -175,6 +189,7 @@ test("Change a thread icon before its save finishes", async () => {
 
   click(changeIcon);
   const searchInput = await screen.findByLabelText("Search emoji");
+  await screen.findByText("Smileys & Emotion");
   click(emojiButton("grinning face"));
   await waitFor(() => {
     expect(changeIcon).toHaveTextContent("😀");
@@ -215,12 +230,11 @@ test.each([
     const viewport = context.mocks.browser.matchMedia(desktop);
     const searchInput = await openEmojiPicker();
 
-    // "eye" has 20 matches in the production emoji data. Search through the
-    // page before remounting so this responsive contract does not repeatedly
-    // build the unrelated full emoji grid.
+    // "eye" matches two emoji in the test emoji data. Search before
+    // remounting so the remounted picker has to keep the query.
     await fill(searchInput, "eye");
     await waitFor(() => {
-      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(20);
+      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(2);
     });
 
     act(() => {
@@ -235,7 +249,7 @@ test.each([
       expect(searchInputs).toHaveLength(1);
       expect(searchInputs[0]).toHaveFocus();
       expect(searchInputs[0]).toHaveValue("eye");
-      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(20);
+      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(2);
     });
     expect(screen.getAllByTestId("chat-thread-header-title")).toHaveLength(1);
     expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
@@ -254,14 +268,14 @@ test("Choosing an emoji category exits search results", async () => {
   });
   expect(screen.queryByText("Food & Drink")).toBeNull();
 
-  click(categoryTab("Food & Drink"));
+  click(categoryButton("Food & Drink"));
 
   await waitFor(() => {
     expect(searchInput).toHaveValue("");
     expect(screen.getByText("Food & Drink")).toBeInTheDocument();
-    expect(categoryTab("Food & Drink")).toHaveAttribute(
-      "aria-selected",
-      "true",
+    expect(categoryButton("Food & Drink")).toHaveAttribute(
+      "aria-current",
+      "location",
     );
   });
 });
@@ -281,40 +295,52 @@ test("Choosing an emoji category updates the category rail", async () => {
     },
   });
 
-  click(categoryTab("Food & Drink"));
+  click(categoryButton("Food & Drink"));
   await nextAnimationFrame();
 
-  expect(categoryTab("Food & Drink")).toHaveAttribute("aria-selected", "true");
-  expect(categoryTab("Frequently used")).toHaveAttribute(
-    "aria-selected",
-    "false",
+  expect(categoryButton("Food & Drink")).toHaveAttribute(
+    "aria-current",
+    "location",
   );
-  expect(screen.getByText("Food & Drink")).toBeInTheDocument();
+  expect(categoryButton("Frequently used")).not.toHaveAttribute("aria-current");
+  const controlledSectionId =
+    categoryButton("Food & Drink").getAttribute("aria-controls");
+  expect(controlledSectionId).not.toMatch(/\s/);
+  expect(document.getElementById(controlledSectionId ?? "")).toContainElement(
+    screen.getByText("Food & Drink"),
+  );
   expect(feed.scrollTop).toBeGreaterThan(0);
 });
 
-test("Emoji categories can be navigated with arrow keys", async () => {
-  await openEmojiPicker();
-  const categoryList = screen.getByRole("tablist", {
-    name: "Emoji categories",
+test("Keyboard category navigation preserves search until activation", async () => {
+  const user = userEvent.setup();
+  const searchInput = await openEmojiPicker();
+  await user.type(searchInput, "watermelon");
+  await waitFor(() => {
+    expect(emojiButton("watermelon")).toBeInTheDocument();
   });
-  const frequent = categoryTab("Frequently used");
-  const smileys = categoryTab("Smileys & Emotion");
-  frequent.focus();
+  const frequent = categoryButton("Frequently used");
+  const smileys = categoryButton("Smileys & Emotion");
 
-  fireEvent.keyDown(categoryList, { key: "ArrowRight" });
+  act(() => {
+    frequent.focus();
+  });
+  expect(frequent).toHaveFocus();
+  await user.keyboard("{ArrowRight}");
+
+  expect(smileys).toHaveFocus();
+  expect(searchInput).toHaveValue("watermelon");
+  expect(frequent).toHaveAttribute("aria-current", "location");
+  expect(screen.queryByText("Smileys & Emotion")).not.toBeInTheDocument();
+
+  await user.keyboard("{Enter}");
 
   await waitFor(() => {
-    expect(smileys).toHaveAttribute("aria-selected", "true");
-    expect(smileys).toHaveFocus();
+    expect(searchInput).toHaveValue("");
+    expect(screen.getByText("Smileys & Emotion")).toBeInTheDocument();
+    expect(smileys).toHaveAttribute("aria-current", "location");
   });
-  expect(smileys).toHaveAttribute("tabindex", "0");
-  expect(frequent).toHaveAttribute("tabindex", "-1");
-  expect(
-    queryAllByRoleFast("tab").filter((tab) => {
-      return tab.getAttribute("tabindex") === "0";
-    }),
-  ).toHaveLength(1);
+  expect(smileys).toHaveFocus();
 });
 
 test("The emoji picker names the emoji under the pointer", async () => {
@@ -335,28 +361,31 @@ test("The emoji picker names the emoji under the pointer", async () => {
   expect(screen.queryByText(":grinning_face:")).toBeNull();
 });
 
-test("The emoji category rail resumes following manual scrolling", async () => {
+test("Manual emoji scrolling updates the current category without moving focus", async () => {
+  const user = userEvent.setup();
   await openEmojiPicker();
   const feed = emojiFeed();
   setCategoryLayout(feed);
-  expect(categoryTab("Frequently used")).toHaveAttribute(
-    "aria-selected",
-    "true",
+  expect(categoryButton("Frequently used")).toHaveAttribute(
+    "aria-current",
+    "location",
   );
 
-  click(categoryTab("Frequently used"));
+  act(() => {
+    categoryButton("Frequently used").focus();
+  });
+  expect(categoryButton("Frequently used")).toHaveFocus();
+  await user.keyboard(" ");
   await nextAnimationFrame();
   feed.scrollTop = 100;
   fireEvent.scroll(feed);
 
   await waitFor(() => {
-    expect(categoryTab("Smileys & Emotion")).toHaveAttribute(
-      "aria-selected",
-      "true",
+    expect(categoryButton("Smileys & Emotion")).toHaveAttribute(
+      "aria-current",
+      "location",
     );
   });
-  expect(categoryTab("Frequently used")).toHaveAttribute(
-    "aria-selected",
-    "false",
-  );
+  expect(categoryButton("Frequently used")).not.toHaveAttribute("aria-current");
+  expect(categoryButton("Frequently used")).toHaveFocus();
 });

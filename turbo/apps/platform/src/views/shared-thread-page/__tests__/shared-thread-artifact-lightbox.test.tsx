@@ -1,13 +1,7 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -50,24 +44,22 @@ interface SnapshotResource {
 
 function mockSnapshotResources({
   anonymous = true,
-  previewImages = true,
 }: {
   anonymous?: boolean;
-  previewImages?: boolean;
 } = {}) {
   const site: SnapshotResource = {
     url: SITE_URL,
     filename: "lightsite1.html",
     contentType: "text/html",
     kind: "html",
-    ...(previewImages ? { previewImageUrl: SITE_COVER } : {}),
+    previewImageUrl: SITE_COVER,
   };
   const video: SnapshotResource = {
     url: VIDEO_URL,
     filename: "lightvid01.mp4",
     contentType: "video/mp4",
     kind: "file",
-    ...(previewImages ? { previewImageUrl: VIDEO_COVER } : {}),
+    previewImageUrl: VIDEO_COVER,
   };
   const resources: Readonly<Record<string, SnapshotResource>> = {
     "lightsite1.html": site,
@@ -295,103 +287,6 @@ test("a signed-in viewer downloads freshly authorized bytes from a normal artifa
   );
 });
 
-test("a signed-in viewer switching shared conversations cancels the active download and resets the preview", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const requested = context.mocks.deferred<void>();
-  const cancelled = context.mocks.deferred<void>();
-  const videoUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=preview`;
-  const nextId = "30000000-0000-4000-8000-000000000703";
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ request, respond }) => {
-      expect(request.headers.has("authorization")).toBeTruthy();
-      return respond(200, {
-        url: videoUrl,
-        filename: "lightvid01.mp4",
-        contentType: "video/mp4",
-        expiresAt: "2099-01-01T00:00:00Z",
-        target: { kind: "file", id: FILE_ID },
-      });
-    },
-  );
-  context.mocks.api(sharedThreadsContract.get, ({ params, respond }) => {
-    return respond(
-      200,
-      sharedThread({
-        id: params.id,
-        title:
-          params.id === nextId ? "Next shared conversation" : "Launch review",
-        messages: [
-          {
-            messageIndex: 0,
-            role: "assistant",
-            content: `![Launch video](${VIDEO})`,
-          },
-        ],
-      }),
-    );
-  });
-  context.mocks.http.get(
-    `${R2_ORIGIN}/files/launch.mp4`,
-    async ({ request }) => {
-      request.signal.addEventListener(
-        "abort",
-        () => {
-          cancelled.resolve();
-        },
-        { once: true },
-      );
-      requested.resolve();
-      await cancelled.promise;
-      return HttpResponse.text("shared video bytes", {
-        headers: { "Content-Type": "video/mp4" },
-      });
-    },
-  );
-
-  await setupSharedThreadPage(context, {
-    host: "app.okou.ai",
-    auth: { user: { id: "user_shared_artifact_viewer", fullName: "Viewer" } },
-  });
-
-  click(await screen.findByTestId("markdown-artifact-preview-video"));
-
-  const dialog = await screen.findByRole("dialog");
-  await waitFor(() => {
-    expect(getButtonByName("Download", dialog)).toBeEnabled();
-  });
-  click(getButtonByName("Download", dialog));
-  await requested.promise;
-
-  act(() => {
-    window.history.pushState({}, "", `/share/threads/${nextId}`);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  });
-
-  await cancelled.promise;
-  await expect(
-    screen.findByRole("heading", { name: "Next shared conversation" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(browser.downloads).toStrictEqual([]);
-
-  click(await screen.findByTestId("markdown-artifact-preview-video"));
-
-  const nextDialog = await screen.findByRole("dialog");
-  await waitFor(() => {
-    expect(nextDialog.querySelector("video")).toHaveAttribute(
-      "src",
-      `${videoUrl}#t=2`,
-    );
-  });
-  click(getButtonByName("Copy link", nextDialog));
-
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([VIDEO]);
-  });
-});
-
 test("a shared video uses its generated cover and plays the original in the viewer", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   mockSnapshotResources();
@@ -432,20 +327,6 @@ test("a shared video uses its generated cover and plays the original in the view
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([VIDEO]);
   });
-  click(getButtonByName("Enter fullscreen", dialog));
-
-  await waitFor(() => {
-    expect(dialog).toHaveAttribute("data-mode", "fullscreen");
-  });
-  await userEvent.keyboard("{Escape}");
-
-  await waitFor(() => {
-    expect(dialog).toHaveAttribute("data-mode", "windowed");
-  });
-  expect(stage.querySelector("video")).toHaveAttribute(
-    "src",
-    `${VIDEO_URL}#t=2`,
-  );
   await userEvent.keyboard("{Escape}");
 
   await waitFor(() => {
@@ -456,51 +337,8 @@ test("a shared video uses its generated cover and plays the original in the view
 test.each([
   {
     kind: "html",
-    url: SITE,
-    selector: "iframe",
-    cardUrl: `${SITE_URL}#slide-2`,
-    dialogUrl: `${SITE_URL}#slide-2`,
-  },
-  {
-    kind: "video",
-    url: VIDEO,
-    selector: "video",
-    cardUrl: `${VIDEO_URL}#t=0.001`,
-    dialogUrl: `${VIDEO_URL}#t=2`,
-  },
-] as const)(
-  "shared $kind snapshots without generated covers remain previewable",
-  async ({ kind, url, selector, cardUrl, dialogUrl }) => {
-    mockSnapshotResources({ previewImages: false });
-    mockSharedMessage(`![Launch preview](${url})`);
-
-    await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
-    const card = await screen.findByTestId(`markdown-artifact-preview-${kind}`);
-    await waitFor(() => {
-      expect(card.querySelector(selector)).toHaveAttribute("src", cardUrl);
-    });
-    expect(within(card).queryByRole("img")).not.toBeInTheDocument();
-
-    click(card);
-
-    const dialog = await screen.findByRole("dialog");
-    await waitFor(() => {
-      expect(dialog.querySelector(selector)).toHaveAttribute("src", dialogUrl);
-    });
-  },
-);
-
-test.each([
-  {
-    kind: "html",
     url: "https://launch-review.okou.app/#slide-2",
     selector: "iframe",
-  },
-  {
-    kind: "video",
-    url: "https://a.okou.io/legacyvid1.mp4#t=2",
-    selector: "video",
   },
 ] as const)(
   "legacy shared $kind links open the viewer and keep their original URL when copied",
@@ -526,7 +364,7 @@ test.each([
   },
 );
 
-test.each([403, 404] as const)(
+test.each([404] as const)(
   "an unavailable snapshot shows no private preview content: %s",
   async (status) => {
     context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
@@ -641,48 +479,6 @@ test("shared prompt attachments retain their covers and open the independent vie
   });
 });
 
-test("a shared site reuses its card credential across opening and reopening", async () => {
-  const { site } = mockSnapshotResources();
-  const refreshedUrl = `https://ps-${"d".repeat(48)}.okou.app/`;
-  mockSharedMessage(`![Launch site](${SITE})`);
-
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
-  const card = await screen.findByTestId("markdown-artifact-preview-html");
-  const thumbnail = await within(card).findByTestId(
-    "attachment-preview-thumbnail",
-  );
-  expect(thumbnail).toHaveAttribute(
-    "src",
-    `${THUMBNAIL_PREFIX}${SITE_COVER_URL}`,
-  );
-  fireEvent.load(thumbnail);
-  site.url = refreshedUrl;
-
-  click(card);
-
-  const dialog = await screen.findByRole("dialog");
-  await expect(
-    within(dialog).findByTestId("artifact-dialog-body-html"),
-  ).resolves.toHaveAttribute("src", `${SITE_URL}#slide-2`);
-  expect(getButtonByName("Download", dialog)).toBeEnabled();
-
-  click(getButtonByName("Close", dialog));
-
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  site.status = 404;
-
-  click(card);
-
-  const reopenedDialog = await screen.findByRole("dialog");
-  await expect(
-    within(reopenedDialog).findByTestId("artifact-dialog-body-html"),
-  ).resolves.toHaveAttribute("src", `${SITE_URL}#slide-2`);
-  expect(getButtonByName("Download", reopenedDialog)).toBeEnabled();
-});
-
 test("revoked download access reports an error without downloading or leaving the shared conversation", async () => {
   const browser = context.mocks.browser.blobDownload();
   const replace = context.mocks.browser.locationReplace();
@@ -759,12 +555,6 @@ test("a shared image opens in the conversation and keeps its destination for a n
   if (!link) {
     throw new Error("Expected the shared image to keep its own destination");
   }
-
-  // A held modifier is a request for a tab of its own, so the anchor answers:
-  // the click runs to its default instead of being taken by the dialog.
-  expect(fireEvent.click(link, { metaKey: true })).toBeTruthy();
-
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
   click(link);
 

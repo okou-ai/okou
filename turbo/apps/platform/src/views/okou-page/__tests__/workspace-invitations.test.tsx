@@ -1,5 +1,4 @@
 import { screen, waitFor } from "@testing-library/react";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import { expect, test } from "vitest";
 
 import {
@@ -106,10 +105,6 @@ test("An invitation accepted for another account offers account switching", asyn
         forceRedirectUrl: "/",
       }),
     );
-  });
-  toast.dismiss();
-  await waitFor(() => {
-    expect(acceptedNotice).not.toBeInTheDocument();
   });
 });
 

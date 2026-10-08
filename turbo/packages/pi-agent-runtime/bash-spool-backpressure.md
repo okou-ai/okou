@@ -1,6 +1,6 @@
 # Pi Bash spool backpressure
 
-The version-pinned `@earendil-works/pi-coding-agent@0.86.1` patch fixes the
+The version-pinned `@earendil-works/pi-coding-agent@0.87.1` patch fixes the
 local backend used by `createBashTool` in `src/session-runtime.ts`. The runtime
 still selects `/usr/local/bin/guest-tool-exec`; its factory and the existing
 AgentSession/Photon patch behavior are unchanged.
@@ -9,7 +9,7 @@ The original #32637 evidence below was recorded against 0.84.1. The #32641
 upgrade ports all six Bash, accumulator and child-process JS/declaration hunks
 to official 0.86.1, retaining its shared shell factories, context working
 directory and configured spool prefix. The original contract fixtures remain
-unchanged and run against the installed 0.86.1 package.
+unchanged and run against the installed 0.87.1 package after the later rebase.
 
 This implements [#32637](https://github.com/vm0-ai/vm0/issues/32637). It does
 not establish the cause of the historical termination in

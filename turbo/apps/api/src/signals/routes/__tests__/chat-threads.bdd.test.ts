@@ -1,8 +1,4 @@
-import {
-  setHistoricalGoalStatusFixture,
-  seedGoalForRunFixture,
-} from "../../../test-fixtures/goal-queue";
-
+import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import AdmZip from "adm-zip";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -13,57 +9,21 @@ import {
   type ChatEvent,
   type ChatThreadArtifactGoogleDriveSync,
   type UserMessageInputDocument,
+  chatThreadUsageContract,
+  type ChatEventUsagePayload,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
-import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
-import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
-import { createStore } from "ccstate";
-import { HttpResponse, http } from "msw";
 import { createHash, randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { stubTestTimezone } from "../../../__tests__/env-stub";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  clearMockNow,
-  mockNow,
-  now,
-  withMockNowForTest,
-} from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import {
-  holdChatEventInsertTransactionFixture,
-  insertOutputEventWithConflictingLegacyPayloadFixture,
-  startChatEventInsertTransactionFixture,
-} from "../../../test-fixtures/chat-events";
-import {
-  deleteChatThreadEventMarkerFixture,
-  holdChatThreadEventInsertTransactionFixture,
-  insertCanonicalOrphanChatThreadEventFixture,
-  insertChatThreadEventTransactionFixture,
-  readChatThreadEventIdsFixture,
-  setChatThreadSnapshotBoundaryFixture,
-  setChatThreadVideoModelFixture,
-} from "../../../test-fixtures/chat-thread-events";
-
-import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
-import {
-  seedOrgMetadata,
-  seedUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
+import { insertOutputEventWithConflictingLegacyPayloadFixture } from "../../../test-fixtures/chat-events";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
-import { testChatThreadSnapshotCompactionRoutes } from "../test-chat-thread-snapshot-compaction";
-import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import {
   createBddApi,
   expectApiError,
@@ -73,6 +33,7 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import {
   createConnectorBddApi,
@@ -88,21 +49,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
-import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
-import {
-  generatedStripeCustomerId,
-  generatedStripeSubscriptionId,
-  postUsageAllowanceInvoicePaid,
-} from "./helpers/stripe-billing-webhook";
-import {
-  insertUsageEvent$,
-  materializeHourlyUsage$,
-} from "./helpers/usage-state";
-
-const TEST_APP_ROUTES = Object.freeze([
-  ...cronProjectChatEventSearchRoutes,
-  ...chatThreadRoutes,
-]);
+const TEST_APP_ROUTES = Object.freeze([...chatThreadRoutes]);
 
 /**
  * CHAT-01 / CHAT-03: chat thread lifecycle beyond the mutation chain that
@@ -111,13 +58,13 @@ const TEST_APP_ROUTES = Object.freeze([
  * Google Drive sync status.
  *
  * Most Given state is constructed through public APIs (Stripe-webhook
- * entitlement, org model provider routes, runner heartbeat/claim, sandbox
+ * entitlement, personal model provider routes, runner heartbeat/claim, sandbox
  * report webhooks, connector OAuth flows, and skills routes).
  * Targeted database checks are kept for migration and side-effect coverage
  * where the persisted row shape is the contract under test.
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
@@ -127,12 +74,7 @@ const cu = createComputerUseBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 const authOrg = createAuthOrgAgentsBddApi(context);
 const routeMocks = createRouteMocks(context);
-const store = createStore();
 const DAY_MS = 24 * 60 * 60 * 1000;
-const FORWARD_CLEANUP_CUTOFF_MS = Date.parse("2026-08-03T05:40:26.000Z");
-const FORWARD_CLEANUP_TEST_CREATED_AT = "2026-08-03T05:40:26.001Z";
-const PRE_FORWARD_CLEANUP_TEST_CREATED_AT = "2026-08-03T05:40:25.999Z";
-
 function chatThreadConnectorSelectionsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(
     chatThreadConnectorSelectionContract,
@@ -158,30 +100,6 @@ type UserMessage = Extract<
 type AssistantMessage = Exclude<ChatEvent, UserMessage>;
 type RunnerClaim = Awaited<ReturnType<typeof api.claimRunnerJob>>;
 
-async function compactChatThreadSnapshots(
-  actor: ApiTestUser,
-  ...otherActors: readonly ApiTestUser[]
-) {
-  const client = setupApp({
-    context,
-    routes: testChatThreadSnapshotCompactionRoutes,
-  })(testChatThreadSnapshotCompactionContract);
-  const response = await accept(
-    client.compact({
-      body: {
-        scopes: [actor, ...otherActors].map((ownedActor) => {
-          if (!ownedActor.orgId) {
-            throw new Error("Expected an organization-scoped snapshot actor");
-          }
-          return { user_id: ownedActor.userId, org_id: ownedActor.orgId };
-        }),
-      },
-    }),
-    [200],
-  );
-  return response.body;
-}
-
 interface EntitledChatActor {
   readonly actor: ApiTestUser;
   readonly agentId: string;
@@ -191,6 +109,10 @@ interface EntitledChatActor {
 
 type EntitledChatActorWithoutRunner = Omit<EntitledChatActor, "runnerGroup">;
 
+async function selectNativeClaudeModel(actor: ApiTestUser) {
+  await api.updateUserModelPreference(actor, "claude-fable-5-1");
+}
+
 async function entitledChatActorWithoutRunner(
   displayName: string,
 ): Promise<EntitledChatActorWithoutRunner> {
@@ -198,10 +120,13 @@ async function entitledChatActorWithoutRunner(
   chatCallbacks.acceptChatObjectStorage();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
   chatCallbacks.disableVapid();
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
+  // Thread lifecycle tests claim and complete a native-harness run. Fable is
+  // the permanently native Claude route now that Pi has no off switch.
+  await selectNativeClaudeModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",
@@ -226,14 +151,11 @@ async function sendChatRun(
     readonly prompt: string;
     readonly threadId?: string;
     readonly chatThreadSortEventId?: string;
-    readonly model?: SupportedRunModel;
+    readonly model?: string | null;
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
-  const sent = await chat.requestSendEvent(actor, body, [201]);
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected the entitled chat send to create a run");
-  }
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
+  const { runId, threadId } = await chat.sendAndLaunch(actor, body);
+  return { runId, threadId };
 }
 
 async function claimChatRun(
@@ -262,23 +184,10 @@ function okouTokenFromClaim(claim: RunnerClaim): string {
   return token;
 }
 
-async function waitForThreadMessages(
-  actor: ApiTestUser,
-  threadId: string,
-  predicate: (messages: readonly ChatEvent[]) => boolean,
-) {
-  let page: Awaited<ReturnType<typeof chat.listThreadEvents>> | undefined;
-  await expect
-    .poll(async () => {
-      page = await chat.listThreadEvents(actor, threadId);
-      return predicate(page.events);
-    })
-    .toBe(true);
-  if (!page) {
-    throw new Error(`Expected chat thread ${threadId} messages to be readable`);
-  }
-  return page;
-}
+const waitForThreadMessages = readThreadMessagesAfterBackgroundWork.bind(
+  null,
+  chat,
+);
 
 async function waitForThreadEvents(
   actor: ApiTestUser,
@@ -286,12 +195,13 @@ async function waitForThreadEvents(
   predicate: (events: readonly ChatEvent[]) => boolean,
 ) {
   let page: Awaited<ReturnType<typeof chat.listThreadEvents>> | undefined;
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       page = await chat.listThreadEvents(actor, threadId);
       return predicate(page.events);
-    })
-    .toBe(true);
+    })(),
+  ).resolves.toBeTruthy();
   if (!page) {
     throw new Error(`Expected chat thread ${threadId} events to be readable`);
   }
@@ -303,12 +213,13 @@ async function waitForRunStatus(
   runId: string,
   status: "cancelled" | "completed" | "failed" | "pending" | "running",
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const run = await api.readRun(actor, runId);
       return run.status;
-    })
-    .toBe(status);
+    })(),
+  ).resolves.toBe(status);
 }
 
 /**
@@ -384,17 +295,24 @@ function isUserMessage(message: ChatEvent): message is UserMessage {
   }
 }
 
-type UsageRecordedEvent = Extract<ChatEvent, { eventType: "usage.recorded" }>;
-
-async function usageEventsForRun(
+async function settledUsageForRun(
   actor: ApiTestUser,
   threadId: string,
   runId: string,
-): Promise<UsageRecordedEvent[]> {
-  const page = await chat.listThreadEvents(actor, threadId);
-  return page.events.filter((event): event is UsageRecordedEvent => {
-    return event.eventType === "usage.recorded" && event.runId === runId;
-  });
+): Promise<ChatEventUsagePayload | undefined> {
+  const response = await accept(
+    setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadUsageContract,
+    ).read({
+      headers: authHeaders(actor),
+      params: { id: threadId },
+      body: { runIds: [runId] },
+    }),
+    [200],
+  );
+  return response.body.runs.find((run) => {
+    return run.runId === runId;
+  })?.usage;
 }
 
 function stateFromAuthorizationUrl(authorizationUrl: string): string {
@@ -435,65 +353,6 @@ async function allThreadEvents(actor: ApiTestUser) {
   return (await threadEventPage(actor)).events;
 }
 
-async function createSnapshotCursorScenario(label: string) {
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped chat actor");
-  }
-  const { providerId } = await api.ensureOrgModelProvider(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: `${label} agent`,
-  });
-  const firstEventId = randomUUID();
-  const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
-    title: `${label} thread`,
-    eventId: firstEventId,
-  });
-  const markerEventId = randomUUID();
-  await chat.renameThread(actor, thread.id, `${label} marker`, markerEventId);
-
-  const events = await allThreadEvents(actor);
-  const firstEvent = events.find((event) => {
-    return event.id === firstEventId;
-  });
-  const markerEvent = events.find((event) => {
-    return event.id === markerEventId;
-  });
-  if (!firstEvent || !markerEvent) {
-    throw new Error("Expected snapshot cursor lifecycle events");
-  }
-
-  await compactChatThreadSnapshots(actor);
-  const snapshot = await chat.getThreadSnapshot(actor);
-  const { latestEventId, latestSeqId } = snapshot;
-  expect(latestEventId).toBe(markerEvent.id);
-  expect(latestSeqId).toBe(markerEvent.seqId);
-  if (latestEventId === null || latestSeqId === null) {
-    throw new Error("Expected a non-empty snapshot cursor");
-  }
-  return {
-    actor,
-    orgId: actor.orgId,
-    providerId,
-    agent,
-    thread,
-    firstEvent,
-    snapshot: { latestEventId, latestSeqId },
-  };
-}
-
-async function deleteSnapshotCursorMarker(
-  scenario: Awaited<ReturnType<typeof createSnapshotCursorScenario>>,
-): Promise<void> {
-  await deleteChatThreadEventMarkerFixture({
-    userId: scenario.actor.userId,
-    orgId: scenario.orgId,
-    eventId: scenario.snapshot.latestEventId,
-    seqId: scenario.snapshot.latestSeqId,
-  });
-}
-
 type ThreadArtifacts = Awaited<ReturnType<typeof chat.listThreadArtifacts>>;
 
 function expectDriveStatuses(
@@ -522,7 +381,8 @@ async function sendNoCreditMessageResult(
   actor: ApiTestUser,
   body: NoCreditMessageBody,
 ): Promise<{ readonly threadId: string; readonly createdAt: number }> {
-  await api.ensureOrgModelProvider(actor);
+  // An unconfigured Auto workspace has no credits and needs no personal
+  // subscription fixture to persist a rejected message for search assertions.
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (
     sent.status !== 201 ||
@@ -535,6 +395,8 @@ async function sendNoCreditMessageResult(
   if (!Number.isFinite(createdAt)) {
     throw new Error("Expected the no-credit send to return a timestamp");
   }
+  // The background pick rejects the input for insufficient credits.
+  await flushWaitUntilForTest();
   return { threadId: sent.body.threadId, createdAt };
 }
 
@@ -543,23 +405,6 @@ async function sendNoCreditMessage(
   body: NoCreditMessageBody,
 ): Promise<string> {
   return (await sendNoCreditMessageResult(actor, body)).threadId;
-}
-
-async function advanceNoCreditMessageCreatedAt(
-  actor: ApiTestUser,
-  agentId: string,
-  after: number,
-): Promise<number> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const filler = await sendNoCreditMessageResult(actor, {
-      agentId,
-      prompt: `timestamp boundary ${randomUUID()}`,
-    });
-    if (filler.createdAt > after) {
-      return filler.createdAt;
-    }
-  }
-  throw new Error("Expected the chat API timestamp to advance");
 }
 
 /**
@@ -618,22 +463,6 @@ function okouCapabilityHeaders(
   };
 }
 
-/** Construct historical state without exposing a live Goal API. */
-async function createThreadGoal(
-  _actor: ApiTestUser,
-  runId: string,
-  objective: string,
-): Promise<void> {
-  await seedGoalForRunFixture(runId, objective);
-}
-
-async function completeThreadGoal(
-  actor: ApiTestUser,
-  runId: string,
-): Promise<void> {
-  await setHistoricalGoalStatusFixture(runId, "complete");
-}
-
 const malformedChatThreadIdRequests = [
   { method: "GET", path: "/api/chat-threads/:id", paramName: "id" },
   { method: "PATCH", path: "/api/chat-threads/:id", paramName: "id" },
@@ -670,6 +499,16 @@ const malformedChatThreadIdRequests = [
     paramName: "id",
   },
   {
+    method: "POST",
+    path: "/api/chat-threads/:id/archive",
+    paramName: "id",
+  },
+  {
+    method: "POST",
+    path: "/api/chat-threads/:id/unarchive",
+    paramName: "id",
+  },
+  {
     method: "GET",
     path: "/api/chat-threads/:id/artifacts",
     paramName: "threadId",
@@ -682,67 +521,6 @@ const malformedChatThreadIdRequests = [
 ] as const;
 
 describe("CHAT-01 thread detail, create, and delete cascades", () => {
-  it("preserves model settings through snapshot compaction and patch replay", async () => {
-    const { actor, providerId, thread } =
-      await createSnapshotCursorScenario("Effort snapshot");
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "claude-opus-4-8",
-        isDefault: false,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-sonnet-5", {
-      reasoningEffort: "high",
-    });
-    await compactChatThreadSnapshots(actor);
-    const snapshot = await chat.getThreadSnapshot(actor);
-    expect(snapshot.chatThreads).toContainEqual(
-      expect.objectContaining({
-        id: thread.id,
-        modelSettings: { "claude-sonnet-5": { effort: "high" } },
-      }),
-    );
-    if (snapshot.latestSeqId === null) {
-      throw new Error("Expected snapshot cursor");
-    }
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-opus-4-8", {
-      reasoningEffort: "extra",
-    });
-    const events = await threadEventPage(actor, snapshot.latestSeqId);
-    expect(
-      replayChatThreadEvents(snapshot.chatThreads, events.events),
-    ).toContainEqual(
-      expect.objectContaining({
-        id: thread.id,
-        selectedModel: "claude-opus-4-8",
-        modelSettings: {
-          "claude-sonnet-5": { effort: "high" },
-          "claude-opus-4-8": { effort: "extra" },
-        },
-      }),
-    );
-    await compactChatThreadSnapshots(actor);
-    expect((await chat.getThreadSnapshot(actor)).chatThreads).toContainEqual(
-      expect.objectContaining({
-        id: thread.id,
-        modelSettings: {
-          "claude-sonnet-5": { effort: "high" },
-          "claude-opus-4-8": { effort: "extra" },
-        },
-      }),
-    );
-  });
-
   it("rejects malformed thread ids before auth and unauthenticated clerk bearers", async () => {
     const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
 
@@ -778,7 +556,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
     }
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [
         {
@@ -885,7 +663,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
   it("returns chat thread snapshot and lifecycle events with cursor expiry", async () => {
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Thread event sourcing agent",
     });
@@ -911,9 +689,14 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       "Renamed event title",
       renameEventId,
     );
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-sonnet-5", {
-      eventId: modelSelectionEventId,
-    });
+    await chat.updateThreadModelSelection(
+      actor,
+      thread.id,
+      "claude-sonnet-5-5",
+      {
+        eventId: modelSelectionEventId,
+      },
+    );
 
     const allEvents = await chat.requestThreadEvents(actor, {}, [200]);
     expect(allEvents.status).toBe(200);
@@ -951,7 +734,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
           chatThreadId: thread.id,
           agentId: agent.agentId,
           title: null,
-          selectedModel: "claude-sonnet-5",
+          selectedModel: "claude-sonnet-5-5",
           createdAt: expect.any(String),
         }),
         expect.objectContaining({
@@ -1033,7 +816,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
   it("keeps no-snapshot cursors anchored to real scoped rows", async () => {
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "No-snapshot cursor agent",
     });
@@ -1063,729 +846,65 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await expectExpiredThreadEventCursor(actor, firstEvent.seqId + 1);
   });
 
-  it("reads retained and exact markerless snapshot cursors atomically", async () => {
-    const scenario = await createSnapshotCursorScenario("Markerless cursor");
-    const { actor, agent, firstEvent, snapshot, thread } = scenario;
-
-    await expect(
-      threadEventPage(actor, firstEvent.seqId),
-    ).resolves.toStrictEqual({
-      events: [expect.objectContaining({ id: snapshot.latestEventId })],
-      hasMore: false,
+  it("removes all deleted Agent threads from the sidebar event stream", async () => {
+    const actor = bdd.user();
+    await api.ensurePersonalSubscriptionModel(actor);
+    const removedAgent = await bdd.createAgent(actor, {
+      displayName: "Agent with sidebar threads to delete",
     });
-    await deleteSnapshotCursorMarker(scenario);
-
-    const held = await holdChatThreadEventInsertTransactionFixture({
-      userId: actor.userId,
-      orgId: scenario.orgId,
-      chatThreadId: thread.id,
-      agentId: agent.agentId,
-      title: "Committed after the snapshot cursor read",
-      signal: context.signal,
+    const keptAgent = await bdd.createAgent(actor, {
+      displayName: "Agent with a retained sidebar thread",
     });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-
-    await expect(
-      threadEventPage(actor, snapshot.latestSeqId),
-    ).resolves.toStrictEqual({ events: [], hasMore: false });
-
-    held.release();
-    await held.done;
-    await expect(
-      threadEventPage(actor, snapshot.latestSeqId),
-    ).resolves.toStrictEqual({
-      events: [expect.objectContaining({ id: held.event.id })],
-      hasMore: false,
-    });
-  });
-
-  it("validates real cursors after a markerless snapshot watermark", async () => {
-    const scenario = await createSnapshotCursorScenario("Real cursor");
-    const { actor, snapshot, thread } = scenario;
-    await deleteSnapshotCursorMarker(scenario);
-
-    const laterEventId = randomUUID();
-    await chat.renameThread(
-      actor,
-      thread.id,
-      "Later real lifecycle event",
-      laterEventId,
-    );
-    const afterSnapshotCursor = await threadEventPage(
-      actor,
-      snapshot.latestSeqId,
-    );
-    const [laterEvent] = afterSnapshotCursor.events;
-    if (!laterEvent || laterEvent.id !== laterEventId) {
-      throw new Error("Expected the later lifecycle event");
-    }
-    expect(afterSnapshotCursor.hasMore).toBeFalsy();
-
-    await chat.renameThread(
-      actor,
-      thread.id,
-      "Reserve a post-snapshot gap",
-      laterEventId,
-    );
-    const postSnapshotGapSeqId = laterEvent.seqId + 1;
-    await expectExpiredThreadEventCursor(actor, postSnapshotGapSeqId);
-
-    const nextRealEventId = randomUUID();
-    await chat.renameThread(
-      actor,
-      thread.id,
-      "Real event after the allocation gap",
-      nextRealEventId,
-    );
-    const afterLaterCursor = await threadEventPage(actor, laterEvent.seqId);
-    const [nextRealEvent] = afterLaterCursor.events;
-    if (!nextRealEvent || nextRealEvent.id !== nextRealEventId) {
-      throw new Error("Expected the real lifecycle event after the gap");
-    }
-    expect(nextRealEvent.seqId).toBe(postSnapshotGapSeqId + 1);
-    expect(afterLaterCursor.hasMore).toBeFalsy();
-
-    await expect(
-      threadEventPage(actor, nextRealEvent.seqId),
-    ).resolves.toStrictEqual({
-      events: [],
-      hasMore: false,
-    });
-
-    const peer = bdd.user({ orgId: scenario.orgId });
-    const peerAgent = await bdd.createAgent(peer, {
-      displayName: "Cross-user cursor agent",
-    });
-    await chat.createThread(peer, {
-      agentId: peerAgent.agentId,
-      title: "Cross-user cursor thread",
-    });
-    await expectExpiredThreadEventCursor(peer, nextRealEvent.seqId);
-
-    const otherOrgActor = bdd.user({ userId: actor.userId });
-    await api.ensureOrgModelProvider(otherOrgActor);
-    const otherOrgAgent = await bdd.createAgent(otherOrgActor, {
-      displayName: "Cross-organization cursor agent",
-    });
-    await chat.createThread(otherOrgActor, {
-      agentId: otherOrgAgent.agentId,
-      title: "Cross-organization cursor thread",
-    });
-    await expectExpiredThreadEventCursor(otherOrgActor, nextRealEvent.seqId);
-    await expectExpiredThreadEventCursor(actor, 999_999);
-  });
-
-  it("paginates a markerless snapshot tail without gaps or duplicates", async () => {
-    const scenario = await createSnapshotCursorScenario("Paginated cursor");
-    const { actor, snapshot, thread } = scenario;
-    await deleteSnapshotCursorMarker(scenario);
-    const lifecyclePageSize = 1000;
-    const paginationEvents = Array.from(
-      { length: lifecyclePageSize + 1 },
-      (_, index) => {
-        return {
-          id: randomUUID(),
-          title: `Pagination lifecycle event ${index}`,
-        };
-      },
-    );
-    // This test covers cursor pagination, not concurrent mutation admission.
-    // Keep the writes to one thread sequential to avoid artificial contention.
-    for (const event of paginationEvents) {
-      await chat.renameThread(actor, thread.id, event.title, event.id);
-    }
-
-    const firstPage = await threadEventPage(actor, snapshot.latestSeqId);
-    expect(firstPage.events).toHaveLength(lifecyclePageSize);
-    expect(firstPage.hasMore).toBeTruthy();
-    const firstPageCursor = firstPage.events.at(-1);
-    if (!firstPageCursor) {
-      throw new Error("Expected the first snapshot tail page cursor");
-    }
-
-    const secondPage = await threadEventPage(actor, firstPageCursor.seqId);
-    expect(secondPage.events).toHaveLength(1);
-    expect(secondPage.hasMore).toBeFalsy();
-
-    const pagedEvents = [...firstPage.events, ...secondPage.events];
-    const pagedSeqIds = pagedEvents.map((event) => {
-      return event.seqId;
-    });
-    expect(pagedSeqIds).toStrictEqual(
-      [...pagedSeqIds].sort((left, right) => {
-        return left - right;
+    const removedThreads = await Promise.all(
+      ["First deleted thread", "Second deleted thread"].map(async (title) => {
+        return await chat.createThread(actor, {
+          agentId: removedAgent.agentId,
+          title,
+        });
       }),
     );
-    const pagedEventIds = pagedEvents.map((event) => {
-      return event.id;
+    const keptThread = await chat.createThread(actor, {
+      agentId: keptAgent.agentId,
+      title: "Retained sidebar thread",
     });
-    const expectedTailEventIds = paginationEvents.map((event) => {
-      return event.id;
-    });
-    expect(new Set(pagedEventIds).size).toBe(expectedTailEventIds.length);
-    expect([...pagedEventIds].sort()).toStrictEqual(
-      [...expectedTailEventIds].sort(),
-    );
-  }, 90_000);
-
-  it("keeps markerless snapshot watermarks monotonic across stale projection refresh", async () => {
-    const snapshotAt = now();
-    mockNow(snapshotAt);
-    const scenario = await createSnapshotCursorScenario(
-      "Monotonic markerless compaction",
-    );
-    const { actor, firstEvent, thread } = scenario;
-    const removedAgent = await bdd.createAgent(actor, {
-      displayName: "Removed snapshot projection agent",
-    });
-    const removedThreadEventId = randomUUID();
-    const removedThread = await chat.createThread(actor, {
-      agentId: removedAgent.agentId,
-      title: "Removed snapshot projection thread",
-      eventId: removedThreadEventId,
-    });
-
-    await compactChatThreadSnapshots(actor);
-    const boundary = await chat.getThreadSnapshot(actor);
-    expect(boundary.latestEventId).toBe(removedThreadEventId);
-    expect(boundary.chatThreads).toContainEqual(
-      expect.objectContaining({ id: removedThread.id }),
-    );
-    if (boundary.latestEventId === null || boundary.latestSeqId === null) {
-      throw new Error("Expected the advanced snapshot boundary");
+    const initialEvents = await allThreadEvents(actor);
+    const before = {
+      chatThreads: replayChatThreadEvents([], initialEvents),
+      latestSeqId: initialEvents.at(-1)?.seqId,
+    };
+    expect(before.chatThreads).toHaveLength(3);
+    if (before.latestSeqId === undefined) {
+      throw new Error("Expected a sidebar lifecycle cursor");
     }
 
-    // Reusing an older retained event ID reserves a sequence but inserts no
-    // event. The live thread still changes, giving stale compaction a
-    // projection-only update to apply without treating the allocator gap as a
-    // cursor boundary.
-    await chat.renameThread(
-      actor,
-      thread.id,
-      "Projection refreshed without a lifecycle event",
-      firstEvent.id,
-    );
-    for (const event of [
-      firstEvent,
-      {
-        id: scenario.snapshot.latestEventId,
-        seqId: scenario.snapshot.latestSeqId,
-      },
-      { id: boundary.latestEventId, seqId: boundary.latestSeqId },
-    ]) {
-      await deleteChatThreadEventMarkerFixture({
-        userId: actor.userId,
-        orgId: scenario.orgId,
-        eventId: event.id,
-        seqId: event.seqId,
-      });
-    }
     chat.mockObjectStorageObjectsExist();
     await authOrg.deleteAgent(actor, removedAgent.agentId);
-    await expect(
-      threadEventPage(actor, boundary.latestSeqId),
-    ).resolves.toStrictEqual({ events: [], hasMore: false });
-
-    const unrelatedActor = bdd.user();
-    const unrelatedAgent = await bdd.createAgent(unrelatedActor, {
-      displayName: "Unrelated snapshot compaction agent",
-    });
-    await chat.createThread(unrelatedActor, {
-      agentId: unrelatedAgent.agentId,
-      title: "Unrelated event arriving before stale compaction",
-    });
-
-    mockNow(snapshotAt + DAY_MS + 1);
-    const staleCompact = await compactChatThreadSnapshots(actor);
-    expect(staleCompact.eventsApplied).toBe(0);
-    expect(staleCompact.removedDeletedAgentThreads).toBeGreaterThanOrEqual(1);
-    await expect(chat.getThreadSnapshot(unrelatedActor)).resolves.toStrictEqual(
-      {
-        chatThreads: [],
-        latestEventId: null,
-        latestSeqId: null,
-      },
-    );
-    const preserved = await chat.getThreadSnapshot(actor);
-    expect({
-      latestEventId: preserved.latestEventId,
-      latestSeqId: preserved.latestSeqId,
-    }).toStrictEqual({
-      latestEventId: boundary.latestEventId,
-      latestSeqId: boundary.latestSeqId,
-    });
-    expect(preserved.chatThreads).toContainEqual(
-      expect.objectContaining({
-        id: thread.id,
-        title: "Projection refreshed without a lifecycle event",
+    // The App renders its list from the snapshot plus this external event API.
+    const tail = await threadEventPage(actor, before.latestSeqId);
+    expect(tail.events).toHaveLength(2);
+    expect(tail.hasMore).toBeFalsy();
+    expect(
+      tail.events.map((event) => {
+        return { kind: event.kind, chatThreadId: event.chatThreadId };
       }),
+    ).toStrictEqual(
+      expect.arrayContaining(
+        removedThreads.map((thread) => {
+          return { kind: "deleted", chatThreadId: thread.id };
+        }),
+      ),
     );
     expect(
-      preserved.chatThreads.some((entry) => {
-        return entry.id === removedThread.id;
+      replayChatThreadEvents(before.chatThreads, tail.events).map((thread) => {
+        return thread.id;
       }),
-    ).toBeFalsy();
-    await expect(
-      readChatThreadEventIdsFixture({
-        userId: actor.userId,
-        orgId: scenario.orgId,
-        eventIds: [
-          firstEvent.id,
-          scenario.snapshot.latestEventId,
-          boundary.latestEventId,
-        ],
-      }),
-    ).resolves.toStrictEqual([]);
-
-    const laterEventId = randomUUID();
-    await chat.renameThread(
-      actor,
-      thread.id,
-      "Real lifecycle event after allocator gap",
-      laterEventId,
-    );
-    const markerlessTail = await threadEventPage(actor, boundary.latestSeqId);
-    expect(markerlessTail).toStrictEqual({
-      events: [expect.objectContaining({ id: laterEventId })],
-      hasMore: false,
-    });
-    const [laterEvent] = markerlessTail.events;
-    if (!laterEvent) {
-      throw new Error("Expected the real event after the allocator gap");
-    }
-    expect(laterEvent.seqId).toBe(boundary.latestSeqId + 2);
-    await expectExpiredThreadEventCursor(actor, firstEvent.seqId);
-
-    const advancedCompact = await compactChatThreadSnapshots(actor);
-    expect(advancedCompact.eventsApplied).toBeGreaterThanOrEqual(1);
-    const advanced = await chat.getThreadSnapshot(actor);
-    expect({
-      latestEventId: advanced.latestEventId,
-      latestSeqId: advanced.latestSeqId,
-    }).toStrictEqual({
-      latestEventId: laterEvent.id,
-      latestSeqId: laterEvent.seqId,
-    });
-
-    await compactChatThreadSnapshots(actor);
-    const repeated = await chat.getThreadSnapshot(actor);
-    expect({
-      latestEventId: repeated.latestEventId,
-      latestSeqId: repeated.latestSeqId,
-    }).toStrictEqual({
-      latestEventId: laterEvent.id,
-      latestSeqId: laterEvent.seqId,
-    });
-  }, 90_000);
-
-  it("isolates snapshot refresh and retention by both user and organization", async () => {
-    const createdAt = now();
-    mockNow(createdAt);
-    const actor = bdd.user();
-    const otherOrg = bdd.user({ userId: actor.userId });
-    const otherUser = bdd.user({ orgId: actor.orgId });
-    const fixtures = [];
-    for (const owner of [actor, otherOrg, otherUser]) {
-      const agent = await bdd.createAgent(owner, {
-        displayName: "Scoped snapshot retention agent",
-      });
-      const createdEventId = randomUUID();
-      const thread = await chat.createThread(owner, {
-        agentId: agent.agentId,
-        title: "Before scoped compaction",
-        eventId: createdEventId,
-      });
-      fixtures.push({
-        owner,
-        thread,
-        createdEventId,
-        renamedEventId: randomUUID(),
-      });
-    }
-    await compactChatThreadSnapshots(actor, otherOrg, otherUser);
-
-    for (const fixture of fixtures) {
-      await chat.renameThread(
-        fixture.owner,
-        fixture.thread.id,
-        "After scoped compaction",
-        fixture.renamedEventId,
-      );
-    }
-
-    mockNow(createdAt + 8 * DAY_MS);
-    await expect(compactChatThreadSnapshots(actor)).resolves.toStrictEqual({
-      success: true,
-      scopes: 1,
-      eventsApplied: 1,
-      removedDeletedAgentThreads: 0,
-      eventsPruned: 2,
-    });
-    for (const fixture of fixtures) {
-      const selected = fixture.owner === actor;
-      const snapshot = await chat.getThreadSnapshot(fixture.owner);
-      expect(snapshot.latestEventId).toBe(
-        selected ? fixture.renamedEventId : fixture.createdEventId,
-      );
-      expect(snapshot.chatThreads).toStrictEqual([
-        expect.objectContaining({
-          id: fixture.thread.id,
-          title: selected
-            ? "After scoped compaction"
-            : "Before scoped compaction",
-        }),
-      ]);
-      const events = await allThreadEvents(fixture.owner);
+    ).toStrictEqual([keptThread.id]);
+    for (const thread of removedThreads) {
       expect(
-        events.map((event) => {
-          return event.id;
-        }),
-      ).toStrictEqual(
-        selected ? [] : [fixture.createdEventId, fixture.renamedEventId],
-      );
+        (await chat.requestReadThread(actor, thread.id, [404])).status,
+      ).toBe(404);
     }
   });
-
-  it("rejects snapshot compaction test requests in production", async () => {
-    mockEnv("ENV", "production");
-    const client = setupApp({
-      context,
-      routes: testChatThreadSnapshotCompactionRoutes,
-    })(testChatThreadSnapshotCompactionContract);
-    const response = await client.compact({
-      body: {
-        scopes: [
-          { user_id: `user_${randomUUID()}`, org_id: `org_${randomUUID()}` },
-        ],
-      },
-    });
-    expect(response.status).toBe(404);
-  });
-
-  it("rejects snapshot compaction without explicitly owned scopes", async () => {
-    const client = setupApp({
-      context,
-      routes: testChatThreadSnapshotCompactionRoutes,
-    })(testChatThreadSnapshotCompactionContract);
-    const response = await client.compact({ body: { scopes: [] } });
-    expect(response.status).toBe(400);
-  });
-
-  it("prunes covered lifecycle events in retry-safe deterministic batches", async () => {
-    mockOptionalEnv("CHAT_THREAD_EVENT_PRUNE_BATCH_SIZE", "2");
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped retention actor");
-    }
-    await api.ensureOrgModelProvider(actor);
-    const liveAgent = await bdd.createAgent(actor, {
-      displayName: "Bounded retention live agent",
-    });
-    const deletedAgent = await bdd.createAgent(actor, {
-      displayName: "Bounded retention deleted agent",
-    });
-    const liveThread = await chat.createThread(actor, {
-      agentId: liveAgent.agentId,
-      title: "Bounded retention live thread",
-    });
-    const deletedThread = await chat.createThread(actor, {
-      agentId: liveAgent.agentId,
-      title: "Bounded retention deleted thread",
-    });
-    const deletedAgentThread = await chat.createThread(actor, {
-      agentId: deletedAgent.agentId,
-      title: "Bounded retention deleted Agent thread",
-    });
-    const retentionCutoff = Date.parse("1800-01-01T00:00:00.000Z");
-    const retainedAtBoundary = new Date(retentionCutoff);
-
-    const liveCovered = await insertChatThreadEventTransactionFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      chatThreadId: liveThread.id,
-      agentId: liveAgent.agentId,
-      title: "First covered retention event",
-      createdAt: retainedAtBoundary,
-    });
-    const deletedThreadCovered = await insertChatThreadEventTransactionFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      chatThreadId: deletedThread.id,
-      agentId: liveAgent.agentId,
-      title: "Covered event for a deleted thread",
-      createdAt: retainedAtBoundary,
-    });
-    const deletedAgentCovered = await insertChatThreadEventTransactionFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      chatThreadId: deletedAgentThread.id,
-      agentId: deletedAgent.agentId,
-      title: "Covered event for a deleted Agent",
-      createdAt: retainedAtBoundary,
-    });
-    const secondLiveCovered = await insertChatThreadEventTransactionFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      chatThreadId: liveThread.id,
-      agentId: liveAgent.agentId,
-      title: "Second covered retention event",
-      createdAt: retainedAtBoundary,
-    });
-
-    await chat.deleteThread(actor, deletedThread.id);
-    chat.mockObjectStorageObjectsExist();
-    await authOrg.deleteAgent(actor, deletedAgent.agentId);
-    const nullAgentMarker = await insertCanonicalOrphanChatThreadEventFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      chatThreadId: deletedThread.id,
-      createdAt: retainedAtBoundary,
-    });
-    const coveredEventIds = [
-      liveCovered.id,
-      deletedThreadCovered.id,
-      deletedAgentCovered.id,
-      secondLiveCovered.id,
-      nullAgentMarker.id,
-    ];
-    const snapshotAt = new Date(retentionCutoff + 7 * DAY_MS);
-    await setChatThreadSnapshotBoundaryFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      latestEventId: nullAgentMarker.id,
-      latestEventSeqId: nullAgentMarker.seqId,
-      updatedAt: snapshotAt,
-    });
-
-    mockNow(snapshotAt);
-    const boundaryCompact = await compactChatThreadSnapshots(actor);
-    expect(boundaryCompact).toMatchObject({ scopes: 0, eventsPruned: 0 });
-    await expect(
-      readChatThreadEventIdsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        eventIds: coveredEventIds,
-      }),
-    ).resolves.toStrictEqual(coveredEventIds);
-
-    const concurrentAppend = await holdChatThreadEventInsertTransactionFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      chatThreadId: liveThread.id,
-      agentId: liveAgent.agentId,
-      title: "Concurrent event above the committed snapshot watermark",
-      createdAt: retainedAtBoundary,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      concurrentAppend.release();
-      await concurrentAppend.done;
-    });
-
-    mockNow(snapshotAt.getTime() + 1);
-    const overlappingCompactions = await Promise.all([
-      compactChatThreadSnapshots(actor),
-      compactChatThreadSnapshots(actor),
-    ]);
-    expect(
-      overlappingCompactions
-        .map((result) => {
-          return result.eventsPruned;
-        })
-        .sort((left, right) => {
-          return left - right;
-        }),
-    ).toStrictEqual([2, 2]);
-    await expect(
-      readChatThreadEventIdsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        eventIds: coveredEventIds,
-      }),
-    ).resolves.toStrictEqual([nullAgentMarker.id]);
-
-    const converged = await compactChatThreadSnapshots(actor);
-    expect(converged.eventsPruned).toBe(1);
-    await expect(
-      readChatThreadEventIdsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        eventIds: coveredEventIds,
-      }),
-    ).resolves.toStrictEqual([]);
-    const retry = await compactChatThreadSnapshots(actor);
-    expect(retry.eventsPruned).toBe(0);
-
-    concurrentAppend.release();
-    await concurrentAppend.done;
-    mockOptionalEnv("CHAT_THREAD_SNAPSHOT_COMPACTION_BATCH_SIZE", "1");
-    const isolatedActor = bdd.user({ userId: actor.userId });
-    if (!isolatedActor.orgId) {
-      throw new Error("Expected an organization-scoped isolation actor");
-    }
-    expect(isolatedActor.orgId).not.toBe(actor.orgId);
-    await api.ensureOrgModelProvider(isolatedActor);
-    const isolatedAgent = await bdd.createAgent(isolatedActor, {
-      displayName: "Same-user other-org retention agent",
-    });
-    const isolatedBoundaryId = randomUUID();
-    const isolatedThread = await chat.createThread(isolatedActor, {
-      agentId: isolatedAgent.agentId,
-      title: "Same-user other-org retention thread",
-      eventId: isolatedBoundaryId,
-    });
-    const isolatedBoundary = (await allThreadEvents(isolatedActor)).find(
-      (threadEvent) => {
-        return threadEvent.id === isolatedBoundaryId;
-      },
-    );
-    if (!isolatedBoundary) {
-      throw new Error("Expected the isolation snapshot boundary event");
-    }
-    await setChatThreadSnapshotBoundaryFixture({
-      userId: isolatedActor.userId,
-      orgId: isolatedActor.orgId,
-      latestEventId: isolatedBoundary.id,
-      latestEventSeqId: isolatedBoundary.seqId,
-      updatedAt: new Date(snapshotAt.getTime() + 1),
-    });
-    const isolatedAboveWatermark =
-      await insertChatThreadEventTransactionFixture({
-        userId: isolatedActor.userId,
-        orgId: isolatedActor.orgId,
-        chatThreadId: isolatedThread.id,
-        agentId: isolatedAgent.agentId,
-        title: "Old event above only the isolated scope watermark",
-        createdAt: retainedAtBoundary,
-      });
-    const compactionBlocker = bdd.user({ userId: actor.userId });
-    await api.ensureOrgModelProvider(compactionBlocker);
-    const blockerAgent = await bdd.createAgent(compactionBlocker, {
-      displayName: "Above-watermark compaction blocker",
-    });
-    await chat.createThread(compactionBlocker, {
-      agentId: blockerAgent.agentId,
-      title: "Keep the retention scope out of this snapshot batch",
-    });
-
-    const aboveWatermarkCompact = await compactChatThreadSnapshots(
-      actor,
-      isolatedActor,
-      compactionBlocker,
-    );
-    expect(aboveWatermarkCompact.eventsPruned).toBe(0);
-    const unchangedBoundary = await chat.getThreadSnapshot(actor);
-    expect({
-      latestEventId: unchangedBoundary.latestEventId,
-      latestSeqId: unchangedBoundary.latestSeqId,
-    }).toStrictEqual({
-      latestEventId: nullAgentMarker.id,
-      latestSeqId: nullAgentMarker.seqId,
-    });
-    await expect(
-      readChatThreadEventIdsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        eventIds: [concurrentAppend.event.id],
-      }),
-    ).resolves.toStrictEqual([concurrentAppend.event.id]);
-    await expect(
-      readChatThreadEventIdsFixture({
-        userId: isolatedActor.userId,
-        orgId: isolatedActor.orgId,
-        eventIds: [isolatedAboveWatermark.id],
-      }),
-    ).resolves.toStrictEqual([isolatedAboveWatermark.id]);
-
-    const nextTailEvent = await insertChatThreadEventTransactionFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      chatThreadId: liveThread.id,
-      agentId: liveAgent.agentId,
-      title: "Second event above the committed snapshot watermark",
-      createdAt: retainedAtBoundary,
-    });
-    await expect(
-      readChatThreadEventIdsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        eventIds: [concurrentAppend.event.id, nextTailEvent.id],
-      }),
-    ).resolves.toStrictEqual([concurrentAppend.event.id, nextTailEvent.id]);
-
-    const markerlessTail = await threadEventPage(actor, nullAgentMarker.seqId);
-    expect(
-      markerlessTail.events.map((event) => {
-        return { id: event.id, seqId: event.seqId };
-      }),
-    ).toStrictEqual([
-      {
-        id: concurrentAppend.event.id,
-        seqId: concurrentAppend.event.seqId,
-      },
-      { id: nextTailEvent.id, seqId: nextTailEvent.seqId },
-    ]);
-    expect(markerlessTail.hasMore).toBeFalsy();
-    await expectExpiredThreadEventCursor(actor, liveCovered.seqId);
-  }, 90_000);
-
-  it("keeps concurrent thread event sequence reservation atomic through commit", async () => {
-    const owner = bdd.user();
-    if (!owner.orgId) {
-      throw new Error("Expected an organization-scoped chat actor");
-    }
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Concurrent thread event agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: "thread event sequence serialization anchor",
-    });
-    const fixture = {
-      userId: owner.userId,
-      orgId: owner.orgId,
-      chatThreadId: threadId,
-      agentId: agent.agentId,
-    } as const;
-    const held = await holdChatThreadEventInsertTransactionFixture({
-      ...fixture,
-      title: "Held thread event",
-      signal: context.signal,
-    });
-    const secondInsert = insertChatThreadEventTransactionFixture({
-      ...fixture,
-      title: "Blocked thread event",
-    });
-    onTestFinished(async () => {
-      held.release();
-      await Promise.allSettled([held.done, secondInsert]);
-    });
-
-    await expect.poll(held.blockedWaiterCount).toBe(1);
-    const beforeCommit = await allThreadEvents(owner);
-    expect(
-      beforeCommit.some((event) => {
-        return event.id === held.event.id;
-      }),
-    ).toBeFalsy();
-
-    held.release();
-    await held.done;
-    const second = await secondInsert;
-    const committed = (await allThreadEvents(owner)).filter((event) => {
-      return event.id === held.event.id || event.id === second.id;
-    });
-    expect(
-      committed.map((event) => {
-        return event.id;
-      }),
-    ).toStrictEqual([held.event.id, second.id]);
-    expect(held.event.seqId).toBeLessThan(second.seqId);
-  }, 30_000);
 
   it("touches thread sort from existing direct user sends and run-finished markers", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
@@ -1840,186 +959,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
     expect(sortTouches).toHaveLength(2);
   }, 90_000);
-
-  it("preserves UTC snapshot and event cutoff boundaries outside UTC", async () => {
-    stubTestTimezone("Asia/Shanghai");
-    onTestFinished(() => {
-      clearMockNow();
-      stubTestTimezone("UTC");
-    });
-    const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
-    const liveAgent = await bdd.createAgent(actor, {
-      displayName: "Snapshot compaction live agent",
-    });
-    const deletedAgent = await bdd.createAgent(actor, {
-      displayName: "Snapshot compaction deleted agent",
-    });
-    const liveCreateEventId = randomUUID();
-    const deletedCreateEventId = randomUUID();
-
-    const liveThread = await chat.createThread(actor, {
-      agentId: liveAgent.agentId,
-      title: "Initial compact title",
-      eventId: liveCreateEventId,
-    });
-    const deletedAgentThread = await chat.createThread(actor, {
-      agentId: deletedAgent.agentId,
-      title: "Deleted agent compact title",
-      eventId: deletedCreateEventId,
-    });
-
-    const initialEvents = await allThreadEvents(actor);
-    const liveCreateEvent = initialEvents.find((event) => {
-      return event.id === liveCreateEventId;
-    });
-    const deletedCreateEvent = initialEvents.find((event) => {
-      return event.id === deletedCreateEventId;
-    });
-    if (!liveCreateEvent || !deletedCreateEvent) {
-      throw new Error("Expected both thread creation events");
-    }
-    const initialSnapshotAt =
-      Math.max(
-        Date.parse(liveCreateEvent.createdAt),
-        Date.parse(deletedCreateEvent.createdAt),
-      ) + 1000;
-    mockNow(initialSnapshotAt);
-    const initialCompact = await compactChatThreadSnapshots(actor);
-    expect(initialCompact.eventsApplied).toBeGreaterThanOrEqual(2);
-
-    const baselineSnapshot = await chat.getThreadSnapshot(actor);
-    expect(baselineSnapshot.latestEventId).not.toBeNull();
-    expect(baselineSnapshot.latestSeqId).not.toBeNull();
-    expect(
-      baselineSnapshot.chatThreads.map((thread) => {
-        return thread.id;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([liveThread.id, deletedAgentThread.id]),
-    );
-
-    const renameEventId = randomUUID();
-    const modelSelectionEventId = randomUUID();
-    await chat.renameThread(
-      actor,
-      liveThread.id,
-      "Renamed compact title",
-      renameEventId,
-    );
-    await chat.updateThreadModelSelection(
-      actor,
-      liveThread.id,
-      "claude-sonnet-5",
-      { eventId: modelSelectionEventId },
-    );
-    await setChatThreadVideoModelFixture(liveThread.id, "fal-ai/veo3.1/fast");
-    await chat.updateThreadImageModel(
-      actor,
-      liveThread.id,
-      "fal-ai/flux-pro/v1.1",
-    );
-
-    const incrementalSnapshotAt = initialSnapshotAt + 1000;
-    mockNow(incrementalSnapshotAt);
-    const incrementalCompact = await compactChatThreadSnapshots(actor);
-    expect(incrementalCompact.eventsApplied).toBeGreaterThanOrEqual(1);
-
-    chat.mockObjectStorageObjectsExist();
-    await authOrg.deleteAgent(actor, deletedAgent.agentId);
-
-    mockNow(incrementalSnapshotAt + DAY_MS);
-    await compactChatThreadSnapshots(actor);
-    const boundarySnapshot = await chat.getThreadSnapshot(actor);
-    expect(
-      boundarySnapshot.chatThreads.map((thread) => {
-        return thread.id;
-      }),
-    ).toContain(deletedAgentThread.id);
-
-    mockNow(incrementalSnapshotAt + DAY_MS + 1);
-    const staleCompact = await compactChatThreadSnapshots(actor);
-    expect(staleCompact.removedDeletedAgentThreads).toBeGreaterThanOrEqual(1);
-    const compactedSnapshot = await chat.getThreadSnapshot(actor);
-    expect(compactedSnapshot.latestEventId).not.toBeNull();
-    expect(compactedSnapshot.latestSeqId).not.toBeNull();
-    expect(compactedSnapshot.chatThreads).toStrictEqual([
-      expect.objectContaining({
-        id: liveThread.id,
-        agentId: liveAgent.agentId,
-        title: "Renamed compact title",
-        renamedAt: expect.any(String),
-        selectedModel: "claude-sonnet-5",
-        // The compaction projection is hand-written SQL, so a column missing
-        // from it survives every read until compaction runs and drops it.
-        selectedVideoModel: "fal-ai/veo3.1/fast",
-        selectedImageModel: "fal-ai/flux-pro/v1.1",
-      }),
-    ]);
-
-    const retentionBoundary =
-      Date.parse(liveCreateEvent.createdAt) + 7 * DAY_MS;
-    mockNow(retentionBoundary);
-    await compactChatThreadSnapshots(actor);
-    expect(
-      (await allThreadEvents(actor)).some((event) => {
-        return event.id === liveCreateEvent.id;
-      }),
-    ).toBeTruthy();
-    const retainedBoundaryCursor = await chat.requestThreadEvents(
-      actor,
-      { sinceSeqId: liveCreateEvent.seqId },
-      [200],
-    );
-    expect(retainedBoundaryCursor.status).toBe(200);
-
-    mockNow(retentionBoundary + 1);
-    const retentionCompact = await compactChatThreadSnapshots(actor);
-    expect(retentionCompact.eventsPruned).toBeGreaterThanOrEqual(1);
-    const prunedCursor = await chat.requestThreadEvents(
-      actor,
-      { sinceSeqId: liveCreateEvent.seqId },
-      [410],
-    );
-    expect(prunedCursor.body).toStrictEqual({
-      error: {
-        message: "Chat thread events cursor has expired",
-        code: "CHAT_THREAD_EVENTS_EXPIRED",
-      },
-    });
-
-    mockNow(Date.parse(deletedCreateEvent.createdAt) + 7 * DAY_MS + 1);
-    await compactChatThreadSnapshots(actor);
-    const prunedDeletedAgentCursor = await chat.requestThreadEvents(
-      actor,
-      { sinceSeqId: deletedCreateEvent.seqId },
-      [410],
-    );
-    expect(prunedDeletedAgentCursor.body).toStrictEqual({
-      error: {
-        message: "Chat thread events cursor has expired",
-        code: "CHAT_THREAD_EVENTS_EXPIRED",
-      },
-    });
-    expect(
-      (await allThreadEvents(actor)).some((event) => {
-        return event.agentId === deletedAgent.agentId;
-      }),
-    ).toBeFalsy();
-
-    const markerlessSnapshotCursor = await chat.requestThreadEvents(
-      actor,
-      { sinceSeqId: compactedSnapshot.latestSeqId ?? undefined },
-      [200],
-    );
-    expect(markerlessSnapshotCursor.status).toBe(200);
-    if (markerlessSnapshotCursor.status !== 200) {
-      throw new Error(
-        "Expected the markerless snapshot cursor to remain valid",
-      );
-    }
-    expect(markerlessSnapshotCursor.body.events).toStrictEqual([]);
-  });
   it("keeps thread detail independent from thread model projection state", async () => {
     const { actor, agentId } = await entitledChatActor(
       "Thread detail model pin agent",
@@ -2029,7 +968,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "pin the first run model",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
 
     let detail = await chat.readThread(actor, run.threadId);
@@ -2041,9 +980,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await chat.updateThreadModelSelection(actor, run.threadId, null);
     detail = await chat.readThread(actor, run.threadId);
     expect(detail).not.toHaveProperty("selectedModel");
-    expect(detail).not.toHaveProperty("modelProviderId");
-    expect(detail).not.toHaveProperty("modelProviderType");
-    expect(detail).not.toHaveProperty("modelProviderCredentialScope");
 
     await cancelChatRun(actor, run.runId);
     await expect(chat.listActiveChatThreadIds(actor)).resolves.not.toContain(
@@ -2051,19 +987,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
   }, 90_000);
 
-  it("rejects explicit thread models outside current workspace policy", async () => {
-    const { actor, agentId, providerId } = await entitledChatActor(
+  it("rejects explicit thread models without the member's subscription", async () => {
+    const { actor, agentId } = await entitledChatActor(
       "Unavailable explicit thread model agent",
     );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-opus-4-8",
-        isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "claude-opus-5-5");
 
     const rejectedThreadId = randomUUID();
     const rejectedCreate = await chat.requestCreateThread(
@@ -2071,127 +999,148 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       {
         agentId,
         clientThreadId: rejectedThreadId,
-        model: "claude-sonnet-5",
+        model: "gpt-6-astra",
       },
       [400],
     );
     expectApiError(rejectedCreate.body);
     expect(rejectedCreate.body.error.message).toBe(
-      "The selected model is not available in this workspace",
+      "Select Auto or a model from your connected personal subscription",
     );
     await chat.requestReadThread(actor, rejectedThreadId, [404]);
 
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "claude-opus-4-8",
+      model: "claude-opus-5-5",
     });
     const rejectedUpdate = await chat.requestUpdateThreadModelSelection(
       actor,
       thread.id,
-      "claude-sonnet-5",
+      "gpt-6-astra",
       [400],
     );
     expectApiError(rejectedUpdate.body);
     expect(rejectedUpdate.body.error.message).toBe(
-      "The selected model is not available in this workspace",
+      "Select Auto or a model from your connected personal subscription",
     );
   }, 90_000);
 
-  it("allows free model pins and rejects all other models for limited-free-1 workspaces", async () => {
-    const { actor, agentId } = await entitledChatActor(
-      "Limited free model pin agent",
+  it("rejects the internal Auto run model as a thread selection", async () => {
+    const { actor, agentId } = await entitledChatActorWithoutRunner(
+      "Auto run model selection agent",
     );
-    if (!actor.orgId) {
-      throw new Error("Expected actor org");
-    }
-    // "limited-free-1" is only assigned by the Clerk org-creation bootstrap;
-    // no product API can move an entitled org onto it, so downgrade the tier
-    // through the shared system-config seed while keeping the pro balance.
-    const billingStatus = await api.readBillingStatus(actor);
-    // Configure the workspace while it can still add a Pro-only built-in model,
-    // so the downgraded plan keeps one configured route the plan itself gates.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "deepseek-v4-flash",
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "gpt-5.6-luna",
-        isDefault: false,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "gpt-6-astra",
-        isDefault: false,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: billingStatus.credits,
-    });
+
+    const rejectedThreadId = randomUUID();
+    const rejectedCreate = await chat.requestCreateThread(
+      actor,
+      { agentId, clientThreadId: rejectedThreadId, model: "okou-1.0" },
+      [400],
+    );
+    expectApiError(rejectedCreate.body);
+    await chat.requestReadThread(actor, rejectedThreadId, [404]);
 
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "deepseek-v4-flash",
-      title: "limited free model pin",
+      model: "claude-fable-5-1",
     });
-    const restrictedSelection = await chat.requestUpdateThreadModelSelection(
+    const rejectedUpdate = await chat.requestUpdateThreadModelSelection(
       actor,
       thread.id,
-      "gpt-6-astra",
-      [402],
+      "okou-1.0",
+      [400],
     );
-    expectApiError(restrictedSelection.body);
-    expect(restrictedSelection.body.error).toStrictEqual({
-      message:
-        "Insufficient credits. Add credits or configure your own API key to continue.",
-      code: "INSUFFICIENT_CREDITS",
+    expectApiError(rejectedUpdate.body);
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
+  }, 90_000);
+
+  it("creates a thread without a model as Auto when the member has no preference", async () => {
+    const actor = bdd.user();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Auto default thread agent",
     });
-    await expect(chat.readThread(actor, thread.id)).resolves.not.toHaveProperty(
-      "selectedModel",
+    const eventId = randomUUID();
+    const created = await accept(
+      setupApp({ context, routes: chatThreadCreateRoutes })(
+        chatThreadsContract,
+      ).create({
+        headers: authHeaders(actor),
+        body: { agentId: agent.agentId, eventId },
+      }),
+      [201],
     );
+    expect(created.body.selectedModel).toBeNull();
+    await expect(
+      chat.readThreadMetadata(actor, created.body.id),
+    ).resolves.toMatchObject({ selectedModel: null });
+    await expect(allThreadEvents(actor)).resolves.toContainEqual(
+      expect.objectContaining({
+        id: eventId,
+        kind: "created",
+        chatThreadId: created.body.id,
+        selectedModel: null,
+      }),
+    );
+  });
 
-    for (const selectedModel of [
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "claude-sonnet-5",
-      "claude-sonnet-4-6",
-    ] as const) {
-      const unconfiguredSelection =
-        await chat.requestUpdateThreadModelSelection(
-          actor,
-          thread.id,
-          selectedModel,
-          [400],
-        );
-      expectApiError(unconfiguredSelection.body);
-      expect(unconfiguredSelection.body.error).toStrictEqual({
-        message: "The selected model is not available in this workspace",
-        code: "BAD_REQUEST",
+  it("selects Auto as a null thread selection for limited-free-1 workspaces", async () => {
+    const fixture = createPublicFirewallFixture(context);
+    await fixture.run(async () => {
+      api.configureRunnerGroup();
+      chatCallbacks.acceptChatObjectStorage();
+      api.acceptStorageDownloads();
+      api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      chatCallbacks.disableVapid();
+      const actor = fixture.actor;
+      const subscription = await fixture.fund();
+      await api.ensurePersonalSubscriptionModel(actor);
+      await selectNativeClaudeModel(actor);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Limited free model pin agent",
+        visibility: "private",
       });
-
+      fixture.registerAgent(agent.agentId);
+      const agentId = agent.agentId;
+      const billingStatus = await api.readBillingStatus(actor);
+      await createWebhookCallbackApi(context).postStripeEvent(
+        {
+          type: "customer.subscription.deleted",
+          data: {
+            object: {
+              id: subscription.subscriptionId,
+              customer: subscription.customerId,
+              status: "canceled",
+              metadata: {},
+              items: { data: [{ price: { id: "price_bdd_pro" } }] },
+            },
+          },
+        },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
+        tier: "limited-free-1",
+        status: "active",
+        credits: billingStatus.credits,
+      });
+      const thread = await chat.createThread(actor, {
+        agentId,
+        model: null,
+        title: "limited free model pin",
+      });
+      expect(thread.title).toBe("limited free model pin");
+      await chat.updateThreadModelSelection(actor, thread.id, null);
       await expect(
-        chat.readThread(actor, thread.id),
-      ).resolves.not.toHaveProperty("selectedModel");
-    }
-
-    await chat.updateThreadModelSelection(actor, thread.id, "gpt-5.6-luna");
-    const detail = await chat.readThread(actor, thread.id);
-    expect(detail).not.toHaveProperty("selectedModel");
+        chat.readThreadMetadata(actor, thread.id),
+      ).resolves.toMatchObject({ selectedModel: null });
+    });
   }, 90_000);
 
   it("updates the Computer Use host binding on a chat thread", async () => {
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Computer-use thread agent",
     });
@@ -2298,14 +1247,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const siblingClaim = await claimChatRun(runnerGroup, sibling.runId);
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(sibling.runId, siblingClaim.sandboxHeaders);
-    await setAgentRunCreatedAtFixture(
-      main.runId,
-      new Date(FORWARD_CLEANUP_TEST_CREATED_AT),
-    );
-    await setAgentRunCreatedAtFixture(
-      sibling.runId,
-      new Date(PRE_FORWARD_CLEANUP_TEST_CREATED_AT),
-    );
 
     await expect(chat.listActiveChatThreadIds(actor)).resolves.not.toContain(
       sibling.threadId,
@@ -2352,49 +1293,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         }),
       ]),
     );
-
-    // Terminal-only deletion does not have the active fast path. The sibling
-    // predates the watermark, so only its matching post-watermark tombstone
-    // admits it to the forward cleanup cohort.
-    await chat.deleteThread(actor, sibling.threadId);
-    const siblingDeletion = (await allThreadEvents(actor)).find((event) => {
-      return (
-        event.kind === "deleted" && event.chatThreadId === sibling.threadId
-      );
-    });
-    if (!siblingDeletion) {
-      throw new Error("Expected the sibling deletion tombstone");
-    }
-    expect(Date.parse(siblingDeletion.createdAt)).toBeGreaterThanOrEqual(
-      FORWARD_CLEANUP_CUTOFF_MS,
-    );
-    const cleanupAt = now() + CANCELLATION_RECOVERY_STALE_AFTER_MS;
-    mockNow(cleanupAt);
-    onTestFinished(clearMockNow);
-    const cleanup = await accept(
-      setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-        testCronCleanupSandboxesStateContract,
-      ).cleanup({
-        body: {
-          chatThreadIds: [],
-          runIds: [main.runId, sibling.runId],
-          orgIds: [],
-          exportJobIds: [],
-        },
-      }),
-      [200],
-    );
-    expect(cleanup.body.threadlessRuns.discovered).toBe(2);
-    expect(cleanup.body.threadlessRuns.deleted).toBe(2);
-    await expect(
-      api.requestReadRun(actor, main.runId, [404]),
-    ).resolves.toMatchObject({ status: 404 });
-    await expect(
-      api.requestReadRun(actor, sibling.runId, [404]),
-    ).resolves.toMatchObject({ status: 404 });
-    await expect(api.readRun(actor, other.runId)).resolves.toMatchObject({
-      status: "pending",
-    });
 
     await cancelChatRun(actor, other.runId);
   }, 120_000);
@@ -2463,15 +1361,14 @@ describe("CHAT-01 chat thread read state", () => {
     expect(orgless.body.error.code).toBe("UNAUTHORIZED");
 
     const peer = bdd.user({ orgId: owner.orgId });
+    await bdd.readOnboardingStatus(peer);
+    await bdd.completeOnboarding(peer);
     if (!peer.orgId) {
       throw new Error("Expected an organization-scoped peer");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: peer.userId, orgId: peer.orgId, orgRole: "org:admin" },
-      { [FeatureSwitchKey.PiLoop]: false },
-    );
-    await api.ensureOrgModelProvider(peer);
+
+    await api.ensurePersonalSubscriptionModel(peer);
+    await selectNativeClaudeModel(peer);
     const peerAgent = await bdd.createAgent(peer, {
       displayName: "Unread peer agent",
       visibility: "private",
@@ -2483,7 +1380,8 @@ describe("CHAT-01 chat thread read state", () => {
 
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
     await api.grantProEntitlement(sameUserOtherOrg);
-    await api.ensureOrgModelProvider(sameUserOtherOrg);
+    await api.ensurePersonalSubscriptionModel(sameUserOtherOrg);
+    await selectNativeClaudeModel(sameUserOtherOrg);
     const otherOrgAgent = await bdd.createAgent(sameUserOtherOrg, {
       displayName: "Unread other org agent",
       visibility: "private",
@@ -2557,31 +1455,6 @@ describe("CHAT-01 chat thread read state", () => {
       [],
     );
 
-    // Historical Goal status does not control current unread indicators.
-    const activeGoalRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId: agentA,
-      prompt: "unread aggregate with active goal",
-    });
-    const completeGoalRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId: agentB,
-      prompt: "unread aggregate with complete goal",
-    });
-    await createThreadGoal(owner, activeGoalRun.runId, "bdd unread goal");
-    await createThreadGoal(owner, completeGoalRun.runId, "bdd unread goal");
-    await completeThreadGoal(owner, completeGoalRun.runId);
-    expect(new Set(await chat.listUnreadAgents(owner))).toStrictEqual(
-      new Set([agentA, agentB]),
-    );
-    expect(new Set(await chat.listUnreadChatThreadIds(owner))).toStrictEqual(
-      new Set([activeGoalRun.threadId, completeGoalRun.threadId]),
-    );
-    await chat.markThreadRead(owner, activeGoalRun.threadId);
-    await chat.markThreadRead(owner, completeGoalRun.threadId);
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
-    await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(
-      [],
-    );
-
     const runA = await completeChatRunInThread(owner, runnerGroup, {
       agentId: agentA,
       prompt: "unread aggregate A",
@@ -2610,6 +1483,43 @@ describe("CHAT-01 chat thread read state", () => {
     );
   }, 120_000);
 
+  it("does not let a muted thread hide another unread thread under the same agent", async () => {
+    const { actor, agentId, runnerGroup } =
+      await entitledChatActor("Mixed mute states");
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      { [FeatureSwitchKey.ChatThreadMuting]: true },
+    );
+    const muted = await completeChatRunInThread(actor, runnerGroup, {
+      agentId,
+      prompt: "Muted unread task",
+    });
+    const other = await completeChatRunInThread(actor, runnerGroup, {
+      agentId,
+      prompt: "Unmuted unread task",
+    });
+    await chat.requestSetThreadMuted(actor, muted.threadId, true, [204]);
+    await expect(chat.listUnreadChatThreadIds(actor)).resolves.toStrictEqual([
+      other.threadId,
+    ]);
+    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([
+      agentId,
+    ]);
+    await chat.markThreadRead(actor, other.threadId);
+    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([]);
+    await chat.requestSetThreadMuted(actor, muted.threadId, false, [204]);
+    await expect(chat.listUnreadChatThreadIds(actor)).resolves.toStrictEqual([
+      muted.threadId,
+    ]);
+    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([
+      agentId,
+    ]);
+  });
+
   it("lists active thread ids without hiding the agent's unread state", async () => {
     const {
       actor: owner,
@@ -2617,6 +1527,8 @@ describe("CHAT-01 chat thread read state", () => {
       runnerGroup,
     } = await entitledChatActor("Active ids owner agent");
     const peer = bdd.user({ orgId: owner.orgId });
+    await bdd.readOnboardingStatus(peer);
+    await bdd.completeOnboarding(peer);
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
 
     const peerAgent = await bdd.createAgent(peer, {
@@ -2628,7 +1540,10 @@ describe("CHAT-01 chat thread read state", () => {
       visibility: "private",
     });
     await api.grantProEntitlement(sameUserOtherOrg);
-    await api.ensureOrgModelProvider(sameUserOtherOrg);
+    await api.ensurePersonalSubscriptionModel(sameUserOtherOrg);
+    await api.ensurePersonalSubscriptionModel(peer, {
+      model: "claude-fable-5-1",
+    });
 
     // A completed run's thread must not appear in the active list. Run it
     // first so the pro-tier concurrency slots stay free for the runs below.
@@ -2790,106 +1705,6 @@ describe("CHAT-01 chat thread read state", () => {
     });
   }, 240_000);
 
-  it("excludes active runs while preserving unread state in historical Goal threads", async () => {
-    const {
-      actor: owner,
-      agentId,
-      runnerGroup,
-    } = await entitledChatActor("Unread active state agent");
-
-    // A claimed (running) run keeps its thread out of the unread list.
-    const runningRun = await sendChatRun(owner, {
-      agentId,
-      prompt: "unread thread with active run",
-    });
-    const runningClaim = await claimChatRun(runnerGroup, runningRun.runId);
-
-    const completedRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId,
-      prompt: "unread thread with completed run",
-    });
-    const activeGoalRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId,
-      prompt: "unread thread with active goal",
-    });
-    const completeGoalRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId,
-      prompt: "unread thread with complete goal",
-    });
-    await createThreadGoal(owner, activeGoalRun.runId, "bdd unread goal");
-    await createThreadGoal(owner, completeGoalRun.runId, "bdd unread goal");
-    await completeThreadGoal(owner, completeGoalRun.runId);
-
-    expect(
-      new Set(
-        (await chat.listThreadUnreads(owner, agentId)).map((unread) => {
-          return unread.threadId;
-        }),
-      ),
-    ).toStrictEqual(
-      new Set([
-        completedRun.threadId,
-        activeGoalRun.threadId,
-        completeGoalRun.threadId,
-      ]),
-    );
-    await expect(chat.listIndicators(owner)).resolves.toStrictEqual({
-      agents: { [agentId]: "unread" },
-      threads: {
-        [runningRun.threadId]: "active",
-        [completedRun.threadId]: "unread",
-        [completeGoalRun.threadId]: "unread",
-        [activeGoalRun.threadId]: "unread",
-      },
-      unreadAt: {
-        [completedRun.threadId]: expect.any(String),
-        [completeGoalRun.threadId]: expect.any(String),
-        [activeGoalRun.threadId]: expect.any(String),
-      },
-    });
-
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(runningRun.runId, runningClaim.sandboxHeaders);
-    await flushWaitUntilForTest();
-    await waitForThreadEvents(owner, runningRun.threadId, (events) => {
-      return events.some((event) => {
-        return (
-          event.runId === runningRun.runId &&
-          event.eventType === "run.completed"
-        );
-      });
-    });
-    expect(
-      new Set(
-        (await chat.listThreadUnreads(owner, agentId)).map((unread) => {
-          return unread.threadId;
-        }),
-      ),
-    ).toStrictEqual(
-      new Set([
-        runningRun.threadId,
-        completedRun.threadId,
-        completeGoalRun.threadId,
-        activeGoalRun.threadId,
-      ]),
-    );
-    await expect(chat.listIndicators(owner)).resolves.toStrictEqual({
-      agents: { [agentId]: "unread" },
-      threads: {
-        [runningRun.threadId]: "unread",
-        [completedRun.threadId]: "unread",
-        [completeGoalRun.threadId]: "unread",
-        [activeGoalRun.threadId]: "unread",
-      },
-      unreadAt: {
-        [runningRun.threadId]: expect.any(String),
-        [completedRun.threadId]: expect.any(String),
-        [completeGoalRun.threadId]: expect.any(String),
-        [activeGoalRun.threadId]: expect.any(String),
-      },
-    });
-  }, 120_000);
-
   it("marks all unread chat threads for one agent", async () => {
     const {
       actor: owner,
@@ -3049,434 +1864,10 @@ describe("CHAT-01 chat thread read state", () => {
       }),
     ).toStrictEqual([secondQueuedUser, secondReplacement, secondAssistant]);
   }, 30_000);
-
-  it("serializes concurrent message sequence writes through commit", async () => {
-    const owner = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Concurrent message sequence agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: "sequence serialization anchor",
-    });
-
-    const firstContent = `held sequence message ${randomUUID()}`;
-    const secondContent = `blocked sequence message ${randomUUID()}`;
-    const held = await holdChatEventInsertTransactionFixture({
-      threadId,
-      content: firstContent,
-      signal: context.signal,
-    });
-    const secondInsert = await startChatEventInsertTransactionFixture({
-      threadId,
-      content: secondContent,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await Promise.allSettled([held.done, secondInsert.done]);
-    });
-
-    await expect
-      .poll(() => {
-        return held.blocks(secondInsert.pid);
-      })
-      .toBe(true);
-    const beforeCommit = await chat.listThreadEvents(owner, threadId);
-    expect(
-      beforeCommit.events.some((message) => {
-        return (
-          chatEventDisplayText(message) === firstContent ||
-          chatEventDisplayText(message) === secondContent
-        );
-      }),
-    ).toBeFalsy();
-
-    held.release();
-    await held.done;
-    const second = await secondInsert.done;
-    const committed = await chat.listThreadEvents(owner, threadId);
-    const concurrentRows = committed.events.filter((message) => {
-      return message.id === held.event.id || message.id === second.id;
-    });
-    expect(
-      concurrentRows.map((message) => {
-        return message.id;
-      }),
-    ).toStrictEqual([held.event.id, second.id]);
-    expect(held.event.seqId).toBeLessThan(second.seqId);
-  }, 30_000);
 });
 
 describe("CHAT-03 run usage events", () => {
-  it("emits aggregate-only usage with the run completion timestamp", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
-      "Hourly usage event agent",
-    );
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "record compacted usage",
-    });
-    const { sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
-    const provider = `hourly-chat-${randomUUID().slice(0, 8)}`;
-    await store.set(
-      insertUsageEvent$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: run.runId,
-        kind: "connector",
-        provider,
-        category: "api_request",
-        quantity: 3,
-        status: "processed",
-        creditsCharged: 7,
-        processedAt: new Date("2020-01-01T12:25:00.000Z"),
-      },
-      context.signal,
-    );
-    await expect(
-      store.set(
-        materializeHourlyUsage$,
-        {
-          orgId: actor.orgId,
-          userId: actor.userId,
-          runId: run.runId,
-        },
-        context.signal,
-      ),
-    ).resolves.toBe(1);
-
-    const completedAt = new Date(now() + 1000);
-    mockNow(completedAt);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    await completeChatRunOk(run.runId, sandboxHeaders);
-    await flushWaitUntilForTest();
-
-    const usageEvents = await usageEventsForRun(actor, run.threadId, run.runId);
-    expect(usageEvents).toStrictEqual([
-      expect.objectContaining({
-        createdAt: completedAt.toISOString(),
-        usage: {
-          version: 1,
-          totalCredits: 7,
-          settledAt: completedAt.toISOString(),
-          breakdown: [
-            {
-              kind: "connector",
-              credits: 7,
-              providers: [{ provider, credits: 7 }],
-            },
-          ],
-        },
-      }),
-    ]);
-  }, 60_000);
-
-  it("revises run usage when later usage settles", async () => {
-    const { actor, agentId } = await entitledChatActorWithoutRunner(
-      "Usage message agent",
-    );
-    const provider = `bdd-usage-${randomUUID().slice(0, 8)}`;
-    const missingProvider = `${provider}-free`;
-    const category = "api_request";
-    await seedUsagePricingRows([
-      { kind: "connector", provider, category, unitPrice: 7, unitSize: 2 },
-    ]);
-
-    const { runId, threadId } = await sendChatRun(actor, {
-      agentId,
-      prompt: "record billable usage",
-    });
-    const sandboxHeaders = {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
-    };
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 5,
-          },
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider: missingProvider,
-            category,
-            quantity: 1,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    const conflicting =
-      await insertOutputEventWithConflictingLegacyPayloadFixture({
-        threadId,
-        runId,
-        content: "explicit output event with stale usage payload",
-        legacyPayload: "usage.recorded",
-      });
-    const page = await chat.listThreadEvents(actor, threadId);
-    expect(page.events).toContainEqual(
-      expect.objectContaining({
-        id: conflicting.id,
-        eventType: "output.message",
-      }),
-    );
-
-    const billing = createBillingMediaApi(context);
-    await billing.processOrgUsageEvents(actor);
-
-    let usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(1);
-    const initialUsageEvent = usageEvents[0];
-    if (!initialUsageEvent) {
-      throw new Error("Expected one usage event");
-    }
-    expect(initialUsageEvent).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      usage: {
-        version: 1,
-        totalCredits: 18,
-        settledAt: expect.any(String),
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 18,
-            providers: expect.arrayContaining([
-              { provider, credits: 18 },
-              { provider: missingProvider, credits: 0 },
-            ]),
-          },
-        ],
-      },
-    });
-
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    // Sandbox tokens are validated against the mockable clock, so record late
-    // usage before advancing time for settlement.
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider: missingProvider,
-            category,
-            quantity: 1,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    mockNow(new Date("2030-01-01T00:00:00.000Z"));
-    await billing.processOrgUsageEvents(actor);
-    usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toStrictEqual([initialUsageEvent]);
-
-    clearMockNow();
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 3,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    mockNow(new Date("2030-01-01T00:00:01.000Z"));
-    await billing.processOrgUsageEvents(actor);
-    usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(2);
-    const firstRevision = usageEvents[1];
-    if (!firstRevision) {
-      throw new Error("Expected the first usage revision");
-    }
-    expect(firstRevision).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      revokesEventId: initialUsageEvent.id,
-      usage: {
-        version: 1,
-        totalCredits: 29,
-        settledAt: initialUsageEvent.usage.settledAt,
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 29,
-            providers: expect.arrayContaining([
-              { provider, credits: 29 },
-              { provider: missingProvider, credits: 0 },
-            ]),
-          },
-        ],
-      },
-    });
-
-    clearMockNow();
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 2,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    mockNow(new Date("2030-01-01T00:00:02.000Z"));
-    await billing.processOrgUsageEvents(actor);
-    usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(3);
-    expect(usageEvents[2]).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      revokesEventId: firstRevision.id,
-      usage: {
-        version: 1,
-        totalCredits: 36,
-        settledAt: initialUsageEvent.usage.settledAt,
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 36,
-            providers: expect.arrayContaining([
-              { provider, credits: 36 },
-              { provider: missingProvider, credits: 0 },
-            ]),
-          },
-        ],
-      },
-    });
-  }, 60_000);
-
-  it("emits complete allowance-covered usage in one event", async () => {
-    const fixture = await seedBuiltInDefaultModelKey(context);
-    const selectedModel = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
-    expect(fixture.selectedModel).toBe(selectedModel);
-
-    const { actor, agentId } = await entitledChatActorWithoutRunner(
-      "Allowance usage message agent",
-    );
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected allowance chat actor to have an org");
-    }
-    await seedOrgMetadata({ orgId, tier: "pro", credits: 10 });
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      orgId,
-      userId: actor.userId,
-      customerId: generatedStripeCustomerId(),
-      subscriptionId: generatedStripeSubscriptionId(),
-      effectiveAt: new Date(now()),
-      expiresAt: new Date(now() + 365 * 24 * 60 * 60 * 1000),
-      shortWindowSeconds: 5 * 60 * 60,
-      shortWindowUnits: 100,
-      weeklyWindowSeconds: 7 * 24 * 60 * 60,
-      weeklyWindowUnits: 100,
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-
-    const provider = `allowance-chat-${randomUUID().slice(0, 8)}`;
-    const category = "api_request";
-    await seedUsagePricingRows([
-      { kind: "connector", provider, category, unitPrice: 1, unitSize: 1 },
-    ]);
-    const { runId, threadId } = await sendChatRun(actor, {
-      agentId,
-      prompt: "record allowance-covered usage",
-      model: selectedModel,
-    });
-    const sandboxHeaders = {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
-    };
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 70,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    await createBillingMediaApi(context).processOrgUsageEvents(actor);
-
-    const usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(1);
-    expect(usageEvents[0]).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      usage: {
-        version: 1,
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 70,
-            providers: [{ provider, credits: 70 }],
-          },
-        ],
-        totalCredits: 70,
-        settledAt: expect.any(String),
-      },
-    });
-    const billingStatus = await api.readBillingStatus(actor);
-    if (!billingStatus.usageAllowance) {
-      throw new Error("Expected allowance windows for chat usage");
-    }
-    expect(
-      Object.fromEntries(
-        billingStatus.usageAllowance.windows.map((window) => {
-          return [window.kind, window.consumedUnits];
-        }),
-      ),
-    ).toStrictEqual({ short: 70, weekly: 70 });
-  }, 60_000);
-
-  it("emits zero-credit usage events and skips runs without usage", async () => {
+  it("reads zero-credit usage and omits runs without settled usage", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       "Zero-credit usage message agent",
     );
@@ -3508,12 +1899,9 @@ describe("CHAT-03 run usage events", () => {
     await completeChatRunOk(agentRun.runId, okouSandboxHeaders);
     await flushWaitUntilForTest();
 
-    const [zeroUsageEvent] = await usageEventsForRun(
-      actor,
-      agentRun.threadId,
-      agentRun.runId,
-    );
-    expect(zeroUsageEvent?.usage).toMatchObject({
+    await expect(
+      settledUsageForRun(actor, agentRun.threadId, agentRun.runId),
+    ).resolves.toMatchObject({
       version: 1,
       totalCredits: 0,
       breakdown: [
@@ -3525,10 +1913,8 @@ describe("CHAT-03 run usage events", () => {
       ],
     });
 
-    // A run that never recorded usage settles nothing, so completion must not
-    // append a usage message. (The former pending-suppression variant is not
-    // product-reachable: both production emitters settle the org's pending
-    // usage immediately before emitting.)
+    // A run with no usage has no monetary receipt; it must not inherit another
+    // run's amount merely because both belong to the same member.
     const quietRun = await sendChatRun(actor, {
       agentId,
       prompt: "complete without recording usage",
@@ -3540,27 +1926,13 @@ describe("CHAT-03 run usage events", () => {
     await completeChatRunOk(quietRun.runId, quietSandboxHeaders);
     await flushWaitUntilForTest();
     await expect(
-      usageEventsForRun(actor, quietRun.threadId, quietRun.runId),
-    ).resolves.toHaveLength(0);
+      settledUsageForRun(actor, quietRun.threadId, quietRun.runId),
+    ).resolves.toBeUndefined();
+    await expect(
+      settledUsageForRun(actor, quietRun.threadId, agentRun.runId),
+    ).resolves.toBeUndefined();
   }, 60_000);
 });
-
-const CHAT_EVENT_SEARCH_CRON_SECRET = "chat-event-search-cron-secret";
-
-async function projectChatEventSearch() {
-  mockEnv("CRON_SECRET", CHAT_EVENT_SEARCH_CRON_SECRET);
-  const client = setupApp({
-    context,
-    routes: cronProjectChatEventSearchRoutes,
-  })(cronProjectChatEventSearchContract);
-  const response = await accept(
-    client.project({
-      headers: { authorization: `Bearer ${CHAT_EVENT_SEARCH_CRON_SECRET}` },
-    }),
-    [200],
-  );
-  return response.body;
-}
 
 describe("CHAT-01 chat search", () => {
   it("rejects search without an org session or the chat-event:read capability", async () => {
@@ -3592,505 +1964,6 @@ describe("CHAT-01 chat search", () => {
     expect(forbidden.body.error.code).toBe("FORBIDDEN");
     expect(forbidden.body.error.message).toContain("chat-event:read");
   });
-
-  it("searches own matched messages with filters", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const owner = bdd.user({ orgId });
-    const peer = bdd.user({ orgId });
-    bdd.acceptAgentStorageWrites();
-    const agentA = await bdd.createAgent(owner, {
-      displayName: "Search agent A",
-    });
-    const agentB = await bdd.createAgent(owner, {
-      displayName: "Search agent B",
-    });
-
-    const emptyResults = await chat.searchChat(owner, "quokka");
-    expect(emptyResults).toStrictEqual({ results: [] });
-
-    const blankKeyword = await chat.requestSearchChat(owner, "   ", {}, [400]);
-    expectApiError(blankKeyword.body);
-
-    // Peer-user isolation inside one org.
-    const peerAgent = await bdd.createAgent(peer, {
-      displayName: "Peer search agent",
-    });
-    await sendNoCreditMessage(peer, {
-      agentId: peerAgent.agentId,
-      prompt: "peer says supercalifragilistic",
-    });
-    const ownerThreadA = await sendNoCreditMessage(owner, {
-      agentId: agentA.agentId,
-      prompt: "owner says supercalifragilistic",
-    });
-    await projectChatEventSearch();
-    const isolation = await chat.searchChat(owner, "supercalifragilistic");
-    expect(isolation.results).toHaveLength(1);
-    expect(isolation.results[0]?.chatThreadId).toBe(ownerThreadA);
-    expect(isolation.results[0]?.matchedMessage.content).toBe(
-      "owner says supercalifragilistic",
-    );
-    expect(isolation.results[0]?.matchedRanges).toStrictEqual([
-      { start: 11, end: 31 },
-    ]);
-    expect(isolation.results[0]?.agentName).toStrictEqual(expect.any(String));
-
-    // Canonical userMessage fields, not the legacy content projection, own
-    // both matching and the returned display text.
-    const canonicalKeyword = `canonical-${randomUUID()}`;
-    const legacyKeyword = `legacy-${randomUUID()}`;
-    const canonicalDisplay = `Find [Chat thread: ${canonicalKeyword} archive]`;
-    await sendNoCreditMessage(owner, {
-      agentId: agentA.agentId,
-      prompt: legacyKeyword,
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "Find " },
-          {
-            type: "chat_thread",
-            threadId: ownerThreadA,
-            titleSnapshot: `${canonicalKeyword} archive`,
-          },
-        ],
-      },
-    });
-    await projectChatEventSearch();
-    const canonicalSearch = await chat.searchChat(owner, canonicalKeyword);
-    expect(canonicalSearch.results).toHaveLength(1);
-    expect(canonicalSearch.results[0]?.matchedMessage.content).toBe(
-      canonicalDisplay,
-    );
-    const legacySearch = await chat.searchChat(owner, legacyKeyword);
-    expect(legacySearch.results).toStrictEqual([]);
-
-    // Agent mention parts contribute their name snapshot to both keyword
-    // matching and the canonical display projection.
-    const mentionKeyword = `mention-${randomUUID()}`;
-    await sendNoCreditMessage(owner, {
-      agentId: agentA.agentId,
-      prompt: `legacy-${randomUUID()}`,
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "Ask " },
-          {
-            type: "agent",
-            agentId: agentB.agentId,
-            nameSnapshot: `${mentionKeyword} agent`,
-          },
-        ],
-      },
-    });
-    await projectChatEventSearch();
-    const mentionSearch = await chat.searchChat(owner, mentionKeyword);
-    expect(mentionSearch.results).toHaveLength(1);
-    expect(mentionSearch.results[0]?.matchedMessage.content).toBe(
-      `Ask [Agent: ${mentionKeyword} agent]`,
-    );
-
-    // Cross-org isolation for the same user.
-    const sameUserOtherOrg = bdd.user({ userId: owner.userId });
-    const otherOrgAgent = await bdd.createAgent(sameUserOtherOrg, {
-      displayName: "Other org search agent",
-    });
-    await sendNoCreditMessage(sameUserOtherOrg, {
-      agentId: otherOrgAgent.agentId,
-      prompt: "other-org supercalifragilistic sighting",
-    });
-    await projectChatEventSearch();
-    const crossOrg = await chat.searchChat(owner, "supercalifragilistic");
-    expect(crossOrg.results).toHaveLength(1);
-    expect(crossOrg.results[0]?.chatThreadId).toBe(ownerThreadA);
-
-    // The since filter keeps only messages at or after the boundary.
-    const ancient = await sendNoCreditMessageResult(owner, {
-      agentId: agentA.agentId,
-      prompt: "ancient quokka spotted",
-    });
-    const sinceBoundary = await advanceNoCreditMessageCreatedAt(
-      owner,
-      agentA.agentId,
-      ancient.createdAt,
-    );
-    await sendNoCreditMessage(owner, {
-      agentId: agentA.agentId,
-      prompt: "recent quokka spotted",
-    });
-    await projectChatEventSearch();
-    const since = await chat.searchChat(owner, "quokka", {
-      since: sinceBoundary,
-    });
-    expect(since.results).toHaveLength(1);
-    expect(since.results[0]?.matchedMessage.content).toBe(
-      "recent quokka spotted",
-    );
-
-    // The agentId filter scopes matches to one agent's threads.
-    await sendNoCreditMessage(owner, {
-      agentId: agentB.agentId,
-      prompt: "agent B mentions narwhal",
-    });
-    const narwhalThreadA = await sendNoCreditMessage(owner, {
-      agentId: agentA.agentId,
-      prompt: "agent A mentions narwhal",
-    });
-    await projectChatEventSearch();
-    const byAgent = await chat.searchChat(owner, "narwhal", {
-      agentId: agentA.agentId,
-    });
-    expect(byAgent.results).toHaveLength(1);
-    expect(byAgent.results[0]?.chatThreadId).toBe(narwhalThreadA);
-    expect(byAgent.results[0]?.matchedMessage.content).toBe(
-      "agent A mentions narwhal",
-    );
-
-    // The old context request remains accepted during rollout, but only the
-    // matched message is returned.
-    const contextThread = await sendNoCreditMessage(owner, {
-      agentId: agentB.agentId,
-      prompt: "context round one",
-    });
-    await sendNoCreditMessage(owner, {
-      agentId: agentB.agentId,
-      threadId: contextThread,
-      prompt: "the okapi was here",
-    });
-    await sendNoCreditMessage(owner, {
-      agentId: agentB.agentId,
-      threadId: contextThread,
-      prompt: "context round three",
-    });
-    await projectChatEventSearch();
-    const contextual = await chat.searchChat(owner, "okapi");
-    expect(contextual.results).toHaveLength(1);
-    const match = contextual.results[0];
-    if (!match) {
-      throw new Error("Expected one okapi match");
-    }
-    expect(match.matchedMessage.content).toBe("the okapi was here");
-  }, 60_000);
-
-  it("returns batched matched messages without context across threads", async () => {
-    const owner = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const agentA = await bdd.createAgent(owner, {
-      displayName: "Batched search agent A",
-    });
-    const agentB = await bdd.createAgent(owner, {
-      displayName: "Batched search agent B",
-    });
-    const marker = `batched-${randomUUID()}`;
-    const alphaPrompt = `${marker} needle alpha`;
-    const betaPrompt = `${marker} needle beta`;
-    const gammaPrompt = `${marker} needle gamma`;
-
-    const threadA = await sendNoCreditMessage(owner, {
-      agentId: agentA.agentId,
-      prompt: alphaPrompt,
-    });
-    await sendNoCreditMessage(owner, {
-      agentId: agentA.agentId,
-      threadId: threadA,
-      prompt: betaPrompt,
-    });
-
-    const threadB = await sendNoCreditMessage(owner, {
-      agentId: agentB.agentId,
-      prompt: gammaPrompt,
-    });
-
-    await projectChatEventSearch();
-    const contextual = await chat.searchChat(owner, `${marker} needle`);
-    expect(
-      contextual.results
-        .map((result) => {
-          return result.matchedMessage.content;
-        })
-        .sort(),
-    ).toStrictEqual([alphaPrompt, betaPrompt, gammaPrompt].sort());
-
-    const matchesByContent = new Map(
-      contextual.results.map((result) => {
-        return [result.matchedMessage.content, result] as const;
-      }),
-    );
-    const alpha = matchesByContent.get(alphaPrompt);
-    const beta = matchesByContent.get(betaPrompt);
-    const gamma = matchesByContent.get(gammaPrompt);
-    if (!alpha || !beta || !gamma) {
-      throw new Error("Expected all batched chat-search matches");
-    }
-    expect(alpha.chatThreadId).toBe(threadA);
-    expect(beta.chatThreadId).toBe(threadA);
-    expect(gamma.chatThreadId).toBe(threadB);
-  }, 60_000);
-});
-
-describe("CHAT-01 chat search index", () => {
-  function assistantOutputEvent(
-    sequenceNumber: number,
-    text: string,
-  ): Record<string, unknown> {
-    return {
-      eventType: "assistant",
-      sequenceNumber,
-      eventData: { message: { content: [{ type: "text", text }] } },
-    };
-  }
-
-  it("serves index-backed keyword search from the projection by default", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const owner = bdd.user({ orgId });
-    const peer = bdd.user({ orgId });
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Search index agent",
-    });
-    const peerAgent = await bdd.createAgent(peer, {
-      displayName: "Search index peer agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: "今天天气很好，今天天气，vercel 部署完成",
-    });
-    await sendNoCreditMessage(peer, {
-      agentId: peerAgent.agentId,
-      prompt: "peer 今天天气 message",
-    });
-
-    // The projector has not indexed either thread yet, so search recalls
-    // nothing until the first projection tick.
-    const beforeProjection = await chat.searchChat(owner, "天气");
-    expect(beforeProjection.results).toStrictEqual([]);
-
-    const firstTick = await projectChatEventSearch();
-    expect(firstTick.success).toBeTruthy();
-    expect(firstTick.threads).toBeGreaterThanOrEqual(2);
-    expect(firstTick.indexedEvents).toBeGreaterThanOrEqual(2);
-
-    // CJK bigram recall: one bigram, an adjacent phrase, and a CJK+word AND.
-    for (const keyword of ["天气", "今天天气", "天气 vercel"]) {
-      const found = await chat.searchChat(owner, keyword);
-      expect(found.results).toHaveLength(1);
-      expect(found.results[0]?.chatThreadId).toBe(threadId);
-      expect(found.results[0]?.matchedMessage.content).toBe(
-        "今天天气很好，今天天气，vercel 部署完成",
-      );
-    }
-    const repeatedCjk = await chat.searchChat(owner, "今天天气");
-    expect(repeatedCjk.results[0]?.matchedRanges).toStrictEqual([
-      { start: 0, end: 4 },
-      { start: 7, end: 11 },
-    ]);
-
-    // Neither a single CJK character nor punctuation has an indexable form,
-    // so those keywords cannot match.
-    const singleChar = await chat.searchChat(owner, "好");
-    expect(singleChar.results).toStrictEqual([]);
-    const punctuation = await chat.searchChat(owner, "，");
-    expect(punctuation.results).toStrictEqual([]);
-
-    // Word tokens match whole words only under the index path.
-    const partialWord = await chat.searchChat(owner, "verce");
-    expect(partialWord.results).toStrictEqual([]);
-    const wholeWord = await chat.searchChat(owner, "vercel");
-    expect(wholeWord.results).toHaveLength(1);
-    expect(wholeWord.results[0]?.matchedRanges).toStrictEqual([
-      { start: 12, end: 18 },
-    ]);
-
-    // Re-running the projector is idempotent for already-indexed threads.
-    const secondTick = await projectChatEventSearch();
-    expect(secondTick.success).toBeTruthy();
-    const stable = await chat.searchChat(owner, "天气");
-    expect(stable.results).toHaveLength(1);
-  }, 60_000);
-
-  it("excludes future follow-up content from indexed matches and context", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
-      "Follow-up search exclusion agent",
-    );
-    const visibleNeedle = `visiblemessage${randomUUID().replaceAll("-", "")}`;
-    const followupOnlyNeedle = `futurefollowup${randomUUID().replaceAll("-", "")}`;
-    mockOptionalEnv("OPENROUTER_API_KEY", "follow-up-search-key");
-    server.use(
-      http.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        async ({ request }) => {
-          const body = await request.text();
-          return HttpResponse.json({
-            choices: [
-              {
-                finish_reason: "stop",
-                message: {
-                  content: body.includes("recommended follow-up messages")
-                    ? JSON.stringify([
-                        { prompt: followupOnlyNeedle, kind: "talk" },
-                      ])
-                    : "Follow-up search exclusion",
-                },
-              },
-            ],
-          });
-        },
-      ),
-    );
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: visibleNeedle,
-    });
-    const { sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
-    chatCallbacks.mockChatOutputEvents([
-      assistantOutputEvent(0, "Follow-up search response"),
-    ]);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-    await waitForThreadMessages(actor, run.threadId, (messages) => {
-      return messages.some((message) => {
-        return (
-          message.eventType === "output.followups" &&
-          (message.content?.includes(followupOnlyNeedle) ?? false)
-        );
-      });
-    });
-
-    const tick = await projectChatEventSearch();
-    expect(tick.success).toBeTruthy();
-
-    const visibleHit = await chat.searchChat(actor, visibleNeedle);
-    expect(visibleHit.results).toHaveLength(1);
-
-    const followupHit = await chat.searchChat(actor, followupOnlyNeedle);
-    expect(followupHit.results).toStrictEqual([]);
-  }, 60_000);
-
-  it("indexes assistant output through the projection", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
-      "Search index assistant agent",
-    );
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "帮我查询部署状态基线",
-    });
-    const { sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
-    chatCallbacks.mockChatOutputEvents([
-      assistantOutputEvent(0, "axolotl 部署一切正常"),
-    ]);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-    await waitForThreadMessages(actor, run.threadId, (messages) => {
-      return messages.some((message) => {
-        return (
-          message.eventType === "output.message" &&
-          (message.content?.includes("axolotl") ?? false)
-        );
-      });
-    });
-
-    const tick = await projectChatEventSearch();
-    expect(tick.success).toBeTruthy();
-
-    const assistantHit = await chat.searchChat(actor, "axolotl");
-    expect(assistantHit.results).toHaveLength(1);
-    expect(assistantHit.results[0]?.matchedMessage.role).toBe("assistant");
-    expect(assistantHit.results[0]?.matchedMessage.content).toBe(
-      "axolotl 部署一切正常",
-    );
-    // The prompt and the assistant reply share the 部署 bigram; run
-    // lifecycle rows around them stay out of the index.
-    const both = await chat.searchChat(actor, "部署");
-    expect(both.results).toHaveLength(2);
-  }, 60_000);
-
-  it("ignores a thread deleted before projection", async () => {
-    const owner = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Search deletion race agent",
-    });
-    const marker = `projectiondelete${randomUUID().replaceAll("-", "")}`;
-    const threadA = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: `${marker} alpha`,
-    });
-    const threadB = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: `${marker} beta`,
-    });
-    await chat.deleteThread(owner, threadB);
-    const tick = await projectChatEventSearch();
-    expect(tick.success).toBeTruthy();
-
-    const found = await chat.searchChat(owner, marker);
-    expect(found.results).toHaveLength(1);
-    expect(found.results[0]?.chatThreadId).toBe(threadA);
-    const deleted = await chat.requestReadThread(owner, threadB, [404]);
-    expectApiError(deleted.body);
-  }, 60_000);
-
-  it("applies agent and since filters inside the projection", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const owner = bdd.user({ orgId });
-    bdd.acceptAgentStorageWrites();
-    const agentA = await bdd.createAgent(owner, {
-      displayName: "Index filter agent A",
-    });
-    const agentB = await bdd.createAgent(owner, {
-      displayName: "Index filter agent B",
-    });
-
-    await sendNoCreditMessage(owner, {
-      agentId: agentA.agentId,
-      prompt: "旧的水豚记录一",
-    });
-    const oldMessage = await sendNoCreditMessageResult(owner, {
-      agentId: agentA.agentId,
-      prompt: "旧的水豚记录二",
-    });
-    const sinceBoundary = await advanceNoCreditMessageCreatedAt(
-      owner,
-      agentA.agentId,
-      oldMessage.createdAt,
-    );
-    const recentMessageA = await sendNoCreditMessageResult(owner, {
-      agentId: agentA.agentId,
-      prompt: "新的水豚记录",
-    });
-    await advanceNoCreditMessageCreatedAt(
-      owner,
-      agentA.agentId,
-      recentMessageA.createdAt,
-    );
-    const threadB = await sendNoCreditMessage(owner, {
-      agentId: agentB.agentId,
-      prompt: "另一个水豚记录",
-    });
-    const recentThreadA = recentMessageA.threadId;
-    const tick = await projectChatEventSearch();
-    expect(tick.success).toBeTruthy();
-
-    const all = await chat.searchChat(owner, "水豚");
-    expect(all.results).toHaveLength(4);
-
-    // `since` is answered by the projection's own created_at.
-    const since = await chat.searchChat(owner, "水豚", {
-      since: sinceBoundary,
-    });
-    expect(
-      since.results.map((result) => {
-        return result.chatThreadId;
-      }),
-    ).toStrictEqual([threadB, recentThreadA]);
-
-    // The Agent scope comes from the canonical Agent reference, so no join
-    // takes part in selecting rows.
-    const byAgent = await chat.searchChat(owner, "水豚", {
-      agentId: agentB.agentId,
-    });
-    expect(byAgent.results).toHaveLength(1);
-    expect(byAgent.results[0]?.chatThreadId).toBe(threadB);
-  }, 60_000);
 });
 
 describe("CHAT-03 thread artifacts and google drive status", () => {
@@ -4609,6 +2482,69 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "Bearer drive-access-refreshed",
       "Bearer drive-access-refreshed",
     ]);
+
+    // Upload refresh must publish its token before retrying the provider. A
+    // later status request can use it even when Google refuses another refresh.
+    mockGoogleDriveConnectorOAuth({
+      refreshOutcome: { type: "ok", accessToken: "drive-upload-refreshed" },
+    });
+    mockGoogleDriveArtifactUpload({
+      id: "drive-upload-after-refresh",
+      name: "data.csv",
+    });
+    mockGoogleDriveFilesList((request) => {
+      if (
+        request.headers.get("authorization") !== "Bearer drive-upload-refreshed"
+      ) {
+        return { status: 401 };
+      }
+      return {
+        status: 200,
+        files: [{ id: "drive-folder", name: "artifacts" }],
+      };
+    });
+    const refreshedUpload = await chat.requestSyncThreadArtifact(
+      actor,
+      run.threadId,
+      { runId: run.runId, fileId: csvId },
+      [200],
+    );
+    expect(refreshedUpload.body).toMatchObject({
+      id: "drive-upload-after-refresh",
+    });
+    mockGoogleDriveConnectorOAuth();
+    mockGoogleDriveFilesList((request) => {
+      if (
+        request.headers.get("authorization") !== "Bearer drive-upload-refreshed"
+      ) {
+        return { status: 401 };
+      }
+      return {
+        status: 200,
+        files: [
+          {
+            id: "drive-upload-after-refresh",
+            name: "data.csv",
+            appProperties: {
+              vm0Artifact: "true",
+              vm0ThreadId: run.threadId,
+              vm0RunId: run.runId,
+              vm0FileId: csvId,
+            },
+          },
+        ],
+      };
+    });
+    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
+    expect(
+      artifacts.runs[0]?.files.find((file) => {
+        return file.id === csvId;
+      })?.googleDriveSync,
+    ).toMatchObject({
+      status: "synced",
+      accountReady: true,
+      id: "drive-upload-after-refresh",
+    });
 
     // Transient OAuth failures remain connected and retry on later polls.
     const transientRefresh = mockGoogleDriveConnectorOAuth({

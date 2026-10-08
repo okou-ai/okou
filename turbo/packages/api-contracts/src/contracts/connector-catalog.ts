@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
-import { connectorCatalogDiagnosticsSchema } from "./connector-catalog-diagnostics";
 import {
   connectorAuthMethodIdSchema,
   connectorSlugSchema,
@@ -40,24 +39,6 @@ export const publicConnectorCatalogIconSchema = z.object({
   url: z.url({ protocol: /^https$/u }).max(2048),
   invertInDarkMode: z.boolean(),
   scale: z.number().min(1).max(3).optional(),
-});
-
-const publicConnectorCatalogCategoryGroupSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  menuLabel: z.string(),
-});
-
-const publicConnectorCatalogCategorySchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  menuLabel: z.string(),
-  groupId: z.string().nullable(),
-});
-
-const publicConnectorCatalogCategoryMetadataSchema = z.object({
-  categories: z.array(publicConnectorCatalogCategorySchema),
-  groups: z.array(publicConnectorCatalogCategoryGroupSchema),
 });
 
 const publicConnectorCatalogItemSchema = z.object({
@@ -118,7 +99,6 @@ const publicConnectorCatalogDetailSchema =
 
 const publicConnectorCatalogListResponseSchema = z.object({
   connectors: z.array(publicConnectorCatalogItemSchema),
-  categoryMetadata: publicConnectorCatalogCategoryMetadataSchema.optional(),
 });
 
 const publicConnectorCatalogConnectionStatusSchema = z.enum([
@@ -148,13 +128,40 @@ const publicConnectorCatalogStatusItemSchema =
     connectNotice: z.enum(["google-security-warning"]).nullable(),
   });
 
+/**
+ * A connector as a connect surface lists it: what draws its card and what
+ * starts a connection from the same click, since the provider window has to
+ * open inside that click. Detail that only one connector's page shows
+ * (permissions, MCP, tags) stays on `GET /api/connector-catalog/:slug`.
+ */
+export const publicConnectorCatalogConnectItemSchema =
+  publicConnectorCatalogStatusItemSchema.pick({
+    slug: true,
+    label: true,
+    description: true,
+    icon: true,
+    popularityRank: true,
+    authMethods: true,
+    connection: true,
+    connected: true,
+    connectionStatus: true,
+    scopeMismatch: true,
+    authMethodSupportsRefresh: true,
+    tokenExpiresAt: true,
+    singleAuthCodeAuthMethodId: true,
+    connectNotice: true,
+  });
+
+export const publicConnectorCatalogConnectListResponseSchema = z.object({
+  connectors: z.array(publicConnectorCatalogConnectItemSchema),
+});
+
 const publicConnectorCatalogDetailResponseSchema = z.object({
   connector: publicConnectorCatalogStatusItemSchema,
 });
 
 const publicConnectorCatalogStatusResponseSchema = z.object({
   connectors: z.array(publicConnectorCatalogStatusItemSchema),
-  categoryMetadata: publicConnectorCatalogCategoryMetadataSchema.optional(),
 });
 
 const publicConnectorCatalogDiscoveryResponseSchema =
@@ -236,15 +243,6 @@ export type PublicConnectorCatalogPermissionSummary = z.infer<
 export type PublicConnectorCatalogIcon = z.infer<
   typeof publicConnectorCatalogIconSchema
 >;
-export type PublicConnectorCatalogCategoryGroup = z.infer<
-  typeof publicConnectorCatalogCategoryGroupSchema
->;
-export type PublicConnectorCatalogCategory = z.infer<
-  typeof publicConnectorCatalogCategorySchema
->;
-export type PublicConnectorCatalogCategoryMetadata = z.infer<
-  typeof publicConnectorCatalogCategoryMetadataSchema
->;
 export type PublicConnectorCatalogItem = z.infer<
   typeof publicConnectorCatalogItemSchema
 >;
@@ -274,6 +272,12 @@ export type PublicConnectorCatalogConnection = z.infer<
 >;
 export type PublicConnectorCatalogStatusItem = z.infer<
   typeof publicConnectorCatalogStatusItemSchema
+>;
+export type PublicConnectorCatalogConnectItem = z.infer<
+  typeof publicConnectorCatalogConnectItemSchema
+>;
+export type PublicConnectorCatalogConnectListResponse = z.infer<
+  typeof publicConnectorCatalogConnectListResponseSchema
 >;
 export type PublicConnectorCatalogStatusResponse = z.infer<
   typeof publicConnectorCatalogStatusResponseSchema
@@ -334,17 +338,18 @@ export const connectorCatalogContract = c.router({
     },
     summary: "Browse featured connectors or search by slug and label",
   },
-  diagnostics: {
+  oneClick: {
     method: "GET",
-    path: "/api/connector-catalog/diagnostics",
+    path: "/api/connector-catalog/one-click",
     headers: authHeadersSchema,
     responses: {
-      200: connectorCatalogDiagnosticsSchema,
+      200: publicConnectorCatalogConnectListResponseSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
-      404: apiErrorSchema,
+      503: apiErrorSchema,
     },
-    summary: "Read connector catalog diagnostics",
+    summary:
+      "List connectors that connect in one browser step, with connection status",
   },
   get: {
     method: "GET",

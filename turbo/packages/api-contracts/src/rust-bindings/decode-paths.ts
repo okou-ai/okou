@@ -1,12 +1,12 @@
 import { type z } from "zod";
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import {
-  runnersActiveInputsContract,
   runnersCancellationContract,
   runnersBuiltinFirewallsResolveContract,
   runnersConnectorRuntimeSyncContract,
   runnersJobClaimContract,
   runnersPollContract,
+  runnersSteerContract,
 } from "../contracts/runners";
 
 export interface RustDecodePathBinding {
@@ -38,30 +38,16 @@ export const rustDecodePathBindings = [
     rustDoc: ["Decode-path schema for the runner job claim response."],
   },
   {
-    schema: runnersActiveInputsContract.reserve.responses[200],
+    schema: runnersSteerContract.next.responses[200],
     rustModulePath: [
       "runners",
       "runs",
       "by_run_id",
-      "active_inputs",
-      "reserve",
+      "steerable_inputs",
+      "next",
     ],
     rustConstName: "RESPONSE",
-    rustDoc: ["Decode-path schema for the active-input reserve response."],
-  },
-  {
-    schema: runnersActiveInputsContract.receipt.responses[200],
-    rustModulePath: [
-      "runners",
-      "runs",
-      "by_run_id",
-      "active_inputs",
-      "deliveries",
-      "by_delivery_id",
-      "receipt",
-    ],
-    rustConstName: "RESPONSE",
-    rustDoc: ["Decode-path schema for the active-input receipt response."],
+    rustDoc: ["Decode-path schema for the next steerable input response."],
   },
   {
     schema: runnersConnectorRuntimeSyncContract.sync.responses[200],

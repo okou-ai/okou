@@ -79,12 +79,19 @@ describe("managed SocialKit contract", () => {
     },
   );
 
-  it("accepts nullable Instagram views and duration without widening counts", () => {
+  it("accepts nullable Instagram views, shares, and duration without widening counts", () => {
     const resultSchema = MANAGED_SOCIALKIT_TOOLS.find((tool) => {
       return tool.name === "instagram_stats";
     })!.resultSchema;
     for (const result of [
-      { views: null, duration: null, likes: 4, author: "example" },
+      {
+        views: null,
+        shares: null,
+        duration: null,
+        likes: 4,
+        author: "example",
+      },
+      { views: 0, shares: 0, duration: "00:12" },
       { duration: "00:12", likes: 4, author: "example" },
       { likes: 4, author: "example" },
       { views: 0, likes: 4, author: "example" },
@@ -98,6 +105,52 @@ describe("managed SocialKit contract", () => {
     expect(resultSchema.safeParse({ views: null, likes: null }).success).toBe(
       false,
     );
+    expect(resultSchema.safeParse({ shares: -1 }).success).toBe(false);
+    expect(
+      managedSocialKitToolCatalog().find((tool) => {
+        return tool.name === "instagram_stats";
+      })?.outputSchema,
+    ).toHaveProperty("properties.shares");
+  });
+
+  it("declares Instagram comment outcomes and TikTok summary provenance", () => {
+    const comments = MANAGED_SOCIALKIT_TOOLS.find((tool) => {
+      return tool.name === "instagram_comments";
+    })!.resultSchema;
+    expect(
+      comments.parse({
+        comments: [{ id: "one" }],
+        commentCount: null,
+        hasMore: false,
+        collectionStatus: "partial",
+        stopReason: "repeated_cursor",
+      }),
+    ).toMatchObject({ commentCount: null, stopReason: "repeated_cursor" });
+    expect(comments.safeParse({ collectionStatus: "complete" }).success).toBe(
+      false,
+    );
+    expect(comments.safeParse({ commentCount: "unavailable" }).success).toBe(
+      false,
+    );
+
+    const summary = MANAGED_SOCIALKIT_TOOLS.find((tool) => {
+      return tool.name === "tiktok_summarize";
+    })!.resultSchema;
+    expect(summary.parse({ summarySource: "visual" })).toStrictEqual({
+      summarySource: "visual",
+    });
+    expect(summary.safeParse({ summarySource: "unknown" }).success).toBe(false);
+    const catalog = managedSocialKitToolCatalog();
+    expect(
+      catalog.find((tool) => {
+        return tool.name === "instagram_comments";
+      })?.outputSchema,
+    ).toHaveProperty("properties.collectionStatus");
+    expect(
+      catalog.find((tool) => {
+        return tool.name === "tiktok_summarize";
+      })?.outputSchema,
+    ).toHaveProperty("properties.summarySource");
   });
 
   it("accepts requireViews only as an Instagram stats boolean", () => {

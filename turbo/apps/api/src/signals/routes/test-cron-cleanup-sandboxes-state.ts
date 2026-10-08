@@ -5,21 +5,17 @@ import {
   testCronCleanupSandboxesStateContract,
 } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
-import {
-  agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  MIN_EPOCH_MS_TIMESTAMP,
-} from "@okouai/api-contracts/contracts/runners";
+import { agentRunConnectorDiagnosticRegistrationPayloadSchema } from "@okouai/api-contracts/contracts/runners";
 import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { browserSessions } from "@okouai/db/schema/browser-session";
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
-import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { exportJobs } from "@okouai/db/schema/export-job";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
@@ -30,6 +26,12 @@ import {
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import {
+  billingRunAttributionWrite,
+  type BillingRun,
+} from "../services/managed-usage-attribution";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { command } from "ccstate";
 import { and, eq, inArray, notExists, sql } from "drizzle-orm";
 
@@ -38,17 +40,12 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
+import { normalizeRunMetadata } from "../services/agent-run-metadata-write.service";
 import {
-  encryptQueuedRunnerJobPayload,
-  queuedRunnerJobPayload,
-} from "../services/agent-run-queue-payload.service";
-import {
-  normalizeRunMetadata,
-  writeRunMetadata,
-} from "../services/agent-run-metadata-write.service";
-import { transitionAgentRunsToTerminal } from "../services/agent-run-terminal-transition.service";
-import { cleanupSandboxes$ } from "../services/cron-cleanup-sandboxes.service";
-import { insertChatEvent } from "../services/chat-event.service";
+  releaseNeverStartedRunSlots,
+  transitionAgentRunsToTerminal,
+} from "../services/agent-run-terminal-transition.service";
+import { deleteArtifactCatalogForHostedSiteId } from "../services/artifact-catalog-deletion.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -56,9 +53,6 @@ import {
 import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitlements.service";
 
 const actionBody$ = bodyResultOf(testCronCleanupSandboxesStateContract.action);
-const cleanupBody$ = bodyResultOf(
-  testCronCleanupSandboxesStateContract.cleanup,
-);
 
 function actionOk(extra: Record<string, unknown> = {}) {
   return {
@@ -160,7 +154,7 @@ async function seedRunForAction(
       .insert(orgMetadataCanonicalWrites)
       .values({
         orgId,
-        tier: "free",
+        tier: "limited-free-1",
         credits: 10_000,
       })
       .onConflictDoNothing()
@@ -185,38 +179,68 @@ async function seedRunForAction(
 
   const threadless = readOptionalBoolean(body, "threadless") === true;
   const status = readOptionalString(body, "status") ?? "pending";
-  // Queued fixtures can be promoted through the production metadata writer.
-  // Lifecycle-only fixtures that never enter that path intentionally stay null.
-  const runMetadata =
-    threadless || status === "queued"
-      ? normalizeRunMetadata({ triggerSource: triggerSource.data })
-      : null;
-  const [run] = await db
-    .insert(agentRuns)
-    .values({
-      userId,
-      orgId,
-      sessionId: session.id,
-      storageMounts:
-        readOptionalBoolean(body, "checkpoint_ready") === true ? [] : null,
-      status,
-      prompt: readOptionalString(body, "prompt") ?? "cleanup sandboxes test",
-      sandboxId:
-        readOptionalString(body, "sandbox_id") ?? `sandbox-${randomUUID()}`,
-      createdAt: readDate(body, "created_at") ?? undefined,
-      completedAt: readNullableDate(body, "completed_at"),
-      lastHeartbeatAt: readNullableDate(body, "last_heartbeat_at"),
-      runnerGroup: readOptionalString(body, "runner_group"),
-      cancellationRecoveryCompleted: readOptionalBoolean(
-        body,
-        "cancellation_recovery_completed",
-      ),
-      ...runMetadata,
-    })
-    .returning({ id: agentRuns.id, sandboxId: agentRuns.sandboxId });
+  // Lifecycle-only fixtures intentionally keep null run metadata.
+  const runMetadata = threadless
+    ? normalizeRunMetadata({ triggerSource: triggerSource.data })
+    : null;
+  const run = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(agentRuns)
+      .values({
+        userId,
+        orgId,
+        sessionId: session.id,
+        storageMounts:
+          readOptionalBoolean(body, "checkpoint_ready") === true ? [] : null,
+        status,
+        prompt: readOptionalString(body, "prompt") ?? "cleanup sandboxes test",
+        sandboxId:
+          readOptionalString(body, "sandbox_id") ?? `sandbox-${randomUUID()}`,
+        createdAt: readDate(body, "created_at") ?? undefined,
+        completedAt: readNullableDate(body, "completed_at"),
+        runnerGroup: readOptionalString(body, "runner_group"),
+        cancellationRecoveryCompleted: readOptionalBoolean(
+          body,
+          "cancellation_recovery_completed",
+        ),
+        ...runMetadata,
+      })
+      .returning({
+        id: agentRuns.id,
+        sandboxId: agentRuns.sandboxId,
+        orgId: agentRuns.orgId,
+        userId: agentRuns.userId,
+        startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+        triggerSource: agentRuns.triggerSource,
+        threadId: agentRuns.chatThreadId,
+      });
+    signal.throwIfAborted();
+    if (!created) {
+      return undefined;
+    }
+    const capture = billingRunAttributionWrite(created);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
+    signal.throwIfAborted();
+    return created;
+  });
   signal.throwIfAborted();
   if (!run) {
     return actionBadRequest("failed to seed run");
+  }
+  if (["pending", "running"].includes(status)) {
+    await db.insert(activeAgentRuns).values({
+      runId: run.id,
+      orgId,
+      userId,
+      lastHeartbeatAt:
+        readDate(body, "last_heartbeat_at") ??
+        readDate(body, "created_at") ??
+        nowDate(),
+    });
+    signal.throwIfAborted();
   }
 
   return actionOk({
@@ -227,31 +251,6 @@ async function seedRunForAction(
     org_id: orgId,
     user_id: userId,
   });
-}
-
-async function seedConnectorDiagnosticRegistrationForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const payload =
-    agentRunConnectorDiagnosticRegistrationPayloadSchema.safeParse(
-      body["payload"],
-    );
-  if (!payload.success) {
-    return actionBadRequest("payload is invalid");
-  }
-  await db.insert(agentRunConnectorDiagnosticRegistrations).values({
-    runId,
-    payload: payload.data,
-    createdAt: readDate(body, "created_at") ?? undefined,
-  });
-  signal.throwIfAborted();
-  return actionOk();
 }
 
 async function getConnectorDiagnosticRegistrationForAction(
@@ -371,8 +370,6 @@ async function deleteRunForAction(
       );
     signal.throwIfAborted();
   }
-  await db.delete(agentRunQueue).where(eq(agentRunQueue.runId, runId));
-  signal.throwIfAborted();
   await db.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
   signal.throwIfAborted();
   await db.delete(agentRuns).where(eq(agentRuns.id, runId));
@@ -421,7 +418,7 @@ async function seedHostedPublication(
       userId: run.userId,
       slug: publicSlug,
       ...scope,
-      publicBrand: "vm0",
+      linkLayoutSegment: "okou",
       publicSlug,
       createdFromRunId: run.id,
     });
@@ -438,7 +435,7 @@ async function seedHostedPublication(
       orgId: run.orgId,
       userId: run.userId,
       runId: run.id,
-      publicBrand: "vm0",
+      linkLayoutSegment: "okou",
       status: "ready",
       artifactUrl: `https://storage.example/${hostedDeploymentId}.zip`,
       r2Prefix: `hosted/${hostedDeploymentId}`,
@@ -479,6 +476,51 @@ async function seedHostedPublication(
   return { hostedSiteId, hostedDeploymentId, hostedArtifactId };
 }
 
+async function seedOwnershipUsage(
+  db: Db,
+  run: BillingRun,
+  signal: AbortSignal,
+): Promise<string> {
+  const usageEventId = randomUUID();
+  await db.transaction(async (tx) => {
+    const capture = billingRunAttributionWrite(run);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
+    await tx.insert(usageEvent).values({
+      id: usageEventId,
+      runId: run.id,
+      idempotencyKey: randomUUID(),
+      orgId: run.orgId,
+      userId: run.userId,
+      kind: "model",
+      provider: `cleanup-test-${run.id}`,
+      category: "tokens.input",
+      quantity: 1,
+      status: "pending",
+      billingRunId: run.id,
+      billingContext: "run",
+      billingAnchorAt: sql`${run.startedAt}::timestamp`,
+    });
+    await tx
+      .update(billingRunAttribution)
+      .set({ usageObserved: true })
+      .where(
+        and(
+          eq(billingRunAttribution.runId, run.id),
+          eq(billingRunAttribution.orgId, run.orgId),
+          eq(billingRunAttribution.userId, run.userId),
+          eq(billingRunAttribution.usageObserved, false),
+        ),
+      );
+    signal.throwIfAborted();
+  });
+  signal.throwIfAborted();
+
+  return usageEventId;
+}
+
 async function seedRunOwnershipForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -493,6 +535,9 @@ async function seedRunOwnershipForAction(
       id: agentRuns.id,
       userId: agentRuns.userId,
       orgId: agentRuns.orgId,
+      startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+      triggerSource: agentRuns.triggerSource,
+      threadId: agentRuns.chatThreadId,
     })
     .from(agentRuns)
     .where(eq(agentRuns.id, runId))
@@ -502,20 +547,7 @@ async function seedRunOwnershipForAction(
     return actionBadRequest("run not found");
   }
 
-  const usageEventId = randomUUID();
-  await db.insert(usageEvent).values({
-    id: usageEventId,
-    runId,
-    idempotencyKey: randomUUID(),
-    orgId: run.orgId,
-    userId: run.userId,
-    kind: "model",
-    provider: `cleanup-test-${runId}`,
-    category: "tokens.input",
-    quantity: 1,
-    status: "pending",
-  });
-  signal.throwIfAborted();
+  const usageEventId = await seedOwnershipUsage(db, run, signal);
 
   const [uploadedFile] = await db
     .insert(runUploadedFiles)
@@ -559,7 +591,6 @@ async function seedRunOwnershipForAction(
     runId,
     orgId: run.orgId,
     userId: run.userId,
-    publicBrand: "vm0",
     name: "cleanup-browser",
     status: "suspended",
     timeoutMinutes: 30,
@@ -574,6 +605,8 @@ async function seedRunOwnershipForAction(
     orgId: run.orgId,
     userId: run.userId,
     runId,
+    billingRunId: run.id,
+    billingContext: "run",
     request: {},
   });
   signal.throwIfAborted();
@@ -628,7 +661,12 @@ async function getRunOwnershipForAction(
     .from(usageEvent)
     .where(eq(usageEvent.id, usageEventId));
   const [uploadedFile] = await db
-    .select({ id: runUploadedFiles.id })
+    .select({
+      id: runUploadedFiles.id,
+      runId: runUploadedFiles.runId,
+      userId: runUploadedFiles.userId,
+      orgId: runUploadedFiles.orgId,
+    })
     .from(runUploadedFiles)
     .where(eq(runUploadedFiles.id, uploadedFileId));
   const [fileArtifact] = await db
@@ -689,6 +727,12 @@ async function deleteRunOwnershipForAction(
   if (ids.length > 0) {
     await db.delete(artifacts).where(inArray(artifacts.id, ids));
   }
+  const uploadedFileId = readString(body, "uploaded_file_id");
+  if (uploadedFileId) {
+    await db
+      .delete(runUploadedFiles)
+      .where(eq(runUploadedFiles.id, uploadedFileId));
+  }
   const usageEventId = readString(body, "usage_event_id");
   if (usageEventId) {
     await db.delete(usageEvent).where(eq(usageEvent.id, usageEventId));
@@ -707,249 +751,11 @@ async function deleteRunOwnershipForAction(
   }
   const hostedSiteId = readString(body, "hosted_site_id");
   if (hostedSiteId) {
-    await db.delete(hostedSites).where(eq(hostedSites.id, hostedSiteId));
-  }
-  signal.throwIfAborted();
-  return actionOk();
-}
-
-async function seedRunnerJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  const expiresAt = readDate(body, "expires_at");
-  if (!runId || !expiresAt) {
-    return actionBadRequest("run_id and expires_at are required");
-  }
-  await db.insert(runnerJobQueue).values({
-    runId,
-    runnerGroup: readOptionalString(body, "runner_group") ?? "vm0/test",
-    profile: readOptionalString(body, "profile") ?? "vm0/default",
-    executionContext: {
-      storageMounts: [],
-      environment: null,
-      platformEnvironment: {},
-      resumeSession: null,
-      encryptedSecrets: null,
-      cliAgentType: "claude-code",
-      apiStartTime: readDate(body, "api_start_time")?.getTime() ?? 0,
-    },
-    expiresAt,
-  });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
-async function seedQueueEntryForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  const expiresAt = readDate(body, "expires_at");
-  if (!runId || !expiresAt) {
-    return actionBadRequest("run_id and expires_at are required");
-  }
-  const [run] = await db
-    .select({
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      createdAt: agentRuns.createdAt,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    return actionBadRequest("run not found");
-  }
-  const encryptedParams =
-    readOptionalString(body, "encrypted_params") ??
-    (await encryptQueuedRunnerJobPayload(
-      queuedRunnerJobPayload({
-        runnerGroup: "vm0/test",
-        profile: "vm0/default",
-        cliAgentSessionId: null,
-        reuseKey: null,
-        executionContext: {
-          storageMounts: [],
-          environment: null,
-          platformEnvironment: {},
-          secretValueEnvironmentKeys: null,
-          resumeSession: null,
-          encryptedSecrets: null,
-          connectorRuntimeTargets: [],
-          cliAgentType: "claude-code",
-          apiStartTime: MIN_EPOCH_MS_TIMESTAMP,
-        },
-      }),
-    ));
-  signal.throwIfAborted();
-  await db.insert(agentRunQueue).values({
-    runId,
-    userId: run.userId,
-    orgId: run.orgId,
-    createdAt: run.createdAt,
-    expiresAt,
-    encryptedParams,
-  });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
-async function seedQueueMarkerForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [run] = await db
-    .select({
-      userId: agentRuns.userId,
-      sessionId: agentRuns.sessionId,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    return actionBadRequest("run not found");
-  }
-  const [session] = await db
-    .select({ agentId: agentSessions.agentId })
-    .from(agentSessions)
-    .where(eq(agentSessions.id, run.sessionId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!session) {
-    return actionBadRequest("session not found");
-  }
-  const [thread] = await db
-    .insert(chatThreads)
-    .values({
-      userId: run.userId,
-      agentId: session.agentId,
-      title: "cron cleanup marker test",
-    })
-    .returning({ id: chatThreads.id });
-  signal.throwIfAborted();
-  if (!thread) {
-    return actionBadRequest("failed to seed chat thread");
-  }
-  const marker = await db.transaction(async (tx) => {
-    return await insertChatEvent(tx, {
-      chatThreadId: thread.id,
-      eventType: "run.queued",
-      content: "Waiting in queue...",
-      runId,
-      runEventId: "queue:queued",
+    await db.transaction(async (tx) => {
+      await deleteArtifactCatalogForHostedSiteId(tx, hostedSiteId);
+      await tx.delete(hostedSites).where(eq(hostedSites.id, hostedSiteId));
     });
-  });
-  signal.throwIfAborted();
-  if (!marker) {
-    return actionBadRequest("failed to seed queue marker");
   }
-  return actionOk({ marker_id: marker.id, thread_id: thread.id });
-}
-
-async function attachRunThreadForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [run] = await db
-    .select({ userId: agentRuns.userId, sessionId: agentRuns.sessionId })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId));
-  if (!run) {
-    return actionBadRequest("run not found");
-  }
-  const [session] = await db
-    .select({ agentId: agentSessions.agentId })
-    .from(agentSessions)
-    .where(eq(agentSessions.id, run.sessionId));
-  if (!session) {
-    return actionBadRequest("session not found");
-  }
-  const [thread] = await db
-    .insert(chatThreads)
-    .values({
-      userId: run.userId,
-      agentId: session.agentId,
-      title: "concurrent cleanup recheck",
-    })
-    .returning({ id: chatThreads.id });
-  if (!thread) {
-    return actionBadRequest("failed to seed chat thread");
-  }
-  await writeRunMetadata(db, {
-    patch: { chatThreadId: thread.id },
-    where: eq(agentRuns.id, runId),
-  });
-  signal.throwIfAborted();
-  return actionOk({ thread_id: thread.id });
-}
-
-async function deleteRunThreadForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const threadId = readString(body, "thread_id");
-  if (!threadId) {
-    return actionBadRequest("thread_id is required");
-  }
-  await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
-  signal.throwIfAborted();
-  return actionOk();
-}
-
-async function seedExportJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const status = readString(body, "status");
-  if (!status) {
-    return actionBadRequest("status is required");
-  }
-  const [job] = await db
-    .insert(exportJobs)
-    .values({
-      userId: readOptionalString(body, "user_id") ?? `user-${randomUUID()}`,
-      orgId: readOptionalString(body, "org_id") ?? `org-${randomUUID()}`,
-      status,
-      createdAt: readDate(body, "created_at") ?? undefined,
-      expiresAt: readNullableDate(body, "expires_at"),
-      s3Key: readOptionalString(body, "s3_key") ?? null,
-    })
-    .returning({ id: exportJobs.id });
-  signal.throwIfAborted();
-  if (!job) {
-    return actionBadRequest("failed to seed export job");
-  }
-  return actionOk({ export_job_id: job.id });
-}
-
-async function deleteExportJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const jobId = readString(body, "export_job_id");
-  if (!jobId) {
-    return actionBadRequest("export_job_id is required");
-  }
-  await db.delete(exportJobs).where(eq(exportJobs.id, jobId));
   signal.throwIfAborted();
   return actionOk();
 }
@@ -970,82 +776,6 @@ async function getRunForAction(
     .limit(1);
   signal.throwIfAborted();
   return actionOk({ run: run ?? null });
-}
-
-async function getRunnerJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [job] = await db
-    .select({ runId: runnerJobQueue.runId })
-    .from(runnerJobQueue)
-    .where(eq(runnerJobQueue.runId, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ runner_job: job ?? null });
-}
-
-async function getQueueEntryForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [entry] = await db
-    .select({ runId: agentRunQueue.runId })
-    .from(agentRunQueue)
-    .where(eq(agentRunQueue.runId, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ queue_entry: entry ?? null });
-}
-
-async function getQueueMarkerRevokerForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const markerId = readString(body, "marker_id");
-  if (!markerId) {
-    return actionBadRequest("marker_id is required");
-  }
-  const [revoker] = await db
-    .select({
-      id: chatEvents.id,
-      revokesEventId: chatEvents.revokesEventId,
-      runEventId: chatEvents.runEventId,
-    })
-    .from(chatEvents)
-    .where(eq(chatEvents.revokesEventId, markerId))
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ queue_marker_revoker: revoker ?? null });
-}
-
-async function getExportJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const jobId = readString(body, "export_job_id");
-  if (!jobId) {
-    return actionBadRequest("export_job_id is required");
-  }
-  const [job] = await db
-    .select({ status: exportJobs.status, error: exportJobs.error })
-    .from(exportJobs)
-    .where(eq(exportJobs.id, jobId))
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ export_job: job ?? null });
 }
 
 const TEST_TERMINAL_RUN_STATUSES = [
@@ -1072,7 +802,7 @@ async function transitionRunTerminalForAction(
     return actionBadRequest("terminal status is required");
   }
   const updated = await db.transaction(async (tx) => {
-    const [run] = await transitionAgentRunsToTerminal(tx, {
+    const transitions = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: terminalStatus,
         completedAt: nowDate(),
@@ -1086,7 +816,8 @@ async function transitionRunTerminalForAction(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    return run;
+    await releaseNeverStartedRunSlots(tx, transitions);
+    return transitions[0];
   });
   signal.throwIfAborted();
   return updated ? actionOk() : actionBadRequest("active run not found");
@@ -1095,23 +826,10 @@ async function transitionRunTerminalForAction(
 const cronCleanupSandboxesActionHandlers = {
   "seed-run": seedRunForAction,
   "seed-run-ownership": seedRunOwnershipForAction,
-  "attach-run-thread": attachRunThreadForAction,
   "delete-run": deleteRunForAction,
   "delete-run-ownership": deleteRunOwnershipForAction,
-  "delete-run-thread": deleteRunThreadForAction,
-  "seed-runner-job": seedRunnerJobForAction,
-  "seed-queue-entry": seedQueueEntryForAction,
-  "seed-queue-marker": seedQueueMarkerForAction,
-  "seed-export-job": seedExportJobForAction,
-  "delete-export-job": deleteExportJobForAction,
   "get-run": getRunForAction,
   "get-run-ownership": getRunOwnershipForAction,
-  "get-runner-job": getRunnerJobForAction,
-  "get-queue-entry": getQueueEntryForAction,
-  "get-queue-marker-revoker": getQueueMarkerRevokerForAction,
-  "get-export-job": getExportJobForAction,
-  "seed-connector-diagnostic-registration":
-    seedConnectorDiagnosticRegistrationForAction,
   "get-connector-diagnostic-registration":
     getConnectorDiagnosticRegistrationForAction,
   "corrupt-connector-diagnostic-registration":
@@ -1141,32 +859,9 @@ const mutateTestCronCleanupSandboxesState$ = command(
   },
 );
 
-const cleanupTestCronCleanupSandboxesState$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-    const bodyResult = await get(cleanupBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-    const body = await set(
-      cleanupSandboxes$,
-      { kind: "fixtures", ...bodyResult.data },
-      signal,
-    );
-    return { status: 200 as const, body };
-  },
-);
-
 export const testCronCleanupSandboxesStateRoutes: readonly RouteEntry[] = [
   {
     route: testCronCleanupSandboxesStateContract.action,
     handler: mutateTestCronCleanupSandboxesState$,
-  },
-  {
-    route: testCronCleanupSandboxesStateContract.cleanup,
-    handler: cleanupTestCronCleanupSandboxesState$,
   },
 ];

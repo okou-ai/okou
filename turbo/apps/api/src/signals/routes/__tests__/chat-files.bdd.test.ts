@@ -4,12 +4,16 @@ import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/c
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import {
   createChatFilesBddApi,
   persistedAttachment,
 } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 /*
 helper gap:
@@ -113,7 +117,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const markedRead = await api.markThreadRead(actor, created.id);
     expect(markedRead).toStrictEqual({
       lastReadAt: expect.any(String),
-      unreads: [],
     });
 
     context.mocks.ably.publish.mockClear();
@@ -121,7 +124,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const markedUnread = await api.markThreadUnread(actor, created.id);
     expect(markedUnread).toStrictEqual({
       lastReadAt: null,
-      unreads: [],
     });
     expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
       [`user-org:${actor.userId}:${actor.orgId}`],
@@ -174,13 +176,11 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const peerRead = await api.requestReadThread(peer, thread.id, [404]);
     expectApiError(peerRead.body);
     expect(peerRead.body.error.code).toBe("NOT_FOUND");
-    const peerDraftRead = await api.requestReadThreadDraft(
-      peer,
-      thread.id,
-      [404],
-    );
-    expectApiError(peerDraftRead.body);
-    expect(peerDraftRead.body.error.code).toBe("NOT_FOUND");
+    // A thread the caller does not own reads as the empty draft.
+    await expect(api.readThreadDraft(peer, thread.id)).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
     await api.patchThread(owner, thread.id, {
       draftAttachments: null,
       draftUserMessage: {
@@ -193,6 +193,10 @@ describe("CHAT-01 chat thread lifecycle", () => {
         version: 1,
         parts: [{ type: "text", text: "private draft" }],
       },
+    });
+    await expect(api.readThreadDraft(peer, thread.id)).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
     });
     await expect(api.listThreadDrafts(peer)).resolves.not.toContain(thread.id);
 
@@ -229,13 +233,14 @@ describe("CHAT-01 chat thread lifecycle", () => {
     });
 
     await api.renameThread(owner, thread.id, "Pinned launch plan");
+    await createChatEventsFixture(context).configureSubscriptionPiModel(owner);
+    await createRunsApi(context).updateUserModelPreference(owner, null);
     await api.updateThreadModelSelection(owner, thread.id, "gpt-6-luna");
     await api.pinThread(owner, thread.id);
     const readEmpty = await api.markThreadRead(owner, thread.id);
 
     expect(readEmpty).toStrictEqual({
       lastReadAt: expect.any(String),
-      unreads: [],
     });
 
     let detail = await api.readThread(owner, thread.id);
@@ -361,6 +366,8 @@ describe("CHAT-02 chat messages and visible validation", () => {
     }
     expect(sent.body.runId).toBeNull();
     expect(sent.body.threadId).toStrictEqual(expect.any(String));
+    // The background pick rejects the input for missing credits.
+    await flushWaitUntilForTest();
 
     const threadId = sent.body.threadId;
     await expect(api.readThreadDraft(actor, threadId)).resolves.toStrictEqual({
@@ -435,13 +442,17 @@ describe("CHAT-02 chat messages and visible validation", () => {
         prompt: "Reuse the client message id in another thread",
         clientEventId,
       },
-      [409],
+      [201],
     );
-    expectApiError(duplicateAcrossThreads.body);
-    expect(duplicateAcrossThreads.body.error.code).toBe("CONFLICT");
-    expect(duplicateAcrossThreads.body.error.message).toBe(
-      "clientEventId is already in use",
+    expect(duplicateAcrossThreads.body).toMatchObject({
+      runId: null,
+      threadId: secondThread.id,
+    });
+    const secondThreadEvents = await api.listThreadEvents(
+      actor,
+      secondThread.id,
     );
+    expect(secondThreadEvents.events).toStrictEqual([]);
 
     if (!rejectedUserMessage) {
       throw new Error("Expected the no-credit send to create a user message");
@@ -589,18 +600,28 @@ describe("CHAT-02 chat messages and visible validation", () => {
     }
     expect(first.body.threadId).toBe(clientThreadId);
 
+    // A retried first send without a client event id settles on the
+    // thread's first input instead of enqueuing a second one.
     const retry = await api.requestSendEvent(
       actor,
       {
         agentId: agent.agentId,
-        prompt: "Retry without an associated run",
+        prompt: "Retry the first client-thread send",
         clientThreadId,
       },
-      [400],
+      [201],
     );
-    expectApiError(retry.body);
-    expect(retry.body.error.code).toBe("BAD_REQUEST");
-    expect(retry.body.error.message).toBe("Client thread id is already in use");
+    expect(retry.body).toStrictEqual(first.body);
+    await flushWaitUntilForTest();
+    const retriedEvents = await api.listThreadEvents(actor, clientThreadId);
+    expect(
+      retriedEvents.events.filter((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === undefined
+        );
+      }),
+    ).toHaveLength(1);
 
     const otherAgent = await bdd.createAgent(actor, {
       displayName: "Client-thread mismatch branch agent",
@@ -837,6 +858,7 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
   });
 
   it("prepares and completes a hosted-site deployment through host APIs", async () => {
+    createHostMapsBddApi(context).captureHostedSitesS3();
     const actor = bdd.user();
     const site = `bdd-site-${randomUUID().slice(0, 8)}`;
 
@@ -871,7 +893,6 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
     expectApiError(crossOrgComplete.body);
     expect(crossOrgComplete.body.error.code).toBe("NOT_FOUND");
 
-    api.mockObjectStorageObjectsExist();
     const completed = await api.completeHostedSite(
       actor,
       prepared.deploymentId,

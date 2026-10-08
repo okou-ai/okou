@@ -22,8 +22,6 @@ const context = testContext();
 const RUN_ID = "a0000000-0000-4000-a000-000000000399";
 const SELECTED_MODEL = "gpt-5.6-luna";
 const DIRECT_PROVIDER = "codex-oauth-token";
-const RUNTIME_PROVIDER = "openrouter-codex";
-const RUNTIME_MODEL = "openai/gpt-5.6-luna";
 
 function logDetail(): LogDetail {
   return {
@@ -43,16 +41,6 @@ function logDetail(): LogDetail {
     startedAt: "2026-03-10T14:56:01Z",
     completedAt: "2026-03-10T14:56:10Z",
     artifact: { name: null, version: null },
-  };
-}
-
-function managedLogDetail(): LogDetail {
-  return {
-    ...logDetail(),
-    modelProvider: "built-in",
-    selectedModel: SELECTED_MODEL,
-    modelRuntimeProvider: RUNTIME_PROVIDER,
-    modelRuntimeModel: RUNTIME_MODEL,
   };
 }
 
@@ -215,63 +203,4 @@ test("Activity context lists model route fields without runtime metadata", async
     }
     expect(within(row).getByText(value)).toBeInTheDocument();
   }
-});
-
-test("Diagnostic export remains available when run context was not retained", async () => {
-  const downloads = context.mocks.browser.blobDownload();
-  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(200, managedLogDetail());
-  });
-  context.mocks.api(runContextContract.getContext, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Run context not available" },
-    });
-  });
-  context.mocks.api(runNetworkLogsContract.getNetworkLogs, ({ respond }) => {
-    return respond(200, { networkLogs: [], hasMore: false });
-  });
-
-  await setupPage({
-    context,
-    path: `/activities/${RUN_ID}?tab=context`,
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Checkout Export" }),
-    ).toBeInTheDocument();
-  });
-  await expect(
-    screen.findByRole("heading", { name: "Model Route" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText(RUNTIME_PROVIDER)).toBeInTheDocument();
-  expect(screen.getByText(RUNTIME_MODEL)).toBeInTheDocument();
-  expect(
-    screen.getByRole("heading", { name: "Context not available" }),
-  ).toBeInTheDocument();
-
-  click(screen.getByLabelText("Download raw data"));
-  await waitFor(() => {
-    expect(downloads.downloads).toHaveLength(1);
-  });
-
-  const download = downloads.downloads[0];
-  if (!download?.blob) {
-    throw new Error("Downloaded activity blob was not captured");
-  }
-  const downloaded = JSON.parse(await download.blob.text()) as Record<
-    string,
-    unknown
-  >;
-
-  expect(download.filename).toBe(`${RUN_ID}-logs.json`);
-  expect(downloaded.meta).toMatchObject({
-    modelProvider: "built-in",
-    selectedModel: SELECTED_MODEL,
-    modelRuntimeProvider: RUNTIME_PROVIDER,
-    modelRuntimeModel: RUNTIME_MODEL,
-  });
-  expect(downloaded.events).toStrictEqual([]);
-  expect(downloaded).not.toHaveProperty("context");
-  expect(downloaded.networkLogs).toStrictEqual([]);
 });

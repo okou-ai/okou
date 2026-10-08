@@ -1,15 +1,19 @@
 import {
-  browserContract,
-  type BrowserSession,
-} from "@okouai/api-contracts/contracts/browser";
-import {
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   browserUserActionsContract,
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import {
@@ -18,8 +22,8 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const REQUEST_TOKEN = `vm0_browser_user_action_${"b".repeat(43)}`;
@@ -49,12 +53,14 @@ function action(
         label: "Email",
         fieldKind: "username",
         required: true,
+        control: { tagName: "INPUT", inputType: "email" },
       },
       {
         key: "remembered",
         label: "Remembered answer",
         fieldKind: "text",
         required: false,
+        control: { tagName: "INPUT", inputType: "text" },
       },
     ],
     callbackIds: {
@@ -70,6 +76,272 @@ function action(
   };
 }
 
+function rangeAction(required: boolean, preflight: boolean) {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "level",
+        label: "Level",
+        fieldKind: "range" as const,
+        required,
+        control: {
+          tagName: "INPUT" as const,
+          inputType: "range" as const,
+          ...(preflight
+            ? {
+                siteRequired: false,
+                rangeValue: "19",
+                min: "10",
+                max: "20",
+                step: "any",
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
+function colorAction(required: boolean, preflight: boolean) {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "swatch",
+        label: "Swatch",
+        fieldKind: "color" as const,
+        required,
+        control: {
+          tagName: "INPUT" as const,
+          inputType: "color" as const,
+          ...(preflight
+            ? {
+                siteRequired: false,
+                colorMode: "opaque-srgb" as const,
+                colorValue: "#123abc",
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
+const FILE_FINGERPRINT = "f".repeat(64);
+function fileAction(args: {
+  readonly required: boolean;
+  readonly preflight: boolean;
+  readonly existing?: boolean;
+}) {
+  return {
+    ...action("pending"),
+    siteOrigin: "https://uploads.example.test",
+    fields: [
+      {
+        key: "document",
+        label: "Document",
+        fieldKind: "file" as const,
+        required: args.required,
+        control: {
+          tagName: "INPUT" as const,
+          inputType: "file" as const,
+          ...(args.preflight
+            ? {
+                siteRequired: false,
+                multiple: true,
+                accept: ".txt",
+                fileSetFingerprint: FILE_FINGERPRINT,
+                files: args.existing
+                  ? [{ name: "old.txt", size: 12, type: "text/plain" }]
+                  : [],
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
+function numberAction(
+  required: boolean,
+): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "quantity",
+        label: "Quantity",
+        fieldKind: "number",
+        required,
+        control: {
+          tagName: "INPUT",
+          inputType: "number",
+          siteRequired: false,
+          min: "10",
+          max: "20",
+          step: "0.5",
+        },
+      },
+    ],
+  };
+}
+
+function dateTimeAction(
+  inputType: "date" | "time" | "datetime-local" | "month" | "week",
+  required: boolean,
+): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "arrival",
+        label: "Arrival",
+        fieldKind: "date_time",
+        required,
+        control: {
+          tagName: "INPUT",
+          inputType,
+          siteRequired: false,
+          min: undefined,
+          max: undefined,
+          step: "any",
+        },
+      },
+    ],
+  };
+}
+
+function checkboxAction(args: {
+  readonly required: boolean;
+  readonly checked: boolean;
+  readonly preflight?: boolean;
+  readonly siteRequired?: boolean;
+}): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "consent",
+        label: "Consent",
+        fieldKind: "checkbox",
+        required: args.required,
+        control: {
+          tagName: "INPUT",
+          inputType: "checkbox",
+          ...(args.preflight
+            ? {
+                checked: args.checked,
+                siteRequired: args.siteRequired ?? false,
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
+const RADIO_FINGERPRINT = "b".repeat(64);
+function radioAction(args: {
+  required: boolean;
+  selected: number;
+  preflight?: boolean;
+  siteRequired?: boolean;
+  fingerprint?: string;
+}) {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "delivery",
+        label: "Delivery",
+        fieldKind: "radio" as const,
+        required: args.required,
+        control: {
+          tagName: "INPUT" as const,
+          inputType: "radio" as const,
+          ...(args.preflight
+            ? {
+                siteRequired: args.siteRequired ?? false,
+                radioGroupFingerprint: args.fingerprint ?? RADIO_FINGERPRINT,
+                radioOptions: [0, 1, 2].map((index) => {
+                  return {
+                    index,
+                    label: "Same",
+                    disabled: index === 2,
+                    selected: index === args.selected,
+                  };
+                }),
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
+const SELECT_FINGERPRINT = "a".repeat(64);
+
+function selectAction(args: {
+  readonly required: boolean;
+  readonly multiple: boolean;
+  readonly preflight?: boolean;
+  readonly fingerprint?: string;
+}): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "region",
+        label: "Region",
+        fieldKind: "select",
+        required: args.required,
+        control: {
+          tagName: "SELECT",
+          inputType: args.multiple ? "select-multiple" : "select-one",
+          ...(args.preflight
+            ? {
+                siteRequired: false,
+                multiple: args.multiple,
+                optionSetFingerprint: args.fingerprint ?? SELECT_FINGERPRINT,
+                options: [
+                  {
+                    index: 0,
+                    label: "Choose",
+                    disabled: false,
+                    selected: !args.multiple,
+                    empty: true,
+                  },
+                  {
+                    index: 1,
+                    label: "First",
+                    disabled: false,
+                    selected: args.multiple,
+                    empty: false,
+                  },
+                  {
+                    index: 2,
+                    label: "Second",
+                    disabled: false,
+                    selected: false,
+                    empty: false,
+                  },
+                  {
+                    index: 3,
+                    label: "Unavailable",
+                    disabled: true,
+                    selected: false,
+                    empty: false,
+                  },
+                ],
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
 function mockPendingPreflight() {
   context.mocks.api(
     browserUserActionsContract.preflight,
@@ -79,40 +351,6 @@ function mockPendingPreflight() {
       return respond(200, action("pending"));
     },
   );
-}
-
-function directAction(
-  state: BrowserUserActionResponse["state"] = "pending",
-): Extract<BrowserUserActionResponse, { kind: "direct_interaction" }> {
-  return {
-    kind: "direct_interaction",
-    requestToken: REQUEST_TOKEN,
-    state,
-    completedAt: state === "pending" ? null : "2026-09-22T05:00:00.000Z",
-    agentId: AGENT_ID,
-    threadId: THREAD_ID,
-    reason: "Finish the visual challenge",
-    callbackIds: action("pending").callbackIds,
-  };
-}
-
-function browserSession(): BrowserSession {
-  return {
-    threadId: THREAD_ID,
-    name: "Research",
-    status: "suspended",
-    viewerUrl: `https://browser.example.test/view/${THREAD_ID}`,
-    liveUrl: null,
-    screenshotUrl: "https://images.example.test/browser-suspended.png",
-    proxyCountryCode: "US",
-    timeoutMinutes: 240,
-    screen: { width: 1440, height: 900, resizable: true },
-    idleExpiresAt: null,
-    suspendedAt: "2026-09-22T04:55:00.000Z",
-    suspensionReason: "idle",
-    createdAt: "2026-09-22T04:00:00.000Z",
-    updatedAt: "2026-09-22T04:55:00.000Z",
-  };
 }
 
 function route(args: { readonly threadId?: string } = {}): string {
@@ -130,16 +368,6 @@ function button(name: string): HTMLElement {
   });
   if (!result) {
     throw new Error(`Button not found: ${name}`);
-  }
-  return result;
-}
-
-function link(name: string): HTMLElement {
-  const result = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.getAttribute("aria-label") === name;
-  });
-  if (!result) {
-    throw new Error(`Link not found: ${name}`);
   }
   return result;
 }
@@ -172,9 +400,11 @@ test("The standalone route reuses the native browser input form", async () => {
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
-  expect(screen.queryByRole("form")).toBeNull();
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
+  expect(
+    queryAllByRoleFast("button").some((candidate) => {
+      return candidate.textContent?.trim() === "Enter information";
+    }),
+  ).toBeFalsy();
   const form = await screen.findByRole("form", {
     name: "Enter information in browser",
   });
@@ -197,6 +427,1808 @@ test("The standalone route reuses the native browser input form", async () => {
   expect(document.title).toContain("Browser action");
 });
 
+test("A required native slider starts at the website position and needs deliberate confirmation", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, rangeAction(true, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, rangeAction(true, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...rangeAction(true, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const slider = within(form).getByRole("slider", { name: /Level/u });
+  await waitFor(() => {
+    return expect(slider).toHaveValue("19");
+  });
+  expect(within(form).getByText("19")).toBeInTheDocument();
+  expect(button("Add to browser")).toBeDisabled();
+  click(button("Use current value"));
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([
+      {
+        key: "level",
+        observedValue: "19",
+        observedMin: "10",
+        observedMax: "20",
+        observedStep: "any",
+        value: "19",
+      },
+    ]);
+  });
+});
+
+test("An optional native slider stays untouched unless the user changes it", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, rangeAction(false, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, rangeAction(false, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...rangeAction(false, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const slider = within(form).getByRole("slider", { name: /Level/u });
+  await waitFor(() => {
+    return expect(slider).toHaveValue("19");
+  });
+  expect(button("Add to browser")).toBeEnabled();
+  fireEvent.change(slider, { target: { value: "16" } });
+  await waitFor(() => {
+    return expect(within(form).getByText("16")).toBeInTheDocument();
+  });
+  fireEvent.change(slider, { target: { value: "19" } });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([]);
+  });
+});
+
+test("An optional native slider submits a changed position with its observed snapshot", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, rangeAction(false, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, rangeAction(false, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...rangeAction(false, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const slider = within(form).getByRole("slider", { name: /Level/u });
+  await waitFor(() => {
+    return expect(slider).toHaveValue("19");
+  });
+  fireEvent.change(slider, { target: { value: "16" } });
+  await waitFor(() => {
+    return expect(within(form).getByText("16")).toBeInTheDocument();
+  });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([
+      {
+        key: "level",
+        observedValue: "19",
+        observedMin: "10",
+        observedMax: "20",
+        observedStep: "any",
+        value: "16",
+      },
+    ]);
+  });
+});
+
+test("A required native color starts from the website and needs explicit confirmation", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, colorAction(true, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, colorAction(true, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...colorAction(true, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const picker = within(form).getByLabelText(/Swatch/u) as HTMLInputElement;
+  await waitFor(() => {
+    return expect(picker).toHaveValue("#123abc");
+  });
+  expect(within(form).getByText("#123abc")).toBeInTheDocument();
+  expect(button("Add to browser")).toBeDisabled();
+  click(button("Use current value"));
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([
+      { key: "swatch", observedColor: "#123abc", value: "#123abc" },
+    ]);
+  });
+});
+
+test("An optional native color remains untouched or submits an explicit change", async () => {
+  const submissions: unknown[] = [];
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, colorAction(false, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, colorAction(false, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    submissions.push(body.values);
+    return respond(200, {
+      ...colorAction(false, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const picker = within(form).getByLabelText(/Swatch/u) as HTMLInputElement;
+  await waitFor(() => {
+    return expect(picker).toHaveValue("#123abc");
+  });
+  fireEvent.change(picker, { target: { value: "#00ff00" } });
+  await waitFor(() => {
+    return expect(within(form).getByText("#00ff00")).toBeInTheDocument();
+  });
+  fireEvent.change(picker, { target: { value: "#123abc" } });
+  expect(picker).toHaveValue("#123abc");
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(submissions).toStrictEqual([[]]);
+  });
+});
+
+test("A changed native color submits its observed website snapshot", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, colorAction(false, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, colorAction(false, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...colorAction(false, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const picker = within(form).getByLabelText(/Swatch/u) as HTMLInputElement;
+  await waitFor(() => {
+    return expect(picker).toHaveValue("#123abc");
+  });
+  fireEvent.change(picker, { target: { value: "#00ff00" } });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([
+      { key: "swatch", observedColor: "#123abc", value: "#00ff00" },
+    ]);
+  });
+});
+
+test("A standalone native file input transfers chosen bytes only on confirmed submission", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let uploaded = false;
+  let directPut = false;
+  const uploadUrl = "https://uploads.example.test/browser-input-test";
+  context.mocks.api(
+    browserUserActionsContract.prepareFileUpload,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual({
+        key: "document",
+        index: 0,
+        size: 4,
+      });
+      return respond(200, { uploadUrl });
+    },
+  );
+  context.mocks.http.put(uploadUrl, ({ request }) => {
+    expect(request.credentials).toBe("omit");
+    expect(request.headers.get("content-type")).toBe(
+      "application/octet-stream",
+    );
+    expect(request.headers.get("x-amz-checksum-sha256")).toBeNull();
+    directPut = true;
+    return new HttpResponse(null, { status: 200 });
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      state === "pending"
+        ? fileAction({ required: true, preflight: false })
+        : {
+            ...fileAction({ required: true, preflight: false }),
+            state,
+            completedAt: "2026-09-25T05:00:00.000Z",
+          },
+    );
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: true }));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "document",
+        operation: "replace",
+        observedFingerprint: FILE_FINGERPRINT,
+        files: [
+          {
+            name: "note.txt",
+            type: "text/plain",
+            size: 4,
+          },
+        ],
+      },
+    ]);
+    expect(directPut).toBeTruthy();
+    uploaded = true;
+    state = "succeeded";
+    return respond(200, {
+      ...fileAction({ required: true, preflight: false }),
+      state,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const input = within(form).getByLabelText(/Document/u);
+  await waitFor(() => {
+    return expect(input).toBeEnabled();
+  });
+  expect(button("Add to browser")).toBeDisabled();
+  expect(within(form).getByText("https://uploads.example.test")).toBeVisible();
+  const file = new File(["test"], "note.txt", { type: "text/plain" });
+  fireEvent.change(input, { target: { files: [file] } });
+  expect(uploaded).toBeFalsy();
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(uploaded).toBeTruthy();
+  });
+});
+
+test("A rejected Browser file authorization and PUT leave the selection retryable without applying", async () => {
+  let prepares = 0;
+  let attemptedPut = false;
+  const uploadUrl = "https://uploads.example.test/rejected-browser-file";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: false }));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: true }));
+  });
+  context.mocks.api(
+    browserUserActionsContract.prepareFileUpload,
+    ({ respond }) => {
+      prepares += 1;
+      if (prepares === 1) {
+        return respond(503, {
+          error: {
+            code: "BROWSER_PROVIDER_UNAVAILABLE",
+            message: "Synthetic upload authorization temporarily unavailable",
+          },
+        });
+      }
+      return respond(200, { uploadUrl });
+    },
+  );
+  context.mocks.http.put(uploadUrl, () => {
+    attemptedPut = true;
+    return new HttpResponse(null, { status: 403 });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const input = within(form).getByLabelText(/Document/u);
+  await waitFor(() => {
+    return expect(input).toBeEnabled();
+  });
+  const file = new File(["test"], "synthetic.txt", { type: "text/plain" });
+  fireEvent.change(input, { target: { files: [file] } });
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await expect(
+    screen.findByText("Synthetic upload authorization temporarily unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(attemptedPut).toBeFalsy();
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(attemptedPut).toBeTruthy();
+  });
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+});
+
+test("An optional file selection leaves existing website files untouched without auxiliary buttons", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, fileAction({ required: false, preflight: false }));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      fileAction({ required: false, preflight: true, existing: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...fileAction({ required: false, preflight: false }),
+      state: "succeeded",
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await screen.findByText(/old.txt/u);
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  expect(screen.queryByText("Clear website value")).toBeNull();
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([]);
+  });
+});
+
+test("A required file field can retain already selected website files without a keep button", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...fileAction({ required: true, preflight: false }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      fileAction({ required: true, preflight: true, existing: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "document",
+        operation: "keep",
+        files: [],
+        observedFingerprint: FILE_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...fileAction({ required: true, preflight: false }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await screen.findByText(/old.txt/u);
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("The standalone form accepts input and submission while its background check is pending", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let applied = false;
+  const checkStarted = createDeferredPromise<void>(context.signal);
+  const releaseCheck = createDeferredPromise<void>(context.signal);
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action(state));
+  });
+  context.mocks.api(
+    browserUserActionsContract.preflight,
+    async ({ respond }) => {
+      checkStarted.resolve(undefined);
+      await releaseCheck.promise;
+      return respond(200, action("pending"));
+    },
+  );
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    applied = true;
+    expect(body.values).toStrictEqual([
+      { key: "email", value: "owner@example.test" },
+    ]);
+    state = "succeeded";
+    return respond(200, action(state));
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await checkStarted.promise;
+  expect(screen.getByText("Checking this request…")).toBeVisible();
+  expect(button("Add to browser")).toBeEnabled();
+  await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+  click(button("Add to browser"));
+  await waitFor(() => {
+    expect(applied).toBeTruthy();
+  });
+  releaseCheck.resolve(undefined);
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("A failed background check blocks submission and retains the draft for retry", async () => {
+  let checks = 0;
+  let applied = false;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    checks += 1;
+    return checks === 1
+      ? respond(503, {
+          error: {
+            code: "BROWSER_USE_TIMEOUT",
+            message: "Browser check timed out",
+          },
+        })
+      : respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    applied = true;
+    return respond(200, action("succeeded"));
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const email = within(form).getByLabelText(/Email/u);
+  await fill(email, "owner@example.test");
+  await expect(
+    screen.findByText(/Couldn't check the browser/u),
+  ).resolves.toBeVisible();
+  expect(button("Add to browser")).toBeDisabled();
+  expect(email).toHaveValue("owner@example.test");
+  expect(applied).toBeFalsy();
+  click(button("Retry"));
+  await waitFor(() => {
+    expect(checks).toBe(2);
+    expect(button("Add to browser")).toBeEnabled();
+  });
+  expect(email).toHaveValue("owner@example.test");
+});
+
+test("The standalone form uses preflight's observed multiline and email controls", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action(state));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    const pending = action("pending");
+    return respond(200, {
+      ...pending,
+      fields: [
+        {
+          ...pending.fields[0],
+          control: {
+            tagName: "INPUT",
+            inputType: "email",
+            siteRequired: true,
+            multiple: true,
+          },
+        },
+        {
+          ...pending.fields[1],
+          control: { tagName: "TEXTAREA", inputType: "textarea", minLength: 3 },
+        },
+      ],
+    });
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      { key: "email", value: "owner@example.test" },
+      { key: "remembered", value: "first line\nsecond line" },
+    ]);
+    state = "succeeded";
+    return respond(200, action(state));
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await waitFor(() => {
+    expect(within(form).getByLabelText(/Remembered answer/u).tagName).toBe(
+      "TEXTAREA",
+    );
+  });
+  const email = within(form).getByLabelText(/Email/u);
+  const multiline = within(form).getByLabelText(/Remembered answer/u);
+  expect(email).toHaveAttribute("type", "email");
+  expect(email).toHaveAttribute("multiple");
+  expect(email).toBeRequired();
+  expect(multiline.tagName).toBe("TEXTAREA");
+  expect(multiline).toHaveAttribute("minlength", "3");
+  await fill(email, "owner@example.test");
+  await fill(multiline, "first line\nsecond line");
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("The standalone form uses the existing input style with live number constraints", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let applied = false;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, { ...numberAction(true), state });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, numberAction(true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    applied = true;
+    expect(body.values).toStrictEqual([{ key: "quantity", value: "12.5" }]);
+    state = "succeeded";
+    return respond(200, { ...numberAction(true), state });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const quantity = within(form).getByLabelText(/Quantity/u);
+  expect(quantity).toHaveAttribute("data-slot", "input");
+  expect(quantity).toHaveAttribute("type", "number");
+  expect(quantity).toHaveAttribute("min", "10");
+  expect(quantity).toHaveAttribute("max", "20");
+  expect(quantity).toHaveAttribute("step", "0.5");
+  expect(quantity).toBeRequired();
+  await fill(quantity, "12.5");
+  click(button("Add to browser"));
+  await waitFor(() => {
+    expect(applied).toBeTruthy();
+  });
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test.each([
+  { typedThenDeleted: false, expected: [] },
+  { typedThenDeleted: true, expected: [{ key: "quantity", value: "" }] },
+])(
+  "Optional number field can be untouched or cleared using its input ($typedThenDeleted)",
+  async ({ typedThenDeleted, expected }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, { ...numberAction(false), state });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, numberAction(false));
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual(expected);
+      state = "succeeded";
+      return respond(200, { ...numberAction(false), state });
+    });
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    expect(within(form).getByLabelText(/Quantity/u)).toHaveAttribute(
+      "type",
+      "number",
+    );
+    if (typedThenDeleted) {
+      const quantity = within(form).getByLabelText(/Quantity/u);
+      await fill(quantity, "12.5");
+      await fill(quantity, "");
+    }
+    expect(screen.queryByText("Clear website value")).toBeNull();
+    expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+    click(button("Add to browser"));
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  },
+);
+
+test.each([
+  { inputType: "date" as const, value: "2026-09-25" },
+  { inputType: "time" as const, value: "09:30" },
+  { inputType: "datetime-local" as const, value: "2026-09-25T09:30" },
+  { inputType: "month" as const, value: "2026-09" },
+  { inputType: "week" as const, value: "2026-W39" },
+])(
+  "A native $inputType picker submits its local canonical string",
+  async ({ inputType, value }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, { ...dateTimeAction(inputType, false), state });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, dateTimeAction(inputType, false));
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual([{ key: "arrival", value }]);
+      state = "succeeded";
+      return respond(200, { ...dateTimeAction(inputType, false), state });
+    });
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    const picker = within(form).getByLabelText(/Arrival/u);
+    expect(picker).toHaveAttribute("type", inputType);
+    expect(picker).toHaveAttribute("step", "any");
+    fireEvent.change(picker, { target: { value } });
+    click(button("Add to browser"));
+    await expect(
+      screen.findByText("Agent notified"),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each([
+  { clear: false, expected: [] },
+  { clear: true, expected: [{ key: "arrival", value: "" }] },
+])(
+  "An optional date can be untouched or explicitly cleared ($clear)",
+  async ({ clear, expected }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, { ...dateTimeAction("date", false), state });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, dateTimeAction("date", false));
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual(expected);
+      state = "succeeded";
+      return respond(200, { ...dateTimeAction("date", false), state });
+    });
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    if (clear) {
+      const picker = within(form).getByLabelText(/Arrival/u);
+      fireEvent.change(picker, { target: { value: "2026-09-25" } });
+      fireEvent.change(picker, { target: { value: "" } });
+    }
+    click(button("Add to browser"));
+    await expect(
+      screen.findByText("Agent notified"),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each([
+  { siteChecked: true, expected: false },
+  { siteChecked: false, expected: true },
+])(
+  "An optional checkbox submits an explicit $expected rather than the website's $siteChecked",
+  async ({ siteChecked, expected }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, {
+        ...checkboxAction({ required: false, checked: siteChecked }),
+        state,
+      });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(
+        200,
+        checkboxAction({
+          required: false,
+          checked: siteChecked,
+          preflight: true,
+        }),
+      );
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual([
+        { key: "consent", checked: expected, observedChecked: siteChecked },
+      ]);
+      state = "succeeded";
+      return respond(200, {
+        ...checkboxAction({ required: false, checked: siteChecked }),
+        state,
+      });
+    });
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(body.prompt).toBe(CALLBACK_PROMPT);
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
+    await waitFor(() => {
+      expect(checkbox).toBeEnabled();
+    });
+    expect(checkbox).toHaveProperty("checked", siteChecked);
+    const user = userEvent.setup({ delay: null });
+    await user.click(checkbox);
+    click(button("Add to browser"));
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  },
+);
+
+test("An untouched optional checkbox preserves a checked website value", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...checkboxAction({ required: false, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      checkboxAction({ required: false, checked: true, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([]);
+    state = "succeeded";
+    return respond(200, {
+      ...checkboxAction({ required: false, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
+  await waitFor(() => {
+    expect(checkbox).toBeEnabled();
+  });
+  expect(checkbox).toBeChecked();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("A required checked checkbox submits its valid website state without auxiliary confirmation", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...checkboxAction({ required: true, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      checkboxAction({ required: true, checked: true, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      { key: "consent", checked: true, observedChecked: true },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...checkboxAction({ required: true, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
+  await waitFor(() => {
+    expect(checkbox).toBeEnabled();
+  });
+  expect(checkbox).toBeChecked();
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("A changed checkbox state on Retry uses the fresh valid website snapshot", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let checks = 0;
+  let applies = 0;
+  const submissions: unknown[] = [];
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...checkboxAction({ required: true, checked: false }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    checks += 1;
+    return respond(
+      200,
+      checkboxAction({
+        required: true,
+        checked: checks === 2,
+        preflight: true,
+      }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    applies += 1;
+    submissions.push(body.values);
+    if (applies === 1) {
+      return respond(409, {
+        error: {
+          code: "BROWSER_USER_ACTION_INVALID_VALUE",
+          message: "Changed website state",
+        },
+      });
+    }
+    state = "succeeded";
+    return respond(200, {
+      ...checkboxAction({ required: true, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
+  await waitFor(() => {
+    expect(checkbox).toBeEnabled();
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(checkbox);
+  click(button("Add to browser"));
+  await screen.findByRole("alert");
+  click(button("Retry"));
+  await waitFor(() => {
+    expect(checks).toBe(2);
+  });
+  expect(checkbox).toBeChecked();
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(submissions).toStrictEqual([
+    [{ key: "consent", checked: true, observedChecked: false }],
+    [{ key: "consent", checked: true, observedChecked: true }],
+  ]);
+});
+
+test("A radio group submits an indexed choice without its duplicate value", async () => {
+  const memberIndex = 1;
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...radioAction({ required: false, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      radioAction({ required: false, selected: 0, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "delivery",
+        memberIndex,
+        observedSelectedIndex: 0,
+        groupFingerprint: RADIO_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...radioAction({ required: false, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.prompt).toBe(CALLBACK_PROMPT);
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const radios = await within(form).findAllByRole("radio");
+  expect(radios).toHaveLength(3);
+  expect(radios[0]).toBeChecked();
+  expect(radios[2]).toBeDisabled();
+  await userEvent
+    .setup({ delay: null })
+    .click(within(form).getByRole("radio", { name: "2. Same" }));
+  expect(screen.queryByText("Clear website value")).toBeNull();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("A radio choice from a changed website group uses its fresh snapshot on Retry", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let checks = 0;
+  const submissions: unknown[] = [];
+  const changedFingerprint = "c".repeat(64);
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...radioAction({ required: true, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    checks += 1;
+    return respond(
+      200,
+      radioAction({
+        required: true,
+        selected: checks === 1 ? 0 : 1,
+        preflight: true,
+        fingerprint: checks === 1 ? RADIO_FINGERPRINT : changedFingerprint,
+      }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    submissions.push(body.values);
+    if (submissions.length === 1) {
+      return respond(409, {
+        error: {
+          code: "BROWSER_USER_ACTION_INVALID_VALUE",
+          message: "Changed website group",
+        },
+      });
+    }
+    state = "succeeded";
+    return respond(200, {
+      ...radioAction({ required: true, selected: 1 }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const radios = await within(form).findAllByRole("radio");
+  await waitFor(() => {
+    expect(radios[0]).toBeEnabled();
+  });
+  await userEvent.setup({ delay: null }).click(radios[1]);
+  click(button("Add to browser"));
+  await screen.findByRole("alert");
+  click(button("Retry"));
+  await waitFor(() => {
+    expect(checks).toBe(2);
+    expect(radios[1]).toBeChecked();
+  });
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(submissions).toStrictEqual([
+    [
+      {
+        key: "delivery",
+        memberIndex: 1,
+        observedSelectedIndex: 0,
+        groupFingerprint: RADIO_FINGERPRINT,
+      },
+    ],
+    [
+      {
+        key: "delivery",
+        memberIndex: 1,
+        observedSelectedIndex: 1,
+        groupFingerprint: changedFingerprint,
+      },
+    ],
+  ]);
+});
+
+test("An untouched optional radio group preserves the existing selection", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...radioAction({ required: false, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      radioAction({ required: false, selected: 0, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([]);
+    state = "succeeded";
+    return respond(200, {
+      ...radioAction({ required: false, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await within(form).findAllByRole("radio");
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("An Agent-required radio group submits its existing valid website choice", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...radioAction({ required: true, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      radioAction({ required: true, selected: 0, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "delivery",
+        memberIndex: 0,
+        observedSelectedIndex: 0,
+        groupFingerprint: RADIO_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...radioAction({ required: true, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await within(form).findAllByRole("radio");
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("The standalone form selects a required native option by index, not its website value", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...selectAction({ required: true, multiple: false }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      selectAction({ required: true, multiple: false, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "region",
+        optionIndexes: [2],
+        optionSetFingerprint: SELECT_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...selectAction({ required: true, multiple: false }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const region = within(form).getByLabelText(/Region/u);
+  await waitFor(() => {
+    expect(region).toBeEnabled();
+  });
+  expect(region).not.toHaveAttribute("multiple");
+  expect(button("Add to browser")).toBeDisabled();
+  const user = userEvent.setup({ delay: null });
+  await user.selectOptions(region, "2");
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("A required multiple select cannot keep a disabled website choice and drops it on change", async () => {
+  const preflight = selectAction({
+    required: true,
+    multiple: true,
+    preflight: true,
+  });
+  const [field] = preflight.fields;
+  if (!field?.control.options) {
+    throw new Error("Expected select options in the preflight fixture");
+  }
+  const snapshot = {
+    ...preflight,
+    fields: [
+      {
+        ...field,
+        control: {
+          ...field.control,
+          options: field.control.options.map((option) => {
+            return option.index === 3 ? { ...option, selected: true } : option;
+          }),
+        },
+      },
+    ],
+  };
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...selectAction({ required: true, multiple: true }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, snapshot);
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "region",
+        optionIndexes: [1, 2],
+        optionSetFingerprint: SELECT_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...selectAction({ required: true, multiple: true }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const region = within(form).getByLabelText(/Region/u);
+  await waitFor(() => {
+    expect(region).toBeEnabled();
+  });
+  expect(button("Add to browser")).toBeDisabled();
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+  const user = userEvent.setup({ delay: null });
+  await user.selectOptions(region, "2");
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("An optional multiple select distinguishes untouched from an explicit clear", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...selectAction({ required: false, multiple: true }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      selectAction({ required: false, multiple: true, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "region",
+        optionIndexes: [],
+        optionSetFingerprint: SELECT_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...selectAction({ required: false, multiple: true }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const region = within(form).getByLabelText(/Region/u);
+  await waitFor(() => {
+    expect(region).toBeEnabled();
+  });
+  expect(region).toHaveAttribute("multiple");
+  await userEvent.setup({ delay: null }).deselectOptions(region, "1");
+  expect(screen.queryByText("Clear website value")).toBeNull();
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("An optional single select clears its website selection through the native empty option", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  const snapshot = selectAction({
+    required: false,
+    multiple: false,
+    preflight: true,
+  });
+  const [field] = snapshot.fields;
+  if (!field?.control.options) {
+    throw new Error("Expected select options");
+  }
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...selectAction({ required: false, multiple: false }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, {
+      ...snapshot,
+      fields: [
+        {
+          ...field,
+          control: {
+            ...field.control,
+            options: field.control.options?.map((option) => {
+              return {
+                ...option,
+                selected: option.index === 1,
+              };
+            }),
+          },
+        },
+      ],
+    });
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "region",
+        optionIndexes: [],
+        optionSetFingerprint: SELECT_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...selectAction({ required: false, multiple: false }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const region = within(form).getByLabelText(/Region/u);
+  await waitFor(() => {
+    return expect(region).toHaveValue("1");
+  });
+  await userEvent.setup({ delay: null }).selectOptions(region, "");
+  expect(region).toHaveValue("");
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test.each([
+  { siteSelection: 1, confirmedIndex: 1, siteValid: true },
+  { siteSelection: 0, confirmedIndex: 2, siteValid: false },
+])(
+  "A changed select snapshot accepts valid website selection or requires a fresh choice ($siteSelection)",
+  async ({ siteSelection, confirmedIndex, siteValid }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    let preflights = 0;
+    let applies = 0;
+    const submissions: unknown[] = [];
+    const nextFingerprint = "b".repeat(64);
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, {
+        ...selectAction({ required: true, multiple: false }),
+        state,
+      });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      preflights += 1;
+      const checked = selectAction({
+        required: true,
+        multiple: false,
+        preflight: true,
+        fingerprint: preflights === 1 ? SELECT_FINGERPRINT : nextFingerprint,
+      });
+      if (preflights === 1) {
+        return respond(200, checked);
+      }
+      return respond(200, {
+        ...checked,
+        fields: checked.fields.map((field) => {
+          return {
+            ...field,
+            control: {
+              ...field.control,
+              options: field.control.options?.map((option) => {
+                return {
+                  ...option,
+                  selected: option.index === siteSelection,
+                  label:
+                    option.index === 1 ? "Current site choice" : option.label,
+                };
+              }),
+            },
+          };
+        }),
+      });
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      applies += 1;
+      submissions.push(body.values);
+      if (applies === 1) {
+        return respond(409, {
+          error: {
+            code: "BROWSER_USER_ACTION_INVALID_VALUE",
+            message: "Website choices changed",
+          },
+        });
+      }
+      state = "succeeded";
+      return respond(200, {
+        ...selectAction({ required: true, multiple: false }),
+        state,
+      });
+    });
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    const region = within(form).getByLabelText(/Region/u);
+    await waitFor(() => {
+      expect(region).toBeEnabled();
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.selectOptions(region, "2");
+    click(button("Add to browser"));
+    await screen.findByRole("alert");
+    click(button("Retry"));
+    await waitFor(() => {
+      expect(preflights).toBe(2);
+    });
+    expect(region).toHaveValue(String(siteSelection));
+    expect(button("Add to browser")).toHaveProperty("disabled", !siteValid);
+    if (!siteValid) {
+      await user.selectOptions(region, "2");
+    }
+    expect(button("Add to browser")).toBeEnabled();
+    click(button("Add to browser"));
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+    expect(applies).toBe(2);
+    expect(submissions).toStrictEqual([
+      [
+        {
+          key: "region",
+          optionIndexes: [2],
+          optionSetFingerprint: SELECT_FINGERPRINT,
+        },
+      ],
+      [
+        {
+          key: "region",
+          optionIndexes: [confirmedIndex],
+          optionSetFingerprint: nextFingerprint,
+        },
+      ],
+    ]);
+  },
+);
+
+test("Changed site constraints require a fresh preflight without losing ordinary draft text", async () => {
+  let preflights = 0;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    preflights += 1;
+    const pending = action("pending");
+    return respond(200, {
+      ...pending,
+      fields: [
+        pending.fields[0],
+        {
+          ...pending.fields[1],
+          control: {
+            tagName: "TEXTAREA",
+            inputType: "textarea",
+            minLength: preflights === 1 ? 3 : 5,
+          },
+        },
+      ],
+    });
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    return respond(409, {
+      error: {
+        code: "BROWSER_USER_ACTION_INVALID_VALUE",
+        message: "Browser input does not meet the website control constraints",
+      },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  let form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+  await fill(within(form).getByLabelText(/Remembered answer/u), "abcd");
+  click(button("Add to browser"));
+  await screen.findByRole("alert");
+  click(button("Retry"));
+  form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  expect(preflights).toBe(2);
+  expect(within(form).getByLabelText(/Remembered answer/u)).toHaveAttribute(
+    "minlength",
+    "5",
+  );
+  expect(within(form).getByLabelText(/Remembered answer/u)).toHaveValue("abcd");
+});
+
+test("Returning to a pending standalone form keeps its password draft", async () => {
+  const pending = {
+    ...action("pending"),
+    fields: [
+      {
+        key: "password",
+        label: "Password",
+        fieldKind: "password" as const,
+        required: true,
+        control: { tagName: "INPUT" as const, inputType: "password" as const },
+      },
+    ],
+  };
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, pending);
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, pending);
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  const password = await screen.findByLabelText("Password");
+  await fill(password, "temporary-secret");
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(screen.getByLabelText("Password")).toBe(password);
+  expect(password).toHaveValue("temporary-secret");
+});
+
+test("The standalone form records cancellation before notifying the agent", async () => {
+  const ordering: string[] = [];
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action(state));
+  });
+  mockPendingPreflight();
+  context.mocks.api(browserUserActionsContract.cancel, ({ respond }) => {
+    ordering.push("cancel");
+    state = "cancelled";
+    return respond(200, action(state));
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    ordering.push("callback");
+    expect(body.prompt).toBe("The user cancelled the browser input request.");
+    expect(body.clientEventId).toBe(CANCEL_CLIENT_ID);
+    expect(body.chatThreadSortEventId).toBe(CANCEL_SORT_ID);
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await screen.findByRole("form", { name: "Enter information in browser" });
+  click(button("Cancel"));
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(ordering).toStrictEqual(["cancel", "callback"]);
+});
+
 test("A fresh standalone action page reads accepted callback delivery", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, { ...action("succeeded"), callbackDelivered: true });
@@ -212,84 +2244,9 @@ test("A fresh standalone action page reads accepted callback delivery", async ()
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(
     queryAllByRoleFast("button", document.body).some((candidate) => {
-      return candidate.textContent?.trim() === "Continue";
+      return candidate.textContent?.trim() === "Notify agent";
     }),
   ).toBeFalsy();
-});
-
-test("An ambiguous callback response reconciles from the accepted event read", async () => {
-  let delivered = false;
-  let reads = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    reads += 1;
-    return respond(200, {
-      ...action("succeeded"),
-      callbackDelivered: delivered,
-    });
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
-    delivered = true;
-    return respond(503, {
-      error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
-    });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await screen.findByText("Information added");
-  click(button("Continue"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(reads).toBeGreaterThan(1);
-});
-
-test("Standalone entry waits for preflight and retries a transient failure without exposing fields", async () => {
-  const entered = createDeferredPromise<void>(context.signal);
-  const release = createDeferredPromise<void>(context.signal);
-  let attempts = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action("pending"));
-  });
-  context.mocks.api(
-    browserUserActionsContract.preflight,
-    async ({ body, respond }) => {
-      expect(body).toStrictEqual({});
-      attempts += 1;
-      if (attempts === 1) {
-        entered.resolve(undefined);
-        await release.promise;
-        return respond(503, {
-          error: {
-            code: "BROWSER_UNAVAILABLE",
-            message: "Browser unavailable",
-          },
-        });
-      }
-      return respond(200, action("pending"));
-    },
-  );
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
-  await entered.promise;
-  expect(screen.queryByRole("form")).toBeNull();
-  expect(screen.getByText("Checking this request…")).toBeVisible();
-  release.resolve(undefined);
-  await screen.findByText("Retry");
-  click(button("Retry"));
-  await screen.findByRole("form", { name: "Enter information in browser" });
-  expect(attempts).toBe(2);
 });
 
 test("Standalone preflight makes a confirmed changed target stale before showing fields", async () => {
@@ -308,13 +2265,86 @@ test("Standalone preflight makes a confirmed changed target stale before showing
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
   await expect(screen.findByText("Fields changed")).resolves.toBeVisible();
   expect(screen.queryByRole("form")).toBeNull();
   expect(
     screen.getByText("Ask the agent to create a new request."),
   ).toBeVisible();
+});
+
+test("A transient standalone preflight failure keeps fields visible but blocks submission", async () => {
+  let attempts = 0;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    attempts += 1;
+    return attempts === 1
+      ? respond(503, {
+          error: {
+            code: "BROWSER_UNAVAILABLE",
+            message: "Browser unavailable",
+          },
+        })
+      : respond(200, action("pending"));
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  await waitFor(() => {
+    expect(button("Retry")).toBeVisible();
+  });
+  expect(attempts).toBe(1);
+  expect(
+    screen.getByRole("form", { name: "Enter information in browser" }),
+  ).toBeVisible();
+  expect(button("Add to browser")).toBeDisabled();
+  click(button("Retry"));
+  await waitFor(() => {
+    expect(attempts).toBe(2);
+    expect(button("Add to browser")).toBeEnabled();
+  });
+});
+
+test("Retry after a failed standalone request also runs preflight", async () => {
+  let reads = 0;
+  let checks = 0;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    reads += 1;
+    return reads === 1
+      ? respond(503, {
+          error: {
+            code: "BROWSER_UNAVAILABLE",
+            message: "Browser unavailable",
+          },
+        })
+      : respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    checks += 1;
+    return respond(200, action("pending"));
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  await waitFor(() => {
+    expect(button("Retry")).toBeVisible();
+  });
+  expect(checks).toBe(0);
+  click(button("Retry"));
+  await screen.findByRole("form", { name: "Enter information in browser" });
+  expect(reads).toBe(2);
+  expect(checks).toBe(1);
 });
 
 test("A terminal standalone action retries only its stable callback", async () => {
@@ -336,180 +2366,12 @@ test("A terminal standalone action retries only its stable callback", async () =
   });
 
   await expect(screen.findByText("Information added")).resolves.toBeVisible();
-  click(button("Continue"));
+  click(button("Notify agent"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
-test("A standalone direct interaction opens the existing Browser page and completes before its callback", async () => {
-  const ordering: string[] = [];
-  let state: BrowserUserActionResponse["state"] = "pending";
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, directAction(state));
-  });
-  context.mocks.api(browserContract.get, ({ params, respond }) => {
-    expect(params.threadId).toBe(THREAD_ID);
-    return respond(200, { browser: browserSession() });
-  });
-  context.mocks.api(browserUserActionsContract.complete, ({ respond }) => {
-    ordering.push("complete");
-    state = "succeeded";
-    return respond(200, directAction(state));
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    ordering.push("callback");
-    expect(body.prompt).toBe(CALLBACK_PROMPT);
-    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
-    expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await expect(
-    screen.findByText("Finish the visual challenge"),
-  ).resolves.toBeVisible();
-  expect(document.title).toContain("Browser action");
-  const browserLink = await waitFor(() => {
-    return link("Open Research browser");
-  });
-  expect(browserLink).toHaveAttribute("href", `/browsers/${THREAD_ID}`);
-  expect(browserLink).toHaveAttribute("target", "_blank");
-  expect(browserLink).toHaveAttribute("rel", "noreferrer");
-  click(button("Done"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(ordering).toStrictEqual(["complete", "callback"]);
-});
-
-test("A direct interaction serializes duplicate completion and retries only its failed callback", async () => {
-  const completeResponse = context.mocks.deferred<void>();
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let completeCount = 0;
-  let callbackCount = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, directAction(state));
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "BROWSER_NOT_FOUND", message: "Browser not found" },
-    });
-  });
-  context.mocks.api(
-    browserUserActionsContract.complete,
-    async ({ respond }) => {
-      completeCount += 1;
-      await completeResponse.promise;
-      state = "succeeded";
-      return respond(200, directAction(state));
-    },
-  );
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    callbackCount += 1;
-    if (callbackCount === 1) {
-      return respond(503, {
-        error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
-      });
-    }
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await screen.findByText("Finish the visual challenge");
-  const done = button("Done");
-  click(done);
-  click(done);
-  await waitFor(() => {
-    expect(completeCount).toBe(1);
-  });
-  completeResponse.resolve();
-
-  await expect(
-    screen.findByText("The agent wasn't notified. Try Continue again."),
-  ).resolves.toBeVisible();
-  click(button("Continue"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(completeCount).toBe(1);
-  expect(callbackCount).toBe(2);
-});
-
-test("A direct cancellation fails closed when the mutation response changes action kind", async () => {
-  let callbackCount = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, directAction());
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "BROWSER_NOT_FOUND", message: "Browser not found" },
-    });
-  });
-  context.mocks.api(browserUserActionsContract.cancel, ({ respond }) => {
-    return respond(200, action("cancelled"));
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    callbackCount += 1;
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await screen.findByText("Finish the visual challenge");
-  click(button("Cancel"));
-
-  await waitFor(() => {
-    expect(button("Cancel")).toBeEnabled();
-  });
-  expect(callbackCount).toBe(0);
-  expect(screen.getByText("Finish the visual challenge")).toBeVisible();
-});
-
-test("A terminal standalone direct interaction retries only its stable callback", async () => {
-  let callbackCount = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, directAction("succeeded"));
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    callbackCount += 1;
-    expect(body.prompt).toBe(CALLBACK_PROMPT);
-    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
-    expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await expect(
-    screen.findByText("Browser interaction complete"),
-  ).resolves.toBeVisible();
-  click(button("Continue"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(callbackCount).toBe(1);
-});
-
-test("A failed Continue announces the error and remains retryable", async () => {
+test("A failed notification announces the error and remains retryable", async () => {
   let rejectCallback = true;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action("succeeded"));
@@ -535,13 +2397,11 @@ test("A failed Continue announces the error and remains retryable", async () => 
   });
 
   await expect(screen.findByText("Information added")).resolves.toBeVisible();
-  click(button("Continue"));
+  click(button("Notify agent"));
   await waitFor(() => {
-    expect(
-      screen.getByText("The agent wasn't notified. Try Continue again."),
-    ).toBeVisible();
+    expect(screen.getByText("Agent not notified.")).toBeVisible();
   });
-  click(button("Continue"));
+  click(button("Retry"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
@@ -580,8 +2440,6 @@ test("A failed callback retries without repeating the Browser mutation", async (
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
   const form = await screen.findByRole("form", {
     name: "Enter information in browser",
   });
@@ -589,68 +2447,15 @@ test("A failed callback retries without repeating the Browser mutation", async (
   click(button("Add to browser"));
 
   await waitFor(() => {
-    expect(
-      screen.getByText("The agent wasn't notified. Try Continue again."),
-    ).toBeVisible();
+    expect(screen.getByText("Agent not notified.")).toBeVisible();
   });
   expect(screen.queryByDisplayValue("owner@example.test")).toBeNull();
-  click(button("Continue"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-});
-
-test("A transient apply failure keeps the draft for an explicit retry", async () => {
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let rejectApply = true;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action(state));
-  });
-  mockPendingPreflight();
-  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
-    expect(body.values).toStrictEqual([
-      { key: "email", value: "owner@example.test" },
-    ]);
-    if (rejectApply) {
-      rejectApply = false;
-      return respond(503, {
-        error: { code: "BROWSER_UNAVAILABLE", message: "Browser unavailable" },
-      });
-    }
-    state = "succeeded";
-    return respond(200, action(state));
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
-  const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
-  });
-  const email = within(form).getByLabelText(/Email/u);
-  await fill(email, "owner@example.test");
-  click(button("Add to browser"));
-
-  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Your entries are still here",
-  );
-  expect(email).toHaveValue("owner@example.test");
-  click(button("Add to browser"));
+  click(button("Retry"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
 test.each([
-  ["applying", "Adding information"],
-  ["stale", "Fields changed"],
   ["uncertain", "Check the browser"],
   ["cancelled", "Request cancelled"],
 ] as const)(

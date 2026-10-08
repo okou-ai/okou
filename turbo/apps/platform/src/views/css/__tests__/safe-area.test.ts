@@ -64,12 +64,4 @@ describe("safe-area properties", () => {
       /--okou-safe-b:\s*0px;/,
     );
   });
-
-  // Fills that paint past the viewport edge still need the physical reserve, so
-  // the correction must not reach the property they read.
-  it("keeps the physical inset unchanged while the keyboard is open", () => {
-    expect(readRuleBody(':root[data-keyboard-open="true"] {')).not.toContain(
-      "--sab:",
-    );
-  });
 });

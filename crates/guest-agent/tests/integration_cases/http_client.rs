@@ -3,7 +3,6 @@ use api_contracts::generated::constants::client::headers::{
     CLIENT_REQUEST_ID_HEADER, CLIENT_SESSION_ID_HEADER, CLIENT_TYPE_HEADER, CLIENT_VERSION_HEADER,
 };
 use api_contracts::generated::constants::client::types::CLIENT_TYPE_GUEST_AGENT;
-use api_contracts::generated::types::runners::runs::active_inputs::receipt::Response as ActiveInputReceiptResponse;
 use guest_agent::error::AgentError;
 use guest_agent::masker::SecretMasker;
 use httpmock::prelude::*;
@@ -679,62 +678,58 @@ async fn post_json_uses_explicit_api_config_without_env_api_url() {
 }
 
 #[tokio::test]
-async fn active_input_receipt_parses_bounded_json_response() {
+async fn steered_input_declaration_posts_once_to_the_event_route() {
     let server = MockServer::start();
     let client = guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "test-token",
         "",
-        "response-limit-run",
+        "steered-run",
         Duration::ZERO,
     )
     .unwrap();
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/runners/runs/run-123/active-inputs/deliveries/delivery-123/receipt");
-        then.status(200)
-            .json_body(json!({ "outcome": "delivered" }));
+            .path("/api/runners/runs/run-123/steerable-inputs/event-123/steered")
+            .header("Authorization", "Bearer test-token")
+            .json_body(json!({}));
+        then.status(200).json_body(json!({ "outcome": "steered" }));
     });
 
-    let response = client
-        .post_active_input_receipt("run-123", "delivery-123")
+    client
+        .post_steered_input("run-123", "event-123")
         .await
         .unwrap();
 
     mock.assert_calls_async(1).await;
-    assert_eq!(response, ActiveInputReceiptResponse::Delivered);
 }
 
 #[tokio::test]
-async fn active_input_receipt_rejects_declared_response_over_success_body_limit() {
-    let response_head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-        EXPECTED_SUCCESS_RESPONSE_BODY_LIMIT_BYTES + 1,
-    );
-    let server = HeldOpenResponseServer::start(vec![response_head.into_bytes()])
-        .await
-        .unwrap();
+async fn steered_input_conflict_is_returned_without_a_retry() {
+    let server = MockServer::start();
     let client = guest_agent::http::HttpClient::with_api_config(
-        &server.base_url,
+        server.base_url(),
         "test-token",
         "",
-        "response-limit-run",
+        "steered-run",
         Duration::ZERO,
     )
     .unwrap();
+    let mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/runners/runs/run-123/steerable-inputs/event-123/steered");
+        then.status(409).json_body(json!({
+            "error": { "code": "INPUT_ALREADY_CONSUMED", "message": "Input already consumed" }
+        }));
+    });
 
-    let result = tokio::time::timeout(
-        RESPONSE_LIMIT_TEST_TIMEOUT,
-        client.post_active_input_receipt("run-123", "delivery-123"),
-    )
-    .await
-    .expect("receipt client waited for an oversized declared response");
+    let result = client.post_steered_input("run-123", "event-123").await;
 
-    let Err(AgentError::Http(message)) = result else {
-        panic!("expected response body limit error");
-    };
-    assert_eq!(message, EXPECTED_SUCCESS_RESPONSE_BODY_LIMIT_DIAGNOSTIC);
-    server.finish().await;
+    mock.assert_calls_async(1).await;
+    assert!(matches!(
+        result,
+        Err(AgentError::HttpStatus { status: 409, .. })
+    ));
 }
 
 #[tokio::test]

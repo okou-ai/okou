@@ -8,12 +8,9 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { SUPPORTED_USER_LOCALES } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
-import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -25,18 +22,28 @@ import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { userModelPreferenceRoutes } from "../user-model-preference";
-import { modelProvidersRoutes } from "../model-providers";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext({ connectorCatalog: true });
+const personalModelProviderTestRoutes = Object.freeze([
+  ...meModelProvidersListRoutes,
+  ...meModelProvidersUpsertRoutes,
+  ...meModelProvidersDeleteRoutes,
+  ...meModelProvidersResetSubscriptionRoutes,
+]);
+
+const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
-const MODEL = "claude-sonnet-5";
+const MODEL = "claude-fable-5-1";
 const WELCOME_STEP_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
 const WELCOME_SCENE_BASE =
@@ -67,19 +74,6 @@ function metadataClient() {
   );
 }
 
-async function enable(actor: ApiTestUser, value = true) {
-  if (!actor.orgId) {
-    throw new Error("Expected a workspace");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.WelcomeThread]: value,
-    },
-  );
-}
-
 async function fixture() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
@@ -89,7 +83,6 @@ async function fixture() {
   const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Editable agent name must not replace the public brand",
   });
-  await enable(actor);
   return { actor, agentId };
 }
 
@@ -138,36 +131,6 @@ describe("POST /api/welcome-chat-threads", () => {
     expect(response.status).toBe(401);
   });
 
-  it("does not create a thread while the persisted switch is disabled", async () => {
-    const clientThreadId = randomUUID();
-    const { actor } = await fixture();
-    await enable(actor, false);
-    await accept(
-      welcomeClient().create({
-        headers: headers(actor),
-        body: { clientThreadId },
-      }),
-      [403],
-    );
-    await accept(
-      metadataClient().get({
-        headers: headers(actor),
-        params: { id: clientThreadId },
-      }),
-      [404],
-    );
-    await expect(createdEvents(actor, clientThreadId)).resolves.toStrictEqual(
-      [],
-    );
-  });
-
-  it("creates the requested thread while the persisted switch is enabled", async () => {
-    const clientThreadId = randomUUID();
-    const { actor } = await fixture();
-    await enable(actor);
-    expect((await create(actor, clientThreadId)).body.id).toBe(clientThreadId);
-  });
-
   it("requires write capability and current membership for agent credentials", async () => {
     const { actor } = await fixture();
     if (!actor.orgId) {
@@ -214,7 +177,6 @@ describe("POST /api/welcome-chat-threads", () => {
 
   it("reports an unavailable default agent without provisioning or creating a thread", async () => {
     const actor = bdd.user();
-    await enable(actor);
     const clientThreadId = randomUUID();
     const unavailable = await accept(
       welcomeClient().create({
@@ -242,7 +204,6 @@ describe("POST /api/welcome-chat-threads", () => {
     // coverage for historical data through the explicit legacy fixture.
     await seedLegacyPrivateDefaultAgentFixture(agentId);
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await enable(member);
     const clientThreadId = randomUUID();
     const rejected = await accept(
       welcomeClient().create({
@@ -259,7 +220,7 @@ describe("POST /api/welcome-chat-threads", () => {
 
   it("creates a complete ordinary runless welcome with default model/media and connector state", async () => {
     const { actor, agentId } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Notification unavailable"),
     );
@@ -277,9 +238,7 @@ describe("POST /api/welcome-chat-threads", () => {
       title: "Welcome to Okou",
       selectedModel: MODEL,
       serviceTier: null,
-      selectedVideoModel: DEFAULT_VIDEO_MODEL,
-      selectedImageModel: DEFAULT_IMAGE_MODEL,
-      cloudBrowserEnabled: false,
+      cloudBrowserEnabled: true,
     });
     const rows = await chat.listThreadEventRows(actor, body.id);
     expect(rows).toHaveLength(1);
@@ -340,7 +299,6 @@ describe("POST /api/welcome-chat-threads", () => {
     );
     expect(selections.body.selections).toStrictEqual([]);
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    await enable(actor, false);
     await expect(
       chat.listThreadEventRows(actor, body.id),
     ).resolves.toStrictEqual(rows);
@@ -365,15 +323,15 @@ describe("POST /api/welcome-chat-threads", () => {
     );
   });
 
-  it("allows an unresolved default model and does not require generation credits", async () => {
+  it("falls back to the fixed default model and does not require generation credits", async () => {
     const { actor } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     await accept(
-      setupApp({ context, routes: modelProvidersRoutes })(
-        modelProvidersByTypeContract,
+      setupApp({ context, routes: personalModelProviderTestRoutes })(
+        personalModelProvidersByTypeContract,
       ).delete({
         headers: headers(actor),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );
@@ -450,9 +408,9 @@ describe("POST /api/welcome-chat-threads", () => {
     },
   );
 
-  it("inherits the member's media and model preference at creation", async () => {
+  it("inherits the member's chat model at creation", async () => {
     const { actor } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     await accept(
       setupApp({ context, routes: userModelPreferenceRoutes })(
         userModelPreferenceContract,
@@ -461,8 +419,6 @@ describe("POST /api/welcome-chat-threads", () => {
         body: {
           selectedModel: MODEL,
           serviceTier: null,
-          selectedVideoModel: "MiniMax-H3",
-          selectedImageModel: "fal-ai/flux-pro/v1.1",
         },
       }),
       [200],
@@ -477,8 +433,6 @@ describe("POST /api/welcome-chat-threads", () => {
     );
     expect(metadata.body).toMatchObject({
       selectedModel: MODEL,
-      selectedVideoModel: "MiniMax-H3",
-      selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
   });
 });

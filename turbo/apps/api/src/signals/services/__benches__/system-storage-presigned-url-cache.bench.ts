@@ -1,23 +1,27 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
-import { createStore } from "ccstate";
+import { computed, createStore, state } from "ccstate";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { beforeEach, test } from "vitest";
 import { z } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
+import {
+  withPgPoolAcquisitionCapture,
+  type PgPoolAcquisitionCapture,
+} from "../../../lib/db-instrumentation";
 import { executeRawRows } from "../../../lib/db-raw-rows";
 import { nowDate } from "../../../lib/time";
 import { writeDb$ } from "../../external/db";
 import {
-  prefetchStorageManifestPresignedUrlCacheRows,
+  createStorageManifestPresignedUrlCacheRows,
   readOnlyStoragePresignedUrlCacheKey,
   resolveReadOnlyStoragePresignedUrls,
   resolveSystemStoragePresignedUrls,
   resolveWorkflowSkillStoragePresignedUrls,
-  systemStoragePresignedUrlCacheKey,
   SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+  systemStoragePresignedUrlCacheKey,
   workflowSkillStoragePresignedUrlCacheKey,
   type ReadOnlyStoragePresignedUrlRequest,
   type StorageManifestPresignedUrlCacheScope,
@@ -27,7 +31,7 @@ import {
 
 const context = testContext();
 const store = createStore();
-const BENCH_SIZES = [1, 4, 17, 51, 52, 64, 500, 501] as const;
+const BENCH_SIZES = [1, 4, 17, 51, 52, 64, 96, 128, 129, 500, 501] as const;
 const BACKGROUND_ROW_COUNT = 5000;
 const INSERT_CHUNK_SIZE = 500;
 const benchOptions = {
@@ -70,7 +74,10 @@ function cacheInsert(args: {
   readonly resolvedOrgId: string | null;
   readonly issuedAt: Date;
 }): CacheInsert {
-  const expiresAt = new Date(args.issuedAt.getTime() + 60 * 60_000);
+  // Warm rows model the full lifetime of a freshly signed archive URL.
+  const expiresAt = new Date(
+    args.issuedAt.getTime() + SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS * 1000,
+  );
   return {
     cacheKey: args.cacheKey,
     scope: args.scope,
@@ -251,24 +258,96 @@ function logicalLookupCount(fixture: BenchFixture): number {
   }).length;
 }
 
+function repeatRequests<TRequest extends object>(
+  requests: readonly TRequest[],
+  count: number,
+): readonly TRequest[] {
+  return Array.from({ length: count }, (_, index) => {
+    const request = requests[index % requests.length];
+    if (!request) {
+      throw new Error("Cannot repeat an empty storage cache request group");
+    }
+    return { ...request };
+  });
+}
+
+function repeatedFixture(
+  fixture: BenchFixture,
+  requestCount: number,
+): BenchFixture {
+  const systemCount = Math.ceil(requestCount / 3);
+  const workflowSkillCount = Math.ceil((requestCount - systemCount) / 2);
+  const readOnlyCount = requestCount - systemCount - workflowSkillCount;
+  return {
+    ...fixture,
+    systemRequests: repeatRequests(fixture.systemRequests, systemCount),
+    workflowSkillRequests: repeatRequests(
+      fixture.workflowSkillRequests,
+      workflowSkillCount,
+    ),
+    readOnlyRequests: repeatRequests(fixture.readOnlyRequests, readOnlyCount),
+  };
+}
+
+const internalCacheFixture$ = state<{
+  readonly fixture: BenchFixture;
+} | null>(null);
+const cacheInput$ = computed((get) => {
+  const input = get(internalCacheFixture$);
+  if (!input) {
+    return Promise.resolve(undefined);
+  }
+  const { fixture } = input;
+  return Promise.resolve({
+    input: {
+      systemRequests: fixture.systemRequests,
+      workflowSkillRequests: fixture.workflowSkillRequests,
+      readOnlyRequests: fixture.readOnlyRequests,
+      logicalLookupCount: logicalLookupCount(fixture),
+    },
+    groups: [
+      { kind: "system" as const, values: fixture.systemRequests },
+      { kind: "workflow" as const, values: fixture.workflowSkillRequests },
+      { kind: "readonly" as const, values: fixture.readOnlyRequests },
+    ],
+  });
+});
+const cacheRows$ = computed(async (get) => {
+  const input = await get(cacheInput$);
+  return await get(createStorageManifestPresignedUrlCacheRows(input));
+});
+
+async function prefetchFixture(fixture: BenchFixture) {
+  // A fresh input invalidates the fixed reader on every iteration, including
+  // repeated fixtures and concurrent reads; no benchmark result is memoized.
+  store.set(internalCacheFixture$, { fixture });
+  return await store.get(cacheRows$);
+}
+
+async function assertFixtureLookupBatches(
+  fixture: BenchFixture,
+  expectedCount: number,
+): Promise<void> {
+  const capture: PgPoolAcquisitionCapture = { acquisitions: [] };
+  const rows = await withPgPoolAcquisitionCapture(capture, async () => {
+    return await prefetchFixture(fixture);
+  });
+  if (!rows || capture.acquisitions.length !== expectedCount) {
+    throw new Error(
+      `Expected ${String(expectedCount)} cache lookup batches, observed ${String(capture.acquisitions.length)}`,
+    );
+  }
+}
+
 async function resolveFixture(
   fixture: BenchFixture,
   useMixedLookup: boolean,
   expectedMissCount = 0,
+  verifyFixtureUrls = false,
 ): Promise<void> {
   const db = store.set(writeDb$);
   const prefetchedRows = useMixedLookup
-    ? await store.get(
-        prefetchStorageManifestPresignedUrlCacheRows({
-          db,
-          input: {
-            systemRequests: fixture.systemRequests,
-            workflowSkillRequests: fixture.workflowSkillRequests,
-            readOnlyRequests: fixture.readOnlyRequests,
-            logicalLookupCount: logicalLookupCount(fixture),
-          },
-        }),
-      )
+    ? await prefetchFixture(fixture)
     : undefined;
   const results = await Promise.all([
     store.get(
@@ -305,16 +384,31 @@ async function resolveFixture(
   ) {
     throw new Error("Storage cache benchmark fixture status count changed");
   }
+  if (verifyFixtureUrls) {
+    const expectedUrls = new Map(
+      fixture.rows.map((row) => {
+        return [row.cacheKey, row.presignedUrl];
+      }),
+    );
+    if (
+      resolved.some((result) => {
+        return expectedUrls.get(result.cacheKey) !== result.url;
+      })
+    ) {
+      throw new Error("Storage cache benchmark returned an incorrect URL");
+    }
+  }
 }
 
 async function resolveFixtureWithExpiredRows(
   fixture: BenchFixture,
   useMixedLookup: boolean,
+  expiredEvery = 10,
 ): Promise<void> {
   const db = store.set(writeDb$);
   const expiredCacheKeys = fixture.pairs
     .filter((_, index) => {
-      return index % 10 === 0;
+      return index % expiredEvery === 0;
     })
     .map((pair) => {
       return pair.cacheKey;
@@ -391,6 +485,14 @@ test(
     }
 
     const concurrentFixture = fixtureAt(fixtures, 17);
+    const repeated96Fixture = repeatedFixture(concurrentFixture, 96);
+    await bench("current per-scope lookup 96 raw / 17 unique", async () => {
+      await resolveFixture(repeated96Fixture, false);
+    }).run(benchOptions);
+    await bench("bounded mixed lookup 96 raw / 17 unique", async () => {
+      await resolveFixture(repeated96Fixture, true);
+    }).run(benchOptions);
+
     await bench("current per-scope lookup 17 with expired rows", async () => {
       await resolveFixtureWithExpiredRows(concurrentFixture, false);
     }).run(benchOptions);
@@ -412,5 +514,101 @@ test(
         }),
       );
     }).run(benchOptions);
+    await bench("current per-scope lookup 96 raw / 17 unique x32", async () => {
+      await Promise.all(
+        Array.from({ length: 32 }, async () => {
+          await resolveFixture(repeated96Fixture, false);
+        }),
+      );
+    }).run(benchOptions);
+    await bench("bounded mixed lookup 96 raw / 17 unique x32", async () => {
+      await Promise.all(
+        Array.from({ length: 32 }, async () => {
+          await resolveFixture(repeated96Fixture, true);
+        }),
+      );
+    }).run(benchOptions);
+    await bench(
+      "current per-scope lookup 96 raw / 17 unique half expired",
+      async () => {
+        await resolveFixtureWithExpiredRows(repeated96Fixture, false, 2);
+      },
+    ).run(benchOptions);
+    await bench(
+      "bounded mixed lookup 96 raw / 17 unique half expired",
+      async () => {
+        await resolveFixtureWithExpiredRows(repeated96Fixture, true, 2);
+      },
+    ).run(benchOptions);
   },
 );
+
+test("refreshes near-expiry rows in both storage cache lookup paths", async () => {
+  for (const useMixedLookup of [false, true]) {
+    const fixture = benchFixture(
+      17,
+      `storage-cache-near-expiry-${randomUUID()}`,
+    );
+    const expiresAt = new Date(nowDate().getTime() + 3 * 60 * 60_000);
+    await insertChunks(
+      fixture.rows.map((row) => {
+        return { ...row, expiresAt, refreshAfter: expiresAt };
+      }),
+    );
+    await resolveFixture(fixture, useMixedLookup, fixture.pairs.length);
+    await resolveFixture(fixture, useMixedLookup);
+  }
+});
+
+test("deduplicated lookup routes by both raw and unique request counts", async () => {
+  const fixture = benchFixture(17, `storage-cache-duplicates-${randomUUID()}`);
+  await insertChunks(fixture.rows);
+  for (const requestCount of [51, 52, 64, 96, 128]) {
+    const repeated = repeatedFixture(fixture, requestCount);
+    await assertFixtureLookupBatches(repeated, 1);
+    await resolveFixture(repeated, true, 0, true);
+  }
+  await assertFixtureLookupBatches(repeatedFixture(fixture, 129), 3);
+  await resolveFixture(repeatedFixture(fixture, 129), true, 0, true);
+  const uniqueFixture = benchFixture(
+    52,
+    `storage-cache-unique-${randomUUID()}`,
+  );
+  await insertChunks(uniqueFixture.rows);
+  await assertFixtureLookupBatches(uniqueFixture, 3);
+  await resolveFixture(uniqueFixture, true, 0, true);
+  const sharedObjectKey = "storage-cache-shared-object-key";
+  const versionedFixture: BenchFixture = {
+    ...uniqueFixture,
+    systemRequests: uniqueFixture.systemRequests.map((request) => {
+      return { ...request, objectKey: sharedObjectKey };
+    }),
+    workflowSkillRequests: uniqueFixture.workflowSkillRequests.map(
+      (request) => {
+        return { ...request, objectKey: sharedObjectKey };
+      },
+    ),
+    readOnlyRequests: uniqueFixture.readOnlyRequests.map((request) => {
+      return { ...request, objectKey: sharedObjectKey };
+    }),
+  };
+  await assertFixtureLookupBatches(versionedFixture, 3);
+  const [wrongScope, expired, missing] = fixture.rows;
+  if (!wrongScope || !expired || !missing) {
+    throw new Error("Incomplete duplicate cache fixture");
+  }
+  const db = store.set(writeDb$);
+  const expiredAt = new Date(nowDate().getTime() - 60_000);
+  await db
+    .update(systemStoragePresignedUrlCache)
+    .set({ scope: "readonly_storage" })
+    .where(eq(systemStoragePresignedUrlCache.cacheKey, wrongScope.cacheKey));
+  await db
+    .update(systemStoragePresignedUrlCache)
+    .set({ expiresAt: expiredAt, refreshAfter: expiredAt })
+    .where(eq(systemStoragePresignedUrlCache.cacheKey, expired.cacheKey));
+  await db
+    .delete(systemStoragePresignedUrlCache)
+    .where(eq(systemStoragePresignedUrlCache.cacheKey, missing.cacheKey));
+  await resolveFixture(repeatedFixture(fixture, 96), true, 3);
+});

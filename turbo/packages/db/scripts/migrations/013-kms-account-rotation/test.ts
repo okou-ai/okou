@@ -611,15 +611,18 @@ try {
     await db.query("DROP TABLE cloudflare_access_configs");
   }
   // VNC is optional only when its entire table predates the recovery snapshot.
-  // Current snapshots require its exact primary key and password ciphertext.
+  // The current migration exposes both nullable ciphertext columns; rotation
+  // must process each non-null envelope and reject a missing declared column.
   await db.query(
-    "CREATE TABLE vnc_credentials (id uuid PRIMARY KEY, auth_method text NOT NULL, username text, encrypted_password text NOT NULL)",
+    "CREATE TABLE vnc_credentials (id uuid PRIMARY KEY, auth_method text NOT NULL, username text, encrypted_password text, encrypted_client_identity text)",
   );
   const vncId = randomUUID();
   const usernameVncId = randomUUID();
+  const certId = randomUUID();
+  const certAndPasswordId = randomUUID();
   await db.query(
-    "INSERT INTO vnc_credentials VALUES ($1, 'vnc_password', NULL, $3), ($2, 'username_password', 'operator', $3)",
-    [vncId, usernameVncId, sshTarget],
+    "INSERT INTO vnc_credentials (id,auth_method,username,encrypted_password,encrypted_client_identity) VALUES ($1,'vnc_password',NULL,$5,NULL), ($2,'username_password','operator',$5,NULL), ($3,'client_certificate',NULL,NULL,$5), ($4,'client_certificate_vnc_password',NULL,$5,$5)",
+    [vncId, usernameVncId, certId, certAndPasswordId, sshTarget],
   );
   try {
     const before: unknown[] = (await db.query("SELECT * FROM vnc_credentials"))
@@ -629,28 +632,39 @@ try {
       "--recovery-schema",
     ]);
     assert.equal(vncRecovery.databaseVerifiedOnTarget, true);
-    assert.equal(object(vncRecovery.totals).verified, 2);
+    assert.equal(object(vncRecovery.totals).verified, 5);
     assert.equal(object(vncRecovery.totals).updated, 0);
     assert.deepEqual(
       (await db.query("SELECT * FROM vnc_credentials")).rows,
       before,
       "Recovery verification must preserve VNC ciphertext",
     );
-    await db.query("UPDATE vnc_credentials SET encrypted_password=$1", [
-      sshSource,
-    ]);
+    await db.query(
+      "UPDATE vnc_credentials SET encrypted_password=$1 WHERE encrypted_password IS NOT NULL",
+      [sshSource],
+    );
+    await db.query(
+      "UPDATE vnc_credentials SET encrypted_client_identity=$1 WHERE encrypted_client_identity IS NOT NULL",
+      [sshSource],
+    );
     const sourceVnc = await cli("recovery-source-vnc", [
       "--verify",
       "--recovery-schema",
     ]);
     assert.equal(sourceVnc.databaseVerifiedOnTarget, false);
-    assert.equal(object(sourceVnc.totals).source, 2);
+    assert.equal(object(sourceVnc.totals).source, 5);
     assert.equal(object(sourceVnc.totals).updated, 0);
-    await db.query("UPDATE vnc_credentials SET encrypted_password=$1", [
-      sshTarget,
-    ]);
+    await db.query(
+      "UPDATE vnc_credentials SET encrypted_password=$1 WHERE encrypted_password IS NOT NULL",
+      [sshTarget],
+    );
+    await db.query(
+      "UPDATE vnc_credentials SET encrypted_client_identity=$1 WHERE encrypted_client_identity IS NOT NULL",
+      [sshTarget],
+    );
     for (const [column, code] of [
       ["encrypted_password", "storage_manifest_mismatch"],
+      ["encrypted_client_identity", "storage_manifest_mismatch"],
       ["id", "primary_key_manifest_mismatch"],
     ]) {
       await db.query(
@@ -1169,8 +1183,28 @@ try {
   const invalid = await cli("malformed", [], false, true);
   assert.equal(object(invalid.totals).invalid, 1);
   assert.equal(invalid.databaseVerifiedOnTarget, false);
+  // Migrations 1272 and 1282 dropped agent_run_queue and
+  // telegram_installations; recovery still verifies the rest.
+  await db.query("DELETE FROM secrets WHERE id = 'bad'");
+  await db.query("DROP TABLE agent_run_queue");
+  await db.query("DROP TABLE telegram_installations");
+  const droppedQueueRecovery = await cli("recovery-dropped-agent-run-queue", [
+    "--verify",
+    "--recovery-schema",
+  ]);
+  assert.equal(object(droppedQueueRecovery.totals).invalid, 0);
+  assert.ok(
+    Array.isArray(droppedQueueRecovery.missingOptionalFields) &&
+      droppedQueueRecovery.missingOptionalFields.includes(
+        "agent_run_queue.encrypted_params",
+      ) &&
+      droppedQueueRecovery.missingOptionalFields.includes(
+        "telegram_installations.encrypted_bot_token",
+      ),
+    "Recovery must accept databases after the agent_run_queue and telegram_installations drops",
+  );
   process.stdout.write(
-    "KMS rotation CLI integration passed: protected workflow entry, runtime and operator canaries, failure-before-write guards, secret-safe artifacts, read-only inventory, concurrent verification and failure checkpoints, nested verification, bounded resume, concurrent writes, KMS failure recovery, rewrap preservation, reverse migration, and malformed ciphertext.\n",
+    "KMS rotation CLI integration passed: protected workflow entry, runtime and operator canaries, failure-before-write guards, secret-safe artifacts, read-only inventory, concurrent verification and failure checkpoints, nested verification, bounded resume, concurrent writes, KMS failure recovery, rewrap preservation, reverse migration, malformed ciphertext, and recovery after the agent_run_queue and telegram_installations drops.\n",
   );
 } finally {
   kms.destroy();

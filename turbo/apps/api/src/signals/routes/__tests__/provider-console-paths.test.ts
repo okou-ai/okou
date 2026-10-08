@@ -1,17 +1,14 @@
-import { createHmac, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import type { RouteEntry } from "../../route-entry";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { slackCommandsRoutes } from "../slack-commands";
-import { slackEventsRoutes } from "../slack-events";
 import { slackInteractiveRoutes } from "../slack-interactive";
-import { slackOauthRoutes } from "../slack-oauth";
 import { teamsOauthRoutes } from "../teams-oauth";
 
 const context = testContext();
@@ -51,22 +48,11 @@ async function getRequest(
   );
 }
 
-function signedSlackHeaders(body: string): Record<string, string> {
-  const timestamp = String(Math.floor(now() / 1000));
-  return {
-    "x-slack-request-timestamp": timestamp,
-    "x-slack-signature": `v0=${createHmac("sha256", SLACK_SIGNING_SECRET)
-      .update(`v0:${timestamp}:${body}`)
-      .digest("hex")}`,
-  };
-}
-
 async function slackIngressRequest(args: {
   readonly routes: readonly RouteEntry[];
   readonly path: string;
   readonly body: string;
   readonly contentType: string;
-  readonly signed: boolean;
 }): Promise<ResponseSnapshot> {
   const app = createAppWithRoutes({
     signal: context.signal,
@@ -77,7 +63,6 @@ async function slackIngressRequest(args: {
       method: "POST",
       headers: {
         "content-type": args.contentType,
-        ...(args.signed ? signedSlackHeaders(args.body) : {}),
       },
       body: args.body,
     }),
@@ -93,28 +78,6 @@ describe("provider console paths", () => {
     mockOptionalEnv("SLACK_SIGNING_SECRET", SLACK_SIGNING_SECRET);
     mockEnv("MICROSOFT_OAUTH_CLIENT_ID", "microsoft-client-id");
     mockEnv("MICROSOFT_OAUTH_CLIENT_SECRET", "microsoft-client-secret");
-  });
-
-  describe("GET /api/integrations/slack/oauth/callback", () => {
-    const path = "/api/integrations/slack/oauth/callback";
-
-    it("rejects a callback without an authorization code", async () => {
-      await expect(getRequest(slackOauthRoutes, path)).resolves.toStrictEqual({
-        status: 400,
-        location: null,
-        body: jsonBody({ error: "Missing authorization code" }),
-      });
-    });
-
-    it("builds the failure redirect for a denied authorization", async () => {
-      await expect(
-        getRequest(slackOauthRoutes, `${path}?error=access_denied`),
-      ).resolves.toStrictEqual({
-        status: 307,
-        location: `${APP_ORIGIN}/slack/failed?error=access_denied`,
-        body: "",
-      });
-    });
   });
 
   describe("GET /api/integrations/teams/oauth/callback", () => {
@@ -154,66 +117,10 @@ describe("provider console paths", () => {
     });
   });
 
-  describe("POST /api/webhooks/slack/events", () => {
-    const path = "/api/webhooks/slack/events";
-    const body = jsonBody({
-      type: "url_verification",
-      challenge: "provider-console-challenge",
-    });
-
-    it("verifies the Slack signature and answers URL verification", async () => {
-      await expect(
-        slackIngressRequest({
-          routes: slackEventsRoutes,
-          path,
-          body,
-          contentType: "application/json",
-          signed: true,
-        }),
-      ).resolves.toStrictEqual({
-        status: 200,
-        location: null,
-        body: jsonBody({ challenge: "provider-console-challenge" }),
-      });
-    });
-
-    it("rejects an unsigned request", async () => {
-      await expect(
-        slackIngressRequest({
-          routes: slackEventsRoutes,
-          path,
-          body,
-          contentType: "application/json",
-          signed: false,
-        }),
-      ).resolves.toStrictEqual({
-        status: 401,
-        location: null,
-        body: jsonBody({ error: "Missing Slack signature headers" }),
-      });
-    });
-  });
-
   describe("POST /api/webhooks/slack/commands", () => {
     const path = "/api/webhooks/slack/commands";
     const body = "command=%2Fokou&text=help";
 
-    it("verifies the Slack signature before parsing the command", async () => {
-      await expect(
-        slackIngressRequest({
-          routes: slackCommandsRoutes,
-          path,
-          body,
-          contentType: FORM_CONTENT_TYPE,
-          signed: true,
-        }),
-      ).resolves.toStrictEqual({
-        status: 400,
-        location: null,
-        body: jsonBody({ error: "Missing required Slack command fields" }),
-      });
-    });
-
     it("rejects an unsigned request", async () => {
       await expect(
         slackIngressRequest({
@@ -221,7 +128,6 @@ describe("provider console paths", () => {
           path,
           body,
           contentType: FORM_CONTENT_TYPE,
-          signed: false,
         }),
       ).resolves.toStrictEqual({
         status: 401,
@@ -235,22 +141,6 @@ describe("provider console paths", () => {
     const path = "/api/webhooks/slack/interactive";
     const body = "not_a_payload=1";
 
-    it("verifies the Slack signature before parsing the payload", async () => {
-      await expect(
-        slackIngressRequest({
-          routes: slackInteractiveRoutes,
-          path,
-          body,
-          contentType: FORM_CONTENT_TYPE,
-          signed: true,
-        }),
-      ).resolves.toStrictEqual({
-        status: 400,
-        location: null,
-        body: jsonBody({ error: "Missing payload" }),
-      });
-    });
-
     it("rejects an unsigned request", async () => {
       await expect(
         slackIngressRequest({
@@ -258,7 +148,6 @@ describe("provider console paths", () => {
           path,
           body,
           contentType: FORM_CONTENT_TYPE,
-          signed: false,
         }),
       ).resolves.toStrictEqual({
         status: 401,

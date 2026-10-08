@@ -5,7 +5,7 @@ import { testComputerUseStateContract } from "@okouai/api-contracts/contracts/te
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import { bodyResultOf, queryOf } from "../context/request";
@@ -13,6 +13,9 @@ import { request$ } from "../context/hono";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { normalizeRunMetadata } from "../services/agent-run-metadata-write.service";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "../services/managed-usage-attribution";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -122,14 +125,38 @@ async function seedBaseComputerUseRun(args: {
   });
   args.signal.throwIfAborted();
 
-  await args.db.insert(agentRuns).values({
-    id: runId,
-    userId: args.userId,
-    orgId: args.orgId,
-    sessionId,
-    status: "running",
-    prompt: "Need Computer Use",
-    ...metadata,
+  await args.db.transaction(async (tx) => {
+    const [run] = await tx
+      .insert(agentRuns)
+      .values({
+        id: runId,
+        userId: args.userId,
+        orgId: args.orgId,
+        sessionId,
+        status: "running",
+        prompt: "Need Computer Use",
+        ...metadata,
+      })
+      .returning({
+        id: agentRuns.id,
+        orgId: agentRuns.orgId,
+        userId: agentRuns.userId,
+        startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+        triggerSource: agentRuns.triggerSource,
+        threadId: agentRuns.chatThreadId,
+      });
+    args.signal.throwIfAborted();
+    if (!run) {
+      throw new Error(
+        "Computer Use fixture Run insertion returned no identity",
+      );
+    }
+    const capture = billingRunAttributionWrite(run);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
+    args.signal.throwIfAborted();
   });
   args.signal.throwIfAborted();
 

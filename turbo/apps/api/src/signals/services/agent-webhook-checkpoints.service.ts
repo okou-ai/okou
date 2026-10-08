@@ -24,7 +24,7 @@ import { blobs } from "@okouai/db/schema/blob";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { conversations } from "@okouai/db/schema/conversation";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
@@ -33,7 +33,7 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   generatePresignedPutUrl,
@@ -50,7 +50,6 @@ import {
   SESSION_HISTORY_ENCODING_IDENTITY,
   SESSION_HISTORY_ENCODING_ZSTD,
 } from "./session-history-blobs";
-import { lockAgentRunCheckpointLifecycle } from "./agent-run-checkpoint-lifecycle-lock.service";
 import { safeSync, settle } from "../utils";
 
 export type AgentCheckpointBody = z.infer<
@@ -90,8 +89,7 @@ type AgentCheckpointPreparation =
 
 type AgentCheckpointPersistenceSource =
   | "standalone-webhook"
-  | "combined-completion"
-  | "pi-api-first-turn";
+  | "combined-completion";
 
 interface CheckpointRunContext {
   readonly agentSessionConversationId: string | null;
@@ -170,32 +168,27 @@ function checkpointStorageMounts(args: {
   });
 }
 
-async function loadCheckpointRunContext(
-  db: Db,
-  input: AgentCheckpointInput,
-): Promise<CheckpointRunContext | undefined> {
-  const [run] = await db
-    .select({
-      agentSessionConversationId: agentSessions.conversationId,
-      chatThreadId: agentRuns.chatThreadId,
-      launchSnapshot: agentRuns.launchSnapshot,
-      status: agentRuns.status,
-      storageMounts: agentRuns.storageMounts,
-      sessionId: agentRuns.sessionId,
-    })
-    .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .where(
-      and(
-        eq(agentRuns.id, input.body.runId),
-        eq(agentRuns.userId, input.auth.userId),
-      ),
-    )
-    .limit(1);
+function createInitialCheckpointRun(runId: string, userId: string) {
+  return computed(async (get): Promise<CheckpointRunContext | undefined> => {
+    const db = get(db$);
+    const [run] = await db
+      .select({
+        agentSessionConversationId: agentSessions.conversationId,
+        chatThreadId: agentRuns.chatThreadId,
+        launchSnapshot: agentRuns.launchSnapshot,
+        status: agentRuns.status,
+        storageMounts: agentRuns.storageMounts,
+        sessionId: agentRuns.sessionId,
+      })
+      .from(agentRuns)
+      .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+      .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, userId)))
+      .limit(1);
 
-  return run
-    ? { ...run, status: runStatusSchema.parse(run.status) }
-    : undefined;
+    return run
+      ? { ...run, status: runStatusSchema.parse(run.status) }
+      : undefined;
+  });
 }
 
 async function lockCheckpointRunContext(
@@ -553,8 +546,6 @@ export const prepareCheckpointHistoryUpload$ = command(
     }
 
     const admission = await db.transaction(async (tx) => {
-      await lockAgentRunCheckpointLifecycle(tx, input.body.runId);
-      signal.throwIfAborted();
       const [run] = await tx
         .select({ status: agentRuns.status })
         .from(agentRuns)
@@ -1214,68 +1205,6 @@ export async function persistAgentCheckpointInTransaction(
   );
 }
 
-export const prepareAgentCheckpointPersistence$ = command(
-  async (
-    { set },
-    input: AgentCheckpointInput,
-    options: {
-      readonly source: AgentCheckpointPersistenceSource;
-    },
-    signal: AbortSignal,
-  ): Promise<AgentCheckpointPreparation> => {
-    const db = set(writeDb$);
-    const run = await loadCheckpointRunContext(db, input);
-    signal.throwIfAborted();
-
-    if (!run) {
-      return { ok: false, response: notFound("Agent run not found") };
-    }
-
-    const typeError = piCheckpointTypeError(run, input.body);
-    if (typeError) {
-      return { ok: false, response: badRequestMessage(typeError) };
-    }
-    if (
-      options.source === "standalone-webhook" &&
-      isUnsettledCheckpointStatus(run.status)
-    ) {
-      return {
-        ok: false,
-        response: badRequestMessage(
-          standaloneCheckpointRunStateError(run.status),
-        ),
-      };
-    }
-    const maintenance = await privateMaintenanceCheckpoint(db, input, run);
-    signal.throwIfAborted();
-    if (typeof maintenance === "string") {
-      return { ok: false, response: badRequestMessage(maintenance) };
-    }
-    const piNeedsValidation =
-      isPiCheckpointRun(run) &&
-      !maintenance &&
-      isActivePiCheckpointStatus(run.status);
-    if (piNeedsValidation) {
-      const piError = await set(validatePiH2$, db, run, input.body, signal);
-      if (piError) {
-        return { ok: false, response: badRequestMessage(piError) };
-      }
-    }
-
-    return {
-      ok: true,
-      prepared: piNeedsValidation
-        ? {
-            piValidation: {
-              chatThreadId: run.chatThreadId,
-              runSessionId: run.sessionId,
-            },
-          }
-        : {},
-    };
-  },
-);
-
 async function commitAgentCheckpoint(
   db: Db,
   input: AgentCheckpointInput,
@@ -1284,8 +1213,6 @@ async function commitAgentCheckpoint(
   source: AgentCheckpointPersistenceSource,
 ): Promise<AgentCheckpointResponse> {
   return await db.transaction(async (tx) => {
-    await lockAgentRunCheckpointLifecycle(tx, input.body.runId);
-    signal.throwIfAborted();
     return await persistAgentCheckpointInTransaction(
       tx,
       input,
@@ -1296,48 +1223,92 @@ async function commitAgentCheckpoint(
   });
 }
 
-export const createAgentCheckpoint$ = command(
-  async ({ set }, input: AgentCheckpointInput, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const preparation = await set(
-      prepareAgentCheckpointPersistence$,
-      input,
-      { source: "standalone-webhook" },
-      signal,
-    );
-    if (!preparation.ok) {
-      return preparation.response;
-    }
+/** One verified checkpoint identity owns its lazy initial context and operations. */
+export function createAgentCheckpointOperations(runId: string, userId: string) {
+  const initialRun$ = createInitialCheckpointRun(runId, userId);
+  const prepare$ = command(
+    async (
+      { get, set },
+      input: AgentCheckpointInput,
+      options: {
+        readonly source: AgentCheckpointPersistenceSource;
+      },
+      signal: AbortSignal,
+    ): Promise<AgentCheckpointPreparation> => {
+      const db = set(writeDb$);
+      const run = await get(initialRun$);
+      signal.throwIfAborted();
 
-    return await commitAgentCheckpoint(
-      db,
-      input,
-      preparation.prepared,
-      signal,
-      "standalone-webhook",
-    );
-  },
-);
+      if (!run) {
+        return { ok: false, response: notFound("Agent run not found") };
+      }
 
-export const createPiApiFirstTurnCheckpoint$ = command(
-  async ({ set }, input: AgentCheckpointInput, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const preparation = await set(
-      prepareAgentCheckpointPersistence$,
-      input,
-      { source: "pi-api-first-turn" },
-      signal,
-    );
-    if (!preparation.ok) {
-      return preparation.response;
-    }
+      const typeError = piCheckpointTypeError(run, input.body);
+      if (typeError) {
+        return { ok: false, response: badRequestMessage(typeError) };
+      }
+      if (
+        options.source === "standalone-webhook" &&
+        isUnsettledCheckpointStatus(run.status)
+      ) {
+        return {
+          ok: false,
+          response: badRequestMessage(
+            standaloneCheckpointRunStateError(run.status),
+          ),
+        };
+      }
+      const maintenance = await privateMaintenanceCheckpoint(db, input, run);
+      signal.throwIfAborted();
+      if (typeof maintenance === "string") {
+        return { ok: false, response: badRequestMessage(maintenance) };
+      }
+      const piNeedsValidation =
+        isPiCheckpointRun(run) &&
+        !maintenance &&
+        isActivePiCheckpointStatus(run.status);
+      if (piNeedsValidation) {
+        const piError = await set(validatePiH2$, db, run, input.body, signal);
+        if (piError) {
+          return { ok: false, response: badRequestMessage(piError) };
+        }
+      }
 
-    return await commitAgentCheckpoint(
-      db,
-      input,
-      preparation.prepared,
-      signal,
-      "pi-api-first-turn",
-    );
-  },
-);
+      return {
+        ok: true,
+        prepared: piNeedsValidation
+          ? {
+              piValidation: {
+                chatThreadId: run.chatThreadId,
+                runSessionId: run.sessionId,
+              },
+            }
+          : {},
+      };
+    },
+  );
+
+  const create$ = command(
+    async ({ set }, input: AgentCheckpointInput, signal: AbortSignal) => {
+      const db = set(writeDb$);
+      const preparation = await set(
+        prepare$,
+        input,
+        { source: "standalone-webhook" },
+        signal,
+      );
+      if (!preparation.ok) {
+        return preparation.response;
+      }
+
+      return await commitAgentCheckpoint(
+        db,
+        input,
+        preparation.prepared,
+        signal,
+        "standalone-webhook",
+      );
+    },
+  );
+  return { prepare$, create$ };
+}

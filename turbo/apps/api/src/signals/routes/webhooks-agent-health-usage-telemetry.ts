@@ -12,10 +12,9 @@ import {
   type SandboxReuseResult,
 } from "@okouai/api-contracts/contracts/webhooks";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { usageEvent } from "@okouai/db/schema/usage-event";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { and, eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -35,7 +34,15 @@ import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
 import { hasAgentPhoneTypingTargetForRun$ } from "../services/agent-event-consumer-agentphone-typing.service";
+import {
+  DISCORD_TYPING_REFRESH_INTERVAL_SECONDS,
+  hasDiscordTypingTargetForRun,
+} from "../services/discord-run-typing.service";
 import { settle } from "../utils";
+import {
+  recordRunnerUsageBatch$,
+  RunnerUsageRunMissingError,
+} from "../services/provider-usage-publication.service";
 import {
   getSandboxAuthForRun,
   resolveSandboxAuthForRun,
@@ -43,20 +50,14 @@ import {
 } from "./agent-webhook-auth";
 import { usageUnderbillingFields } from "../usage-underbilling";
 import { readUsageEventBody } from "./webhooks-usage-body";
-import {
-  ingestXResourceUsage,
-  XResourceUsageError,
-} from "../services/x-resource-usage.service";
-import {
-  lockXResourceAdmission,
-  setXResourceTransactionTimeouts,
-} from "../services/x-resource-usage-lifecycle";
+import { ingestXResourceUsage$ } from "../services/x-resource-usage.service";
+import { XResourceUsageError } from "../services/x-resource-usage-values";
 
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
 const SANDBOX_TELEMETRY_NETWORK_DATASET = "sandbox-telemetry-network";
-const MODEL_USAGE_KIND = "model";
 const TELEMETRY_INGEST_TIMEOUT_MS = 10_000;
+const AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS = 4;
 
 const L = logger("webhooks:agent");
 
@@ -71,6 +72,9 @@ interface SandboxOperationDimensionInput {
   readonly dns_readiness_guest_duration_ms?: number;
   readonly dns_readiness_host_residual_ms?: number;
   readonly dns_readiness_timing?: string;
+  readonly storage_batch_guest_duration_ms?: number;
+  readonly storage_batch_outer_residual_ms?: number;
+  readonly storage_batch_timing?: string;
   readonly runner_startup_path?: RunnerStartupPath;
   readonly sandbox_reuse_result?: SandboxReuseResult;
   readonly runner_pre_spawn_concurrency_bucket?: RunnerPreSpawnConcurrencyBucket;
@@ -160,6 +164,22 @@ function dnsReadinessDimensions(
   };
 }
 
+function storageBatchDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  return {
+    ...(op.storage_batch_guest_duration_ms !== undefined
+      ? { storage_batch_guest_duration_ms: op.storage_batch_guest_duration_ms }
+      : {}),
+    ...(op.storage_batch_outer_residual_ms !== undefined
+      ? { storage_batch_outer_residual_ms: op.storage_batch_outer_residual_ms }
+      : {}),
+    ...(op.storage_batch_timing
+      ? { storage_batch_timing: op.storage_batch_timing }
+      : {}),
+  };
+}
+
 function archiveConnectionAttemptDimensions(
   op: SandboxOperationDimensionInput,
 ): Record<string, number | boolean> {
@@ -208,6 +228,7 @@ function sandboxOperationDimensions(
       : {}),
     ...archiveConnectionAttemptDimensions(op),
     ...dnsReadinessDimensions(op),
+    ...storageBatchDimensions(op),
     ...(op.runner_startup_path
       ? { runner_startup_path: op.runner_startup_path }
       : {}),
@@ -337,6 +358,31 @@ function workspaceHistoryRestoreDimensions(
   };
 }
 
+/**
+ * Typing indicators are best-effort side effects of heartbeat progress. The
+ * Runner uses this hint for an extra refresh cadence that never counts as a
+ * control-path heartbeat failure.
+ */
+const typingRefreshIntervalSecondsForRun$ = command(
+  async (
+    { get, set },
+    args: { readonly runId: string; readonly triggerSource: string | null },
+    signal: AbortSignal,
+  ): Promise<number | undefined> => {
+    if (args.triggerSource === "agentphone") {
+      return (await set(hasAgentPhoneTypingTargetForRun$, args.runId, signal))
+        ? AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS
+        : undefined;
+    }
+    if (args.triggerSource === "discord") {
+      const refresh = await hasDiscordTypingTargetForRun(get(db$), args.runId);
+      signal.throwIfAborted();
+      return refresh ? DISCORD_TYPING_REFRESH_INTERVAL_SECONDS : undefined;
+    }
+    return undefined;
+  },
+);
+
 const heartbeatBody$ = bodyResultOf(webhookHeartbeatContract.send);
 const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   const bodyResult = await get(heartbeatBody$);
@@ -352,31 +398,46 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const db = set(writeDb$);
+  const heartbeatAt = nowDate();
+  // The active row outlives the public status: a run cancelled while running
+  // keeps it until the runner reports completion, and its sandbox keeps
+  // heartbeating meanwhile. Row existence is the only gate.
+  await db
+    .update(activeAgentRuns)
+    .set({ lastHeartbeatAt: heartbeatAt })
+    .where(
+      and(
+        eq(activeAgentRuns.runId, body.runId),
+        eq(activeAgentRuns.userId, auth.userId),
+      ),
+    );
+  signal.throwIfAborted();
   const result = await db
-    .update(agentRuns)
-    .set({ lastHeartbeatAt: nowDate() })
+    .select({ triggerSource: agentRuns.triggerSource })
+    .from(agentRuns)
     .where(
       and(
         eq(agentRuns.id, body.runId),
         eq(agentRuns.userId, auth.userId),
         inArray(agentRuns.status, ["pending", "running"]),
       ),
-    )
-    .returning({
-      id: agentRuns.id,
-      triggerSource: agentRuns.triggerSource,
-    });
+    );
   signal.throwIfAborted();
 
   if (result.length === 0) {
     return notFound("Agent run not found");
   }
 
-  const typingTarget =
-    result[0]?.triggerSource === "agentphone"
-      ? await settle(set(hasAgentPhoneTypingTargetForRun$, body.runId, signal))
-      : null;
-  const refreshTyping = typingTarget?.ok && typingTarget.value;
+  const typingRefreshIntervalSeconds = await settle(
+    set(
+      typingRefreshIntervalSecondsForRun$,
+      {
+        runId: body.runId,
+        triggerSource: result[0]?.triggerSource ?? null,
+      },
+      signal,
+    ),
+  );
   signal.throwIfAborted();
 
   waitUntil(set(dispatchProgressCallbacks$, body.runId, signal));
@@ -385,7 +446,10 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       ok: true,
-      ...(refreshTyping ? { typingRefreshIntervalSeconds: 4 } : {}),
+      ...(typingRefreshIntervalSeconds.ok &&
+      typingRefreshIntervalSeconds.value !== undefined
+        ? { typingRefreshIntervalSeconds: typingRefreshIntervalSeconds.value }
+        : {}),
     },
   };
 });
@@ -408,8 +472,7 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
       return "protocol" in event;
     })
   ) {
-    const db = set(writeDb$);
-    const result = await settle(ingestXResourceUsage(db, body, auth, signal));
+    const result = await settle(set(ingestXResourceUsage$, body, auth, signal));
     signal.throwIfAborted();
     if (!result.ok) {
       if (result.error instanceof XResourceUsageError) {
@@ -430,70 +493,19 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
     return { status: 200 as const, body: { success: true } };
   }
 
-  const db = set(writeDb$);
-  const hasModelEvents = body.events.some((event) => {
-    return event.kind === MODEL_USAGE_KIND;
-  });
-  const [runModelContext] = hasModelEvents
-    ? await db
-        .select({
-          modelProvider: agentRuns.modelProvider,
-        })
-        .from(agentRuns)
-        .where(
-          and(eq(agentRuns.id, body.runId), isNotNull(agentRuns.triggerSource)),
-        )
-        .limit(1)
-    : [];
-  signal.throwIfAborted();
-
-  const modelProviderType = runModelContext?.modelProvider ?? null;
-  const usageEventValues = body.events
-    .filter((event) => {
-      return (
-        event.quantity > 0 &&
-        (event.kind !== MODEL_USAGE_KIND ||
-          modelProviderType === null ||
-          isBuiltInModelProviderType(modelProviderType))
-      );
-    })
-    .map((event) => {
-      return {
-        runId: body.runId,
-        orgId: auth.orgId,
-        userId: auth.userId,
-        kind: event.kind,
-        provider: event.provider,
-        category: event.category,
-        quantity: event.quantity,
-        idempotencyKey: event.idempotencyKey,
-      };
-    })
-    .sort((left, right) => {
-      // Match resource/mixed batches when a retry is regrouped by a producer.
-      return left.idempotencyKey
-        .toLowerCase()
-        .localeCompare(right.idempotencyKey.toLowerCase());
-    });
   const insertResult = await settle(
-    (async () => {
-      if (usageEventValues.length > 0) {
-        await db.transaction(async (tx) => {
-          await setXResourceTransactionTimeouts(tx);
-          // Count-event retries share the account-cleanup fence with resource batches.
-          await lockXResourceAdmission(tx, "shared");
-          await tx
-            .insert(usageEvent)
-            .values(usageEventValues)
-            .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
-          signal.throwIfAborted();
-        });
-      }
-    })(),
+    set(
+      recordRunnerUsageBatch$,
+      { ...auth, runId: body.runId, events: body.events },
+      signal,
+    ),
   );
   signal.throwIfAborted();
   if (!insertResult.ok) {
-    if (isForeignKeyViolation(insertResult.error)) {
+    if (
+      insertResult.error instanceof RunnerUsageRunMissingError ||
+      isForeignKeyViolation(insertResult.error)
+    ) {
       L.error("Run not found for usage event, dropping", {
         ...usageUnderbillingFields("run_not_found", "confirmed"),
         runId: body.runId,

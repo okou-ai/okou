@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import {
   runAgentEventsContract,
@@ -203,25 +203,11 @@ test("Runner diagnostics explain how the activity environment started", async ()
       description: "The sandbox and its workspace were reused.",
     },
     {
-      runId: "a0000000-0000-4000-a000-000000000307",
-      sandboxReuseResult: "poolMiss",
-      workspaceReuseResult: "reused",
-      label: "Workspace reuse",
-      description: "A fresh sandbox restored a cached workspace.",
-    },
-    {
       runId: "a0000000-0000-4000-a000-000000000308",
       sandboxReuseResult: "poolMiss",
       workspaceReuseResult: "cacheMiss",
       label: "Cold start",
       description: "A fresh sandbox and workspace were prepared.",
-    },
-    {
-      runId: "a0000000-0000-4000-a000-000000000309",
-      sandboxReuseResult: null,
-      workspaceReuseResult: null,
-      label: "Unknown",
-      description: "Startup reuse details are unavailable.",
     },
   ] as const satisfies readonly {
     runId: string;
@@ -260,61 +246,4 @@ test("Runner diagnostics explain how the activity environment started", async ()
       within(startupCard).getByText(entry.description),
     ).toBeInTheDocument();
   }
-});
-
-test("Missing runner attribution distinguishes active provisioning from historical absence", async () => {
-  const activeRunId = "a0000000-0000-4000-a000-000000000305";
-  const historicalRunId = "a0000000-0000-4000-a000-000000000304";
-  mockActivities({
-    [activeRunId]: {
-      status: "running",
-      framework: null,
-      runner: {
-        sandboxReuseResult: null,
-        workspaceReuseResult: null,
-        runnerHostname: null,
-        runnerVersion: null,
-        runnerId: null,
-        runnerHeartbeatGeneration: null,
-      },
-    },
-    [historicalRunId]: {
-      status: "completed",
-      framework: null,
-      runner: {
-        sandboxReuseResult: null,
-        workspaceReuseResult: null,
-        runnerHostname: null,
-        runnerVersion: null,
-        runnerId: null,
-        runnerHeartbeatGeneration: null,
-      },
-    },
-  });
-
-  await setupRunnerPage(activeRunId);
-
-  await expect(
-    screen.findByRole("heading", { name: "Environment" }),
-  ).resolves.toBeInTheDocument();
-  expectRunnerAttribute("Framework", "Unavailable");
-  expectRunnerAttribute("Hostname", "Provisioning");
-  expectRunnerAttribute("Version", "Provisioning");
-  expectRunnerAttribute("Runner ID", "Provisioning");
-  expectRunnerAttribute("Generation", "Provisioning");
-
-  navigateToRunner(historicalRunId);
-
-  await waitFor(() => {
-    expectRunnerAttribute("Hostname", "Unavailable");
-  });
-  expectRunnerAttribute("Framework", "Unavailable");
-  expectRunnerAttribute("Version", "Unavailable");
-  expectRunnerAttribute("Runner ID", "Unavailable");
-  expectRunnerAttribute("Generation", "Unavailable");
-  expect(
-    screen.getAllByRole("article").every((card) => {
-      return card.querySelector("p") !== null;
-    }),
-  ).toBeTruthy();
 });

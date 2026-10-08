@@ -464,6 +464,35 @@ describe("connector client request contracts", () => {
     expect(connectorCheckRequestSchema.parse(base)).toStrictEqual(base);
   });
 
+  it("rejects an AWS target combined with a Query Action selector", () => {
+    expect(() => {
+      connectorCheckRequestBodySchema.parse({
+        mode: "url",
+        method: "POST",
+        url: "https://dynamodb.us-west-2.amazonaws.com/",
+        aws: {
+          sigv4Service: "dynamodb",
+          target: "DynamoDB_20120810.GetItem",
+          query: [{ key: "Action", value: "OtherOperation" }],
+        },
+      });
+    }).toThrow();
+  });
+
+  it("rejects AWS authentication query parameters as diagnostic selectors", () => {
+    expect(() => {
+      connectorCheckRequestBodySchema.parse({
+        mode: "url",
+        method: "GET",
+        url: "https://s3.us-west-2.amazonaws.com/bucket/key",
+        aws: {
+          sigv4Service: "s3",
+          query: [{ key: "X-Amz-Signature", value: "private-signature" }],
+        },
+      });
+    }).toThrow();
+  });
+
   it("separates legacy and target-aware connector check requests", () => {
     const base = {
       mode: "url" as const,

@@ -1,35 +1,60 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
-import type {
-  BrowserUserActionApplyRequest,
-  BrowserUserActionCreateRequest,
-  BrowserUserActionResponse,
-  BrowserUserActionState,
+import {
+  BROWSER_USER_ACTION_MAX_FILE_BYTES,
+  BROWSER_USER_ACTION_MAX_FILES,
+  browserUserActionDisplayFieldSchema,
+  browserUserActionFieldKindSchema,
+  type BrowserUserActionApplyRequest,
+  type BrowserUserActionCreateRequest,
+  type BrowserUserActionResponse,
+  type BrowserUserActionState,
+  type BrowserUserActionPrepareFileUploadRequest,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/contracts/browser";
 import {
   browserUserActionFieldSupportsTarget,
   parseBrowserUserActionPayload,
   type BrowserUserActionCallbackIds,
+  type BrowserUserActionInputField,
   type BrowserUserActionPayload,
 } from "@okouai/db/jsonb-contracts/browser-user-action";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   browserSessionInstances,
   browserSessions,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
-import { and, asc, eq, gt, inArray, isNotNull, lt, lte } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  lt,
+  lte,
+  sql,
+} from "drizzle-orm";
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
+import {
+  deleteS3Objects,
+  downloadS3BufferWithMaxBytes,
+  generatePresignedPutUrl,
+} from "../external/s3";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
 import {
   applyBrowserUseUserAction,
   BrowserUseProviderError,
+  type BrowserUseControlInspection,
+  type BrowserUseUserActionExactTarget,
   type BrowserUseUserActionValidation,
   BrowserUseUserActionValidationError,
   BrowserUseUserActionMutationError,
@@ -37,16 +62,12 @@ import {
   preflightBrowserUseUserAction,
   validateBrowserUseUserAction,
 } from "./browser-use.service";
-import {
-  type ChatThreadContentIdentity,
-  withChatThreadContentRead,
-  withChatThreadContentWrite,
-} from "./chat-thread-content-erasure-admission.service";
 
 const REQUEST_TOKEN_PREFIX = "vm0_browser_user_action";
 const APPLY_STUCK_AFTER_MS = 60_000;
 const IDLE_LEASE_MS = BROWSER_IDLE_LEASE_MINUTES * 60_000;
 const CALLBACK_RECOVERY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const L = logger("BrowserUserActions");
 const TERMINAL_STATES: readonly BrowserUserActionState[] = [
   "succeeded",
   "cancelled",
@@ -107,6 +128,79 @@ function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+const FILE_UPLOAD_PREFIX = "browser-native-input/";
+const FILE_UPLOAD_CONTENT_TYPE = "application/octet-stream";
+
+function temporaryFileKey(
+  row: Pick<RequestRow, "requestTokenHash">,
+  index: number,
+): string {
+  return `${FILE_UPLOAD_PREFIX}${row.requestTokenHash}/${index.toString()}`;
+}
+
+export function temporaryBrowserFileKeys(
+  requestTokenHash: string,
+): readonly string[] {
+  const row = { requestTokenHash };
+  return Array.from({ length: BROWSER_USER_ACTION_MAX_FILES }, (_, index) => {
+    return temporaryFileKey(row, index);
+  });
+}
+
+export const prepareBrowserUserFileUpload$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly requestToken: string;
+      readonly input: BrowserUserActionPrepareFileUploadRequest;
+    },
+    signal: AbortSignal,
+  ): Promise<ServiceResult<{ readonly uploadUrl: string }>> => {
+    const db = set(writeDb$);
+    const row = await loadOwnedRequest(db, args);
+    signal.throwIfAborted();
+    if (!row) {
+      return notFound();
+    }
+    const payload = decodePayload(row);
+    if (
+      row.status !== "pending" ||
+      payload?.kind !== "input" ||
+      payload.target.fields.length !== 1 ||
+      payload.target.fields[0]?.fieldKind !== "file" ||
+      payload.target.fields[0].key !== args.input.key
+    ) {
+      return conflict("Browser file upload is not available");
+    }
+    if (!(await requestHasLiveBrowser(db, row))) {
+      return expired();
+    }
+    const uploadUrl = await get(
+      generatePresignedPutUrl(
+        env("R2_USER_STORAGES_BUCKET_NAME"),
+        temporaryFileKey(row, args.input.index),
+        FILE_UPLOAD_CONTENT_TYPE,
+        {
+          usePublicEndpoint: true,
+          contentLength: args.input.size,
+          expiresInSeconds: BROWSER_IDLE_LEASE_MINUTES * 60,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    // The signed PUT and the provider's idle lease use the same duration.
+    // Its absolute timeout and request state still gate the subsequent apply.
+    if (!(await touchExactProvider(db, row))) {
+      return expired();
+    }
+    signal.throwIfAborted();
+    return { kind: "ok", value: { uploadUrl } };
+  },
+);
+
 function generateToken(): string {
   return `${REQUEST_TOKEN_PREFIX}_${randomBytes(32).toString("base64url")}`;
 }
@@ -138,6 +232,7 @@ function publicRequest(
   row: RequestRow,
   requestToken: string,
   payload: BrowserUserActionPayload,
+  controls?: readonly BrowserUseControlInspection[],
 ): BrowserUserActionResponse {
   const common = {
     requestToken,
@@ -147,14 +242,12 @@ function publicRequest(
     threadId: row.chatThreadId,
     callbackIds: payload.callbackIds,
   };
-  if (payload.kind === "direct_interaction") {
-    return { ...common, kind: payload.kind, reason: payload.reason };
-  }
   return {
     ...common,
     kind: payload.kind,
     siteOrigin: payload.target.siteOrigin,
-    fields: payload.target.fields.map((field) => {
+    fields: payload.target.fields.map((field, index) => {
+      const observed = controls?.[index];
       return {
         key: field.key,
         label: field.label,
@@ -163,20 +256,71 @@ function publicRequest(
           : { description: field.description }),
         fieldKind: field.fieldKind,
         required: field.required,
+        control: browserUserActionDisplayFieldSchema.shape.control.parse({
+          ...field.fingerprint,
+          ...(observed === undefined
+            ? {}
+            : {
+                siteRequired: observed.siteRequired,
+                multiple: observed.multiple,
+                ...(observed.fileSetFingerprint === undefined
+                  ? {}
+                  : {
+                      accept: observed.accept,
+                      files: observed.files,
+                      fileSetFingerprint: observed.fileSetFingerprint,
+                    }),
+                ...(observed.checked === undefined
+                  ? {}
+                  : { checked: observed.checked }),
+                ...(observed.rangeValue === undefined
+                  ? {}
+                  : { rangeValue: observed.rangeValue }),
+                ...(observed.colorValue === undefined
+                  ? {}
+                  : {
+                      colorValue: observed.colorValue,
+                      colorMode: observed.colorMode,
+                    }),
+                ...(observed.radioGroupFingerprint === undefined
+                  ? {}
+                  : {
+                      radioGroupFingerprint: observed.radioGroupFingerprint,
+                      radioOptions: observed.radioOptions,
+                    }),
+                ...(observed.optionSetFingerprint === undefined
+                  ? {}
+                  : { optionSetFingerprint: observed.optionSetFingerprint }),
+                ...(observed.options === undefined
+                  ? {}
+                  : {
+                      options: observed.options.map((option) => {
+                        return {
+                          index: option.index,
+                          label: option.label,
+                          disabled: option.disabled,
+                          selected: option.selected,
+                          empty: option.empty,
+                        };
+                      }),
+                    }),
+                ...(observed.minLength === undefined
+                  ? {}
+                  : { minLength: observed.minLength }),
+                ...(observed.maxLength === undefined
+                  ? {}
+                  : { maxLength: observed.maxLength }),
+                ...(observed.pattern === undefined
+                  ? {}
+                  : { pattern: observed.pattern }),
+                ...(observed.min === undefined ? {} : { min: observed.min }),
+                ...(observed.max === undefined ? {} : { max: observed.max }),
+                ...(observed.step === undefined ? {} : { step: observed.step }),
+              }),
+        }),
       };
     }),
   };
-}
-
-function authorized(
-  row: RequestRow,
-  identity: ChatThreadContentIdentity,
-): boolean {
-  return (
-    identity.userId === row.userId &&
-    identity.agentId === row.agentId &&
-    identity.orgId === row.orgId
-  );
 }
 
 async function loadOwnedRequest(
@@ -335,12 +479,13 @@ async function finalize(
 async function convertClosedBrowserUserActions(
   db: Db,
   limit: number,
-  chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
+  cleanupFileObjects: (requestTokenHash: string) => Promise<void>,
 ): Promise<number> {
   const candidates = await db
     .select({
       requestTokenHash: browserUserActionRequests.requestTokenHash,
+      payload: browserUserActionRequests.payload,
       providerSessionId: browserUserActionRequests.providerSessionId,
       status: browserUserActionRequests.status,
       finishedAt: browserSessionInstances.finishedAt,
@@ -358,9 +503,6 @@ async function convertClosedBrowserUserActions(
         inArray(browserUserActionRequests.status, ["pending", "applying"]),
         eq(browserSessionInstances.status, "stopped"),
         isNotNull(browserSessionInstances.finishedAt),
-        chatThreadIds === null
-          ? undefined
-          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
       ),
     )
     .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -375,7 +517,7 @@ async function convertClosedBrowserUserActions(
       throw new Error("Expected a closed Browser user-action candidate");
     }
     const nextStatus = candidate.status === "pending" ? "stale" : "uncertain";
-    await db
+    const updated = await db
       .update(browserUserActionRequests)
       .set({
         status: nextStatus,
@@ -393,22 +535,60 @@ async function convertClosedBrowserUserActions(
           ),
           eq(browserUserActionRequests.status, candidate.status),
         ),
+      )
+      .returning({
+        requestTokenHash: browserUserActionRequests.requestTokenHash,
+      });
+    if (
+      updated.length > 0 &&
+      candidate.payload.kind === "input" &&
+      candidate.payload.target.fields[0]?.fieldKind === "file"
+    ) {
+      const cleanup = await settle(
+        cleanupFileObjects(candidate.requestTokenHash),
       );
+      if (!cleanup.ok) {
+        L.warn("Temporary Browser file cleanup failed");
+      }
+    }
     signal.throwIfAborted();
   }
   return candidates.length;
 }
 
+async function deleteRetiredDirectBrowserUserActions(
+  db: Db,
+  limit: number,
+  signal: AbortSignal,
+): Promise<number> {
+  const retiredKind = sql`${browserUserActionRequests.payload}->>'kind' = 'direct_interaction'`;
+  const candidates = db
+    .select({ requestTokenHash: browserUserActionRequests.requestTokenHash })
+    .from(browserUserActionRequests)
+    .where(retiredKind)
+    .orderBy(asc(browserUserActionRequests.requestTokenHash))
+    .limit(limit);
+  const removed = await db
+    .delete(browserUserActionRequests)
+    .where(inArray(browserUserActionRequests.requestTokenHash, candidates))
+    .returning({
+      requestTokenHash: browserUserActionRequests.requestTokenHash,
+    });
+  signal.throwIfAborted();
+  return removed.length;
+}
+
 async function deleteExpiredBrowserUserActions(
   db: Db,
   limit: number,
-  chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
+  cleanupFileObjects: (requestTokenHash: string) => Promise<void>,
 ): Promise<number> {
   const cutoff = new Date(nowDate().getTime() - CALLBACK_RECOVERY_RETENTION_MS);
   const candidates = await db
     .select({
       requestTokenHash: browserUserActionRequests.requestTokenHash,
+      payload: browserUserActionRequests.payload,
       providerSessionId: browserUserActionRequests.providerSessionId,
       status: browserUserActionRequests.status,
       completedAt: browserUserActionRequests.completedAt,
@@ -429,9 +609,6 @@ async function deleteExpiredBrowserUserActions(
         eq(browserSessionInstances.status, "stopped"),
         isNotNull(browserSessionInstances.finishedAt),
         lte(browserSessionInstances.finishedAt, cutoff),
-        chatThreadIds === null
-          ? undefined
-          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
       ),
     )
     .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -444,6 +621,18 @@ async function deleteExpiredBrowserUserActions(
       !TERMINAL_STATES.includes(candidate.status)
     ) {
       throw new Error("Expected a retained Browser user-action candidate");
+    }
+    if (
+      candidate.payload.kind === "input" &&
+      candidate.payload.target.fields[0]?.fieldKind === "file"
+    ) {
+      const cleanup = await settle(
+        cleanupFileObjects(candidate.requestTokenHash),
+      );
+      if (!cleanup.ok) {
+        L.warn("Temporary Browser file cleanup failed");
+        continue;
+      }
     }
     await db
       .delete(browserUserActionRequests)
@@ -469,22 +658,27 @@ async function deleteExpiredBrowserUserActions(
 export async function reconcileBrowserUserActions(
   db: Db,
   limit: number,
-  chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
+  cleanupFileObjects: (requestTokenHash: string) => Promise<void>,
 ): Promise<number> {
+  const retired = await deleteRetiredDirectBrowserUserActions(
+    db,
+    limit,
+    signal,
+  );
   const checkedForConversion = await convertClosedBrowserUserActions(
     db,
     limit,
-    chatThreadIds,
     signal,
+    cleanupFileObjects,
   );
   const checkedForCleanup = await deleteExpiredBrowserUserActions(
     db,
     limit,
-    chatThreadIds,
     signal,
+    cleanupFileObjects,
   );
-  return checkedForConversion + checkedForCleanup;
+  return retired + checkedForConversion + checkedForCleanup;
 }
 
 interface CreateBrowserUserActionArgs {
@@ -497,7 +691,70 @@ interface CreateBrowserUserActionArgs {
 interface PreparedBrowserUserAction {
   readonly chatThreadId: string;
   readonly providerSessionId: string;
-  readonly validation: BrowserUseUserActionValidation | null;
+  readonly validation: BrowserUseUserActionValidation;
+}
+
+function browserCreationValidationMessage(
+  error: BrowserUseUserActionValidationError,
+): string {
+  const field = error.fieldPosition ? `--field ${error.fieldPosition}: ` : "";
+  switch (error.code) {
+    case "page_target_not_found": {
+      return "The selected Browser page no longer exists; inspect the active tab and recapture the controls";
+    }
+    case "unsupported_page": {
+      return "The selected Browser page is not an HTTP or HTTPS page";
+    }
+    case "backend_node_not_found": {
+      return `${field}the selected Browser control no longer exists; inspect the page and recapture it`;
+    }
+    case "unsupported_control": {
+      return `${field}the selected Browser control is not a writable top-level input, textarea, or select`;
+    }
+  }
+}
+
+function browserCreationControlType(
+  fingerprint: BrowserUseUserActionValidation["fields"][number]["fingerprint"],
+): string {
+  if (fingerprint.tagName === "TEXTAREA") {
+    return "textarea";
+  }
+  if (fingerprint.tagName === "SELECT") {
+    return fingerprint.inputType === "select-multiple"
+      ? "multiple select"
+      : "single select";
+  }
+  const knownTypes = [
+    "text",
+    "password",
+    "email",
+    "tel",
+    "url",
+    "search",
+    "number",
+    "range",
+    "date",
+    "time",
+    "datetime-local",
+    "month",
+    "week",
+    "checkbox",
+    "radio",
+    "file",
+  ];
+  return knownTypes.includes(fingerprint.inputType)
+    ? `input type '${fingerprint.inputType}'`
+    : "input control";
+}
+
+function hasMixedFileFields(input: BrowserUserActionCreateRequest): boolean {
+  return (
+    input.fields.length !== 1 &&
+    input.fields.some((field) => {
+      return field.fieldKind === "file";
+    })
+  );
 }
 
 async function prepareBrowserUserAction(
@@ -542,16 +799,6 @@ async function prepareBrowserUserAction(
       "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
     );
   }
-  if (args.input.kind === "direct_interaction") {
-    return {
-      kind: "ok",
-      value: {
-        chatThreadId: run.chatThreadId,
-        providerSessionId: live.providerSessionId,
-        validation: null,
-      },
-    };
-  }
   const providerResult = await settle(
     getBrowserUseSession(live.providerSessionId, signal),
   );
@@ -584,26 +831,40 @@ async function prepareBrowserUserAction(
   if (!validationResult.ok) {
     return validationResult.error instanceof BrowserUseUserActionValidationError
       ? conflict(
-          "The Browser page target or requested controls are not available",
+          browserCreationValidationMessage(validationResult.error),
           `BROWSER_USER_ACTION_${validationResult.error.code.toUpperCase()}`,
         )
       : providerFailure(validationResult.error);
   }
+  if (hasMixedFileFields(args.input)) {
+    return conflict(
+      "File input must be requested on its own",
+      "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
+    );
+  }
+  const mismatchedPosition = args.input.fields.findIndex((field, index) => {
+    const target = validationResult.value.fields[index];
+    return (
+      !target ||
+      !browserUserActionFieldSupportsTarget(field.fieldKind, target.fingerprint)
+    );
+  });
   if (
     validationResult.value.fields.length !== args.input.fields.length ||
-    args.input.fields.some((field, index) => {
-      const target = validationResult.value.fields[index];
-      return (
-        !target ||
-        !browserUserActionFieldSupportsTarget(
-          field.fieldKind,
-          target.fingerprint,
-        )
-      );
-    })
+    mismatchedPosition !== -1
   ) {
+    const position = mismatchedPosition === -1 ? 0 : mismatchedPosition + 1;
+    const field = args.input.fields[mismatchedPosition];
+    const target = validationResult.value.fields[mismatchedPosition];
+    const compatibleKinds = target
+      ? browserUserActionFieldKindSchema.options.filter((kind) => {
+          return browserUserActionFieldSupportsTarget(kind, target.fingerprint);
+        })
+      : [];
     return conflict(
-      "The requested Browser field kind does not match its control",
+      position > 0 && field && target
+        ? `--field ${position}: fieldKind '${field.fieldKind}' does not match the observed ${browserCreationControlType(target.fingerprint)}; use ${compatibleKinds.join(" or ")}`
+        : "The requested Browser fields do not match the observed controls",
       "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
     );
   }
@@ -619,20 +880,9 @@ async function prepareBrowserUserAction(
 
 function buildBrowserUserActionPayload(
   input: BrowserUserActionCreateRequest,
-  validation: BrowserUseUserActionValidation | null,
+  validation: BrowserUseUserActionValidation,
   callbackIds: BrowserUserActionCallbackIds,
 ): BrowserUserActionPayload {
-  if (input.kind === "direct_interaction") {
-    return {
-      version: 1,
-      kind: input.kind,
-      callbackIds,
-      reason: input.reason,
-    };
-  }
-  if (!validation) {
-    throw new Error("Browser input request has no validated targets");
-  }
   return {
     version: 1,
     kind: input.kind,
@@ -656,6 +906,9 @@ function buildBrowserUserActionPayload(
           fieldKind: field.fieldKind,
           required: field.required,
           backendNodeId: target.backendNodeId,
+          ...(target.radioMemberNodeIds
+            ? { radioMemberNodeIds: target.radioMemberNodeIds }
+            : {}),
           fingerprint: target.fingerprint,
         };
       }),
@@ -671,94 +924,80 @@ async function persistBrowserUserAction(
     readonly requestToken: string;
     readonly payload: BrowserUserActionPayload;
   },
-  signal: AbortSignal,
 ): Promise<RequestRow | null> {
   const { args, payload, prepared, requestToken } = input;
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
+  return await db.transaction(async (tx): Promise<RequestRow | null> => {
+    const [currentRun] = await tx
+      .select({ agentId: chatThreads.agentId })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.orgId, args.orgId),
+          eq(agentRuns.userId, args.userId),
+          eq(agentRuns.chatThreadId, prepared.chatThreadId),
+          inArray(agentRuns.status, ["pending", "running"]),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1)
+      .for("share", { of: agentRuns });
+    if (!currentRun?.agentId) {
+      return null;
+    }
+    const currentLive = await loadLiveBrowser(tx as Db, {
       chatThreadId: prepared.chatThreadId,
-      authorize: (identity) => {
-        return (
-          identity.userId === args.userId &&
-          identity.agentId !== null &&
-          identity.orgId === args.orgId
-        );
-      },
-    },
-    async (tx, identity): Promise<RequestRow | null> => {
-      const [currentRun] = await tx
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, args.runId),
-            eq(agentRuns.orgId, args.orgId),
-            eq(agentRuns.userId, args.userId),
-            eq(agentRuns.chatThreadId, prepared.chatThreadId),
-            inArray(agentRuns.status, ["pending", "running"]),
+      orgId: args.orgId,
+      userId: args.userId,
+    });
+    if (
+      currentLive?.runId !== args.runId ||
+      currentLive.providerSessionId !== prepared.providerSessionId
+    ) {
+      return null;
+    }
+    const now = nowDate();
+    const [leased] = await tx
+      .update(browserSessionInstances)
+      .set({
+        lastTouchedAt: now,
+        idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(
+            browserSessionInstances.providerSessionId,
+            prepared.providerSessionId,
           ),
-        )
-        .limit(1)
-        .for("share");
-      if (!currentRun || !identity.agentId) {
-        return null;
-      }
-      const currentLive = await loadLiveBrowser(tx as Db, {
-        chatThreadId: prepared.chatThreadId,
+          eq(browserSessionInstances.chatThreadId, prepared.chatThreadId),
+          eq(browserSessionInstances.status, "active"),
+          gt(browserSessionInstances.timeoutAt, now),
+          gt(browserSessionInstances.idleExpiresAt, now),
+        ),
+      )
+      .returning({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      });
+    if (!leased) {
+      return null;
+    }
+    const [created] = await tx
+      .insert(browserUserActionRequests)
+      .values({
+        requestTokenHash: hash(requestToken),
         orgId: args.orgId,
         userId: args.userId,
-      });
-      if (
-        currentLive?.runId !== args.runId ||
-        currentLive.providerSessionId !== prepared.providerSessionId
-      ) {
-        return null;
-      }
-      const now = nowDate();
-      const [leased] = await tx
-        .update(browserSessionInstances)
-        .set({
-          lastTouchedAt: now,
-          idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(
-              browserSessionInstances.providerSessionId,
-              prepared.providerSessionId,
-            ),
-            eq(browserSessionInstances.chatThreadId, prepared.chatThreadId),
-            eq(browserSessionInstances.status, "active"),
-            gt(browserSessionInstances.timeoutAt, now),
-            gt(browserSessionInstances.idleExpiresAt, now),
-          ),
-        )
-        .returning({
-          providerSessionId: browserSessionInstances.providerSessionId,
-        });
-      if (!leased) {
-        return null;
-      }
-      const [created] = await tx
-        .insert(browserUserActionRequests)
-        .values({
-          requestTokenHash: hash(requestToken),
-          orgId: args.orgId,
-          userId: args.userId,
-          agentId: identity.agentId,
-          chatThreadId: prepared.chatThreadId,
-          status: "pending",
-          providerSessionId: prepared.providerSessionId,
-          payload,
-        })
-        .returning();
-      return created ?? null;
-    },
-    signal,
-  );
-  return admitted.outcome === "written" ? admitted.value : null;
+        agentId: currentRun.agentId,
+        chatThreadId: prepared.chatThreadId,
+        status: "pending",
+        providerSessionId: prepared.providerSessionId,
+        payload,
+      })
+      .returning();
+    return created ?? null;
+  });
 }
 
 export const createBrowserUserAction$ = command(
@@ -793,16 +1032,13 @@ export const createBrowserUserAction$ = command(
       prepared.value.validation,
       callbackIds,
     );
-    const created = await persistBrowserUserAction(
-      db,
-      {
-        args,
-        prepared: prepared.value,
-        requestToken,
-        payload,
-      },
-      signal,
-    );
+    const created = await persistBrowserUserAction(db, {
+      args,
+      prepared: prepared.value,
+      requestToken,
+      payload,
+    });
+    signal.throwIfAborted();
     if (!created) {
       return notFound();
     }
@@ -831,7 +1067,6 @@ export const createBrowserUserAction$ = command(
 async function normalizeStuckApplying(
   db: Db,
   row: RequestRow,
-  signal: AbortSignal,
 ): Promise<RequestRow | null> {
   if (
     row.status !== "applying" ||
@@ -840,43 +1075,25 @@ async function normalizeStuckApplying(
   ) {
     return row;
   }
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
-      chatThreadId: row.chatThreadId,
-      authorize: (identity) => {
-        return authorized(row, identity);
-      },
-      threadLock: "update",
-    },
-    async (tx) => {
-      const operationDb = tx as Db;
-      const now = nowDate();
-      const [updated] = await operationDb
-        .update(browserUserActionRequests)
-        .set({
-          status: "uncertain",
-          completedAt: now,
-        })
-        .where(
-          and(
-            eq(
-              browserUserActionRequests.requestTokenHash,
-              row.requestTokenHash,
-            ),
-            eq(browserUserActionRequests.status, "applying"),
-            lt(
-              browserUserActionRequests.applyStartedAt,
-              new Date(now.getTime() - APPLY_STUCK_AFTER_MS),
-            ),
-          ),
-        )
-        .returning();
-      return updated ?? (await loadExactRequest(operationDb, row));
-    },
-    signal,
-  );
-  return admitted.outcome === "written" ? admitted.value : null;
+  const now = nowDate();
+  const [updated] = await db
+    .update(browserUserActionRequests)
+    .set({
+      status: "uncertain",
+      completedAt: now,
+    })
+    .where(
+      and(
+        eq(browserUserActionRequests.requestTokenHash, row.requestTokenHash),
+        eq(browserUserActionRequests.status, "applying"),
+        lt(
+          browserUserActionRequests.applyStartedAt,
+          new Date(now.getTime() - APPLY_STUCK_AFTER_MS),
+        ),
+      ),
+    )
+    .returning();
+  return updated ?? (await loadExactRequest(db, row));
 }
 
 export const readBrowserUserAction$ = command(
@@ -895,53 +1112,34 @@ export const readBrowserUserAction$ = command(
     if (!row) {
       return notFound();
     }
-    row = await normalizeStuckApplying(db, row, signal);
+    row = await normalizeStuckApplying(db, row);
+    signal.throwIfAborted();
     if (!row) {
       return notFound();
     }
-    const readRow = row;
-    const admitted = await withChatThreadContentRead(
-      db,
-      {
-        chatThreadId: readRow.chatThreadId,
-        authorize: (identity) => {
-          return authorized(readRow, identity);
-        },
-      },
-      async (tx) => {
-        const current = await loadExactRequest(tx as Db, readRow);
-        if (!current) {
-          return null;
-        }
-        const payload = decodePayload(current);
-        const callbackId =
-          current.status === "succeeded"
-            ? payload?.callbackIds.success.clientEventId
-            : current.status === "cancelled"
-              ? payload?.callbackIds.cancellation.clientEventId
-              : undefined;
-        if (!callbackId) {
-          return { row: current, callbackDelivered: false };
-        }
-        const [callbackEvent] = await tx
-          .select({ id: chatEvents.id })
-          .from(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.id, callbackId),
-              eq(chatEvents.chatThreadId, current.chatThreadId),
-              eq(chatEvents.eventType, "input.prompt"),
-            ),
-          )
-          .limit(1);
-        return { row: current, callbackDelivered: callbackEvent !== undefined };
-      },
-      signal,
-    );
-    if (admitted.outcome !== "written" || !admitted.value) {
-      return notFound();
+    const payload = decodePayload(row);
+    const callbackId =
+      row.status === "succeeded"
+        ? payload?.callbackIds.success.clientEventId
+        : row.status === "cancelled"
+          ? payload?.callbackIds.cancellation.clientEventId
+          : undefined;
+    let callbackDelivered = false;
+    if (callbackId) {
+      const [callbackEvent] = await db
+        .select({ id: chatEvents.id })
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.id, callbackId),
+            eq(chatEvents.chatThreadId, row.chatThreadId),
+            eq(chatEvents.eventType, "input.prompt"),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      callbackDelivered = callbackEvent !== undefined;
     }
-    row = admitted.value.row;
     if (
       (row.status === "pending" || row.status === "applying") &&
       !(await requestHasLiveBrowser(db, row))
@@ -949,13 +1147,12 @@ export const readBrowserUserAction$ = command(
       return expired();
     }
     signal.throwIfAborted();
-    const payload = decodePayload(row);
     return payload
       ? {
           kind: "ok",
           value: {
             ...publicRequest(row, args.requestToken, payload),
-            callbackDelivered: admitted.value.callbackDelivered,
+            callbackDelivered,
           },
         }
       : conflict(
@@ -965,10 +1162,119 @@ export const readBrowserUserAction$ = command(
   },
 );
 
+type SubmittedBrowserValue = BrowserUserActionApplyRequest["values"][number];
+
+function validBrowserFileName(name: string): boolean {
+  return ![...name].some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (
+      code <= 31 || code === 127 || character === "/" || character === "\\"
+    );
+  });
+}
+
+function validSubmittedFiles(
+  entry: Extract<SubmittedBrowserValue, { files: unknown }>,
+): boolean {
+  let total = 0;
+  for (const file of entry.files) {
+    if (
+      !validBrowserFileName(file.name) ||
+      /[^\x20-\x7e]/u.test(file.type) ||
+      file.type !== file.type.toLowerCase()
+    ) {
+      return false;
+    }
+    total += file.size;
+    if (total > BROWSER_USER_ACTION_MAX_FILE_BYTES) {
+      return false;
+    }
+  }
+  return entry.files.length <= BROWSER_USER_ACTION_MAX_FILES;
+}
+
+const materializeBrowserFileChoice$ = command(
+  async (
+    { get },
+    row: RequestRow,
+    entry: Extract<SubmittedBrowserValue, { files: unknown }>,
+    signal: AbortSignal,
+  ): Promise<
+    BrowserUseUserActionExactTarget["fields"][number]["fileChoice"] | null
+  > => {
+    const files: {
+      name: string;
+      type: string;
+      size: number;
+      contentBase64: string;
+    }[] = [];
+    for (const [index, file] of entry.files.entries()) {
+      const buffer = await get(
+        downloadS3BufferWithMaxBytes(
+          env("R2_USER_STORAGES_BUCKET_NAME"),
+          temporaryFileKey(row, index),
+          BROWSER_USER_ACTION_MAX_FILE_BYTES,
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+      if (buffer.length !== file.size) {
+        return null;
+      }
+      files.push({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        contentBase64: buffer.toString("base64"),
+      });
+    }
+    return {
+      observedFingerprint: entry.observedFingerprint,
+      operation: entry.operation,
+      files,
+    };
+  },
+);
+
+function submittedValueMatchesField(
+  field: BrowserUserActionInputField,
+  entry: SubmittedBrowserValue,
+): boolean {
+  if (
+    ("observedValue" in entry && field.fieldKind !== "range") ||
+    ("observedColor" in entry && field.fieldKind !== "color")
+  ) {
+    return false;
+  }
+  switch (field.fieldKind) {
+    case "range": {
+      return "observedValue" in entry;
+    }
+    case "color": {
+      return "observedColor" in entry;
+    }
+    case "select": {
+      return "optionIndexes" in entry;
+    }
+    case "checkbox": {
+      return "checked" in entry;
+    }
+    case "radio": {
+      return "memberIndex" in entry;
+    }
+    case "file": {
+      return "files" in entry && validSubmittedFiles(entry);
+    }
+    default: {
+      return "value" in entry;
+    }
+  }
+}
+
 function submittedValues(
   payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
   input: BrowserUserActionApplyRequest,
-): ServiceResult<Map<string, string>> {
+): ServiceResult<Map<string, SubmittedBrowserValue>> {
   const allowed = new Map(
     payload.target.fields.map((field) => {
       return [field.key, field];
@@ -976,12 +1282,13 @@ function submittedValues(
   );
   const values = new Map(
     input.values.map((entry) => {
-      return [entry.key, entry.value];
+      return [entry.key, entry];
     }),
   );
   if (
     input.values.some((entry) => {
-      return !allowed.has(entry.key);
+      const field = allowed.get(entry.key);
+      return !field || !submittedValueMatchesField(field, entry);
     })
   ) {
     return failure(
@@ -992,9 +1299,23 @@ function submittedValues(
   }
   if (
     payload.target.fields.some((field) => {
+      if (!field.required) {
+        return false;
+      }
+      const entry = values.get(field.key);
       return (
-        field.required &&
-        (!values.has(field.key) || values.get(field.key)?.length === 0)
+        !entry ||
+        ("observedValue" in entry || "observedColor" in entry
+          ? entry.value.length === 0
+          : "optionIndexes" in entry
+            ? entry.optionIndexes.length === 0
+            : "checked" in entry
+              ? entry.checked !== true
+              : "memberIndex" in entry
+                ? entry.memberIndex < 0
+                : "files" in entry
+                  ? entry.operation === "clear"
+                  : entry.value.length === 0)
       );
     })
   ) {
@@ -1008,7 +1329,13 @@ function submittedValues(
     kind: "ok",
     value: new Map(
       input.values.flatMap((entry) => {
-        return entry.value.length === 0 ? [] : [[entry.key, entry.value]];
+        return "value" in entry &&
+          entry.value.length === 0 &&
+          !["number", "date_time"].includes(
+            allowed.get(entry.key)?.fieldKind ?? "",
+          )
+          ? []
+          : [[entry.key, entry]];
       }),
     ),
   };
@@ -1045,9 +1372,61 @@ async function markPendingBrowserUserActionStale(
   return stale ?? null;
 }
 
+type BrowserInputInspection =
+  | { readonly kind: "stale" }
+  | {
+      readonly kind: "valid";
+      readonly controls: readonly BrowserUseControlInspection[];
+    };
+
+async function inspectPendingBrowserUserAction(
+  row: RequestRow,
+  payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
+  signal: AbortSignal,
+): Promise<ServiceResult<BrowserInputInspection>> {
+  const attemptId = randomUUID();
+  const provider = await settle(
+    getBrowserUseSession(row.providerSessionId, signal),
+  );
+  signal.throwIfAborted();
+  if (!provider.ok) {
+    return providerFailure(provider.error);
+  }
+  if (provider.value.status === "stopped") {
+    return { kind: "ok", value: { kind: "stale" } };
+  }
+  if (!provider.value.cdpUrl) {
+    return providerFailure(new Error("Browser provider is not active"));
+  }
+  const checked = await settle(
+    preflightBrowserUseUserAction(
+      provider.value.cdpUrl,
+      {
+        ...exactInputTarget(payload),
+        fields: payload.target.fields.map((field) => {
+          return {
+            backendNodeId: field.backendNodeId,
+            fingerprint: field.fingerprint,
+            ...(field.radioMemberNodeIds
+              ? { radioMemberNodeIds: field.radioMemberNodeIds }
+              : {}),
+            required: field.required,
+          };
+        }),
+      },
+      signal,
+      attemptId,
+    ),
+  );
+  signal.throwIfAborted();
+  return checked.ok
+    ? { kind: "ok", value: checked.value }
+    : providerFailure(checked.error);
+}
+
 export const preflightBrowserUserAction$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1061,264 +1440,250 @@ export const preflightBrowserUserAction$ = command(
     if (!located) {
       return notFound();
     }
-    const admitted = await withChatThreadContentWrite(
-      db,
-      {
-        chatThreadId: located.chatThreadId,
-        authorize: (identity) => {
-          return authorized(located, identity);
-        },
-        threadLock: "update",
-      },
-      async (tx): Promise<ServiceResult<BrowserUserActionResponse>> => {
-        const operationDb = tx as Db;
-        const current = await loadExactRequest(operationDb, located);
-        if (!current) {
-          return notFound();
-        }
-        const payload = decodePayload(current);
-        if (!payload) {
-          return conflict(
-            "Browser user-action request payload is unavailable",
-            "BROWSER_USER_ACTION_UNAVAILABLE",
-          );
-        }
-        if (payload.kind !== "input") {
-          return conflict("This Browser request does not accept input values");
-        }
-        if (current.status !== "pending") {
-          return conflict("Browser input is no longer pending");
-        }
-        const leased = await touchExactProvider(operationDb, current);
-        if (!leased) {
-          return expired();
-        }
-        const provider = await settle(
-          getBrowserUseSession(current.providerSessionId, signal),
-        );
-        signal.throwIfAborted();
-        if (!provider.ok) {
-          return providerFailure(provider.error);
-        }
-        if (provider.value.status === "stopped") {
-          const stale = await markPendingBrowserUserActionStale(
-            operationDb,
-            current,
-          );
-          return stale
-            ? {
-                kind: "ok",
-                value: publicRequest(stale, args.requestToken, payload),
-              }
-            : conflict("Browser input state changed during preflight");
-        }
-        if (!provider.value.cdpUrl) {
-          return providerFailure(new Error("Browser provider is not active"));
-        }
-        const target = exactInputTarget(payload);
-        const checked = await settle(
-          preflightBrowserUseUserAction(
-            provider.value.cdpUrl,
-            {
-              ...target,
-              fields: payload.target.fields.map((field) => {
-                return {
-                  backendNodeId: field.backendNodeId,
-                  fingerprint: field.fingerprint,
-                };
-              }),
-            },
-            signal,
+    const payload = decodePayload(located);
+    if (!payload) {
+      return conflict(
+        "Browser user-action request payload is unavailable",
+        "BROWSER_USER_ACTION_UNAVAILABLE",
+      );
+    }
+    if (payload.kind !== "input") {
+      return conflict("This Browser request does not accept input values");
+    }
+    if (located.status !== "pending") {
+      return conflict("Browser input is no longer pending");
+    }
+    const leased = await touchExactProvider(db, located);
+    signal.throwIfAborted();
+    if (!leased) {
+      return expired();
+    }
+    const inspected = await inspectPendingBrowserUserAction(
+      located,
+      payload,
+      signal,
+    );
+    if (inspected.kind === "error") {
+      return inspected;
+    }
+    const inspection = inspected.value;
+    // Apply or cancellation may have consumed the request while the check was
+    // running.
+    const current = await loadExactRequest(db, located);
+    signal.throwIfAborted();
+    if (!current) {
+      return notFound();
+    }
+    if (current.status !== "pending") {
+      return conflict("Browser input state changed during preflight");
+    }
+    if (!(await requestHasLiveBrowser(db, current))) {
+      return expired();
+    }
+    if (inspection.kind === "stale") {
+      const stale = await markPendingBrowserUserActionStale(db, current);
+      signal.throwIfAborted();
+      if (!stale) {
+        return conflict("Browser input state changed during preflight");
+      }
+      if (payload.target.fields[0]?.fieldKind === "file") {
+        const cleanup = await settle(
+          get(
+            deleteS3Objects(
+              env("R2_USER_STORAGES_BUCKET_NAME"),
+              temporaryBrowserFileKeys(stale.requestTokenHash),
+            ),
           ),
         );
         signal.throwIfAborted();
-        if (!checked.ok) {
-          return providerFailure(checked.error);
+        if (!cleanup.ok) {
+          L.warn("Temporary Browser file cleanup failed");
         }
-        if (checked.value === "stale") {
-          const stale = await markPendingBrowserUserActionStale(
-            operationDb,
-            current,
-          );
-          if (!stale) {
-            return conflict("Browser input state changed during preflight");
-          }
-          return {
-            kind: "ok",
-            value: publicRequest(stale, args.requestToken, payload),
-          };
-        }
-        return {
-          kind: "ok",
-          value: publicRequest(current, args.requestToken, payload),
-        };
-      },
-      signal,
-    );
-    return admitted.outcome === "written" ? admitted.value : notFound();
+      }
+      return {
+        kind: "ok",
+        value: publicRequest(stale, args.requestToken, payload),
+      };
+    }
+    return {
+      kind: "ok",
+      value: publicRequest(
+        current,
+        args.requestToken,
+        payload,
+        inspection.controls,
+      ),
+    };
   },
 );
 
 async function claimBrowserUserAction(
   db: Db,
   located: RequestRow,
-  signal: AbortSignal,
 ): Promise<ServiceResult<RequestRow>> {
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
-      chatThreadId: located.chatThreadId,
-      authorize: (identity) => {
-        return authorized(located, identity);
-      },
-      threadLock: "update",
-    },
-    async (tx): Promise<ServiceResult<RequestRow>> => {
-      const operationDb = tx as Db;
-      const current = await loadExactRequest(operationDb, located);
-      if (!current) {
-        return notFound();
-      }
-      if (!(await requestHasLiveBrowser(operationDb, current))) {
-        return expired();
-      }
-      if (current.status !== "pending") {
-        return conflict("Browser input has already been claimed");
-      }
-      const startedAt = nowDate();
-      const [claimed] = await operationDb
-        .update(browserUserActionRequests)
-        .set({
-          status: "applying",
-          applyStartedAt: startedAt,
-        })
-        .where(
-          and(
-            eq(
-              browserUserActionRequests.requestTokenHash,
-              current.requestTokenHash,
-            ),
-            eq(browserUserActionRequests.status, "pending"),
-          ),
-        )
-        .returning();
-      if (!claimed) {
-        return conflict("Browser input has already been claimed");
-      }
-      return { kind: "ok", value: claimed };
-    },
-    signal,
-  );
-  return admitted.outcome === "written" ? admitted.value : notFound();
+  if (!(await requestHasLiveBrowser(db, located))) {
+    return expired();
+  }
+  if (located.status !== "pending") {
+    return conflict("Browser input has already been claimed");
+  }
+  const [claimed] = await db
+    .update(browserUserActionRequests)
+    .set({
+      status: "applying",
+      applyStartedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(
+          browserUserActionRequests.requestTokenHash,
+          located.requestTokenHash,
+        ),
+        eq(browserUserActionRequests.status, "pending"),
+      ),
+    )
+    .returning();
+  if (!claimed) {
+    return conflict("Browser input has already been claimed");
+  }
+  return { kind: "ok", value: claimed };
+}
+
+function browserApplyField(
+  field: BrowserUserActionInputField,
+  entry: SubmittedBrowserValue | undefined,
+  fileContents?: BrowserUseUserActionExactTarget["fields"][number]["fileChoice"],
+): BrowserUseUserActionExactTarget["fields"][number] {
+  return {
+    backendNodeId: field.backendNodeId,
+    fingerprint: field.fingerprint,
+    ...(field.radioMemberNodeIds
+      ? { radioMemberNodeIds: field.radioMemberNodeIds }
+      : {}),
+    required: field.required,
+    ...(entry === undefined
+      ? {}
+      : "observedValue" in entry
+        ? { rangeChoice: entry }
+        : "observedColor" in entry
+          ? { colorChoice: entry }
+          : "value" in entry
+            ? { value: entry.value }
+            : "checked" in entry
+              ? {
+                  checkbox: {
+                    checked: entry.checked,
+                    observedChecked: entry.observedChecked,
+                  },
+                }
+              : "files" in entry
+                ? fileContents
+                  ? { fileChoice: fileContents }
+                  : {}
+                : "memberIndex" in entry
+                  ? {
+                      radioChoice: {
+                        memberIndex: entry.memberIndex,
+                        observedSelectedIndex: entry.observedSelectedIndex,
+                        groupFingerprint: entry.groupFingerprint,
+                      },
+                    }
+                  : {
+                      selection: {
+                        optionIndexes: entry.optionIndexes,
+                        optionSetFingerprint: entry.optionSetFingerprint,
+                      },
+                    }),
+  };
 }
 
 async function applyClaimedBrowserUserAction(
   db: Db,
   claimed: RequestRow,
   payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
-  values: ReadonlyMap<string, string>,
+  submission: {
+    readonly values: ReadonlyMap<string, SubmittedBrowserValue>;
+    readonly fileContents:
+      | BrowserUseUserActionExactTarget["fields"][number]["fileChoice"]
+      | undefined;
+  },
   signal: AbortSignal,
 ): Promise<ServiceResult<RequestRow>> {
-  // The claim above is already visible. Re-enter canonical admission before
-  // the Browser effect so closure in the gap prevents mutation, while this
-  // transaction retains its barriers until the terminal state commits. The
-  // sequential transactions never reserve one pool connection while waiting
-  // to acquire a second one.
-  const commitSignal = new AbortController().signal;
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
-      chatThreadId: claimed.chatThreadId,
-      authorize: (identity) => {
-        return authorized(claimed, identity);
-      },
-      threadLock: "update",
-    },
-    async (tx): Promise<ServiceResult<RequestRow>> => {
-      const operationDb = tx as Db;
-      const current = await loadExactRequest(operationDb, claimed);
-      if (
-        !current ||
-        current.status !== "applying" ||
-        current.applyStartedAt?.getTime() !== claimed.applyStartedAt?.getTime()
-      ) {
-        return conflict("Browser input state changed during application");
-      }
-      const leased = await touchExactProvider(operationDb, current);
-      if (!leased) {
-        const terminal = await finalize(
-          operationDb,
-          current.requestTokenHash,
-          "stale",
-        );
-        return terminal
-          ? { kind: "ok", value: terminal }
-          : conflict("Browser input state changed during application");
-      }
-      const target = exactInputTarget(payload);
-      const provider = await settleIncludingAbort(
-        getBrowserUseSession(current.providerSessionId, signal),
-      );
-      if (!provider.ok) {
-        await restorePending(operationDb, current.requestTokenHash);
-        return providerFailure(provider.error);
-      }
-      if (provider.value.status !== "active" || !provider.value.cdpUrl) {
-        await restorePending(operationDb, current.requestTokenHash);
-        return providerFailure(new Error("Browser provider is not active"));
-      }
-      const operation = await settle(
-        applyBrowserUseUserAction(
-          provider.value.cdpUrl,
-          {
-            ...target,
-            fields: payload.target.fields.map((field) => {
-              const value = values.get(field.key);
-              return {
-                backendNodeId: field.backendNodeId,
-                fingerprint: field.fingerprint,
-                ...(value === undefined ? {} : { value }),
-              };
-            }),
-          },
-          signal,
-        ),
-      );
-      if (!operation.ok) {
-        if (
-          operation.error instanceof BrowserUseUserActionMutationError &&
-          operation.error.writeStarted
-        ) {
-          const terminal = await finalize(
-            operationDb,
-            current.requestTokenHash,
-            "uncertain",
+  // Once claimed, every exit settles the request: a terminal state or a
+  // restored pending state, each conditional on the claim still applying.
+  const leased = await touchExactProvider(db, claimed);
+  if (!leased) {
+    const terminal = await finalize(db, claimed.requestTokenHash, "stale");
+    return terminal
+      ? { kind: "ok", value: terminal }
+      : conflict("Browser input state changed during application");
+  }
+  const target = exactInputTarget(payload);
+  const provider = await settleIncludingAbort(
+    getBrowserUseSession(claimed.providerSessionId, signal),
+  );
+  if (!provider.ok) {
+    await restorePending(db, claimed.requestTokenHash);
+    return providerFailure(provider.error);
+  }
+  if (provider.value.status !== "active" || !provider.value.cdpUrl) {
+    await restorePending(db, claimed.requestTokenHash);
+    return providerFailure(new Error("Browser provider is not active"));
+  }
+  const operation = await settle(
+    applyBrowserUseUserAction(
+      provider.value.cdpUrl,
+      {
+        ...target,
+        fields: payload.target.fields.map((field) => {
+          return browserApplyField(
+            field,
+            submission.values.get(field.key),
+            submission.fileContents,
           );
-          return terminal
-            ? { kind: "ok", value: terminal }
-            : conflict("Browser input state changed during application");
-        }
-        await restorePending(operationDb, current.requestTokenHash);
-        return providerFailure(operation.error);
-      }
+        }),
+      },
+      signal,
+    ),
+  );
+  if (!operation.ok) {
+    if (
+      operation.error instanceof BrowserUseUserActionMutationError &&
+      operation.error.writeStarted
+    ) {
       const terminal = await finalize(
-        operationDb,
-        current.requestTokenHash,
-        operation.value,
+        db,
+        claimed.requestTokenHash,
+        "uncertain",
       );
       return terminal
         ? { kind: "ok", value: terminal }
         : conflict("Browser input state changed during application");
-    },
-    commitSignal,
+    }
+    await restorePending(db, claimed.requestTokenHash);
+    return providerFailure(operation.error);
+  }
+  if (operation.value === "invalid") {
+    await restorePending(db, claimed.requestTokenHash);
+    return conflict(
+      "Browser input does not meet the website control constraints",
+      "BROWSER_USER_ACTION_INVALID_VALUE",
+    );
+  }
+  const terminal = await finalize(
+    db,
+    claimed.requestTokenHash,
+    operation.value,
   );
   signal.throwIfAborted();
-  return admitted.outcome === "written" ? admitted.value : notFound();
+  return terminal
+    ? { kind: "ok", value: terminal }
+    : conflict("Browser input state changed during application");
 }
 
 export const applyBrowserUserAction$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1348,7 +1713,29 @@ export const applyBrowserUserAction$ = command(
       return valuesResult;
     }
 
-    const claimed = await claimBrowserUserAction(db, located, signal);
+    const submittedFile =
+      payload.target.fields.length === 1
+        ? valuesResult.value.get(payload.target.fields[0]!.key)
+        : undefined;
+    let fileContents:
+      | BrowserUseUserActionExactTarget["fields"][number]["fileChoice"]
+      | undefined;
+    if (submittedFile && "files" in submittedFile) {
+      const materialized = await settle(
+        set(materializeBrowserFileChoice$, located, submittedFile, signal),
+      );
+      signal.throwIfAborted();
+      if (!materialized.ok || !materialized.value) {
+        return conflict(
+          "Temporary Browser file is missing or invalid",
+          "BROWSER_USER_ACTION_INVALID_VALUE",
+        );
+      }
+      fileContents = materialized.value;
+    }
+
+    const claimed = await claimBrowserUserAction(db, located);
+    signal.throwIfAborted();
     if (claimed.kind === "error") {
       return claimed;
     }
@@ -1356,11 +1743,28 @@ export const applyBrowserUserAction$ = command(
       db,
       claimed.value,
       payload,
-      valuesResult.value,
+      { values: valuesResult.value, fileContents },
       signal,
     );
     if (applied.kind === "error") {
       return applied;
+    }
+    if (
+      payload.target.fields.length === 1 &&
+      payload.target.fields[0]?.fieldKind === "file"
+    ) {
+      const cleanup = await settle(
+        get(
+          deleteS3Objects(
+            env("R2_USER_STORAGES_BUCKET_NAME"),
+            temporaryBrowserFileKeys(applied.value.requestTokenHash),
+          ),
+        ),
+      );
+      signal.throwIfAborted();
+      if (!cleanup.ok) {
+        L.warn("Temporary Browser file cleanup failed");
+      }
     }
     return {
       kind: "ok",
@@ -1374,7 +1778,7 @@ async function mutatePendingRequest(
   args: {
     readonly row: RequestRow;
     readonly requestToken: string;
-    readonly terminal: "cancelled" | "succeeded";
+    readonly terminal: "cancelled";
   },
   signal: AbortSignal,
 ): Promise<ServiceResult<BrowserUserActionResponse>> {
@@ -1385,92 +1789,47 @@ async function mutatePendingRequest(
       "BROWSER_USER_ACTION_UNAVAILABLE",
     );
   }
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
-      chatThreadId: args.row.chatThreadId,
-      authorize: (identity) => {
-        return authorized(args.row, identity);
-      },
-      threadLock: "update",
-    },
-    async (tx): Promise<ServiceResult<RequestRow>> => {
-      const operationDb = tx as Db;
-      const current = await loadExactRequest(operationDb, args.row);
-      if (!current) {
-        return notFound();
-      }
-      if (current.status === args.terminal) {
-        return { kind: "ok", value: current };
-      }
-      if (!(await requestHasLiveBrowser(operationDb, current))) {
-        return expired();
-      }
-      if (current.status !== "pending") {
-        return conflict(
-          "Browser user-action state no longer permits this action",
-        );
-      }
-      const now = nowDate();
-      const [updated] = await operationDb
-        .update(browserUserActionRequests)
-        .set({
-          status: args.terminal,
-          completedAt: now,
-        })
-        .where(
-          and(
-            eq(
-              browserUserActionRequests.requestTokenHash,
-              current.requestTokenHash,
-            ),
-            eq(browserUserActionRequests.status, "pending"),
-          ),
-        )
-        .returning();
-      return updated
-        ? { kind: "ok", value: updated }
-        : conflict("Browser user-action state changed");
-    },
-    signal,
-  );
-  if (admitted.outcome !== "written") {
-    return notFound();
+  const current = args.row;
+  if (current.status === args.terminal) {
+    return {
+      kind: "ok",
+      value: publicRequest(current, args.requestToken, payload),
+    };
   }
-  return admitted.value.kind === "error"
-    ? admitted.value
-    : {
+  if (!(await requestHasLiveBrowser(db, current))) {
+    return expired();
+  }
+  if (current.status !== "pending") {
+    return conflict("Browser user-action state no longer permits this action");
+  }
+  const [updated] = await db
+    .update(browserUserActionRequests)
+    .set({
+      status: args.terminal,
+      completedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(
+          browserUserActionRequests.requestTokenHash,
+          current.requestTokenHash,
+        ),
+        eq(browserUserActionRequests.status, "pending"),
+      ),
+    )
+    .returning();
+  signal.throwIfAborted();
+  return updated
+    ? {
         kind: "ok",
-        value: publicRequest(admitted.value.value, args.requestToken, payload),
-      };
+        value: publicRequest(updated, args.requestToken, payload),
+      }
+    : conflict("Browser user-action state changed");
 }
 
 export const cancelBrowserUserAction$ = command(
   async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly requestToken: string;
-    },
-    signal: AbortSignal,
-  ): Promise<ServiceResult<BrowserUserActionResponse>> => {
-    const db = set(writeDb$);
-    const row = await loadOwnedRequest(db, args);
-    signal.throwIfAborted();
-    return row
-      ? await mutatePendingRequest(
-          db,
-          { row, requestToken: args.requestToken, terminal: "cancelled" },
-          signal,
-        )
-      : notFound();
-  },
-);
-
-export const completeBrowserUserAction$ = command(
-  async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1484,20 +1843,28 @@ export const completeBrowserUserAction$ = command(
     if (!row) {
       return notFound();
     }
-    const payload = decodePayload(row);
-    if (!payload) {
-      return conflict(
-        "Browser user-action request payload is unavailable",
-        "BROWSER_USER_ACTION_UNAVAILABLE",
-      );
-    }
-    if (payload.kind !== "direct_interaction") {
-      return conflict("This Browser request is not a direct interaction");
-    }
-    return await mutatePendingRequest(
+    const result = await mutatePendingRequest(
       db,
-      { row, requestToken: args.requestToken, terminal: "succeeded" },
+      { row, requestToken: args.requestToken, terminal: "cancelled" },
       signal,
     );
+    if (
+      result.kind === "ok" &&
+      decodePayload(row)?.target.fields[0]?.fieldKind === "file"
+    ) {
+      const cleanup = await settle(
+        get(
+          deleteS3Objects(
+            env("R2_USER_STORAGES_BUCKET_NAME"),
+            temporaryBrowserFileKeys(row.requestTokenHash),
+          ),
+        ),
+      );
+      signal.throwIfAborted();
+      if (!cleanup.ok) {
+        L.warn("Temporary Browser file cleanup failed");
+      }
+    }
+    return result;
   },
 );

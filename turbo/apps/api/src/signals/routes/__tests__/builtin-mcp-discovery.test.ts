@@ -11,7 +11,7 @@ import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
@@ -64,16 +64,13 @@ async function setupRun() {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Account discovery Agent",
   });
-  const run = await runs.createDirectRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Discover admitted accounts",
-    modelProviderType: "anthropic-api-key",
-    vars: { OKOU_AGENT_ID: agent.agentId },
-    secrets: { OKOU_TOKEN: "discovery-test-token" },
   });
   return { actor, run };
 }

@@ -1,5 +1,6 @@
 import { fetchResource } from "../lib/resource-fetch.ts";
 import {
+  DEFAULT_USER_LOCALE,
   SUPPORTED_USER_LOCALES,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -28,7 +29,7 @@ import zhHansCommonUrl from "./locales/zh-Hans/common.json?url";
 import zhHantAgentsUrl from "./locales/zh-Hant/agents.json?url";
 import zhHantCommonUrl from "./locales/zh-Hant/common.json?url";
 
-export const DEFAULT_LOCALE = "en-US";
+export const DEFAULT_LOCALE = DEFAULT_USER_LOCALE;
 export const DEFAULT_NAMESPACE = "common";
 export const SUPPORTED_LOCALES = SUPPORTED_USER_LOCALES;
 

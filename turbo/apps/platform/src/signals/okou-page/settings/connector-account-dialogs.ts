@@ -9,6 +9,7 @@ import type {
 
 import type {
   PlatformConnectorAccountMutationIntent,
+  PlatformConnectorCatalogConnectItem,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
 import { reloadConnectorAccountSummaries$ } from "../connector-accounts.ts";
@@ -38,7 +39,7 @@ export interface DefaultConnectorAccountMutationOptions {
 }
 
 export function defaultBuiltinConnectorAccountOptions(
-  connector: PlatformConnectorCatalogStatusItem | undefined,
+  connector: PlatformConnectorCatalogConnectItem | undefined,
 ): DefaultConnectorAccountMutationOptions | null {
   if (!connector) {
     return null;

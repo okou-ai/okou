@@ -1,21 +1,30 @@
-//! Verified RFB 3.8 / VeNCrypt 0.2 X509 authentication, bounded captures and serialized input.
+//! Bounded RFB authentication, captures and serialized input.
 //!
 //! [`authenticate`] consumes an already connected stream. The caller owns
 //! destination/authorization policy; this crate never resolves or connects a host.
 //! Authentication stops before ClientInit. [`Authenticated::initialize`] adds
 //! desktop negotiation with an explicit [`SharingMode`] and owned framebuffer updates.
 //! [`Session`] adds immutable PNG captures and balanced keyboard/pointer input.
-//! Failure or cancellation drops the stream, with no background tasks.
+//! Failure or cancellation drops the stream. A QEMU SCRAM step already running
+//! in the blocking pool (including bounded PBKDF2) may finish after cancellation;
+//! that task does not retain the stream.
 
 #![forbid(unsafe_code)]
 
+mod apple_dh;
+mod apple_rsa_srp;
+mod apple_srp;
+mod apple_vnc_password;
 mod authentication;
 mod capture;
 mod framebuffer;
 mod input;
 mod memory;
 mod pixels;
+mod qemu_sasl;
+mod rsa_aes;
 mod session;
+mod transport;
 mod trust;
 mod wire;
 mod zrle;
@@ -27,16 +36,17 @@ use std::{fmt, io, time::Duration};
 
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::Instant;
-use tokio_rustls::client::TlsStream;
 use zeroize::Zeroizing;
 
 pub use capture::{Capture, CaptureMetadata};
 pub use framebuffer::{Cursor, FramebufferConnection};
 pub use input::{Input, InputOutcome, Key, MouseButton, ScrollAxis};
+pub use rsa_aes::{RsaAesCredentials, RsaAesSecurity, RsaServerKeyPin};
 pub use session::{Geometry, Session};
-pub use trust::TrustRoots;
+pub use transport::AuthenticatedStream;
+pub use trust::{ClientIdentity, TrustRoots};
 
-/// Maximum lifetime of the complete negotiation, including TLS and authentication.
+/// Maximum lifetime of the complete selected authentication negotiation.
 pub const MAX_HANDSHAKE_DURATION: Duration = Duration::from_secs(30);
 
 /// Per-connection sharing request sent in RFB ClientInit. The server controls
@@ -57,18 +67,28 @@ pub enum SharingMode {
 /// whether a server, firewall, proxy, or another network component caused silence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthenticationStage {
-    /// Waiting for or responding to the RFB 3.8 version banner.
+    /// Waiting for or responding to the selected RFB version banner.
     RfbVersion,
-    /// Negotiating the required VeNCrypt 0.2 X509 security profile.
+    /// Negotiating the exact caller-selected RFB security profile.
     SecurityNegotiation,
     /// Establishing the certificate-verified TLS transport.
     TlsHandshake,
     /// Completing the X509None SecurityResult exchange.
     X509NoneAuthentication,
-    /// Completing the VNC password challenge and SecurityResult exchange.
+    /// Completing the X509Vnc or explicitly selected bare VNC password exchange.
     VncAuthentication,
     /// Sending X509Plain credentials and completing the SecurityResult exchange.
     X509PlainAuthentication,
+    /// Completing pinned QEMU X509SASL/SCRAM and verifying the server proof.
+    QemuScramAuthentication,
+    /// Completing Apple DH security type 30 and SecurityResult.
+    AppleDhAuthentication,
+    /// Completing Apple Direct SRP security type 36 and SecurityResult.
+    AppleSrpAuthentication,
+    /// Completing Apple RSA/SRP security type 33 and SecurityResult.
+    AppleRsaSrpAuthentication,
+    /// Completing exact RSA-AES key/proof/credential and SecurityResult exchange.
+    RsaAesAuthentication,
 }
 
 impl AuthenticationStage {
@@ -81,6 +101,11 @@ impl AuthenticationStage {
             Self::X509NoneAuthentication => "x509_none_authentication",
             Self::VncAuthentication => "vnc_authentication",
             Self::X509PlainAuthentication => "x509_plain_authentication",
+            Self::QemuScramAuthentication => "qemu_scram_authentication",
+            Self::AppleDhAuthentication => "apple_dh_authentication",
+            Self::AppleSrpAuthentication => "apple_srp_authentication",
+            Self::AppleRsaSrpAuthentication => "apple_rsa_srp_authentication",
+            Self::RsaAesAuthentication => "rsa_aes_authentication",
         }
     }
 }
@@ -155,6 +180,139 @@ impl fmt::Debug for PlainCredentials {
     }
 }
 
+/// Credentials for QEMU's SCRAM-SHA-256 over verified X509 TLS.
+///
+/// Values are restricted to printable ASCII so the SASL library cannot silently
+/// change their bytes during SASLprep. Unlike classic VNC, the password is not
+/// truncated at eight bytes. Owned input is erased on drop; debug is redacted.
+pub struct QemuScramCredentials {
+    pub(crate) username: Zeroizing<String>,
+    pub(crate) password: Zeroizing<String>,
+}
+
+impl QemuScramCredentials {
+    pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    pub fn new_zeroizing(username: String, password: Zeroizing<String>) -> Result<Self, Error> {
+        let username = Zeroizing::new(username);
+        if !(1..=255).contains(&username.len())
+            || !username
+                .bytes()
+                .all(|b| b.is_ascii_graphic() && b != b'=' && b != b',')
+        {
+            return Err(Error::InvalidScramUsername);
+        }
+        if !(1..=1023).contains(&password.len())
+            || !password.bytes().all(|b| (0x20..=0x7e).contains(&b))
+        {
+            return Err(Error::InvalidScramPassword);
+        }
+        Ok(Self { username, password })
+    }
+}
+
+impl fmt::Debug for QemuScramCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("QemuScramCredentials([REDACTED])")
+    }
+}
+
+/// Validated Apple DH / ARD username and password. Each field fits its 64-byte
+/// NUL-terminated wire slot without truncation; owned bytes are erased on drop.
+pub struct AppleDhCredentials {
+    username: Zeroizing<Vec<u8>>,
+    password: Zeroizing<Vec<u8>>,
+}
+
+impl AppleDhCredentials {
+    pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
+        let username = Zeroizing::new(username.into_bytes());
+        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
+        if !(1..=63).contains(&username.len()) || username.contains(&0) {
+            return Err(Error::InvalidAppleDhUsername);
+        }
+        if !(1..=63).contains(&password.len()) || password.contains(&0) {
+            return Err(Error::InvalidAppleDhPassword);
+        }
+        Ok(Self { username, password })
+    }
+}
+
+impl fmt::Debug for AppleDhCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AppleDhCredentials([REDACTED])")
+    }
+}
+
+/// Validated Apple Direct SRP username and password. Owned password bytes are
+/// erased on drop; Debug never exposes either credential.
+pub struct AppleSrpCredentials {
+    username: Zeroizing<Vec<u8>>,
+    password: Zeroizing<Vec<u8>>,
+}
+
+impl AppleSrpCredentials {
+    pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
+        let username = Zeroizing::new(username.into_bytes());
+        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
+        if !(1..=255).contains(&username.len()) || username.contains(&0) {
+            return Err(Error::InvalidAppleSrpUsername);
+        }
+        if !(1..=1023).contains(&password.len()) || password.contains(&0) {
+            return Err(Error::InvalidAppleSrpPassword);
+        }
+        Ok(Self { username, password })
+    }
+}
+
+impl fmt::Debug for AppleSrpCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AppleSrpCredentials([REDACTED])")
+    }
+}
+
+/// Validated Apple RSA/SRP type-33 credentials. Unlike direct SRP, the
+/// RSA-2048 username envelope leaves room for only 234 UTF-8 bytes.
+/// Owned credentials are zeroized on drop and Debug is redacted.
+pub struct AppleRsaSrpCredentials {
+    username: Zeroizing<Vec<u8>>,
+    password: Zeroizing<Vec<u8>>,
+}
+
+impl AppleRsaSrpCredentials {
+    pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
+        let username = Zeroizing::new(username.into_bytes());
+        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
+        if !(1..=234).contains(&username.len()) || username.contains(&0) {
+            return Err(Error::InvalidAppleRsaSrpUsername);
+        }
+        if !(1..=1023).contains(&password.len()) || password.contains(&0) {
+            return Err(Error::InvalidAppleRsaSrpPassword);
+        }
+        Ok(Self { username, password })
+    }
+}
+
+impl fmt::Debug for AppleRsaSrpCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AppleRsaSrpCredentials([REDACTED])")
+    }
+}
+
 /// Exact certificate-TLS VeNCrypt authentication selected by the caller.
 ///
 /// `None` verifies the server and encrypts the session, but does not
@@ -167,6 +325,9 @@ pub enum X509Authentication {
     VncPassword(VncPassword),
     /// X509Plain (subtype 262), with a username and password sent inside TLS.
     Plain(PlainCredentials),
+    /// QEMU 8.2.2 X509SASL (subtype 263) with SCRAM-SHA-256 inside verified TLS.
+    /// QEMU swaps the spec's 263/264 names; 264 is *not* accepted by this path.
+    QemuScramSha256(QemuScramCredentials),
 }
 
 impl X509Authentication {
@@ -175,6 +336,7 @@ impl X509Authentication {
             Self::None => 260,
             Self::VncPassword(_) => 261,
             Self::Plain(_) => 262,
+            Self::QemuScramSha256(_) => 263,
         }
     }
 
@@ -183,6 +345,7 @@ impl X509Authentication {
             Self::None => AuthenticationStage::X509NoneAuthentication,
             Self::VncPassword(_) => AuthenticationStage::VncAuthentication,
             Self::Plain(_) => AuthenticationStage::X509PlainAuthentication,
+            Self::QemuScramSha256(_) => AuthenticationStage::QemuScramAuthentication,
         }
     }
 }
@@ -193,22 +356,201 @@ impl fmt::Debug for X509Authentication {
             Self::None => f.write_str("X509Authentication::None"),
             Self::VncPassword(_) => f.write_str("X509Authentication::VncPassword([REDACTED])"),
             Self::Plain(_) => f.write_str("X509Authentication::Plain([REDACTED])"),
+            Self::QemuScramSha256(_) => {
+                f.write_str("X509Authentication::QemuScramSha256([REDACTED])")
+            }
         }
     }
 }
 
 /// An authenticated connection, positioned immediately after SecurityResult.
-/// It retains no client credentials. Dropping it drops the underlying owned stream.
+/// A certificate-authenticated TLS connection may retain its signing key until
+/// stream teardown. Dropping it drops the underlying owned stream.
 pub struct Authenticated<S> {
-    stream: TlsStream<S>,
+    stream: AuthenticatedStream<S>,
 }
 
 impl<S> Authenticated<S> {
-    /// Transfer ownership of the verified TLS stream to the RFB session engine.
+    /// Transfer ownership of the selected post-authentication stream to the RFB engine.
     /// The next client message is ClientInit; ServerInit has not been read.
-    pub fn into_stream(self) -> TlsStream<S> {
+    pub fn into_stream(self) -> AuthenticatedStream<S> {
         self.stream
     }
+}
+
+/// Certificate-required X509 VeNCrypt authentication, distinct from the
+/// certificate-free [`X509Authentication`] policy.
+///
+/// Both variants verify the server and require a TLS client certificate.
+pub enum ClientCertificateAuthentication {
+    /// X509None (subtype 260), without an inner VNC credential.
+    None,
+    /// X509Vnc (subtype 261), with a classic VNC password inside mTLS.
+    VncPassword(VncPassword),
+}
+
+impl ClientCertificateAuthentication {
+    const fn stage(&self) -> AuthenticationStage {
+        match self {
+            Self::None => AuthenticationStage::X509NoneAuthentication,
+            Self::VncPassword(_) => AuthenticationStage::VncAuthentication,
+        }
+    }
+}
+
+impl fmt::Debug for ClientCertificateAuthentication {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::None => f.write_str("ClientCertificateAuthentication::None"),
+            Self::VncPassword(_) => {
+                f.write_str("ClientCertificateAuthentication::VncPassword([REDACTED])")
+            }
+        }
+    }
+}
+
+/// Authenticate exactly Apple DH / ARD security type 30 on a caller-owned stream.
+///
+/// This legacy exchange protects only the credential block. It does not verify
+/// the server or encrypt subsequent RFB traffic. The caller must provide an
+/// independently authenticated, full-session protective transport when crossing
+/// an untrusted network. No product profile currently admits this engine path.
+pub async fn authenticate_apple_dh<S>(
+    stream: S,
+    credentials: AppleDhCredentials,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = apple_dh::authenticate(stream, credentials, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::AppleDhAuthentication,
+        });
+    }
+    Ok(authenticated)
+}
+
+/// Authenticate exactly the optional classic VNC password (RFB security type 2)
+/// offered by the tested Apple Remote Management server on a caller-owned stream.
+/// The password authenticates the client, not the server, and does not encrypt
+/// post-authentication RFB data. Product callers must independently require a
+/// saved host-key-verified SSH connection terminating on the Mac and literal
+/// loopback RFB destination. This engine entry point admits no saved profile.
+pub async fn authenticate_apple_vnc_password<S>(
+    stream: S,
+    password: VncPassword,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = apple_vnc_password::authenticate(stream, password, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::VncAuthentication,
+        });
+    }
+    Ok(authenticated)
+}
+
+/// Authenticate exactly Apple Direct SRP (RFB security type 36) on a caller-owned
+/// stream. The server is authenticated by its SRP proof before the stream is
+/// returned, but post-authentication RFB traffic is not encrypted. The caller
+/// must provide a verified protective transport across untrusted networks.
+/// Product callers must enforce the saved SSH-to-Mac-loopback route and
+/// independent VNC and SSH authorization before using this entry point.
+pub async fn authenticate_apple_srp<S>(
+    stream: S,
+    credentials: AppleSrpCredentials,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = apple_srp::authenticate(stream, credentials, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::AppleSrpAuthentication,
+        });
+    }
+    Ok(authenticated)
+}
+
+/// Authenticate exactly Apple RSA/SRP security type 33 on a caller-owned stream.
+/// The RSA key is received from the peer and is not a trusted server identity.
+/// A future product caller must independently enforce verified SSH terminating
+/// on the Mac and a literal loopback RFB destination before using this engine.
+/// No direct/raw saved profile is admitted by this crate.
+pub async fn authenticate_apple_rsa_srp<S>(
+    stream: S,
+    credentials: AppleRsaSrpCredentials,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = apple_rsa_srp::authenticate(stream, credentials, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::AppleRsaSrpAuthentication,
+        });
+    }
+    Ok(authenticated)
+}
+
+/// Authenticate an owned RFB 3.8 stream using one exact RSA-AES profile.
+///
+/// The caller must acquire the complete SHA256 RSA public-key-wire pin out of
+/// band. Authentication-only `ne` modes do not protect later traffic: a future
+/// product caller must independently enforce its verified outer transport. No
+/// owner/Runner profile is enabled by this engine API. Cancellation/failure drops
+/// the owned stream; bounded CPU jobs may finish separately, retaining permits
+/// and dropping their private inputs without keeping the stream alive.
+/// Server keys are limited to 2048/3072/4096 bits and exponent 65537; every client
+/// handshake generates a fresh, fixed 2048-bit ephemeral key.
+pub async fn authenticate_rsa_aes<S>(
+    stream: S,
+    security: RsaAesSecurity,
+    credentials: RsaAesCredentials,
+    pin: RsaServerKeyPin,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    authentication::phase(
+        AuthenticationStage::RsaAesAuthentication,
+        deadline,
+        rsa_aes::authenticate(stream, security, credentials, pin, deadline),
+    )
+    .await
 }
 
 /// Authenticate an owned stream using one exact certificate-TLS VeNCrypt profile.
@@ -251,6 +593,51 @@ where
     Ok(authenticated)
 }
 
+/// Authenticate a caller-owned stream with required client-certificate TLS.
+///
+/// The key and chain must be constructed as [`ClientIdentity`] before calling.
+/// The saved server DNS name or IP is independent of the supplied stream's
+/// socket destination. TLS must both verify the server and request/select this
+/// client's identity. A successful handshake alone does not establish whether
+/// the remote server *enforces* client verification: the caller must independently
+/// verify its server-side `verify-peer=on` policy.
+///
+/// Shares the certificate-free entry point's single <=30s absolute deadline,
+/// exact subtype, SecurityResult boundary, cancellation and no-fallback contract.
+/// No product or Runner saved profile is enabled by this engine-only API.
+pub async fn authenticate_with_client_certificate<S>(
+    stream: S,
+    server_name: &str,
+    authentication: ClientCertificateAuthentication,
+    roots: TrustRoots,
+    identity: ClientIdentity,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let final_stage = authentication.stage();
+    let authenticated = authentication::authenticate_with_client_certificate(
+        stream,
+        server_name,
+        authentication,
+        roots,
+        identity,
+        deadline,
+    )
+    .await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded { stage: final_stage });
+    }
+    Ok(authenticated)
+}
+
 /// Bounded local error categories. Server-provided error text is never retained
 /// or included in Display/Debug output.
 #[derive(Debug, thiserror::Error)]
@@ -285,13 +672,55 @@ pub enum Error {
     InvalidPlainUsername,
     #[error("Plain password must contain 1-1023 UTF-8 bytes without NUL")]
     InvalidPlainPassword,
+    #[error("QEMU SCRAM username must contain 1-255 printable ASCII bytes without comma or equals")]
+    InvalidScramUsername,
+    #[error("QEMU SCRAM password must contain 1-1023 printable ASCII bytes")]
+    InvalidScramPassword,
+    #[error("QEMU SCRAM-SHA-256 was not offered")]
+    UnsupportedScramMechanism,
+    #[error("invalid or over-budget QEMU SCRAM exchange")]
+    InvalidScramExchange,
+    #[error("Apple DH username must contain 1-63 UTF-8 bytes without NUL")]
+    InvalidAppleDhUsername,
+    #[error("Apple DH password must contain 1-63 UTF-8 bytes without NUL")]
+    InvalidAppleDhPassword,
+    #[error("invalid or unsupported Apple DH parameters")]
+    InvalidAppleDhParameters,
+    #[error("Apple SRP username must contain 1-255 UTF-8 bytes without NUL")]
+    InvalidAppleSrpUsername,
+    #[error("Apple SRP password must contain 1-1023 UTF-8 bytes without NUL")]
+    InvalidAppleSrpPassword,
+    #[error("invalid or unsupported Apple SRP parameters or framing")]
+    InvalidAppleSrpParameters,
+    #[error("Apple RSA/SRP username must contain 1-234 UTF-8 bytes without NUL")]
+    InvalidAppleRsaSrpUsername,
+    #[error("Apple RSA/SRP password must contain 1-1023 UTF-8 bytes without NUL")]
+    InvalidAppleRsaSrpPassword,
+    #[error("invalid or unsupported Apple RSA/SRP key or framing")]
+    InvalidAppleRsaSrpParameters,
+    #[error("RSA-AES credentials require 1-255 UTF-8 bytes without NUL and the exact subtype")]
+    InvalidRsaAesCredential,
+    #[error("invalid or unsupported RSA-AES parameters, proof or transition")]
+    InvalidRsaAesExchange,
+    #[error("RSA-AES server key does not match the required owner pin")]
+    RsaServerKeyMismatch,
+    #[error("OS cryptographic randomness failed")]
+    Randomness,
     #[error("invalid TLS server name")]
     InvalidServerName,
     #[error("custom trust requires 1-8 valid DER certificates totaling at most 64 KiB")]
     InvalidTrustRoots,
-    #[error("unsupported RFB version; RFB 3.8 is required")]
+    #[error(
+        "client identity requires a matching PKCS#8 key and 1-8 DER certificates within limits"
+    )]
+    InvalidClientIdentity,
+    #[error("TLS server did not request the required client certificate")]
+    ClientCertificateNotRequested,
+    #[error("no usable client signing scheme was selected for TLS client authentication")]
+    ClientCertificateNotSelected,
+    #[error("unsupported RFB version for selected profile")]
     UnsupportedRfbVersion,
-    #[error("server does not offer the required VeNCrypt X509 profile")]
+    #[error("server does not offer the required RFB security profile")]
     UnsupportedSecurity,
     #[error("server rejected security negotiation")]
     NegotiationRejected,
@@ -316,4 +745,29 @@ pub enum Error {
     Io(#[from] io::Error),
     #[error("TLS provider configuration failed")]
     TlsConfiguration(#[source] rustls::Error),
+}
+
+#[cfg(test)]
+mod qemu_scram_credentials_tests {
+    use super::*;
+
+    #[test]
+    fn bounds_scram_credentials_without_classic_vnc_truncation() {
+        let valid =
+            QemuScramCredentials::new("owner@example.test".into(), "more-than-eight".into())
+                .unwrap();
+        assert_eq!(format!("{valid:?}"), "QemuScramCredentials([REDACTED])");
+        assert!(matches!(
+            QemuScramCredentials::new("a,b".into(), "password".into()),
+            Err(Error::InvalidScramUsername)
+        ));
+        assert!(matches!(
+            QemuScramCredentials::new("user".into(), "\0password".into()),
+            Err(Error::InvalidScramPassword)
+        ));
+        assert!(matches!(
+            QemuScramCredentials::new("user".into(), "x".repeat(1024)),
+            Err(Error::InvalidScramPassword)
+        ));
+    }
 }

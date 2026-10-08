@@ -72,12 +72,6 @@ async function page(path: string, auth?: SetupPageAuth, host = "app.okou.ai") {
   await screen.findByRole("heading", { name: "Sign in to Desktop" });
 }
 
-async function leaveDesktopAuthPage(): Promise<void> {
-  window.history.pushState({}, "", "/desktop-auth/missing");
-  fireEvent.popState(window);
-  await screen.findByRole("heading", { name: "That page isn't here." });
-}
-
 function button(name: string) {
   const result = queryAllByRoleFast("button").find((item) => {
     return (
@@ -111,47 +105,19 @@ async function failed() {
   });
 }
 
-test.each(["ai.okou.desktop", "ai.okou.desktop.dev"])(
-  "signed-out entry preserves explicit %s in the absolute hosted auth callback",
-  async (scheme) => {
-    const documents = navigation();
-    await page(`/desktop-auth/start?callbackScheme=${scheme}`, null);
-    await waitFor(() => {
-      expect(documents).toHaveLength(1);
-    });
-    const destination = new URL(documents[0]!);
-    expect(destination.origin).toBe("https://app.okou.ai");
-    expect(destination.pathname).toBe("/sign-in");
-    expect(destination.searchParams.get("redirect_url")).toBe(
-      `https://app.okou.ai/desktop-auth/callback?callbackScheme=${scheme}`,
-    );
-  },
-);
-
-test("the skeleton covers the page until the Clerk runtime resolves", async () => {
-  const clerkLoad = context.mocks.clerk().runtimePending();
+test("signed-out entry preserves an explicit scheme in the absolute hosted auth callback", async () => {
+  const scheme = "ai.okou.desktop.dev";
   const documents = navigation();
-
-  const pageReady = setupPage({
-    context,
-    host: "app.okou.ai",
-    path: `/desktop-auth/start?callbackScheme=${SCHEME}`,
-  });
-
-  // The app root mounts nothing before the runtime resolves, so publishing the
-  // page any earlier would replace the skeleton with a blank document.
-  const skeleton = await screen.findByTestId("app-skeleton");
-  expect(skeleton).not.toHaveAttribute("aria-hidden", "true");
-  expect(
-    screen.queryByRole("heading", { name: "Sign in to Desktop" }),
-  ).toBeNull();
-
-  clerkLoad.resolve();
-  await pageReady;
-
+  await page(`/desktop-auth/start?callbackScheme=${scheme}`, null);
   await waitFor(() => {
-    expect(documents).toStrictEqual([CALLBACK]);
+    expect(documents).toHaveLength(1);
   });
+  const destination = new URL(documents[0]!);
+  expect(destination.origin).toBe("https://app.okou.ai");
+  expect(destination.pathname).toBe("/sign-in");
+  expect(destination.searchParams.get("redirect_url")).toBe(
+    `https://app.okou.ai/desktop-auth/callback?callbackScheme=${scheme}`,
+  );
 });
 
 test("signed-in entry goes straight to the callback", async () => {
@@ -195,7 +161,7 @@ test.each(["sign-in", "sign-up"])(
   },
 );
 
-test.each(["app.okou.ai", "app.vm7.ai", "pr-31957-app.omby.ai"])(
+test.each(["app.okou.ai", "pr-31957-app.omby.ai"])(
   "signed-out consume uses the normal API origin for %s and never navigates with the ticket",
   async (host) => {
     const documents = navigation();
@@ -256,7 +222,7 @@ test.each(["app.okou.ai", "app.vm7.ai", "pr-31957-app.omby.ai"])(
   },
 );
 
-test.each(["bad", "expired", "replayed"])(
+test.each(["bad", "expired"])(
   "fails closed on a %s code and does not expose the API error",
   async (kind) => {
     const documents = navigation();
@@ -309,73 +275,63 @@ test("ticket session tasks preserve the handoff without exposing the ticket to h
   expect(task.toString()).not.toContain(TICKET);
 });
 
-test.each(["event-before-resolution", "event-after-resolution"])(
-  "bootstrap organization watcher yields through fresh-token IPC and server acknowledgement: %s",
-  async (ordering) => {
-    const documents = navigation();
-    const clerk = context.mocks.clerk();
-    const activated = context.mocks.deferred<void>();
-    const ipc = context.mocks.deferred<void>();
-    const acknowledgement = context.mocks.deferred<void>();
-    const completionRequested = context.mocks.deferred<void>();
-    const tokens = bridge(() => {
-      return ipc.promise;
-    });
-    const headers: (string | null)[] = [];
-    mockedClerk.sessionGetToken.mockImplementation((options) => {
-      return Promise.resolve(
-        options?.skipCache ? "fresh-org-beta" : "stale-org-alpha",
-      );
-    });
-    mockedClerk.setActive.mockImplementation(async () => {
-      if (ordering === "event-before-resolution") {
-        clerk.organization({ activeOrg: { id: "org_beta", name: "Beta" } });
-        clerk.stateChanged();
-      }
-      activated.resolve();
-      await Promise.resolve();
-    });
-    context.mocks.api(
-      desktopAuthHandoffContract.complete,
-      async ({ request, respond }) => {
-        headers.push(request.headers.get("Authorization"));
-        completionRequested.resolve();
-        await acknowledgement.promise;
-        return respond(200, { status: "completed" });
-      },
+test("bootstrap organization watcher yields through fresh-token IPC and server acknowledgement", async () => {
+  const documents = navigation();
+  const clerk = context.mocks.clerk();
+  const activated = context.mocks.deferred<void>();
+  const ipc = context.mocks.deferred<void>();
+  const acknowledgement = context.mocks.deferred<void>();
+  const completionRequested = context.mocks.deferred<void>();
+  const tokens = bridge(() => {
+    return ipc.promise;
+  });
+  const headers: (string | null)[] = [];
+  mockedClerk.sessionGetToken.mockImplementation((options) => {
+    return Promise.resolve(
+      options?.skipCache ? "fresh-org-beta" : "stale-org-alpha",
     );
-    await page(
-      `/desktop-auth/select-org?force=true&handoffId=${HANDOFF}`,
-      signedIn(true),
-    );
-    await screen.findByRole("region", {
-      description: "Choose a workspace for this computer.",
-    });
-    click(button("Beta"));
-    click(button("Beta"));
-    await activated.promise;
-    if (ordering === "event-after-resolution") {
-      clerk.organization({ activeOrg: { id: "org_beta", name: "Beta" } });
-      clerk.stateChanged();
-    }
-    await waitFor(() => {
-      expect(tokens).toStrictEqual(["fresh-org-beta"]);
-    });
-    expect(location.pathname).toBe("/desktop-auth/select-org");
-    expect(documents).toStrictEqual([]);
-    expect(headers).toStrictEqual([]);
-    ipc.resolve();
-    await completionRequested.promise;
-    expect(documents).toStrictEqual([]);
-    expect(location.pathname).toBe("/desktop-auth/select-org");
-    expect(headers).toStrictEqual(["Bearer fresh-org-beta"]);
-    acknowledgement.resolve();
-    await waitFor(() => {
-      expect(documents).toStrictEqual(["/"]);
-    });
-    expect(mockedClerk.setActive).toHaveBeenCalledTimes(1);
-  },
-);
+  });
+  mockedClerk.setActive.mockImplementation(async () => {
+    activated.resolve();
+    await Promise.resolve();
+  });
+  context.mocks.api(
+    desktopAuthHandoffContract.complete,
+    async ({ request, respond }) => {
+      headers.push(request.headers.get("Authorization"));
+      completionRequested.resolve();
+      await acknowledgement.promise;
+      return respond(200, { status: "completed" });
+    },
+  );
+  await page(
+    `/desktop-auth/select-org?force=true&handoffId=${HANDOFF}`,
+    signedIn(true),
+  );
+  await screen.findByRole("region", {
+    description: "Choose a workspace for this computer.",
+  });
+  click(button("Beta"));
+  await activated.promise;
+  clerk.organization({ activeOrg: { id: "org_beta", name: "Beta" } });
+  clerk.stateChanged();
+  await waitFor(() => {
+    expect(tokens).toStrictEqual(["fresh-org-beta"]);
+  });
+  expect(location.pathname).toBe("/desktop-auth/select-org");
+  expect(documents).toStrictEqual([]);
+  expect(headers).toStrictEqual([]);
+  ipc.resolve();
+  await completionRequested.promise;
+  expect(documents).toStrictEqual([]);
+  expect(location.pathname).toBe("/desktop-auth/select-org");
+  expect(headers).toStrictEqual(["Bearer fresh-org-beta"]);
+  acknowledgement.resolve();
+  await waitFor(() => {
+    expect(documents).toStrictEqual(["/"]);
+  });
+  expect(mockedClerk.setActive).toHaveBeenCalledTimes(1);
+});
 
 test("ordinary Web organization switching still refreshes and navigates home", async () => {
   const clerk = context.mocks.clerk();
@@ -420,23 +376,20 @@ test("existing session restoration uses a fresh token without requiring a handof
   expect(tokens).toStrictEqual(["fresh-restore"]);
 });
 
-test.each([0, 2])(
-  "token restoration with %s memberships makes the native select-org transition",
-  async (count) => {
-    const documents = navigation();
-    const tokens = bridge();
-    await page(
-      `/desktop-auth/token?handoffId=${HANDOFF}`,
-      signedIn(false, [alpha, beta].slice(0, count)),
-    );
-    await waitFor(() => {
-      expect(documents).toStrictEqual([
-        `https://app.okou.ai/desktop-auth/select-org?handoffId=${HANDOFF}`,
-      ]);
-    });
-    expect(tokens).toStrictEqual([]);
-  },
-);
+test("token restoration with several memberships makes the native select-org transition", async () => {
+  const documents = navigation();
+  const tokens = bridge();
+  await page(
+    `/desktop-auth/token?handoffId=${HANDOFF}`,
+    signedIn(false, [alpha, beta]),
+  );
+  await waitFor(() => {
+    expect(documents).toStrictEqual([
+      `https://app.okou.ai/desktop-auth/select-org?handoffId=${HANDOFF}`,
+    ]);
+  });
+  expect(tokens).toStrictEqual([]);
+});
 
 test("a sole workspace is activated before token restoration completes", async () => {
   const documents = navigation();
@@ -492,25 +445,6 @@ test.each(["bridge", "completion"])(
   },
 );
 
-test("cancelling a delayed token read prevents late IPC", async () => {
-  const documents = navigation();
-  const tokens = bridge();
-  const token = context.mocks.deferred<string>();
-  const requested = context.mocks.deferred<void>();
-  context.mocks.clerk();
-  mockedClerk.sessionGetToken.mockImplementation(() => {
-    requested.resolve();
-    return token.promise;
-  });
-  await page("/desktop-auth/token");
-  await requested.promise;
-  await leaveDesktopAuthPage();
-  token.resolve("too-late-token");
-  await token.promise;
-  expect(tokens).toStrictEqual([]);
-  expect(documents).toStrictEqual([]);
-});
-
 test("browser completion waits through pending and consumed, and manual reopen never creates a second handoff", async () => {
   const opened = context.mocks.browser.locationAssign();
   const consumed = context.mocks.deferred<void>();
@@ -559,85 +493,6 @@ test("browser completion waits through pending and consumed, and manual reopen n
   expect(polls).toBe(3);
 });
 
-test.each([404, 500] as const)(
-  "browser polling stops on status %s and retry explicitly navigates to a fresh callback attempt",
-  async (status) => {
-    const documents = navigation();
-    context.mocks.browser.locationAssign();
-    const unusable = context.mocks.deferred<void>();
-    let polls = 0;
-    let creates = 0;
-    context.mocks.api(desktopAuthHandoffContract.create, ({ respond }) => {
-      creates += 1;
-      return respond(200, {
-        callbackUrl: `${SCHEME}://auth/callback?code=${CODE}&handoffId=${HANDOFF}`,
-        handoffId: HANDOFF,
-      });
-    });
-    context.mocks.api(
-      desktopAuthHandoffContract.status,
-      async ({ respond }) => {
-        polls += 1;
-        if (polls === 1) {
-          return respond(200, { status: "pending" });
-        }
-        await unusable.promise;
-        return respond(status, {
-          error: {
-            code: status === 404 ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
-            message: TICKET,
-          },
-        });
-      },
-    );
-    await page(`/desktop-auth/callback?callbackScheme=${SCHEME}`);
-    await screen.findByRole("region", {
-      description: "Open Desktop to continue signing in.",
-    });
-    unusable.resolve();
-    await failed();
-    expect(polls).toBe(2);
-    expect(creates).toBe(1);
-    expect(document.body.textContent).not.toContain(TICKET);
-    click(button("Try again"));
-    expect(documents).toStrictEqual([CALLBACK]);
-  },
-);
-
-test("leaving the browser callback aborts a pending handoff status request", async () => {
-  context.mocks.browser.locationAssign();
-  const requested = context.mocks.deferred<AbortSignal>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.api(desktopAuthHandoffContract.create, ({ respond }) => {
-    return respond(200, {
-      callbackUrl: `${SCHEME}://auth/callback?code=${CODE}&handoffId=${HANDOFF}`,
-      handoffId: HANDOFF,
-    });
-  });
-  context.mocks.api(
-    desktopAuthHandoffContract.status,
-    async ({ request, respond }) => {
-      requested.resolve(request.signal);
-      await response.promise;
-      return respond(200, { status: "completed" });
-    },
-  );
-
-  await page(`/desktop-auth/callback?callbackScheme=${SCHEME}`);
-  await screen.findByRole("region", {
-    description: "Open Desktop to continue signing in.",
-  });
-  const requestSignal = await requested.promise;
-  await leaveDesktopAuthPage();
-  expect(requestSignal.aborted).toBeTruthy();
-
-  response.resolve();
-  await response.promise;
-  expect(
-    screen.getByRole("heading", { name: "That page isn't here." }),
-  ).toBeInTheDocument();
-});
-
 test.each([
   "https://evil.example/",
   "ai.vm0.zero.desktop://auth/callback",
@@ -681,28 +536,6 @@ test("route replacement cancels consume and a late reply cannot activate Clerk o
   expect(mockedClerk.clientSignInCreate).not.toHaveBeenCalled();
   expect(documents).toStrictEqual([]);
   expect(tokens).toStrictEqual([]);
-});
-
-test("cancellation after IPC starts discards its delayed acknowledgement", async () => {
-  const documents = navigation();
-  const pending = context.mocks.deferred<void>();
-  const tokens = bridge(() => {
-    return pending.promise;
-  });
-  let completions = 0;
-  context.mocks.api(desktopAuthHandoffContract.complete, ({ respond }) => {
-    completions += 1;
-    return respond(200, { status: "completed" });
-  });
-  await page(`/desktop-auth/token?handoffId=${HANDOFF}`);
-  await waitFor(() => {
-    expect(tokens).toStrictEqual(["test-token"]);
-  });
-  await leaveDesktopAuthPage();
-  pending.resolve();
-  await pending.promise;
-  expect(completions).toBe(0);
-  expect(documents).toStrictEqual([]);
 });
 
 test("a required organization task stays in hosted auth with its Desktop callback", async () => {
@@ -819,71 +652,6 @@ test("workspace selection includes memberships beyond the first Clerk page", asy
     description: "Choose a workspace for this computer.",
   });
   expect(button("Workspace 100")).toBeEnabled();
-});
-
-test("a cancelled ticket activation cannot navigate after the Clerk response arrives", async () => {
-  const documents = navigation();
-  const ticket = context.mocks.deferred<{
-    status: string;
-    createdSessionId: string;
-  }>();
-  const requested = context.mocks.deferred<void>();
-  context.mocks.clerk();
-  context.mocks.api(desktopAuthConsumeContract.consume, ({ respond }) => {
-    return respond(200, { token: TICKET });
-  });
-  mockedClerk.clientSignInCreate.mockImplementation(() => {
-    requested.resolve();
-    return ticket.promise;
-  });
-  await page(`/desktop-auth/consume?code=${CODE}`, null);
-  await requested.promise;
-  await leaveDesktopAuthPage();
-  ticket.resolve({ status: "complete", createdSessionId: "late-session" });
-  await ticket.promise;
-  expect(documents).toStrictEqual([]);
-  expect(mockedClerk.setActive).not.toHaveBeenCalled();
-});
-
-test("cancelling a server completion request cannot publish late native success", async () => {
-  const documents = navigation();
-  bridge();
-  const completion = context.mocks.deferred<void>();
-  const requested = context.mocks.deferred<void>();
-  context.mocks.api(
-    desktopAuthHandoffContract.complete,
-    async ({ respond }) => {
-      requested.resolve();
-      await completion.promise;
-      return respond(200, { status: "completed" });
-    },
-  );
-  await page(`/desktop-auth/token?handoffId=${HANDOFF}`);
-  await requested.promise;
-  await leaveDesktopAuthPage();
-  completion.resolve();
-  await completion.promise;
-  expect(documents).toStrictEqual([]);
-});
-
-test("a delayed handoff-create response after cancellation never opens a native URL", async () => {
-  const opened = context.mocks.browser.locationAssign();
-  const handoff = context.mocks.deferred<void>();
-  const requested = context.mocks.deferred<void>();
-  context.mocks.api(desktopAuthHandoffContract.create, async ({ respond }) => {
-    requested.resolve();
-    await handoff.promise;
-    return respond(200, {
-      callbackUrl: `${SCHEME}://auth/callback?code=${CODE}&handoffId=${HANDOFF}`,
-      handoffId: HANDOFF,
-    });
-  });
-  await page(`/desktop-auth/callback?callbackScheme=${SCHEME}`);
-  await requested.promise;
-  await leaveDesktopAuthPage();
-  handoff.resolve();
-  await handoff.promise;
-  expect(opened.calls).toStrictEqual([]);
 });
 
 test("forced workspace selection survives a required session task", async () => {

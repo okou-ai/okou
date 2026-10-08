@@ -1,6 +1,10 @@
 import { command } from "ccstate";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
-import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
+import {
+  hostContract,
+  isHostedSiteDocument,
+  type HostedSiteFilesResponse,
+} from "@okouai/api-contracts/contracts/host";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { accept } from "../lib/accept.ts";
@@ -11,7 +15,10 @@ import {
 } from "../views/okou-page/attachment-url.ts";
 import { i18n } from "../i18n/index.ts";
 import { apiClient$ } from "./api-client.ts";
-import { classifyChatAttachment } from "./chat-page/parse-body-blocks.ts";
+import {
+  classifyChatAttachment,
+  isHostedSiteUrl,
+} from "./chat-page/parse-body-blocks.ts";
 import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
 import { logger } from "./log.ts";
 import { settle } from "./utils.ts";
@@ -23,8 +30,25 @@ type AttachmentDownload = {
   readonly url: string;
 };
 
+function hostedPublicationUrl(url: string): URL | null {
+  if (!isHostedSiteUrl(url)) {
+    return null;
+  }
+  const parsed = new URL(url);
+  // Match hosted navigation, including extensionless SPA routes. Direct asset
+  // links still download one file; the manifest disambiguates extensionless files.
+  const documentPath =
+    /\.html?$/iu.test(parsed.pathname) ||
+    (!/\.[A-Za-z0-9]+$/u.test(parsed.pathname) &&
+      !parsed.pathname.startsWith("/assets/"));
+  if (parsed.username || parsed.password || parsed.port || !documentPath) {
+    return null;
+  }
+  return parsed;
+}
+
 /**
- * List the publication an artifact reference points at.
+ * List the publication an artifact reference or public site URL points at.
  *
  * `403` and `404` are the documented misses for this viewer: a reference that
  * does not name hosted content, and a publication whose files this viewer may
@@ -39,24 +63,36 @@ const hostedPublication$ = command(
   async (
     { get },
     attachment: AttachmentDownload,
+    siteUrl: URL | null,
     signal: AbortSignal,
   ): Promise<HostedSiteFilesResponse | null> => {
     const reference = parseArtifactReference(attachment.url, location.origin);
-    if (!reference) {
-      return null;
-    }
-    const response = await accept(
-      get(apiClient$)(artifactDownloadsContract).files({
-        params: { reference: `${reference.hash}${reference.extension}` },
-        fetchOptions: { signal },
-      }),
-      [200, 403, 404],
-      signal,
-      // This path owns one `downloadFailed` toast for every way it can fail.
-      { showErrorToast: false },
-    );
+    const response = reference
+      ? await accept(
+          get(apiClient$)(artifactDownloadsContract).files({
+            params: { reference: `${reference.hash}${reference.extension}` },
+            fetchOptions: { signal },
+          }),
+          [200, 403, 404],
+          signal,
+          { showErrorToast: false },
+        )
+      : siteUrl
+        ? await accept(
+            get(apiClient$)(hostContract).files({
+              params: { publicSlug: siteUrl.hostname.split(".")[0] },
+              // The hostname selects published bytes, not an owner's private draft.
+              query: { hostname: siteUrl.hostname },
+              fetchOptions: { signal },
+            }),
+            [200, 403, 404],
+            signal,
+            // This path owns one downloadFailed toast for every way it can fail.
+            { showErrorToast: false },
+          )
+        : null;
     signal.throwIfAborted();
-    return response.status === 200 ? response.body : null;
+    return response?.status === 200 ? response.body : null;
   },
 );
 
@@ -110,16 +146,43 @@ const downloadHostedPublication$ = command(
     args: {
       readonly attachment: AttachmentDownload;
       readonly resourceUrl: string;
+      readonly siteUrl: URL | null;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
     const attempt = await settle(
       (async (): Promise<boolean | null> => {
-        const site = await set(hostedPublication$, args.attachment, signal);
+        const site = await set(
+          hostedPublication$,
+          args.attachment,
+          args.siteUrl,
+          signal,
+        );
         if (!site || site.files.length < 2) {
           return null;
         }
-        return await writePublicationArchive(site, args.resourceUrl, signal);
+        // Hosted delivery decodes paths and removes empty segments, so /image/
+        // and /%69mage can both name an extensionless non-HTML member.
+        const requestedPath = args.siteUrl
+          ? `/${decodeURIComponent(args.siteUrl.pathname).split("/").filter(Boolean).join("/")}`
+          : null;
+        const requestedFile = site.files.find((file) => {
+          return file.path === requestedPath;
+        });
+        if (requestedFile && !isHostedSiteDocument(requestedFile)) {
+          return null;
+        }
+        const publicationUrl = site.artifactUrl
+          ? hostedPublicationUrl(site.artifactUrl)
+          : null;
+        // Pin public aliases to the listed deployment. Private references and
+        // shared aliases retain their authorized delivery URL.
+        const resourceUrl =
+          args.siteUrl &&
+          publicationUrl?.hostname.startsWith(`dpl-${site.deploymentId}.`)
+            ? publicationUrl.href
+            : args.resourceUrl;
+        return await writePublicationArchive(site, resourceUrl, signal);
       })(),
       signal,
     );
@@ -160,11 +223,12 @@ export const downloadAttachment$ = command(
       get(preview.artifactShareIdentity$),
     ]);
     signal.throwIfAborted();
+    const siteUrl = hostedPublicationUrl(attachment.url);
     if (
-      identity?.target.kind === "html" &&
+      (identity?.target.kind === "html" || siteUrl) &&
       (await set(
         downloadHostedPublication$,
-        { attachment, resourceUrl },
+        { attachment, resourceUrl, siteUrl },
         signal,
       ))
     ) {

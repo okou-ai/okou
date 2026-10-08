@@ -554,7 +554,6 @@ async fn run_codex_app_server(
             failure_diagnostic: ingestor.failure_diagnostic(),
             control_error: None,
             cli_termination: None,
-            active_input_delivery_ids: Vec::new(),
         })
     };
     let run_outcome = run_with_execution_deadline(
@@ -642,7 +641,9 @@ async fn run_codex_app_server(
     {
         active_input_controller.mark_sink_stopped_after_consumer_exit();
     }
-    let active_input_delivery_ids = active_input_controller.finalize_receipts().await;
+    let active_input_finalized = active_input_controller
+        .finalize_steered_declarations()
+        .await;
     let stderr_lines = masker.mask_diagnostic_lines(client.stderr_tail().to_vec());
     for event in notification_state.citation_repair.abandon() {
         let mut sink = EventIngestSink {
@@ -658,15 +659,14 @@ async fn run_codex_app_server(
     // Publish buffered event-log bytes after the child is stopped and before
     // callers observe the finished app-server execution.
     agent_log.flush().await;
-    let active_input_delivery_ids = match active_input_delivery_ids {
-        Ok(delivery_ids) => delivery_ids,
+    match active_input_finalized {
+        Ok(()) => {}
         Err(active_input_error) if run_outcome.is_heartbeat_failure() => {
             log_warn!(
                 LOG_TAG,
                 "Codex active-input cleanup failed after heartbeat failure: {}",
                 masker.mask_string(&active_input_error.to_string())
             );
-            Vec::new()
         }
         Err(active_input_error) => {
             if let Err(shutdown_error) = &shutdown_result {
@@ -677,13 +677,12 @@ async fn run_codex_app_server(
             }
             return Err(active_input_error);
         }
-    };
+    }
 
     match run_outcome {
         AppServerRunOutcome::Completed(run_result) => match (*run_result, shutdown_result) {
             (Ok(mut result), Ok(())) => {
                 result.stderr_lines = stderr_lines;
-                result.active_input_delivery_ids = active_input_delivery_ids;
                 Ok(result)
             }
             (Ok(_result), Err(error)) => Err(AgentError::Execution(format!(
@@ -723,7 +722,6 @@ async fn run_codex_app_server(
                     cli_termination: Some(CliTerminationDiagnostic::new(
                         failure.termination_reason,
                     )),
-                    active_input_delivery_ids,
                 })
             }
         },
@@ -751,7 +749,6 @@ async fn run_codex_app_server(
                 cli_termination: Some(CliTerminationDiagnostic::new(
                     CliTerminationReason::ExecutionTimeout,
                 )),
-                active_input_delivery_ids,
             })
         }
         AppServerRunOutcome::UserCancelled => {
@@ -776,7 +773,6 @@ async fn run_codex_app_server(
                 cli_termination: Some(CliTerminationDiagnostic::new(
                     CliTerminationReason::UserCancellation,
                 )),
-                active_input_delivery_ids,
             })
         }
     }

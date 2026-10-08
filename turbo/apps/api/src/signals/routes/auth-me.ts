@@ -60,6 +60,9 @@ const getAuthMeInner$ = command(
           userId: auth.userId,
           email: cached.email,
           orgId: auth.orgId ?? null,
+          ...(auth.tokenType === "session" && auth.sessionId
+            ? { sessionId: auth.sessionId }
+            : {}),
         },
       };
     }
@@ -105,6 +108,9 @@ const getAuthMeInner$ = command(
         userId: auth.userId,
         email,
         orgId: auth.orgId ?? null,
+        ...(auth.tokenType === "session" && auth.sessionId
+          ? { sessionId: auth.sessionId }
+          : {}),
       },
     };
   },

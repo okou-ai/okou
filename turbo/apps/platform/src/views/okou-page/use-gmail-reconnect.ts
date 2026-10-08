@@ -1,7 +1,7 @@
 import { useGet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 
-import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
+import { connectorCatalogItemBySlug } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
@@ -10,17 +10,19 @@ import {
 } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
+// Reconnecting Gmail needs its one catalog entry, not the full catalog status.
+const gmailCatalogItem$ = connectorCatalogItemBySlug("gmail");
+
 export function useGmailReconnect(
   connectionId: string | undefined,
   onSuccess: () => void | Promise<void>,
 ) {
-  const catalogBySlug = useLastResolved(connectorCatalogStatusBySlug$);
+  const connector = useLastResolved(gmailCatalogItem$) ?? undefined;
   const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
   const [connection, connect] = useLoadableSet(
     connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   );
   const signal = useGet(pageSignal$);
-  const connector = catalogBySlug?.get("gmail");
   const authMethod = connector
     ? getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(connector)
     : null;

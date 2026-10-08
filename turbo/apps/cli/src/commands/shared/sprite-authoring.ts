@@ -1,9 +1,9 @@
 /**
- * Sprite generation source-selection packet.
+ * Sprite generation authoring instructions.
  *
  * `okou generate sprite` does not run a server-side pipeline. Like the website
- * and styled-image commands, it "bounces" a structured authoring packet back to
- * the calling agent: the resolved sprite plan, the recommended image model, the
+ * and styled-image commands, it prints authoring instructions for the calling
+ * agent: the resolved sprite plan, the image generation guidance, the
  * upstream sprite skill to resolve, and the hard containment rules the agent
  * must honor when it drives built-in image generation plus local postprocessing.
  */
@@ -22,7 +22,6 @@ export interface SpritePlan {
   readonly margin: string;
   readonly effectPolicy: string;
   readonly reference: string;
-  readonly model: string;
   readonly name: string;
 }
 
@@ -30,23 +29,6 @@ interface SpriteAuthoringOptions {
   readonly prompt: string;
   readonly plan: SpritePlan;
   readonly visibility?: ArtifactVisibility;
-}
-
-interface SpriteAuthoringPacket {
-  readonly type: "generation-source-selection";
-  readonly kind: "sprite";
-  readonly prompt: string;
-  readonly plan: SpritePlan;
-  readonly model: string;
-  readonly outputDir: string;
-  readonly skill: {
-    readonly repo: string;
-    readonly ref: string;
-    readonly skillPath: string;
-    readonly references: readonly string[];
-    readonly script: string;
-  };
-  readonly instructions: string;
 }
 
 const SPRITE_SKILL = {
@@ -75,7 +57,7 @@ const CORE_INVARIANTS = [
 const WORKFLOW = [
   "1. Resolve the upstream skill below, then infer or confirm the asset plan. Pick the smallest useful output and do not pad unrelated actions into one raw sheet.",
   "2. Write the art prompt by hand using the skill's prompt-rules. Lock the art style, the exact sheet shape, the solid magenta background, the identity, and the containment rules. Do not delegate prompt writing to a script.",
-  "3. Generate each raw sheet with built-in image generation using the recommended model below. If a reference is involved, make it visible to the model first (view a local file before generating); never pass a bare filesystem path as the visual reference.",
+  "3. Generate each raw sheet with built-in image generation as described under Image Generation. If a reference is involved, make it visible to the model first (view a local file before generating); never pass a bare filesystem path as the visual reference.",
   "4. Postprocess each raw sheet locally with the skill's processor script: magenta cleanup, frame extraction, alignment, shared-scale normalization, component filtering, QC metadata, transparent sheet export, and GIF export.",
   "5. QC each sheet: no frame touches a cell edge, scale is consistent, detached FX did not become noise, the sheet reads as one coherent animation, and hero/player body height matches the accepted idle/run scale within ~10-15%. Reprocess or regenerate if it fails.",
   "6. Return the bundle for the resolved plan (single sheet, unit/spell/combat bundle, line bundle, or hero action bundle with separate FX assets and an optional assembled engine atlas after per-action QC).",
@@ -91,9 +73,9 @@ const EXPECTED_OUTPUTS = [
   "`pipeline-meta.json`",
 ] as const;
 
-export function createSpriteAuthoringPacket(
+export function createSpriteAuthoringInstructions(
   options: SpriteAuthoringOptions,
-): SpriteAuthoringPacket {
+): string {
   const { prompt, plan } = options;
   const outputDir = `./generated/sprites/${plan.name}`;
   const visibilityFlag =
@@ -115,7 +97,7 @@ export function createSpriteAuthoringPacket(
     ["Reference", plan.reference],
   ];
 
-  const instructions = [
+  return [
     "# Okou generate sprite",
     "",
     "This is a federated generation source-selection packet for the current agent.",
@@ -132,10 +114,10 @@ export function createSpriteAuthoringPacket(
     }),
     `- Output name: ${plan.name}`,
     "",
-    "## Recommended Model",
-    `- Use \`${plan.model}\` for every raw sheet via built-in image generation (\`okou generate image --provider built-in --model ${plan.model} --raw-prompt "..."\`, or the in-context image tool).`,
-    "- gpt-image-2 is recommended for sprite sheets: it accepts flexible WIDTHxHEIGHT sizes and high quality for crisp, evenly-spaced grids. It does not emit transparent backgrounds, which is expected here — the solid magenta background is chroma-keyed by the local processor.",
-    "- Pick a sheet-friendly square or grid-aligned size (for example 1024x1024 for 2x2/3x3/4x4) so each cell stays evenly spaced.",
+    "## Image Generation",
+    '- Generate every raw sheet via built-in image generation (`okou generate image --provider built-in --raw-prompt "..."`, or the in-context image tool). Do not pass a model: built-in image generation uses the image model selected in Settings › Built-in tools.',
+    "- Do not request a transparent background; the solid magenta background is chroma-keyed by the local processor.",
+    "- Pick a sheet-friendly square or grid-aligned size (for example `--size 1024x1024` for 2x2/3x3/4x4) so each cell stays evenly spaced. If the selected model rejects the size, use a supported square size listed by `okou generate image -h`.",
     "",
     "## Workflow Skill",
     "Resolve this skill before authoring; it is the authority for sprite prompt patterns, sheet/bundle selection, and the postprocessing primitive.",
@@ -178,15 +160,4 @@ export function createSpriteAuthoringPacket(
     "- For hero/player body actions, confirm body height matches the accepted idle/run scale within ~10-15%.",
     "- Report the output directory, the final assets, and the resolved plan.",
   ].join("\n");
-
-  return {
-    type: "generation-source-selection",
-    kind: "sprite",
-    prompt,
-    plan,
-    model: plan.model,
-    outputDir,
-    skill: SPRITE_SKILL,
-    instructions,
-  };
 }

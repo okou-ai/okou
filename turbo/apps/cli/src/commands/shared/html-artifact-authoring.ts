@@ -1,7 +1,4 @@
-import type {
-  GenerationOutputKind,
-  GenerationTarget,
-} from "@okouai/core/resource-registry";
+import type { GenerationTarget } from "@okouai/core/resource-registry";
 import type { ArtifactVisibility } from "./artifact-visibility";
 
 /** Generation targets authored as static HTML from a target-specific resource index. */
@@ -46,38 +43,6 @@ interface HtmlArtifactSelectionOutputSchema {
   readonly rationale: "string";
 }
 
-interface HtmlArtifactAuthoringPacket {
-  readonly type: "generation-source-selection";
-  readonly kind: HtmlArtifactKind;
-  readonly prompt: string;
-  readonly artifact: {
-    readonly outputMode: "primary-artifact-with-supporting-assets";
-    readonly primaryArtifact: {
-      readonly kind: GenerationOutputKind;
-      readonly path: string;
-    };
-    readonly supportingAssets: readonly {
-      readonly kind: GenerationOutputKind | "metadata";
-      readonly path: string;
-      readonly optional: boolean;
-    }[];
-    readonly previewKind: "hosted-url";
-    readonly outputDir: string;
-  };
-  readonly selection: {
-    readonly indexUrl: string;
-    readonly outputSchema: HtmlArtifactSelectionOutputSchema;
-  };
-  readonly authoring: {
-    readonly details: readonly string[];
-    readonly artifactRules: readonly string[];
-  };
-  readonly outputDir: string;
-  readonly site: string;
-  readonly hostCommand: string;
-  readonly instructions: string;
-}
-
 function slugify(value: string): string {
   const slug = value
     .toLowerCase()
@@ -106,14 +71,14 @@ function outputDirForSite(site: string): string {
   return `./generated/mockups/${site}`;
 }
 
-export function createHtmlArtifactAuthoringPacket(
+export function createHtmlArtifactAuthoringInstructions(
   options: HtmlArtifactAuthoringOptions,
-): HtmlArtifactAuthoringPacket {
+): string {
   const site =
     options.siteSlug ?? slugify(options.slugSource ?? options.prompt);
   const outputDir = outputDirForSite(site);
   const visibilityFlag =
-    options.visibility === undefined
+    options.kind === "website" || options.visibility === undefined
       ? ""
       : ` --visibility ${options.visibility}`;
   const hostCommand = `okou host ${outputDir} --site ${site}${
@@ -160,38 +125,7 @@ export function createHtmlArtifactAuthoringPacket(
     "- If a source file cannot be fetched, state that limitation and fall back to the index metadata for that resource.",
     "",
   ];
-  const artifact = {
-    outputMode: "primary-artifact-with-supporting-assets",
-    primaryArtifact: {
-      kind: options.kind,
-      path: `${outputDir}/index.html`,
-    },
-    supportingAssets: [
-      {
-        kind: "image",
-        path: `${outputDir}/assets/`,
-        optional: true,
-      },
-      {
-        kind: "audio",
-        path: `${outputDir}/assets/`,
-        optional: true,
-      },
-      {
-        kind: "video",
-        path: `${outputDir}/assets/`,
-        optional: true,
-      },
-      {
-        kind: "metadata",
-        path: `${outputDir}/metadata.json`,
-        optional: true,
-      },
-    ],
-    previewKind: "hosted-url",
-    outputDir,
-  } as const;
-  const instructions = [
+  return [
     `# Okou generate ${options.kind}`,
     "",
     "This is a generation source-selection packet for the current agent.",
@@ -206,8 +140,8 @@ export function createHtmlArtifactAuthoringPacket(
     `Author a production-quality ${title} as a static HTML artifact using the selected generation resources.`,
     "",
     "## Artifact Output Model",
-    `- Primary artifact: \`${artifact.primaryArtifact.kind}\` at \`${artifact.primaryArtifact.path}\`.`,
-    `- Output mode: \`${artifact.outputMode}\`.`,
+    `- Primary artifact: \`${options.kind}\` at \`${outputDir}/index.html\`.`,
+    "- Output mode: `primary-artifact-with-supporting-assets`.",
     "- Supporting images, audio, video, or metadata may live inside the same output directory when the result needs them.",
     "- Treat the output directory as a project bundle when multiple media types are generated, while keeping the HTML entry point primary.",
     "",
@@ -216,7 +150,7 @@ export function createHtmlArtifactAuthoringPacket(
     `- The entry file must be \`${outputDir}/index.html\`.`,
     "- Keep every local asset inside the same output directory.",
     options.kind === "website"
-      ? "- Keep supporting generated media at its default visibility and bundle local copies. Hosting publishes the website publicly; do not make supporting media public separately."
+      ? "- Keep supporting generated media bundled inside the website output directory when needed."
       : "- Keep supporting generated media at its default visibility and bundle local copies. The selected visibility applies to the final artifact; do not make supporting media public separately.",
     "- For private generated media, use `okou web download-file --help` to download by file ID, artifact URL, or /artifacts/<hash> reference; bundle the downloaded assets using relative paths. Never embed private artifact references (absolute or hostless) or expiring preview/provider signatures in HTML.",
     "- Image batch results may be relative asset paths rooted at the batch state directory. Copy its optimized WebP assets into this output bundle, reference them with relative paths, and preserve image dimensions.",
@@ -252,7 +186,7 @@ export function createHtmlArtifactAuthoringPacket(
     "## Publish",
     "The hosted URL is the preview and user-accessible view for this static HTML artifact.",
     options.kind === "website"
-      ? "Return the exact URL from the host command. Hosted websites are public: anyone with the returned URL can open them."
+      ? "Return the exact URL from the host command."
       : "Return the exact URL from the host command. Private artifacts use an authenticated preview URL.",
     ...(options.kind === "website"
       ? []
@@ -267,26 +201,11 @@ export function createHtmlArtifactAuthoringPacket(
     hostCommand,
     "```",
     "",
-    "File upload is a separate delivery channel for when the user needs a local file copy, not another way to preview the same hosted artifact.",
-    `For a requested file copy, use \`okou web upload-file -f <file>${visibilityFlag}\` and return the exact URL it prints.`,
+    ...(options.kind === "website"
+      ? []
+      : [
+          "File upload is a separate delivery channel for when the user needs a local file copy, not another way to preview the same hosted artifact.",
+          `For a requested file copy, use \`okou web upload-file -f <file>${visibilityFlag}\` and return the exact URL it prints.`,
+        ]),
   ].join("\n");
-
-  return {
-    type: "generation-source-selection",
-    kind: options.kind,
-    prompt: options.prompt,
-    artifact,
-    selection: {
-      indexUrl: resourceIndexUrl,
-      outputSchema: selectionSchema,
-    },
-    authoring: {
-      details: options.details,
-      artifactRules: options.artifactRules,
-    },
-    outputDir,
-    site,
-    hostCommand,
-    instructions,
-  };
 }

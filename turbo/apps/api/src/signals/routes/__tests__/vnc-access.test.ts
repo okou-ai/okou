@@ -3,37 +3,36 @@ import { randomUUID } from "node:crypto";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
-import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createStore } from "ccstate";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { agentsRoutes } from "../agents";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncAccessRoutes } from "../vnc-access";
-import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
+import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
   vncConnectionBody,
+  vncRunnerHeaders,
   vncSessionHeaders as headers,
 } from "./helpers/vnc-runtime";
 
 const context = testContext();
 const api = createVncRuntimeApi(context);
-const mocks = createRouteMocks(context);
-const store = createStore();
 
 beforeEach(initializeVncRuntimeTest);
 
@@ -95,7 +94,218 @@ async function visibility(agentId: string, value: "public" | "private") {
   );
 }
 
-describe("explicit VNC grants and current Agent inventory", () => {
+describe("live chat VNC Run inventory", () => {
+  const claimed = createClaimedVncApi(context);
+  const publicRuns = createPublicRemoteAccessRunApi(context);
+  afterEach(async () => {
+    await publicRuns.cleanup();
+    await claimed.cleanup();
+  });
+
+  it("advertises the exact client-certificate profile without revealing private material", async () => {
+    useSecretKmsProbe();
+    const f = await claimed.fixture({
+      defaultEnabled: false,
+    });
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.VncAccess]: true,
+    });
+    api.authenticate(f);
+    const created = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Client certificate QEMU",
+          host: "qemu.example.com",
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: {
+            create: {
+              name: "QEMU identity",
+              authentication: {
+                method: "client_certificate",
+                certificateChain,
+                privateKey,
+              },
+            },
+          },
+        },
+      }),
+      [201],
+    );
+    await accept(
+      setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      ).updateHostDefault({
+        headers,
+        params: { protocol: "vnc", connectionId: created.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const result = await accept(
+      inventory().list({ headers: claimed.agentHeaders(f) }),
+      [200],
+    );
+    const item = result.body.hosts.find((host) => {
+      return host.id === created.body.id;
+    });
+    expect(item).toMatchObject({
+      authMethod: "client_certificate",
+      securityType: "x509_none",
+      availability: { status: "ready" },
+    });
+    expect(JSON.stringify(result.body)).not.toContain(privateKey);
+    expect(JSON.stringify(result.body)).not.toContain("certificateChain");
+  });
+
+  it("lists the owner-selected QEMU SCRAM pair without exposing its password", async () => {
+    const f = await claimed.fixture({
+      defaultEnabled: false,
+    });
+    api.authenticate(f);
+    const password = "synthetic-scram-secret";
+    const created = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "QEMU SCRAM desktop",
+          host: "qemu.example.com",
+          security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
+          credential: {
+            create: {
+              name: "QEMU SCRAM login",
+              authentication: {
+                method: "qemu_scram_sha256",
+                username: "operator",
+                password,
+              },
+            },
+          },
+        },
+      }),
+      [201],
+    );
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(f) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ hosts: [] });
+    await accept(
+      setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      ).updateHostDefault({
+        headers,
+        params: { protocol: "vnc", connectionId: created.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const kms = useSecretKmsProbe();
+    const listed = await accept(
+      inventory().list({ headers: claimed.agentHeaders(f) }),
+      [200],
+    );
+    expect(listed.body.hosts).toContainEqual({
+      id: created.body.id,
+      displayName: "QEMU SCRAM desktop",
+      host: "qemu.example.com",
+      port: 5900,
+      authMethod: "qemu_scram_sha256",
+      securityType: "qemu_x509_sasl",
+      availability: { status: "ready" },
+    });
+    expect(JSON.stringify(listed.body)).not.toContain(password);
+    expect(kms.decryptCalls).toBe(0);
+  });
+
+  it("filters live chat inventory by VNC access and the exact SSH dependency", async () => {
+    const f = await claimed.fixture({
+      defaultEnabled: false,
+    });
+    if (!f.threadId) {
+      throw new Error("Missing fixture chat thread");
+    }
+    const threadId = f.threadId;
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.VncAccess]: true,
+    });
+    api.authenticate(f);
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    const listIds = async () => {
+      return (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(f) }),
+          [200],
+        )
+      ).body.hosts.map((host) => {
+        return host.id;
+      });
+    };
+    await expect(listIds()).resolves.toStrictEqual([]);
+    await accept(
+      remote.updateHostDefault({
+        headers,
+        params: { protocol: "vnc", connectionId: f.connectionId },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(listIds()).resolves.toStrictEqual([f.connectionId]);
+    const ssh = await accept(
+      sshConnections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "VNC gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    await accept(
+      api.connections().update({
+        headers,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          transport: { type: "ssh", connectionId: ssh.body.id },
+          security: {
+            ...vncConnectionBody().security,
+            serverName: "desktop.internal",
+          },
+        },
+      }),
+      [200],
+    );
+    await expect(listIds()).resolves.toStrictEqual([]);
+    await accept(
+      remote.updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId: ssh.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(listIds()).resolves.toStrictEqual([f.connectionId]);
+    await accept(
+      remote.setThreadOverride({
+        headers,
+        params: { threadId, protocol: "ssh", connectionId: ssh.body.id },
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await expect(listIds()).resolves.toStrictEqual([]);
+  });
+
   async function createHost(host = "vnc.example.com") {
     return await accept(
       api.connections().create({
@@ -106,100 +316,64 @@ describe("explicit VNC grants and current Agent inventory", () => {
     );
   }
 
-  it("automatically grants all visible Agents only on a zero-to-one host transition", async () => {
-    const current = await owner();
-    const ownPrivate = await api.runtime(current);
-    await visibility(ownPrivate.agentId, "private");
-    const teammate = await owner({ orgId: current.orgId });
-    const shared = await api.runtime(teammate);
-    const teammatePrivate = await api.runtime(teammate);
-    await visibility(teammatePrivate.agentId, "private");
-    const foreign = await owner();
-    const foreignAgent = await api.runtime(foreign);
-
-    api.authenticate(current);
+  it("keeps first-host and recreated-host chat access default off", async () => {
+    const current = await claimed.paidOwner();
+    const runtime = { ...current, ...(await claimed.runtime(current)) };
     const first = await createHost();
-    for (const agentId of [ownPrivate.agentId, shared.agentId]) {
-      expect(
-        (
-          await accept(
-            api.access().get({ headers, params: { agentId } }),
-            [200],
-          )
-        ).body,
-      ).toStrictEqual({ enabled: true });
-    }
-    for (const agentId of [teammatePrivate.agentId, foreignAgent.agentId]) {
-      await accept(api.access().get({ headers, params: { agentId } }), [404]);
-    }
-
-    await api.grant({ ...current, agentId: ownPrivate.agentId }, false);
-    const laterAgent = await api.runtime(current);
-    const second = await createHost("second.example.com");
-    for (const agentId of [ownPrivate.agentId, laterAgent.agentId]) {
-      expect(
-        (
-          await accept(
-            api.access().get({ headers, params: { agentId } }),
-            [200],
-          )
-        ).body,
-      ).toStrictEqual({ enabled: false });
-    }
-
-    for (const connection of [first.body, second.body]) {
-      await accept(
-        api.connections().delete({
-          headers,
-          params: { connectionId: connection.id },
-          body: { expectedGeneration: connection.generation },
-        }),
-        [204],
-      );
-    }
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ hosts: [] });
+    await accept(
+      api.connections().delete({
+        headers,
+        params: { connectionId: first.body.id },
+        body: { expectedGeneration: first.body.generation },
+      }),
+      [204],
+    );
     await createHost("replacement.example.com");
-    for (const agentId of [ownPrivate.agentId, laterAgent.agentId]) {
-      expect(
-        (
-          await accept(
-            api.access().get({ headers, params: { agentId } }),
-            [200],
-          )
-        ).body,
-      ).toStrictEqual({ enabled: true });
-    }
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ hosts: [] });
   });
 
-  it("serializes concurrent first hosts while granting visible Agents", async () => {
-    const current = await owner();
-    const runtime = await api.runtime(current);
+  it("commits concurrent first hosts without implicit chat access", async () => {
+    const current = await claimed.paidOwner();
+    const runtime = { ...current, ...(await claimed.runtime(current)) };
     await Promise.all([
       createHost("one.example.com"),
       createHost("two.example.com"),
     ]);
     expect(
-      (
-        await accept(
-          api.access().get({ headers, params: { agentId: runtime.agentId } }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ enabled: true });
-    expect(
       (await accept(api.connections().list({ headers }), [200])).body
         .connections,
     ).toHaveLength(2);
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ hosts: [] });
   });
 
-  it("does not auto-grant an Agent created after the first connection", async () => {
-    const f = await api.fixture({ grant: false });
-    const params = { agentId: f.agentId };
-    expect(
-      (await accept(api.access().get({ headers, params }), [200])).body,
-    ).toStrictEqual({ enabled: false });
-    await accept(inventory().list({ headers: token(f) }), [404]);
-    await api.grant(f, true);
-    const listed = await accept(inventory().list({ headers: token(f) }), [200]);
+  it("lists a chat-enabled host for an Agent without decrypting credentials", async () => {
+    const f = await claimed.fixture();
+    const listed = await accept(
+      inventory().list({ headers: claimed.agentHeaders(f) }),
+      [200],
+    );
     expect(listed.body).toStrictEqual({
       hosts: [
         {
@@ -209,48 +383,61 @@ describe("explicit VNC grants and current Agent inventory", () => {
           port: 5900,
           authMethod: "vnc_password",
           securityType: "x509_vnc",
+          availability: { status: "ready" },
         },
       ],
     });
     const kms = useSecretKmsProbe();
-    await accept(inventory().list({ headers: token(f) }), [200]);
+    await accept(inventory().list({ headers: claimed.agentHeaders(f) }), [200]);
     expect(kms.decryptCalls).toBe(0);
-    await api.grant(f, false);
-    await accept(inventory().list({ headers: token(f) }), [404]);
     await accept(
       api.connections().create({ headers, body: vncConnectionBody() }),
       [201],
     );
     expect(
-      (await accept(api.access().get({ headers, params }), [200])).body,
-    ).toStrictEqual({ enabled: false });
-  });
-
-  it("returns an authorized empty inventory and never auto-grants a later Agent", async () => {
-    const current = await owner();
-    const runtime = { ...current, ...(await api.runtime(current)) };
-    await api.grant(runtime, true);
-    expect(
-      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
-    ).toStrictEqual({ hosts: [] });
-    const other = await api.runtime(current);
-    expect(
       (
         await accept(
-          api.access().get({ headers, params: { agentId: other.agentId } }),
+          inventory().list({ headers: claimed.agentHeaders(f) }),
           [200],
         )
       ).body,
-    ).toStrictEqual({ enabled: false });
-    await accept(
-      inventory().list({ headers: token({ ...current, ...other }) }),
-      [404],
-    );
+    ).toStrictEqual(listed.body);
   });
 
-  it("requires both VNC and SSH grants for SSH-backed inventory rows", async () => {
-    const current = await owner();
-    const runtime = { ...current, ...(await api.runtime(current)) };
+  it("returns an authorized empty inventory for current and later Agents", async () => {
+    const current = await claimed.paidOwner();
+    const runtime = { ...current, ...(await claimed.runtime(current)) };
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ hosts: [] });
+    const bdd = createBddApi(context);
+    const laterAgent = await bdd.createAgent(bdd.user(current), {
+      displayName: "Later VNC Agent",
+    });
+    const other = await claimed.runtime({
+      ...current,
+      agentId: laterAgent.agentId,
+    });
+    expect(
+      (
+        await accept(
+          inventory().list({
+            headers: claimed.agentHeaders({ ...current, ...other }),
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ hosts: [] });
+  });
+
+  it("requires both VNC and SSH chat host permissions for SSH-backed inventory rows", async () => {
+    const current = await claimed.paidOwner();
+    const runtime = { ...current, ...(await claimed.runtime(current)) };
     const ssh = await accept(
       sshConnections().create({
         headers,
@@ -287,14 +474,12 @@ describe("explicit VNC grants and current Agent inventory", () => {
       }),
       [201],
     );
-    await api.grant(runtime, true);
-    // Creating the first SSH host auto-grants visible Agents. Establish the
-    // VNC-only baseline explicitly before testing the independent grant.
-    await api.grantSsh(runtime, false);
+    await api.enableDefault(current, "vnc", direct.body.id);
+    await api.enableDefault(current, "vnc", tunneled.body.id);
 
     const listIds = async () => {
       const result = await accept(
-        inventory().list({ headers: token(runtime) }),
+        inventory().list({ headers: claimed.agentHeaders(runtime) }),
         [200],
       );
       expect(JSON.stringify(result.body)).not.toContain(ssh.body.id);
@@ -304,18 +489,88 @@ describe("explicit VNC grants and current Agent inventory", () => {
     };
 
     await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
-    await api.grantSsh(runtime, true);
+    await api.enableDefault(current, "ssh", ssh.body.id);
     await expect(listIds()).resolves.toStrictEqual([
       direct.body.id,
       tunneled.body.id,
     ]);
-    await api.grantSsh(runtime, false);
+    await api.setDefault(current, "ssh", ssh.body.id, false);
     await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
   });
 
+  it("lists the authorized Mac classic password profile without exposing its secret", async () => {
+    const current = await claimed.paidOwner();
+    const runtime = { ...current, ...(await claimed.runtime(current)) };
+    const ssh = await accept(
+      sshConnections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Mac SSH",
+          host: "mac.example.com",
+          credential: inlineSshKey("operator", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const saved = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Classic desktop",
+          host: "127.0.0.1",
+          credential: {
+            create: {
+              name: "Classic password",
+              authentication: {
+                method: "vnc_password",
+                password: "testpass",
+              },
+            },
+          },
+          security: { type: "apple_vnc_password" },
+          transport: { type: "ssh", connectionId: ssh.body.id },
+        },
+      }),
+      [201],
+    );
+    await api.enableDefault(current, "vnc", saved.body.id);
+    await api.enableDefault(current, "ssh", ssh.body.id);
+    const kms = useSecretKmsProbe();
+    const listed = await accept(
+      inventory().list({ headers: claimed.agentHeaders(runtime) }),
+      [200],
+    );
+    expect(listed.body).toStrictEqual({
+      hosts: [
+        {
+          id: saved.body.id,
+          displayName: "Classic desktop",
+          host: "127.0.0.1",
+          port: 5900,
+          authMethod: "vnc_password",
+          securityType: "apple_vnc_password",
+          availability: { status: "ready" },
+        },
+      ],
+    });
+    expect(JSON.stringify(listed.body)).not.toContain("testpass");
+    expect(kms.decryptCalls).toBe(0);
+    await api.setDefault(current, "ssh", ssh.body.id, false);
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ hosts: [] });
+  });
+
   it("returns both exact supported pairs without decrypting credentials", async () => {
-    const current = await owner();
-    const runtime = { ...current, ...(await api.runtime(current)) };
+    const current = await claimed.paidOwner();
+    const runtime = { ...current, ...(await claimed.runtime(current)) };
     const kms = useSecretKmsProbe();
     const plain = await accept(
       api.connections().create({
@@ -343,8 +598,14 @@ describe("explicit VNC grants and current Agent inventory", () => {
       [201],
     );
     expect(plain.body.security.type).toBe("x509_plain");
+    await api.enableDefault(current, "vnc", plain.body.id);
     expect(
-      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
+      ).body,
     ).toStrictEqual({
       hosts: [
         {
@@ -354,13 +615,20 @@ describe("explicit VNC grants and current Agent inventory", () => {
           port: 5900,
           authMethod: "username_password",
           securityType: "x509_plain",
+          availability: { status: "ready" },
         },
       ],
     });
 
     const supported = await createHost("supported.example.com");
+    await api.enableDefault(current, "vnc", supported.body.id);
     expect(
-      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
+      ).body,
     ).toStrictEqual({
       hosts: [
         {
@@ -370,6 +638,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
           port: 5900,
           authMethod: "username_password",
           securityType: "x509_plain",
+          availability: { status: "ready" },
         },
         {
           id: supported.body.id,
@@ -378,20 +647,52 @@ describe("explicit VNC grants and current Agent inventory", () => {
           port: 5900,
           authMethod: "vnc_password",
           securityType: "x509_vnc",
+          availability: { status: "ready" },
         },
       ],
     });
     expect(kms.decryptCalls).toBe(0);
   });
 
-  it("isolates a shared Agent's grants and inventory by the Run owner", async () => {
-    const creator = await api.fixture();
+  it("isolates a shared Agent's inventory by the Run owner", async () => {
+    const bdd = createBddApi(context);
+    const creatorOwner = await claimed.paidOwner();
+    const sharedAgent = await bdd.createAgent(bdd.user(creatorOwner), {
+      displayName: "Shared VNC Agent",
+      visibility: "public",
+    });
+    const creatorHost = await accept(
+      api.connections().create({ headers, body: vncConnectionBody() }),
+      [201],
+    );
+    await api.enableDefault(creatorOwner, "vnc", creatorHost.body.id);
+    const creator = {
+      ...(await claimed.runtime({
+        ...creatorOwner,
+        agentId: sharedAgent.agentId,
+      })),
+      connectionId: creatorHost.body.id,
+    };
     const consumer = await owner({ orgId: creator.orgId });
+    const consumerActor = bdd.user(consumer);
+    // Memory initialization and model selection are personal to each Run owner.
+    await bdd.completeOnboarding(consumerActor);
+    await createRunsApi(context).ensurePersonalSubscriptionModel(
+      consumerActor,
+      { model: "claude-sonnet-5-5" },
+    );
     const runtime = {
       ...consumer,
-      ...(await api.runtime(consumer, { agentId: creator.agentId })),
+      ...(await claimed.runtime({ ...consumer, agentId: creator.agentId })),
     };
-    await accept(inventory().list({ headers: token(runtime) }), [404]);
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ hosts: [] });
     const host = await accept(
       api.connections().create({
         headers,
@@ -399,10 +700,13 @@ describe("explicit VNC grants and current Agent inventory", () => {
       }),
       [201],
     );
-    await api.grant(runtime, true);
+    await api.enableDefault(consumer, "vnc", host.body.id);
     expect(
       (
-        await accept(inventory().list({ headers: token(runtime) }), [200])
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
       ).body.hosts.map((entry) => {
         return entry.id;
       }),
@@ -410,60 +714,56 @@ describe("explicit VNC grants and current Agent inventory", () => {
     api.authenticate(creator);
     expect(
       (
-        await accept(inventory().list({ headers: token(creator) }), [200])
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(creator) }),
+          [200],
+        )
       ).body.hosts.map((entry) => {
         return entry.id;
       }),
     ).toStrictEqual([creator.connectionId]);
     await visibility(creator.agentId, "private");
     api.authenticate(consumer);
-    await accept(inventory().list({ headers: token(runtime) }), [404]);
-    for (const agentId of [creator.agentId, randomUUID()]) {
-      await accept(api.access().get({ headers, params: { agentId } }), [404]);
-      await accept(
-        api
-          .access()
-          .update({ headers, params: { agentId }, body: { enabled: true } }),
-        [404],
-      );
-    }
+    await accept(
+      inventory().list({ headers: claimed.agentHeaders(runtime) }),
+      [404],
+    );
   });
 
   it("does not accept another organization or Run owner from a valid token", async () => {
-    const f = await api.fixture();
+    const f = await claimed.fixture();
     const foreign = await owner({ userId: f.userId });
-    const unavailableAgent = await accept(
-      api.access().get({ headers, params: { agentId: f.agentId } }),
-      [404],
-    );
-    expect(unavailableAgent.body.error.code).toBe("VNC_UNAVAILABLE");
-    await accept(
-      api.access().update({
-        headers,
-        params: { agentId: f.agentId },
-        body: { enabled: true },
-      }),
-      [404],
-    );
-    await accept(
-      inventory().list({ headers: token({ ...foreign, runId: f.runId }) }),
-      [404],
-    );
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: token({ ...foreign, runId: f.runId }) }),
+          [404],
+        )
+      ).status,
+    ).toBe(404);
     const other = await owner({ orgId: f.orgId });
-    await accept(
-      inventory().list({ headers: token({ ...other, runId: f.runId }) }),
-      [404],
-    );
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: token({ ...other, runId: f.runId }) }),
+          [404],
+        )
+      ).status,
+    ).toBe(404);
     api.authenticate(f);
-    await accept(
-      inventory().list({ headers: token({ ...f, runId: randomUUID() }) }),
-      [404],
-    );
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: token({ ...f, runId: randomUUID() }) }),
+          [404],
+        )
+      ).status,
+    ).toBe(404);
   });
 
-  it("rechecks the feature and membership for already issued tokens and owner writes", async () => {
-    const f = await api.fixture();
-    const stale = token(f);
+  it("rechecks the VNC feature and membership for already issued tokens", async () => {
+    const f = await claimed.fixture();
+    const stale = claimed.agentHeaders(f);
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.VncAccess]: false,
     });
@@ -472,18 +772,6 @@ describe("explicit VNC grants and current Agent inventory", () => {
       [404],
     );
     expect(disabledInventory.body.error.code).toBe("VNC_UNAVAILABLE");
-    await accept(
-      api.access().get({ headers, params: { agentId: f.agentId } }),
-      [404],
-    );
-    await accept(
-      api.access().update({
-        headers,
-        params: { agentId: f.agentId },
-        body: { enabled: true },
-      }),
-      [404],
-    );
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.VncAccess]: true,
     });
@@ -491,24 +779,23 @@ describe("explicit VNC grants and current Agent inventory", () => {
       { data: [], totalCount: 0 },
     );
     await accept(inventory().list({ headers: stale }), [404]);
-    await accept(
-      api.access().get({ headers, params: { agentId: f.agentId } }),
-      [404],
-    );
-    await accept(
-      api.access().update({
-        headers,
-        params: { agentId: f.agentId },
-        body: { enabled: false },
-      }),
-      [404],
-    );
   });
 
   it.each(["pending", "completed", "cancelled", "failed"] as const)(
-    "rejects inventory for a %s Run despite a current grant",
+    "rejects inventory for a %s Run despite an enabled host default",
     async (status) => {
-      const f = await api.fixture({ runtime: { status } });
+      const value = await owner();
+      const connection = await accept(
+        api.connections().create({ headers, body: vncConnectionBody() }),
+        [201],
+      );
+      await api.enableDefault(value, "vnc", connection.body.id);
+      const f = await publicRuns.start(value);
+      if (status !== "pending") {
+        const runtime = await publicRuns.claim(f, vncRunnerHeaders);
+        await publicRuns.finish(runtime, status);
+      }
+      api.authenticate(f);
       const unavailableInventory = await accept(
         inventory().list({ headers: token(f) }),
         [404],
@@ -517,22 +804,21 @@ describe("explicit VNC grants and current Agent inventory", () => {
     },
   );
 
-  it("keeps owner grant APIs session-only and VNC inventory capability-specific", async () => {
-    const f = await api.fixture({ grant: false, runtime: { access: true } });
-    const params = { agentId: f.agentId };
-    for (const denied of [
-      token(f, ["vnc:read", "vnc:write"]),
-      { authorization: `Bearer ${f.sandboxToken}` },
-    ]) {
-      await accept(api.access().get({ headers: denied, params }), [403]);
-      await accept(
-        api
-          .access()
-          .update({ headers: denied, params, body: { enabled: true } }),
-        [403],
-      );
-    }
-    await accept(inventory().list({ headers }), [403]);
+  it("keeps VNC inventory Agent-token and capability-specific", async () => {
+    const f = await claimed.fixture();
+    expect((await accept(inventory().list({ headers }), [403])).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await accept(
+          inventory().list({
+            headers: { authorization: `Bearer ${f.sandboxToken}` },
+          }),
+          [403],
+        )
+      ).status,
+    ).toBe(403);
     for (const capabilities of [
       [],
       ["ssh:read", "ssh:write"],
@@ -544,97 +830,10 @@ describe("explicit VNC grants and current Agent inventory", () => {
         [403],
       );
     }
-    await accept(inventory().list({ headers: token(f) }), [404]);
+    await accept(inventory().list({ headers: token(f) }), [200]);
     await accept(
       inventory().list({ headers: token(f, ["vnc:read"], -1) }),
       [401],
     );
-    await accept(api.access().get({ headers: {}, params }), [401]);
-    expect(
-      (await accept(api.access().get({ headers, params }), [200])).body,
-    ).toStrictEqual({ enabled: false });
   });
-
-  it("rejects unknown grant fields without echoing request contents", async () => {
-    const f = await api.fixture({ grant: false });
-    const raw = setupRawAppRequest({ context, routes: vncAccessRoutes });
-    const response = await raw(`/api/agents/${f.agentId}/vnc-access`, {
-      method: "PUT",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({
-        enabled: true,
-        password: "untrusted-secret-canary",
-      }),
-    });
-    expect(response.status).toBe(400);
-    expect(JSON.stringify(response.body)).not.toContain(
-      "untrusted-secret-canary",
-    );
-    expect(
-      (
-        await accept(
-          api.access().get({ headers, params: { agentId: f.agentId } }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ enabled: false });
-  });
-
-  it.each(["membership", "user"] as const)(
-    "%s cleanup removes grants even when the shared Agent has no VNC connections",
-    async (scope) => {
-      const creator = await owner();
-      const shared = await api.runtime(creator);
-      const consumer = await owner({ orgId: creator.orgId });
-      const runtime = {
-        ...consumer,
-        ...(await api.runtime(consumer, { agentId: shared.agentId })),
-      };
-      await api.grant(runtime, true);
-      const membershipId = `orgmem_${randomUUID()}`;
-      await store.set(seedOrgMembership$, creator, context.signal);
-      await store.set(
-        seedOrgMembership$,
-        { ...consumer, membershipId },
-        context.signal,
-      );
-      mocks.s3.listObjects([]);
-      mockOptionalEnv(
-        "CLERK_WEBHOOK_SIGNING_SECRET",
-        "synthetic-vnc-signing-secret",
-      );
-      context.mocks.clerk.verifyWebhook.mockResolvedValueOnce(
-        scope === "membership"
-          ? {
-              type: "organizationMembership.deleted",
-              data: {
-                id: membershipId,
-                organization_id: consumer.orgId,
-                user_id: consumer.userId,
-              },
-            }
-          : { type: "user.deleted", data: { id: consumer.userId } },
-      );
-      await accept(
-        setupApp({ context, routes: webhooksClerkRoutes })(
-          webhookClerkContract,
-        ).post({ body: "{}" }),
-        [200],
-      );
-      await flushWaitUntilForTest();
-      // Retained external identity permits reading the post-cleanup boundary.
-      await updateFeatureSwitchesForUser(context, consumer, {
-        [FeatureSwitchKey.VncAccess]: true,
-      });
-      api.authenticate(consumer);
-      expect(
-        (
-          await accept(
-            api.access().get({ headers, params: { agentId: shared.agentId } }),
-            [200],
-          )
-        ).body,
-      ).toStrictEqual({ enabled: false });
-    },
-  );
 });

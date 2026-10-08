@@ -5,8 +5,9 @@ import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { writeDb$, type Db } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
-import { updateUserBuiltinConnectors } from "./user-connectors.service";
+import { updateUserBuiltinConnectors$ } from "./user-connectors.service";
 
 interface AuthorizableAgent {
   readonly id: string;
@@ -141,7 +142,7 @@ export const authorizeConnectedConnector$ = command(
       };
     }
 
-    const updated = await updateUserBuiltinConnectors(writeDb, {
+    const updated = await set(updateUserBuiltinConnectors$, {
       orgId: args.orgId,
       userId: args.userId,
       agentId: agent.id,
@@ -163,6 +164,10 @@ export const authorizeConnectedConnector$ = command(
       },
       signal,
     );
+    await publishUserSignal([args.userId], "composerAgentConnectorsChanged", {
+      agentId: agent.id,
+    });
+    signal.throwIfAborted();
     return { status: "authorized", agentId: agent.id };
   },
 );

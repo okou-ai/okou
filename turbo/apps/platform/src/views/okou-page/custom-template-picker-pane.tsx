@@ -26,6 +26,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
+  Toggle,
+  ToggleGroup,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -218,7 +220,7 @@ function CustomTemplateActions({
   return (
     // Revealed on hover like the picker's own tile controls, but kept visible
     // where hover does not exist and whenever it takes focus.
-    <div className="absolute right-2 top-2 z-20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:group-focus-within/tile:opacity-100">
+    <div className="absolute right-2 top-2 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:group-focus-within/tile:opacity-100">
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -307,6 +309,8 @@ function CustomTemplateCard({
         template.kind === "illustration" && "mb-6 break-inside-avoid",
       )}
     >
+      {/* Positioned tree order paints the cover, then the scrim, then the
+          sibling Use and More actions, including during opacity transitions. */}
       <div className="relative">
         <button
           type="button"
@@ -353,13 +357,13 @@ function CustomTemplateCard({
               <FilePreviewIcon filename={template.sourceFilename} size="lg" />
             </span>
           )}
-          <span className="pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity group-hover/tile:opacity-100" />
+          <span className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity group-hover/tile:opacity-100" />
         </button>
         {/* Beside the preview rather than inside it: the tile opens the
             template, and using it is a different decision from looking at
             it. Revealed on hover like the actions menu above, and kept
             reachable where hover does not exist. */}
-        <div className="absolute bottom-2 right-2 z-20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:group-focus-within/tile:opacity-100">
+        <div className="absolute bottom-2 right-2 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:group-focus-within/tile:opacity-100">
           <Button
             type="button"
             size="sm"
@@ -500,34 +504,31 @@ function CustomTemplateKindFilters({
     },
   ] as const;
   return (
-    <div
-      role="group"
+    <ToggleGroup<UserTemplateKind>
+      value={[kind]}
+      onValueChange={(value) => {
+        // Reapplying the projected kind also pins the initial catalog default.
+        setKind(value[0] ?? kind);
+      }}
       aria-label={t(($) => {
         return $.artifacts.templates.categories;
       })}
-      className="flex w-full items-center gap-1 lg:w-auto"
+      className="w-full gap-1 lg:w-auto"
     >
       {options.map(({ value, label }) => {
         return (
-          <Button
+          <Toggle
             key={value}
-            type="button"
+            value={value}
             variant="quiet"
             size="sm"
-            aria-pressed={value === kind}
-            className={cn(
-              "flex-1 max-[374px]:px-2 max-[374px]:text-xs lg:flex-none",
-              value === kind && "bg-gray-50 text-foreground",
-            )}
-            onClick={() => {
-              setKind(value);
-            }}
+            className="flex-1 max-[374px]:px-2 max-[374px]:text-xs lg:flex-none"
           >
             {label}
-          </Button>
+          </Toggle>
         );
       })}
-    </div>
+    </ToggleGroup>
   );
 }
 

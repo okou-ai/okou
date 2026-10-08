@@ -1,20 +1,24 @@
-import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
-import { screen, waitFor } from "@testing-library/react";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   chatEventsContract,
   chatThreadArtifactsContract,
   chatThreadDraftContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import {
+  closeModelPanel,
+  modelOption,
+  openModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
   CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
@@ -24,21 +28,19 @@ import {
   fastButton,
   installActiveChatBoundaries,
   installChatListAgent,
-  installChatListModelPolicies,
+  installChatListRunModels,
   installChatListStream,
   sidebarThreadLinks,
   sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
 
 async function selectClaudeSonnet(): Promise<void> {
-  click(await composerModelTrigger("GPT 5.6 Luna"));
-  const chatModels = await screen.findByRole("menu", {
-    name: "Chat models",
-  });
-  click(modelMenuOption(/Claude Sonnet 4\.6/u, chatModels));
+  const chatModels = await openModelPanel("GPT 5.6 Luna");
+  click(modelOption(/Claude Sonnet 5/u, chatModels));
+  await expect(composerModelTrigger("Claude Sonnet 5")).resolves.toBeVisible();
+  await closeModelPanel();
 }
 
 async function sendComposerMessage(message: string): Promise<void> {
@@ -60,27 +62,24 @@ function composerFileInput(): HTMLInputElement {
 
 function installNewThreadDefaults(): void {
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-5.6-luna",
     serviceTier: null,
     modelSettings: {},
-    selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: "2026-08-01T00:00:00.000Z",
   });
   installActiveChatBoundaries(context);
 }
 
-async function openUnconfirmedConversation(
-  options: { readonly headerActionsEnabled?: boolean } = {},
-) {
+async function openUnconfirmedConversation() {
   const auth = chatListAuth(9);
   const confirmation = context.mocks.deferred<void>();
   const requests: {
     threadId: string | undefined;
     eventId: string | undefined;
-    model: string | undefined;
+    model: string | null | undefined;
     draftRequested: boolean;
   } = {
     threadId: undefined,
@@ -113,7 +112,7 @@ async function openUnconfirmedConversation(
       id: body.clientThreadId ?? "b7000000-0000-4000-a000-000000000009",
       title: null,
       createdAt: "2026-08-01T03:00:00.000Z",
-      selectedModel: body.model ?? "claude-sonnet-4-6",
+      selectedModel: body.model ?? "claude-sonnet-5",
       serviceTier: body.serviceTier ?? null,
     });
   });
@@ -128,7 +127,6 @@ async function openUnconfirmedConversation(
     return respond(201, {
       runId: "a7000000-0000-4000-a000-000000000009",
       threadId: body.threadId ?? "b7000000-0000-4000-a000-000000000009",
-      status: "pending",
       createdAt: "2026-08-01T03:00:01.000Z",
     });
   });
@@ -138,10 +136,6 @@ async function openUnconfirmedConversation(
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(9, []),
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadHeaderActions]:
-        options.headerActionsEnabled ?? false,
-    },
   });
   return { confirmation, requests, stream };
 }
@@ -222,7 +216,7 @@ test.each([true, false])(
   async (desktop) => {
     context.mocks.browser.matchMedia(desktop);
     const { confirmation, requests, stream } =
-      await openUnconfirmedConversation({ headerActionsEnabled: true });
+      await openUnconfirmedConversation();
 
     await sendComposerMessage("Create a thread before showing its actions");
     await waitFor(() => {
@@ -268,11 +262,9 @@ test("The changed model survives the first send before server confirmation", asy
   await selectClaudeSonnet();
   await sendComposerMessage("Start the local conversation");
   await waitFor(() => {
-    expect(requests.model).toBe("claude-sonnet-4-6");
+    expect(requests.model).toBe("claude-sonnet-5");
   });
-  await expect(
-    composerModelTrigger("Claude Sonnet 4.6"),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Sonnet 5")).resolves.toBeVisible();
   expect(requests.draftRequested).toBeFalsy();
   expect(confirmation.settled()).toBeFalsy();
 });
@@ -284,7 +276,7 @@ test("Sending in an older conversation moves it to the top", async () => {
   const send = context.mocks.deferred<void>();
   let sentPrompt: string | undefined;
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: 12,
     snapshot: [older, newer],
@@ -296,7 +288,6 @@ test("Sending in an older conversation moves it to the top", async () => {
     return respond(201, {
       runId: "a7000000-0000-4000-a000-000000000012",
       threadId: body.threadId ?? older.id,
-      status: "pending",
       createdAt: "2026-08-01T03:00:02.000Z",
     });
   });
@@ -350,7 +341,7 @@ test("Server confirmation settles a new conversation without duplication", async
       id: body.clientThreadId ?? "b7000000-0000-4000-a000-000000000013",
       title: null,
       createdAt: "2026-08-01T03:00:03.000Z",
-      selectedModel: body.model ?? "claude-sonnet-4-6",
+      selectedModel: body.model ?? "claude-sonnet-5",
       serviceTier: body.serviceTier ?? null,
     });
   });
@@ -358,7 +349,6 @@ test("Server confirmation settles a new conversation without duplication", async
     return respond(201, {
       runId: "a7000000-0000-4000-a000-000000000013",
       threadId: body.threadId ?? "b7000000-0000-4000-a000-000000000013",
-      status: "pending",
       createdAt: "2026-08-01T03:00:04.000Z",
     });
   });
@@ -386,7 +376,7 @@ test("Server confirmation settles a new conversation without duplication", async
   const persistedCreate = chatListEvent(13, 2, "created", createdThreadId, {
     id: createdEventId,
     title: "Confirmed conversation",
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     createdAt: "2026-08-01T03:00:03.000Z",
   });
   stream.setEvents([persistedCreate]);

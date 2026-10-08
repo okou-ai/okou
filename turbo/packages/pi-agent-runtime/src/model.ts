@@ -1,19 +1,15 @@
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
   isOkouRunModel,
   type OkouRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
-import { streamPiNative } from "./native-stream";
+import { OKOU_MODEL_METADATA } from "@okouai/api-contracts/contracts/okou-model-metadata";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import {
   stream as streamResponses,
   streamSimple as streamSimpleResponses,
 } from "@earendil-works/pi-ai/api/openai-responses";
 import { buildBaseOptions } from "@earendil-works/pi-ai/api/simple-options";
-import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type {
   Api,
@@ -24,8 +20,8 @@ import type {
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
 
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
+import { piModelLimitOverride } from "./model-limits";
 import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
-import { observePiUsageFetch } from "./usage-transport";
 import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
@@ -33,9 +29,8 @@ import {
 
 const PI_AGENT_USER_AGENT = "okou-pi-agent/1.0";
 
-const OKOU_PI_MODEL_CAPABILITIES = {
+const OKOU_PI_MODEL_COSTS = {
   "okou-1.0": {
-    name: "Okou 1.0",
     cost: {
       input: 0.2,
       output: 1.2,
@@ -52,46 +47,9 @@ const OKOU_PI_MODEL_CAPABILITIES = {
       ],
     },
   },
-  "okou-1.0-pro": {
-    name: "Okou 1.0 Pro",
-    cost: {
-      input: 5,
-      output: 30,
-      cacheRead: 0.5,
-      cacheWrite: 6.25,
-      tiers: [
-        {
-          inputTokensAbove: 272_000,
-          input: 10,
-          output: 45,
-          cacheRead: 1,
-          cacheWrite: 12.5,
-        },
-      ],
-    },
-  },
-  "okou-1.0-max": {
-    name: "Okou 1.0 Max",
-    cost: {
-      input: 5,
-      output: 30,
-      cacheRead: 0.5,
-      cacheWrite: 6.25,
-      tiers: [
-        {
-          inputTokensAbove: 272_000,
-          input: 10,
-          output: 45,
-          cacheRead: 1,
-          cacheWrite: 12.5,
-        },
-      ],
-    },
-  },
 } as const satisfies Record<
   OkouRunModel,
   {
-    readonly name: string;
     readonly cost: Model<Api>["cost"];
   }
 >;
@@ -104,10 +62,11 @@ function okouSourceModel(
   if (provider !== "openrouter" || !isOkouRunModel(model)) {
     return undefined;
   }
-  const capabilities = OKOU_PI_MODEL_CAPABILITIES[model];
+  const metadata = OKOU_MODEL_METADATA[model];
+  const pricing = OKOU_PI_MODEL_COSTS[model];
   return {
     id: model,
-    name: capabilities.name,
+    name: metadata.displayName,
     provider,
     // The source API tag only guards reuse of API-specific compatibility.
     // Okou executes on OpenRouter Responses without completions compatibility.
@@ -115,25 +74,15 @@ function okouSourceModel(
     baseUrl: "https://openrouter.ai/api/v1",
     // Reasoning is configured by the OpenRouter Preset, not by the client.
     reasoning: false,
-    input: ["text", "image"],
-    contextWindow: 1_050_000,
-    maxTokens: 128_000,
-    cost: capabilities.cost,
+    input: [...metadata.inputModalities],
+    contextWindow: metadata.pi.contextWindow,
+    maxTokens: metadata.pi.maxTokens,
+    cost: pricing.cost,
   };
 }
 
 function providerModels(provider: string): readonly Model<Api>[] {
   switch (provider) {
-    case "anthropic":
-    case "amazon-bedrock": {
-      return anthropicProvider().getModels();
-    }
-    case "deepseek": {
-      return deepseekProvider().getModels();
-    }
-    case "openai": {
-      return openaiProvider().getModels();
-    }
     case "openai-codex": {
       return openaiCodexProvider().getModels();
     }
@@ -144,12 +93,6 @@ function providerModels(provider: string): readonly Model<Api>[] {
       return [];
     }
   }
-}
-
-function isMessagesModel(
-  model: Model<Api>,
-): model is Model<"anthropic-messages"> {
-  return model.api === "anthropic-messages";
 }
 
 function isResponsesModel(
@@ -164,56 +107,53 @@ function isCodexResponsesModel(
   return model.api === "openai-codex-responses";
 }
 
-function sourceModel(provider: string, model: string): Model<Api> | undefined {
+function catalogSourceModel(
+  provider: string,
+  model: string,
+): Model<Api> | undefined {
   const okouModel = okouSourceModel(provider, model);
   if (okouModel) {
     return okouModel;
   }
-  // pi-ai 0.86.1 retired `deepseek-v4-flash` from the DeepSeek catalog while
-  // the product still offers it. Pin the exact 0.85.1 definition so admission,
-  // tier and billing keep their current behaviour; see deepseek-v41-catalog.md.
-  // `api` stays "openai-completions" as upstream shipped it: resolvePiAgentModel
-  // copies `source.compat` only when `source.api === dialect`, so recording the
-  // upstream dialect keeps that guard false and leaves the wire unchanged.
-  // This is the V4 text-only model, priced apart from V4.1; never substitute one
-  // for the other. The OpenRouter route still resolves from the 0.86.1 catalog.
-  if (provider === "deepseek" && model === "deepseek-v4-flash") {
+  // The pinned Pi catalog predates 6.1 Sol. Only the ChatGPT subscription is
+  // approved; do not infer OpenRouter support.
+  if (provider === "openai-codex" && model === "gpt-6.1-sol") {
+    const predecessor = providerModels(provider).find((entry) => {
+      return entry.id === "gpt-6-sol";
+    });
+    if (!predecessor) return undefined;
     return {
+      ...predecessor,
       id: model,
-      name: "DeepSeek V4 Flash",
-      provider,
-      api: "openai-completions",
-      baseUrl: "https://api.deepseek.com",
-      reasoning: true,
-      thinkingLevelMap: {
-        minimal: null,
-        low: "low",
-        medium: null,
-        high: "high",
-        max: "max",
+      name: "GPT 6.1 Sol",
+      contextWindow: 1_050_000,
+      maxTokens: 128_000,
+      cost: {
+        input: 2,
+        output: 10,
+        cacheRead: 0.1,
+        cacheWrite: 2.5,
+        tiers: [
+          {
+            inputTokensAbove: 272_000,
+            input: 4,
+            output: 15,
+            cacheRead: 0.2,
+            cacheWrite: 5,
+          },
+        ],
       },
-      input: ["text"],
-      contextWindow: 1_000_000,
-      maxTokens: 384_000,
-      cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 },
     };
   }
-  // pi-ai 0.85.1 predates V4.1. These exact identities use the provider
+  // pi-ai 0.85.1 predates V4.1. This exact identity uses the provider
   // metadata recorded in deepseek-v41-catalog.md, never the V4 text-only model.
-  if (
-    (provider === "deepseek" &&
-      (model === "deepseek-flash" || model === "deepseek-v4.1-flash")) ||
-    (provider === "openrouter" && model === "deepseek/deepseek-v4.1-flash")
-  ) {
+  if (provider === "openrouter" && model === "deepseek/deepseek-v4.1-flash") {
     return {
       id: model,
       name: "DeepSeek V4.1 Flash",
       provider,
       api: "openai-responses",
-      baseUrl:
-        provider === "deepseek"
-          ? "https://api.deepseek.com"
-          : "https://openrouter.ai/api/v1",
+      baseUrl: "https://openrouter.ai/api/v1",
       reasoning: true,
       thinkingLevelMap: {
         minimal: null,
@@ -233,6 +173,13 @@ function sourceModel(provider: string, model: string): Model<Api> | undefined {
   });
 }
 
+function sourceModel(provider: string, model: string): Model<Api> | undefined {
+  const source = catalogSourceModel(provider, model);
+  if (!source) return undefined;
+  const limits = piModelLimitOverride(provider, model);
+  return limits ? { ...source, ...limits } : source;
+}
+
 function streamSimpleResponsesWithPolicy(
   model: Model<"openai-responses">,
   context: TranscriptContext,
@@ -240,9 +187,7 @@ function streamSimpleResponsesWithPolicy(
 ): AssistantMessageEventStream {
   const serviceTier = options?.serviceTier;
   if (serviceTier !== undefined && serviceTier !== "priority") {
-    throw new Error(
-      "Pi public Responses only accepts the priority service tier",
-    );
+    throw new Error("Pi public Responses service tier only accepts priority");
   }
   const base = buildBaseOptions(model, context, options, options?.apiKey);
   const clampedReasoning =
@@ -251,126 +196,9 @@ function streamSimpleResponsesWithPolicy(
       : clampThinkingLevel(model, options.reasoning);
   return streamResponses(model, context, {
     ...base,
-    fetch:
-      options?.onObservedServiceTier === undefined
-        ? base.fetch
-        : observeResponsesServiceTier(
-            base.fetch ?? globalThis.fetch,
-            options.onObservedServiceTier,
-          ),
     reasoningEffort: clampedReasoning === "off" ? undefined : clampedReasoning,
     serviceTier,
   });
-}
-
-function eventData(frame: string): string | null {
-  const data = frame
-    .split(/\r?\n/u)
-    .filter((line) => {
-      return line === "data" || line.startsWith("data:");
-    })
-    .map((line) => {
-      return line.startsWith("data:") ? line.slice(5).replace(/^ /u, "") : "";
-    });
-  return data.length === 0 ? null : data.join("\n");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function terminalResponsesServiceTier(frame: string): {
-  readonly terminal: boolean;
-  readonly serviceTier: string | null | undefined;
-} {
-  const data = eventData(frame);
-  if (data === null || data === "[DONE]") {
-    return { terminal: false, serviceTier: undefined };
-  }
-  try {
-    const event = JSON.parse(data) as unknown;
-    if (
-      !isRecord(event) ||
-      (event.type !== "response.completed" &&
-        event.type !== "response.incomplete")
-    ) {
-      return { terminal: false, serviceTier: undefined };
-    }
-    const response = event.response;
-    if (!isRecord(response)) {
-      return { terminal: true, serviceTier: undefined };
-    }
-    const serviceTier = response.service_tier;
-    return {
-      terminal: true,
-      serviceTier:
-        typeof serviceTier === "string" || serviceTier === null
-          ? serviceTier
-          : undefined,
-    };
-  } catch {
-    // Preserve malformed provider bytes for Pi's canonical stream parser. A
-    // missing observation remains standard at the billing boundary.
-    return { terminal: false, serviceTier: undefined };
-  }
-}
-
-function observeResponsesServiceTier(
-  providerFetch: typeof globalThis.fetch,
-  onObservedServiceTier: NonNullable<
-    PiAgentStreamOptions["onObservedServiceTier"]
-  >,
-): typeof globalThis.fetch {
-  return async (input, init) => {
-    const response = await providerFetch(input, init);
-    if (response.body === null) {
-      return response;
-    }
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let observed = false;
-    const inspectFrame = (frame: string): void => {
-      if (observed) {
-        return;
-      }
-      const terminal = terminalResponsesServiceTier(frame);
-      if (terminal.terminal) {
-        observed = true;
-        onObservedServiceTier(terminal.serviceTier);
-      }
-    };
-    const inspectCompleteFrames = (): void => {
-      while (true) {
-        const boundary = /\r?\n\r?\n/u.exec(buffer);
-        if (!boundary || boundary.index === undefined) {
-          return;
-        }
-        inspectFrame(buffer.slice(0, boundary.index));
-        buffer = buffer.slice(boundary.index + boundary[0].length);
-      }
-    };
-    const body = response.body.pipeThrough(
-      new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          buffer += decoder.decode(chunk, { stream: true });
-          inspectCompleteFrames();
-          controller.enqueue(chunk);
-        },
-        flush() {
-          buffer += decoder.decode();
-          inspectCompleteFrames();
-          if (buffer.length > 0) {
-            inspectFrame(buffer);
-          }
-        },
-      }),
-    );
-    return new Response(body, {
-      headers: response.headers,
-      status: response.status,
-      statusText: response.statusText,
-    });
-  };
 }
 
 const piAgentStream = (
@@ -378,10 +206,7 @@ const piAgentStream = (
   context: TranscriptContext,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream => {
-  if (
-    options?.serviceTier === undefined &&
-    options?.onObservedServiceTier === undefined
-  ) {
+  if (options?.serviceTier === undefined) {
     return streamSimpleResponses(model, context, options);
   }
   return streamSimpleResponsesWithPolicy(model, context, options);
@@ -404,13 +229,6 @@ function piAgentCodexStream(
       : clampThinkingLevel(model, options.reasoning);
   return streamCodexResponses(model, context, {
     ...base,
-    fetch:
-      options?.onObservedServiceTier === undefined
-        ? base.fetch
-        : observeResponsesServiceTier(
-            base.fetch ?? globalThis.fetch,
-            options.onObservedServiceTier,
-          ),
     reasoningEffort: clampedReasoning === "off" ? undefined : clampedReasoning,
     // Codex keeps fast in config but sends priority on Responses requests.
     serviceTier: serviceTier === "fast" ? "priority" : undefined,
@@ -436,40 +254,23 @@ export const piAgentRegisteredStream = (
   return piAgentStream(model, context, options);
 };
 
-/** Apply API-owned per-request policy to both API-first and Sandbox turns. */
+/** Apply API-owned per-request policy to Sandbox and maintenance turns. */
 export function piAgentStreamForConfig(
   config: PiAgentStreamConfig,
 ): typeof piAgentRegisteredStream {
   return (model, context, options) => {
-    const configuredHeaderNames = new Set(
-      Object.keys(config.requestHeaders ?? {}).map((name) => {
-        return name.toLowerCase();
-      }),
-    );
-    const inheritedHeaders = Object.fromEntries(
-      Object.entries(options?.headers ?? {}).filter(([name]) => {
-        return !configuredHeaderNames.has(name.toLowerCase());
-      }),
-    );
     const configuredOptions = {
       ...options,
       headers: {
-        ...inheritedHeaders,
+        ...options?.headers,
         "User-Agent": PI_AGENT_USER_AGENT,
-        ...config.requestHeaders,
       },
       // The immutable route owns tier even when standard omits it.
       serviceTier: config.serviceTier,
     };
-    if (
-      config.dialect === "anthropic-messages" ||
-      config.dialect === "bedrock-converse-stream"
-    ) {
-      return streamPiNative(config, model, context, configuredOptions);
-    }
     const start = (fetch: NonNullable<PiAgentStreamOptions["fetch"]>) => {
       // Observe transport evidence before a body guard can consume or reject it.
-      // Every public route still drops markup and bounds opaque gateway errors.
+      // Every public route still drops markup and bounds opaque upstream errors.
       const responseOptions = {
         ...configuredOptions,
         fetch,
@@ -499,13 +300,7 @@ export function piAgentStreamForConfig(
       );
     };
     const fetch = observePiResponseStatus(
-      observePiUsageFetch(
-        configuredOptions.fetch ?? globalThis.fetch,
-        config.dialect === "openai-codex-responses"
-          ? "codex-responses"
-          : "responses",
-        configuredOptions.usageObserver,
-      ),
+      configuredOptions.fetch ?? globalThis.fetch,
       configuredOptions.onObservedResponseStatus,
     );
     return streamWithModelRequestDiagnostics(
@@ -516,57 +311,16 @@ export function piAgentStreamForConfig(
   };
 }
 
-function resolveNativeModel(
-  config: PiAgentModelConfig,
-): Model<"anthropic-messages"> | Model<"bedrock-converse-stream"> | null {
-  if (
-    config.serviceTier !== undefined ||
-    !piNativeCatalogModelSchema.safeParse(config.catalogModel).success ||
-    !config.catalogModel ||
-    config.provider !==
-      (config.dialect === "anthropic-messages" ? "anthropic" : "amazon-bedrock")
-  )
-    return null;
-  const native = sourceModel("anthropic", config.catalogModel);
-  if (!native || !isMessagesModel(native)) return null;
-  const common = {
-    ...native,
-    id: config.model,
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-  };
-  return config.dialect === "anthropic-messages"
-    ? { ...common, api: "anthropic-messages" }
-    : {
-        ...common,
-        api: "bedrock-converse-stream",
-        compat: {
-          supportsStrictMode: native.compat?.supportsStrictTools,
-        },
-      };
-}
-
-/** Resolve model metadata from Pi's native provider catalog. */
+/** Resolve model metadata from Pi's provider catalog. */
 export function resolvePiAgentModel(
   config: PiAgentModelConfig,
-):
-  | Model<"openai-responses">
-  | Model<"openai-codex-responses">
-  | Model<"anthropic-messages">
-  | Model<"bedrock-converse-stream">
-  | null {
+): Model<"openai-responses"> | Model<"openai-codex-responses"> | null {
   if (
     config.serviceTier !== undefined &&
     config.serviceTier !==
       (config.dialect === "openai-codex-responses" ? "fast" : "priority")
   ) {
     return null;
-  }
-  if (
-    config.dialect === "anthropic-messages" ||
-    config.dialect === "bedrock-converse-stream"
-  ) {
-    return resolveNativeModel(config);
   }
   const source = sourceModel(
     config.provider,

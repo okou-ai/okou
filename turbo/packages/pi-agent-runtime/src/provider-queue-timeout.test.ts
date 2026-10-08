@@ -15,21 +15,21 @@ import {
   it,
   onTestFinished,
 } from "vitest";
-import { projectPiApiAssistantMessage } from "./api-turn";
+import { piModelFailureReason } from "./model-request-diagnostics";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 
 const queueTimeout =
   "We were unable to start processing your request within the 900-second timeout limit. Please try again later.";
 const route = {
-  provider: "deepseek",
-  baseUrl: "https://api.deepseek.com",
-  model: "deepseek-v4-flash",
+  provider: "openrouter",
+  baseUrl: "https://openrouter.ai/api/v1",
+  model: "deepseek/deepseek-v4.1-flash",
   apiKey: "synthetic-token",
   dialect: "openai-responses",
   transport: "sse",
 } as const;
-const endpoint = "https://api.deepseek.com/responses";
+const endpoint = "https://openrouter.ai/api/v1/responses";
 const server = setupServer();
 beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
@@ -108,7 +108,7 @@ function completedResponse(text = "Recovered") {
 
 function stream(signal?: AbortSignal) {
   const model = resolvePiAgentModel(route);
-  if (!model) throw new Error("Expected the pinned DeepSeek model");
+  if (!model) throw new Error("Expected the pinned OpenRouter DeepSeek model");
   return piAgentStreamForConfig(route)(
     model,
     normalizeContext({
@@ -194,9 +194,7 @@ describe("provider-declared queue expiry", () => {
           },
         },
       ]);
-      expect(projectPiApiAssistantMessage(result).failureReason).toBe(
-        "provider_queue_timeout",
-      );
+      expect(piModelFailureReason(result)).toBe("provider_queue_timeout");
       expect(JSON.stringify(result.diagnostics)).not.toContain(queueTimeout);
     },
   );
@@ -403,7 +401,7 @@ describe("provider-declared queue expiry", () => {
     );
     const result = await stream().result();
     expect(result.stopReason).toBe("stop");
-    expect(projectPiApiAssistantMessage(result).failureReason).toBeUndefined();
+    expect(piModelFailureReason(result)).toBeUndefined();
     expect(result.diagnostics).toBeUndefined();
   });
 

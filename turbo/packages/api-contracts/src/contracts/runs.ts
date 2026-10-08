@@ -4,18 +4,14 @@ import { firewallPoliciesSchema } from "@okouai/connectors/firewall-contracts";
 import {
   modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
-  modelProviderWriteTypeSchema,
-  type ModelProviderWriteType,
+  type ModelProviderType,
 } from "./model-providers";
 import { triggerSourceSchema } from "./logs";
 import { orgTierSchema } from "./orgs";
 
-export type DirectRunModelProviderType = Exclude<
-  ModelProviderWriteType,
-  "built-in"
->;
+export type DirectRunModelProviderType = Exclude<ModelProviderType, "built-in">;
 
-const directRunModelProviderTypeSchema = modelProviderWriteTypeSchema.refine(
+const directRunModelProviderTypeSchema = modelProviderTypeSchema.refine(
   (type) => {
     return type !== "built-in";
   },
@@ -87,16 +83,6 @@ const unifiedRunRequestSchema = z
     // Base parameters (can be used directly or overridden after shortcut expansion)
     agentId: z.string().optional(),
     conversationId: z.string().optional(),
-    // Multi-mount artifacts, each with its own mountPath.
-    artifacts: z
-      .array(
-        z.object({
-          name: z.string(),
-          version: z.string().optional(),
-          mountPath: z.string(),
-        }),
-      )
-      .optional(),
     vars: z.record(z.string(), z.string()).optional(),
     secrets: z.record(z.string(), z.string()).optional(),
     volumeVersions: z.record(z.string(), z.string()).optional(),
@@ -135,8 +121,7 @@ const unifiedRunRequestSchema = z
     // Settings JSON to pass to Claude CLI (passed as --settings)
     settings: z.string().optional(),
 
-    // Supported new work; the logs schema also decodes retained Goal history.
-    triggerSource: triggerSourceSchema.exclude(["goal"]).optional(),
+    triggerSource: triggerSourceSchema.optional(),
 
     // Per-permission policies (e.g., { "github": { "actions:read": "allow" } })
     permissionPolicies: firewallPoliciesSchema.optional(),
@@ -693,23 +678,6 @@ const networkLogsResponseSchema = z.object({
 });
 
 /**
- * Queue entry schema — own entries have real data, others have null for private fields
- * Ownership is detected via runId: non-null = own entry, null = other user's entry
- */
-const queueEntrySchema = z.object({
-  position: z.number(),
-  agentName: z.string().nullable(),
-  agentDisplayName: z.string().nullable(),
-  userEmail: z.string().nullable(),
-  createdAt: z.string(),
-  isOwner: z.boolean(),
-  runId: z.string().nullable(),
-  prompt: z.string().nullable(),
-  triggerSource: triggerSourceSchema.nullable(),
-  sessionLink: z.string().nullable(),
-});
-
-/**
  * Running task schema — shows currently executing runs
  */
 const runningTaskSchema = z.object({
@@ -743,9 +711,7 @@ const concurrencyInfoSchema = z.object({
  */
 const queueResponseSchema = z.object({
   concurrency: concurrencyInfoSchema,
-  queue: z.array(queueEntrySchema),
   runningTasks: z.array(runningTaskSchema),
-  estimatedTimePerRun: z.number().nullable(),
 });
 
 // Export schemas for reuse
@@ -771,7 +737,6 @@ export {
   modelCatalogCacheEvictionCountSchema,
   networkLogEntrySchema,
   networkLogsResponseSchema,
-  queueEntrySchema,
   runningTaskSchema,
   concurrencyMemberUsageSchema,
   concurrencyInfoSchema,
@@ -802,7 +767,6 @@ export type AxiomNetworkEvent = Omit<NetworkLogEntry, "timestamp"> & {
   runId: string;
   userId: string;
 };
-export type QueueEntry = z.infer<typeof queueEntrySchema>;
 export type RunningTask = z.infer<typeof runningTaskSchema>;
 export type ConcurrencyMemberUsage = z.infer<
   typeof concurrencyMemberUsageSchema

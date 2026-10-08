@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
+import { publicConnectorCatalogIconSchema } from "./connector-catalog";
+import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
 
 /** How many task cards the home page ever shows at once. */
@@ -53,6 +55,20 @@ export type HomeTaskRecommendation = z.infer<
   typeof homeTaskRecommendationSchema
 >;
 
+/**
+ * Display metadata for a connector a card names. Resolved when the cards are
+ * read, never persisted with them, so a catalog relabel or icon change shows up
+ * without regenerating the set.
+ */
+export const homeTaskRecommendationConnectorSchema = z.object({
+  slug: connectorSlugSchema,
+  label: z.string(),
+  icon: publicConnectorCatalogIconSchema,
+});
+export type HomeTaskRecommendationConnector = z.infer<
+  typeof homeTaskRecommendationConnectorSchema
+>;
+
 export const homeTaskRecommendationsResponseSchema = z.object({
   /**
    * `unavailable` means no set could be produced for this request — the switch
@@ -68,6 +84,13 @@ export const homeTaskRecommendationsResponseSchema = z.object({
   recommendations: z
     .array(homeTaskRecommendationSchema)
     .max(HOME_TASK_RECOMMENDATION_LIMIT),
+  /**
+   * Label and icon for the connector slugs the cards name, limited to
+   * connectors the caller can see. A slug without an entry is not drawn.
+   * Optional because a temporarily unavailable catalog still returns the
+   * cards without it; `revision` covers the cards only.
+   */
+  connectors: z.array(homeTaskRecommendationConnectorSchema).optional(),
 });
 export type HomeTaskRecommendationsResponse = z.infer<
   typeof homeTaskRecommendationsResponseSchema

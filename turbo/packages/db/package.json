@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.290.0",
+  "version": "1.323.9",
   "private": true,
   "type": "module",
   "exports": {
@@ -20,10 +20,6 @@
       "import": "./src/jsonb-contracts/*.ts",
       "types": "./src/jsonb-contracts/*.ts"
     },
-    "./operations/model-provider-built-in-identity": {
-      "import": "./src/operations/model-provider-built-in-identity.ts",
-      "types": "./src/operations/model-provider-built-in-identity.ts"
-    },
     "./operations/org-metadata-canonical-write": {
       "import": "./src/operations/org-metadata-canonical-write.ts",
       "types": "./src/operations/org-metadata-canonical-write.ts"
@@ -31,26 +27,6 @@
     "./types": {
       "import": "./src/types.ts",
       "types": "./src/types.ts"
-    },
-    "./operations/account-erasure": {
-      "import": "./src/operations/account-erasure.ts",
-      "types": "./src/operations/account-erasure.ts"
-    },
-    "./migrations/014-goal-archive-search": {
-      "import": "./scripts/migrations/014-goal-archive-search/recover.ts",
-      "types": "./scripts/migrations/014-goal-archive-search/recover.ts"
-    },
-    "./erasure-journal": {
-      "import": "./src/erasure-journal/client.ts",
-      "types": "./src/erasure-journal/client.ts"
-    },
-    "./erasure-journal/migrate": {
-      "import": "./src/erasure-journal/migrate.ts",
-      "types": "./src/erasure-journal/migrate.ts"
-    },
-    "./operations/account-erasure-bridge": {
-      "import": "./src/operations/account-erasure-bridge.ts",
-      "types": "./src/operations/account-erasure-bridge.ts"
     }
   },
   "scripts": {
@@ -62,9 +38,10 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
-    "check:account-erasure-claim-scale": "tsx scripts/check-account-erasure-claim-scale.ts",
-    "test:migration-consistency": "pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:plan-entitlement-capability-migration && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:vnc-configuration && pnpm test:vnc-runner-authority && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:hosted-publication-history-audit && pnpm test:hosted-publication-runtime && pnpm test:hosted-publication-contraction && pnpm test:private-artifact-absolute-urls && pnpm test:pro-suspend-retirement && pnpm test:slack-ingress-failed-retirement && pnpm test:erasure-journal && pnpm --filter api test:erasure-bridge && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:marketing-privacy-retirement && tsx scripts/test-migration-consistency-schema.ts",
+    "test:migration-consistency": "pnpm test:connector-catalog-entry-columns && pnpm test:unselectable-thread-model-cleanup && pnpm test:auto-model-selection-null && pnpm test:file-run-provenance && pnpm test:file-thread-associations && pnpm test:legacy-free-retirement && pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:plan-entitlement-capability-migration && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:vnc-configuration && pnpm test:vnc-runner-authority && pnpm test:agent-grant-table-retirement && pnpm test:native-morning-brief-storage-retirement && pnpm test:morning-brief-enrollment-installation && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:hosted-publication-history-audit && pnpm test:hosted-publication-runtime && pnpm test:hosted-publication-contraction && pnpm test:hosted-publication-pointers && pnpm test:private-artifact-absolute-urls && pnpm test:pro-suspend-retirement && pnpm test:slack-ingress-failed-retirement && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:retire-v7-chat-event-snapshots && pnpm --filter api test:chat-event-sequences && pnpm --filter api test:chat-event-context && pnpm --filter api test:chat-event-auxiliary && tsx scripts/test-migration-consistency-schema.ts",
     "test:vnc-configuration": "tsx scripts/test-vnc-configuration.ts",
+    "test:native-morning-brief-storage-retirement": "tsx scripts/test-native-morning-brief-storage-retirement.ts",
+    "test:agent-grant-table-retirement": "tsx scripts/test-agent-grant-table-retirement.ts",
     "test:vnc-runner-authority": "tsx scripts/test-vnc-runner-authority.ts",
     "test:cloudflare-access": "tsx scripts/test-cloudflare-access.ts",
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",
@@ -76,31 +53,35 @@
     "test:pi-memory-citations": "tsx scripts/test-pi-memory-citation-migration.ts",
     "test:reusable-ssh-credentials": "tsx scripts/test-reusable-ssh-credentials.ts",
     "test:morning-brief-enrollment-installation": "tsx scripts/test-morning-brief-enrollment-installation.ts",
-    "test:billing-attribution": "tsx scripts/test-billing-attribution.ts",
     "billing:attribution": "tsx scripts/billing-attribution.ts",
     "test:pi-candidate-trigger-retirement": "tsx scripts/test-pi-candidate-trigger-retirement.ts",
     "test:historical-blob-audit": "tsx scripts/test-historical-session-blob-audit.ts",
-    "journal:generate": "drizzle-kit generate --dialect postgresql --schema ./src/erasure-journal/schema.ts --out ./erasure-journal-migrations",
-    "test:erasure-journal": "tsx scripts/test-erasure-journal.ts",
     "test:pi-inference-lifecycle": "tsx scripts/test-pi-inference-lifecycle.ts",
+    "test:retire-v7-chat-event-snapshots": "tsx scripts/test-retire-v7-chat-event-snapshots.ts",
     "test:prepared-domain-trigger-retirement": "tsx scripts/test-prepared-domain-trigger-retirement.ts",
-    "test:marketing-privacy-retirement": "tsx scripts/test-marketing-privacy-retirement.ts",
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-alerts": "node --test ../../../ops/pi-memory-stage1/v1/fixtures.test.mjs",
-    "test:gpt-55-retirement": "tsx scripts/test-gpt-55-retirement.ts",
     "test:hosted-publication-history-audit": "tsx scripts/test-hosted-publication-history-audit.ts",
     "test:private-artifact-absolute-urls": "tsx scripts/test-private-artifact-absolute-urls.ts",
     "test:hosted-publication-runtime": "tsx scripts/test-hosted-publication-runtime.ts",
     "test:hosted-publication-contraction": "tsx scripts/test-hosted-publication-contraction.ts",
     "test:pro-suspend-retirement": "tsx scripts/test-pro-suspend-retirement.ts",
-    "test:slack-ingress-failed-retirement": "tsx scripts/test-slack-ingress-failed-status-retirement.ts"
+    "test:legacy-free-retirement": "tsx scripts/test-legacy-free-retirement.ts",
+    "test:unselectable-thread-model-cleanup": "tsx scripts/test-unselectable-thread-model-cleanup.ts",
+    "test:auto-model-selection-null": "tsx scripts/test-auto-model-selection-null.ts",
+    "test:file-thread-associations": "tsx scripts/test-file-thread-associations.ts",
+    "test:file-run-provenance": "tsx scripts/test-file-run-provenance.ts",
+    "test:slack-ingress-failed-retirement": "tsx scripts/test-slack-ingress-failed-status-retirement.ts",
+    "test:hosted-publication-pointers": "tsx scripts/migrations/018-hosted-publication-pointers/test.ts",
+    "test:connector-catalog-entry-columns": "tsx scripts/test-connector-catalog-entry-columns.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1127.0",
-    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/client-kms": "^3.1136.0",
+    "@aws-sdk/client-s3": "^3.1136.0",
     "@clerk/backend": "^3.13.1",
     "@okouai/api-contracts": "workspace:*",
+    "@okouai/connectors": "workspace:*",
     "@okouai/core": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9"
@@ -109,6 +90,7 @@
     "@types/node": "^24.3.0",
     "@types/pg": "^8.21.0",
     "@okouai/eslint-config": "workspace:*",
+    "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
     "drizzle-kit": "^0.31.9",
     "eslint": "^9.34.0",
@@ -119,7 +101,7 @@
     "tsx": "^4.21.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.1",
     "zod": "^4.5.4"
   }
 }

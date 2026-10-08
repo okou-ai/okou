@@ -1,6 +1,7 @@
 import { command } from "ccstate";
+import { agentRuns } from "@okouai/db/schema/agent-run";
 import { runBuiltInAdmissions } from "@okouai/db/schema/run-built-in-admission";
-import { and, count, eq, lte, sql } from "drizzle-orm";
+import { and, count, eq, lte } from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -8,13 +9,6 @@ import { nowDate } from "../../lib/time";
 const RUN_BUILT_IN_MAX_IN_FLIGHT = 3;
 const RUN_BUILT_IN_MAX_STARTED = 50;
 const RUN_BUILT_IN_ADMISSION_TTL_MS = 30 * 60 * 1000;
-
-type RunBuiltInGenerationKind =
-  | "image"
-  | "video"
-  | "presentation"
-  | "website"
-  | "voice";
 
 export interface RunBuiltInAdmission {
   readonly id: string;
@@ -73,7 +67,6 @@ export const startRunBuiltInAdmission$ = command(
     { set },
     args: {
       readonly runId: string | undefined;
-      readonly kind: RunBuiltInGenerationKind;
     },
     signal: AbortSignal,
   ): Promise<RunBuiltInAdmissionResult> => {
@@ -84,9 +77,12 @@ export const startRunBuiltInAdmission$ = command(
     const runId = args.runId;
     const writeDb = set(writeDb$);
     return await writeDb.transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext('run_builtin_' || ${runId}))`,
-      );
+      await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, runId))
+        .for("no key update");
+      signal.throwIfAborted();
 
       const now = nowDate();
       await tx
@@ -128,7 +124,7 @@ export const startRunBuiltInAdmission$ = command(
         .insert(runBuiltInAdmissions)
         .values({
           runId,
-          kind: args.kind,
+          kind: "image",
           status: "active",
           expiresAt,
         })

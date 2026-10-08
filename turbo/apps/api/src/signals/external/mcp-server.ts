@@ -7,12 +7,6 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import {
-  mcpCreateChatThreadInputSchema,
-  mcpCreateChatThreadOutputSchema,
-  type McpCreateChatThreadInput,
-  type McpCreateChatThreadOutput,
-} from "@okouai/api-contracts/contracts/mcp-chat-creation";
-import {
   mcpUpdateChatThreadInputSchema,
   mcpUpdateChatThreadOutputSchema,
   type McpUpdateChatThreadInput,
@@ -29,11 +23,17 @@ import {
   type McpDiscoveryResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import {
-  mcpGetChatStatusInputSchema,
-  mcpGetChatStatusOutputSchema,
-  type McpGetChatStatusInput,
-  type McpChatStatusResult,
-} from "@okouai/api-contracts/contracts/mcp-chat-status";
+  mcpGetRunStatusInputSchema,
+  mcpGetRunStatusOutputSchema,
+  type McpGetRunStatusInput,
+  type McpRunStatusResult,
+} from "@okouai/api-contracts/contracts/mcp-run-status";
+import {
+  mcpGetChatInputInputSchema,
+  mcpGetChatInputOutputSchema,
+  type McpGetChatInputInput,
+  type McpChatInputReadResult,
+} from "@okouai/api-contracts/contracts/mcp-chat-input";
 import {
   mcpSendChatMessageInputSchema,
   mcpSendChatMessageOutputSchema,
@@ -64,10 +64,13 @@ import {
 import {
   mcpGetChatThreadInputSchema,
   mcpGetChatThreadOutputSchema,
+  mcpGetChatIndicatorsInputSchema,
+  mcpGetChatIndicatorsOutputSchema,
   mcpListChatThreadsInputSchema,
   mcpListChatThreadsOutputSchema,
   type McpGetChatThreadInput,
   type McpGetChatThreadOutput,
+  type McpGetChatIndicatorsOutput,
   type McpListChatThreadsInput,
   type McpListChatThreadsOutput,
   type McpThreadReadResult,
@@ -90,18 +93,18 @@ interface McpChatAccess {
   readonly listModels: (
     signal: AbortSignal,
   ) => Promise<McpDiscoveryResult<McpListModelsOutput>>;
-  readonly createThread: (
-    input: McpCreateChatThreadInput,
-    signal: AbortSignal,
-  ) => Promise<McpChatMutationResult<McpCreateChatThreadOutput>>;
   readonly updateThread: (
     input: McpUpdateChatThreadInput,
     signal: AbortSignal,
   ) => Promise<McpChatMutationResult<McpUpdateChatThreadOutput>>;
-  readonly getStatus: (
-    input: McpGetChatStatusInput,
+  readonly getRunStatus: (
+    input: McpGetRunStatusInput,
     signal: AbortSignal,
-  ) => Promise<McpChatStatusResult>;
+  ) => Promise<McpRunStatusResult>;
+  readonly getInput: (
+    input: McpGetChatInputInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatInputReadResult>;
   readonly sendMessage: (
     input: McpSendChatMessageInput,
     signal: AbortSignal,
@@ -118,6 +121,10 @@ interface McpChatAccess {
     input: McpSearchChatMessagesInput,
     signal: AbortSignal,
   ) => Promise<McpChatSearchResult>;
+  readonly getIndicators: (signal: AbortSignal) => Promise<{
+    readonly kind: "ok";
+    readonly data: McpGetChatIndicatorsOutput;
+  }>;
   readonly listThreads: (
     input: McpListChatThreadsInput,
     signal: AbortSignal,
@@ -149,67 +156,7 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const nonRelocatableSchemaKeywords = [
-  "$id",
-  "$anchor",
-  "$dynamicAnchor",
-  "$dynamicRef",
-  "$recursiveAnchor",
-  "$recursiveRef",
-  "$defs",
-  "definitions",
-] as const;
-const reusableSchemaArrayKeywords = ["anyOf", "oneOf", "allOf"] as const;
-
-function hasReusableSchemaShape(value: Record<string, unknown>): boolean {
-  if (typeof value.type === "string") {
-    return true;
-  }
-  if (Array.isArray(value.type)) {
-    return value.type.every((item) => {
-      return typeof item === "string";
-    });
-  }
-  return (
-    reusableSchemaArrayKeywords.some((keyword) => {
-      return Array.isArray(value[keyword]);
-    }) ||
-    Array.isArray(value.enum) ||
-    Object.hasOwn(value, "const")
-  );
-}
-
-function reusableSchemaKey(value: unknown): string | null {
-  if (!isJsonObject(value)) {
-    return null;
-  }
-  if (
-    nonRelocatableSchemaKeywords.some((keyword) => {
-      return keyword in value;
-    })
-  ) {
-    return null;
-  }
-  if (
-    Object.keys(value).length === 3 &&
-    value.type === "string" &&
-    (value.format === "uuid" || value.format === "date-time") &&
-    typeof value.pattern === "string"
-  ) {
-    return `scalar\u0000${String(value.format)}\u0000${String(value.pattern)}`;
-  }
-  if (value.type === "object" && isJsonObject(value.properties)) {
-    return `object\u0000${JSON.stringify(value)}`;
-  }
-  if (hasReusableSchemaShape(value)) {
-    return `schema\u0000${JSON.stringify(value)}`;
-  }
-  return null;
-}
-
 const schemaMapKeywords = [
-  "$defs",
-  "definitions",
   "dependentSchemas",
   "patternProperties",
   "properties",
@@ -234,79 +181,18 @@ function includesString(values: readonly string[], value: string): boolean {
   return values.includes(value);
 }
 
-function forEachJsonObject(
-  value: unknown,
-  visit: (child: Record<string, unknown>) => void,
-): void {
-  if (isJsonObject(value)) {
-    visit(value);
-    return;
-  }
-  if (!Array.isArray(value)) {
-    return;
-  }
-  for (const child of value) {
-    if (isJsonObject(child)) {
-      visit(child);
-    }
-  }
-}
-
-function forEachJsonSchemaChild(
+function mapJsonSchemaChildren(
   schema: Record<string, unknown>,
-  visit: (child: Record<string, unknown>, insideDefinitions: boolean) => void,
-  insideDefinitions: boolean,
-): void {
-  for (const [keyword, value] of Object.entries(schema)) {
-    if (includesString(schemaMapKeywords, keyword) && isJsonObject(value)) {
-      const childInsideDefinitions =
-        insideDefinitions || keyword === "$defs" || keyword === "definitions";
-      for (const child of Object.values(value)) {
-        if (isJsonObject(child)) {
-          visit(child, childInsideDefinitions);
-        }
-      }
-      continue;
-    }
-    if (includesString(schemaArrayKeywords, keyword) && Array.isArray(value)) {
-      for (const child of value) {
-        if (isJsonObject(child)) {
-          visit(child, insideDefinitions);
-        }
-      }
-      continue;
-    }
-    if (includesString(schemaValueKeywords, keyword)) {
-      forEachJsonObject(value, (child) => {
-        visit(child, insideDefinitions);
-      });
-    }
-  }
-}
-
-function replaceJsonSchemaChildren(
-  schema: Record<string, unknown>,
-  replace: (
-    child: Record<string, unknown>,
-    insideDefinitions: boolean,
-  ) => unknown,
-  insideDefinitions: boolean,
+  map: (child: Record<string, unknown>) => Record<string, unknown>,
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(schema).map(([keyword, value]) => {
       if (includesString(schemaMapKeywords, keyword) && isJsonObject(value)) {
-        const childInsideDefinitions =
-          insideDefinitions || keyword === "$defs" || keyword === "definitions";
         return [
           keyword,
           Object.fromEntries(
             Object.entries(value).map(([name, child]) => {
-              return [
-                name,
-                isJsonObject(child)
-                  ? replace(child, childInsideDefinitions)
-                  : child,
-              ];
+              return [name, isJsonObject(child) ? map(child) : child];
             }),
           ),
         ];
@@ -318,23 +204,19 @@ function replaceJsonSchemaChildren(
         return [
           keyword,
           value.map((child) => {
-            return isJsonObject(child)
-              ? replace(child, insideDefinitions)
-              : child;
+            return isJsonObject(child) ? map(child) : child;
           }),
         ];
       }
       if (includesString(schemaValueKeywords, keyword)) {
         if (isJsonObject(value)) {
-          return [keyword, replace(value, insideDefinitions)];
+          return [keyword, map(value)];
         }
         if (Array.isArray(value)) {
           return [
             keyword,
             value.map((child) => {
-              return isJsonObject(child)
-                ? replace(child, insideDefinitions)
-                : child;
+              return isJsonObject(child) ? map(child) : child;
             }),
           ];
         }
@@ -344,147 +226,62 @@ function replaceJsonSchemaChildren(
   );
 }
 
-interface ReusableSchema {
-  readonly count: number;
-  readonly definition: Record<string, unknown>;
-  readonly key: string;
-  readonly name: string;
-}
-
-function compactJsonSchema(
+function inlineJsonSchema(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
-  const occurrences = new Map<
-    string,
-    { count: number; definition: Record<string, unknown> }
-  >();
-  function count(value: unknown, insideDefinitions = false): void {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        count(item, insideDefinitions);
+  function resolve(reference: string): Record<string, unknown> {
+    if (!reference.startsWith("#/")) {
+      throw new Error(`Unsupported JSON Schema reference ${reference}`);
+    }
+    let value: unknown = schema;
+    for (const encodedSegment of reference.slice(2).split("/")) {
+      const segment = encodedSegment
+        .replaceAll("~1", "/")
+        .replaceAll("~0", "~");
+      const property = isJsonObject(value)
+        ? Object.getOwnPropertyDescriptor(value, segment)
+        : undefined;
+      if (!property || !("value" in property)) {
+        throw new Error(`Unresolved JSON Schema reference ${reference}`);
       }
-      return;
+      value = property.value;
     }
     if (!isJsonObject(value)) {
-      return;
+      throw new Error(`JSON Schema reference is not an object ${reference}`);
     }
-    if (!insideDefinitions) {
-      const key = reusableSchemaKey(value);
-      if (key) {
-        const previous = occurrences.get(key);
-        occurrences.set(key, {
-          count: (previous?.count ?? 0) + 1,
-          definition: previous?.definition ?? value,
-        });
-        if (key.startsWith("scalar\u0000")) {
-          return;
-        }
-      }
-    }
-    forEachJsonSchemaChild(value, count, insideDefinitions);
-  }
-  count(schema);
-
-  const existingDefinitions = isJsonObject(schema.$defs) ? schema.$defs : {};
-  const usedNames = new Set(Object.keys(existingDefinitions));
-  const counters = new Map<string, number>();
-  function uniqueName(definition: Record<string, unknown>): string {
-    const base =
-      definition.format === "uuid"
-        ? "uuid"
-        : definition.format === "date-time"
-          ? "dateTime"
-          : definition.type === "object"
-            ? "object"
-            : "schema";
-    let index = (counters.get(base) ?? 0) + 1;
-    let name = index === 1 ? base : `${base}${index}`;
-    while (usedNames.has(name)) {
-      index += 1;
-      name = `${base}${index}`;
-    }
-    counters.set(base, index);
-    usedNames.add(name);
-    return name;
+    return value;
   }
 
-  const candidates = [...occurrences.entries()]
-    .filter(([, candidate]) => {
-      return candidate.count > 1;
-    })
-    .map(([key, candidate]) => {
-      return {
-        key,
-        ...candidate,
-        name: uniqueName(candidate.definition),
-      };
-    })
-    .sort((left, right) => {
-      const leftBytes = utf8Bytes(JSON.stringify(left.definition));
-      const rightBytes = utf8Bytes(JSON.stringify(right.definition));
-      return right.count * rightBytes - left.count * leftBytes;
-    });
-
-  function render(
-    selected: ReadonlyMap<string, ReusableSchema>,
+  function inline(
+    value: Record<string, unknown>,
+    activeReferences: ReadonlySet<string>,
   ): Record<string, unknown> {
-    function replace(
-      value: unknown,
-      insideDefinitions = false,
-      retainedKey?: string,
-    ): unknown {
-      if (!isJsonObject(value)) {
-        return value;
+    if ("$ref" in value) {
+      const reference = value.$ref;
+      if (typeof reference !== "string" || Object.keys(value).length !== 1) {
+        throw new Error("Unsupported JSON Schema reference with siblings");
       }
-      if (!insideDefinitions) {
-        const key = reusableSchemaKey(value);
-        const candidate =
-          key && key !== retainedKey ? selected.get(key) : undefined;
-        if (candidate) {
-          return { $ref: `#/$defs/${candidate.name}` };
-        }
+      if (activeReferences.has(reference)) {
+        throw new Error(`Cyclic JSON Schema reference ${reference}`);
       }
-      return replaceJsonSchemaChildren(
-        value,
-        (child, childInsideDefinitions) => {
-          return replace(child, childInsideDefinitions);
-        },
-        insideDefinitions,
+      return inline(
+        resolve(reference),
+        new Set(activeReferences).add(reference),
       );
     }
-
-    const rewritten = replace(schema);
-    if (!isJsonObject(rewritten) || selected.size === 0) {
-      return schema;
-    }
-    const definitions: Record<string, unknown> = { ...existingDefinitions };
-    for (const candidate of selected.values()) {
-      definitions[candidate.name] = replace(
-        candidate.definition,
-        false,
-        candidate.key,
-      );
-    }
-    return { ...rewritten, $defs: definitions };
+    const rewritten = mapJsonSchemaChildren(value, (child) => {
+      return inline(child, activeReferences);
+    });
+    const result = { ...rewritten };
+    delete result.$defs;
+    delete result.definitions;
+    return result;
   }
 
-  const selected = new Map<string, ReusableSchema>();
-  let compacted = schema;
-  let compactedBytes = utf8Bytes(JSON.stringify(compacted));
-  for (const candidate of candidates) {
-    const trialSelection = new Map(selected).set(candidate.key, candidate);
-    const trial = render(trialSelection);
-    const trialBytes = utf8Bytes(JSON.stringify(trial));
-    if (trialBytes < compactedBytes) {
-      selected.set(candidate.key, candidate);
-      compacted = trial;
-      compactedBytes = trialBytes;
-    }
-  }
-  return compacted;
+  return inline(schema, new Set());
 }
 
-function compactStandardSchema<Input, Output>(
+function inlineStandardSchema<Input, Output>(
   schema: StandardSchemaWithJSON<Input, Output>,
 ): StandardSchemaWithJSON<Input, Output> {
   const standard = schema["~standard"];
@@ -497,26 +294,20 @@ function compactStandardSchema<Input, Output>(
       },
       jsonSchema: {
         input(options) {
-          const converted = standard.jsonSchema.input(options);
-          return options.target === "draft-2020-12"
-            ? compactJsonSchema(converted)
-            : converted;
+          return inlineJsonSchema(standard.jsonSchema.input(options));
         },
         output(options) {
-          const converted = standard.jsonSchema.output(options);
-          return options.target === "draft-2020-12"
-            ? compactJsonSchema(converted)
-            : converted;
+          return inlineJsonSchema(standard.jsonSchema.output(options));
         },
       },
     },
   };
 }
 
-function compactZodSchema<Schema extends z.ZodType>(
+function inlineZodSchema<Schema extends z.ZodType>(
   schema: Schema,
 ): StandardSchemaWithJSON<z.input<Schema>, z.output<Schema>> {
-  return compactStandardSchema(
+  return inlineStandardSchema(
     schema as unknown as StandardSchemaWithJSON<
       z.input<Schema>,
       z.output<Schema>
@@ -585,7 +376,7 @@ function validationToolError(
 function uncheckedInputSchema<Input extends Record<string, unknown>>(
   schema: z.ZodType<Input>,
 ): StandardSchemaWithJSON<unknown, unknown> {
-  const advertised = compactZodSchema(schema);
+  const advertised = inlineZodSchema(schema);
   return {
     "~standard": {
       version: 1,
@@ -626,7 +417,7 @@ function registerChatTool<
     {
       ...advertisedConfig,
       inputSchema: uncheckedInputSchema(inputSchema),
-      outputSchema: compactZodSchema(outputSchema),
+      outputSchema: inlineZodSchema(outputSchema),
     },
     async (input, context) => {
       const parsed = inputSchema.safeParse(input);
@@ -692,10 +483,10 @@ function registerMessageTool(
     "get_chat_messages",
     {
       description:
-        "Read visible messages in turn order (latest 20 by default). messageAt is accepted-input time for users and output-event time for assistants. Filter by runId or center the first page on eventId/seqId with around. Continue cursors with unchanged filters and no around; use nextContentCursor for truncated content. Offsets count UTF-16 units/files. History changes invalidate cursors. Reading does not mark read or bypass artifact authorization. Limits: 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, 15 seconds.",
+        "Read visible messages in turn order (latest 20 by default). messageAt is accepted-input time for users and output-event time for assistants. User refs keep the original input eventId across replacements; seqId is the current revision. Filter by runId or center the first page on eventId/seqId with around. Continue cursors with unchanged filters and no around; use nextContentCursor for truncated content. Offsets count UTF-16 units/files. History changes invalidate cursors. Reading does not mark read or bypass artifact authorization. Limits: 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, 15 seconds.",
       inputSchema: mcpGetChatMessagesInputSchema,
       outputSchema: mcpGetChatMessagesOutputSchema,
-      annotations: readAnnotations,
+      annotations: { ...readAnnotations, title: "Read Chat Messages" },
     },
     async (args, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -744,13 +535,15 @@ async function mutationTool<T extends Record<string, unknown>>(
       code: "unavailable",
       message:
         options.unavailableMessage ??
-        "The operation result is unavailable. For sends, retry the identical requestId, threadId and text within 24 hours; otherwise inspect the current state before retrying.",
-      retryable: true,
+        "The operation result is uncertain. Inspect the conversation before intentionally sending new work. Do not automatically retry an uncertain send.",
+      retryable: false,
     });
   }
   if (result.value.kind === "error") {
     return toolError({
-      code: result.value.code,
+      // Common Web commands use uppercase API codes; MCP's existing wire
+      // contract uses lowercase snake_case while retaining the business meaning.
+      code: result.value.code.toLowerCase(),
       message: result.value.message,
       retryable: result.value.retryable,
     });
@@ -765,66 +558,34 @@ function registerManageTools(
 ): void {
   registerChatTool(
     server,
-    "create_chat_thread",
-    {
-      description:
-        "Create a conversation and optionally its first message atomically. requestId is required. Omitted agentId uses the visible organization default; omitted model pins the then-current default at first run admission; omitted title remains null until the first text run names it. Without message, use send_chat_message. With message, dispatch follows acceptance; use get_chat_status because acceptance is not delivery or success. Use one UUID requestId per intent. Within 24 hours, retry only the identical mode, values, and field presence; retryUntil is the deadline. Creation is not generally idempotent after expiry, so inspect current state. threadId equals requestId; inputRef is stable.",
-      inputSchema: mcpCreateChatThreadInputSchema,
-      outputSchema: mcpCreateChatThreadOutputSchema,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: true,
-      },
-    },
-    (input, context) => {
-      return mutationTool(
-        access,
-        "message" in input ? "okou:chat:send" : "okou:chat:manage",
-        (signal) => {
-          return access.createThread(input, signal);
-        },
-        AbortSignal.any([requestSignal, context.mcpReq.signal]),
-        {
-          summarize(data) {
-            return `Created chat thread ${data.threadId}${data.replayed ? " (replayed request)" : ""}. Next: ${data.nextAction.tool}.`;
-          },
-          unavailableMessage:
-            "Creation result is unavailable. Retry the identical requestId, mode, exact values and optional-field presence within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
-        },
-      );
-    },
-  );
-  registerChatTool(
-    server,
     "update_chat_thread",
     {
       description:
-        "Update title and/or future-run model atomically; omitted fields stay unchanged. metadataUpdatedAt is the metadata clock, not lastMessageAt. model:null clears the pin; next run admission pins the then-current default. A title update suppresses automatic naming; model changes do not affect an active run. Use one UUID requestId per patch. For 24 hours, retry only the identical threadId and patch; retryUntil is the deadline. Updates are not generally idempotent after expiry; inspect current state. Replay returns current state without restoring older settings.",
+        "Update title/model using the ordinary Web metadata command; omitted fields stay unchanged. model:null selects Auto. Title changes disable automatic naming; model changes affect neither queued inputs nor an active run. Inspect get_chat_thread after an uncertain update.",
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {
+        title: "Update Chat Thread",
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
         openWorldHint: false,
       },
     },
-    (input, context) => {
+    (input) => {
       return mutationTool(
         access,
         "okou:chat:manage",
         (signal) => {
           return access.updateThread(input, signal);
         },
-        AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        requestSignal,
         {
           summarize(data) {
-            return `Updated chat thread ${data.threadId}${data.replayed ? " (replayed request)" : ""}.`;
+            return `Updated chat thread ${data.threadId}.`;
           },
           unavailableMessage:
-            "Update result is unavailable. Retry the identical requestId, threadId and exact patch within 24 hours; otherwise inspect get_chat_thread before making a new intended change.",
+            "Update result is uncertain. Inspect get_chat_thread before making a new intended change.",
         },
       );
     },
@@ -836,6 +597,10 @@ function registerMutationTools(
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
+  // The SDK aborts mcpReq.signal when a successful exchange closes, including
+  // normal JSON response completion. Ordinary Web mutation commands schedule
+  // finite background work with their caller's HTTP/application lifetime, so
+  // keep that real request signal rather than the shorter SDK exchange signal.
   if (access.scopes.includes("okou:chat:manage")) {
     registerManageTools(server, access, requestSignal);
   }
@@ -845,30 +610,28 @@ function registerMutationTools(
       "send_chat_message",
       {
         description:
-          "Submit text to an existing conversation; the server may launch, queue, or steer. Use a new UUID requestId per intended message. Within 24 hours, retry only the identical threadId and exact text; retryUntil is the deadline. Sends are not generally idempotent after expiry, so inspect history before new work. inputRef identifies the original input even if visible history replaces it. disposition is observational, not proof of delivery or success, and runId may be null. Execute nextAction unchanged to observe this input with get_chat_status, then follow its message handoff.",
+          "Send an ordinary Web chat input with agentId and prompt. Omit threadId to create a conversation; provide it to continue that Agent's owned conversation. model is optional; null selects Auto. Returns the original accepted eventId, not a Run. Follow it with get_chat_input(threadId,eventId), then get_run_status for native execution. Never automatically retry an uncertain send.",
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
+          title: "Send Chat Message",
           readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: true,
         },
       },
-      (input, context) => {
+      (input) => {
         return mutationTool(
           access,
           "okou:chat:send",
           (signal) => {
             return access.sendMessage(input, signal);
           },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          requestSignal,
           {
             summarize(data) {
-              const run = data.runId
-                ? `; run ${data.runId}`
-                : "; no run assigned";
-              return `Accepted chat input ${data.inputRef.eventId}; disposition ${data.disposition}${run}.`;
+              return `Accepted input ${data.eventId} in chat thread ${data.threadId}.`;
             },
           },
         );
@@ -881,28 +644,28 @@ function registerMutationTools(
       "revoke_queued_message",
       {
         description:
-          "Withdraw an unclaimed queued input using the complete send_chat_message inputRef. Repeating a revocation is safe. Reserved or associated input is not revocable here, and not_revocable does not prove delivery. This never cancels a run; use cancel_run with the reported runId when appropriate.",
+          "Recall a queued user input using agentId, threadId and its original eventId. Credit-rejected inputs are also recallable while live. Canonical input lookup resolves replacements and verifies recall; retained history may exceed read limits. This does not cancel a Run or undo prior effects.",
         inputSchema: mcpRevokeQueuedMessageInputSchema,
         outputSchema: mcpRevokeQueuedMessageOutputSchema,
         annotations: {
+          title: "Revoke Queued Message",
           readOnlyHint: false,
           destructiveHint: true,
           idempotentHint: true,
           openWorldHint: false,
         },
       },
-      (input, context) => {
+      (input) => {
         return mutationTool(
           access,
           "okou:run:cancel",
           (signal) => {
             return access.revokeQueuedMessage(input, signal);
           },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          requestSignal,
           {
             summarize(data) {
-              const run = data.runId ? `; run ${data.runId}` : "";
-              return `Queued input ${data.inputRef.eventId}: ${data.outcome}${run}.`;
+              return `Recalled input ${data.eventId} in chat thread ${data.threadId}.`;
             },
           },
         );
@@ -917,20 +680,21 @@ function registerMutationTools(
         inputSchema: mcpCancelRunInputSchema,
         outputSchema: mcpCancelRunOutputSchema,
         annotations: {
+          title: "Cancel Run",
           readOnlyHint: false,
           destructiveHint: true,
           idempotentHint: true,
           openWorldHint: true,
         },
       },
-      (input, context) => {
+      (input) => {
         return mutationTool(
           access,
           "okou:run:cancel",
           (signal) => {
             return access.cancelRun(input, signal);
           },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          requestSignal,
           {
             summarize(data) {
               return `Run ${data.runId} is cancelled${data.alreadyCancelled ? " (already cancelled)" : ""}.`;
@@ -952,10 +716,10 @@ function registerDiscoveryTools(
     "list_agents",
     {
       description:
-        "List visible Agents, including the default, with bounded descriptions rather than instructions/configuration. Continue nextCursor with the same limit (default 20, max 50); pages may be shortened by response limits. Cursors expire after 24 hours and visibility is rechecked per page. Use agentId with create_chat_thread.",
+        "List visible Agents, including the default, with bounded descriptions rather than instructions/configuration. Continue nextCursor with the same limit (default 20, max 50); pages may be shortened by response limits. Cursors expire after 24 hours and visibility is rechecked per page. Use agentId with send_chat_message.",
       inputSchema: mcpListAgentsInputSchema,
       outputSchema: mcpListAgentsOutputSchema,
-      annotations: readAnnotations,
+      annotations: { ...readAnnotations, title: "List Agents" },
     },
     (input, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -977,10 +741,10 @@ function registerDiscoveryTools(
     "list_models",
     {
       description:
-        "List the current model catalog and member/workspace default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id with create_chat_thread.",
+        "List model catalog and member preference; a null model id is Auto, the default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id, or null for Auto, with send_chat_message.",
       inputSchema: mcpListModelsInputSchema,
       outputSchema: mcpListModelsOutputSchema,
-      annotations: readAnnotations,
+      annotations: { ...readAnnotations, title: "List Models" },
     },
     (_input, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -994,7 +758,7 @@ function registerDiscoveryTools(
           const selectable = data.models.filter((model) => {
             return model.selectable;
           }).length;
-          return `Found ${data.models.length} model(s), ${selectable} selectable; default ${data.defaultModel.model ?? "not configured"}.`;
+          return `Found ${data.models.length} model(s), ${selectable} selectable; default ${data.defaultModel.model ?? "Auto"}.`;
         },
         "Model discovery is temporarily unavailable. Retry later.",
       );
@@ -1015,7 +779,7 @@ function registerSearchAndStatusTools(
         "Search visible message text using whole words or CJK phrases of 2+ characters; every query group must match. Filter by thread, Agent, role, and sourceEventAt; bounds, newest-first order, and continuation all use that source-event clock. Results include bounded excerpts and real refs; use around with get_chat_messages for full context. Continue nextCursor with identical inputs (default 20, max 50). Empty pages may continue; scanLimited marks the 100-candidate budget. Indexing is asynchronous; empty results do not prove absence. Search does not mark read, and 32 MiB/50,000-event/15-second history limits fail explicitly.",
       inputSchema: mcpSearchChatMessagesInputSchema,
       outputSchema: mcpSearchChatMessagesOutputSchema,
-      annotations: readAnnotations,
+      annotations: { ...readAnnotations, title: "Search Chat Messages" },
     },
     async (args, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -1036,47 +800,51 @@ function registerSearchAndStatusTools(
   );
   registerChatTool(
     server,
-    "get_chat_status",
+    "get_chat_input",
     {
       description:
-        "Observe derived lifecycle {phase,outcome,output}. Pass complete send_chat_message inputRef " +
-        "for that input, or only threadId for the latest run. waitMs requires inputRef, clamps to " +
-        "8 seconds and 5 observations, and returns ready, deadline, or status; " +
-        "deadline or capacity is current state, not a run outcome. Missing associations never select " +
-        "another run. queued proves neither delivery, provenance, nor model compliance. Private " +
-        "observations may map several inputs to one run and output. Terminal runs may remain " +
-        "finalizing with pending or partial output; ready means current materialized output is " +
-        "readable, but late output may arrive. A ready wait includes one bounded messagePage; follow " +
-        "its cursors or messages handoff. Disconnect cancels only the waiter, never the run. Honor " +
-        "retryAfterMs. Limits match get_chat_messages: 8 MiB gzip, 32 MiB history, 50,000 events, " +
-        "15 seconds; missing refs are unavailable and archive errors explicit. Response caps are " +
-        "16 KiB, or 192 KiB with messagePage. Reading neither marks read nor changes or cancels " +
-        "execution.",
-      inputSchema: mcpGetChatStatusInputSchema,
-      outputSchema: mcpGetChatStatusOutputSchema,
-      annotations: readAnnotations,
+        "Follow an accepted chat input by threadId and its original eventId. Reports queued, consumed, rejected or recalled; consumed includes a separate native Run observation. Recalled content stays hidden. Several inputs may share a Run, without a separate answer guarantee. Reads canonical archive plus tail under 8 MiB gzip/32 MiB/50,000-event/15-second limits; failures never imply queued or absent work.",
+      inputSchema: mcpGetChatInputInputSchema,
+      outputSchema: mcpGetChatInputOutputSchema,
+      annotations: { ...readAnnotations, title: "Get Chat Input" },
     },
     async (args, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
       return await readTool(
         access,
         () => {
-          return access.getStatus(args, signal);
+          return access.getInput(args, signal);
         },
         signal,
         (data) => {
-          const outcome = data.lifecycle.outcome
-            ? `/${data.lifecycle.outcome}`
-            : "";
-          const wait = data.wait
-            ? `; wait ${data.wait.outcome} (${data.wait.returnReason})`
-            : "";
-          const retry = data.retryAfterMs
-            ? `; retry after ${data.retryAfterMs} ms`
-            : "";
-          return `Chat ${data.threadId}: ${data.lifecycle.phase}${outcome}/${data.lifecycle.output}${wait}${retry}.`;
+          return `Input ${data.eventId}: ${data.inputStatus}${data.run ? `; Run ${data.run.runId}: ${data.run.status}` : ""}.`;
         },
-        "Chat status is temporarily unavailable. Retry later.",
+        "Chat input is temporarily unavailable. Retry the read later; do not resend uncertain work.",
+      );
+    },
+  );
+  registerChatTool(
+    server,
+    "get_run_status",
+    {
+      description:
+        "Read the ordinary Web Run state by runId, obtainable from get_chat_input after consumption. This read does not wait, derive a second lifecycle, mark read, change execution or imply output completeness.",
+      inputSchema: mcpGetRunStatusInputSchema,
+      outputSchema: mcpGetRunStatusOutputSchema,
+      annotations: { ...readAnnotations, title: "Get Run Status" },
+    },
+    async (args, context) => {
+      const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+      return await readTool(
+        access,
+        () => {
+          return access.getRunStatus(args, signal);
+        },
+        signal,
+        (data) => {
+          return `Run ${data.runId}: ${data.status}.`;
+        },
+        "Run status is temporarily unavailable. Retry later.",
       );
     },
   );
@@ -1096,13 +864,37 @@ function createChatServer(
     registerDiscoveryTools(server, access, requestSignal);
     registerChatTool(
       server,
+      "get_chat_indicators",
+      {
+        description:
+          "Get active and unread Agent and chat thread indicators for your current organization. Active is not run completion. Reading does not mark read. Use get_chat_thread for details.",
+        inputSchema: mcpGetChatIndicatorsInputSchema,
+        outputSchema: mcpGetChatIndicatorsOutputSchema,
+        annotations: { ...readAnnotations, title: "Get Chat Indicators" },
+      },
+      async (_args, context) => {
+        const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+        return await readTool(
+          access,
+          () => {
+            return access.getIndicators(signal);
+          },
+          signal,
+          () => {
+            return "Read chat indicators.";
+          },
+        );
+      },
+    );
+    registerChatTool(
+      server,
       "list_chat_threads",
       {
         description:
-          "List your conversations newest-message first. Filter by Agent, literal title substring, lastMessageAt, activity, or unread; bounds, order, and continuation use lastMessageAt, while metadataUpdatedAt is the separate metadata clock. Continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Unread covers retained terminal events and native deliveries, not all archives; activity is not run completion. Reading does not mark read. Use get_chat_thread for details.",
+          "List your conversations newest-message first. Filter by Agent, literal title substring or lastMessageAt; bounds, order, and continuation use lastMessageAt, while metadataUpdatedAt is the separate metadata clock. Continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Reading does not mark read. Use get_chat_indicators for active and unread state, and get_chat_thread for details.",
         inputSchema: mcpListChatThreadsInputSchema,
         outputSchema: mcpListChatThreadsOutputSchema,
-        annotations: readAnnotations,
+        annotations: { ...readAnnotations, title: "List Chat Threads" },
       },
       async (args, context) => {
         const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -1123,10 +915,10 @@ function createChatServer(
       "get_chat_thread",
       {
         description:
-          "Read one owned conversation's title, Agent, selected/effective model, activity, and unread state. createdAt is creation, metadataUpdatedAt is metadata change, and lastMessageAt is message activity. Model metadata is current policy; admission is checked on send. Unread covers retained terminal events and native deliveries. This neither reads messages nor marks read, and idle activity does not prove execution success.",
+          "Read one owned conversation's title, Agent, and selected/effective model. createdAt is creation, metadataUpdatedAt is metadata change, and lastMessageAt is message activity. Model metadata is current policy; admission is checked on send. This neither reads messages nor marks read. Use get_chat_indicators for active and unread state; absence of an active indicator does not prove execution success.",
         inputSchema: mcpGetChatThreadInputSchema,
         outputSchema: mcpGetChatThreadOutputSchema,
-        annotations: readAnnotations,
+        annotations: { ...readAnnotations, title: "Get Chat Thread" },
       },
       async (args, context) => {
         const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);

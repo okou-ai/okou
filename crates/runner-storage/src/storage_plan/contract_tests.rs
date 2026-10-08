@@ -332,16 +332,16 @@ fn cached_instructions_allow_replaced_and_removed_skills_on_reuse() {
 }
 
 #[test]
-fn omitted_goal_mount_removes_old_guidance_and_preserves_other_nested_skills() {
+fn omitted_mount_prunes_managed_skill_and_preserves_nested_user_skills() {
     let dir = tempfile::tempdir().unwrap();
     let skills = dir.path().join(".claude/skills");
-    let removed = skills.join("goal");
+    let removed = skills.join("removed-skill");
     let retained = skills.join("workflow");
     fs::create_dir_all(&removed).unwrap();
-    fs::create_dir_all(retained.join("custom/goal")).unwrap();
-    fs::write(removed.join("SKILL.md"), "obsolete automatic guidance").unwrap();
+    fs::create_dir_all(retained.join("custom/removed-skill")).unwrap();
+    fs::write(removed.join("SKILL.md"), "managed skill").unwrap();
     fs::write(
-        retained.join("custom/goal/SKILL.md"),
+        retained.join("custom/removed-skill/SKILL.md"),
         "user-owned nested skill",
     )
     .unwrap();
@@ -349,7 +349,7 @@ fn omitted_goal_mount_removes_old_guidance_and_preserves_other_nested_skills() {
         storages: HashMap::from([
             (
                 removed.to_string_lossy().into_owned(),
-                StorageFingerprint::new("goal", "v1"),
+                StorageFingerprint::new("removed-skill", "v1"),
             ),
             (
                 retained.to_string_lossy().into_owned(),
@@ -377,7 +377,7 @@ fn omitted_goal_mount_removes_old_guidance_and_preserves_other_nested_skills() {
     run_plan(plan);
     assert!(!removed.exists());
     assert_eq!(
-        fs::read_to_string(retained.join("custom/goal/SKILL.md")).unwrap(),
+        fs::read_to_string(retained.join("custom/removed-skill/SKILL.md")).unwrap(),
         "user-owned nested skill"
     );
 }

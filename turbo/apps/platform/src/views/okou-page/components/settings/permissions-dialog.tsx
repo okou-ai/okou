@@ -81,7 +81,6 @@ import {
 import type { PermissionPolicy } from "../../../../signals/okou-page/settings/permissions.ts";
 import {
   Check,
-  Ban,
   ChevronRight,
   Clock,
   ChevronDown,
@@ -259,8 +258,6 @@ function splitPermName(name: string): [string, string] {
   return [name, ""];
 }
 
-const POLICY_OPTIONS = ["allow", "deny"] as const;
-
 const PERMISSION_PAGE_SIZE = 100;
 
 function getGroupPolicy(
@@ -273,64 +270,6 @@ function getGroupPolicy(
     draft,
     permissions: perms,
   });
-}
-
-function PolicyPill({
-  policy,
-  onChange,
-  disabled,
-}: {
-  policy: FirewallPolicyValue | "mixed";
-  onChange?: (p: PermissionPolicy) => void;
-  disabled?: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <span className="inline-flex shrink-0 rounded-md overflow-hidden text-xs font-medium border border-surface-border">
-      {POLICY_OPTIONS.map((option, idx) => {
-        return (
-          <button
-            key={option}
-            type="button"
-            disabled={disabled}
-            aria-pressed={policy === option}
-            style={
-              idx > 0
-                ? {
-                    borderLeft:
-                      "var(--border-width-surface) solid hsl(var(--gray-400))",
-                  }
-                : undefined
-            }
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onChange?.(option);
-            }}
-            className={`flex items-center gap-1 px-2.5 py-1.5 transition-colors ${
-              policy === option
-                ? option === "allow"
-                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                  : "bg-rose-500/10 text-rose-700 dark:text-rose-400"
-                : disabled
-                  ? "text-muted-foreground/50"
-                  : "text-muted-foreground hover:text-foreground hover:bg-state-hover"
-            } ${disabled ? "cursor-default" : "cursor-pointer"}`}
-          >
-            {option === "allow" && <Check size={12} />}
-            {option === "deny" && <Ban size={12} />}
-            {option === "allow"
-              ? t(($) => {
-                  return $.connectors.permissions.actions.allow;
-                })
-              : t(($) => {
-                  return $.connectors.permissions.actions.deny;
-                })}
-          </button>
-        );
-      })}
-    </span>
-  );
 }
 
 function buildSortedGroups(
@@ -692,11 +631,14 @@ function PermissionGrantPolicyControl({
           {showExpirationStatus && (
             <PermissionAllowDurationStatic label={durationLabel} />
           )}
-          <PolicyPill
+          <PermissionPolicyToggle
             policy={policy}
             disabled={readOnly}
-            onChange={(nextPolicy) => {
-              onPolicyChange(nextPolicy);
+            onAllow={() => {
+              onPolicyChange("allow");
+            }}
+            onDeny={() => {
+              onPolicyChange("deny");
             }}
           />
         </>
@@ -1447,9 +1389,15 @@ function LoadedPermissionsDrawerContent({
                 ({permissions.length})
               </span>
               {!readOnly && (
-                <PolicyPill
+                <PermissionPolicyToggle
                   policy={getGroupPolicy(context, draft, permissions)}
-                  onChange={handleSetAll}
+                  disabled={saving}
+                  onAllow={() => {
+                    handleSetAll("allow");
+                  }}
+                  onDeny={() => {
+                    handleSetAll("deny");
+                  }}
                 />
               )}
             </div>

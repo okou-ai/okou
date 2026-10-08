@@ -152,29 +152,3 @@ test("The update dialog appears only when an update is required", async () => {
 
   expect(reload).toHaveBeenCalledOnce();
 });
-
-test("A required Platform upgrade opens the update dialog", async () => {
-  let requestCount = 0;
-  context.mocks.http.get("*/api/agents/:id/user-connectors", () => {
-    requestCount += 1;
-    if (requestCount === 1) {
-      return Response.json({ enabledConnectorSlugs: [] });
-    }
-    return Response.json(
-      { error: "Client update required" },
-      { status: CLIENT_FORCE_UPGRADE_STATUS },
-    );
-  });
-
-  await setupPage({ context, path: "/_/error" });
-
-  await waitForReadyPage();
-
-  await client().get({ params: { id: AGENT_ID } });
-
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
-  await client().get({ params: { id: AGENT_ID } });
-
-  await screen.findByRole("dialog", { name: "Update required" });
-});

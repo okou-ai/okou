@@ -10,12 +10,6 @@ let mockSlackOrgData: SlackOrgStatus = {
   isInstalled: true,
   workspaceName: "Test Org Workspace",
   isAdmin: true,
-  environment: {
-    requiredSecrets: [],
-    requiredVars: [],
-    missingSecrets: [],
-    missingVars: [],
-  },
 };
 
 export function resetMockSlackOrgIntegration(): void {
@@ -24,12 +18,6 @@ export function resetMockSlackOrgIntegration(): void {
     isInstalled: true,
     workspaceName: "Test Org Workspace",
     isAdmin: true,
-    environment: {
-      requiredSecrets: [],
-      requiredVars: [],
-      missingSecrets: [],
-      missingVars: [],
-    },
   };
 }
 

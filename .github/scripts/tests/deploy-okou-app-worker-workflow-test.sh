@@ -12,7 +12,10 @@ python3 - \
   "${repo_root}/turbo/apps/app-worker/wrangler.jsonc" \
   "${repo_root}/.github/workflows/turbo.yml" << 'PY'
 from pathlib import Path
+import os
+import subprocess
 import sys
+import tempfile
 
 import yaml
 
@@ -78,17 +81,38 @@ if worker_release_job.get("environment") != "production":
 prepare_step = find_step(
     worker_release_job, "Prepare standalone App Worker production deployment"
 )
-verify_assets_step = find_step(
-    worker_release_job, "Verify immutable App assets for Worker production"
-)
 sentry_step = find_step(worker_release_job, "Upload App source maps to Sentry")
 deploy_step = find_step(worker_release_job, "Deploy App Worker production")
 start_step = find_step(worker_release_job, "Start GitHub Deployment")
 finish_step = find_step(worker_release_job, "Finish GitHub Deployment")
 
+preview_job = turbo["jobs"]["deploy-app"]
 preview_prepare_step = find_step(
-    turbo["jobs"]["deploy-app"], "Prepare standalone app Worker preview"
+    preview_job, "Prepare standalone app Worker preview"
 )
+build_step = find_step(preview_job, "Build canonical app artifact")
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    (root / "turbo").mkdir()
+    command_log = root / "commands.log"
+    subprocess.run(
+        [
+            "bash",
+            "-euo",
+            "pipefail",
+            "-c",
+            'pnpm() { printf "%s\\n" "$*" >> "$COMMAND_LOG"; }\n'
+            + build_step["run"],
+        ],
+        cwd=root,
+        env={**os.environ, "COMMAND_LOG": str(command_log)},
+        check=True,
+    )
+    if command_log.read_text().splitlines() != [
+        "--filter @okouai/app exec vite build --sourcemap",
+        "--filter @okouai/app exec sentry-cli sourcemaps inject dist",
+    ]:
+        raise RuntimeError("App deployment must build once and retain source map injection")
 for shell_prepare_step in (prepare_step, preview_prepare_step):
     require_fragments(
         shell_prepare_step, ["bash .github/scripts/prepare-okou-app-worker-shell.sh"]
@@ -102,19 +126,7 @@ require_fragments(
         'echo "canonical-dist=$canonical_dist"',
     ],
 )
-require_fragments(
-    verify_assets_step,
-    [
-        "bash .github/scripts/verify-okou-app-assets.sh",
-        '"https://static.okou.io/okou-app/assets"',
-        '"$CANONICAL_ASSETS"',
-    ],
-)
 expected_canonical_dist = "${{ steps.worker-production.outputs.canonical-dist }}"
-if verify_assets_step.get("env", {}).get("CANONICAL_ASSETS") != (
-    f"{expected_canonical_dist}/assets"
-):
-    raise RuntimeError("Worker asset verification must use the canonical artifact")
 if sentry_step.get("env", {}).get("CANONICAL_DIST") != expected_canonical_dist:
     raise RuntimeError("source map upload must use the Worker canonical artifact")
 require_fragments(
@@ -181,12 +193,11 @@ if finish_step.get("with", {}).get("env_url") != "https://app.okou.ai":
 steps = worker_release_job["steps"]
 if not (
     steps.index(prepare_step)
-    < steps.index(verify_assets_step)
     < steps.index(sentry_step)
     < steps.index(deploy_step)
     < steps.index(finish_step)
 ):
-    raise RuntimeError("Worker artifact verification must precede deployment reporting")
+    raise RuntimeError("Worker artifact preparation must precede deployment reporting")
 if "publish-okou-app-assets.sh" in str(worker_release_job):
     raise RuntimeError("production promotion must not republish immutable app assets")
 

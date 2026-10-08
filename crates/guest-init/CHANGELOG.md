@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.17.6](https://github.com/okou-ai/okou/compare/guest-init-v0.17.5...guest-init-v0.17.6) (2026-10-07)
+
+## [0.17.5](https://github.com/okou-ai/okou/compare/guest-init-v0.17.4...guest-init-v0.17.5) (2026-10-07)
+
+## [0.17.4](https://github.com/okou-ai/okou/compare/guest-init-v0.17.3...guest-init-v0.17.4) (2026-10-07)
+
+## [0.17.3](https://github.com/okou-ai/okou/compare/guest-init-v0.17.2...guest-init-v0.17.3) (2026-10-02)
+
+## [0.17.2](https://github.com/okou-ai/okou/compare/guest-init-v0.17.1...guest-init-v0.17.2) (2026-10-01)
+
+## [0.17.1](https://github.com/okou-ai/okou/compare/guest-init-v0.17.0...guest-init-v0.17.1) (2026-09-30)
+
+## [0.17.0](https://github.com/okou-ai/okou/compare/guest-init-v0.16.303...guest-init-v0.17.0) (2026-09-30)
+
+
+### Features
+
+* **runner:** add private run-scoped guest duplex channel ([#37113](https://github.com/okou-ai/okou/issues/37113)) ([5487cfc](https://github.com/okou-ai/okou/commit/5487cfce060b5072409b8a0d944a7d1528ffbd91))
+
+## [0.16.303](https://github.com/okou-ai/okou/compare/guest-init-v0.16.302...guest-init-v0.16.303) (2026-09-30)
+
+## [0.16.302](https://github.com/okou-ai/okou/compare/guest-init-v0.16.301...guest-init-v0.16.302) (2026-09-29)
+
+## [0.16.301](https://github.com/okou-ai/okou/compare/guest-init-v0.16.300...guest-init-v0.16.301) (2026-09-29)
+
+## [0.16.300](https://github.com/okou-ai/okou/compare/guest-init-v0.16.299...guest-init-v0.16.300) (2026-09-28)
+
+## [0.16.299](https://github.com/okou-ai/okou/compare/guest-init-v0.16.298...guest-init-v0.16.299) (2026-09-28)
+
+## [0.16.298](https://github.com/okou-ai/okou/compare/guest-init-v0.16.297...guest-init-v0.16.298) (2026-09-28)
+
+## [0.16.297](https://github.com/okou-ai/okou/compare/guest-init-v0.16.296...guest-init-v0.16.297) (2026-09-27)
+
+## [0.16.296](https://github.com/okou-ai/okou/compare/guest-init-v0.16.295...guest-init-v0.16.296) (2026-09-26)
+
+## [0.16.295](https://github.com/okou-ai/okou/compare/guest-init-v0.16.294...guest-init-v0.16.295) (2026-09-26)
+
+
+### Bug Fixes
+
+* **guest-init:** mount devpts for pseudo-terminals ([#37020](https://github.com/okou-ai/okou/issues/37020)) ([81afd16](https://github.com/okou-ai/okou/commit/81afd166e897fc06cdcf7561202594b73c30e939))
+
+## [0.16.294](https://github.com/okou-ai/okou/compare/guest-init-v0.16.293...guest-init-v0.16.294) (2026-09-25)
+
+## [0.16.293](https://github.com/okou-ai/okou/compare/guest-init-v0.16.292...guest-init-v0.16.293) (2026-09-25)
+
+## [0.16.292](https://github.com/okou-ai/okou/compare/guest-init-v0.16.291...guest-init-v0.16.292) (2026-09-24)
+
+## [0.16.291](https://github.com/okou-ai/okou/compare/guest-init-v0.16.290...guest-init-v0.16.291) (2026-09-23)
+
+## [0.16.290](https://github.com/okou-ai/okou/compare/guest-init-v0.16.289...guest-init-v0.16.290) (2026-09-23)
+
 ## [0.16.289](https://github.com/okou-ai/okou/compare/guest-init-v0.16.288...guest-init-v0.16.289) (2026-09-22)
 
 ## [0.16.288](https://github.com/okou-ai/okou/compare/guest-init-v0.16.287...guest-init-v0.16.288) (2026-09-22)

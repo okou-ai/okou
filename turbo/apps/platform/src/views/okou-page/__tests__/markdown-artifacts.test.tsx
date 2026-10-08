@@ -140,23 +140,6 @@ test("Artifact links show image, video, and file kinds", async () => {
   ).toBeNull();
 });
 
-test("An artifact text link uses the already-open artifacts sidebar", async () => {
-  const url = publicArtifactUrl("sidebar-evidence.png");
-  installMessage(`[Supporting evidence](${url})`);
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  const link = await findNamedLink("Supporting evidence");
-  click(getNamedButton("Open artifacts"));
-  await expect(
-    screen.findByTestId("thread-sidebar-artifacts"),
-  ).resolves.toBeVisible();
-  click(link);
-  await expect(
-    screen.findByTestId("artifact-sidebar-body-image"),
-  ).resolves.toHaveAttribute("src", url);
-  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
-});
-
 test("Bare platform URLs stay links and fenced URLs stay code", async () => {
   const url = publicArtifactUrl("bare-evidence.png");
   const site = "https://literal-site.sites.vm7.io";

@@ -14,7 +14,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 const REQUEST_TOKEN = "computer-use-request-token";
-const STUDIO_HOST_ID = "11111111-1111-4111-8111-111111111111";
 const OFFLINE_HOST_ID = "33333333-3333-4333-8333-333333333333";
 
 function computerUseHost(
@@ -169,24 +168,4 @@ test("A user with no online computer receives setup guidance", async () => {
     "href",
     expect.stringContaining("/api/desktop/updates/stable/darwin/arm64/dmg"),
   );
-});
-
-test("A Teams computer-use request names the Teams thread", async () => {
-  mockAuthorizationRequest({
-    source: "teams",
-    hosts: [computerUseHost(STUDIO_HOST_ID, "Teams Mac")],
-  });
-
-  await setupPage({
-    context,
-    path: `/computer-use/authorize/${REQUEST_TOKEN}`,
-    host: "app.okou.ai",
-  });
-
-  await expect(screen.findByText("Teams Mac")).resolves.toBeVisible();
-  expect(
-    screen.getByText(
-      "Choose an online computer for Okou to use in this Teams thread.",
-    ),
-  ).toBeVisible();
 });

@@ -1,4 +1,10 @@
 import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import {
   connectorRuntimeTargetKey,
   type ConnectorRuntimeCustomAbsentReason,
   type ConnectorRuntimeCustomUnresolvedReason,
@@ -6,34 +12,42 @@ import {
   type ConnectorRuntimeTarget,
   type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import type { FirewallApi } from "@okouai/connectors/firewall-types";
+import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { and, eq, inArray } from "drizzle-orm";
-
 import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
-import {
-  buildCustomConnectorRuntimeContext,
-  customConnectorRuntimeExecutionState,
-  loadEffectiveCustomConnectorPermissionBundle,
-  type CustomConnectorRuntimeDataRows,
-} from "./agent-run-create.service";
-import {
-  loadConnectorRuntimeSelection,
-  type ConnectorRuntimeSelection,
-} from "./connector-catalog-runtime.service";
-import { loadCustomConnectorPermissionBundleDependencySlugs } from "./custom-connector-permission-bundle.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
-import { loadCustomConnectorRuntimeData } from "./custom-connector.service";
+import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
 import {
   connectorAccountTargetKey,
   resolveConnectorAccounts,
   resolvedConnectorAccountIdsByTarget,
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
-import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
+import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/schema/connector-catalog";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+  connectorCatalogSlugRuntimeFromRows,
+} from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogRuntimeColumns,
+  materializeConnectorCatalogRuntimeRow,
+} from "./connector-catalog-columns";
+import {
+  buildCustomConnectorRuntimeContext,
+  customConnectorRuntimeExecutionState,
+  loadEffectiveCustomConnectorPermissionBundle,
+  type CustomConnectorRuntimeDataRows,
+} from "./connector-runtime-preparation.service";
+import { loadCustomConnectorPermissionBundleDependencySlugs } from "./custom-connector-permission-bundle.service";
+import { loadCustomConnectorRuntimeData } from "./custom-connector.service";
+
+import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -77,6 +91,7 @@ type ResolvedConnectorRuntimeTarget =
 
 interface ConnectorRuntimeDiagnosticApi {
   readonly base: string;
+  readonly usesAwsSigv4: boolean;
   readonly permissions: readonly {
     readonly name: string;
     readonly rules: readonly string[];
@@ -171,22 +186,22 @@ function customUnresolvedResult(
   };
 }
 
-function builtinUnresolvedResult(
-  target: Extract<ConnectorRuntimeTarget, { readonly kind: "builtin" }>,
-): ConnectorRuntimeBuiltinSyncResult {
-  return {
-    target,
-    state: "unresolved",
-    reason: "connector-unavailable",
-  };
-}
-
 function builtinAbsentResult(
   target: Extract<ConnectorRuntimeTarget, { readonly kind: "builtin" }>,
 ): ConnectorRuntimeBuiltinSyncResult {
   return {
     target,
     state: "absent",
+    reason: "connector-unavailable",
+  };
+}
+
+function builtinUnresolvedResult(
+  target: Extract<ConnectorRuntimeTarget, { readonly kind: "builtin" }>,
+): ConnectorRuntimeBuiltinSyncResult {
+  return {
+    target,
+    state: "unresolved",
     reason: "connector-unavailable",
   };
 }
@@ -199,7 +214,7 @@ function authResolvesAtNetworkBoundary(auth: FirewallApi["auth"]): boolean {
 }
 
 function builtinMcpCredentialResolution(args: {
-  readonly snapshot: ConnectorRuntimeSelection | undefined;
+  readonly snapshot: ConnectorRuntimeLookup | undefined;
   readonly registration: BuiltinRuntimeTargetRegistration;
   readonly credentialAvailable: boolean;
 }): "network-boundary" | "none" | undefined {
@@ -217,6 +232,37 @@ function builtinMcpCredentialResolution(args: {
         return authResolvesAtNetworkBoundary(api.auth);
       }) ?? false;
   return credentialed ? "network-boundary" : "none";
+}
+
+function customTargetsFromRows(
+  runtimeRows: CustomConnectorRuntimeDataRows,
+  grantRows: readonly {
+    readonly customConnectorId: string;
+    readonly permissionNames: readonly string[];
+  }[],
+): ReadonlyMap<string, CustomTargetSnapshot> {
+  const grants = new Map(
+    grantRows.map((grant) => {
+      return [grant.customConnectorId, grant] as const;
+    }),
+  );
+  return new Map(
+    runtimeRows.map((row) => {
+      const grant = grants.get(row.connector.id);
+      return [
+        row.connector.id,
+        {
+          row,
+          grant: grant
+            ? {
+                customConnectorId: grant.customConnectorId,
+                permissionNames: [...grant.permissionNames],
+              }
+            : undefined,
+        },
+      ] as const;
+    }),
+  );
 }
 
 async function loadCustomSnapshot(args: {
@@ -237,10 +283,34 @@ async function loadCustomSnapshot(args: {
           orgId: args.scope.orgId,
           customConnectorIds,
         });
-      const connectorCatalogSelection = await loadConnectorRuntimeSelection(
-        tx,
+      const catalogRows = await tx
+        .select({
+          current: {
+            schemaVersion: connectorCatalog.schemaVersion,
+            hash: connectorCatalog.hash,
+          },
+          entry: connectorCatalogRuntimeColumns,
+        })
+        .from(connectorCatalog)
+        .leftJoin(
+          connectorCatalogEntries,
+          connectorCatalogSlugJoin(metadataConnectorSlugs),
+        )
+        .where(connectorCatalogCurrentWhere());
+      // Permission-bundle dependencies are metadata only. A missing entry
+      // resolves through the fail-closed unavailable custom runtime row.
+      const connectorCatalogSelection = connectorCatalogSlugRuntimeFromRows(
+        catalogRows.map((row) => {
+          return {
+            ...row,
+            entry:
+              row.entry === null
+                ? null
+                : materializeConnectorCatalogRuntimeRow(row.entry),
+          };
+        }),
         {
-          requestedConnectorSlugs: [],
+          runtimeConnectorSlugs: [],
           metadataConnectorSlugs,
         },
       );
@@ -278,10 +348,19 @@ async function loadCustomSnapshot(args: {
           );
         }
       }
-      const featureSwitchContext = await loadUserFeatureSwitchContext(
-        tx,
+      const featureSwitchContextRows0 = await tx
+        .select({
+          userId: userFeatureSwitches.userId,
+          switches: userFeatureSwitches.switches,
+        })
+        .from(userFeatureSwitches)
+        .where(
+          userFeatureSwitchRowCondition(args.scope.orgId, args.scope.userId),
+        );
+      const featureSwitchContext = featureSwitchContextFromRows(
         args.scope.orgId,
         args.scope.userId,
+        featureSwitchContextRows0,
       );
       const runtimeRows = await loadCustomConnectorRuntimeData(tx, {
         orgId: args.scope.orgId,
@@ -303,24 +382,7 @@ async function loadCustomSnapshot(args: {
             inArray(userCustomConnectors.customConnectorId, customConnectorIds),
           ),
         );
-      const grants = new Map(
-        grantRows.map((grant) => {
-          return [grant.customConnectorId, grant] as const;
-        }),
-      );
-      const customTargets = new Map<string, CustomTargetSnapshot>();
-      for (const row of runtimeRows) {
-        const grant = grants.get(row.connector.id);
-        customTargets.set(row.connector.id, {
-          row,
-          grant: grant
-            ? {
-                customConnectorId: grant.customConnectorId,
-                permissionNames: [...grant.permissionNames],
-              }
-            : undefined,
-        });
-      }
+      const customTargets = customTargetsFromRows(runtimeRows, grantRows);
       return {
         connectorCatalogSelection,
         featureSwitchContext,
@@ -445,6 +507,65 @@ function connectorAccountRequests(
   });
 }
 
+function resolveBuiltinTarget(args: {
+  readonly registration: BuiltinRuntimeTargetRegistration;
+  readonly scope: ConnectorRuntimeScope;
+  readonly snapshot: ConnectorRuntimeLookup | undefined;
+  readonly accounts: Awaited<ReturnType<typeof resolveConnectorAccounts>>;
+  readonly refreshes: ReadonlyMap<
+    string,
+    Awaited<ReturnType<typeof resolveActiveNetworkPolicyRefreshes>>[number]
+  >;
+}): ResolvedConnectorRuntimeTarget {
+  const { registration, scope, snapshot } = args;
+  const target = {
+    kind: "builtin" as const,
+    connectorSlug: registration.connectorSlug,
+  };
+  const accountResolution = args.accounts.get(
+    connectorAccountTargetKey(target),
+  );
+  const credentialAccess =
+    accountResolution?.kind === "resolved" && snapshot
+      ? resolveBuiltinConnectorCredentialAccess({
+          snapshot,
+          stored: {
+            authMethodId: accountResolution.account.authMethod,
+            automaticAuthType: accountResolution.account.automaticAuthType,
+            connectorId: accountResolution.account.connectorId,
+            connectorSlug: registration.connectorSlug,
+            orgId: scope.orgId,
+            storageVersion: accountResolution.account.storageVersion,
+            userId: scope.userId,
+          },
+        })
+      : undefined;
+  const refresh = args.refreshes.get(connectorRuntimeTargetKey(target));
+  const credentialResolution = builtinMcpCredentialResolution({
+    snapshot,
+    registration,
+    credentialAvailable: credentialAccess?.kind === "ok",
+  });
+  return {
+    kind: "builtin",
+    ...(credentialResolution === undefined ? {} : { credentialResolution }),
+    // A connector that left the catalog is treated as never authorized: the
+    // Runner drops it, and a later catalog switch wakes the Run to restore it.
+    result: !snapshot?.connectors.has(registration.connectorSlug)
+      ? builtinAbsentResult(target)
+      : refresh && credentialAccess?.kind === "ok"
+        ? {
+            target,
+            state: "available",
+            networkPolicy: refresh.networkPolicy,
+            ...(refresh.nextRefreshAt
+              ? { nextSyncAt: refresh.nextRefreshAt }
+              : {}),
+          }
+        : builtinUnresolvedResult(target),
+  };
+}
+
 async function resolveConnectorRuntimeTargetStates(args: {
   readonly db: Db;
   readonly scope: ConnectorRuntimeScope;
@@ -458,9 +579,36 @@ async function resolveConnectorRuntimeTargetStates(args: {
   });
   const builtinCatalogSelection =
     builtinConnectorSlugs.length > 0
-      ? await loadConnectorRuntimeSelection(args.db, {
-          requestedConnectorSlugs: builtinConnectorSlugs,
-        })
+      ? connectorCatalogSlugRuntimeFromRows(
+          (
+            await args.db
+              .select({
+                current: {
+                  schemaVersion: connectorCatalog.schemaVersion,
+                  hash: connectorCatalog.hash,
+                },
+                entry: connectorCatalogRuntimeColumns,
+              })
+              .from(connectorCatalog)
+              .leftJoin(
+                connectorCatalogEntries,
+                connectorCatalogSlugJoin(builtinConnectorSlugs),
+              )
+              .where(connectorCatalogCurrentWhere())
+          ).map((row) => {
+            return {
+              ...row,
+              entry:
+                row.entry === null
+                  ? null
+                  : materializeConnectorCatalogRuntimeRow(row.entry),
+            };
+          }),
+          // A registered target without an entry becomes `absent` below.
+          {
+            runtimeConnectorSlugs: builtinConnectorSlugs,
+          },
+        )
       : undefined;
   const builtinCatalogConnectorSlugs = new Set(
     builtinCatalogSelection?.connectors.keys() ?? [],
@@ -470,6 +618,13 @@ async function resolveConnectorRuntimeTargetStates(args: {
       return builtinCatalogConnectorSlugs.has(connectorSlug);
     },
   );
+  if (catalogBuiltinConnectorSlugs.length < builtinConnectorSlugs.length) {
+    L.warn("Registered connector runtime targets have no catalog entry", {
+      connectorSlugs: builtinConnectorSlugs.filter((connectorSlug) => {
+        return !builtinCatalogConnectorSlugs.has(connectorSlug);
+      }),
+    });
+  }
   const [builtinRefreshes, builtinAccountResolutions, customSnapshot] =
     await Promise.all([
       resolveActiveNetworkPolicyRefreshes(
@@ -524,50 +679,15 @@ async function resolveConnectorRuntimeTargetStates(args: {
       });
       continue;
     }
-    const target = {
-      kind: "builtin" as const,
-      connectorSlug: registration.connectorSlug,
-    };
-    const accountResolution = builtinAccountResolutions.get(
-      connectorAccountTargetKey(target),
+    resolvedTargets.push(
+      resolveBuiltinTarget({
+        registration,
+        scope: args.scope,
+        snapshot: builtinCatalogSelection,
+        accounts: builtinAccountResolutions,
+        refreshes: builtinByTarget,
+      }),
     );
-    const credentialAccess =
-      accountResolution?.kind === "resolved" && builtinCatalogSelection
-        ? resolveBuiltinConnectorCredentialAccess({
-            snapshot: builtinCatalogSelection,
-            stored: {
-              authMethodId: accountResolution.account.authMethod,
-              automaticAuthType: accountResolution.account.automaticAuthType,
-              connectorId: accountResolution.account.connectorId,
-              connectorSlug: registration.connectorSlug,
-              orgId: args.scope.orgId,
-              storageVersion: accountResolution.account.storageVersion,
-              userId: args.scope.userId,
-            },
-          })
-        : undefined;
-    const refresh = builtinByTarget.get(connectorRuntimeTargetKey(target));
-    const credentialResolution = builtinMcpCredentialResolution({
-      snapshot: builtinCatalogSelection,
-      registration,
-      credentialAvailable: credentialAccess?.kind === "ok",
-    });
-    resolvedTargets.push({
-      kind: "builtin",
-      ...(credentialResolution === undefined ? {} : { credentialResolution }),
-      result: !builtinCatalogConnectorSlugs.has(registration.connectorSlug)
-        ? builtinAbsentResult(target)
-        : refresh && credentialAccess?.kind === "ok"
-          ? {
-              target,
-              state: "available",
-              networkPolicy: refresh.networkPolicy,
-              ...(refresh.nextRefreshAt
-                ? { nextSyncAt: refresh.nextRefreshAt }
-                : {}),
-            }
-          : builtinUnresolvedResult(target),
-    });
   }
   logResolvedConnectorRuntimeTargets(args.targets, resolvedTargets);
   return resolvedTargets;
@@ -618,6 +738,7 @@ function diagnosticCustomApis(
   return result.firewall.firewall.apis.map((api) => {
     return {
       base: api.base,
+      usesAwsSigv4: api.auth.awsSigv4 !== undefined,
       permissions: (api.permissions ?? []).map((permission) => {
         return { name: permission.name, rules: [...permission.rules] };
       }),

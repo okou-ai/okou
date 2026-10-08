@@ -13,6 +13,7 @@ import {
   verifyOkouToken,
 } from "./tokens";
 import { clerkSessionAuth$ } from "./clerk-session";
+import { logTemporaryAuthFailure$ } from "./temporary-auth-diagnostics";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { AgentAuthContext, AuthContext, CliAuth } from "../../types/auth";
 import {
@@ -375,9 +376,11 @@ export const requiredAuthContext$ = command(
     const authContext = resolved.value;
     if (authContext) {
       if (options.requireOrganization && !authContext.orgId) {
-        return missingOrganizationError(
-          options.missingOrganizationStatus ?? 400,
-        );
+        const status = options.missingOrganizationStatus ?? 400;
+        if (status === 401) {
+          await set(logTemporaryAuthFailure$, authContext, signal);
+        }
+        return missingOrganizationError(status);
       }
       return authContext;
     }
@@ -389,6 +392,7 @@ export const requiredAuthContext$ = command(
       }
     }
 
+    await set(logTemporaryAuthFailure$, null, signal);
     return {
       status: 401 as const,
       body: {

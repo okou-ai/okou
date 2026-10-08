@@ -31,26 +31,3 @@ export async function transitionRunToTimeout(
 ) {
   return await transitionRunToTerminal(context, runId, "timeout");
 }
-
-export async function cleanupTimedOutRun(
-  context: TestContext,
-  args: {
-    readonly runId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-  },
-) {
-  return await accept(
-    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-      testCronCleanupSandboxesStateContract,
-    ).cleanup({
-      body: {
-        chatThreadIds: [args.chatThreadId],
-        runIds: [args.runId],
-        orgIds: [args.orgId],
-        exportJobIds: [],
-      },
-    }),
-    [200],
-  );
-}

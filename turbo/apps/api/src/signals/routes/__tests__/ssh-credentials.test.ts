@@ -146,6 +146,193 @@ describe("reusable SSH credential owner routes", () => {
     ).toStrictEqual([]);
   });
 
+  it("keeps every host on the current credential when attachment races rotation", async () => {
+    useSecretKmsProbe();
+    owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const first = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Existing host",
+          host: "first.example.com",
+          credential: { id: created.body.id },
+        },
+      }),
+      [201],
+    );
+    const [attached] = await Promise.all([
+      accept(
+        connections().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "New host",
+            host: "second.example.com",
+            credential: { id: created.body.id },
+          },
+        }),
+        [201],
+      ),
+      accept(
+        credentials().update({
+          headers,
+          params: { credentialId: created.body.id },
+          body: { expectedRevision: 1, username: "rotated-user" },
+        }),
+        [200],
+      ),
+    ]);
+    const listed = await accept(connections().list({ headers }), [200]);
+    expect(listed.body.connections).toHaveLength(2);
+    expect(listed.body.connections).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first.body.id,
+          username: "rotated-user",
+          generation: 2,
+          credentialId: created.body.id,
+        }),
+        expect.objectContaining({
+          id: attached.body.id,
+          username: "rotated-user",
+          // Attachment can commit before or after rotation's host UPDATE.
+          // The host always resolves the current credential independently.
+          generation: expect.toBeOneOf([1, 2]),
+          credentialId: created.body.id,
+        }),
+      ]),
+    );
+    const current = await accept(credentials().list({ headers }), [200]);
+    expect(current.body.credentials).toStrictEqual([
+      expect.objectContaining({
+        id: created.body.id,
+        revision: 2,
+        username: "rotated-user",
+        hosts: expect.arrayContaining([
+          { id: first.body.id, displayName: "Existing host" },
+          { id: attached.body.id, displayName: "New host" },
+        ]),
+      }),
+    ]);
+  });
+
+  it("resolves the current credential after concurrent low-frequency rotations", async () => {
+    useSecretKmsProbe();
+    owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const host = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Shared",
+          host: "ssh.example.com",
+          credential: { id: created.body.id },
+        },
+      }),
+      [201],
+    );
+    const results = await Promise.all(
+      ["first-user", "second-user"].map((username) => {
+        return accept(
+          credentials().update({
+            headers,
+            params: { credentialId: created.body.id },
+            body: { expectedRevision: 1, username },
+          }),
+          [200, 409],
+        );
+      }),
+    );
+    expect(
+      results.some((result) => {
+        return result.status === 200;
+      }),
+    ).toBeTruthy();
+    const current = await accept(credentials().list({ headers }), [200]);
+    const credential = current.body.credentials[0];
+    expect(credential).toBeDefined();
+    expect(credential?.username).toBeOneOf(["first-user", "second-user"]);
+    const listed = await accept(connections().list({ headers }), [200]);
+    expect(listed.body.connections).toStrictEqual([
+      expect.objectContaining({
+        id: host.body.id,
+        credentialId: created.body.id,
+        username: credential?.username,
+      }),
+    ]);
+  });
+
+  it("resolves the current credential after a host edit overlaps rotation", async () => {
+    useSecretKmsProbe();
+    owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const host = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Original",
+          host: "ssh.example.com",
+          credential: { id: created.body.id },
+        },
+      }),
+      [201],
+    );
+    const [edited] = await Promise.all([
+      accept(
+        connections().update({
+          headers,
+          params: { connectionId: host.body.id },
+          body: { expectedGeneration: 1, displayName: "Edited" },
+        }),
+        [200, 409],
+      ),
+      accept(
+        credentials().update({
+          headers,
+          params: { credentialId: created.body.id },
+          body: { expectedRevision: 1, username: "rotated-user" },
+        }),
+        [200],
+      ),
+    ]);
+    const listed = await accept(connections().list({ headers }), [200]);
+    expect(listed.body.connections).toStrictEqual([
+      expect.objectContaining({
+        id: host.body.id,
+        credentialId: created.body.id,
+        username: "rotated-user",
+        displayName: edited.status === 200 ? "Edited" : "Original",
+        generation: edited.status === 200 ? 3 : 2,
+      }),
+    ]);
+    const current = await accept(credentials().list({ headers }), [200]);
+    expect(current.body.credentials).toStrictEqual([
+      expect.objectContaining({ id: created.body.id, revision: 2 }),
+    ]);
+  });
+
   it("hides other users and organizations before KMS work or binding", async () => {
     const kms = useSecretKmsProbe();
     const first = owner();
@@ -238,7 +425,7 @@ describe("reusable SSH credential owner routes", () => {
     expect(kms.generateDataKeyCalls).toBe(0);
   });
 
-  it("rechecks credential revision after encryption and leaves a concurrent winner intact", async () => {
+  it("publishes a delayed low-frequency edit and keeps the current credential usable", async () => {
     useSecretKmsProbe();
     owner();
     const created = await accept(
@@ -272,7 +459,7 @@ describe("reusable SSH credential owner routes", () => {
           },
         },
       }),
-      [409],
+      [200],
     );
     await entered.promise;
     const renamed = await accept(
@@ -284,24 +471,78 @@ describe("reusable SSH credential owner routes", () => {
       [200],
     );
     release.resolve();
-    expect((await delayed).body.error.code).toBe(
-      "SSH_CREDENTIAL_REVISION_CONFLICT",
-    );
+    const saved = await delayed;
+    expect(saved.body).toMatchObject({
+      id: created.body.id,
+      name: renamed.body.name,
+      revision: 3,
+      authMethod: "private_key",
+    });
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([renamed.body]);
-    expect(renamed.body).toMatchObject({ revision: 2, authMethod: "password" });
-    await accept(
+    ).toStrictEqual([saved.body]);
+    const staleDeletion = await accept(
       credentials().delete({ headers, params, body: { expectedRevision: 1 } }),
       [409],
     );
+    expect(staleDeletion.body.error.code).toBe(
+      "SSH_CREDENTIAL_REVISION_CONFLICT",
+    );
     await accept(
-      credentials().delete({ headers, params, body: { expectedRevision: 2 } }),
+      credentials().delete({ headers, params, body: { expectedRevision: 3 } }),
       [204],
     );
   });
 
-  it("serializes deletion against a new host reference", async () => {
+  it("leaves a recoverable credential state after deletion overlaps an edit", async () => {
+    useSecretKmsProbe();
+    owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const params = { credentialId: created.body.id };
+    const [updated, deleted] = await Promise.all([
+      accept(
+        credentials().update({
+          headers,
+          params,
+          body: { expectedRevision: 1, name: "Concurrent edit" },
+        }),
+        [200, 404],
+      ),
+      accept(
+        credentials().delete({
+          headers,
+          params,
+          body: { expectedRevision: 1 },
+        }),
+        [204, 409],
+      ),
+    ]);
+    const remaining = await accept(credentials().list({ headers }), [200]);
+    if (deleted.status === 204) {
+      expect(remaining.body.credentials).toStrictEqual([]);
+      return;
+    }
+    expect(updated.status).toBe(200);
+    expect(remaining.body.credentials).toStrictEqual([updated.body]);
+    await accept(
+      credentials().delete({
+        headers,
+        params,
+        body: {
+          expectedRevision: remaining.body.credentials[0]?.revision ?? 0,
+        },
+      }),
+      [204],
+    );
+  });
+
+  it("preserves one valid outcome when creating a host races credential deletion", async () => {
     useSecretKmsProbe();
     owner();
     const created = await accept(
@@ -336,7 +577,92 @@ describe("reusable SSH credential owner routes", () => {
     expect([bound.status, deleted.status]).toStrictEqual(
       bound.status === 201 ? [201, 409] : [404, 204],
     );
+    if (bound.status === 404) {
+      expect(bound.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
+    }
+    if (deleted.status === 409) {
+      expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_IN_USE");
+    }
     const hosts = await accept(connections().list({ headers }), [200]);
     expect(hosts.body.connections).toHaveLength(bound.status === 201 ? 1 : 0);
+    const remaining = await accept(credentials().list({ headers }), [200]);
+    expect(remaining.body.credentials).toHaveLength(
+      bound.status === 201 ? 1 : 0,
+    );
+  });
+
+  it("preserves the host binding when changing credentials races deletion", async () => {
+    useSecretKmsProbe();
+    owner();
+    const original = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const replacement = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody, name: "Replacement" },
+      }),
+      [201],
+    );
+    const host = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Existing",
+          host: "ssh.example.com",
+          credential: { id: original.body.id },
+        },
+      }),
+      [201],
+    );
+    const [bound, deleted] = await Promise.all([
+      accept(
+        connections().update({
+          headers,
+          params: { connectionId: host.body.id },
+          body: {
+            expectedGeneration: host.body.generation,
+            displayName: "Rebound",
+            credential: { id: replacement.body.id },
+          },
+        }),
+        [200, 404],
+      ),
+      accept(
+        credentials().delete({
+          headers,
+          params: { credentialId: replacement.body.id },
+          body: { expectedRevision: replacement.body.revision },
+        }),
+        [204, 409],
+      ),
+    ]);
+    expect([bound.status, deleted.status]).toStrictEqual(
+      bound.status === 200 ? [200, 409] : [404, 204],
+    );
+    if (bound.status === 404) {
+      expect(bound.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
+    }
+    if (deleted.status === 409) {
+      expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_IN_USE");
+    }
+    const hosts = await accept(connections().list({ headers }), [200]);
+    expect(hosts.body.connections).toStrictEqual([
+      bound.status === 200 ? bound.body : host.body,
+    ]);
+    const remaining = await accept(credentials().list({ headers }), [200]);
+    const credentialIds = remaining.body.credentials.map(({ id }) => {
+      return id;
+    });
+    expect(credentialIds.sort()).toStrictEqual(
+      bound.status === 200
+        ? [original.body.id, replacement.body.id].sort()
+        : [original.body.id],
+    );
   });
 });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
-import { connectorCatalogDiagnosticsSchema } from "./connector-catalog-diagnostics";
+import { connectorCatalogSyncAttemptReportSchema } from "./connector-catalog-sync";
 import { apiErrorSchema } from "./errors";
 import {
   officialWorkflowCatalogSyncResponseSchema,
@@ -99,7 +99,6 @@ const cronCompactChatThreadSnapshotsResponseSchema = z.object({
   success: z.literal(true),
   scopes: z.number(),
   eventsApplied: z.number(),
-  removedDeletedAgentThreads: z.number(),
   eventsPruned: z.number(),
 });
 
@@ -109,12 +108,7 @@ export const cronProjectChatEventSearchResponseSchema = z.object({
   indexedEvents: z.number(),
   deletedDocs: z.number(),
   orphanedThreads: z.number(),
-  /** Candidates denied by an account-erasure subject closure this tick. */
-  closedThreads: z.number().int().nonnegative(),
-  /** Candidates deferred by lock/statement deadlines, GIN maintenance or ownership races. */
-  deferredThreads: z.number().int().nonnegative(),
   convergence: z.object({
-    /** Threads with events whose canonical subjects are all still open. */
     eligibleThreads: z.number(),
     durableCaughtUpThreads: z.number(),
   }),
@@ -153,18 +147,14 @@ const cronRetainChatEventsResponseSchema = z.object({
   success: z.literal(true),
   cutoff: z.iso.datetime(),
   scanLimit: z.number().int().positive(),
-  deleteLimit: z.number().int().positive(),
   scanned: z.number().int().nonnegative(),
-  candidates: z.number().int().nonnegative(),
   deleted: z.number().int().nonnegative(),
   skippedSnapshot: z.number().int().nonnegative(),
   skippedSearchWatermark: z.number().int().nonnegative(),
   skippedPendingRunless: z.number().int().nonnegative(),
   skippedNonterminalRun: z.number().int().nonnegative(),
-  skippedActiveInput: z.number().int().nonnegative(),
-  skippedBatchLimit: z.number().int().nonnegative(),
   hasMore: z.boolean(),
-  overlapPrevented: z.boolean(),
+  sweepRestarted: z.boolean(),
   durationMs: z.number().int().nonnegative(),
 });
 
@@ -240,10 +230,9 @@ const cronSyncSkillsResponseSchema = z.object({
   total: z.number(),
 });
 
+// The writer's report of this attempt only.
 const connectorCatalogSyncResponseSchema =
-  connectorCatalogDiagnosticsSchema.extend({
-    outcome: z.enum(["accepted", "unchanged", "rejected"]),
-  });
+  connectorCatalogSyncAttemptReportSchema;
 
 export type ConnectorCatalogSyncResponse = z.infer<
   typeof connectorCatalogSyncResponseSchema
@@ -542,57 +531,6 @@ export const cronDrainEmailOutboxContract = c.router({
   },
 });
 
-/**
- * The bounded outcome of one native Morning Brief tick.
- *
- * It is operational metadata only: counts and phase progress, never source
- * bodies, prompts, results, recipients or credentials.
- */
-const cronExecuteMorningBriefsResponseSchema = z.object({
-  /** Installed briefs given a durable native row for the first time. */
-  materialized: z.number().int().nonnegative(),
-  /** Members whose native obligation was due and examined this tick. */
-  examined: z.number().int().nonnegative(),
-  /** Slots this tick claimed. */
-  claimed: z.number().int().nonnegative(),
-  /** Slots that reached exactly one durable settlement this tick. */
-  settled: z.number().int().nonnegative(),
-  /** Slots held by a finite pre-reservation configuration deferral. */
-  deferred: z.number().int().nonnegative(),
-  /** Accepted results whose delivery recovery was resolved this tick. */
-  deliveriesRecovered: z.number().int().nonnegative(),
-  /** Cutover or rollback transitions advanced this tick. */
-  transitions: z.number().int().nonnegative(),
-  /** Transitions deliberately held because a drain could not be proven. */
-  drainsHeld: z.number().int().nonnegative(),
-  /** True when the tick stopped on its absolute budget with work remaining. */
-  budgetExhausted: z.boolean(),
-});
-
-export type CronExecuteMorningBriefsResponse = z.infer<
-  typeof cronExecuteMorningBriefsResponseSchema
->;
-
-/**
- * Cron contract for /api/cron/execute-morning-briefs.
- *
- * This is ordinary application scheduling with the repository's normal cron
- * secret. It creates no agent Run, sandbox, tool loop, Run-credit admission or
- * ledger debit.
- */
-export const cronExecuteMorningBriefsContract = c.router({
-  execute: {
-    method: "GET",
-    path: "/api/cron/execute-morning-briefs",
-    headers: authHeadersSchema,
-    responses: {
-      200: cronExecuteMorningBriefsResponseSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Execute due native Morning Brief occurrences",
-  },
-});
-
 export const cronRenewGmailWatchesContract = c.router({
   renew: {
     method: "GET",
@@ -659,6 +597,24 @@ export const cronSyncSkillsContract = c.router({
 });
 
 export const cronConnectorCatalogContract = c.router({
+  seedPreview: {
+    method: "GET",
+    path: "/api/cron/seed-preview-onboarding-catalog",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        catalogVersion: z.string(),
+        catalogDigest: z.string(),
+        connectorSlugs: z.array(z.string()),
+      }),
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    // Historical path retained for the CI preview workflow.
+    summary:
+      "Initialize the complete official connector catalog in preview only",
+  },
   sync: {
     method: "GET",
     path: "/api/cron/sync-connector-catalog",
@@ -667,7 +623,7 @@ export const cronConnectorCatalogContract = c.router({
       200: connectorCatalogSyncResponseSchema,
       401: apiErrorSchema,
     },
-    summary: "Sync the validated connector catalog snapshot",
+    summary: "Publish the validated official connector catalog",
   },
 });
 
@@ -736,14 +692,6 @@ export const cronMaterializePiResourceIndexesContract = c.router({
         unindexable: z.number().int().nonnegative(),
         retried: z.number().int().nonnegative(),
         stale: z.number().int().nonnegative(),
-        stableContext: z.object({
-          claimed: z.number().int().nonnegative(),
-          ready: z.number().int().nonnegative(),
-          pending: z.number().int().nonnegative(),
-          unindexable: z.number().int().nonnegative(),
-          failed: z.number().int().nonnegative(),
-          stale: z.number().int().nonnegative(),
-        }),
       }),
       401: apiErrorSchema,
     },
@@ -804,8 +752,6 @@ export type CronConnectorOauthStateCleanupContract =
 export type CronComputerUseScreenshotCleanupContract =
   typeof cronComputerUseScreenshotCleanupContract;
 export type CronBrowserReconcileContract = typeof cronBrowserReconcileContract;
-export type CronExecuteMorningBriefsContract =
-  typeof cronExecuteMorningBriefsContract;
 export type CronDrainEmailOutboxContract = typeof cronDrainEmailOutboxContract;
 export type CronSyncSkillsContract = typeof cronSyncSkillsContract;
 export type CronConnectorCatalogContract = typeof cronConnectorCatalogContract;
@@ -824,10 +770,7 @@ export type CronRenewGoogleWorkspaceEventSubscriptionsContract =
 // Export schemas for reuse
 export {
   cleanupResultSchema,
-  cleanupResponseSchema,
-  cronCompactChatThreadSnapshotsResponseSchema,
   cronSnapshotChatEventsResponseSchema,
-  cronRetainChatEventsResponseSchema,
   cronProcessUsageEventsResponseSchema,
   cronReconcileSocialKitDownloadsResponseSchema,
   cronReconcileBillingEntitlementsResponseSchema,

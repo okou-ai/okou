@@ -2,14 +2,12 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
-import {
-  isLlmConfigured,
-  OpenRouterRequestError,
-} from "../external/openrouter";
+import { OpenRouterRequestError } from "../external/openrouter";
+import { gcpLlmConfiguration, GcpLlmAuthError } from "../external/gcp-llm-auth";
+import { VertexTextError } from "../external/vertex-text";
 import {
   isTransientProviderFailure,
   openRouterFailureReason,
-  openRouterFailureTokenCounts,
   type OpenRouterFailureReason,
   type OpenRouterTokenCounts,
 } from "../external/openrouter-failure";
@@ -23,7 +21,8 @@ type AuxiliaryFeature =
   | "run_summary"
   | "recommended_followups"
   | "home_task_recommendations"
-  | "notification_summary";
+  | "notification_summary"
+  | "agent_setup_prompt";
 type Outcome = "success" | "degraded" | "cancelled" | "error" | "skipped";
 type Reason =
   | OpenRouterFailureReason
@@ -151,13 +150,20 @@ function diagnose(
     reason,
     ...context,
     errorKind:
-      error instanceof OpenRouterRequestError
-        ? "openrouter_request"
-        : error instanceof TypeError
-          ? "type_error"
-          : error instanceof SyntaxError
-            ? "syntax_error"
-            : "unknown",
+      error instanceof VertexTextError
+        ? "vertex_request"
+        : error instanceof GcpLlmAuthError
+          ? "gcp_auth"
+          : error instanceof OpenRouterRequestError
+            ? "openrouter_request"
+            : error instanceof TypeError
+              ? "type_error"
+              : error instanceof SyntaxError
+                ? "syntax_error"
+                : "unknown",
+    ...(error instanceof VertexTextError || error instanceof GcpLlmAuthError
+      ? { status: error.status }
+      : {}),
     ...(error instanceof OpenRouterRequestError
       ? {
           status: error.status,
@@ -198,7 +204,7 @@ export async function generateAuxiliary<T>(
     onRejection(
       (async () => {
         signal?.throwIfAborted();
-        if (!isLlmConfigured()) {
+        if (!gcpLlmConfiguration()) {
           recordResult({
             feature: args.feature,
             outcome: "skipped",
@@ -257,7 +263,13 @@ export async function generateAuxiliary<T>(
         const cancelled = signal?.aborted === true && error === signal.reason;
         const reason = cancelled
           ? "caller_cancelled"
-          : openRouterFailureReason(error);
+          : error instanceof VertexTextError
+            ? error.reason
+            : error instanceof GcpLlmAuthError
+              ? error.temporary
+                ? "provider_unavailable"
+                : "auth"
+              : openRouterFailureReason(error);
         const outcome = cancelled
           ? "cancelled"
           : isDegradedReason(reason)
@@ -271,7 +283,7 @@ export async function generateAuxiliary<T>(
           feature: args.feature,
           outcome,
           reason,
-          tokens: openRouterFailureTokenCounts(error),
+          tokens: error instanceof VertexTextError ? error.tokens : {},
           ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
           ...(runId === undefined ? {} : { runId }),
           startedAt,

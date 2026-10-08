@@ -2,6 +2,7 @@ import type {
   UsageRecordKind,
   UsageRecordKindBreakdown,
 } from "@okouai/api-contracts/contracts/usage-record";
+import { useLastResolved } from "ccstate-react";
 import {
   Tooltip,
   TooltipContent,
@@ -11,6 +12,7 @@ import {
 import { i18n } from "../../../i18n/index.ts";
 import { formatLocalizedNumber } from "../../../i18n/format.ts";
 import { buildCreditUsageDisplaySegments } from "../../../lib/credit-usage-display.ts";
+import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
 
 export const USAGE_KIND_META = {
   model: {
@@ -71,7 +73,8 @@ export function UsageBreakdownBar({
   max: number;
   testIdPrefix?: string;
 }) {
-  const segments = buildCreditUsageDisplaySegments(breakdown);
+  const catalog = useLastResolved(modelCatalog$);
+  const segments = buildCreditUsageDisplaySegments(breakdown, catalog);
   if (credits <= 0 || segments.length === 0) {
     return null;
   }

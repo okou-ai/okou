@@ -40,25 +40,68 @@ export const vncTypeBindings = [
         fields: {
           authMethod: ["Supported authentication method."],
           securityType: ["Supported security policy."],
-          transportType: [
-            "Supported transport; omission is the legacy direct-only capability.",
-          ],
+          transportType: ["Supported transport for this exact tuple."],
         },
       },
       {
         rustTypeName: "ResolveRequestSupportedProfileAuthMethod",
         rustDoc: ["Authentication method advertised by this Runner."],
         variants: {
+          none: [
+            "No inner RFB client authentication; require explicit saved X509None.",
+          ],
           vnc_password: ["Classic VNC password authentication."],
           username_password: ["Plain username/password authentication."],
+          qemu_scram_sha256: ["QEMU-specific SCRAM-SHA-256 authentication."],
+          rsa_aes_password: [
+            "RSA-AES password-only subtype with 255-byte fields.",
+          ],
+          rsa_aes_username_password: [
+            "RSA-AES username/password subtype with 255-byte fields.",
+          ],
+          apple_dh_username_password: [
+            "Apple DH username/password authentication with 63-byte fields.",
+          ],
+          apple_srp_username_password: [
+            "Apple Direct SRP username/password authentication with bounded UTF-8 fields.",
+          ],
+          apple_rsa_srp_username_password: [
+            "Apple RSA/SRP username/password authentication with a 234-byte username bound.",
+          ],
+          client_certificate: [
+            "Required TLS client certificate with X509None.",
+          ],
+          client_certificate_vnc_password: [
+            "Required TLS client certificate and classic VNC password.",
+          ],
         },
       },
       {
         rustTypeName: "ResolveRequestSupportedProfileSecurityType",
         rustDoc: ["Security profile advertised by this Runner."],
         variants: {
+          x509_none: ["VeNCrypt X509None; no inner client authentication."],
           x509_vnc: ["VeNCrypt X509Vnc."],
           x509_plain: ["VeNCrypt X509Plain."],
+          qemu_x509_sasl: ["QEMU X509SASL subtype 263 with verified TLS."],
+          rsa_aes_ra2: ["Pinned RSA-AES type 5; full-session AES-128 EAX."],
+          rsa_aes_ra2_256: [
+            "Pinned RSA-AES type 129; full-session AES-256 EAX.",
+          ],
+          rsa_aes_ra2ne: ["Pinned RSA-AES type 6; verified SSH-loopback only."],
+          rsa_aes_ra2ne_256: [
+            "Pinned RSA-AES type 130; verified SSH-loopback only.",
+          ],
+          apple_vnc_password: [
+            "Apple bare type 2, requiring SSH to Mac loopback.",
+          ],
+          apple_dh: ["Apple DH type 30, requiring SSH to Mac loopback."],
+          apple_srp: [
+            "Apple Direct SRP type 36, requiring SSH to Mac loopback.",
+          ],
+          apple_rsa_srp: [
+            "Apple RSA/SRP type 33, requiring SSH to Mac loopback.",
+          ],
         },
       },
       {
@@ -79,6 +122,7 @@ export const vncTypeBindings = [
     sensitive: true,
     fieldTypeOverrides: {
       password: `crate::SecretUtf8Text<${VNC_USERNAME_PASSWORD_MAX_BYTES}>`,
+      privateKeyPkcs8Der: "crate::SecretUtf8Text<24576>",
     },
     declarations: [
       {
@@ -91,12 +135,14 @@ export const vncTypeBindings = [
           port: ["Current destination port."],
           generation: ["Current saved configuration generation."],
           serverName: [
-            "Explicit certificate identity for a transport-capable handoff.",
+            "Certificate identity for X509 transport handoffs; absent for Apple DH.",
           ],
           transport: [
             "Explicit direct or generation-bound SSH transport snapshot.",
           ],
-          authentication: ["Credential for the explicitly saved method."],
+          authentication: [
+            "Exact saved method, with no credential for X509None.",
+          ],
           security: [
             "Explicit saved transport and trust policy; never downgrade.",
           ],
@@ -108,11 +154,23 @@ export const vncTypeBindings = [
           unsupported_profile: [
             "Runner does not support the exact saved profile.",
           ],
-          resolved: [
-            "Legacy direct credential and policy; the VNC server controls connection admission.",
-          ],
           resolved_transport: [
             "Current credential, policy and explicit generation-bound transport.",
+          ],
+          resolved_apple_vnc_password: [
+            "Apple classic VNC password with verified SSH-to-Mac-loopback transport only.",
+          ],
+          resolved_apple_dh: [
+            "Apple DH credential and verified SSH-to-Mac-loopback transport only.",
+          ],
+          resolved_apple_srp: [
+            "Apple Direct SRP credential and verified SSH-to-Mac-loopback transport only.",
+          ],
+          resolved_rsa_aes: [
+            "Exact RSA-AES mode, independent wire pin and bounded credential.",
+          ],
+          resolved_apple_rsa_srp: [
+            "Apple RSA/SRP credential and verified SSH-to-Mac-loopback transport only.",
           ],
         },
       },
@@ -131,34 +189,94 @@ export const vncTypeBindings = [
         },
       },
       {
-        rustTypeName: "ResolveResponseResolvedAuthentication",
+        rustTypeName: "ResolveResponseResolvedTransportAuthentication",
         rustDoc: ["Typed private VNC credential."],
         fields: {
           username: ["Bounded Plain username, preserving exact UTF-8 bytes."],
           password: [
             "Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.",
           ],
+          certificateChainDer: [
+            "Bounded base64-encoded DER client certificate chain.",
+          ],
+          privateKeyPkcs8Der: [
+            "Base64-encoded unencrypted PKCS#8 key, private and zeroizing.",
+          ],
         },
         variants: {
+          none: ["No inner client authentication or secret."],
+          rsa_aes_password: [
+            "RSA-AES password-only subtype; native validates 255 UTF-8 bytes.",
+          ],
+          rsa_aes_username_password: [
+            "RSA-AES username/password subtype; native validates 255 UTF-8 bytes per field.",
+          ],
           vnc_password: ["Classic VNC password challenge response."],
           username_password: [
             "Username/password authentication inside verified TLS.",
           ],
+          qemu_scram_sha256: [
+            "Bounded ASCII SCRAM-SHA-256 credential for QEMU X509SASL.",
+          ],
+          apple_dh_username_password: [
+            "Apple DH username/password fields; the Runner validates 63-byte bounds.",
+          ],
+          apple_srp_username_password: [
+            "Apple Direct SRP username/password fields; the Runner validates 255/1023-byte bounds.",
+          ],
+          apple_rsa_srp_username_password: [
+            "Apple RSA/SRP username/password fields; the Runner validates 234/1023-byte bounds.",
+          ],
+          client_certificate: [
+            "Required client identity; no inner RFB credential.",
+          ],
+          client_certificate_vnc_password: [
+            "Required client identity and classic VNC password.",
+          ],
         },
       },
       {
-        rustTypeName: "ResolveResponseResolvedSecurity",
+        rustTypeName: "ResolveResponseResolvedTransportSecurity",
         rustDoc: [
           "Saved security policy, independent of future engine capabilities.",
         ],
-        fields: { trust: ["Required verified TLS trust policy."] },
+        fields: {
+          trust: ["Required verified TLS trust policy."],
+          serverKeySha256: [
+            "Independent full RSA wire-key SHA256, never CA trust.",
+          ],
+        },
         variants: {
+          rsa_aes_ra2: ["Pinned type 5; full-session AES-128 EAX."],
+          rsa_aes_ra2_256: ["Pinned type 129; full-session AES-256 EAX."],
+          rsa_aes_ra2ne: [
+            "Pinned type 6; authentication-only over verified SSH-loopback.",
+          ],
+          rsa_aes_ra2ne_256: [
+            "Pinned type 130; authentication-only over verified SSH-loopback.",
+          ],
+          x509_none: ["Verified TLS without inner RFB client authentication."],
           x509_vnc: ["VeNCrypt X509Vnc with verified TLS."],
           x509_plain: ["VeNCrypt X509Plain with verified TLS."],
+          qemu_x509_sasl: [
+            "QEMU X509SASL subtype 263 and SCRAM-SHA-256 over verified TLS.",
+          ],
+          apple_vnc_password: [
+            "Apple bare type 2; only the separately verified SSH channel protects the RFB session.",
+          ],
+          apple_dh: [
+            "Apple DH type 30; only the separately verified SSH channel protects the RFB session.",
+          ],
+          apple_srp: [
+            "Apple Direct SRP type 36; only the separately verified SSH channel protects the RFB session.",
+          ],
+          apple_rsa_srp: [
+            "Apple RSA/SRP type 33; only the separately verified SSH channel protects the RFB session.",
+          ],
         },
       },
       {
-        rustTypeName: "ResolveResponseResolvedSecurityX509VncTrust",
+        rustTypeName: "ResolveResponseResolvedTransportSecurityX509VncTrust",
         rustDoc: [
           "Exact trust source; insecure verification is not representable.",
         ],
@@ -187,9 +305,7 @@ export const vncTypeBindings = [
           expectedGeneration: [
             "Configuration generation returned by credential resolution.",
           ],
-          expectedTransport: [
-            "Expected explicit transport snapshot; omission preserves legacy direct-only checks.",
-          ],
+          expectedTransport: ["Expected explicit transport snapshot."],
         },
       },
       identityDocs("CheckRequestRunnerIdentity"),

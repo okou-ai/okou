@@ -18,8 +18,6 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadPinOrderRoutes } from "../chat-threads-pin-order";
 import { chatThreadPinRoutes } from "../chat-threads-pin";
-import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
-import { testChatThreadSnapshotCompactionRoutes } from "../test-chat-thread-snapshot-compaction";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
 
@@ -116,7 +114,7 @@ function metadataClient() {
 }
 
 describe("pinned thread ordering", () => {
-  it("persists client ranks in events and compacted snapshots without changing pin time", async () => {
+  it("persists client ranks in events without changing pin time", async () => {
     const fixture = await seedChatThread("First");
     const second = await chat.createThread(fixture.actor, {
       agentId: fixture.agentId,
@@ -169,31 +167,6 @@ describe("pinned thread ordering", () => {
           return thread.id;
         }),
     ).toStrictEqual([fixture.threadId, second.id]);
-    const compact = setupApp({
-      context,
-      routes: testChatThreadSnapshotCompactionRoutes,
-    })(testChatThreadSnapshotCompactionContract);
-    await accept(
-      compact.compact({
-        body: {
-          scopes: [{ user_id: fixture.userId, org_id: fixture.orgId }],
-        },
-      }),
-      [200],
-    );
-    const snapshot = await chat.getThreadSnapshot(fixture.actor);
-    const compactedPin = snapshot.chatThreads.find((thread) => {
-      return thread.id === fixture.threadId;
-    });
-    expect(Date.parse(compactedPin?.pinnedAt ?? "")).toBe(
-      Date.parse(before.body.pinnedAt ?? ""),
-    );
-    expect(snapshot.chatThreads).toContainEqual(
-      expect.objectContaining({
-        id: fixture.threadId,
-        pinOrder: "Zy",
-      }),
-    );
   });
 
   it("accepts equal client ranks with deterministic id ordering", async () => {

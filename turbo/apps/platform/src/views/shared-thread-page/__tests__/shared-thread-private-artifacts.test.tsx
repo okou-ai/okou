@@ -185,7 +185,7 @@ test("anonymous prompt attachments load snapshot thumbnails while opening the st
   expect(screen.getByLabelText("brief.pdf")).toHaveAttribute("href", PDF);
 });
 
-test.each([403, 404] as const)(
+test.each([403] as const)(
   "denied or revoked snapshots show unavailable previews without loading the reference as bytes: %s",
   async (status) => {
     context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {

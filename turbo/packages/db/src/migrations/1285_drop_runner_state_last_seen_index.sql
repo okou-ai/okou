@@ -1,0 +1,1 @@
+DROP INDEX "runner_state_last_seen_idx";

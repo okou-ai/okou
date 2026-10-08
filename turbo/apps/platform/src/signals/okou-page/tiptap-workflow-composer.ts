@@ -30,16 +30,15 @@ import {
   type GenerationTemplateRequest,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
+import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import {
   VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
   type VoiceIoEditorContext,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
-import { onRef, resetSignal } from "../utils.ts";
+import { detach, onRef, Reason, resetSignal } from "../utils.ts";
 import { createComposerEditorEvents } from "./composer-editor-events.ts";
 import type { DraftInputSyncTarget, DraftSignals } from "./chat-draft.ts";
 import {
@@ -60,11 +59,6 @@ import {
   splitAgentMentionSegments,
   type ComposerAgentSuggestion,
 } from "./composer-agent-suggestion-domain.ts";
-import {
-  avatarFramingEnabled$,
-  avatarNeckSweaterEnabled$,
-  featureSwitch$,
-} from "../external/feature-switch.ts";
 import {
   agentMentionText,
   createAgentMentionAvatarRuntime,
@@ -88,7 +82,6 @@ import {
   createEditorDocumentSnapshot,
   draftToEditorDoc,
   INLINE_TEMPLATE_NODE_NAME,
-  messageDocumentToEditorDoc,
   TEMPLATE_ATTACHMENT_NODE_NAME,
   type EditorDocumentSnapshot,
 } from "./user-message-document-codec.ts";
@@ -107,6 +100,14 @@ type WorkflowNamesSyncCommand = Command<
   [AbortSignal, AbortSignal]
 >;
 type AgentMentionAvatarsSyncCommand = Command<Promise<void>, [AbortSignal]>;
+
+interface ComposerWorkflowNames {
+  readonly sync$: WorkflowNamesSyncCommand;
+  /** Latches the workflow list once the draft has any text. */
+  readonly request$: Command<boolean, []>;
+  /** Requests the list for the draft and syncs its names when newly latched. */
+  readonly syncForInput$: Command<void, [AbortSignal]>;
+}
 
 interface MountedWorkflowNamesSync {
   readonly command$: WorkflowNamesSyncCommand;
@@ -138,6 +139,20 @@ const unregisterMountedWorkflowNamesSync$ = command(
     const next = new Set(current);
     next.delete(mountedWorkflowNamesSync);
     set(mountedWorkflowNamesSyncs$, next);
+  },
+);
+
+const mountWorkflowNamesSync$ = command(
+  (
+    { set },
+    command$: WorkflowNamesSyncCommand,
+    mountSignal: AbortSignal,
+  ): void => {
+    const mountedWorkflowNamesSync = { command$, mountSignal };
+    set(registerMountedWorkflowNamesSync$, mountedWorkflowNamesSync);
+    mountSignal.addEventListener("abort", () => {
+      set(unregisterMountedWorkflowNamesSync$, mountedWorkflowNamesSync);
+    });
   },
 );
 
@@ -210,7 +225,8 @@ export interface WorkflowComposerSignals {
     Promise<ComposerChatThreadSuggestionResult>
   >;
   readonly agentId$: Computed<Promise<string | null>>;
-  readonly workflows$: Computed<Promise<readonly WorkflowSummary[]>>;
+  /** Null until the draft first has text. */
+  readonly workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>;
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
   readonly setSelectedSuggestionIndex$: Command<void, [number]>;
@@ -262,8 +278,6 @@ export type ComposerTemplateAttachmentType =
   | "custom"
   | "presentation"
   | "illustration"
-  | "video"
-  | "avatar"
   | "workflow"
   | "website";
 
@@ -275,12 +289,46 @@ export interface ComposerTemplateAttachment {
 }
 
 function createComposerAgentResources<T extends AgentIdValue>(
+  editor: Editor,
   agentIdSource$: Computed<T>,
 ) {
   const agentId$ = computed(async (get): Promise<string | null> => {
     return await get(agentIdSource$);
   });
-  return { agentId$, workflows$: createComposerWorkflows(agentId$) };
+  const allWorkflows$ = createComposerWorkflows(agentId$);
+  // The workflow list is only needed for `/` tokens. An untouched composer
+  // does not request it; the first keystroke does, so the list is usually
+  // ready by the time a `/` opens the menu.
+  const workflowsRequested$ = state(false);
+  const workflows$ = computed((get) => {
+    return get(workflowsRequested$) ? get(allWorkflows$) : null;
+  });
+  const sync$ = createSyncWorkflowNamesCommand(editor, agentId$, workflows$);
+  const request$ = command(({ get, set }): boolean => {
+    if (
+      get(workflowsRequested$) ||
+      workflowComposerDocToString(editor).trim() === ""
+    ) {
+      return false;
+    }
+    set(workflowsRequested$, true);
+    return true;
+  });
+  const syncForInput$ = command(({ set }, mountSignal: AbortSignal): void => {
+    if (set(request$)) {
+      detach(
+        set(sync$, mountSignal, mountSignal),
+        Reason.Daemon,
+        "composer workflow names",
+      );
+    }
+  });
+  const workflowNames: ComposerWorkflowNames = {
+    sync$,
+    request$,
+    syncForInput$,
+  };
+  return { agentId$, workflows$, workflowNames };
 }
 
 function connectComposerFeedback(
@@ -801,8 +849,6 @@ function templateAttachmentNodeAttributes(
     (type !== "presentation" &&
       type !== "custom" &&
       type !== "illustration" &&
-      type !== "video" &&
-      type !== "avatar" &&
       type !== "workflow" &&
       type !== "website") ||
     typeof title !== "string" ||
@@ -822,16 +868,6 @@ function templateAttachmentNodeAttributes(
 function templateAttachmentPreviewLabel(
   attachment: ComposerTemplateAttachment,
 ): string {
-  if (attachment.type === "video") {
-    return i18n.t(
-      ($) => {
-        return $.chat.templates.previewVideo;
-      },
-      {
-        title: attachment.title,
-      },
-    );
-  }
   if (attachment.type === "workflow") {
     return i18n.t(
       ($) => {
@@ -865,16 +901,6 @@ function templateAttachmentPreviewLabel(
 function templateAttachmentRemoveLabel(
   attachment: ComposerTemplateAttachment,
 ): string {
-  if (attachment.type === "video") {
-    return i18n.t(
-      ($) => {
-        return $.chat.templates.removeVideo;
-      },
-      {
-        title: attachment.title,
-      },
-    );
-  }
   if (attachment.type === "workflow") {
     return i18n.t(
       ($) => {
@@ -916,16 +942,6 @@ function templateAttachmentTypeLabel(
   if (type === "illustration") {
     return i18n.t(($) => {
       return $.chat.templates.categories.illustration;
-    });
-  }
-  if (type === "video") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.video;
-    });
-  }
-  if (type === "avatar") {
-    return i18n.t(($) => {
-      return $.artifacts.templates.avatar;
     });
   }
   if (type === "website") {
@@ -1065,8 +1081,6 @@ function createTemplateAttachmentNodeView(
  */
 interface InlineTemplateNodeActions {
   readonly openTemplate: (category: string) => void;
-  /** Read per render so a Lab toggle applies to the next mounted composer. */
-  readonly coverEnabled: () => boolean;
 }
 
 function createInlineTemplateNodeView(
@@ -1084,8 +1098,8 @@ function createInlineTemplateNodeView(
   const openButton = document.createElement("button");
   openButton.type = "button";
   openButton.className = INLINE_TEMPLATE_NAME_ZONE_CLASS;
-  // The template was chosen from a grid of covers, so under
-  // ComposerTemplateChipCover the chip leads with that cover. 18px inside this
+  // The template was chosen from a grid of covers, so the chip leads with that
+  // cover. 18px inside this
   // 28px chip keeps the cover at the proportion the block template-attachment
   // chip above uses: a 20px cover inside its 32px chip.
   const glyph = document.createElement("span");
@@ -1096,8 +1110,8 @@ function createInlineTemplateNodeView(
   cover.alt = "";
   cover.className = "h-full w-full object-cover";
   // Mirrors Lucide's SwatchBook, which the composer template picker button and
-  // sent-message template chips also use. It stands in whenever the cover is
-  // switched off or the template's catalog entry carries no cover image.
+  // sent-message template chips also use. It stands in whenever the template's
+  // catalog entry carries no cover image.
   const icon = createComposerIcon(13, 1.7, [
     "M11 17a4 4 0 0 1-8 0V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2Z",
     "M16.7 13H19a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7",
@@ -1117,9 +1131,7 @@ function createInlineTemplateNodeView(
     title.textContent = attachment.title;
     // The node is rewritten in place when the picker changes the selection, so
     // the cover has to follow the new attributes rather than only the first.
-    const coverUrl = actions.coverEnabled()
-      ? attachment.previewImageUrl
-      : undefined;
+    const coverUrl = attachment.previewImageUrl;
     if (coverUrl === undefined) {
       glyph.replaceChildren(icon);
     } else {
@@ -1581,8 +1593,6 @@ interface WorkflowComposerRuntime {
   removeFeedback(id: number): void;
   localizedUi: Set<() => void>;
   feedbackPlaceholder: () => string;
-  /** Read on every chip render so Lab updates apply without remounting. */
-  templateChipCover: () => boolean;
 }
 
 function createTemplateAttachmentNode(
@@ -1675,12 +1685,7 @@ function createInlineTemplateNode(
         };
         return createInlineTemplateNodeView(
           node,
-          {
-            openTemplate,
-            coverEnabled: () => {
-              return runtime.templateChipCover();
-            },
-          },
+          { openTemplate },
           runtime.localizedUi,
         );
       };
@@ -1912,9 +1917,6 @@ function resetMountedWorkflowRuntime(runtime: WorkflowComposerRuntime): void {
   runtime.removeTemplate = () => {};
   runtime.replaceFeedbackItems = () => {};
   runtime.removeFeedback = () => {};
-  runtime.templateChipCover = () => {
-    return false;
-  };
 }
 
 function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
@@ -1928,7 +1930,9 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
     return;
   }
   storage.workflowNames = names;
-  if (editor.isInitialized) {
+  // `isInitialized` only turns true a tick after `mount()`; a mounted view
+  // must redraw even inside that tick, or a restored draft stays unhighlighted.
+  if (!editor.isDestroyed) {
     editor.view.dispatch(editor.state.tr);
   }
 }
@@ -1936,7 +1940,7 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
 function createSyncWorkflowNamesCommand(
   editor: Editor,
   agentId$: Computed<Promise<string | null>>,
-  workflows$: Computed<Promise<readonly WorkflowSummary[]>>,
+  workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>,
 ): WorkflowNamesSyncCommand {
   const resetWorkflowNamesSyncSignal$ = resetSignal();
   return command(
@@ -1959,7 +1963,7 @@ function createSyncWorkflowNamesCommand(
         get(workflows$),
       ]);
       signal.throwIfAborted();
-      if (syncSignal.aborted) {
+      if (syncSignal.aborted || workflows === null) {
         return;
       }
       const workflowNames = buildComposerSlashWorkflows({
@@ -1979,10 +1983,6 @@ function createSyncAgentMentionAvatarsCommand(
   return command(async ({ get }, signal: AbortSignal): Promise<void> => {
     const agents = await get(agents$);
     signal.throwIfAborted();
-    avatarRuntime.setSwitches({
-      neckSweater: get(avatarNeckSweaterEnabled$),
-      framing: get(avatarFramingEnabled$),
-    });
     avatarRuntime.replaceAgents(agents);
   });
 }
@@ -2082,7 +2082,7 @@ interface MountEditorOptions {
   previewSuggestionIndexState$: State<number | null>;
   feedback: ComposerFeedbackModel;
   compositionGate: CompositionGate;
-  syncWorkflowNames$: WorkflowNamesSyncCommand;
+  workflowNames: ComposerWorkflowNames;
   syncAgentMentionAvatars$: AgentMentionAvatarsSyncCommand;
   autoFocus: boolean;
 }
@@ -2182,15 +2182,12 @@ function createMountEditorCommand({
   previewSuggestionIndexState$,
   feedback,
   compositionGate,
-  syncWorkflowNames$,
+  workflowNames,
   syncAgentMentionAvatars$,
   autoFocus,
 }: MountEditorOptions) {
   return onRef(
     command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-      runtime.templateChipCover = () => {
-        return get(featureSwitch$)[FeatureSwitchKey.ComposerTemplateChipCover];
-      };
       runtime.update = (updatedEditor) => {
         set(legacyTemplateAttachment.sync$);
         set(templateSelection.sync$);
@@ -2198,6 +2195,7 @@ function createMountEditorCommand({
           feedbackItemsFromWorkflowComposer(updatedEditor),
         );
         set(draft.setInput$, workflowComposerDocToString(updatedEditor));
+        set(workflowNames.syncForInput$, signal);
         set(
           draft.setEditorDocument$,
           createEditorDocumentSnapshot(updatedEditor.state.doc),
@@ -2260,6 +2258,7 @@ function createMountEditorCommand({
       );
       set(legacyTemplateAttachment.sync$);
       set(templateSelection.sync$);
+      set(workflowNames.request$);
       editor.mount(element);
       mountLocalizationListener(editor, runtime, signal);
       mountCompositionListeners(editor, compositionGate, signal);
@@ -2272,20 +2271,16 @@ function createMountEditorCommand({
             set(draft.setEditorDocument$, snapshot);
             set(legacyTemplateAttachment.sync$);
             set(templateSelection.sync$);
+            set(workflowNames.syncForInput$, signal);
           },
         }),
       );
       // Keep workflow decoration sync scoped to real editor mounts.
-      const mountedWorkflowNamesSync = {
-        command$: syncWorkflowNames$,
-        mountSignal: signal,
-      };
-      set(registerMountedWorkflowNamesSync$, mountedWorkflowNamesSync);
+      set(mountWorkflowNamesSync$, workflowNames.sync$, signal);
       if (autoFocus && !isMobileTextInputDevice()) {
         focusMountedEditorAtEnd(editor);
       }
       signal.addEventListener("abort", () => {
-        set(unregisterMountedWorkflowNamesSync$, mountedWorkflowNamesSync);
         compositionGate.cancel(signal.reason);
         resetMountedWorkflowRuntime(runtime);
         set(legacyTemplateAttachment.reset$);
@@ -2295,7 +2290,7 @@ function createMountEditorCommand({
         editor.unmount();
       });
       await Promise.all([
-        set(syncWorkflowNames$, signal, signal),
+        set(workflowNames.sync$, signal, signal),
         set(syncAgentMentionAvatars$, signal),
       ]);
     }),
@@ -2762,7 +2757,7 @@ function createInsertUserMessageCommand(editor: Editor) {
     if (insertableParts.length === 0) {
       return;
     }
-    const restored = messageDocumentToEditorDoc({
+    const restored = draftToEditorDoc({
       version: 1,
       parts: insertableParts,
     });
@@ -2819,9 +2814,6 @@ function createWorkflowComposerRuntime(
     removeFeedback(_id: number): void {},
     localizedUi: new Set(),
     feedbackPlaceholder: resolveFeedbackPlaceholder,
-    templateChipCover: () => {
-      return false;
-    },
   };
 }
 
@@ -2943,14 +2935,11 @@ export function createWorkflowComposerSignals<
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const templatePreview = createTemplatePreviewRuntime();
   const compositionGate = createCompositionGate();
-  const { agentId$, workflows$ } = createComposerAgentResources(agentIdSource$);
-
   const editor = createWorkflowEditor(runtime, agentMentionAvatarRuntime);
   connectComposerFeedback(feedback, editor);
-  const syncWorkflowNames$ = createSyncWorkflowNamesCommand(
+  const { agentId$, workflows$, workflowNames } = createComposerAgentResources(
     editor,
-    agentId$,
-    workflows$,
+    agentIdSource$,
   );
   const syncAgentMentionAvatars$ = createSyncAgentMentionAvatarsCommand(
     agentMentionAvatarRuntime,
@@ -3008,7 +2997,7 @@ export function createWorkflowComposerSignals<
     previewSuggestionIndexState$,
     feedback,
     compositionGate,
-    syncWorkflowNames$,
+    workflowNames,
     syncAgentMentionAvatars$,
     autoFocus: options.autoFocus ?? false,
   });
@@ -3018,6 +3007,7 @@ export function createWorkflowComposerSignals<
     activeChatThreadSuggestionRange$,
   );
   const textCommands = createInsertTextCommands(editor);
+  const insertUserMessage$ = createInsertUserMessageCommand(editor);
   const readInputForSubmission$ = createReadInputForSubmissionCommand(
     editor,
     compositionGate,
@@ -3050,7 +3040,7 @@ export function createWorkflowComposerSignals<
     ...suggestionInsertionCommands,
     ...textCommands,
     ...templates.commands,
-    insertUserMessage$: createInsertUserMessageCommand(editor),
+    insertUserMessage$,
     readInputForSubmission$,
     feedback: feedback.signals,
   };

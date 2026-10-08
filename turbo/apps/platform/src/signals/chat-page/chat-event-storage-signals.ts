@@ -11,8 +11,13 @@ import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/cont
 import { captureTaskCompletedSuccessfully } from "../../lib/posthog.ts";
 import type { ChatEventDataKey } from "../../shared-database/data-key.ts";
 import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
+import { reloadBillingStatus$ } from "../okou-page/billing.ts";
 import { notifyChatEventsChanged$ } from "./chat-event-change-registry.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
+import {
+  deriveServerRunStateFromChatEvents,
+  type RunIndicatorState,
+} from "./chat-event-state.ts";
 import {
   appendOptimisticChatEvent$,
   createOptimisticChatEventEntry,
@@ -59,6 +64,41 @@ function reportNewCompletedRuns({
     captureTaskCompletedSuccessfully();
   }
   return newlyCompletedRunIds.length > 0;
+}
+
+/**
+ * An insufficient-credits rejection is rendered with the org's billing state,
+ * so a newly persisted one refreshes that state instead of trusting a copy
+ * loaded before the credits ran out. A rejection is new when it follows the
+ * last known persisted event, or when it resolves a user message this page is
+ * still showing optimistically (a new thread's first send has no persisted
+ * baseline). Other rejections in the first merge of a thread's history are
+ * old, and the billing state loaded with the page covers them.
+ */
+function hasNewInsufficientCreditsRejection({
+  persistentEvents,
+  events,
+  pendingUserMessageIds,
+}: {
+  persistentEvents: readonly PersistedChatEvent[];
+  events: readonly PersistedChatEvent[];
+  pendingUserMessageIds: ReadonlySet<string>;
+}): boolean {
+  const lastKnownSeqId = persistentEvents.at(-1)?.seqId;
+  return events.some((event) => {
+    if (
+      event.eventType !== "input.rejected" ||
+      event.error !== "insufficient_credits"
+    ) {
+      return false;
+    }
+    return (
+      (lastKnownSeqId !== undefined && event.seqId > lastKnownSeqId) ||
+      pendingUserMessageIds.has(event.id) ||
+      (event.revokesEventId !== undefined &&
+        pendingUserMessageIds.has(event.revokesEventId))
+    );
+  });
 }
 
 function mergePersistentEvents(
@@ -192,6 +232,9 @@ export function createChatEventStorageSignals({
       return entry.optimisticUserMessageAssociation !== undefined;
     });
   });
+  const serverRunState$ = computed((get): RunIndicatorState => {
+    return deriveServerRunStateFromChatEvents(get(persistentChatEvents$));
+  });
   const chatEvents$ = createStoredChatEventsComputed({
     persistentEvents$: persistentChatEvents$,
     optimisticEvents$,
@@ -216,10 +259,24 @@ export function createChatEventStorageSignals({
       if (events.length === 0) {
         return;
       }
-      reportNewCompletedRuns({
-        persistentEvents: get(persistentChatEvents$),
-        events,
-      });
+      const persistentEvents = get(persistentChatEvents$);
+      reportNewCompletedRuns({ persistentEvents, events });
+      const pendingUserMessageIds = new Set(
+        get(optimisticEvents$).flatMap((entry) => {
+          return entry.optimisticUserMessageAssociation === undefined
+            ? []
+            : [entry.event.id];
+        }),
+      );
+      if (
+        hasNewInsufficientCreditsRejection({
+          persistentEvents,
+          events,
+          pendingUserMessageIds,
+        })
+      ) {
+        set(reloadBillingStatus$);
+      }
       set(persistentChatEvents$, (previous) => {
         return mergePersistentEvents([previous, events]);
       });
@@ -244,6 +301,7 @@ export function createChatEventStorageSignals({
   return {
     chatEvents$,
     hasOptimisticUserMessage$,
+    serverRunState$,
     initializeIndexedDbEvents$,
     appendOptimisticEvent$,
     syncRemoteEvents$,

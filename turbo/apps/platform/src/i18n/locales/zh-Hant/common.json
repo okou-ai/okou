@@ -84,13 +84,9 @@
           "guidance": "請先做積分診斷。只有當前套餐允許時才購買積分，否則返回套餐升級連結。",
           "title": "積分已用完"
         },
-        "modelProviderUnavailable": {
-          "guidance": "此會話使用的模型提供方已被刪除。請新建一個聊天會話繼續。",
-          "title": "模型提供方不可用"
-        },
         "noModelProvider": {
-          "guidance": "配置模型提供方後即可開始執行智能體。",
-          "title": "未配置模型提供方"
+          "guidance": "請稍後重試，或在設定中連結個人 Claude Code 或 Codex 訂閱。",
+          "title": "此次執行沒有可用的模型提供者"
         },
         "paidPlanRequired": {
           "guidance": "當前套餐不支援內建影片生成。",
@@ -347,13 +343,13 @@
     },
     "sources": {
       "agent": "智能體",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "自動化事件",
       "automationSchedule": "自動化定時任務",
+      "discord": "Discord",
       "email": "郵件",
       "feishu": "飛書",
       "github": "GitHub",
-      "goal": "目標",
       "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
@@ -373,6 +369,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "無法載入智慧體",
+      "backToChats": "返回聊天列表",
+      "chatListUnavailable": "無法載入聊天",
+      "chats": "聊天",
+      "me": "我",
+      "navigation": "主導覽",
+      "searchAgents": "搜尋智慧體",
+      "switchAgent": "切換智慧體"
+    },
     "shortcutHelp": {
       "close": "關閉快捷鍵面板",
       "description": "當前頁面可用的快捷鍵",
@@ -570,7 +576,8 @@
       "video": "影片"
     },
     "metadata": {
-      "generated": "生成於 {{date}}"
+      "generated": "生成於 {{date}}",
+      "updated": "更新於 {{date}}"
     },
     "preview": {
       "audioLabel": "{{filename}} 的音訊預覽",
@@ -620,24 +627,8 @@
       "activeHtmlPreview": "{{title}} 當前 HTML 預覽",
       "all": "全部",
       "avatar": "虛擬形象",
-      "avatarWithId": "虛擬形象 {{id}}",
-      "backToAvatars": "返回虛擬形象",
       "categories": "模板分類",
       "category": "模板分類",
-      "chooseVoice": "為 {{title}} 選擇音色",
-      "filters": {
-        "age": "年齡",
-        "all": "全部",
-        "aspectRatio": "畫面比例",
-        "clear": "清除",
-        "ethnicity": "族裔",
-        "gender": "性別",
-        "language": "語言",
-        "scene": "場景",
-        "style": "風格",
-        "title": "篩選",
-        "useCase": "使用場景"
-      },
       "fullPreview": "{{title}} 網站完整預覽",
       "htmlPreview": "{{title}} HTML 預覽",
       "illustration": "插畫",
@@ -648,25 +639,18 @@
       "importedSlides_other": "{{count}} 頁",
       "importFile": "匯入你自己的檔案",
       "multiAccent": "多口音",
-      "needPro": "需要 Pro",
       "nextSlide": "預覽下一頁",
       "noMatches": "沒有匹配結果",
       "placeholder": "{{title}} 網站預覽佔點陣圖",
-      "playVideo": "播放影片模板預覽 {{title}}",
-      "previewAvatarVideo": "預覽虛擬形象影片 {{title}}",
       "previewCurrentSlide": "從當前頁預覽 {{title}}",
       "previewSlide": "預覽第 {{slideNumber}} 頁",
-      "previewVoice": "試聽音色 {{title}}",
       "previewWebsite": "預覽網站模板 {{title}}",
       "previousSlide": "預覽上一頁",
-      "recommended": "推薦",
       "renameImportedTemplate": "重新命名模板",
       "searchConnector": "搜尋模板",
       "searchConnectors": "搜尋模板",
       "selectStyle": "選擇風格 {{style}}",
       "selectTemplate": "選擇模板 {{title}}",
-      "selectVideo": "選擇影片模板 {{title}}",
-      "selectVoice": "選擇音色 {{title}}",
       "selectWebsite": "選擇網站模板 {{title}}",
       "selectWorkflow": "選擇工作流模板 {{title}}",
       "showVariant": "顯示變體 {{variantNumber}}",
@@ -699,7 +683,6 @@
       "tryDifferentSearch": "換個關鍵詞試試。",
       "use": "使用",
       "useThisTemplate": "使用這個模板",
-      "viewVideoPlans": "檢視影片模板 {{title}} 可用的套餐",
       "visibility": {
         "change": "修改",
         "changeLabel": "修改模板可見範圍",
@@ -1165,9 +1148,6 @@
       "downgradesOn": "將於{{date}}降級為{{plan}}",
       "downgradeTo": "降級到{{plan}}",
       "endsOn": "{{date}}結束",
-      "features": {
-        "byok": "自帶大模型金鑰"
-      },
       "free": {
         "name": "免費版"
       },
@@ -1182,18 +1162,13 @@
         "everythingInBuiltForTeams": "包含{{plan}}的全部功能，併為團隊打造",
         "included": "已包含",
         "liveBrowser": "實時觀看智能體的瀏覽器，隨時接管",
-        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4 Pro",
         "moreConnectorsChannels": "更多自定義連接器和渠道整合",
         "supportEmail": "郵件支援",
         "supportPriority": "優先支援",
-        "videoGeneration": "影片和數字人生成",
         "voiceInput": "語音輸入，每天{{requests}}次請求、{{minutes}}分鐘",
         "webhookAutomations": "一個webhook就能從任何系統發起執行"
       },
       "legacy": "舊版",
-      "limitedFree": {
-        "name": "受限免費版"
-      },
       "loadError": "無法載入帳單狀態。",
       "namedPlan": "{{plan}}套餐",
       "noActivePlan": "沒有生效的套餐",
@@ -1410,6 +1385,7 @@
       "rename": "重新命名",
       "saving": "正在儲存…",
       "send": "傳送",
+      "shareMessage": "分享訊息",
       "stop": "停止",
       "view": "檢視"
     },
@@ -1419,7 +1395,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "已新增 {{amount}}",
         "checkedIn": "已簽到",
         "checkin": {
           "action": "簽到",
@@ -1433,8 +1408,12 @@
           "name": "連線一個工具",
           "unit": "每個連接器"
         },
-        "earned": "已獲得 {{amount}}",
         "howRewardsWork": "獎勵規則說明",
+        "imessage": {
+          "action": "新增",
+          "description": "用 iPhone 傳訊息給 {{assistantName}}",
+          "name": "新增到 iMessage"
+        },
         "inReview": "稽核中",
         "intro": {
           "checkin": {
@@ -1480,6 +1459,9 @@
         "pendingState": "{{amount}} 待發放",
         "rejected": {
           "alreadyRedeemed": "貼文已被使用",
+          "authorAlreadyRewarded": "該帳號已領取過獎勵",
+          "authorUnavailable": "無法確認作者",
+          "officialAccount": "{{assistantName}}官方貼文不計入",
           "postMustMention": "需要提到{{assistantName}}"
         },
         "rewardsNote": "獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
@@ -1490,7 +1472,6 @@
         },
         "shareDialog": {
           "description": "提交一條公開貼文供稽核。每人只能成功領取一次獎勵。",
-          "draft": "我每週一的競品報告都交給 {{assistantName}} 做——它會讀完資料，直接把表格給我。",
           "helper": "貼文必須是公開的，並且提到 {{assistantName}}。",
           "inputLabel": "貼文連結",
           "openX": "開啟 X",
@@ -1505,7 +1486,8 @@
           "stepPaste": "把連結貼回來",
           "stepWrite": "寫這則貼文",
           "submit": "提交",
-          "title": "在 X 上分享 {{assistantName}}"
+          "title": "在 X 上分享 {{assistantName}}",
+          "writingPrompt": "用自己的話寫下你實際用 {{assistantName}} 嘗試過的事。"
         },
         "slack": {
           "action": "新增",
@@ -1728,21 +1710,22 @@
       "applyFailed": "無法新增資訊。你填寫的內容仍然保留，請重試。",
       "applying": "正在新增資訊",
       "applyingDescription": "瀏覽器正在完成這個請求。",
-      "callbackFailed": "未能通知 Agent，請再次點擊「繼續」。",
+      "callbackFailed": "未能通知 Agent。",
       "cancel": "取消",
       "cancelFailed": "無法取消這個請求，請重試。",
       "cancelled": "請求已取消",
-      "cancelledDescription": "沒有新增任何資訊。繼續以通知 Agent。",
       "cancelling": "正在取消…",
+      "checkFailed": "無法檢查瀏覽器。填寫內容已保留，請重試後提交。",
       "completed": "資訊已新增",
-      "completedDescription": "資訊已新增到瀏覽器。繼續以通知 Agent。",
-      "continue": "繼續",
-      "continuing": "正在繼續…",
+      "confirmRangeValue": "使用目前值",
+      "continue": "通知 Agent",
+      "continuing": "正在通知 Agent…",
       "delivered": "已通知 Agent",
-      "deliveredDescription": "Agent 現在可以繼續了。",
-      "description": "請輸入這個網站所需的資訊。",
       "expired": "請求已過期",
       "expiredDescription": "瀏覽器已關閉，或這個請求已不再有效。",
+      "fileLeave": "不變更網站已選檔案",
+      "fileLimit": "最多選 3 個檔案（單檔案控件只能選 1 個），合計不超過 10 MiB。",
+      "fileNotice": "點選「加入瀏覽器」會將所選檔案傳給此網站。網站可能在檔案控件變更時自行上傳或提交：",
       "loadFailed": "無法載入這個請求",
       "loadFailedDescription": "請稍後重試。",
       "loadingDescription": "正在檢查這個請求…",
@@ -1760,31 +1743,6 @@
       "uncertain": "請檢查瀏覽器",
       "uncertainDescription": "瀏覽器可能已收到這些資訊。重試前，請先讓 Agent 檢查。"
     },
-    "browserInteraction": {
-      "applying": "正在完成瀏覽器互動",
-      "applyingDescription": "瀏覽器正在完成此請求。",
-      "callbackFailed": "未能通知 Agent。請再次點擊繼續。",
-      "cancel": "取消",
-      "cancelFailed": "無法取消此請求。請重試。",
-      "cancelled": "請求已取消",
-      "cancelledDescription": "瀏覽器接管已取消。點擊繼續以通知 Agent。",
-      "cancelling": "正在取消…",
-      "completed": "瀏覽器互動已完成",
-      "completedDescription": "瀏覽器互動已記錄。點擊繼續以通知 Agent。",
-      "completeFailed": "無法完成此請求。請重試。",
-      "completing": "正在完成…",
-      "continue": "繼續",
-      "continuing": "正在繼續…",
-      "delivered": "已通知 Agent",
-      "deliveredDescription": "Agent 現在可以繼續。",
-      "description": "開啟瀏覽器並完成此步驟，然後點擊完成。",
-      "done": "完成",
-      "stale": "瀏覽器已不可用",
-      "staleDescription": "請讓 Agent 建立新請求。",
-      "title": "接管瀏覽器",
-      "uncertain": "請檢查瀏覽器",
-      "uncertainDescription": "互動可能已完成。重試前，請先讓 Agent 檢查。"
-    },
     "cards": {
       "viewDetails": "檢視詳情"
     },
@@ -1797,13 +1755,10 @@
         "addTemplate": "新增模板",
         "imagePlaceholder": "描述你想生成的圖片…",
         "presentationPlaceholder": "你的簡報要講什麼？",
-        "settingsAdjusted": "部分影片設定已針對這個模型做了調整",
         "slideCount": "投影片數量",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
       },
-      "createWorkflow": "建立工作流",
-      "imageModelForThisChat": "本次對話使用的圖片模型",
       "message": "訊息",
       "modelForThisChat": "本次對話使用的模型",
       "placeholder": "讓我自動化工作流、管理任務…",
@@ -1818,12 +1773,10 @@
       "temporarilySwitchTo": "臨時切換到",
       "threadSuggestions": "聊天會話",
       "useForFutureChats": "以後的對話都用這個",
-      "videoModelForThisChat": "本次對話使用的影片模型",
       "workflows": {
         "empty": "沒有匹配的工作流",
         "loading": "正在載入工作流…",
-        "title": "工作流",
-        "viewAll": "檢視全部工作流"
+        "title": "工作流"
       }
     },
     "computerUse": {
@@ -1861,8 +1814,6 @@
       "add": "新增 {{connectorName}}",
       "addConnectors": "新增連接器",
       "authorized": "{{connectorName}} 已連線，並已授權給 {{agentName}}",
-      "available_one": "可連線的連接器（{{count}}）",
-      "available_other": "可連線的連接器（{{count}}）",
       "back": "返回",
       "configurePermissions": "配置 {{connectorName}} 權限",
       "customAuthorizeDescription": "檢視並連線這個自定義連接器，然後授權給智能體。",
@@ -1907,38 +1858,63 @@
     "errors": {
       "genericTitle": "這次執行沒能完成",
       "loadMessages": "訊息載入失敗",
-      "noModelProviderAction": "在工作區設定中配置一個",
-      "noModelProviderPrefix": "還沒有配置模型提供方。",
-      "noModelProviderSuffix": "即可開始使用。",
-      "providerDeletedAction": "開始一個新的聊天會話",
-      "providerDeletedPrefix": "這個會話使用的模型提供方已被刪除。",
-      "providerDeletedSuffix": "即可繼續。",
+      "noModelProviderAction": "管理訂閱",
+      "noModelProviderPrefix": "此次執行沒有可用的模型提供者。請重試，或連結個人訂閱。",
       "providerIncompatibleAction": "開始新會話",
       "providerIncompatiblePrefix": "這個會話是用另一個模型提供方開始的，無法用當前的提供方繼續。",
       "recovery": {
+        "accessProgramDescription": "稍後再試，仍可在這段聊天中繼續。",
+        "accessProgramTitle": "Codex 暫時無法存取",
         "autonomyLimitDescription": "連續自動執行的次數已達上限。確認後可以繼續。",
         "autonomyLimitTitle": "已達自動執行上限",
-        "capacityDescription": "稍後再試，或者換一個模型。",
+        "capacityDescription": "可以稍等片刻再試，或換個模型繼續。",
         "capacityTitle": "這個模型現在很忙",
         "claudeCode": "Claude Code",
         "codex": "Codex",
+        "connectionLostTitle": "回覆中途斷開了",
+        "contextWindowTitle": "這個聊天太長了",
         "continue": "繼續",
-        "newRunCurrentSettings": "繼續會按你當前的設定開始一次新的執行。",
-        "originalAccount": "這次執行用的是你的個人訂閱：{{account}}。",
-        "originalAccountUnavailable": "這次執行用的是個人訂閱，原來的帳戶已不再連線。",
-        "originalAccountUnknown": "這次執行用的是個人訂閱，無法確認它原來的帳戶。",
-        "resetAndTryAgain": "重置後重試",
+        "filesystemFullDescription": "這次執行無法再儲存檔案。請重試後繼續。",
+        "filesystemFullTitle": "這次執行的儲存空間用完了",
+        "fiveHourReset": "5 小時額度於 {{time}} 重置",
+        "inputTooLargeDescription": "請縮短訊息內容後重新傳送。",
+        "inputTooLargeTitle": "你的訊息太大",
+        "invalidApiKeyTitle": "你的訂閱登入需要更新",
+        "invalidCredentialsTitle": "模型連線需要更新",
+        "newChat": "新聊天",
+        "newChatDescription": "開啟新聊天，並帶上想繼續使用的重要資訊。",
+        "openClaude": "開啟 Claude",
+        "outputLimitDescription": "回覆還沒完成就停止了。點選「繼續」可以接著生成。",
+        "outputLimitTitle": "回覆達到了長度上限",
+        "personalAccount": "個人訂閱 {{account}}",
+        "personalAccountDisconnected": "個人訂閱已中斷",
+        "providerBalanceDescription": "請檢查訂閱帳號的用量或額度餘額，然後重試。",
+        "providerBalanceTitle": "你的訂閱帳號需要更多額度",
+        "providerConnectionDescription": "到「設定 > 模型」中重新連線或更新帳戶，然後再試。",
+        "providerQueueTimeoutTitle": "模型等待啟動的時間過長",
+        "providerRateLimitedTitle": "目前模型請求過多",
+        "providerServerErrorTitle": "模型服務商暫時出錯",
+        "providerStreamTimeoutTitle": "模型回應已逾時",
+        "reconnectTitle": "重新連接模型帳戶",
         "resetsAt": "{{time}} 重置",
+        "resetUsageRemaining": "重置 · 剩 {{value}} 次",
+        "safetyDescription": "這個請求未通過模型的安全檢查。可以換個說法，或選擇其他模型。",
+        "safetyTitle": "模型無法處理這個請求",
         "selectModel": "切換模型",
-        "timeoutDescription": "這次執行已達時間上限。點選繼續可以接著做。",
+        "sessionHistoryTitle": "這段聊天已達到上限",
+        "termsDescription": "先在 Claude 接受最新條款，再回來重試。",
+        "termsTitle": "需要接受 Claude 新條款",
+        "timeoutDescription": "可以從上次停止的地方繼續。",
         "timeoutTitle": "已達時間上限",
         "tryAgain": "重試",
-        "unavailableDescription": "已連線的 ChatGPT 帳戶不支援這個模型。換一個模型繼續。",
+        "unavailableDescription": "請選擇目前服務商帳戶支援的其他模型。",
         "unavailableTitle": "所選模型不可用",
         "usageDescription": "等用量額度重置後可以繼續，也可以現在換個模型。",
-        "usageTitle": "{{framework}} 已達用量上限"
+        "usageFallbackTitle": "模型服務商用量已達上限",
+        "usageTitle": "{{framework}} 已達用量上限",
+        "weeklyReset": "週額度於 {{time}} 重置"
       },
-      "runCancelled": "思考到一半暫停了，你隨時可以繼續。"
+      "runCancelled": "執行已暫停，可隨時繼續。"
     },
     "feedback": {
       "emailDraftDescription": "郵件草稿",
@@ -1977,6 +1953,10 @@
       "newTasksAvailable": "有新任務可查看",
       "newThread": "新增聊天",
       "reload": "重新載入任務"
+    },
+    "lastReadMarker": {
+      "previouslyRead": "你上次讀到這裡",
+      "unread": "未讀訊息"
     },
     "mail": {
       "bcc": "密送",
@@ -2017,11 +1997,13 @@
     "newChat": "新建聊天",
     "origins": {
       "agentphone": "iMessage",
+      "discord": "Discord",
       "feishu": "飛書",
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "開啟聊天",
       "openChatIn": "在{{integration}}中開啟聊天",
+      "openDiscordMessage": "在 Discord 中開啟原始訊息",
       "openFeishuChat": "在飛書中開啟原對話",
       "openGithubMessage": "在GitHub中開啟原始Issue或Pull Request",
       "openLarkChat": "在Lark中開啟原對話",
@@ -2061,24 +2043,32 @@
       "aboutAutomationEvent": "關於這個自動化事件",
       "aboutQueuedMessage": "關於這條排隊訊息",
       "automationEvent": "自動化事件",
-      "automationEventDescription": "排在已有訊息之後，等當前執行結束後執行。",
+      "automationEventDescription": "排隊等待，可以開始時自動執行。",
       "cancellationRecoveryPending": "正在收尾已取消的執行，之後繼續處理排隊中的任務。",
       "event_one": "{{count}}個事件",
       "event_other": "{{count}}個事件",
-      "goal": "目標",
       "itemsWaiting": "{{items}}等待中",
       "itemsWaitingTogether": "{{messages}}和{{events}}等待中",
       "message_one": "{{count}}條訊息",
       "message_other": "{{count}}條訊息",
       "pendingAutomationEvent": "待處理的自動化事件",
       "queuedMessage": "排隊訊息",
-      "queuedMessageDescription": "排隊等待，當前執行結束後傳送。",
+      "queuedMessageDescription": "排隊等待，可以開始時自動傳送。",
       "removeQueuedMessage": "移除排隊訊息",
       "skipAutomationEvent": "跳過自動化事件"
     },
-    "replaceDraft": {
-      "description": "繼續將清空你當前的輸入框草稿，並開始一個工作流提示詞。",
-      "title": "替換輸入框草稿？"
+    "remoteAccess": {
+      "default": "預設",
+      "defaultEnabled": "聊天預設啟用",
+      "enabledCount_other": "已啟用 {{count}} 個",
+      "loadFailed": "無法載入遠端存取權限。",
+      "loading": "正在載入遠端存取…",
+      "off": "關閉",
+      "on": "開啟",
+      "requiresSsh": "還需要存取 SSH 主機 {{name}}。",
+      "retry": "重試",
+      "title": "遠端存取",
+      "unavailableSsh": "無法使用的 SSH 主機"
     },
     "run": {
       "collapseWorkHistory": "收起工作記錄",
@@ -2095,12 +2085,13 @@
         "wrappedUp": "{{time}}已收尾"
       },
       "duration": {
-        "hoursShort_one": "{{count}}小時",
-        "hoursShort_other": "{{count}}小時",
-        "minutesShort_one": "{{count}}分鐘",
-        "minutesShort_other": "{{count}}分鐘",
-        "secondsShort_one": "{{count}}秒",
-        "secondsShort_other": "{{count}}秒"
+        "hoursMinutesShort": "{{hours}} 小時 {{minutes}} 分鐘",
+        "hoursShort_one": "{{count}} 小時",
+        "hoursShort_other": "{{count}} 小時",
+        "minutesShort_one": "{{count}} 分鐘",
+        "minutesShort_other": "{{count}} 分鐘",
+        "secondsShort_one": "{{count}} 秒",
+        "secondsShort_other": "{{count}} 秒"
       },
       "expandWorkHistory": "展開工作記錄",
       "fastModelName": "{{model}}快速模式",
@@ -2118,24 +2109,14 @@
       "relatedArtifacts": "相關成果",
       "selectedModelAppliesAfterCurrentRun": "下次執行將使用{{model}}",
       "thinking": {
-        "assembling": "正在拼合各個部分…",
-        "brewing": "正在醞釀回覆…",
-        "default": "思考中…",
-        "mapping": "正在理清思路…",
-        "onIt": "這就去辦…",
-        "piecingTogether": "正在把線索拼起來…",
-        "shaping": "正在打磨回覆…",
-        "sketching": "正在勾勒細節…",
-        "spinningUp": "正在啟動…",
-        "tuningIn": "正在進入狀態…",
-        "wiring": "正在串聯起來…"
+        "default": "思考中…"
       },
       "viewActivityLogs": "檢視活動日誌",
       "viewLangfuseTrace": "檢視Langfuse追蹤",
       "viewLogs": "檢視執行日誌",
       "waitingIn": "正在等待",
-      "workedFor": "共工作{{duration}}",
-      "workingFor": "已工作{{duration}}"
+      "workedFor": "共工作 {{duration}}",
+      "workingFor": "已工作 {{duration}}"
     },
     "sharing": {
       "cancel": "取消",
@@ -2146,10 +2127,12 @@
       "createFailed": "無法建立分享對話，請重試。",
       "deselectGroup": "取消選擇該組訊息",
       "linkCopied": "連結已複製",
+      "messageShareFailed": "分享連結建立失敗，請再試一次。",
       "publicDescription": "選中的訊息及其附件將公開可見。",
       "selectedCount_other": "已選{{count}}條",
       "selectGroup": "選擇該組訊息",
       "shareLink": "分享對話連結",
+      "shareLinkCopied": "分享連結已複製",
       "start": "分享訊息",
       "tooLarge": "選擇的訊息過多，請減少後再分享"
     },
@@ -2169,11 +2152,15 @@
       "deleteTitle": "刪除聊天？",
       "draft": "草稿",
       "empty": "發起對話後，會顯示在這裡",
+      "inbox": "收件匣",
       "markUnread": "標為未讀",
       "movePinDown": "下移",
       "movePinUp": "上移",
+      "mute": "靜音聊天",
+      "muted": "已靜音",
       "newChatWith": "與{{agentName}}新建聊天",
       "noArchived": "沒有已歸檔的聊天",
+      "noMuted": "沒有已靜音的聊天",
       "noUnread": "沒有未讀聊天",
       "openChatMenu": "開啟聊天選單",
       "openListMenu": "開啟聊天列表選單",
@@ -2185,17 +2172,13 @@
       "showArchivedChats": "顯示已歸檔的聊天",
       "titlePlaceholder": "聊天標題",
       "unarchive": "取消歸檔",
+      "unmute": "取消靜音",
       "unpin": "取消置頂",
       "unread": "未讀",
       "unreadOnly": "未讀"
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "為你的下一個內容做一位出鏡主播",
-          "prompt": "為我的下一支影片建立一位會說話的數字人主播。",
-          "title": "建立數字人"
-        },
         "illustration": {
           "description": "按你想要的風格做出成品畫面",
           "prompt": "按我描述的風格創作一張插畫。",
@@ -2206,11 +2189,6 @@
           "prompt": "根據我提供的主題或文件建立一份簡報。",
           "title": "建立簡報"
         },
-        "video": {
-          "description": "把你的想法或素材變成成片",
-          "prompt": "把我的想法或素材做成一支成片影片。",
-          "title": "建立影片"
-        },
         "website": {
           "description": "建立並發布一個可分享的頁面",
           "prompt": "為我搭建並發布一個可分享的網頁。",
@@ -2219,7 +2197,36 @@
       },
       "openTemplatesAria": "瀏覽模板",
       "startWithPrompt": "建立",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "用你的 Claude Max 5x/20x 或 Codex 方案",
+        "openSettingsAria": "開啟模型設定",
+        "title": "免費執行任務"
+      },
       "templates": "模板"
+    },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "此重設請求已經兌換。",
+      "confirm_other": "{{count}} 次重設",
+      "confirmation": "重設會消耗一次重設額度。只有點擊重設才會提交請求。",
+      "confirmUnknown": "— 次重設",
+      "credits_other": "剩餘重設次數：{{count}}",
+      "creditsUnknown": "剩餘重設次數：未知",
+      "error": "重設失敗。可重試同一請求。",
+      "expiresAt": "重設次數到期：{{time}}",
+      "loadFailed": "無法讀取訂閱用量。",
+      "loading": "正在讀取訂閱…",
+      "noCredit": "沒有可用的重設次數。",
+      "nothingToReset": "沒有需要重設的已耗盡用量時段。",
+      "reconnect": "請在「設定 > 模型」中重新連線此訂閱。",
+      "reset": "用量已成功重設。",
+      "resetting": "正在重設…",
+      "title": "Reset card",
+      "unavailable": "目前工作區無法存取此訂閱。",
+      "unknown": "未知",
+      "unsupported": "不支援手動重設；用量將自然恢復。"
     },
     "taskChips": {
       "chooseTask": "選擇任務",
@@ -2546,7 +2553,7 @@
         "back": "瀏覽工作流",
         "browse": "瀏覽工作流",
         "close": "關閉",
-        "contextPrefix": "我在意的是：{{context}}",
+        "contextPrefix": "我在意的是：{{preference}}",
         "items": {
           "competitors": {
             "cadence": "每天或每週",
@@ -2837,29 +2844,17 @@
       "importedLoading": "正在載入已上傳的模板…",
       "importedUnavailable": "已上傳的模板暫時不可用。",
       "previewTemplate": "預覽模板 {{title}}",
-      "previewVideo": "預覽影片模板 {{title}}",
       "previewWebsite": "預覽網站模板 {{title}}",
       "previewWorkflow": "預覽工作流模板 {{title}}",
       "removeTemplate": "移除模板 {{title}}",
-      "removeVideo": "移除影片模板 {{title}}",
       "removeWebsite": "移除網站模板 {{title}}",
       "removeWorkflow": "移除工作流模板 {{title}}",
-      "retry": "重試",
-      "videoOptions": "影片選項",
-      "videoOptionsAudio": "生成音訊",
-      "videoOptionsAudioOff": "音訊已關閉",
-      "videoOptionsAudioOn": "音訊已開啟",
-      "videoOptionsDuration": "時長",
-      "videoOptionsLabel": "影片選項 {{spec}}",
-      "videoOptionsModel": "模型",
-      "videoOptionsRatio": "畫面比例",
-      "videoOptionsResolution": "解析度"
+      "retry": "重試"
     },
     "thread": {
       "ariaLabel": "聊天會話",
       "changeIcon": "更換圖示",
       "emoji": {
-        "archive": "歸檔",
         "done": "完成",
         "idea": "想法",
         "no": "否",
@@ -2898,6 +2893,7 @@
       "checkingLimit": "正在檢查語音輸入額度",
       "cleanupFailed": "文字已新增，但儲存的錄音沒能刪除。",
       "confirmRecording": "完成",
+      "detectionFailed": "語音偵測暫時無法使用。錄音已保留，請重試。",
       "discarding": "正在刪除語音草稿…",
       "input": "語音輸入",
       "inputLimitReached": "語音輸入額度已用完。升級到 Pro 或 Team 可獲得更高額度。",
@@ -2906,6 +2902,7 @@
       "inputLimitReachedProMember": "語音輸入額度已用完。請讓工作區管理員升級到 Team 以獲得更高額度。",
       "inputLimitReachedReset": "語音輸入額度已用完。請等待額度重置。",
       "microphoneAccessDenied": "麥克風權限被拒絕。請允許使用麥克風後重試。",
+      "noSpeechDetected": "未偵測到語音，請重新錄音。",
       "openingMicrophone": "正在開啟麥克風…",
       "removeDraft": "刪除語音草稿",
       "restoreFailed": "無法載入你的語音草稿，請重試。",
@@ -2927,6 +2924,7 @@
   },
   "cloudflareAccess": {
     "add": "新增Cloudflare Access",
+    "affectedMembers_other": "{{count}} 位成員",
     "cancel": "取消",
     "changed": "該Cloudflare Access在你編輯期間發生了變化。請先檢視最新設定，再儲存你的更改。",
     "clientId": "Service Token Client ID",
@@ -2934,38 +2932,56 @@
     "clientSecret": "Service Token Client Secret",
     "clientSecretPlaceholder": "貼上Service Token Client Secret",
     "configuration": "Cloudflare Access",
+    "convert": "轉為個人設定",
+    "convertHelp": "此組織 Cloudflare Access 將轉為你自己的個人設定，即使它是由其他人建立的。Service Token 保持不變，你的 SSH 主機可以保持連線。",
+    "convertUncertain": "無法確認轉換是否成功。請查看最新設定後再嘗試。",
     "createNew": "新建Cloudflare Access",
     "delete": "刪除Cloudflare Access",
-    "deleteHelp": "確定刪除這個未被使用的Cloudflare Access？其中儲存的Service Token無法恢復。",
-    "description": "使用 Cloudflare Access 服務權杖存取受保護的應用程式。",
+    "deleteHelp": "確定刪除這個 Cloudflare Access？儲存的 Service Token 無法復原。你自己的主機必須先重新綁定。",
+    "deleteUncertain": "無法確認是否已刪除。請查看最新影響範圍後再嘗試。",
     "edit": "編輯Cloudflare Access",
-    "empty": "還沒有 Cloudflare Access。新增服務權杖即可存取受保護的應用程式。",
     "failed": "無法儲存 Cloudflare Access 更改，請重試。",
-    "inUse": "該Cloudflare Access正在被主機使用。請先檢視受影響的主機，為它們重新綁定或刪除它們。",
-    "inUseHelp": "刪除之前，請為這些主機選擇其他Cloudflare Access、明確改為直連，或刪除這些主機。",
+    "forbidden": "只有組織管理員可以修改共用的 Cloudflare Access。",
+    "hostCount_other": "{{count}} 台 SSH 主機",
+    "impactChanged": "受影響的主機發生了變化。請查看最新影響範圍後再確認。",
+    "impactConfirm": "我了解這些成員的 SSH 主機會保留，但在其擁有者重新綁定或明確選擇直接連線前無法連線。",
+    "impactSummary": "將影響其他 {{members}}的共 {{hosts}}。主機會保留，但在擁有者重新綁定或明確選擇直接連線前無法連線；不會自動改為直接連線。",
+    "inUse": "有 SSH 主機正在使用此 Cloudflare Access。主機擁有者須先重新綁定或刪除該主機。",
+    "inUseHelp": "你的 SSH 主機仍在使用此設定。請先將它們重新綁定至其他設定、明確改為直連，或刪除這些主機。",
     "invalidInput": "部分 Cloudflare Access 設定無效，請檢查各欄位後重試。",
     "keepChanges": "在該版本上保留我的更改",
     "latest": "最新儲存的設定",
     "loadFailed": "無法載入Cloudflare Access，請重試。",
     "loading": "正在載入Cloudflare Access…",
-    "manage": "管理 Cloudflare Access",
+    "memberIdentifier": "（ID {{identifier}}）",
     "missing": "該Cloudflare Access已不可用。請選擇其他項或新建一個。",
     "name": "名稱",
     "namePlaceholder": "例如：生產環境訪問",
+    "nameUnavailable": "姓名暫不可用",
+    "organization": "組織",
+    "organizationHelp": "組織成員都可以使用此服務權杖，只有管理員可以修改。",
+    "personal": "個人",
+    "promote": "轉為組織設定",
+    "promoteConfirm": "我了解組織內所有成員都將能夠使用這個 Service Token。",
+    "promoteHelp": "將你的個人 Cloudflare Access 分享給整個組織。Service Token 和你現有的 SSH 主機綁定保持不變。",
+    "promoteUncertain": "無法確認是否已轉換。請關閉此視窗，查看最新設定後再嘗試。",
     "replace": "替換Service Token",
     "resourceIdConflict": "該資源 ID 無法使用。請關閉表單並重新開啟後再試。",
     "retry": "重試",
     "reviewHelp": "你的草稿已保留。請先確認最新儲存的設定，再應用你的更改。",
+    "reviewLatest": "查看最新影響範圍",
     "revisionExhausted": "該配置已無法繼續更新，請新建一個。",
     "save": "儲存",
     "saveUncertain": "我們無法確認你的更改是否已儲存。請重試這次儲存，或關閉後先檢視列表，再決定是否重新新增。",
+    "scope": "誰可以使用",
+    "sectionEmpty": "這裡還沒有設定。",
     "select": "選擇Cloudflare Access",
     "summary_other": "已配置{{count}}個Cloudflare Access",
     "title": "Cloudflare Access",
     "tokenHelp": "使用 Cloudflare Access 服務權杖存取受保護的應用程式。",
     "unavailable": "該帳號無法使用Cloudflare Access。",
-    "unused": "未被任何主機使用",
-    "usedBy_other": "正在被{{count}}臺主機使用："
+    "unused": "你的主機尚未使用",
+    "usedBy_other": "你的{{count}}臺主機正在使用："
   },
   "connectors": {
     "access": {
@@ -3075,7 +3091,6 @@
       "connectAria": "連線{{connector}}",
       "connected": "已連線",
       "connectionExpired": "連線已過期",
-      "connectToContinue": "連線此帳號後繼續",
       "managePermissions": "管理權限",
       "managePermissionsFor": "管理{{connector}}權限",
       "optional": "可選",
@@ -3145,7 +3160,6 @@
           "menu": "銷售與業務"
         }
       },
-      "categoriesAria": "連接器分類",
       "description": "連線第三方服務，供你的智能體使用。",
       "descriptionWithCount": "連線{{value}}個服務，供你的智能體使用。",
       "directory": {
@@ -3164,8 +3178,6 @@
       "empty": {
         "agent": "此智能體暫無連接器",
         "connected": "暫無已連線的連接器",
-        "matching": "{{message}}，匹配「{{search}}」",
-        "notConnected": "沒有可連線的連接器了",
         "search": "沒有與「{{search}}」匹配的連接器",
         "unshared": "每個連接器都已共享給智能體"
       },
@@ -3175,14 +3187,10 @@
         "all": "全部",
         "allAgents": "全部智能體",
         "aria": "篩選連接器",
-        "connected": "已連線",
-        "notConnected": "未連線",
-        "status": "狀態",
         "unshared": "未共享給任何智能體"
       },
       "filterWith": "篩選：{{category}}",
       "iconUnavailable": "連接器圖示不可用",
-      "newConnector": "新建連接器",
       "noConnectorsAlt": "暫無連接器",
       "otherCategory": "其他",
       "remoteAccess": "遠端訪問",
@@ -3209,10 +3217,6 @@
         "seeMore_one": "檢視{{names}}及其他{{count}}個",
         "seeMore_other": "檢視{{names}}及其他{{count}}個",
         "top": "熱門連接器"
-      },
-      "tabs": {
-        "builtin": "內建",
-        "custom": "自定義"
       },
       "title": "連接器",
       "unnamedAgent": "未命名"
@@ -3353,7 +3357,6 @@
       "edit": {
         "title": "編輯自定義連接器"
       },
-      "emptyAdmin": "還沒有自定義連接器。建立一個，把API註冊給所有成員使用。",
       "emptyMember": "你的組織還沒有註冊任何自定義連接器。",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -3438,7 +3441,7 @@
         "invalidSignature": "此連結的簽名無效。",
         "invalidTimestamp": "此連結的時間戳無效。",
         "invalidTitle": "連線連結無效",
-        "risk": "簡訊和彩信回覆可能無法穩定送達。為獲得最可靠的體驗，請用iMessage與這個AgentPhone號碼通訊。",
+        "risk": "簡訊和彩信回覆可能無法穩定送達。為獲得最可靠的體驗，請用iMessage與這個號碼通訊。",
         "successDescription": "{{phone}}已連線。傳送一條簡訊，即可開始與{{assistantName}}對話。",
         "successTitle": "電話號碼已連線"
       },
@@ -3521,21 +3524,12 @@
         "alreadyDescriptionNamed": "你已連線到{{bot}}。在Telegram中傳送訊息，即可開始對話。",
         "alreadyTitle": "已連線到Telegram",
         "back": "返回Telegram設定",
-        "botFallback": "此機器人",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "我們正在檢查你的Telegram連線，請稍候。",
         "checkingConnectionTitle": "正在檢查連線…",
-        "checkingDomain": "正在檢查域名狀態…",
         "checkingSession": "我們正在驗證你的{{brandName}}登入狀態，請稍候。",
         "connectDescription": "把你的帳號關聯到這個Telegram機器人，就可以直接在Telegram裡與你的智能體交流。",
         "connectTitle": "連線到Telegram",
         "continue": "使用Telegram繼續",
-        "domainDescription": "{{bot}}尚未啟用Telegram網頁登入。",
-        "domainIn": "在 ",
-        "domainInstructionsAfter": "，選擇機器人，然後把域名設定為：",
-        "domainKeepOpen": "儲存域名後請保持此頁面開啟。你也可以在Telegram裡傳送/connect來連線。",
-        "domainSend": "中傳送 ",
-        "domainTitle": "設定Telegram登入域名",
         "errorFallback": "我們無法連線Telegram。請從Telegram重試。",
         "invalidSignature": "此連結的簽名無效。",
         "invalidTimestamp": "此連結的時間戳無效。",
@@ -3545,9 +3539,7 @@
         "linkIncomplete": "請從Telegram重新開啟一個/connect連結後再試。",
         "linkIncompleteTitle": "連線連結不完整",
         "open": "開啟Telegram",
-        "openBotFather": "開啟BotFather",
         "refresh": "請重新整理此頁面後重試。",
-        "setDomainCommand": "/setdomain",
         "signInButton": "登入{{brandName}}",
         "signInCheckFailed": "無法檢查登入狀態",
         "signInDescription": "連線此Telegram使用者前，請先登入你的{{brandName}}帳號。",
@@ -3560,9 +3552,10 @@
       "agentphone": {
         "authorizedSender": "已授權的傳送方",
         "codeExpiry": "10分鐘後過期",
+        "codeLabel": "驗證碼",
         "connectAria": "連線手機",
-        "connectDescription": "掃描二維碼或開啟Messages，然後傳送已填好的驗證碼。",
-        "connectTitle": "連線手機",
+        "connectDescription": "用相機掃描，然後傳送已填好的驗證碼。",
+        "connectTitle": "用 iPhone 傳訊息給 {{assistantName}}",
         "copyAria": "複製{{phone}}",
         "copyCodeAria": "複製連線碼{{code}}",
         "copyCodeError": "連線碼複製失敗",
@@ -3573,80 +3566,16 @@
         "creatingCode": "正在建立連線碼…",
         "description": "透過簡訊使用{{assistantName}}",
         "destination": "iMessage或簡訊傳送至",
-        "manualSend": "或傳送",
-        "manualSendTo": "至",
         "openMessages": "開啟Messages",
         "options": "手機選項",
         "phoneLabel": "電話",
         "qrTitle": "掃碼開啟Messages，連線碼已填好",
         "risk": "儘量使用iMessage。簡訊和彩信的回覆可能無法可靠送達。",
+        "sendToLabel": "傳送至",
         "tryAgain": "重試"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activated": "已啟用",
-          "activeCatalogDigest": "生效目錄摘要",
-          "activeVersion": "生效版本",
-          "evaluated": "已評估",
-          "evaluation": "評估",
-          "executableCapabilityDigest": "可執行能力摘要",
-          "failureCode": "失敗程式碼",
-          "filteredAuthMethods": "已過濾的認證方式",
-          "lastAttempt": "上次嘗試",
-          "lastAttemptAt": "上次嘗試時間",
-          "lastSuccess": "上次成功",
-          "missingVersions": "缺失版本",
-          "rejectedCatalogDigest": "被拒目錄摘要",
-          "rejectedVersion": "被拒版本",
-          "rejectingBackend": "拒絕方後端",
-          "rejectionCache": "拒絕快取",
-          "rejectionFailure": "拒絕失敗原因",
-          "syncState": "同步狀態",
-          "unownedSecrets": "無歸屬金鑰",
-          "unownedVariables": "無歸屬變數",
-          "unresolvedBridgeCredentials": "未解析的橋接憑據"
-        },
-        "loading": "載入中",
-        "none": "無",
-        "notReused": "未複用",
-        "reused": "已複用",
-        "sections": {
-          "compatibility": "相容性",
-          "credentialStorage": "憑據儲存",
-          "rejectedCandidate": "被拒候選"
-        },
-        "title": "連接器目錄",
-        "unavailable": "不可用",
-        "values": {
-          "accepted": "已接受",
-          "current": "當前",
-          "digestMismatch": "摘要不匹配",
-          "invalidArtifact": "成果無效",
-          "invalidCompression": "壓縮格式無效",
-          "invalidJson": "JSON無效",
-          "invalidPointer": "指標無效",
-          "invalidReference": "引用無效",
-          "missingAccessProvider": "缺少訪問提供方",
-          "missingGrantProvider": "缺少授權提供方",
-          "missingPlatformConfiguration": "缺少平臺配置",
-          "missingRevokeProvider": "缺少撤銷提供方",
-          "neverSynced": "從未同步",
-          "objectTooLarge": "物件過大",
-          "providerContractMismatch": "提供方契約不匹配",
-          "publicLeakage": "存在公開洩露",
-          "rejected": "已拒絕",
-          "relationshipMismatch": "關聯關係不匹配",
-          "sourceUnavailable": "資料來源不可用",
-          "stale": "已過期",
-          "unchanged": "無變化",
-          "unsupportedProtocol": "不支援的協議",
-          "unsupportedSchema": "不支援的結構"
-        }
-      },
       "errors": {
-        "githubAuthorizationWindow": "無法開啟授權視窗",
-        "telegramDomain": "Telegram還看不到這個域名。請在BotFather中確認後重試。",
-        "telegramPrivacy": "隱私模式似乎仍處於開啟狀態。請在BotFather中關閉後重試。"
+        "githubAuthorizationWindow": "無法開啟授權視窗"
       },
       "feishu": {
         "addBot": "新增機器人",
@@ -3914,83 +3843,21 @@
         "uninstallTitle": "解除安裝Lark機器人？"
       },
       "telegram": {
-        "addBot": "新增機器人",
-        "addDescription": "完成BotFather中的每個步驟，然後建立工作區機器人。",
-        "adding": "新增中…",
-        "addTitle": "新增Telegram機器人",
-        "agentAria": "{{bot}}的預設智能體",
         "backToIntegrations": "返回整合",
         "botFallback": "Telegram機器人",
-        "bots": "Telegram機器人",
-        "botToken": "機器人令牌",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "檢查中…",
-        "copied": "已複製！",
-        "copyAria": "複製{{value}}",
-        "copyTitle": "點選複製",
-        "create": {
-          "description": "{{brandName}}會註冊這個機器人並配置它的webhook。完成後，在群裡提及該機器人或給它發私信，就能與所選智能體對話。",
-          "descriptionNamed": "{{brandName}}會註冊{{bot}}並配置它的webhook。完成後，在群裡提及該機器人或給它發私信，就能與所選智能體對話。",
-          "title": "準備建立整合"
-        },
-        "defaultAgent": "預設智能體",
         "disconnectAria": "斷開{{bot}}的連線",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "已檢測到域名",
-          "instructionAfter": "，選擇這個機器人，然後把域名設定為 ",
-          "instructionEnd": "。Telegram會用這個域名來允許此機器人的連線流程。",
-          "instructionStart": "在{{botFather}}中傳送 ",
-          "title": "設定Telegram登入域名"
-        },
-        "emptyDescription": "新增機器人令牌，開始把Telegram訊息路由給智能體。",
-        "emptyTitle": "還沒有Telegram機器人",
-        "invalidTokenDescription": "請用BotFather重新生成的令牌重新安裝機器人。",
         "loadError": "無法載入Telegram設定。",
         "moreOptions": "{{bot}}的更多選項",
-        "newBotToken": "新的機器人令牌",
         "notConnected": "未連線",
         "officialBot": "Telegram官方機器人",
         "officialDescription": "由{{brandName}}提供的官方機器人。",
         "officialMissing": "缺少官方機器人配置。",
-        "pageDescription": "管理此工作區的機器人路由",
-        "privacy": {
-          "instructionAfter": "，選擇這個機器人，然後關閉隱私模式。這樣智能體才能讀取提及和回覆附近的群聊上下文。",
-          "instructionStart": "在{{botFather}}中傳送 ",
-          "off": "隱私模式已關閉",
-          "title": "可選：關閉隱私模式"
-        },
-        "registerAria": "註冊Telegram機器人",
-        "reinstall": "重新安裝",
-        "reinstallDescription": "貼上{{bot}}在BotFather中新生成的令牌。該令牌必須屬於同一個機器人。",
-        "reinstalling": "重新安裝中…",
-        "reinstallTargetFallback": "此機器人",
-        "reinstallTitle": "重新安裝Telegram機器人",
-        "selectAgent": "選擇智能體",
-        "steps": {
-          "back": "上一步",
-          "create": "建立",
-          "domain": "域名",
-          "next": "下一步",
-          "privacy": "隱私",
-          "token": "令牌"
-        },
-        "token": {
-          "instructionAfter": "，設定名稱和使用者名稱，然後把令牌貼上到下方。",
-          "open": "開啟 ",
-          "send": "，傳送 ",
-          "title": "在BotFather中建立機器人令牌",
-          "verified": "令牌已驗證"
-        },
-        "tokenInvalid": "令牌無效",
-        "uninstallAria": "解除安裝{{bot}}",
-        "uninstallDescription": "此操作會從工作區移除{{bot}}，並斷開使用它的使用者的Telegram訪問權限。操作無法撤銷。",
-        "uninstallTargetFallback": "這個機器人",
-        "uninstallTitle": "解除安裝Telegram機器人？"
+        "pageDescription": "管理此工作區的機器人路由"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone已連線",
-        "agentphoneDisconnected": "AgentPhone已斷開連線",
+        "agentphoneConnected": "電話號碼已連線",
+        "agentphoneDisconnected": "電話號碼已斷開連線",
         "slackConnected": "Slack連線成功",
         "slackDisconnected": "已斷開與Slack的連線",
         "slackInstalled": "Slack安裝成功",
@@ -4002,12 +3869,7 @@
         "teamsInstalled": "Microsoft Teams安裝成功",
         "teamsUninstalled": "Microsoft Teams整合已解除安裝",
         "teamsUpdated": "Microsoft Teams已更新",
-        "telegramAgentUpdated": "預設智能體已更新",
-        "telegramBotAdded": "已新增Telegram機器人",
-        "telegramBotReinstalled": "已重新安裝Telegram機器人",
-        "telegramBotUninstalled": "已解除安裝Telegram機器人",
-        "telegramDisconnected": "Telegram帳號已斷開連線",
-        "telegramUpdatingAgent": "正在更新預設智能體…"
+        "telegramDisconnected": "Telegram帳號已斷開連線"
       },
       "works": {
         "connected": "已連線",
@@ -4032,9 +3894,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "請求失敗"
-    },
-    "realtime": {
-      "degraded": "實時更新出現問題，請重新整理頁面。"
     }
   },
   "invitationRedirect": {
@@ -4115,131 +3974,66 @@
     }
   },
   "onboarding": {
-    "categories": {
-      "ceo": {
-        "description": "簡報與全域性視角",
-        "title": "CEO"
-      },
-      "data": {
-        "description": "儀表板、指標、查詢",
-        "title": "資料"
-      },
-      "engineering": {
-        "description": "發布、除錯、自動化程式碼",
-        "title": "工程師"
-      },
-      "everyone": {
-        "description": "郵件、日曆、會議",
-        "title": "所有人"
-      },
-      "marketing": {
-        "description": "內容、SEO、營銷活動",
-        "title": "市場"
-      },
-      "operations": {
-        "description": "專案、排期、同步",
-        "title": "運營"
-      },
-      "product": {
-        "description": "需求、發布、反饋",
-        "title": "產品"
-      },
-      "sales": {
-        "description": "商機與客戶觸達",
-        "title": "銷售"
-      },
-      "support": {
-        "description": "工單與客戶支援",
-        "title": "客戶支援"
-      }
-    },
     "common": {
-      "back": "返回",
-      "continue": "繼續",
-      "dialogPreview": "{{title}}預覽",
-      "gotIt": "知道了",
       "next": "下一步",
-      "previewWorkflowDetails": "預覽工作流詳情",
-      "selectTemplate": "選擇此模板",
-      "selectThisTemplate": "選擇此模板",
       "stepProgress": "第{{current}}步，共{{total}}步"
     },
     "documentTitles": {
-      "chooseImage": "選擇圖片風格",
-      "choosePresentation": "選擇簡報模板",
-      "chooseVideo": "選擇影片風格",
-      "chooseWorkflow": "選擇工作流",
-      "make": "歡迎使用{{brandName}}",
-      "runImage": "創作你的第一張圖片",
-      "runPresentation": "製作你的第一份簡報",
-      "runVideo": "製作你的第一個影片",
-      "runWorkflow": "執行你的第一個工作流"
+      "make": "歡迎使用{{brandName}}"
     },
     "make": {
-      "description": "先選一個起點，其他隨時可以再做。",
-      "options": {
-        "explore": {
-          "description": "只先連線我的工具",
-          "title": "我想自己探索"
-        },
-        "images": {
-          "description": "創作高質量視覺素材",
-          "title": "生成圖片"
-        },
-        "presentation": {
-          "description": "生成投影片和演講稿",
-          "title": "生成簡報"
-        },
-        "slack": {
-          "description": "在工作區裡和你的AI同事對話",
-          "title": "在Slack裡和Okou對話"
-        },
-        "video": {
-          "description": "把你的想法變成影片",
-          "title": "影片製作"
-        },
-        "website": {
-          "description": "建立並發布可分享的頁面",
-          "title": "搭建網站"
-        },
-        "workflow": {
-          "description": "從預置模板開始探索",
-          "title": "工作流自動化"
-        }
-      },
-      "projectTypeLabel": "首個專案型別",
       "promptDescription": "你可以在下面改一改，也可以直接執行，接下來交給{{assistantName}}。你的工具都在沙箱裡執行，資料不會離開你的工作區。",
       "promptLabel": "新手引導提示詞",
-      "promptTitle": "試試這個提示詞",
-      "title": "你想先做點什麼"
-    },
-    "runAction": {
-      "checkingPlan": "正在檢查套餐",
-      "runNow": "立即執行",
-      "upgradePro": "升級Pro後執行"
+      "promptTitle": "試試這個提示詞"
     },
     "sourcesFirst": {
+      "chatChannels": {
+        "connectedTitle": "聊天管道已連接",
+        "copy": "透過訊息與 Okou 協作，或將它加入團隊聊天。選擇你習慣的方式。",
+        "imessageConnected": "iMessage 已連接",
+        "imessageCopy": "傳則訊息，就能繼續你的工作。",
+        "imessageExpired": "連接驗證碼已過期。",
+        "imessageRefresh": "取得新驗證碼",
+        "imessageScan": "開啟 iPhone 相機掃碼，然後傳送預填的訊息。",
+        "imessageTitle": "在 iMessage 中與 Okou 聊天",
+        "othersLabel": "也可以透過以下管道使用",
+        "title": "傳訊息給 Okou，繼續你的工作"
+      },
       "common": {
         "back": "返回",
         "continue": "繼續",
-        "finish": "完成設定",
-        "notNow": "暫不",
-        "skip": "先跳過"
+        "notNow": "暫不"
+      },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "安全詳情",
+        "status": {
+          "aligned": "已對標",
+          "compliant": "已合規",
+          "inProgress": "進行中"
+        },
+        "title": "Okou 的合規進展，讓你用得放心"
       },
       "documentTitles": {
         "experience": "你的AI使用經驗",
         "industry": "選擇你的領域",
         "ready": "Okou已就緒",
         "skills": "匯入你的技能",
-        "slack": "把Okou新增到Slack",
         "sources": "連線你的工作",
-        "team": "邀請一位同事"
+        "team": "邀請團隊成員"
       },
       "experience": {
-        "copy": "連線你已經在付費的套餐，任務就在那邊執行，不消耗Okou積分。",
-        "no": "沒有，我剛開始接觸",
-        "noCopy": "Okou會幫你挑一個上手任務。",
-        "title": "你用過Codex或Claude Code嗎？"
+        "copy": "可以從引導開始，也可以連接你已有的 Codex 或 Claude Code 訂閱。",
+        "no": "我是 AI Agent 新手",
+        "noCopy": "Okou 會幫你找到合適的第一項任務。",
+        "title": "你想怎樣開始使用 Okou？",
+        "trust": "連接 Codex 或 Claude Code 訂閱後，任務使用你已有的額度，不消耗 Okou credits，可以放心多用。現在或以後連接都可以。"
       },
       "industries": {
         "coaching": {
@@ -4288,23 +4082,58 @@
         }
       },
       "industry": {
-        "copy": "Okou會據此挑選你的第一個任務，以及從哪些資料來源開始。",
+        "copy": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。選擇你的領域，取得適合你的第一項任務。",
         "title": "你主要做哪類工作？"
+      },
+      "prompt": {
+        "intro": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。"
       },
       "skills": {
         "copied": "已複製",
-        "copy": "將此提示詞貼到你的{{provider}}會話中，它會把你本機的技能匯入Okou。",
+        "copy": "在 {{provider}} 中執行這段提示詞，匯入你已經寫好的技能，Okou 馬上就能用上。",
         "copyError": "無法複製提示詞。",
         "copyPrompt": "複製提示詞",
+        "guide": {
+          "claudeCode": {
+            "openApp": "開啟 Claude 應用程式，切換到 {{control}} 分頁",
+            "openAppNote": "Code 在你的電腦上執行，所以能讀取你的技能資料夾。",
+            "stayLocal": "讓工作階段保持在 {{control}}",
+            "stayLocalNote": "Chat 和雲端工作階段看不到你電腦上的檔案。"
+          },
+          "codex": {
+            "keepOpen": "保持開啟，直到技能出現在下方",
+            "openApp": "開啟 Codex 應用程式，點選 {{control}}",
+            "openAppNote": "請使用你電腦上的應用程式，這樣它才能讀取你的技能資料夾。"
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "複製提示詞",
+          "label": "在哪裡執行提示詞",
+          "paste": "貼上提示詞並送出",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "收合完整提示詞",
         "importedCopy": "已匯入為Okou工作流。",
+        "importedCount_other": "已匯入 {{count}} 個 · 繼續等待",
         "importedLabel": "已匯入的技能",
         "importedTitle": "你的工作流已就緒",
         "preparing": "正在開啟匯入會話…",
         "promptCopy": "它會讀取你本機上的技能，並寫入Okou。",
         "promptLabel": "技能匯入提示詞",
         "promptTitle": "在{{provider}}中執行",
+        "showFullPrompt": "查看完整提示詞",
         "startError": "無法開啟匯入會話。",
-        "title": "把你已經寫好的技能帶過來。",
+        "title": "把你已有的技能匯入 Okou",
         "tryAgain": "重試",
         "waiting": "匯入的技能會在到達後顯示在這裡。"
       },
@@ -4313,44 +4142,18 @@
         "channelAdminRequired": "請讓工作區管理員把Okou加入{{channel}}。",
         "channelUnavailable": "{{channel}}在這個工作區還不可用。",
         "connectAction": "連線Slack",
-        "connectedCopy": "開啟Slack，@Okou就能派任務。",
         "connectedStatus": "已新增到你的工作區",
-        "connectedTitle": "Slack已連線",
-        "copy": "新增一次，之後在工作發生的地方@Okou就行。",
         "name": "Slack",
         "otherAdded": "已新增",
         "otherImessage": "iMessage",
-        "othersLabel": "這些可以現在加，也可以以後加",
         "otherTeams": "Teams",
-        "otherTelegram": "Telegram",
-        "previewAppBadge": "APP",
-        "previewAsk": "把上週按來源劃分的註冊數拉出來，和廣告帳戶核對一遍，再整理成一份表格。",
-        "previewAskAuthor": "Mia Chen",
-        "previewChannel": "# growth",
-        "previewChannelGeneral": "# general",
-        "previewChannelLaunch": "# launch",
-        "previewChannelsLabel": "頻道",
-        "previewChannelTopic": "每週資料，以及接下來要上線的東西",
-        "previewComposer": "發訊息到#growth",
-        "previewContext": "週四就要開董事會，上週的資料我還欠著沒給。",
-        "previewContextAuthor": "Dan Rivera",
-        "previewContextTime": "上午9:06",
-        "previewDirectMessagesLabel": "私信",
-        "previewMention": "@Okou",
-        "previewReplies": "3條回覆",
-        "previewReply": "上週註冊1,284，比1,088增長18%。表格已放在這條會話裡。",
-        "previewReplyAuthor": "Okou",
-        "previewReplyTime": "上午9:16",
-        "previewTime": "上午9:14",
-        "previewWorkspace": "Northwind",
-        "rowCopy": "在你新增它的任何頻道里都能用。",
-        "rowTitle": "Okou for Slack",
-        "title": "不用離開Slack，就能給Okou派活。"
+        "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "它在雲端執行，直接用你團隊已有的工具。產出提升10倍，協作更順，成本更低。先連線一個資料來源開始。",
-        "note": "連線哪些帳號，由你決定。",
-        "title": "Okou為你所用，也服務你的整個團隊。"
+        "copy": "Okou 越了解你的工作，就越聰明。連接一個你每天在用的工具，從一項基於真實工作的任務開始。",
+        "permissions": "Okou 會參考少量資訊為你量身打造第一項任務；Agent 能做什麼、授權多久，都由你決定。",
+        "securityLink": "瞭解 Okou 如何保護你的資料",
+        "title": "連接一個工作工具"
       },
       "startingPrompt": {
         "exact": {
@@ -4684,1213 +4487,39 @@
         "connecting": "連線中…",
         "failedNote": "無法連線{{provider}}。你可以重試，也可以先繼續，稍後再連線。",
         "retry": "重試",
-        "rowCopy": "用你自己的套餐執行，不消耗Okou積分。",
+        "rowCopy": "連接後可使用你的方案執行，不消耗 Okou 點數。",
         "unconfirmedNote": "無法確認{{provider}}的連線狀態。你可以重試，也可以先繼續，稍後再連線。"
       },
       "team": {
-        "copy": "現在就邀請同事，也可以稍後從工作區選單邀請。",
+        "copy": "邀請團隊成員共享你的工作流程，每個人各自連接自己的工具。",
+        "invalidEmail": "請輸入有效的電子郵件地址",
         "invite": "傳送邀請",
         "invited": "已邀請",
-        "label": "同事的郵箱",
-        "note": "他們會加入這個工作區，各自的帳號仍歸自己所有。",
+        "label": "團隊成員的電子郵件",
+        "note": "他們可以馬上開始使用 Okou。",
         "notSent": "未傳送",
-        "panelTitle": "邀請同事",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "邀請團隊成員",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "他們連線的帳號仍歸自己所有——未經他們同意不會共享任何內容。",
-          "workflows": "這裡的每個人都能執行工作區裡已有的工作流。",
-          "workspace": "他們會直接進入這個工作區，用上你剛剛連線的資料來源。"
+          "accounts": "需要時連接自己的工具。",
+          "workflows": "可以執行團隊已建立的所有工作流程。",
+          "workspace": "加入你的工作區。"
         },
         "sending": "傳送中…",
-        "title": "把一起做這些事的同事帶進來。"
+        "title": "讓整個團隊一起用好 Okou"
       },
       "welcome": {
-        "copy": "從第一個任務開始，它是照著你剛連線的工作內容挑的。",
-        "offerTitle": "首小時諮詢免費，另贈最多100積分——",
+        "copy": "看看為你的工作推薦的任務，按目標調整，再讓 Okou 開始執行。",
         "promptLabel": "你的起始提示詞",
         "start": "開始使用Okou",
-        "title": "Okou已經準備好了"
-      }
-    },
-    "templatePicker": {
-      "image": {
-        "description": "以它為參考，創作你想要的圖片。",
-        "selectTemplate": "選擇{{title}}插畫模板",
-        "showVariant": "檢視{{title}}變體{{variant}}",
-        "title": "選一個插畫模板開始"
-      },
-      "presentation": {
-        "description": "以它為參考，製作你想要的簡報。",
-        "nextSlide": "下一頁",
-        "previousSlide": "上一頁",
-        "selectTemplate": "選擇{{title}}演示模板",
-        "showSlide": "檢視第{{slide}}頁",
-        "slideAlt": "{{title}}第{{slide}}頁",
-        "title": "選一個演示模板開始",
-        "viewTemplate": "檢視{{title}}簡報"
-      },
-      "video": {
-        "description": "以它為參考，創作你想要的影片。",
-        "selectTemplate": "選擇{{title}}影片模板",
-        "title": "選一個影片模板開始"
-      }
-    },
-    "templateRun": {
-      "image": {
-        "noteLabel": "自定義插畫場景",
-        "notePlaceholder": "補充你的自定義場景，生成屬於你的插畫",
-        "previewLabel": "插畫模板預覽",
-        "title": "選一個你想試試的自動化"
-      },
-      "presentation": {
-        "noteLabel": "演示內容與要求",
-        "notePlaceholder": "補充你的演示內容與要求",
-        "previewLabel": "演示模板預覽",
-        "title": "完成你的簡報"
-      },
-      "video": {
-        "noteLabel": "自定義影片提示詞",
-        "notePlaceholder": "補充你的自定義提示詞，生成屬於你的影片",
-        "previewLabel": "影片模板預覽",
-        "title": "定製你的影片"
-      }
-    },
-    "templates": {
-      "illustration": {
-        "cozy-parlor": "溫馨客廳",
-        "crowd-ink": "人群速寫",
-        "editorial-flatfolk": "社論扁平人物",
-        "emboss-deboss": "凹凸壓印",
-        "endpaper": "環襯紙",
-        "flat-poster": "扁平海報",
-        "folk-muse": "民俗繆斯",
-        "folk-storybook": "民俗繪本",
-        "grain-poster": "顆粒海報",
-        "grainy-duotone": "顆粒雙色調",
-        "iberian-vignette": "伊比利亞小景",
-        "ink-mascot": "水墨吉祥物",
-        "ink-storefront": "水墨店面",
-        "inkdab": "點墨",
-        "inkstomp": "重墨",
-        "iso-scene": "等距場景",
-        "jade-blockprint": "青玉版畫",
-        "light-pop-portrait": "輕波普人像",
-        "loose-contour": "鬆弛輪廓",
-        "mellow-pop": "柔和波普",
-        "mosaic-still-life": "馬賽克靜物",
-        "notion-illustration": "Notion插畫",
-        "op-ed-cover": "評論版封面",
-        "painterly-botanical": "繪意植物",
-        "papernook": "紙間一角",
-        "postcard-illustration": "明信片插畫",
-        "riso-relic": "復古孔版",
-        "shadow-pop": "投影波普",
-        "soft-vector": "柔和向量",
-        "sticker-sheet": "貼紙集",
-        "sunlit-gouache": "晴日水粉",
-        "tiny-wanderer": "小小旅人"
-      },
-      "presentation": {
-        "bloom-pitch": "花瓣提案",
-        "blueprint-academy": "圖紙校園",
-        "botane-organic-deck": "藕紫花園",
-        "business-data-presentation": "莓果儀表板",
-        "crayon-learning-deck": "蠟筆塗鴉",
-        "creative-agency-presentation": "綠葉畫廊",
-        "data-report-presentation": "糖果圖表",
-        "editorial-magazine-deck": "紙質雜誌",
-        "landing-consulting-deck": "霓虹瀏覽器",
-        "lumina-creative-studio": "筆刷貼紙",
-        "meridian": "鈷藍色塊",
-        "mosaic-geometric-pitch": "包豪斯拼塊",
-        "neo-brutalism": "陰影商店",
-        "nocturne": "午夜舞臺",
-        "pixel-glitch": "街機畫素",
-        "playful-launch-presentation": "放射遊樂場",
-        "playful-pop-deck": "霓虹糖果",
-        "prospectus": "主頁提案",
-        "schoolhouse": "牛皮紙海報",
-        "sticker-scrapbook": "貼紙手賬",
-        "strata": "紅色階梯",
-        "taped-consulting": "拍立得照片牆",
-        "vantage": "編號會議室"
-      },
-      "video": {
-        "chinese-ink-art": "中國水墨",
-        "cyberpunk-anime": "賽博朋克動畫",
-        "epic-grandeur": "史詩宏景",
-        "fashion-editorial": "時尚大片",
-        "gourmet-documentary": "美食紀錄片",
-        "hand-drawn-fantasy-anime": "手繪奇幻動畫",
-        "japanese-wabi-sabi": "日式侘寂",
-        "luxury-product": "奢品微距",
-        "shortform-viral": "短影片爆款",
-        "sports-performance-ad": "運動機能廣告"
-      }
-    },
-    "workflowDiagram": {
-      "preparedDescription": "{{assistantName}}會從你的工具裡準備好下一步。",
-      "preparedTitle": "工作流已就緒",
-      "reviewDescription": "{{assistantName}}會完成工作流並給出結果。",
-      "reviewTitle": "等你確認",
-      "source": "資料來源"
-    },
-    "workflowPicker": {
-      "categoryDescription": "開箱即用的方案，可以按你的工具和目標調整。",
-      "categoryTitle": "{{category}}工作流",
-      "customDescription": "說出你的需求，{{assistantName}}和你一起把它搭出來。",
-      "customTitle": "和{{assistantName}}聊聊，做一個我自己的",
-      "description": "選一個角色，看看適合的工作流。隨時可以切換。",
-      "title": "你平時做哪類工作？",
-      "workflowCardLabel": "{{title}} {{description}}"
-    },
-    "workflowPreview": {
-      "howItWorks": "運作方式",
-      "whatItDoes": "它能做什麼"
-    },
-    "workflowRun": {
-      "continueWithAssistant": "繼續與{{assistantName}}對話",
-      "createWorkflow": "建立工作流",
-      "customNoteLabel": "描述你的工作流",
-      "customNotePlaceholder": "描述你想讓{{assistantName}}搭建什麼",
-      "customTitle": "描述你的工作流",
-      "noteLabel": "還有什麼要補充的嗎？",
-      "notePlaceholder": "還有什麼要補充的嗎？",
-      "reviewTitle": "確認你的工作流草稿"
-    },
-    "workflows": {
-      "alert-metric-moves-slack": {
-        "description": "發現網站的重要變化，並解釋可能的原因。",
-        "scenario": "指標突然波動時，最要緊的是背景資訊同時到位。{{assistantName}}會監控Google Analytics，並在已連線時補充搜尋或付費渠道的佐證。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取你選定的流量和轉化指標。",
-            "title": "核對關鍵指標"
-          },
-          "three": {
-            "description": "{{assistantName}}給出可能的原因和下一步排查方向。",
-            "title": "解釋波動原因"
-          },
-          "two": {
-            "description": "{{assistantName}}把當前數值與預期區間做對比。",
-            "title": "發現異常波動"
-          }
-        },
-        "title": "流量與轉化波動預警"
-      },
-      "auto-merge-github-prs": {
-        "description": "審查準備就緒的PR，等CI透過後合併已批准的改動。",
-        "scenario": "合併一個PR，意味著盯著檢查項、反覆看改動。{{assistantName}}會識別你的ready-to-merge標籤，審查改動，等待CI，只在你認可的規則下合併。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}檢測到ready-to-merge標籤。",
-            "title": "PR準備就緒"
-          },
-          "three": {
-            "description": "{{assistantName}}只在你認可的安全條件全部透過後才合併。",
-            "title": "按你的規則合併"
-          },
-          "two": {
-            "description": "{{assistantName}}檢查改動內容，並等待必需的CI透過。",
-            "title": "{{assistantName}}審查改動"
-          }
-        },
-        "title": "自動合併GitHub PR"
-      },
-      "blog-posts-to-x": {
-        "description": "找出流量下滑的頁面，整理成分好優先順序的更新簡報。",
-        "scenario": "把已有內容做好，往往比再寫一篇新文章更划算。{{assistantName}}會用內建的Firecrawl和DataForSEO找出表現不佳的頁面，梳理當前的搜尋需求，給出有針對性的更新建議。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}抓取站點，找出值得更新的頁面。",
-            "title": "盤點現有頁面"
-          },
-          "three": {
-            "description": "{{assistantName}}為頁面排出優先順序，並說明需要改哪些地方。",
-            "title": "生成更新簡報"
-          },
-          "two": {
-            "description": "{{assistantName}}檢視搜尋結果、關鍵詞和競品覆蓋情況。",
-            "title": "梳理當前需求"
-          }
-        },
-        "title": "制定SEO內容更新計劃"
-      },
-      "build-weekly-deck-gamma": {
-        "description": "在Sheets裡跟蹤收入、支出、應收和現金流。",
-        "scenario": "每次都要手工重算數字，財務回顧就快不起來。{{assistantName}}會拉取你授權的QuickBooks指標，在Google Sheets裡維護一份可直接用於決策的儀表板。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取收入、支出、應收和現金流。",
-            "title": "彙集財務資料"
-          },
-          "three": {
-            "description": "{{assistantName}}把最新的財務檢視寫入Google Sheets。",
-            "title": "重新整理儀表板"
-          },
-          "two": {
-            "description": "{{assistantName}}計算趨勢、異常項和報表合計。",
-            "title": "整理指標"
-          }
-        },
-        "title": "搭建QuickBooks財務儀表板"
-      },
-      "business-review-gamma": {
-        "description": "把財務、增長和運營資料匯成一份回顧。",
-        "scenario": "月度回顧該講清楚業務，而不只是複述儀表板。{{assistantName}}會把QuickBooks、Google Analytics和Google Sheets的資料結合起來，並在可用時補充HubSpot的背景資訊。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取財務、增長和運營指標。",
-            "title": "彙集業務資料"
-          },
-          "three": {
-            "description": "{{assistantName}}給出一份精煉、可直接用於決策的月度回顧。",
-            "title": "生成回顧報告"
-          },
-          "two": {
-            "description": "{{assistantName}}把趨勢、與計劃的偏差、進展和風險串起來。",
-            "title": "分析業務表現"
-          }
-        },
-        "title": "生成月度業務回顧"
-      },
-      "catch-calendar-conflicts": {
-        "description": "提前發現時間衝突和難以銜接的日程安排。",
-        "scenario": "日程衝突在開會當天之前最容易解決。{{assistantName}}會檢查新日程有沒有時間重疊、路途和準備時間上的衝突，並說明可選的處理方式。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取該日程以及前後的Calendar安排。",
-            "title": "檢查新日程"
-          },
-          "three": {
-            "description": "{{assistantName}}說明衝突所在，還可以起草一封Gmail郵件。",
-            "title": "給出解決方案"
-          },
-          "two": {
-            "description": "{{assistantName}}找出時間重疊和根本來不及銜接的間隔。",
-            "title": "識別衝突"
-          }
-        },
-        "title": "發現Google Calendar日程衝突"
-      },
-      "catch-leads-gmail": {
-        "description": "總結階段變化、停滯的商機、風險和預測變動。",
-        "scenario": "變化能在開會前就擺在面前，銷售漏斗回顧會清楚得多。{{assistantName}}會把當前的HubSpot銷售漏斗與上一次快照做對比，給出一份精煉的每週摘要。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}收集商機、階段、負責人、日期和跟進動態。",
-            "title": "讀取銷售漏斗"
-          },
-          "three": {
-            "description": "{{assistantName}}給出後續行動，也可以順帶更新Google Sheets。",
-            "title": "生成摘要"
-          },
-          "two": {
-            "description": "{{assistantName}}找出變化、停滯的商機、卡點和預測偏移。",
-            "title": "分析進展與風險"
-          }
-        },
-        "title": "生成HubSpot銷售漏斗週報"
-      },
-      "chase-overdue-asana-tasks": {
-        "description": "為每位負責人準備專屬提醒，不會自動傳送。",
-        "scenario": "逾期的工作需要的是具體背景，而不是千篇一律的催促。{{assistantName}}會把逾期的Asana任務按負責人歸類，為每個人起草一封簡短的Gmail提醒。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取已逾期的Asana任務。",
-            "title": "找出逾期工作"
-          },
-          "three": {
-            "description": "{{assistantName}}生成提醒供人工確認，絕不會自動傳送。",
-            "title": "準備Gmail草稿"
-          },
-          "two": {
-            "description": "{{assistantName}}整理相關的專案背景和阻塞點。",
-            "title": "任務按負責人分組"
-          }
-        },
-        "title": "為逾期的Asana任務起草Gmail提醒"
-      },
-      "check-posthog-signup-funnel": {
-        "description": "用同一套口徑對比Google Ads和Meta Ads的投放效果。",
-        "scenario": "各平臺的資料口徑不同，付費渠道很難直接對比。{{assistantName}}會統一Google Ads和Meta Ads的花費、轉化、CPA和ROAS口徑。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}按同一統計週期讀取兩個平臺的資料。",
-            "title": "收集廣告資料"
-          },
-          "three": {
-            "description": "{{assistantName}}指出效率和投放節奏問題，也可以更新Sheets。",
-            "title": "解釋渠道差異"
-          },
-          "two": {
-            "description": "{{assistantName}}計算可對比的花費、轉化、CPA和ROAS指標。",
-            "title": "統一效果口徑"
-          }
-        },
-        "title": "對比付費獲客渠道"
-      },
-      "compare-google-ads-last-month": {
-        "description": "跟蹤付費投放的效率、節奏和效果波動。",
-        "scenario": "等負責人發現時，預算往往已經跑偏。{{assistantName}}會在花費、轉化、CPA和ROAS上對比Google Ads和Meta Ads，並指出需要處理的地方。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取所選時間段內兩個廣告平臺的資料。",
-            "title": "收集廣告系列資料"
-          },
-          "three": {
-            "description": "{{assistantName}}給出對比結果，也可以更新Sheets。",
-            "title": "給出行動建議"
-          },
-          "two": {
-            "description": "{{assistantName}}統一效果口徑，找出明顯的偏差。",
-            "title": "對比投放效率"
-          }
-        },
-        "title": "對比Google Ads和Meta Ads"
-      },
-      "daily-company-brief-slack": {
-        "description": "整合增長、銷售管道，以及可選的財務資訊。",
-        "scenario": "公司的整體情況散落在多個系統裡。{{assistantName}}會整合Google Analytics和HubSpot，在有資料時補充QuickBooks，並彙總重要的進展、風險和待決策事項。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取增長、銷售管道和可獲取的財務資料。",
-            "title": "彙總公司動態"
-          },
-          "three": {
-            "description": "{{assistantName}}在自動化會話中總結優先事項。",
-            "title": "輸出每日動態"
-          },
-          "two": {
-            "description": "{{assistantName}}把各業務線的變化串聯起來。",
-            "title": "識別進展與風險"
-          }
-        },
-        "title": "生成公司每日動態"
-      },
-      "daily-industry-news-slack": {
-        "description": "監控QuickBooks中的現金狀況和應收風險。",
-        "scenario": "現金流問題越早處理成本越低。{{assistantName}}會檢查QuickBooks的現金流和逾期發票，說明重大風險，並可起草跟進郵件供你確認。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取現金流、應收賬款和逾期發票。",
-            "title": "檢查財務風險"
-          },
-          "three": {
-            "description": "{{assistantName}}說明風險，並可準備Gmail跟進郵件。",
-            "title": "輸出預警"
-          },
-          "two": {
-            "description": "{{assistantName}}標記賬齡過長的款項和現金壓力訊號。",
-            "title": "識別重大變化"
-          }
-        },
-        "title": "現金流和逾期發票預警"
-      },
-      "draft-github-release-notes-notion": {
-        "description": "把已合併的Pull Request整理成面向使用者的清晰更新說明。",
-        "scenario": "更新說明不該靠人工翻譯提交記錄。{{assistantName}}會收集上次發布以來合併的Pull Request，在Notion裡整理成簡明的更新日誌。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}收集上次發布以來的Pull Request。",
-            "title": "彙總已合併的改動"
-          },
-          "three": {
-            "description": "{{assistantName}}在Notion裡撰寫更新說明草稿。",
-            "title": "儲存更新說明"
-          },
-          "two": {
-            "description": "{{assistantName}}對改動歸類，並說明對使用者的影響。",
-            "title": "轉述改動內容"
-          }
-        },
-        "title": "在Notion裡起草GitHub更新說明"
-      },
-      "draft-newsletter-mailchimp": {
-        "description": "把Analytics和Search Console合成一份自然流量報告。",
-        "scenario": "自然增長的資料分散在流量和搜尋兩邊。{{assistantName}}會把Google Analytics和Search Console結合起來，說明變化和機會，並可把後續工作記錄到Notion。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取站點行為和搜尋表現資料。",
-            "title": "收集自然流量資料"
-          },
-          "three": {
-            "description": "{{assistantName}}給出優先事項，也可以儲存到Notion。",
-            "title": "生成簡報"
-          },
-          "two": {
-            "description": "{{assistantName}}把落地頁、搜尋詞、轉化和趨勢關聯起來。",
-            "title": "分析增長情況"
-          }
-        },
-        "title": "生成自然增長簡報"
-      },
-      "draft-replies-notion-faq": {
-        "description": "基於已稽核的Notion常見問題起草客服郵件。",
-        "scenario": "大多數客服問題其實早就有了標準答案。{{assistantName}}會讀取郵件，找到對應的Notion說明，並起草一封有依據的回覆供你確認。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取Gmail對話和客戶背景。",
-            "title": "收到客服問題"
-          },
-          "three": {
-            "description": "{{assistantName}}準備好回覆，絕不自動傳送。",
-            "title": "起草回覆"
-          },
-          "two": {
-            "description": "{{assistantName}}在Notion裡找到對應的已稽核說明。",
-            "title": "查閱常見問題"
-          }
-        },
-        "title": "按常見問題起草回覆"
-      },
-      "file-gmail-invoices-drive": {
-        "description": "歸檔發票檔案，並記錄對應的賬目。",
-        "scenario": "檔案和賬目對不上時，發票就會帶來額外的整理工作。{{assistantName}}會把Gmail附件歸檔到Drive，在QuickBooks裡記錄帳單或支出，還能更新對賬表。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取選定的Gmail郵件和附件。",
-            "title": "識別發票郵件"
-          },
-          "three": {
-            "description": "{{assistantName}}記錄賬目，也可以更新Google Sheets。",
-            "title": "更新QuickBooks"
-          },
-          "two": {
-            "description": "{{assistantName}}把檔案儲存到Drive，並提取記賬所需資訊。",
-            "title": "留存檔案和明細"
-          }
-        },
-        "title": "把Gmail發票歸檔到Drive和QuickBooks"
-      },
-      "file-sentry-crashes-github": {
-        "description": "按影響排序新增崩潰，並提交最值得處理的問題。",
-        "scenario": "影響很大的崩潰常常淹沒在錯誤列表裡。{{assistantName}}會檢查Sentry裡的新增故障，按嚴重程度和受影響使用者數排序，並把需要研發處理的問題提交出來。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}從Sentry收集未解決的錯誤和影響範圍資訊。",
-            "title": "{{assistantName}}讀取新增崩潰"
-          },
-          "three": {
-            "description": "{{assistantName}}建立可執行的issue，也可以在Linear中關聯。",
-            "title": "提交GitHub issue"
-          },
-          "two": {
-            "description": "{{assistantName}}把緊急的迴歸問題和影響較小的噪音區分開。",
-            "title": "按影響排序"
-          }
-        },
-        "title": "把Sentry崩潰提交為GitHub issue"
-      },
-      "fixes-to-notion-help-docs": {
-        "description": "把已確認的GitHub修復整理成可複用的Notion指南。",
-        "scenario": "修復沒被記錄下來，同樣的問題就會被反覆問起。{{assistantName}}會讀取已解決的GitHub issue，把確認的解決方案寫成清晰的Notion幫助文章。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取GitHub issue、修復方式和使用者影響。",
-            "title": "選定已修復的問題"
-          },
-          "three": {
-            "description": "{{assistantName}}在Notion裡撰寫可複用的草稿。",
-            "title": "儲存幫助文章"
-          },
-          "two": {
-            "description": "{{assistantName}}把解決方案整理成清晰的排查步驟。",
-            "title": "起草指南"
-          }
-        },
-        "title": "把已修復的問題寫成幫助文件"
-      },
-      "flag-figma-designs-no-task": {
-        "description": "把已確認的產品方案拆成Linear上的具體任務。",
-        "scenario": "方案透過之後，還要變成能執行的工作。{{assistantName}}會讀取Notion裡的方案，在Linear中建立專案，並梳理里程碑、任務、依賴和驗收標準。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取Notion裡已確認的產品方案。",
-            "title": "審閱產品方案"
-          },
-          "three": {
-            "description": "{{assistantName}}建立專案，也可以關聯GitHub上的相關資訊。",
-            "title": "建立Linear專案"
-          },
-          "two": {
-            "description": "{{assistantName}}梳理里程碑、任務、依賴和驗收標準。",
-            "title": "拆解工作內容"
-          }
-        },
-        "title": "把Notion方案變成Linear專案"
-      },
-      "flagged-gmail-todoist-tasks": {
-        "description": "把帶指定標籤的郵件變成可執行的任務。",
-        "scenario": "重要郵件離開收件箱、變成明確任務後更容易完成。{{assistantName}}會把帶標籤的Gmail郵件轉成Todoist任務，並帶上截止日期和來源資訊。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}檢測到指定標籤，並讀取郵件內容。",
-            "title": "郵件被標記"
-          },
-          "three": {
-            "description": "{{assistantName}}建立任務，並附上來源連結。",
-            "title": "建立Todoist任務"
-          },
-          "two": {
-            "description": "{{assistantName}}識別任務、截止日期和相關背景。",
-            "title": "提取待辦事項"
-          }
-        },
-        "title": "把標記的Gmail郵件轉成Todoist任務"
-      },
-      "github-idea-to-notion-spec": {
-        "description": "把帶標籤的GitHub想法展開成結構化的產品方案。",
-        "scenario": "好想法常常止步於一段簡短的問題描述。{{assistantName}}會把帶標籤的GitHub想法整理成清晰的Notion方案，包含問題、依據、範圍、指標、風險和待確認事項。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取帶標籤的GitHub issue和相關背景。",
-            "title": "選定一個想法"
-          },
-          "three": {
-            "description": "{{assistantName}}在Notion裡撰寫結構化草稿。",
-            "title": "儲存產品方案"
-          },
-          "two": {
-            "description": "{{assistantName}}展開問題、範圍、成功標準和風險。",
-            "title": "完善產品方案"
-          }
-        },
-        "title": "把GitHub想法變成Notion方案"
-      },
-      "gmail-followups-auto": {
-        "description": "結合上下文準備銷售跟進郵件，交給你確認。",
-        "scenario": "好的跟進既要看客戶記錄，也要看聊天內容。{{assistantName}}會結合HubSpot的商機資訊和對應的Gmail會話，起草一封簡潔的回覆，但不會傳送。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取HubSpot記錄和近期動態。",
-            "title": "檢視商機情況"
-          },
-          "three": {
-            "description": "{{assistantName}}準備Gmail草稿，交給你確認。",
-            "title": "起草跟進郵件"
-          },
-          "two": {
-            "description": "{{assistantName}}梳理待解答的問題、承諾事項和時間節點。",
-            "title": "檢視郵件會話"
-          }
-        },
-        "title": "根據HubSpot起草Gmail跟進郵件"
-      },
-      "gmail-reconnect-reminders": {
-        "description": "找出久未聯絡的重要聯絡人，並起草問候郵件。",
-        "scenario": "重要的關係往往在無人留意時慢慢變淡。{{assistantName}}會梳理Gmail，在有資料時結合日曆記錄，起草用心的重新聯絡郵件。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}檢視近期的Gmail往來和聯絡人背景。",
-            "title": "回顧往來記錄"
-          },
-          "three": {
-            "description": "{{assistantName}}起草個性化郵件，交給你確認。",
-            "title": "準備聯絡草稿"
-          },
-          "two": {
-            "description": "{{assistantName}}找出近期沒有往來的重要聯絡人。",
-            "title": "久未聯絡的關係排序"
-          }
-        },
-        "title": "找出值得重新聯絡的人"
-      },
-      "highlight-key-emails-gmail": {
-        "description": "找出最需要管理者親自回覆的Gmail郵件。",
-        "scenario": "管理者的收件箱裡，重要決策和日常事務混在一起。{{assistantName}}會挑出真正重要的郵件，說明原因，並起草回覆但不傳送。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取近期的Gmail郵件和可獲取的日曆資訊。",
-            "title": "梳理收件箱"
-          },
-          "three": {
-            "description": "{{assistantName}}逐條總結，並起草回覆供你確認。",
-            "title": "準備回覆內容"
-          },
-          "two": {
-            "description": "{{assistantName}}優先處理決策、承諾和敏感請求。",
-            "title": "重要郵件排序"
-          }
-        },
-        "title": "標出重點郵件"
-      },
-      "investor-update-google-docs": {
-        "description": "把財務和增長資料整合成一份Google Docs草稿。",
-        "scenario": "投資人更新之所以費時間，是因為敘事和數字不在一處。{{assistantName}}會整合QuickBooks和Google Analytics，在有資料時補充HubSpot，並在Google Docs裡起草這份更新。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取財務、增長和可獲取的銷售管道資料。",
-            "title": "彙總當前指標"
-          },
-          "three": {
-            "description": "{{assistantName}}在Google Docs裡撰寫投資人更新。",
-            "title": "起草更新內容"
-          },
-          "two": {
-            "description": "{{assistantName}}把進展、經驗、風險和下一步重點串聯起來。",
-            "title": "梳理敘事脈絡"
-          }
-        },
-        "title": "起草投資人更新"
-      },
-      "log-gong-calls-hubspot": {
-        "description": "把會議記錄轉成CRM裡的決策和後續行動。",
-        "scenario": "筆記留在CRM之外，重要的通話細節就會丟失。{{assistantName}}會把Google Meet的會議記錄整理成HubSpot裡的決策、異議、承諾和待辦事項。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取最新的會議記錄和會議背景。",
-            "title": "收到Meet會議記錄"
-          },
-          "three": {
-            "description": "{{assistantName}}記錄會議紀要，並可起草Gmail跟進郵件。",
-            "title": "更新HubSpot"
-          },
-          "two": {
-            "description": "{{assistantName}}梳理決策、異議、承諾和負責人。",
-            "title": "提取銷售訊號"
-          }
-        },
-        "title": "把Google Meet的待辦記錄到HubSpot"
-      },
-      "meeting-notes-asana-tasks": {
-        "description": "根據會議記錄建立帶負責人的專案任務。",
-        "scenario": "會議上的行動項只留在筆記裡就會不了了之。{{assistantName}}會讀取Google Meet的會議記錄，梳理承諾事項和負責人，並建立清晰的Asana任務。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取會議記錄和日曆背景資訊。",
-            "title": "收到Meet會議記錄"
-          },
-          "three": {
-            "description": "{{assistantName}}建立任務、指派負責人，並附上來源資訊。",
-            "title": "建立Asana任務"
-          },
-          "two": {
-            "description": "{{assistantName}}梳理任務、負責人、截止日期和依賴關係。",
-            "title": "提取行動項"
-          }
-        },
-        "title": "把Google Meet筆記轉成Asana任務"
-      },
-      "meeting-recaps-slack": {
-        "description": "把會議記錄整理成簡明紀要和行動項。",
-        "scenario": "會議記錄沒人處理，決策就會被遺忘。{{assistantName}}會讀取Google Meet的會議記錄，把關鍵決策、行動項和負責人寫進Google Docs。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取會議記錄和可獲取的日曆資訊。",
-            "title": "收到Meet會議記錄"
-          },
-          "three": {
-            "description": "{{assistantName}}在Google Docs裡撰寫結構化紀要。",
-            "title": "儲存會議紀要"
-          },
-          "two": {
-            "description": "{{assistantName}}梳理結論、負責人、截止日期和待確認事項。",
-            "title": "提取決策和行動項"
-          }
-        },
-        "title": "把Google Meet紀要儲存到Google Docs"
-      },
-      "morning-brief-slack": {
-        "description": "整合重要郵件、當天日程，以及可選的Notion資訊。",
-        "scenario": "一份好用的晨間計劃，既要看收件箱也要看日曆。{{assistantName}}會梳理Gmail和Google Calendar，在有資料時補充Notion資訊，並給出一份簡短的每日簡報。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取重要郵件和當天日程。",
-            "title": "彙總當天資訊"
-          },
-          "three": {
-            "description": "{{assistantName}}在自動化會話中給出重點計劃。",
-            "title": "輸出簡報"
-          },
-          "two": {
-            "description": "{{assistantName}}梳理承諾事項、需要準備的內容和後續跟進。",
-            "title": "串聯優先事項"
-          }
-        },
-        "title": "生成晨間簡報"
-      },
-      "new-gmail-contacts-hubspot": {
-        "description": "根據相關郵件往來新建或補全CRM聯絡人。",
-        "scenario": "新建立的關係常常被困在收件箱裡。{{assistantName}}會找出值得跟進的Gmail聯絡人，在HubSpot中查重，然後新建或補全聯絡人記錄。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}梳理相關的Gmail會話。",
-            "title": "識別新聯絡人"
-          },
-          "three": {
-            "description": "{{assistantName}}新建或補全HubSpot記錄。",
-            "title": "更新聯絡人"
-          },
-          "two": {
-            "description": "{{assistantName}}查詢已有記錄和缺失資訊。",
-            "title": "在HubSpot中查重"
-          }
-        },
-        "title": "把新的Gmail聯絡人加入HubSpot"
-      },
-      "onboard-new-hires-asana": {
-        "description": "把透過稽核的入職表單變成Asana上的入職計劃。",
-        "scenario": "每份透過稽核的表單都走同一套流程，新人入職才更可靠。{{assistantName}}會讀取Google Forms的提交內容，建立Asana任務，還能把檔案歸檔到Drive。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取新人入職表單和必填資訊。",
-            "title": "表單透過稽核"
-          },
-          "three": {
-            "description": "{{assistantName}}建立入職計劃，也可以把檔案歸檔到Drive。",
-            "title": "更新Asana"
-          },
-          "two": {
-            "description": "{{assistantName}}根據崗位和入職日期安排任務和負責人。",
-            "title": "生成入職計劃"
-          }
-        },
-        "title": "根據Google Forms辦理新人入職"
-      },
-      "post-daily-metrics-slack": {
-        "description": "總結流量、獲客、轉化和值得關注的變化。",
-        "scenario": "看每天的網站變化，不該來回開啟好幾份報表。{{assistantName}}會讀取Google Analytics，在有資料時補充Search Console，並在自動化會話中給出一份簡明簡報。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取流量、獲客和轉化指標。",
-            "title": "採集網站資料"
-          },
-          "three": {
-            "description": "{{assistantName}}總結髮生了哪些變化、哪些值得關注。",
-            "title": "返回簡報"
-          },
-          "two": {
-            "description": "{{assistantName}}對比表現，標出有意義的變化。",
-            "title": "識別變化"
-          }
-        },
-        "title": "生成每日網站資料簡報"
-      },
-      "post-github-updates-slack": {
-        "description": "檢查雲端訪問權限、服務帳號和對外暴露的服務。",
-        "scenario": "專案越做越大，雲端權限也會慢慢失控。{{assistantName}}檢查Google Cloud IAM、服務帳號、金鑰、已啟用的服務和公開暴露情況，然後給出一份只讀的風險報告和明確的整改建議。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}盤點IAM綁定、帳號、金鑰和服務。",
-            "title": "檢查雲端訪問權限"
-          },
-          "three": {
-            "description": "{{assistantName}}給出修復建議，也可按需起草經確認的GitHub issue。",
-            "title": "準備整改方案"
-          },
-          "two": {
-            "description": "{{assistantName}}標出權限過大、過期憑證和公開暴露的風險。",
-            "title": "評估風險"
-          }
-        },
-        "title": "審計Google Cloud IAM和服務"
-      },
-      "post-release-notes-slack": {
-        "description": "把最近在GitHub上完成的工作整理成經確認的更新日誌。",
-        "scenario": "已經上線的工作很容易淹沒在pull request裡。{{assistantName}}彙總最近的GitHub變更，起草易讀的版本說明，並把確認後的版本發布到Notion。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}收集最近合併的GitHub變更。",
-            "title": "彙總已上線的工作"
-          },
-          "three": {
-            "description": "{{assistantName}}把最終的版本說明儲存到Notion。",
-            "title": "發布確認後的草稿"
-          },
-          "two": {
-            "description": "{{assistantName}}對變更分組，並說明對使用者的影響。",
-            "title": "起草版本說明"
-          }
-        },
-        "title": "在Notion發布版本說明"
-      },
-      "prep-google-calendar-meetings": {
-        "description": "為即將到來的外部會議準備一份重點簡報。",
-        "scenario": "會前準備不該等到開會前五分鐘才開始。{{assistantName}}檢視日曆中的會議安排，並在有資料時補充聯絡人和CRM背景。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取所選時間段的Google Calendar。",
-            "title": "找出即將召開的會議"
-          },
-          "three": {
-            "description": "{{assistantName}}給出會議目標、背景、風險和建議提問。",
-            "title": "準備會議簡報"
-          },
-          "two": {
-            "description": "{{assistantName}}在已連線時檢視HubSpot。",
-            "title": "收集參會人背景"
-          }
-        },
-        "title": "為Google Calendar會議做準備"
-      },
-      "publish-scheduled-posts-buffer": {
-        "description": "對比自己和競品的網站，排出自然搜尋機會。",
-        "scenario": "從真實的搜尋缺口出發，內容規劃才更有效。{{assistantName}}用內建的Firecrawl和DataForSEO把你的網站和指定競品做對比，並按搜尋意圖和價值給缺失的主題排序。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}抓取你的網站和所選競品。",
-            "title": "對比網站"
-          },
-          "three": {
-            "description": "{{assistantName}}給出按優先順序排序的內容機會清單。",
-            "title": "排定機會優先順序"
-          },
-          "two": {
-            "description": "{{assistantName}}找出缺失的關鍵詞、主題和意圖覆蓋。",
-            "title": "識別搜尋缺口"
-          }
-        },
-        "title": "找出關鍵詞和內容缺口"
-      },
-      "report-ai-model-costs-slack": {
-        "description": "解讀流量或安全事件，並給出下一步處理建議。",
-        "scenario": "Cloudflare出狀況時，先要背景，而不是一堆告警。{{assistantName}}檢視流量、安全事件和服務狀態，說明可能的影響，並在自動化會話中給出下一步行動。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}檢視服務狀態、流量變化和安全事件。",
-            "title": "檢查Cloudflare"
-          },
-          "three": {
-            "description": "{{assistantName}}給出處理建議，並可起草GitHub issue。",
-            "title": "給出下一步行動"
-          },
-          "two": {
-            "description": "{{assistantName}}區分真實故障和正常波動。",
-            "title": "說明影響"
-          }
-        },
-        "title": "Cloudflare故障預警"
-      },
-      "research-calendar-meetings": {
-        "description": "結合日曆和郵件背景，生成簡明的會前簡報。",
-        "scenario": "參會人和過往溝通記錄都連上之後，會前準備會快很多。{{assistantName}}檢視即將到來的日曆日程，並在有資料時補充Gmail背景。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取所選時間段的Google Calendar。",
-            "title": "找出即將召開的會議"
-          },
-          "three": {
-            "description": "{{assistantName}}給出會議目標、背景和建議提問。",
-            "title": "準備會議簡報"
-          },
-          "two": {
-            "description": "{{assistantName}}檢視相關的Gmail郵件往來。",
-            "title": "收集參會人背景"
-          }
-        },
-        "title": "為即將到來的會議做準備"
-      },
-      "research-new-signups-apollo": {
-        "description": "在X上尋找並篩選創作者線索。",
-        "scenario": "名單一旦過期，外拓就會停滯。{{assistantName}}在X上找到符合目標畫像的創作者和潛在客戶，用內建的人物檢索和Firecrawl逐一篩選，並給出排好序的觸達名單。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}在X上搜尋符合目標畫像的帳號。",
-            "title": "在X上找到候選人"
-          },
-          "three": {
-            "description": "{{assistantName}}給匹配度打分、起草開場白，並可把線索儲存到HubSpot。",
-            "title": "為觸達名單排序"
-          },
-          "two": {
-            "description": "{{assistantName}}用內建調研核實職位、公司和影響力。",
-            "title": "逐條篩選線索"
-          }
-        },
-        "title": "在X上尋找創作者線索"
-      },
-      "run-daily-query-sheets": {
-        "description": "把搜尋曝光和關鍵詞變化寫入Google Sheets。",
-        "scenario": "自然搜尋表現有了連續的歷史記錄，才好據此行動。{{assistantName}}拉取Search Console指標，在有資料時補充Analytics背景，並重新整理報表。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取點選、曝光、點選率、排名和搜尋詞。",
-            "title": "採集搜尋資料"
-          },
-          "three": {
-            "description": "{{assistantName}}把整理後的結果寫入Google Sheets。",
-            "title": "重新整理表格"
-          },
-          "two": {
-            "description": "{{assistantName}}識別上升、下滑和新出現的搜尋需求。",
-            "title": "分析變化"
-          }
-        },
-        "title": "在Sheets中記錄自然搜尋表現"
-      },
-      "send-bugs-github-slack": {
-        "description": "把可復現的缺陷反饋變成結構化的研發任務。",
-        "scenario": "證據留在收件箱裡，缺陷反饋就沒了價值。{{assistantName}}找出可復現的支援問題，提取影響範圍和復現步驟，並提交結構化的GitHub issue。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}在支援郵件中查詢可復現的產品問題。",
-            "title": "識別缺陷反饋"
-          },
-          "three": {
-            "description": "{{assistantName}}建立issue，並可在Linear中關聯。",
-            "title": "提交GitHub issue"
-          },
-          "two": {
-            "description": "{{assistantName}}提取影響、復現步驟、預期行為和背景資訊。",
-            "title": "整理證據"
-          }
-        },
-        "title": "把支援郵件變成GitHub issue"
-      },
-      "sort-gmail-draft-replies": {
-        "description": "對新郵件分類，並準備好待人工稽核的回覆。",
-        "scenario": "收件箱一忙，緊急的請求和隨手能回的郵件都會被埋掉。{{assistantName}}把新的Gmail郵件按緊急程度和待辦事項分組，並起草回覆但不傳送。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取指定的Gmail收件箱或標籤。",
-            "title": "檢視新郵件"
-          },
-          "three": {
-            "description": "{{assistantName}}準備好待人工稽核的回覆。",
-            "title": "起草回覆"
-          },
-          "two": {
-            "description": "{{assistantName}}按緊急程度、訴求和下一步行動給郵件分組。",
-            "title": "郵件分類"
-          }
-        },
-        "title": "整理Gmail並起草回覆"
-      },
-      "sort-route-zendesk-tickets": {
-        "description": "給支援郵件分類，並建立可執行的Linear issue。",
-        "scenario": "支援郵件需要統一的優先順序和明確的負責人。{{assistantName}}閱讀新的Gmail會話，判斷問題型別和緊急程度，併為需要處理的事項建立Linear任務。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}檢視新的會話和已有的背景資訊。",
-            "title": "讀取支援郵件"
-          },
-          "three": {
-            "description": "{{assistantName}}建立可執行的issue，並附上相關證據。",
-            "title": "建立Linear任務"
-          },
-          "two": {
-            "description": "{{assistantName}}劃分緊急程度、主題和負責團隊。",
-            "title": "確定優先順序和負責人"
-          }
-        },
-        "title": "把支援郵件分派到Linear"
-      },
-      "spot-churn-risk-stripe-zendesk": {
-        "description": "彙總支援工單量、風險、共性問題和未解決事項。",
-        "scenario": "看得見重點變化，支援佇列才好管理。{{assistantName}}檢視Gmail會話，標出緊急或反覆出現的問題，並關聯相關的Linear或GitHub任務。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取新的和未解決的Gmail會話。",
-            "title": "彙總支援動態"
-          },
-          "three": {
-            "description": "{{assistantName}}在自動化會話中總結優先事項。",
-            "title": "返回摘要"
-          },
-          "two": {
-            "description": "{{assistantName}}歸類反覆出現的問題，並標記需要緊急跟進的事項。",
-            "title": "識別風險和共性問題"
-          }
-        },
-        "title": "生成每日支援摘要"
-      },
-      "summarize-gmail-newsletters": {
-        "description": "把指定的郵件通訊整理成一份實用的定期摘要。",
-        "scenario": "每封新刊都在搶收件箱的注意力，郵件通訊的價值反而沒了。{{assistantName}}把指定的Gmail郵件通訊歸納成主題、有用的連結和推薦閱讀。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取指定發件人或標籤下的郵件。",
-            "title": "收集郵件通訊"
-          },
-          "three": {
-            "description": "{{assistantName}}給出摘要，並可儲存到Notion。",
-            "title": "生成摘要"
-          },
-          "two": {
-            "description": "{{assistantName}}歸納主題，挑出最值得看的連結。",
-            "title": "提煉有用內容"
-          }
-        },
-        "title": "歸納Gmail郵件通訊"
-      },
-      "summarize-user-feedback-notion": {
-        "description": "把新的表單反饋歸類成排好序的產品洞察。",
-        "scenario": "看到共性，反饋才有用。{{assistantName}}檢視Google Forms的回覆，歸類反覆出現的痛點和訴求，排出優先順序，並把總結寫入Notion。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取最新的Google Forms回覆。",
-            "title": "收集反饋"
-          },
-          "three": {
-            "description": "{{assistantName}}把按優先順序排列的總結寫入Notion。",
-            "title": "儲存洞察"
-          },
-          "two": {
-            "description": "{{assistantName}}歸類痛點、訴求和情緒傾向。",
-            "title": "為主題排序"
-          }
-        },
-        "title": "在Notion中總結Google Forms反饋"
-      },
-      "summarize-zendesk-tickets-daily": {
-        "description": "用內建的數字人能力製作經確認的支援影片。",
-        "scenario": "有些支援答案做成一段短影片更好懂。{{assistantName}}把確認過的FAQ內容寫成指令碼和分鏡，經你稽核後再用內建的數字人影片能力生成。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}確定要用的答案和目標受眾。",
-            "title": "選定FAQ內容"
-          },
-          "three": {
-            "description": "{{assistantName}}只在你確認草稿後才開始生成。",
-            "title": "生成數字人影片"
-          },
-          "two": {
-            "description": "{{assistantName}}制定簡潔、準確的支援影片方案。",
-            "title": "起草指令碼和分鏡"
-          }
-        },
-        "title": "把FAQ做成數字人支援影片"
-      },
-      "sync-asana-projects-notion": {
-        "description": "讓Notion裡的專案概覽與Asana保持同步。",
-        "scenario": "任務狀態在別處變了，專案總結就會失真。{{assistantName}}讀取指定的Asana專案，並同步更新對應的Notion概覽。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}檢視狀態、負責人、截止日期和阻塞項。",
-            "title": "讀取Asana專案"
-          },
-          "three": {
-            "description": "{{assistantName}}更新概覽並標出變化。",
-            "title": "同步Notion"
-          },
-          "two": {
-            "description": "{{assistantName}}把當前專案狀態和上一版概覽做對比。",
-            "title": "識別關鍵變化"
-          }
-        },
-        "title": "把Asana專案同步到Notion"
-      },
-      "sync-linear-roadmap-notion": {
-        "description": "在Notion裡維護一份「現在、接下來、以後」的路線圖。",
-        "scenario": "交付狀態在別處變了，路線圖就會失真。{{assistantName}}讀取指定的Linear專案和issue，對映到「現在、接下來、以後」，並保持Notion路線圖最新。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}檢視所選的專案、issue和里程碑。",
-            "title": "讀取Linear狀態"
-          },
-          "three": {
-            "description": "{{assistantName}}重新整理路線圖並標出關鍵變化。",
-            "title": "更新Notion"
-          },
-          "two": {
-            "description": "{{assistantName}}把交付狀態轉換成「現在、接下來、以後」。",
-            "title": "對映路線圖階段"
-          }
-        },
-        "title": "把Linear路線圖同步到Notion"
-      },
-      "track-feature-usage-posthog": {
-        "description": "找出產品使用情況每週變化最大的地方。",
-        "scenario": "功能使用情況的變化，往往在你看儀表板之前就發生了。{{assistantName}}對比最新的Google Analytics使用資料，找出有意義的變化，並可把結論記錄到Notion。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}採集所選功能和受眾的資料。",
-            "title": "讀取使用資料"
-          },
-          "three": {
-            "description": "{{assistantName}}說明哪些指標有變化、下一步該查什麼。",
-            "title": "返回洞察"
-          },
-          "two": {
-            "description": "{{assistantName}}找出漲幅、跌幅最大的地方和人群差異。",
-            "title": "對比變化"
-          }
-        },
-        "title": "用Google Analytics跟蹤功能使用情況"
-      },
-      "track-keyword-ranks-ahrefs": {
-        "description": "抓取網站，給出按優先順序排序的技術SEO問題清單。",
-        "scenario": "技術SEO問題分散在成百上千個頁面裡。{{assistantName}}用內建的Firecrawl和DataForSEO檢查可抓取性、可收錄性、站內連結和實時搜尋表現，不需要額外的連接器。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}用Firecrawl檢查頁面和站內連結。",
-            "title": "抓取網站"
-          },
-          "three": {
-            "description": "{{assistantName}}給出影響最大的修復建議和支撐證據。",
-            "title": "排定問題優先順序"
-          },
-          "two": {
-            "description": "{{assistantName}}用DataForSEO驗證搜尋曝光和收錄情況。",
-            "title": "核對搜尋資料"
-          }
-        },
-        "title": "審計網站的技術SEO"
-      },
-      "track-signup-sources-sheets": {
-        "description": "查詢Google Cloud資料，產出可重新整理的分析。",
-        "scenario": "重要的業務資料常常躺在BigQuery裡，沒有一個能定期複用的檢視。{{assistantName}}執行確認過的查詢，找出趨勢和異常，並把結果表和總結寫入Google Sheets。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}確認BigQuery的資料範圍和分析問題。",
-            "title": "選定資料集和查詢"
-          },
-          "three": {
-            "description": "{{assistantName}}產出可重新整理的結果表和可直接用於決策的總結。",
-            "title": "結果寫入Sheets"
-          },
-          "two": {
-            "description": "{{assistantName}}執行查詢，檢查趨勢、分組和異常。",
-            "title": "分析雲端資料"
-          }
-        },
-        "title": "在Sheets中分析BigQuery資料"
-      },
-      "watch-brand-mentions": {
-        "description": "把確認過的影片改寫成適合各平臺的貼文和長推。",
-        "scenario": "一條好影片可以用在不止一個渠道。{{assistantName}}分析指定的YouTube影片，起草X貼文和長推，並可把確認後的方案儲存到Notion。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}讀取YouTube影片、字幕文稿和相關背景。",
-            "title": "選定影片"
-          },
-          "three": {
-            "description": "{{assistantName}}儲存方案，未經確認絕不發布。",
-            "title": "內容待你確認"
-          },
-          "two": {
-            "description": "{{assistantName}}寫出簡潔的X貼文和多個長推方案。",
-            "title": "起草社交文案"
-          }
-        },
-        "title": "把YouTube影片改成X內容"
-      },
-      "watch-sentry-after-release": {
-        "description": "把發布後的穩定性和上一版基線做對比。",
-        "scenario": "版本看著一切正常，問題卻在悄悄累積。{{assistantName}}把最新的Sentry資料和上一版基線做對比，並說明該繼續觀察、修復上線還是回滾。",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}}找到最新版本和對應的對比時間段。",
-            "title": "確定版本"
-          },
-          "three": {
-            "description": "{{assistantName}}總結影響，並給出最穩妥的下一步。",
-            "title": "給出處理建議"
-          },
-          "two": {
-            "description": "{{assistantName}}對照基線檢查無崩潰率和新出現的迴歸問題。",
-            "title": "對比穩定性"
-          }
-        },
-        "title": "發布後盯住Sentry"
+        "title": "從一項有價值的任務開始"
       }
     }
   },
   "queue": {
     "concurrentRuns_one": "{{count}}個併發執行",
     "concurrentRuns_other": "{{count}}個併發執行",
-    "description": "檢視你在佇列中的位置，升級即可免去等待。",
+    "description": "檢視正在使用的併發執行數，升級即可免去等待。",
     "perMonth": "/月",
     "pricePerMonth": "{{price}}/月",
     "purchase": {
@@ -5915,7 +4544,6 @@
     "tiers": {
       "custom": "自定義",
       "free": "免費",
-      "limitedFree": "限量免費",
       "pro": "Pro",
       "team": "Team"
     },
@@ -5925,7 +4553,6 @@
       "features": {
         "creditsPerMonth": "每月{{credits}}積分",
         "emailSupport": "郵件支援",
-        "ownKeys": "使用自己的大模型金鑰",
         "payAsYouGo": "超出後按量付費",
         "prioritySupport": "優先支援",
         "unlimitedAgents": "智能體總數不限"
@@ -5938,17 +4565,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "充值積分",
-      "openModelProviders": "開啟模型服務商",
-      "reconnectClaude": "重新連線Claude Code",
-      "shareWithAdmin": "分享給管理員"
+      "openModelSettings": "開啟模型設定",
+      "reconnectClaude": "重新連線Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code無法用當前配置的Anthropic API金鑰完成驗證。請在「模型服務商」中更新或更換API金鑰，然後重試。",
-    "anthropicKeyMember": "Claude Code無法用當前配置的Anthropic API金鑰完成驗證。請聯絡工作區管理員更新或更換API金鑰。",
     "askAdmin": "請聯絡工作區管理員充值積分或升級工作區套餐。",
-    "claudeReconnect": "Claude Code訂閱驗證失敗。請在「模型服務商」中重新連線Claude Code，然後重試。",
-    "claudeTerms": "Claude Code需要你接受更新後的消費者條款和隱私政策。請用「模型服務商」中已連線的Claude帳號登入https://claude.ai，接受更新後的條款和政策，然後重試。",
+    "claudeReconnect": "Claude Code 訂閱驗證失敗。請在「設定 > 模型」中重新連線 Claude Code，然後重試。",
+    "claudeTerms": "Claude Code 需要你接受更新後的消費者條款和隱私政策。請用「設定 > 模型」中已連線的 Claude 帳號登入 https://claude.ai，接受更新後的條款和政策，然後重試。",
     "codexOverloaded": "所選模型已滿負荷，請換一個模型試試。",
-    "codexReconnect": "ChatGPT會話需要重新連線。請在「模型服務商」中重新連線ChatGPT (Codex)，然後重試。",
+    "codexReconnect": "ChatGPT 會話需要重新連線。請在「設定 > 模型」中重新連線 ChatGPT (Codex)，然後重試。",
     "contentPolicyRejected": "模型服務商依據內容安全政策拒絕了這次請求。用相同內容重試仍會失敗。可以換一種說法、開啟新對話，或改用其他模型。",
     "executionTimeout": "本次執行已達到執行時長上限。",
     "failed": "執行失敗",
@@ -5956,9 +4580,9 @@
     "modelTemporarilyUnavailable": "模型暫時不可用",
     "modelUnavailable": "當前模型不可用。",
     "overloaded": "{{model}}負載過高。請稍等幾分鐘後重試，或改用其他模型。",
-    "providerBalance": "你連線的模型服務商帳戶餘額不足。",
+    "providerBalance": "你連結的訂閱帳號餘額不足。",
     "transient": "出了點問題，請稍後再試。",
-    "vm0Credits": "積分不足。請充值積分，或配置自己的API金鑰後繼續。"
+    "vm0Credits": "積分不足。請充值積分，或連接個人 Codex 或 Claude 訂閱後繼續。"
   },
   "serviceStatus": {
     "dismiss": "忽略服務更新",
@@ -6034,7 +4658,7 @@
           "title": "發票"
         },
         "model": {
-          "description": "選擇工作區和執行使用哪些AI模型。",
+          "autoDescription": "Okou 為每項任務選擇模型。",
           "title": "模型"
         },
         "people": {
@@ -6124,110 +4748,61 @@
     },
     "models": {
       "actions": {
-        "addModel": "新增模型",
-        "deleteModel": "刪除模型",
-        "editModel": "編輯模型",
-        "resetUsage": "重置用量",
-        "upgradePro": "升級Pro後可用",
-        "upgradeToPro": "升級到Pro"
+        "resetUsage": "重置用量"
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "授權頁面打不開。請手動開啟連結，再把授權碼貼上到這裡。",
           "authorizationCode": "授權碼",
           "codePlaceholder": "貼上Claude提供的授權碼",
-          "codeRequired": "請貼上Claude Code授權碼後繼續。",
-          "connectedToast": "Claude Code已連線",
-          "connectTitle": "連線Claude Code",
-          "error": "Claude Code連線失敗。請重新開始並重試。",
-          "expired": "Claude Code連線會話已過期。請重新開始並重試。",
+          "codeRequired": "請貼上Claude授權碼後繼續。",
+          "connectedToast": "Claude已連線",
+          "connectTitle": "連線Claude",
+          "error": "Claude連線失敗。請重新開始並重試。",
+          "expired": "Claude連線會話已過期。請重新開始並重試。",
           "instructions": "先點選「開啟Claude授權頁面」。然後在Claude中為{{brandName}}授權，並複製授權後顯示的授權碼。最後把授權碼貼上到這裡，點選「連線」。",
           "openApproval": "開啟Claude授權頁面",
           "preparing": "準備中…",
-          "reconnectAction": "重新連線Claude Code",
-          "reconnectTitle": "重新連線Claude Code",
+          "reconnectAction": "重新連線Claude",
+          "reconnectTitle": "重新連線Claude",
           "signIn": "使用Claude登入",
-          "submit": "連線"
+          "submit": "連線",
+          "usageNotice": "使用你的 Claude 訂閱登入，透過 Claude Code 驅動的智慧代理使用 Claude 系列模型。"
         },
         "codex": {
-          "approvalOpened": "授權頁面已開啟。請先複製裝置碼，再進行授權。",
-          "codeCopied": "裝置碼已複製，等待授權…",
-          "codeCopiedRetry": "裝置碼已複製。請再試著開啟授權頁面。",
           "connectedToast": "ChatGPT已連線",
           "connectTitle": "連線Codex",
-          "copyAndOpen": "複製程式碼並開啟授權頁面",
-          "copyAndOpenError": "無法複製裝置碼或開啟授權頁面。請手動複製程式碼後重試。",
-          "copyError": "授權頁面已開啟，但裝置碼沒有複製成功。請在授權前手動複製。",
           "deviceCode": "裝置碼",
           "error": "ChatGPT連線失敗。請重新開始並重試。",
           "expired": "Codex連線會話已過期。請重新開始並重試。",
           "freePlanRejected": "免費版ChatGPT套餐無法透過{{brandName}}使用Codex。請升級到Plus或Pro後重試。",
-          "instructions": "先點選「複製程式碼並開啟授權頁面」。然後按OpenAI的提示貼上裝置碼。最後確認授權，並在{{brandName}}完成連線前保持這個對話方塊開啟。",
+          "instructions": "先使用複製按鈕複製裝置碼，再開啟授權頁面。然後按OpenAI的提示貼上裝置碼。最後確認授權，並在{{brandName}}完成連線前保持這個對話方塊開啟。",
           "invalidTokenFormat": "Codex返回的登入令牌格式{{brandName}}無法識別。請更新Codex後重試。",
-          "openError": "裝置碼已複製，但授權頁面打不開。請重試。",
+          "openApproval": "開啟授權頁面",
           "preparing": "準備中…",
           "reconnectAction": "重新連線ChatGPT",
           "reconnectTitle": "重新連線Codex",
           "signIn": "使用ChatGPT登入"
         }
       },
-      "gateways": {
-        "actions": "閘道器操作",
-        "add": "新增服務商",
-        "addTitle": "新增模型服務商",
-        "apiBaseUrl": "API基礎URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "API金鑰",
-        "deleteConfirm": "刪除這個模型服務商連線？使用它的模型線路將不可用。",
-        "description": "透過Anthropic Messages、OpenAI Responses或兩者，連線由管理員管理的閘道器。",
-        "dialogDescription": "為每個協議配置Claude Code或Codex使用的API基礎URL。",
-        "editTitle": "編輯模型服務商",
-        "empty": "還沒有配置自定義模型服務商。",
-        "errors": {
-          "invalidMappings": "模型對映必須是一個JSON物件，其值為上游模型名稱。",
-          "missingProtocol": "請至少啟用一個協議。",
-          "missingSecret": "請輸入API金鑰。"
-        },
-        "headerName": "認證請求頭",
-        "headerValue": "請求頭取值模板",
-        "keepKey": "留空則保留當前金鑰",
-        "modelMappings": "模型對映（JSON）",
-        "name": "名稱",
-        "presets": {
-          "custom": "自定義",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "請求",
-        "title": "服務商連線"
-      },
       "personal": {
         "accountFallback": "帳號{{number}}",
-        "accountsDescription": "選擇每個供應商在新工作中使用的帳號。",
-        "accountsSectionTitle": "個人帳號",
-        "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
-        "addAccount": "新增帳號",
-        "claudeDescription": "用Claude Code登入連線，供基於Claude的模型線路使用。",
-        "claudeTitle": "Claude Code OAuth",
-        "codexDescription": "用Codex裝置登入連線，供基於Codex的模型線路使用。",
+        "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
+        "autoTitle": "使用更多模型",
+        "claudeTitle": "Claude",
         "codexTitle": "ChatGPT (Codex)",
-        "description": "僅在你的執行中使用，走你自己的憑據。",
+        "connectAccount": "連接帳號",
         "disconnectAccount": "斷開帳號連線",
         "disconnectDescription": "這會把帳號從Okou中移除，但不會取消你在該服務商處的訂閱。",
         "disconnecting": "正在斷開…",
         "disconnectTitle": "斷開{{account}}？",
+        "loadError": "無法載入你的帳號。",
+        "loadingAccounts": "正在載入帳號…",
         "noAccounts": "還沒有連線任何帳號。",
         "reconnectAccount": "重新連線",
-        "sectionTitle": "個人",
+        "retry": "重試",
         "status": {
           "connected": "已連線",
-          "connectedWithDetail": "已連線（{{detail}}）",
           "fiveHour": "5小時",
           "left": "剩餘{{percent}}",
           "stale": "需處理",
@@ -6236,125 +4811,51 @@
         "useAccount": "使用"
       },
       "picker": {
-        "builtInModel": "內建模型",
-        "byokHelp": "使用你配置的服務商",
-        "categoryChat": "對話",
-        "categoryImage": "影像",
-        "categoryVideo": "影片",
+        "auto": "Auto",
         "chatModels": "對話模型",
         "effort": "思考強度",
         "effortScale": {
           "faster": "更快",
+          "higherUsage": "更高用量",
+          "lowerUsage": "更低用量",
           "smarter": "更聰明"
         },
         "fast": "快速",
         "fastImpact": {
-          "apiCost": "2×API token成本",
-          "chatGptUsage": "2.5×ChatGPT用量",
-          "fasterResponses": "模型響應更快",
-          "modelSpeed": "{{multiplier}}×模型速度",
-          "okouCredits": "2×Okou模型積分",
-          "providerSpeed": "速度取決於服務商",
           "providerUsage": "用量取決於服務商",
-          "solApiSpeed": "模型速度最高2.5×",
-          "summary": "{{speed}} · {{usage}}"
+          "subscriptionUsage": "{{multiplier}} 倍訂閱用量"
         },
+        "fastMode": "快速模式",
         "generationPriceTiers": {
           "higher": "單次生成成本較高",
           "highest": "單次生成成本最高",
           "lowest": "單次生成成本最低",
           "typical": "單次生成成本一般"
         },
-        "imageModels": "影像模型",
-        "inheritDefault": "沿用組織預設",
+        "inheritDefault": "預設（Auto）",
         "loadError": "無法載入模型。",
         "loading": "正在載入模型…",
-        "menu": {
-          "backToModels": "返回模型列表",
-          "changeModel": "更改{{category}}模型，當前{{model}}"
-        },
         "models": "模型",
         "noConfiguredModels": "沒有已配置的模型",
-        "priceTiers": {
-          "balanced": "成本與效能均衡",
-          "economy": "經濟檔，適合日常簡單任務",
-          "frontier": "前沿旗艦模型",
-          "premium": "頂級前沿模型，適合最難的任務"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "Azure Foundry門戶",
-          "claudeCodeOauth": "Claude Code（OAuth令牌）",
-          "deepseek": "Deepseek"
-        },
-        "standard": "標準",
-        "videoModels": "影片模型"
-      },
-      "policies": {
-        "actionsFor": "{{model}}的操作",
-        "apiKey": "API金鑰",
-        "apiKeyDescription": "工作區共享金鑰。適合團隊用同一個帳號結算。",
-        "apiKeyPlaceholder": "輸入你的API金鑰",
-        "apiKeyRequired": "請填寫API金鑰",
-        "availableModels": "可用模型",
-        "builtIn": "內建",
-        "builtInDescription": "用量由工作區積分支付。",
-        "claudeSubscription": "Claude訂閱",
-        "claudeSubscriptionDescription": "每位成員連線自己的Pro、Max或Team套餐。",
-        "codexSubscription": "Codex訂閱",
-        "codexSubscriptionDescription": "每位成員連線自己的Pro或Team套餐。",
-        "defaultModel": "預設模型",
-        "defaultModelDescription": "任務沒有指定模型時使用。",
-        "dialogDescription": "決定成員如何使用這個模型。",
-        "gateway": "自定義閘道器",
-        "gatewayDescription": "透過管理員配置的服務商連線轉發。",
-        "gatewayProvider": "服務商連線",
-        "getKey": "獲取金鑰",
-        "invalidRoute": "線路無效",
-        "missingProvider": "缺少服務商",
-        "model": "模型",
-        "noAvailableModels": "沒有可用模型",
-        "noMappedGateway": "沒有服務商連線對映到這個模型。",
-        "pricing": "定價",
-        "providedBy": "提供方",
-        "provider": "服務商",
-        "providerApiKey": "{{provider}} API金鑰",
-        "runsThrough": "執行線路",
-        "secretStored": "儲存在工作區金鑰中。",
-        "selectDefaultModel": "選擇預設模型",
-        "selectGateway": "選擇服務商連線",
-        "selectModel": "選擇模型",
-        "selectProvider": "選擇服務商",
-        "workspaceDescription": "這個工作區的所有人都可以使用。"
+        "standard": "標準"
       },
       "reset": {
-        "confirmDescription": "消耗一次{{provider}}重置額度，重置當前的用量週期。你還有{{remaining}}。",
+        "confirmDescription": "消耗一次Codex重置額度，重置當前的用量週期。你還有{{remaining}}。",
         "progress": "正在重置…",
         "remaining_one": "還剩{{value}}次重置",
         "remaining_other": "還剩{{value}}次重置",
         "remainingUnavailable": "剩餘重置次數不可用",
         "remainingUnknown": "重置 —",
         "remainingWithExpiry_other": "還剩{{value}}次重置 · {{expiry}}過期",
-        "title": "重置{{provider}}用量？"
-      },
-      "stale": {
-        "claudeExpired": "你的Claude Code會話已過期。請重新連線以繼續。",
-        "claudeFailed": "Claude Code重新整理失敗。請重新連線後重試。",
-        "claudeTitle": "Claude Code會話需要重新連線",
-        "codexExpired": "你的ChatGPT會話已過期。請重新連線以繼續。",
-        "codexFailed": "ChatGPT重新整理失敗。請重新連線後重試。",
-        "codexInvalidated": "你的ChatGPT會話已被撤銷，請重新連線。",
-        "codexReused": "你的ChatGPT會話在別處被使用，請重新連線。",
-        "codexTitle": "ChatGPT會話需要重新連線"
+        "title": "重置Codex用量？"
       },
       "toasts": {
         "accountDisconnected": "帳號已斷開連線",
         "accountSwitched": "已切換當前帳號",
-        "disconnected": "{{provider}}已斷開連線",
-        "policiesUpdated": "模型服務商設定已更新",
-        "reset": "{{provider}}用量已重置",
-        "resetUnavailable": "沒有可用的{{provider}}用量重置次數",
-        "resetUnneeded": "{{provider}}用量當前不需要重置"
+        "reset": "Codex用量已重置",
+        "resetUnavailable": "沒有可用的Codex用量重置次數",
+        "resetUnneeded": "Codex用量當前不需要重置"
       },
       "usage": {
         "inDays": "{{days}}天后",
@@ -6371,22 +4872,23 @@
       }
     },
     "paidTools": {
-      "description": "選擇你可以使用哪些付費內建工具。",
-      "disabledForCreation": "{{tool}}已在你的付費工具設定中關閉。",
+      "description": "這些工具會消耗內建積分，Okou 在執行任務時會依需要自動使用。關閉後，Okou 在執行過程中就不會再使用該工具。",
+      "disabledForCreation": "{{tool}}已在你的內建工具設定中關閉。",
+      "imageModel": {
+        "description": "內建圖片生成會在你的任務中使用這個模型。",
+        "label": "模型",
+        "saveError": "圖片模型沒有儲存成功。"
+      },
       "loadError": "無法載入你的工具設定。",
       "loading": "正在載入你的工具設定…",
-      "openSettings": "開啟付費工具設定",
+      "openSettings": "開啟內建工具設定",
       "retry": "重試",
       "saveError": "修改沒有儲存成功。",
       "saving": "正在儲存…",
       "scope": "這些設定只對你在{{workspace}}中的使用生效。",
       "timing": "修改對之後的執行生效。正在執行和已準備好的任務可能仍沿用原來的設定。",
-      "title": "付費工具",
+      "title": "內建工具",
       "tools": {
-        "avatar-video-generation": {
-          "description": "生成數字人口播影片。",
-          "name": "數字人影片生成"
-        },
         "finance": {
           "description": "查詢公司、行情和市場資料。",
           "name": "金融資料"
@@ -6394,10 +4896,6 @@
         "image-generation": {
           "description": "用內建模型生成圖片。",
           "name": "圖片生成"
-        },
-        "image-recognition": {
-          "description": "讀取和分析圖片。",
-          "name": "圖片識別"
         },
         "maps": {
           "description": "查詢地點、地址和路線。",
@@ -6418,14 +4916,6 @@
         "social": {
           "description": "研究公開的社交內容並收集素材。",
           "name": "社交研究"
-        },
-        "video-generation": {
-          "description": "用內建模型生成影片。",
-          "name": "影片生成"
-        },
-        "voice-generation": {
-          "description": "用內建音色生成語音。",
-          "name": "語音生成"
         },
         "web-search": {
           "description": "在網上查詢最新資訊。",
@@ -6476,26 +4966,6 @@
         "sectionTitle": "聊天"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "取消冷卻",
-          "cancelDescription": "取消這個全域性冷卻後，該線路會立即對所有工作區重新可用。",
-          "cancelling": "正在取消…",
-          "cancelTitle": "取消全域性冷卻？",
-          "cancelWarning": "之後若再出現符合條件的失敗，該線路會重新進入冷卻。",
-          "description": "檢視暫時被排除在備用選擇之外的內建模型線路。",
-          "empty": "當前沒有處於全域性冷卻的內建模型線路。",
-          "globalActive": "個全域性生效的冷卻",
-          "globalExplanation": "冷卻是全域性執行狀態，會影響所有使用內建模型的工作區。",
-          "keepCooldown": "保持冷卻",
-          "loading": "正在載入內建模型冷卻診斷…",
-          "providerType": "服務商型別",
-          "refresh": "重新整理",
-          "selectedModel": "所選模型",
-          "title": "內建模型備用線路",
-          "unavailable": "內建模型冷卻診斷不可用。",
-          "unavailableUntil": "不可用至",
-          "upstreamModel": "上游模型"
-        },
         "capture": {
           "disabled": "已關閉",
           "enabled_one": "已對接下來{{count}}次執行啟用",
@@ -6540,20 +5010,6 @@
           "title": "IndexedDB儲存",
           "unavailable": "IndexedDB儲存不可用。"
         },
-        "morningBriefTrigger": {
-          "description": "立即執行一次真實的Morning Brief。它會把你自己的下一次執行排入常規排程，一分鐘內生成真實的簡報併傳送真實的郵件。在每日固定時間之前觸發，當天早上你會收到兩份簡報。",
-          "failed": "無法將晨報加入佇列，請重試。",
-          "queued": "已加入佇列，定時任務會在一分鐘內送達晨報。",
-          "title": "晨報",
-          "trigger": "立即執行晨報",
-          "triggering": "正在加入佇列…"
-        },
-        "voiceInput": {
-          "default": "預設（{{model}}）",
-          "description": "選擇語音輸入v2使用的模型。語音轉文字模型，以及超過90秒的GPT Audio錄音，會使用{{model}}做後處理。",
-          "title": "語音輸入模型",
-          "unavailable": "不可用的模型（{{model}}）"
-        },
         "welcomeThread": {
           "create": "建立歡迎會話",
           "creating": "建立中…",
@@ -6565,9 +5021,6 @@
       "emailSubscription": {
         "description": "透過郵件接收簡報、提醒和其他工作區更新。",
         "descriptionWithEmail": "接收傳送至 {{email}} 的簡報、提醒和其他工作區更新。",
-        "loading": "正在檢查郵件訂閱…",
-        "retryMessage": "無法儲存或載入你的郵件訂閱，請重試。",
-        "saving": "儲存中…",
         "sectionTitle": "郵件訂閱",
         "title": "郵件更新",
         "unavailable": "郵件不可用",
@@ -6593,16 +5046,10 @@
         "title": "語言"
       },
       "morningBrief": {
-        "chatAndEmail": "聊天+郵件",
-        "chatOnly": "僅聊天",
-        "checkEmailSubscription": "投遞狀態請檢視上方的郵件訂閱。",
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。請在狀態同步完成後重試。",
         "description": "每天早上 7:00（按你的時區）接收當日重點。",
-        "loading": "正在載入晨報設定…",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
-        "nextBrief": "下一份晨報 {{date}}",
-        "paused": "已暫停",
         "preparationFailed": "晨報設定會自動重試，你也可以現在就重試。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
         "retry": "重試",
@@ -6612,10 +5059,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "按⌘/Ctrl+Enter傳送，按Enter換行",
-        "description": "選擇在對話中傳送訊息的方式。",
         "enter": "Enter",
         "enterDescription": "按Enter傳送，按Shift+Enter換行",
-        "sectionTitle": "Enter",
         "title": "傳送訊息的按鍵"
       },
       "timezone": {
@@ -6652,17 +5097,12 @@
     "shared": {
       "cancel": "取消",
       "close": "關閉",
-      "connect": "連線",
       "connecting": "連線中…",
       "delete": "刪除",
       "discard": "放棄",
-      "disconnect": "斷開連線",
-      "edit": "編輯",
       "loading": "載入中",
       "moreOptions": "更多選項",
-      "reconnect": "重新連線",
       "remove": "移除",
-      "replace": "替換",
       "save": "儲存",
       "saveChanges": "儲存更改",
       "saving": "儲存中…"
@@ -6834,8 +5274,6 @@
     "tryItYourself": "自己試一試"
   },
   "ssh": {
-    "accessDescription": "選擇哪些智能體可以使用你的SSH主機。",
-    "accessHelp": "允許該智能體在你當前和今後配置的所有SSH主機上執行命令。這與連接器權限相互獨立。",
     "add": "新增主機",
     "cancel": "取消",
     "chooseFile": "選擇檔案",
@@ -6845,8 +5283,10 @@
       "keepChanges": "在該版本上保留我的更改",
       "latest": "最新儲存的設定",
       "mode": "連線方式",
+      "needsRebind": "這台主機需要重新綁定 Cloudflare Access。編輯主機並選擇新設定或直連；在此之前無法連線。",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "對外發布的主機名",
+      "rebindHelp": "選擇有權使用的 Cloudflare Access 設定或直連，然後儲存以恢復這台主機。儲存前不會變更連線方式。",
       "reviewHelp": "你的草稿已保留。請先確認最新儲存的設定，再應用你的更改。",
       "title": "Cloudflare Access",
       "unavailable": "該帳號無法使用Cloudflare Access。"
@@ -6889,16 +5329,14 @@
       "unused": "未被任何主機使用"
     },
     "credentialsHelp": "憑據只寫入不回顯，並且儲存在沙箱之外。請貼上完整的金鑰，空白字元會原樣保留。關閉此表單時各欄位會被清空。",
-    "credentialsTab": "憑據",
     "delete": "刪除主機",
     "deleteHelp": "確定刪除該主機？它的憑據會保留。智能體將不再在可用主機列表中看到它。",
     "description": "讓你的智能體在遠端機器上執行命令。",
     "displayName": "顯示名稱",
     "edit": "編輯主機",
     "editHelp": "選擇其他憑據只會影響該主機。修改直連地址會清除已記錄的主機金鑰；涉及Cloudflare Access的修改則會保留它。",
-    "empty": "還沒有配置SSH主機。新增主機後，擁有SSH權限的智能體就能使用它。",
+    "empty": "還沒有配置 SSH 主機。新增主機後，可將其設為預設啟用，或在個別聊天中啟用。",
     "errors": {
-      "agentUnavailable": "該智能體已不可用，請選擇其他智能體。",
       "configurationChanged": "該主機在你編輯期間發生了變化。你的草稿已保留。請先檢視最新設定，再應用你的更改。",
       "credentialChanged": "該憑據在你編輯期間發生了變化。你的草稿已保留。請先檢視最新設定和受影響的主機，再儲存你的更改。",
       "credentialInUse": "該憑據正在被主機使用。請為這些主機選擇其他憑據，或先刪除這些主機。",
@@ -6916,11 +5354,9 @@
     "fingerprint": "已記錄的主機金鑰",
     "host": "公網主機名或IP地址",
     "hostSection": "主機",
-    "hostsTab": "主機",
     "label": "SSH",
     "loadFailed": "無法載入SSH設定，請重試。",
     "loading": "正在載入SSH主機…",
-    "loadingAccess": "正在載入智能體訪問權限…",
     "manage": "管理SSH主機",
     "notLearned": "尚未記錄主機金鑰",
     "passphrase": "金鑰口令（可選）",
@@ -6945,7 +5381,10 @@
     },
     "summary_one": "已配置{{count}}臺主機",
     "summary_other": "已配置{{count}}臺主機",
-    "title": "SSH遠端訪問",
+    "tailscale": {
+      "editUnavailable": "此主機現已使用 Tailscale。此處尚未提供 Tailscale 編輯和重新綁定功能。請取消此次編輯以保留已儲存的傳輸方式。",
+      "needsRebind": "此主機需要新的 Tailscale 設定。此處尚未提供 Tailscale 設定和重新綁定功能。"
+    },
     "unavailable": "該帳號無法使用SSH訪問。",
     "username": "SSH使用者名稱"
   },
@@ -7038,15 +5477,20 @@
     }
   },
   "vnc": {
-    "accessDescription": "選擇哪些智能體可以檢視和控制你的VNC桌面。此訪問權限與SSH分開管理。",
-    "accessHelp": "允許該智能體檢視和控制你當前及今後配置的所有VNC桌面。",
     "add": "新增主機",
     "cancel": "取消",
     "close": "關閉",
     "configured": "已配置",
     "credential": {
       "add": "新增憑據",
+      "appleDhFieldHelp": "每項 1–63 個 UTF-8 位元組，不允許 NUL 字元。",
+      "appleDhMethod": "Apple DH 使用者名稱和密碼",
+      "appleRsaSrpMethod": "Apple RSA/SRP 使用者名稱和密碼",
+      "appleRsaSrpUsernameHelp": "RSA/SRP 使用者名稱須為 1–234 個 UTF-8 位元組，不允許 NUL 字元。",
+      "appleSrpMethod": "Apple Direct SRP 使用者名稱和密碼",
       "authentication": "認證方式",
+      "certificateChain": "用戶端憑證鏈（PEM）",
+      "clientKeyHelp": "貼上 1–8 個用戶端憑證與相符的未加密私鑰；儲存時加密。輪換時須一起替換，私鑰不會再次顯示。",
       "createNew": "新建憑據",
       "delete": "刪除憑據",
       "deleteHelp": "刪除這條未使用的憑據？此操作無法撤銷。",
@@ -7060,6 +5504,9 @@
       "password": "VNC密碼",
       "passwordHelp": "經典VNC密碼為1–8個可列印ASCII字元，空格會被保留。",
       "passwordHint": "輸入伺服器的VNC密碼",
+      "privateKey": "未加密的 PKCS#8 私鑰（PEM）",
+      "qemuScramPasswordHelp": "1–1023個可列印ASCII字元；保留空格。",
+      "qemuScramUsernameHelp": "1–255個可列印ASCII字元，不允許空格、逗號或等號。",
       "replace": "更換密碼",
       "replaceHelp": "保持關閉即繼續使用已儲存的密碼。更換密碼會影響所有使用該憑據的主機。",
       "select": "選擇憑據",
@@ -7075,7 +5522,6 @@
       "usernamePasswordHint": "輸入該使用者名稱對應的密碼",
       "usernamePasswordMethod": "使用者名稱和密碼"
     },
-    "credentialsTab": "憑據",
     "delete": "刪除主機",
     "deleteHelp": "刪除這臺已儲存的主機？它使用的可複用憑據會保留。",
     "description": "讓你的智能體檢視和控制遠端桌面。",
@@ -7093,19 +5539,37 @@
       "invalidHost": "請輸入有效的主機名或IP地址，不要包含URL、使用者名稱或埠。",
       "invalidInput": "請檢查VNC配置後重試。",
       "invalidTrust": "請輸入有效的證書包：最多8個公開CA證書，總大小不超過64 KiB。",
-      "ownerChanged": "你的工作區訪問權限已變更，請重新整理後再繼續。",
       "revisionExhausted": "該配置已無法繼續更新，請新建一個。"
     },
     "host": "主機名或IP地址",
     "hostHint": "例如：desktop.example.com",
-    "hostsTab": "主機",
     "label": "VNC",
     "loadFailed": "無法載入VNC配置。",
     "loading": "正在載入VNC配置…",
-    "loadingAccess": "正在載入智能體訪問權限…",
     "manage": "管理VNC",
     "port": "埠",
     "retry": "重試",
+    "rsaAes": {
+      "fieldHelp": "每個欄位為 1–255 個 UTF-8 位元組，不允許 NUL。保留空格；不是傳統 VNC 的八位元組密碼。",
+      "fullHelp": "RA2 和 RA2_256 使用 EAX 加密整個 RFB 工作階段。必須獨立核實完整 RSA 公鑰線格式 pin；CA 信任不能取代它。",
+      "importHelp": "從可信伺服器管理管道取得 PUBLIC KEY 或 RSA PUBLIC KEY PEM。不要貼上私鑰／憑證或自動信任線上連線的金鑰。轉換不證明身分，也不會自動儲存：核實完整 pin 後明確儲存。",
+      "importKey": "匯入可信公鑰",
+      "modulusBits": "匯入公鑰長度：{{bits}} 位元",
+      "neHelp": "RSA-AES 僅加密驗證。必須使用已驗證的已儲存 SSH，目標為伺服器字面環回位址。SSH 只保護該跳；後續代理可能暴露未加密 RFB 流量。",
+      "passwordMethod": "RSA-AES 密碼",
+      "pin": "伺服器 RSA 公鑰線格式 SHA256",
+      "pinHelp": "匯入透過獨立可信來源取得的完整 64 位十六進位 pin：對 U32 大端模數位數及等定寬模數、指數計算 SHA256。不是 PEM／SPKI 雜湊或短指紋。更換後明確儲存，以輪換信任並使工作階段失效。",
+      "publicKey": "獨立可信的 RSA 公鑰 PEM（選填）",
+      "ra2256Password": "RA2_256 · AES-256 · 密碼",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · 使用者名稱／密碼",
+      "ra2ne256Password": "RA2ne_256 · 僅加密驗證 · 密碼",
+      "ra2ne256UsernamePassword": "RA2ne_256 · 僅加密驗證 · 使用者名稱／密碼",
+      "ra2nePassword": "RA2ne · 僅加密驗證 · 密碼",
+      "ra2neUsernamePassword": "RA2ne · 僅加密驗證 · 使用者名稱／密碼",
+      "ra2Password": "RA2 · AES-128 · 密碼",
+      "ra2UsernamePassword": "RA2 · AES-128 · 使用者名稱／密碼",
+      "usernamePasswordMethod": "RSA-AES 使用者名稱／密碼"
+    },
     "save": "儲存",
     "saveRecovery": {
       "resourceIdConflict": "該資源建立失敗。請關閉此對話方塊後重試。",
@@ -7114,16 +5578,31 @@
     },
     "saving": "正在儲存…",
     "security": {
+      "appleDh": "Mac VNC (Apple DH)",
+      "appleDhHelp": "需透過已儲存的 SSH 連線存取 Mac VNC 服務。獨立的 macOS「螢幕共享」模式尚未驗證。RFB 目標必須是該 Mac 上的 127.0.0.1 或 ::1；SSH 保護整個 VNC 工作階段。 請使用你控制的 Mac SSH 主機；其主機金鑰無法排除後續代理轉送。",
+      "appleRsaSrp": "Mac VNC (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "必須透過已儲存的 SSH 連線連到 Mac，RFB 目標為 127.0.0.1 或 ::1。RFB 下發的 RSA 金鑰無法獨立證明主機身分；SRP 驗證帳戶與伺服器證明，SSH 保護整個 VNC 工作階段。SSH 主機金鑰確認所選端點，但無法排除後續代理轉送。",
+      "appleSrp": "Mac VNC (Apple Direct SRP)",
+      "appleSrpHelp": "需要已儲存的 Mac SSH 連線，RFB 目標必須是 127.0.0.1 或 ::1。SRP 驗證帳戶與伺服器證明；SSH 保護整個 VNC 工作階段。SSH 主機金鑰確認所選端點，但無法排除後續代理轉送。",
+      "appleVncPassword": "Mac VNC（傳統 VNC 密碼）",
+      "appleVncPasswordHelp": "Mac 的選用 VNC 密碼限 1–8 個可列印 ASCII 位元組。單獨的 type 2 不驗證伺服器身分，也不加密桌面。已驗證的 SSH 僅保護此次 Okou 工作階段，無法隔離 Mac 的監聽埠；其他用戶端可能因網路設定而存取 5900 埠。請自行決定是否在 Mac 上啟用並承擔風險。",
       "caBundle": "CA證書（PEM）",
       "caHelp": "最多8個CA證書，總大小64 KiB。請勿貼上私鑰或伺服器證書。",
       "caHint": "貼上簽發該伺服器證書的公開CA證書",
+      "clientCertificateHelp": "用戶端出示憑證不代表伺服器已驗證。必須獨立設定伺服器驗證受信任 CA 簽發的用戶端憑證並限制入口；SSH 僅驗證跳點。",
+      "clientCertificateNone": "用戶端憑證，無 VNC 密碼（X509None）",
+      "clientCertificateVnc": "用戶端憑證及 VNC 密碼（X509Vnc）",
       "custom": "自定義證書頒發機構",
       "profileLabel": "安全方案",
+      "qemuX509Sasl": "QEMU SCRAM-SHA-256（X509SASL）",
+      "qemuX509SaslHelp": "僅支援QEMU子類型263。TLS會在SCRAM之前驗證伺服器；不降級至PLAIN或子類型264。",
       "serverName": "TLS憑證身分",
       "serverNameHelp": "選填。留空時將依據RFB目標主機驗證憑證。僅當憑證使用其他DNS名稱時才填寫。",
       "serverNameHint": "例如 desktop.internal.example.com",
       "system": "系統證書頒發機構",
       "title": "伺服器證書信任",
+      "x509None": "加密連線，無 VNC 密碼（X509None）",
+      "x509NoneHelp": "TLS 會驗證伺服器並加密工作階段，但不會向 VNC 伺服器驗證你的身分。其他能連上該伺服器的人也可能控制桌面。SSH 僅保護到所選 SSH 主機的連線，不能阻止其他用戶端或後續轉送存取。僅為你管理的端點選擇此設定。",
       "x509Plain": "加密的使用者名稱和密碼（X509Plain）",
       "x509PlainHelp": "需要VeNCrypt X509Plain。TLS會在傳送使用者名稱和密碼之前驗證伺服器。",
       "x509Vnc": "加密VNC（X509Vnc）",
@@ -7131,19 +5610,26 @@
     },
     "summary_one": "已配置{{count}}臺主機",
     "summary_other": "已配置{{count}}臺主機",
-    "title": "VNC遠端訪問",
     "transport": {
+      "appleDhDestinationHelp": "Apple DH 請填寫 127.0.0.1 或 ::1；這是透過所選 SSH 主機存取的 Mac 本機回環位址。",
+      "appleRsaSrpDestinationHelp": "Apple RSA/SRP 請填寫 127.0.0.1 或 ::1；這是透過所選 SSH 主機存取的 Mac 本機回環位址。",
+      "appleSrpDestinationHelp": "Apple Direct SRP 請填寫 127.0.0.1 或 ::1；這是透過所選 SSH 主機存取的 Mac 本機回環位址。",
+      "appleVncPasswordDestinationHelp": "傳統 VNC 密碼模式請填入 127.0.0.1 或 ::1；這是透過已儲存 SSH 主機連至 Mac 的本機迴路位址。",
       "destination": "RFB目標",
       "destinationHelp": "使用SSH路由時，將從所選SSH伺服器存取此主機和連接埠，而不是由Runner直接存取。",
       "direct": "Runner直接連線",
       "empty": "沒有可用的已儲存SSH主機。使用此路由前，請先在SSH設定中新增主機。",
       "loadFailed": "無法載入已儲存的SSH主機。",
       "loading": "正在載入已儲存的SSH主機…",
+      "privateDirectHelp": "私有或迴環 IP 位址必須透過已儲存的 SSH 主機存取。請主動選擇上方的 SSH 路由；連線方式不會自動變更。",
       "select": "選擇已儲存的SSH主機",
       "selectionUnavailable": "所選SSH主機已無法使用。請選擇其他主機，或明確切換為直接連線。",
       "ssh": "透過已儲存的SSH主機",
       "sshConnection": "SSH主機",
-      "sshHelp": "SSH僅保護Runner到SSH伺服器這一段。該伺服器必須能夠存取RFB目標。Agent必須同時取得VNC和SSH存取權限。",
+      "sshHelp": "SSH 僅保護 Runner 到 SSH 伺服器這一段。該伺服器必須能夠存取 RFB 目標。只有在聊天中同時啟用該 SSH 主機，才能使用此路由。",
+      "sshNeedsRebind": "此 VNC 連線使用的 SSH 主機需要重新綁定 Cloudflare Access。請先在 SSH 設定中重新綁定，或明確選擇直接連線，再嘗試連線。",
+      "sshNeedsRebindStatus": "SSH 需要重新綁定",
+      "sshTailscaleNeedsRebind": "此 VNC 連線使用的 SSH 主機需要新的 Tailscale 設定。此處尚未提供 Tailscale 設定和重新綁定功能。",
       "title": "連線路由",
       "unavailable": "此帳戶無法使用SSH設定。",
       "via": "SSH主機："
@@ -7863,6 +6349,18 @@
       "uninstallTitle": "解除安裝官方工作流",
       "viewAndInstall": "檢視並安裝",
       "yes": "是"
+    },
+    "skillImport": {
+      "action": "匯入技能",
+      "description": "在你的技能所在的地方執行這段提示詞。每個技能都會成為一個私人工作流程。",
+      "emptyAction": "從 Claude Code 或 Codex 匯入",
+      "providerLabel": "匯入來源",
+      "source": {
+        "claudeCode": "匯入自 Claude Code",
+        "codex": "匯入自 Codex"
+      },
+      "title": "匯入你的技能",
+      "viewWorkflows": "查看工作流程"
     }
   },
   "works": {
@@ -7879,6 +6377,27 @@
     },
     "connected": "已連線",
     "connectedWithDetail": "已連線（{{detail}}）",
+    "discord": {
+      "accountSetup": "你的帳號尚未連線。暫時無法連接新的Discord帳號。",
+      "adminSetup": "伺服器設定功能尚未開放。現有已驗證的設定仍可繼續使用Discord。",
+      "chooseDmServer": "選擇伺服器",
+      "description": "在伺服器中提及Okou，或傳送私人訊息給機器人。",
+      "disconnect": "中斷Discord連線",
+      "dmServer": "私人訊息預設伺服器",
+      "limitedContext": "上下文受限：Okou可能無法接收頻道中的一般訊息。請提及Okou，並提供所需的詳細資訊。",
+      "loadError": "無法載入Discord狀態。",
+      "loading": "正在載入Discord狀態…",
+      "memberSetup": "請向組織管理員瞭解Discord存取權限。伺服器設定功能尚未開放。",
+      "moreOptions": "更多Discord選項",
+      "retry": "重試",
+      "server": "伺服器：{{name}}",
+      "suspended": "Discord暫時無法使用。現有連線會保留。",
+      "title": "Discord",
+      "unconfigured": "此組織暫時無法使用Discord。",
+      "uninstall": "移除Discord",
+      "uninstallDescription": "這會中斷此組織所有成員與Discord的連線。其他組織的連線會保留。",
+      "uninstallTitle": "從此組織移除Discord？"
+    },
     "documentTitle": "工作渠道",
     "feishuConnected": "飛書連線成功",
     "github": {

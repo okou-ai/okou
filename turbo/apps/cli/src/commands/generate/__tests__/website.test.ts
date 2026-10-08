@@ -9,7 +9,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import chalk from "chalk";
-import { DEFAULT_IMAGE_MODEL_ENV } from "@okouai/core/image-model-catalog";
 import { generateCommand } from "../index";
 import { websiteCommand } from "../website";
 
@@ -105,12 +104,15 @@ describe("okou generate website command", () => {
     expect(stdout).toContain(
       "okou host ./generated/mockups/clearpath-demo --site clearpath-demo --spa\n",
     );
-    expect(stdout).toContain(
-      "Hosted websites are public: anyone with the returned URL can open them.",
+    expect(stdout).not.toContain("Hosted websites are public:");
+    expect(stdout).not.toContain("--visibility");
+    expect(stdout).not.toContain(
+      "supporting generated media at its default visibility",
     );
+    expect(stdout).not.toContain("okou web upload-file -f <file>");
   });
 
-  it("provides a valid public hosting command without sharing supporting images", async () => {
+  it("provides a direct host command without file-upload or visibility guidance", async () => {
     await generateCommand.parseAsync([
       "node",
       "cli",
@@ -125,8 +127,12 @@ describe("okou generate website command", () => {
     expect(stdout).toContain(
       "okou host ./generated/mockups/launch-site --site launch-site --spa\n",
     );
-    expect(stdout).toContain("okou web upload-file -f <file>");
-    expect(stdout).toContain("do not make supporting media public separately");
+    expect(stdout).not.toContain("okou web upload-file -f <file>");
+    expect(stdout).not.toContain("File upload is a separate delivery channel");
+    expect(stdout).not.toContain(
+      "do not make supporting media public separately",
+    );
+    expect(stdout).not.toContain("Hosted websites are public:");
     const imageWorkflow = stdout.split("\n").find((line) => {
       return line.startsWith("- Image workflow:");
     });
@@ -184,26 +190,6 @@ describe("okou generate website command", () => {
     );
     expect(imageWorkflow).toContain("never call `okou generate image`");
     expect(imageWorkflow).toContain("or a template image wrapper directly");
-    expect(imageWorkflow).not.toContain("a fourth is rejected");
-  });
-
-  it("should let the image batch own its settings with a default image model", async () => {
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "flux-pro-1.1");
-
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "website",
-      "--prompt",
-      "observability launch site",
-    ]);
-
-    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(stdout).toContain(
-      "let the command own generation settings/concurrency/retry",
-    );
-    expect(stdout).not.toContain("use `flux-pro-1.1` by default");
-    expect(stdout).not.toContain("run default image model");
   });
 
   it("should use the generated base slug when no stable site slug is provided", async () => {

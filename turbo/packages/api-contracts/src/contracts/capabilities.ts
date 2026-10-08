@@ -7,10 +7,14 @@ export const CAPABILITIES = [
   "agent:delete",
   "agent-run:read",
   "run-usage:read",
+  "subscription:read",
+  "subscription:switch",
   "github:read",
   "github:write",
   "slack:read",
   "slack:write",
+  "discord:read",
+  "discord:write",
   "feishu:write",
   "lark:write",
   "teams:write",
@@ -33,7 +37,6 @@ export const CAPABILITIES = [
   "people-search:read",
   "web-search:read",
   "social:read",
-  "image-recognition:write",
   "finance:read",
   "seo:read",
   "computer-use:write",
@@ -77,6 +80,14 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
     group: "Agent Runs",
     label: "View current Run token usage",
   },
+  "subscription:read": {
+    group: "Subscriptions",
+    label: "Read personal subscription usage",
+  },
+  "subscription:switch": {
+    group: "Subscriptions",
+    label: "Switch the default personal subscription",
+  },
   "github:read": {
     group: "Integrations",
     label: "Download GitHub files",
@@ -90,6 +101,14 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
     label: "List Slack channels and read history",
   },
   "slack:write": { group: "Integrations", label: "Send Slack messages" },
+  "discord:read": {
+    group: "Integrations",
+    label: "Read Discord channels, messages and files",
+  },
+  "discord:write": {
+    group: "Integrations",
+    label: "Send Discord messages and files",
+  },
   "feishu:write": {
     group: "Integrations",
     label: "Send Feishu messages and files",
@@ -104,11 +123,11 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   },
   "phone:read": {
     group: "Integrations",
-    label: "Download AgentPhone files",
+    label: "Download phone files",
   },
   "phone:write": {
     group: "Integrations",
-    label: "Send AgentPhone messages and files",
+    label: "Send phone messages and files",
   },
   "telegram:read": {
     group: "Integrations",
@@ -168,10 +187,6 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "social:read": {
     group: "Social",
     label: "Use managed public social data",
-  },
-  "image-recognition:write": {
-    group: "Image Recognition",
-    label: "Recognize uploaded images",
   },
   "finance:read": {
     group: "Finance",

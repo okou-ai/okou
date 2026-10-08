@@ -86,11 +86,9 @@ function tools(args: {
   readonly beforeAdHocNoteCreate?: (path: string) => Promise<void>;
   readonly afterAdHocNoteCreate?: (path: string) => Promise<void>;
   readonly sinkThrows?: boolean;
-  readonly mode?: "api-first" | "sandbox";
   readonly selection?: PiMemoryRecallSelection;
 }) {
   return createPiMemoryTools({
-    mode: args.mode ?? "sandbox",
     selection: args.selection ?? SELECTION,
     memoryRoot: args.root,
     ...(args.now === undefined ? {} : { now: args.now }),
@@ -205,6 +203,23 @@ describe("first-party Pi memory tools", () => {
     expect(read.text).toContain("2: Needle in root\n3: Tail");
     expect(read.text).not.toContain("1: Index");
     expect(read.details).toStrictEqual({});
+  });
+
+  it("explains when a file is passed as a search or list directory", async () => {
+    const root = await memoryRoot();
+    await put(root, "MEMORY.md", "Index\nNeedle in root");
+    const registry = tools({ root });
+    const expected = "Memory path must be a directory.";
+
+    await expect(
+      executeText(registry, "memories_search", {
+        query: "needle",
+        path: "MEMORY.md",
+      }),
+    ).rejects.toThrow(expected);
+    await expect(
+      executeText(registry, "memories_list", { path: "MEMORY.md" }),
+    ).rejects.toThrow(expected);
   });
 
   it("pins the Codex-compatible ad-hoc note schema and provenance", async () => {
@@ -550,20 +565,6 @@ describe("first-party Pi memory tools", () => {
     await expect(access(adHocNotePath(ioRoot))).rejects.toMatchObject({
       code: "ENOENT",
     });
-  });
-
-  it("never executes an API-first filesystem mutation", async () => {
-    const parent = await memoryRoot();
-    const missingRoot = join(parent, "api-worker-must-not-create");
-
-    await expect(
-      executeText(
-        tools({ root: missingRoot, mode: "api-first" }),
-        "add_ad_hoc_note",
-        { filename: AD_HOC_NOTE_FILENAME, note: "sandbox only" },
-      ),
-    ).rejects.toThrow("sandbox ownership transfer");
-    await expect(access(missingRoot)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rejects every hostile path form and every .git segment", async () => {
@@ -1039,13 +1040,5 @@ describe("first-party Pi memory tools", () => {
       "memory-version-b",
       "memory-version-a",
     ]);
-  });
-
-  it("never performs API-first filesystem work", async () => {
-    const missingRoot = join(tmpdir(), "pi-memory-root-does-not-exist");
-    const registry = tools({ root: missingRoot, mode: "api-first" });
-    await expect(
-      executeText(registry, "memories_read", { path: "MEMORY.md" }),
-    ).rejects.toThrow("sandbox ownership transfer");
   });
 });

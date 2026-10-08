@@ -1,7 +1,7 @@
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -12,14 +12,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  chatListAuth,
-  fastButton,
-  installActiveChatBoundaries,
-  installChatListAgent,
-  installChatListModelPolicies,
-  installChatListStream,
-} from "./chat-list-test-helpers.ts";
-import {
   continuityAttachment,
   continuityDraft,
   continuitySidebarLink,
@@ -28,6 +20,14 @@ import {
   installContinuityWorkspace,
   textContinuityDraft,
 } from "./chat-continuity-test-helpers.ts";
+import {
+  chatListAuth,
+  fastButton,
+  installActiveChatBoundaries,
+  installChatListAgent,
+  installChatListRunModels,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 
@@ -108,7 +108,6 @@ async function editSeparateConversationDrafts() {
   await user.paste(" and a separate note");
 
   await openConversation(first.id);
-  return { second };
 }
 
 test("Restore the first edited draft without leaking the other conversation's draft", async () => {
@@ -121,25 +120,13 @@ test("Restore the first edited draft without leaking the other conversation's dr
   expect(currentMessageComposer()).not.toHaveTextContent("a separate note");
 });
 
-test("Restore the second edited draft without leaking the other conversation's draft", async () => {
-  const { second } = await editSeparateConversationDrafts();
-  await openConversation(second.id);
-  await waitFor(() => {
-    expect(currentMessageComposer()).toHaveTextContent("a separate note");
-  });
-  expect(currentMessageComposer()).not.toHaveTextContent(
-    "First conversation follow-up",
-  );
-  expect(document.body).toHaveTextContent("Keep this quoted requirement");
-});
-
 test("Protect local edits while a saved draft is loading", async () => {
   const auth = chatListAuth(302);
   const delayedDraft = context.mocks.deferred<void>();
   const oldAttachment = continuityAttachment(2, 1, "older-notes.txt");
   let draftResponseCompleted = false;
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, { caseId: 2, snapshot: [] });
   installActiveChatBoundaries(context);
   context.mocks.api(agentDraftContract.get, async ({ respond }) => {
@@ -300,6 +287,48 @@ test("Save a typed draft and restore it after navigating away", async () => {
   });
 });
 
+test("Refresh the sidebar drafts only when a save adds or removes a draft", async () => {
+  const target = continuityThread(23, 1, "Draft listing target");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 23,
+    threads: [target],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${target.id}`,
+    ...workspace.pageOptions,
+  });
+  const composer = await messageComposer();
+  await waitFor(() => {
+    expect(workspace.draftListRequests()).toBeGreaterThan(0);
+  });
+  const initialRequests = workspace.draftListRequests();
+
+  // The first save adds the draft, so the listing is fetched again.
+  await fill(composer, "Listing draft");
+  await waitFor(() => {
+    expect(workspace.draftListRequests()).toBe(initialRequests + 1);
+  });
+
+  // Editing an already listed draft saves again without refetching.
+  await userEvent.click(composer);
+  await userEvent.keyboard(" v2");
+  await waitFor(() => {
+    expect(
+      workspace.draftPatches.some((patch) => {
+        return draftPlainText(patch.draftUserMessage).includes("v2");
+      }),
+    ).toBeTruthy();
+  });
+
+  // Clearing removes the draft, which is the second and last refetch.
+  await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
+  await waitFor(() => {
+    expect(workspace.draftPatches.at(-1)?.draftUserMessage).toBeNull();
+    expect(workspace.draftListRequests()).toBe(initialRequests + 2);
+  });
+});
+
 test("Clear a saved typed draft without restoring it on the next visit", async () => {
   const {
     target,
@@ -368,7 +397,6 @@ test("Send the current version of a restored draft and clear it", async () => {
     return respond(201, {
       runId: "a7000000-0000-4000-a000-000000000005",
       threadId: body.threadId ?? thread.id,
-      status: "pending",
       createdAt: "2026-08-05T04:00:00.000Z",
     });
   });

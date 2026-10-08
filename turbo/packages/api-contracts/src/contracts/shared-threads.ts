@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import { apiErrorSchema, type ApiErrorResponse } from "./errors";
 import { authHeadersSchema, initContract } from "./base";
-import { publicBrandSchema, type PublicBrand } from "./public-brand";
 import type {
   AnyRouteTypeSlots,
   AppRoute,
@@ -26,14 +25,12 @@ export interface SharedMessage {
   readonly content: string;
   readonly attachments?: readonly SharedMessageAttachment[];
   readonly runIndex?: number;
-  readonly runGroupIndex?: number;
 }
 
 export interface SharedThreadResponse {
   readonly id: string;
   readonly title: string;
   readonly messages: readonly SharedMessage[];
-  readonly publicBrand: PublicBrand;
 }
 
 interface SharedThreadIdPathParams {
@@ -50,6 +47,11 @@ interface CreateSharedThreadPathParams {
 
 interface CreateSharedThreadBody {
   readonly eventIds: readonly string[];
+  /**
+   * Optional client-generated share ID. It lets the client copy the public
+   * link synchronously inside the user gesture and create the share after.
+   */
+  readonly id?: string;
 }
 
 interface CreateSharedThreadResponse {
@@ -58,7 +60,6 @@ interface CreateSharedThreadResponse {
 
 interface SharedThreadMetaResponse {
   readonly title: string;
-  readonly publicBrand: PublicBrand;
 }
 
 interface SharedThreadRequestOptions {
@@ -93,6 +94,7 @@ type CreateSharedThreadRouteResponse =
   | ApiErrorRouteResponse<401>
   | ApiErrorRouteResponse<403>
   | ApiErrorRouteResponse<404>
+  | ApiErrorRouteResponse<409>
   | ApiErrorRouteResponse<413>;
 
 type ReadSharedThreadRouteResponse =
@@ -153,7 +155,6 @@ const sharedMessageZodSchema = z
       )
       .optional(),
     runIndex: z.number().int().nonnegative().optional(),
-    runGroupIndex: z.number().int().nonnegative().optional(),
   })
   .strict();
 export const sharedMessageSchema: ZodLikeSchema<SharedMessage> =
@@ -178,6 +179,7 @@ const createSharedThreadBodySchema: ZodSchema<
   CreateSharedThreadBody
 > = z.object({
   eventIds: z.array(z.string().uuid()).min(1),
+  id: z.string().uuid().optional(),
 });
 
 const createSharedThreadResponseSchema: ZodLikeSchema<CreateSharedThreadResponse> =
@@ -190,13 +192,11 @@ const sharedThreadResponseSchema: ZodLikeSchema<SharedThreadResponse> =
     id: z.string().uuid(),
     title: z.string(),
     messages: z.array(sharedMessageZodSchema),
-    publicBrand: publicBrandSchema,
   });
 
 const sharedThreadMetaResponseSchema: ZodLikeSchema<SharedThreadMetaResponse> =
   z.object({
     title: z.string(),
-    publicBrand: publicBrandSchema,
   });
 
 const sharedThreadApiErrorSchema: ZodLikeSchema<ApiErrorResponse> =
@@ -233,6 +233,7 @@ const sharedThreadsRuntimeSpec = {
       401: sharedThreadApiErrorSchema,
       403: sharedThreadApiErrorSchema,
       404: sharedThreadApiErrorSchema,
+      409: sharedThreadApiErrorSchema,
       413: sharedThreadApiErrorSchema,
     },
     summary: "Create an immutable public snapshot from selected chat events",

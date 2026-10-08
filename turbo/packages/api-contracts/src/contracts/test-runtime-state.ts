@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { initContract } from "./base";
-import { connectorRuntimeTargetsSchema } from "./runners";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 
 const c = initContract();
@@ -8,12 +7,6 @@ const c = initContract();
 // Test-only support actions for infrastructure fixtures used by API suites.
 export const testRuntimeStateErrorSchema = z.object({
   error: z.string(),
-});
-
-const builtInModelRuntimeRouteSchema = z.object({
-  provider_type: z.string(),
-  upstream_model: z.string(),
-  model_key_id: z.uuid(),
 });
 
 export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
@@ -31,40 +24,9 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     fixture_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("seed-built-in-model-candidate-keys"),
-    fixture_id: z.uuid(),
-    selected_model: z.string(),
-  }),
-  z.object({
-    action: z.literal("resolve-built-in-model-route"),
-    selected_model: z.string(),
-  }),
-  z.object({
-    action: z.literal("set-built-in-candidate-cooldown"),
-    selected_model: z.string(),
-    provider_type: z.string(),
-    upstream_model: z.string(),
-    unavailable_until: z.iso.datetime(),
-  }),
-  z.object({
-    action: z.literal("delete-built-in-candidate-cooldown"),
-    selected_model: z.string(),
-    provider_type: z.string(),
-    upstream_model: z.string(),
-  }),
-  z.object({
-    action: z.literal("read-browser-screenshot-schema-state"),
-  }),
-  z.object({
-    action: z.literal("read-usage-pack-invitation-schema-state"),
-  }),
-  z.object({
-    action: z.literal("read-usage-pack-purchase-serialization-schema-state"),
-  }),
-  z.object({
     action: z.literal("set-run-autonomy-budget"),
     run_id: z.uuid(),
-    autonomy_budget: z.int().min(0).max(10),
+    autonomy_budget: z.int().min(0).max(32),
   }),
   z.object({
     action: z.literal("read-run-autonomy-budget"),
@@ -74,10 +36,20 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     action: z.literal("read-run-failure-reason"),
     run_id: z.uuid(),
   }),
+  // Test-only read boundary for the internal WSS target resolver. The public
+  // bootstrap route never exposes a candidate without issuing a ticket.
   z.object({
-    action: z.literal("set-run-model-provider"),
+    action: z.literal("resolve-runner-wss-target"),
     run_id: z.uuid(),
-    model_provider: z.string().nullable(),
+    user_id: z.string(),
+    org_id: z.string(),
+    now: z.iso.datetime().optional(),
+  }),
+  // Test-only boundary: DB-clock ticket expiry without giving API tests
+  // direct access to database internals.
+  z.object({
+    action: z.literal("expire-runner-wss-tickets"),
+    run_id: z.uuid(),
   }),
   z.object({
     action: z.literal("save-run-summary"),
@@ -89,7 +61,7 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("set-workflow-automation-autonomy-budget"),
     automation_id: z.uuid(),
-    autonomy_budget: z.int().min(0).max(10),
+    autonomy_budget: z.int().min(0).max(32),
   }),
   z.object({
     action: z.literal("read-workflow-automation-autonomy-state"),
@@ -100,9 +72,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     automation_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("reset-database-pool"),
-  }),
-  z.object({
     action: z.literal("set-runner-job-pi-context-as-versioned-writer"),
     run_id: z.uuid(),
     // Stored rows can come from a future or invalid writer. The claim boundary
@@ -110,85 +79,7 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     pi_model_config: z.record(z.string(), z.unknown()),
   }),
   z.object({
-    action: z.literal("enable-queued-pi-ownership-transfer"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("mutate-runner-job-connector-permission-baseline"),
-    run_id: z.uuid(),
-    mode: z.enum([
-      "remove",
-      "malformed",
-      "capability-mismatch",
-      "catalog-mismatch",
-      "authority-mismatch",
-      "inconsistent",
-      "incomplete",
-    ]),
-  }),
-  z.object({
-    action: z.literal("set-runner-job-connector-runtime-targets"),
-    run_id: z.uuid(),
-    connector_runtime_targets: connectorRuntimeTargetsSchema,
-  }),
-  z.object({
-    action: z.literal("remove-run-canonical-storage-state"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-runner-job-storage-state"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-run-claim-owner"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-storage-persistence-state"),
-    run_id: z.uuid(),
-    session_id: z.uuid(),
-    checkpoint_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("hold-org-admission-lock"),
-    org_id: z.string(),
-  }),
-  z.object({
-    action: z.literal("read-org-admission-lock-state"),
-  }),
-  z.object({
-    action: z.literal("release-org-admission-lock"),
-  }),
-  z.object({
-    action: z.literal("read-run-uploaded-file-sources"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-chat-event-snapshot-head"),
-    thread_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-chat-event-rows-as-previous-api"),
-    thread_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("advance-chat-event-sequence-as-previous-api"),
-    thread_id: z.uuid(),
-    count: z.int().positive(),
-  }),
-  z.object({
-    action: z.literal("update-chat-event-snapshot-head"),
-    thread_id: z.uuid(),
-    object_key: z.string().optional(),
-    last_seq_id: z.int().nonnegative().optional(),
-    last_event_id: z.uuid().optional(),
-  }),
-  z.object({
     action: z.literal("clear-run-api-start"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-run-api-start"),
     run_id: z.uuid(),
   }),
   z.object({
@@ -203,10 +94,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("read-official-workflow-run-state"),
     run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-agent-run-family-counts"),
-    agent_id: z.uuid(),
   }),
   z.object({
     action: z.literal("set-official-workflow-automation-admission-state"),
@@ -224,53 +111,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
       .optional(),
   }),
   z.object({
-    action: z.literal("retarget-workflow-automation"),
-    automation_id: z.uuid(),
-    workflow_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal(
-      "assert-official-workflow-automation-final-admission-rejected",
-    ),
-    automation_id: z.uuid(),
-    official_workflow_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("hold-official-workflow-run-gate"),
-    gate: z.enum(["observation", "final-admission", "bootstrap-requirement"]),
-  }),
-  z.object({
-    action: z.literal("read-official-workflow-run-gate-state"),
-  }),
-  z.object({
-    action: z.literal("release-official-workflow-run-gate"),
-  }),
-  z.object({
-    action: z.literal("read-thread-session-binding"),
-    thread_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-thread-session-conversation"),
-    thread_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("insert-legacy-artifact-catalog-file"),
-    user_id: z.string(),
-    org_id: z.string(),
-    filename: z.string(),
-    url: z.url(),
-  }),
-  z.object({
-    action: z.literal("set-computer-use-host-as-previous-api"),
-    thread_id: z.uuid(),
-    computer_use_host_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("set-browser-tab-snapshot-as-previous-api"),
-    thread_id: z.uuid(),
-    tab_urls: z.array(z.string().max(8192)).max(50),
-  }),
-  z.object({
     action: z.literal("set-runner-job-context-profile-as-previous-api"),
     run_id: z.uuid(),
     profile: z.string(),
@@ -282,11 +122,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     automation_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("set-custom-connector-auth-template-fixture"),
-    connector_id: z.uuid(),
-    value_template: z.string(),
-  }),
-  z.object({
     action: z.literal("reconcile-socialkit-downloads"),
     download_ids: z.array(z.uuid()).min(1).max(2),
   }),
@@ -296,15 +131,22 @@ export const testRuntimeStateActionResponseSchema = z.object({
   ok: z.literal(true),
   processed: z.int().nonnegative().optional(),
   selected_model: z.string().optional(),
-  built_in_model_route: builtInModelRuntimeRouteSchema.nullable().optional(),
-  browser_screenshot_schema_available: z.boolean().optional(),
-  usage_pack_invitation_schema_available: z.boolean().optional(),
-  usage_pack_purchase_serialization_schema_available: z.boolean().optional(),
-  autonomy_budget: z.int().min(0).max(10).nullable().optional(),
+  autonomy_budget: z.int().min(0).max(32).nullable().optional(),
   failure_reason: runFailureReasonTokenSchema.nullable().optional(),
+  wss_target: z
+    .object({
+      runId: z.uuid(),
+      runnerId: z.uuid(),
+      publicOrigin: z.string(),
+      ingressVerification: z.literal("not-observed"),
+      observedMode: z.enum(["running", "draining"]),
+      observedAt: z.iso.datetime(),
+    })
+    .nullable()
+    .optional(),
   workflow_automation_state: z
     .object({
-      autonomy_budget: z.int().min(0).max(10),
+      autonomy_budget: z.int().min(0).max(32),
       enabled: z.boolean(),
       event_connector_id: z.uuid().nullable(),
       last_run_id: z.uuid().nullable(),
@@ -316,36 +158,10 @@ export const testRuntimeStateActionResponseSchema = z.object({
   workflow_automation_run: z
     .object({
       run_id: z.uuid(),
-      autonomy_budget: z.int().min(0).max(10),
+      autonomy_budget: z.int().min(0).max(32),
     })
     .nullable()
     .optional(),
-  admission_lock_held: z.boolean().optional(),
-  admission_lock_waiting: z.boolean().optional(),
-  uploaded_file_sources: z.array(z.string()).optional(),
-  chat_event_snapshot_head: z
-    .object({
-      archive_schema_version: z.int().positive(),
-      last_event_id: z.uuid(),
-      last_seq_id: z.int().nonnegative(),
-      terminal_event_id: z.uuid().nullable(),
-      terminal_seq_id: z.int().nonnegative().nullable(),
-      object_key: z.string(),
-      snapshot_count: z.int().positive(),
-    })
-    .nullable()
-    .optional(),
-  previous_api_chat_event_rows: z
-    .array(
-      z.object({
-        id: z.uuid(),
-        event_type: z.string(),
-        revokes_event_id: z.uuid().nullable(),
-        payload_keys: z.array(z.string()),
-      }),
-    )
-    .optional(),
-  api_started_at: z.string().nullable().optional(),
   run_time_budget: z
     .object({
       scanned: z.int().nonnegative(),
@@ -418,77 +234,8 @@ export const testRuntimeStateActionResponseSchema = z.object({
           }),
         )
         .nullable(),
-      runner_job_count: z.int().nonnegative(),
-      callback_count: z.int().nonnegative(),
     })
     .nullable()
-    .optional(),
-  agent_run_family_counts: z
-    .object({
-      run_count: z.int().nonnegative(),
-      callback_count: z.int().nonnegative(),
-      runner_job_count: z.int().nonnegative(),
-      launch_queue_count: z.int().nonnegative(),
-    })
-    .optional(),
-  official_workflow_run_gate_state: z
-    .object({
-      gate: z.enum(["observation", "final-admission", "bootstrap-requirement"]),
-      arrivals: z.int().nonnegative(),
-      shared_catalog_holder_count: z.int().nonnegative(),
-      exclusive_catalog_waiter_count: z.int().nonnegative(),
-      blocked_waiter_count: z.int().nonnegative(),
-      bootstrap_requirement: z
-        .object({
-          workflow_ids: z.array(z.uuid()),
-          queue_first_kind: z
-            .enum(["user_message", "automation_event"])
-            .nullable(),
-          workflow_automation_id: z.uuid().nullable(),
-        })
-        .nullable(),
-    })
-    .nullable()
-    .optional(),
-  thread_session_binding: z
-    .object({
-      agent_session_id: z.uuid().nullable(),
-      agent_session_run_id: z.uuid().nullable(),
-      run_session_id: z.uuid().nullable(),
-    })
-    .optional(),
-  thread_session_conversation: z
-    .object({
-      agent_session_id: z.uuid().nullable(),
-      conversation_id: z.uuid().nullable(),
-      conversation_run_id: z.uuid().nullable(),
-    })
-    .optional(),
-  file_id: z.uuid().optional(),
-  storage_persistence: z
-    .object({
-      run_canonical: z.boolean(),
-      session_canonical: z.boolean(),
-      checkpoint_canonical: z.boolean(),
-    })
-    .optional(),
-  runner_job_storage_state: z
-    .object({
-      has_stored_storage_manifest: z.boolean(),
-      canonical_mount_count: z.number().int().nonnegative(),
-      has_run_context_storage: z.boolean(),
-    })
-    .optional(),
-  runner_claim_owner: z
-    .object({
-      runner_id: z.uuid().nullable(),
-      heartbeat_generation: z
-        .number()
-        .int()
-        .positive()
-        .max(Number.MAX_SAFE_INTEGER)
-        .nullable(),
-    })
     .optional(),
 });
 

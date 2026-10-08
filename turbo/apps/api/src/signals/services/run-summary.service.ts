@@ -4,19 +4,17 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 import { logger } from "../../lib/log";
 import { stripMarkdown } from "../../lib/strip-markdown";
-import { writeDb$, type Db } from "../external/db";
+import { VERTEX_TEXT_MODEL } from "../external/vertex-models";
 import {
-  AUXILIARY_TEXT_MAX_TOKENS,
-  FAST_PATH_MODEL,
-  generateTextWithUsage,
-  openRouterTokenCounts,
-} from "../external/openrouter";
+  VERTEX_AUXILIARY_MAX_TOKENS,
+  generateVertexTextWithUsage,
+} from "../external/vertex-text";
 import { tapError } from "../utils";
 import {
   generateAuxiliary,
   type RecordAuxiliaryGenerationDetail,
 } from "./auxiliary-generation.service";
-import { writeRunMetadata } from "./agent-run-metadata-write.service";
+import { writeRunMetadata$ } from "./agent-run-metadata-write.service";
 
 const log = logger("run-summary");
 
@@ -48,8 +46,8 @@ async function generateRunSummary(
 
   // A shortened summary still describes what the run produced, and the
   // alternative is a run with no summary at all.
-  const generation = await generateTextWithUsage(
-    FAST_PATH_MODEL,
+  const generation = await generateVertexTextWithUsage(
+    VERTEX_TEXT_MODEL,
     [
       {
         role: "system",
@@ -60,9 +58,8 @@ async function generateRunSummary(
         content: `Context (user request):\n${promptSnippet}\n\nResult:\n${resultSnippet}`,
       },
     ],
-    AUXILIARY_TEXT_MAX_TOKENS,
+    VERTEX_AUXILIARY_MAX_TOKENS,
     {
-      reasoning: { effort: "low" },
       temperature: 0.3,
       acceptTruncatedText: true,
     },
@@ -73,61 +70,9 @@ async function generateRunSummary(
   }
   record({
     truncated: generation.truncated === true,
-    tokens: openRouterTokenCounts(generation.usage),
+    tokens: generation.tokens,
   });
   return stripMarkdown(generation.text);
-}
-
-export async function saveRunSummary(
-  db: Db,
-  args: {
-    readonly runId: string;
-    readonly triggerSource: string;
-    readonly prompt: string;
-    readonly resultText: string;
-  },
-  signal?: AbortSignal,
-): Promise<void> {
-  const summary = await generateAuxiliary(
-    {
-      feature: "run_summary",
-      generate: (record) => {
-        return generateRunSummary(
-          args.triggerSource,
-          args.prompt,
-          args.resultText,
-          record,
-          signal,
-        );
-      },
-      usable: (value) => {
-        return Boolean(value);
-      },
-      diagnosticContext: { runId: args.runId },
-    },
-    signal,
-  );
-  signal?.throwIfAborted();
-  if (!summary) {
-    return;
-  }
-
-  await tapError(
-    (async () => {
-      await writeRunMetadata(db, {
-        patch: { summary },
-        where: eq(agentRuns.id, args.runId),
-      });
-      signal?.throwIfAborted();
-    })(),
-    (error) => {
-      log.warn("Failed to save run summary", {
-        runId: args.runId,
-        error,
-      });
-    },
-  );
-  signal?.throwIfAborted();
 }
 
 export const saveRunSummary$ = command(
@@ -141,6 +86,46 @@ export const saveRunSummary$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    await saveRunSummary(set(writeDb$), args, signal);
+    const summary = await generateAuxiliary(
+      {
+        feature: "run_summary",
+        generate: (record) => {
+          return generateRunSummary(
+            args.triggerSource,
+            args.prompt,
+            args.resultText,
+            record,
+            signal,
+          );
+        },
+        usable: (value) => {
+          return Boolean(value);
+        },
+        diagnosticContext: { runId: args.runId },
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!summary) {
+      return;
+    }
+
+    await tapError(
+      set(
+        writeRunMetadata$,
+        {
+          patch: { summary },
+          where: eq(agentRuns.id, args.runId),
+        },
+        signal,
+      ),
+      (error) => {
+        log.warn("Failed to save run summary", {
+          runId: args.runId,
+          error,
+        });
+      },
+    );
+    signal.throwIfAborted();
   },
 );

@@ -4,21 +4,19 @@ import { httpInstrumentationMiddleware } from "@hono/otel";
 import * as Sentry from "@sentry/node";
 import {
   CLIENT_FORCE_UPGRADE_STATUS,
-  CLIENT_PRODUCT_HEADER,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_APP,
-  CLIENT_TYPE_DESKTOP,
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
-  desktopProductFromClientHeader,
 } from "@okouai/api-contracts/contracts/client-headers";
 import { serializeError } from "@okouai/core/log-utils";
+import { command } from "ccstate";
 // oxlint-disable-next-line no-restricted-imports -- app factory owns the Hono instance
 import { Hono, type Context, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
-import { matchedRoutes } from "hono/route";
+import { matchedRoutes, routePath } from "hono/route";
 
 import { corsMiddleware } from "./lib/cors";
 import { env } from "./lib/env";
@@ -39,9 +37,8 @@ import {
   ingestToAxiom,
 } from "./signals/external/axiom";
 import type { RouteEntry } from "./signals/route-entry";
-import { configureChatRunFinishedEventDispatcher } from "./signals/services/chat-run-finished-event-registration.service";
-import { configureOfficialWorkflowReconciliationDispatcher } from "./signals/services/official-workflow-reconciliation-registration.service";
-import { configurePiApiFirstTurnDispatcher } from "./signals/services/pi-api-first-turn-registration.service";
+import { configureChatRunFinishedEventDispatcher$ } from "./signals/services/chat-run-finished-event-registration.service";
+import { configureOfficialWorkflowReconciliationDispatcher$ } from "./signals/services/official-workflow-reconciliation-registration.service";
 import type { UsagePricingResolution } from "./signals/context/usage-pricing-resolution";
 import type { SystemSkillStorageResolution } from "./signals/context/system-skill-storage-resolution";
 import {
@@ -52,6 +49,11 @@ import {
 } from "./signals/utils";
 
 const L = logger("App");
+
+const initializeApiServices$ = command(({ set }): void => {
+  set(configureChatRunFinishedEventDispatcher$);
+  set(configureOfficialWorkflowReconciliationDispatcher$);
+});
 
 const AUTH_PATHS = ["/sign-in", "/sign-up"] as const;
 const PREVIEW_AUTOMATION_BYPASS_ERROR = "Preview automation bypass required";
@@ -74,7 +76,6 @@ interface UnhandledRequestErrorLogFields {
 interface ClientHeaderLogFields {
   readonly x_client_version?: string;
   readonly x_client_type?: string;
-  readonly x_client_product?: string;
   readonly x_client_session_id?: string;
   readonly x_client_request_id?: string;
 }
@@ -282,21 +283,25 @@ function isTemplateRoute(path: string): boolean {
   return path !== "*" && path !== "/*";
 }
 
+// `matchedRoutes` lists every registration matching the path, including ones
+// that never ran: `/api/chat-threads/events` also matches the later
+// `/api/chat-threads/:id`. Report the route that answered, as the OTel span
+// does; when a middleware answered first (e.g. the client force-upgrade
+// gate), report the first match, which is the handler Hono would have run.
 function requestRouteTemplate(context: Context): string | undefined {
   const result = safeSync(() => {
-    return matchedRoutes(context);
+    return { answered: routePath(context), matched: matchedRoutes(context) };
   });
   if (!("ok" in result)) {
     return undefined;
   }
-  const routes = result.ok;
-  for (let index = routes.length - 1; index >= 0; index -= 1) {
-    const path = routes[index]?.path;
-    if (path && isTemplateRoute(path)) {
-      return path;
-    }
+  const { answered, matched } = result.ok;
+  if (isTemplateRoute(answered)) {
+    return answered;
   }
-  return undefined;
+  return matched.find((route) => {
+    return isTemplateRoute(route.path);
+  })?.path;
 }
 
 function presentHeaderValue(value: string | null): string | undefined {
@@ -398,19 +403,12 @@ async function previewAutomationBypassMiddleware(
 function clientHeaderLogFields(context: Context): ClientHeaderLogFields {
   const clientVersion = requestHeader(context, CLIENT_VERSION_HEADER);
   const clientType = requestHeader(context, CLIENT_TYPE_HEADER);
-  const clientProduct =
-    clientType === CLIENT_TYPE_DESKTOP
-      ? desktopProductFromClientHeader(
-          requestHeader(context, CLIENT_PRODUCT_HEADER),
-        )
-      : undefined;
   const clientSessionId = requestHeader(context, CLIENT_SESSION_ID_HEADER);
   const clientRequestId = requestHeader(context, CLIENT_REQUEST_ID_HEADER);
 
   return {
     ...(clientVersion ? { x_client_version: clientVersion } : {}),
     ...(clientType ? { x_client_type: clientType } : {}),
-    ...(clientProduct ? { x_client_product: clientProduct } : {}),
     ...(clientSessionId ? { x_client_session_id: clientSessionId } : {}),
     ...(clientRequestId ? { x_client_request_id: clientRequestId } : {}),
   };
@@ -562,9 +560,6 @@ export function createAppWithRoutes({
   usagePricingResolution,
   systemSkillStorageResolution,
 }: CreateAppWithRoutesOptions): Hono {
-  configureChatRunFinishedEventDispatcher();
-  configureOfficialWorkflowReconciliationDispatcher();
-  configurePiApiFirstTurnDispatcher();
   const app = new Hono();
   app.onError(handleError);
 
@@ -614,13 +609,12 @@ export function createAppWithRoutes({
   // compose overlapping route slices.
   for (const entry of routes) {
     const { route } = entry;
-    const routeHandler = honoSignalHandler(
-      entry.handler,
-      route,
-      signal,
+    const routeHandler = honoSignalHandler(entry.handler, route, signal, {
+      initializeServices$: initializeApiServices$,
       usagePricingResolution,
       systemSkillStorageResolution,
-    );
+      observeJsonResponse: entry.observeJsonResponse,
+    });
     app.on(route.method, route.path, routeHandler);
   }
 

@@ -21,6 +21,7 @@ import {
 import {
   matchFirewallBaseUrl,
   matchFirewallRequestDecision,
+  type FirewallRequestDecisionOptions,
   type FirewallRequestDecision,
 } from "@okouai/connectors/firewall-rule-matcher";
 import type {
@@ -37,7 +38,7 @@ import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
-import { type Db, writeDb$ } from "../external/db";
+import { db$, type Db, writeDb$ } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
   buildConnectorDiagnosticBaseCandidates,
@@ -65,6 +66,7 @@ import {
   builtinConnectorCredentialVariableReadCondition,
   resolveBuiltinConnectorCredentialAccess,
   type BuiltinConnectorCredentialAccess,
+  type BuiltinConnectorCredentialReadGroup,
 } from "./builtin-connector-credential-access.service";
 
 type FeatureStates = ReturnType<typeof getAllFeatureStates>;
@@ -116,6 +118,18 @@ interface PendingStoredConnectorRuntime {
   readonly storageNameByRuntimeName: ReadonlyMap<string, string>;
 }
 
+interface StoredConnectorReadPlan {
+  readonly pending: ReadonlyMap<
+    ConnectorSlug,
+    PendingStoredConnectorRuntime | null
+  >;
+  readonly credentialResolutionBySlug: StoredRuntimeState["credentialResolutionBySlug"];
+  readonly readGroups: readonly BuiltinConnectorCredentialReadGroup[];
+  readonly variableReadCondition: ReturnType<
+    typeof builtinConnectorCredentialVariableReadCondition
+  >;
+}
+
 type ConnectorCheckTargetUnavailableReason = Extract<
   ConnectorCheckTargetAwareDiagnosticResult,
   { readonly outcome: "target-unavailable" }
@@ -147,6 +161,7 @@ type ResolveConnectorCheckResult =
   | {
       readonly kind: "ok";
       readonly diagnostic: ConnectorCheckResponseBody;
+      readonly awsContextIncomplete?: true;
     }
   | { readonly kind: "not-found" };
 
@@ -304,113 +319,109 @@ function pendingStoredConnectorRuntimes(
   return pending;
 }
 
-async function loadStoredRuntimeState(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly snapshot: ConnectorRuntimeSnapshot;
-  },
-): Promise<StoredRuntimeState> {
-  return await db.transaction(
-    async (tx) => {
-      const connectorRows = await tx
-        .select({
-          connectorId: connectors.id,
-          connectorSlug: sql`${connectors.connectorSlug}`
-            .mapWith(pgTextDecoder)
-            .as("connector_slug"),
-          authMethod: connectors.authMethod,
-          automaticAuthType: connectors.automaticAuthType,
-          storageVersion: connectors.storageVersion,
-        })
-        .from(connectors)
-        .where(
-          and(
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            isNotNull(connectors.connectorSlug),
-            eq(connectors.isDefault, true),
-          ),
-        );
+function storedConnectorReadQuery(args: {
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return {
+    projection: {
+      connectorId: connectors.id,
+      connectorSlug: sql`${connectors.connectorSlug}`
+        .mapWith(pgTextDecoder)
+        .as("connector_slug"),
+      authMethod: connectors.authMethod,
+      automaticAuthType: connectors.automaticAuthType,
+      storageVersion: connectors.storageVersion,
+    },
+    condition: and(
+      eq(connectors.orgId, args.orgId),
+      eq(connectors.userId, args.userId),
+      isNotNull(connectors.connectorSlug),
+      eq(connectors.isDefault, true),
+    ),
+  };
+}
 
-      const pending = pendingStoredConnectorRuntimes(connectorRows, args);
-      const credentialResolutionBySlug = new Map<
-        ConnectorSlug,
-        "network-boundary" | "none"
-      >();
-      for (const row of connectorRows) {
-        const runtime = pending.get(row.connectorSlug);
-        if (
-          runtime?.access.runtimeMethod.method.grant.kind === "automatic" &&
-          row.automaticAuthType !== null
-        ) {
-          credentialResolutionBySlug.set(
-            row.connectorSlug,
-            row.automaticAuthType === "oauth" ? "network-boundary" : "none",
-          );
-        }
-      }
-
-      const readGroups = [...pending.values()].flatMap((value) => {
-        return value === null || value.storageNameByRuntimeName.size === 0
-          ? []
-          : [
-              {
-                access: value.access,
-                names: [...value.storageNameByRuntimeName.values()],
-              },
-            ];
-      });
-      const variableRows =
-        readGroups.length === 0
-          ? []
-          : await tx
-              .select({ name: variables.name, value: variables.value })
-              .from(variables)
-              .where(
-                builtinConnectorCredentialVariableReadCondition({
-                  db: tx,
-                  groups: readGroups,
-                }),
-              );
-      const valueByStorageName = new Map(
-        variableRows.map((row) => {
-          return [row.name, row.value] as const;
-        }),
+function storedConnectorReadPlan(
+  rows: readonly StoredConnectorRuntimeCandidate[],
+  pending: StoredConnectorReadPlan["pending"],
+): StoredConnectorReadPlan {
+  const credentialResolutionBySlug = new Map<
+    ConnectorSlug,
+    "network-boundary" | "none"
+  >();
+  for (const row of rows) {
+    const runtime = pending.get(row.connectorSlug);
+    if (
+      runtime?.access.runtimeMethod.method.grant.kind === "automatic" &&
+      row.automaticAuthType !== null
+    ) {
+      credentialResolutionBySlug.set(
+        row.connectorSlug,
+        row.automaticAuthType === "oauth" ? "network-boundary" : "none",
       );
-      const baseUrlVarsBySlug = new Map<
-        ConnectorSlug,
-        Readonly<Record<string, string>> | null
-      >();
-      for (const [connectorSlug, pendingState] of pending) {
-        if (pendingState === null) {
-          baseUrlVarsBySlug.set(connectorSlug, null);
-          continue;
-        }
-        const values: Record<string, string> = {};
-        let complete = true;
-        for (const [
-          runtimeName,
-          storageName,
-        ] of pendingState.storageNameByRuntimeName) {
-          const value = valueByStorageName.get(storageName);
-          if (!value) {
-            complete = false;
-            break;
-          }
-          values[runtimeName] = value;
-        }
-        baseUrlVarsBySlug.set(connectorSlug, complete ? values : null);
-      }
+    }
+  }
+  const readGroups = [...pending.values()].flatMap((value) => {
+    return value === null || value.storageNameByRuntimeName.size === 0
+      ? []
+      : [
+          {
+            access: value.access,
+            names: [...value.storageNameByRuntimeName.values()],
+          },
+        ];
+  });
+  return {
+    pending,
+    credentialResolutionBySlug,
+    readGroups,
+    variableReadCondition:
+      readGroups.length === 0
+        ? undefined
+        : builtinConnectorCredentialVariableReadCondition({
+            groups: readGroups,
+          }),
+  };
+}
 
-      return { baseUrlVarsBySlug, credentialResolutionBySlug };
-    },
-    {
-      isolationLevel: "repeatable read",
-      accessMode: "read only",
-    },
+function storedRuntimeStateFromRows(
+  plan: StoredConnectorReadPlan,
+  rows: readonly { readonly name: string; readonly value: string }[],
+): StoredRuntimeState {
+  const valueByStorageName = new Map(
+    rows.map((row) => {
+      return [row.name, row.value] as const;
+    }),
   );
+  const baseUrlVarsBySlug = new Map<
+    ConnectorSlug,
+    Readonly<Record<string, string>> | null
+  >();
+  for (const [connectorSlug, pendingState] of plan.pending) {
+    if (pendingState === null) {
+      baseUrlVarsBySlug.set(connectorSlug, null);
+      continue;
+    }
+    const values: Record<string, string> = {};
+    let complete = true;
+    for (const [
+      runtimeName,
+      storageName,
+    ] of pendingState.storageNameByRuntimeName) {
+      const value = valueByStorageName.get(storageName);
+      if (!value) {
+        complete = false;
+        break;
+      }
+      values[runtimeName] = value;
+    }
+    baseUrlVarsBySlug.set(connectorSlug, complete ? values : null);
+  }
+  return {
+    baseUrlVarsBySlug,
+    credentialResolutionBySlug: plan.credentialResolutionBySlug,
+  };
 }
 
 function routesToDecisionPermissions(
@@ -440,6 +451,7 @@ function configsToDecisionFirewalls(
         return {
           base: candidate.decisionBase,
           auth: {},
+          awsSigv4Capability: candidate.usesAwsSigv4,
           permissions: routesToDecisionPermissions(candidate.routes),
         };
       }),
@@ -505,6 +517,7 @@ function configFromCustomRuntime(
         sourceBase: api.base,
         decisionBase: api.base,
         displayBase: baseKey(api.base),
+        usesAwsSigv4: api.usesAwsSigv4,
         routes: customDiagnosticRoutes(api.permissions),
         environmentNames: null,
       };
@@ -527,50 +540,53 @@ type LoadRunDiagnosticRegistrationResult =
   | { readonly kind: "missing" }
   | { readonly kind: "not-found" };
 
-async function loadRunDiagnosticRegistration(
-  db: Db,
-  args: {
-    readonly runId: string;
-    readonly userId: string;
-    readonly orgId: string;
+const readRunDiagnosticRegistration$ = command(
+  async (
+    { get },
+    args: {
+      readonly runId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+  ): Promise<LoadRunDiagnosticRegistrationResult> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        agentId: agents.id,
+        registrationRunId: agentRunConnectorDiagnosticRegistrations.runId,
+        payload: agentRunConnectorDiagnosticRegistrations.payload,
+      })
+      .from(agentRuns)
+      .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+      .innerJoin(agents, eq(agents.id, agentSessions.agentId))
+      .leftJoin(
+        agentRunConnectorDiagnosticRegistrations,
+        eq(agentRunConnectorDiagnosticRegistrations.runId, agentRuns.id),
+      )
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.userId, args.userId),
+          eq(agentRuns.orgId, args.orgId),
+          inArray(agentRuns.status, ["pending", "running"]),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      return { kind: "not-found" };
+    }
+    if (row.registrationRunId === null) {
+      return { kind: "missing" };
+    }
+    const payload = agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
+      row.payload,
+    );
+    return {
+      kind: "available",
+      registration: { agentId: row.agentId, targets: payload.targets },
+    };
   },
-): Promise<LoadRunDiagnosticRegistrationResult> {
-  const [row] = await db
-    .select({
-      agentId: agents.id,
-      registrationRunId: agentRunConnectorDiagnosticRegistrations.runId,
-      payload: agentRunConnectorDiagnosticRegistrations.payload,
-    })
-    .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .innerJoin(agents, eq(agents.id, agentSessions.agentId))
-    .leftJoin(
-      agentRunConnectorDiagnosticRegistrations,
-      eq(agentRunConnectorDiagnosticRegistrations.runId, agentRuns.id),
-    )
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.userId, args.userId),
-        eq(agentRuns.orgId, args.orgId),
-        inArray(agentRuns.status, ["queued", "pending", "running"]),
-      ),
-    )
-    .limit(1);
-  if (!row) {
-    return { kind: "not-found" };
-  }
-  if (row.registrationRunId === null) {
-    return { kind: "missing" };
-  }
-  const payload = agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
-    row.payload,
-  );
-  return {
-    kind: "available",
-    registration: { agentId: row.agentId, targets: payload.targets },
-  };
-}
+);
 
 function targetAwareUrlRequest(
   request: ConnectorCheckRequestBody,
@@ -813,9 +829,29 @@ function decisionOwnerNames(
   return [];
 }
 
+function awsDiagnosticDecisionOptions(
+  aws: Extract<ConnectorCheckRequestBody, { readonly mode: "url" }>["aws"],
+): FirewallRequestDecisionOptions {
+  return {
+    awsDiagnostic:
+      aws === undefined
+        ? {}
+        : {
+            context: {
+              sigv4Service: aws.sigv4Service,
+              ...(aws.action === undefined ? {} : { action: aws.action }),
+              ...(aws.target === undefined ? {} : { target: aws.target }),
+              query: aws.query ?? [],
+              headerNames: aws.headerNames ?? [],
+            },
+          },
+  };
+}
+
 function environmentNamesForWinningCandidates(
   config: ConnectorCheckRoutingConfig,
   request: ParsedConnectorDiagnosticRequest,
+  aws: Extract<ConnectorCheckRequestBody, { readonly mode: "url" }>["aws"],
 ): readonly string[] | null {
   const candidateByOwner = new Map<string, ConnectorDiagnosticBaseCandidate>();
   const firewalls = config.candidates.map((candidate, index) => {
@@ -827,6 +863,7 @@ function environmentNamesForWinningCandidates(
         {
           base: candidate.decisionBase,
           auth: {},
+          awsSigv4Capability: candidate.usesAwsSigv4,
           permissions: routesToDecisionPermissions(candidate.routes),
         },
       ],
@@ -836,6 +873,9 @@ function environmentNamesForWinningCandidates(
     firewalls,
     request.method,
     request.url,
+    undefined,
+    { status: "absent" },
+    awsDiagnosticDecisionOptions(aws),
   );
   const names = new Set<string>();
   let found = false;
@@ -1215,10 +1255,15 @@ function selectUrlEnvironmentNames(args: {
   readonly parsed: ParsedConnectorDiagnosticRequest;
   readonly requestedEnvironmentName: string | undefined;
   readonly identity: ConnectorCheckTargetIdentity;
+  readonly aws: Extract<
+    ConnectorCheckRequestBody,
+    { readonly mode: "url" }
+  >["aws"];
 }): UrlEnvironmentSelection {
   const environmentNames = environmentNamesForWinningCandidates(
     args.config,
     args.parsed,
+    args.aws,
   );
   if (args.requestedEnvironmentName === undefined) {
     return {
@@ -1334,6 +1379,7 @@ function resolvedUrlDiagnostic(
     parsed,
     requestedEnvironmentName: request.environmentName,
     identity,
+    aws: request.aws,
   });
   if (environmentSelection.kind === "diagnostic") {
     return environmentSelection.diagnostic;
@@ -1362,12 +1408,17 @@ function requestedUrlTarget(
     : undefined;
 }
 
+interface UrlModeResolution {
+  readonly diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+  readonly awsContextIncomplete?: true;
+}
+
 async function resolveUrlMode(
   request: Extract<ConnectorCheckRequestBody, { readonly mode: "url" }>,
   parsed: ParsedConnectorDiagnosticRequest,
   timeline: ConnectorCheckTimeline,
   catalogContext: ConnectorCheckCatalogContext,
-): Promise<ConnectorCheckTargetAwareDiagnosticResult> {
+): Promise<UrlModeResolution> {
   const targetAware = targetAwareUrlRequest(request);
   const requestedTarget = requestedUrlTarget(request);
   const requestedConnectorSlug =
@@ -1379,7 +1430,7 @@ async function resolveUrlMode(
     requestedConnectorSlug !== undefined &&
     !isConnectorSlug(catalogContext.snapshot, requestedConnectorSlug)
   ) {
-    return { outcome: "unknown-connector" };
+    return { diagnostic: { outcome: "unknown-connector" } };
   }
 
   const configs =
@@ -1402,13 +1453,15 @@ async function resolveUrlMode(
       );
     })
   ) {
-    return noMatchDiagnostic(
-      requestedTarget,
-      configs,
-      timeline,
-      catalogContext,
-      targetAware,
-    );
+    return {
+      diagnostic: noMatchDiagnostic(
+        requestedTarget,
+        configs,
+        timeline,
+        catalogContext,
+        targetAware,
+      ),
+    };
   }
   const decision = matchFirewallRequestDecision(
     configsToDecisionFirewalls(configs),
@@ -1421,21 +1474,26 @@ async function resolveUrlMode(
           value: connectorRuntimeTargetKey(requestedTarget),
         }
       : { status: "absent" },
+    awsDiagnosticDecisionOptions(request.aws),
   );
 
   if (decision.kind === "no_match") {
-    return noMatchDiagnostic(
-      requestedTarget,
-      configs,
-      timeline,
-      catalogContext,
-      targetAware,
-    );
+    return {
+      diagnostic: noMatchDiagnostic(
+        requestedTarget,
+        configs,
+        timeline,
+        catalogContext,
+        targetAware,
+      ),
+    };
   }
   if (decision.kind === "ambiguous") {
-    return unresolvedOwnerDiagnostic(decision, configs, catalogContext);
+    return {
+      diagnostic: unresolvedOwnerDiagnostic(decision, configs, catalogContext),
+    };
   }
-  return resolvedUrlDiagnostic({
+  const diagnostic = resolvedUrlDiagnostic({
     request,
     parsed,
     decision,
@@ -1443,6 +1501,15 @@ async function resolveUrlMode(
     timeline,
     catalogContext,
   });
+  return {
+    diagnostic,
+    ...(decision.awsContextIncomplete === true &&
+    diagnostic.outcome === "resolved" &&
+    diagnostic.mode === "url" &&
+    diagnostic.permission.kind === "unknown-endpoint"
+      ? { awsContextIncomplete: true as const }
+      : {}),
+  };
 }
 
 function resolveEnvironmentMode(
@@ -1563,28 +1630,43 @@ function legacyDiagnostic(
   }
 }
 
+function parseCheckRequest(
+  request: ConnectorCheckRequestBody,
+): ReturnType<typeof parseConnectorDiagnosticRequest> | null {
+  return request.mode === "url"
+    ? parseConnectorDiagnosticRequest(request.method, request.url)
+    : null;
+}
+
+function publicCheckResult(
+  request: ConnectorCheckRequestBody,
+  diagnostic: ConnectorCheckTargetAwareDiagnosticResult,
+  awsContextIncomplete: boolean,
+): ResolveConnectorCheckResult {
+  return {
+    kind: "ok",
+    diagnostic: targetAwareUrlRequest(request)
+      ? diagnostic
+      : legacyDiagnostic(diagnostic),
+    ...(awsContextIncomplete ? { awsContextIncomplete: true as const } : {}),
+  };
+}
+
 export const resolveConnectorCheck$ = command(
   async (
     { set },
     args: ResolveConnectorCheckArgs,
     signal: AbortSignal,
   ): Promise<ResolveConnectorCheckResult> => {
-    let parsed: ParsedConnectorDiagnosticRequest | null = null;
-    if (args.request.mode === "url") {
-      const parseResult = parseConnectorDiagnosticRequest(
-        args.request.method,
-        args.request.url,
-      );
-      if ("outcome" in parseResult) {
-        return { kind: "ok", diagnostic: parseResult };
-      }
-      parsed = parseResult;
+    const parsed = parseCheckRequest(args.request);
+    if (parsed && "outcome" in parsed) {
+      return { kind: "ok", diagnostic: parsed };
     }
 
     const db = set(writeDb$);
     let runRegistration: RunDiagnosticRegistration | undefined;
     if (args.stateSource.kind === "run") {
-      const registration = await loadRunDiagnosticRegistration(db, {
+      const registration = await set(readRunDiagnosticRegistration$, {
         runId: args.stateSource.runId,
         userId: args.userId,
         orgId: args.orgId,
@@ -1620,17 +1702,44 @@ export const resolveConnectorCheck$ = command(
       if (args.stateSource.kind !== "stored") {
         throw new Error("Missing active run diagnostic registration");
       }
-      const state =
-        args.request.mode === "url"
-          ? await loadStoredRuntimeState(db, {
-              orgId: args.orgId,
-              userId: args.userId,
-              snapshot,
-            })
-          : {
-              baseUrlVarsBySlug: new Map(),
-              credentialResolutionBySlug: new Map(),
-            };
+      let state: StoredRuntimeState;
+      if (args.request.mode === "url") {
+        const storedScope = {
+          orgId: args.orgId,
+          userId: args.userId,
+          snapshot,
+        };
+        state = await db.transaction(
+          async (tx) => {
+            const query = storedConnectorReadQuery(storedScope);
+            const connectorRows = await tx
+              .select(query.projection)
+              .from(connectors)
+              .where(query.condition);
+            const plan = storedConnectorReadPlan(
+              connectorRows,
+              pendingStoredConnectorRuntimes(connectorRows, storedScope),
+            );
+            const variableRows =
+              plan.readGroups.length === 0
+                ? []
+                : await tx
+                    .select({ name: variables.name, value: variables.value })
+                    .from(variables)
+                    .where(plan.variableReadCondition);
+            return storedRuntimeStateFromRows(plan, variableRows);
+          },
+          {
+            isolationLevel: "repeatable read",
+            accessMode: "read only",
+          },
+        );
+      } else {
+        state = {
+          baseUrlVarsBySlug: new Map(),
+          credentialResolutionBySlug: new Map(),
+        };
+      }
       signal.throwIfAborted();
       timeline = { kind: "stored", state };
     }
@@ -1651,16 +1760,20 @@ export const resolveConnectorCheck$ = command(
       visibleConnectorSlugs: new Set(visibleConnectorSlugs),
     };
     let diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+    let awsContextIncomplete = false;
     if (args.request.mode === "url") {
       if (!parsed) {
         throw new Error("Missing parsed connector diagnostic request");
       }
-      diagnostic = await resolveUrlMode(
+      const resolution = await resolveUrlMode(
         args.request,
         parsed,
         timeline,
         catalogContext,
       );
+      signal.throwIfAborted();
+      diagnostic = resolution.diagnostic;
+      awsContextIncomplete = resolution.awsContextIncomplete === true;
     } else {
       diagnostic = await resolveEnvironmentMode(
         args.request,
@@ -1669,11 +1782,6 @@ export const resolveConnectorCheck$ = command(
       );
     }
     signal.throwIfAborted();
-    return {
-      kind: "ok",
-      diagnostic: targetAwareUrlRequest(args.request)
-        ? diagnostic
-        : legacyDiagnostic(diagnostic),
-    };
+    return publicCheckResult(args.request, diagnostic, awsContextIncomplete);
   },
 );

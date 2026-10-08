@@ -242,6 +242,10 @@ const summaryResultSchema = providerObject({
   quotes: z.array(z.string()),
 });
 
+const tiktokSummaryResultSchema = summaryResultSchema.extend({
+  summarySource: z.enum(["transcript", "visual"]).optional(),
+});
+
 const linkedinAuthorSchema = providerObject({
   name: z.string(),
   headline: z.string(),
@@ -410,6 +414,7 @@ const instagramStatsResultSchema = providerObject({
   views: countSchema.nullable(),
   likes: countSchema,
   comments: countSchema,
+  shares: countSchema.nullable(),
   publishedAt: z.string(),
   author: z.string(),
   authorLink: z.string(),
@@ -418,6 +423,24 @@ const instagramStatsResultSchema = providerObject({
   isVideo: z.boolean(),
   contentType: z.string(),
 });
+
+export const socialKitInstagramCommentsOutcomeSchema = z
+  .object({
+    collectionStatus: z.enum(["partial", "exhausted", "unknown"]),
+    stopReason: z.enum([
+      "requested_limit",
+      "upstream_exhausted",
+      "repeated_cursor",
+      "no_progress",
+      "page_limit",
+      "unknown",
+    ]),
+  })
+  .strict();
+
+export type SocialKitInstagramCommentsOutcome = z.infer<
+  typeof socialKitInstagramCommentsOutcomeSchema
+>;
 
 const instagramChannelStatsResultSchema = providerObject({
   profileUrl: z.string(),
@@ -451,7 +474,8 @@ const instagramCommentSchema = providerObject({
 const instagramCommentsResultSchema = providerObject({
   postUrl: z.string(),
   comments: z.array(instagramCommentSchema),
-  commentCount: countSchema,
+  commentCount: countSchema.nullable(),
+  ...socialKitInstagramCommentsOutcomeSchema.shape,
   hasMore: z.boolean(),
   cursor: paginationCursorResultSchema.nullable(),
 });
@@ -1161,7 +1185,7 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     description: "Summarize a public TikTok video.",
     path: "/tiktok/summarize",
     inputSchema: summaryInputSchema,
-    resultSchema: summaryResultSchema,
+    resultSchema: tiktokSummaryResultSchema,
   }),
   defineTool({
     name: "youtube_transcript",

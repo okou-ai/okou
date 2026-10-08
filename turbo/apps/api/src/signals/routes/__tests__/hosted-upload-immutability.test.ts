@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
@@ -22,7 +23,7 @@ async function fixture(privateArtifacts: boolean) {
 }
 
 test.each([true, false])(
-  "binds hosted upload credentials to the declared bytes (private: %s)",
+  "issues normal 48-hour hosted PUT credentials without checksum binding (private: %s)",
   async (privateArtifacts) => {
     const { actor, capture } = await fixture(privateArtifacts);
     const files = [
@@ -41,18 +42,18 @@ test.each([true, false])(
     });
 
     for (const file of files) {
-      // The storage boundary must receive the checksum, so its signature
-      // cannot authorize replacing published content with different bytes.
-      expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          input: expect.objectContaining({
-            Key: expect.stringContaining(file.path),
-            ChecksumSHA256: Buffer.from(file.sha256, "hex").toString("base64"),
-          }),
-        }),
-        expect.objectContaining({ expiresIn: 172_800 }),
-      );
+      const signing = context.mocks.s3.getSignedUrl.mock.calls.find((call) => {
+        return (
+          call[1] instanceof PutObjectCommand &&
+          call[1].input.Key?.endsWith(file.path)
+        );
+      });
+      if (!signing || !(signing[1] instanceof PutObjectCommand)) {
+        throw new Error("Expected a signed hosted PUT");
+      }
+      expect(signing[1].input.Key).toContain(file.path);
+      expect(signing[1].input.ChecksumSHA256).toBeUndefined();
+      expect(signing[2]).toMatchObject({ expiresIn: 172_800 });
     }
 
     await api.completeHostedSite(actor, draft.deploymentId);

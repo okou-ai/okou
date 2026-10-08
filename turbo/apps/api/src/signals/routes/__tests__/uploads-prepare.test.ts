@@ -18,6 +18,7 @@ import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org"
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
+import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
@@ -459,34 +460,28 @@ describe("POST /api/uploads/prepare", () => {
 
   it("rejects suspended orgs with insufficient credits", async () => {
     const actor = bdd.user();
-    const completed = await bdd.completeOnboarding(actor);
-    expect(completed.status).toBe(200);
     if (!actor.orgId) {
       throw new Error("Expected suspended upload prepare actor to have an org");
     }
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "suspended",
-    });
-    mocks.clerk.session(actor.userId, actor.orgId);
+    const fixture = createPublicUnfundedProFixture(context, actor);
+    await fixture.run(async () => {
+      await fixture.initialize();
+      await fixture.suspend();
+      mocks.clerk.session(actor.userId, actor.orgId);
 
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    const response = await accept(
-      client.prepare({
-        body: validBody(),
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [402],
-    );
+      const client = setupApp({ context, routes: uploadsTestRoutes })(
+        uploadsContract,
+      );
+      const response = await accept(
+        client.prepare({
+          body: validBody(),
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [402],
+      );
 
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    });
   });
 
   it("normalizes staff entitlement lifecycle statuses for suspension checks", async () => {

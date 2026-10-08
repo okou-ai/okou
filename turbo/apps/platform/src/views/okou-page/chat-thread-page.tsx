@@ -1,10 +1,11 @@
 import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
-import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
+import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
+import { Toolbar } from "@base-ui/react/toolbar";
+import { Field } from "@base-ui/react/field";
 import type {
   FormEvent,
-  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
   UIEvent as ReactUIEvent,
@@ -20,7 +21,11 @@ import {
 import type { TFunction } from "i18next";
 import { equalArrays, equalSets } from "../../lib/equality.ts";
 import { useTranslation } from "react-i18next";
-import { formatAppNumber, formatChatTimestamp } from "../../i18n/format.ts";
+import {
+  formatAppNumber,
+  formatChatTimestamp,
+  formatLocalizedNumber,
+} from "../../i18n/format.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts";
 import {
@@ -58,7 +63,6 @@ import {
   Package,
   Route,
   Search,
-  Target,
   X,
   Clock,
   Hourglass,
@@ -71,6 +75,7 @@ import {
   getShortcutParts,
   Button,
   CopyButton,
+  ShareLinkButton,
   Checkbox,
   Input,
   Skeleton,
@@ -103,6 +108,10 @@ import {
   buttonVariants,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
+import {
+  knownRunFailureReasonSchema,
+  type KnownRunFailureReason,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type {
   ChatEventUsagePayload,
   ChatRecommendedFollowup,
@@ -120,9 +129,13 @@ import type {
   ChatThreadWorkflowAutomation,
   WorkflowSchedule,
 } from "@okouai/api-contracts/contracts/workflows";
-import { getModelDisplayName } from "@okouai/core/model-display-name";
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../../signals/external/model-catalog.ts";
 import { emptyChatImg, thinkingSpinnerImg } from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { ChatLastReadMarker } from "../../signals/chat-page/chat-last-read-marker.ts";
 import { ChatThreadPinButton } from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
@@ -155,6 +168,8 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
+import { DiscordMark } from "./components/discord-mark.tsx";
+import { McpMark } from "./components/mcp-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
@@ -164,6 +179,7 @@ import type {
 import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
+  completeExactReconnectChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -178,8 +194,13 @@ import {
   type RunWorkFolding,
   type RunWorkSection,
 } from "../../signals/chat-page/run-work-folding.ts";
+import {
+  chatEventGroupKeys,
+  chatEventRenderKey,
+} from "../../signals/chat-page/chat-event-group-keys.ts";
 import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
+import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 import {
   defaultBuiltinConnectorAccountOptions,
@@ -249,23 +270,27 @@ import type {
   ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
 import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
+import {
+  ChatThreadLinkChip,
+  STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
+  STRUCTURED_INLINE_REFERENCE_CLASS,
+} from "../components/chat-thread-link-chip.tsx";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
   RecommendedFollowupSource,
-  ThinkingIndicatorMode,
+  ThinkingIndicators,
 } from "../../signals/chat-page/chat-panel-signals.ts";
 import {
   applyChatThreadEmoji,
-  isChatThreadArchived,
   removeChatThreadEmoji,
-  unarchiveChatThreadTitle,
   CHAT_THREAD_EMOJI_OPTIONS,
 } from "../../signals/chat-page/chat-thread-title.ts";
 import {
@@ -347,26 +372,24 @@ type RecommendedFollowup = ChatRecommendedFollowup;
 
 type UserMessageNonContentPart = Extract<
   UserMessagePart,
-  { readonly type: "source" | "automation" | "goal" }
+  { readonly type: "source" | "automation" }
 >;
 
 type UserMessageAnnotationRenderPart = Extract<
   UserMessageRenderPart,
-  { readonly type: "source" | "automation" | "goal" }
+  { readonly type: "source" | "automation" }
 >;
 
 function isUserMessageNonContentPart(
   part: UserMessagePart,
 ): part is UserMessageNonContentPart {
-  return (
-    part.type === "source" || part.type === "automation" || part.type === "goal"
-  );
+  return part.type === "source" || part.type === "automation";
 }
 
 type UserMessageHiddenPart = Extract<
   UserMessagePart,
   {
-    readonly type: "source" | "automation" | "goal" | "model";
+    readonly type: "source" | "automation" | "model";
   }
 >;
 
@@ -380,7 +403,6 @@ function isInputChatEvent(event: ChatEvent): event is ChatInputEvent {
   return (
     event.eventType === "input.prompt" ||
     event.eventType === "input.automation" ||
-    event.eventType === "input.goal" ||
     event.eventType === "input.rejected"
   );
 }
@@ -435,8 +457,10 @@ function fastModeEnabled(selection: ChatRunModelSelection): boolean {
 function runModelDisplayName(
   t: TFunction<"common">,
   selection: ChatRunModelSelection,
+  catalog: ModelCatalog | undefined,
 ): string {
-  const model = getModelDisplayName(selection.selectedModel);
+  const model =
+    catalog?.displayName(selection.selectedModel) ?? selection.selectedModel;
   return fastModeEnabled(selection)
     ? t(
         ($) => {
@@ -502,11 +526,7 @@ function userMessageAnnotationRenderPart(
 ): UserMessageAnnotationRenderPart | undefined {
   return document?.parts.find(
     (renderPart): renderPart is UserMessageAnnotationRenderPart => {
-      return (
-        renderPart.type === "source" ||
-        renderPart.type === "automation" ||
-        renderPart.type === "goal"
-      );
+      return renderPart.type === "source" || renderPart.type === "automation";
     },
   );
 }
@@ -713,8 +733,6 @@ export function SettledChatThreadActions({
 
 function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
-  const headerActionsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadHeaderActions];
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
@@ -752,16 +770,12 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
 
   return (
     <header className={CHAT_THREAD_HEADER_CLASS}>
-      {headerActionsEnabled ? (
-        <div className="flex min-w-0 items-center gap-2 pr-3">
-          <ChatThreadHeaderTitle thread={thread} />
-          <SettledChatThreadActions thread={thread}>
-            <ChatThreadPinButton thread={thread} />
-          </SettledChatThreadActions>
-        </div>
-      ) : (
+      <div className="flex min-w-0 items-center gap-2 pr-3">
         <ChatThreadHeaderTitle thread={thread} />
-      )}
+        <SettledChatThreadActions thread={thread}>
+          <ChatThreadPinButton thread={thread} />
+        </SettledChatThreadActions>
+      </div>
       <SettledChatThreadActions thread={thread}>
         <div className="flex shrink-0 items-center gap-0.5">
           <TooltipProvider>
@@ -818,8 +832,6 @@ function useChatThreadEmojiMenuActions({
   const closeChatThreadEmojiMenu = useSet(closeChatThreadEmojiMenu$);
   const renameChatThread = useSet(renameChatThread$);
   const pageSignal = useGet(pageSignal$);
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const open = emojiMenuThreadId === threadId;
 
   function closeMenu() {
@@ -851,11 +863,7 @@ function useChatThreadEmojiMenuActions({
     if (!activeThreadId) {
       return;
     }
-    const currentTitle = emojiMenuTitle ?? title;
-    const nextTitle =
-      archiveEnabled && isChatThreadArchived(currentTitle)
-        ? unarchiveChatThreadTitle(currentTitle)
-        : removeChatThreadEmoji(currentTitle);
+    const nextTitle = removeChatThreadEmoji(emojiMenuTitle ?? title);
     if (!nextTitle) {
       closeMenu();
       return;
@@ -984,16 +992,10 @@ function ChatThreadEmojiMenuButton({
 
 function useFrequentlyUsedEmoji(): ChatThreadEmojiItem[] {
   const { t } = useTranslation();
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const labels = [
-    archiveEnabled
-      ? t(($) => {
-          return $.chat.thread.emoji.archive;
-        })
-      : t(($) => {
-          return $.chat.thread.emoji.done;
-        }),
+    t(($) => {
+      return $.chat.thread.emoji.done;
+    }),
     t(($) => {
       return $.chat.thread.emoji.urgent;
     }),
@@ -1080,7 +1082,7 @@ function chatThreadEmojiDisplayName(
 }
 
 function chatThreadEmojiSectionId(key: string): string {
-  return `chat-thread-emoji-section-${key}`;
+  return `chat-thread-emoji-section-${encodeURIComponent(key)}`;
 }
 
 // The category whose title is pinned right now: the last section that has
@@ -1166,58 +1168,30 @@ function ChatThreadEmojiCategoryRail({
   const selectedCategory =
     activeCategory ?? CHAT_THREAD_EMOJI_FREQUENT_CATEGORY;
 
-  // A tablist takes one tab stop, and the arrow keys move between the tabs
-  // inside it.
-  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-    const step =
-      event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    if (step === 0) {
-      return;
-    }
-    const tabs = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'),
-    );
-    const current = tabs.findIndex((tab) => {
-      return tab === document.activeElement;
-    });
-    if (current === -1) {
-      return;
-    }
-    event.preventDefault();
-    const next = (current + step + tabs.length) % tabs.length;
-    tabs[next]?.focus();
-    const nextCategory = categories[next];
-    if (nextCategory) {
-      onSelect(nextCategory.key);
-    }
-  }
-
+  // These buttons scroll one continuous feed. Toolbar owns keyboard focus;
+  // the pinned section owns the current-location indicator independently.
   return (
-    <div
-      role="tablist"
+    <Toolbar.Root
       aria-label={t(($) => {
         return $.chat.thread.emojiCategories;
       })}
       // 7px top and bottom keeps the buttons clear of the popover edge and of
       // the divider; the active bar then sits inside the bottom gap.
       className="flex gap-0.5 border-b border-border px-2 py-[7px]"
-      onKeyDown={handleKeyDown}
     >
       {categories.map((category) => {
         const CategoryIcon = category.icon;
         const selected = category.key === selectedCategory;
         return (
-          <button
+          <Toolbar.Button
             key={category.key}
             type="button"
-            role="tab"
-            aria-selected={selected}
+            aria-current={selected ? "location" : undefined}
             aria-controls={chatThreadEmojiSectionId(category.key)}
             aria-label={category.label}
             title={category.label}
-            tabIndex={selected ? 0 : -1}
             className={cn(
-              "relative flex h-8 flex-1 items-center justify-center rounded-lg transition-colors hover:bg-state-hover hover:text-foreground",
+              "relative flex h-8 flex-1 items-center justify-center rounded-lg transition-colors hover:bg-state-hover hover:text-foreground focus-visible:bg-state-hover focus-visible:text-foreground",
               selected ? "text-foreground" : "text-muted-foreground",
             )}
             onClick={() => {
@@ -1233,10 +1207,10 @@ function ChatThreadEmojiCategoryRail({
                 className="absolute -bottom-2 h-0.5 w-4 rounded-t-sm bg-primary"
               />
             )}
-          </button>
+          </Toolbar.Button>
         );
       })}
-    </div>
+    </Toolbar.Root>
   );
 }
 
@@ -2194,7 +2168,7 @@ function HeaderWorkflowAutomationCard({
               type="button"
               variant="neutral"
               size="sm"
-              className="h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
+              className="ml-auto h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
               disabled={running}
               onClick={() => {
                 detach(
@@ -3116,21 +3090,79 @@ function ChatThreadScrollCommitMarker({
   );
 }
 
-function assistantGroupIdForRunWorkIndicator(
+const DEFAULT_THINKING_INDICATORS: ThinkingIndicators = Object.freeze({
+  kind: "thinking",
+  runId: null,
+  messages: [],
+});
+
+function equalThinkingMessages(
+  previous: ThinkingMessage,
+  next: ThinkingMessage,
+): boolean {
+  return previous.id === next.id && previous.text === next.text;
+}
+
+// Every summary refresh resolves a new object, even when nothing changed. This
+// component renders the whole message list, so only a changed indicator should
+// render it again.
+function equalThinkingIndicators(
+  previous: ThinkingIndicators | null,
+  next: ThinkingIndicators | null,
+): boolean {
+  if (previous === null || next === null) {
+    return previous === next;
+  }
+  if (previous.kind === "queued" || next.kind === "queued") {
+    return previous.kind === next.kind;
+  }
+  return (
+    previous.runId === next.runId &&
+    equalArrays(previous.messages, next.messages, equalThinkingMessages)
+  );
+}
+
+type RunStatusRow =
+  | {
+      readonly kind: "thinking-indicators";
+      readonly indicators: ThinkingIndicators;
+    }
+  | { readonly kind: "finished" };
+
+// A status tail event (such as a run error) replaces the status row.
+function runStatusRow(
+  runWorkFolding: RunWorkFolding | null,
+  thinkingIndicators: ThinkingIndicators | null,
+  runFinished: boolean,
+): RunStatusRow | undefined {
+  if (runWorkFolding?.statusTail?.events.length) {
+    return undefined;
+  }
+  if (thinkingIndicators !== null) {
+    return { kind: "thinking-indicators", indicators: thinkingIndicators };
+  }
+  return runFinished ? { kind: "finished" } : undefined;
+}
+
+// The status row belongs to the run's work anchor group, otherwise to the
+// latest assistant turn.
+function statusRowAssistantGroupId(
   groups: readonly ChatEventGroup[],
   runWorkFolding: RunWorkFolding | null,
 ): string | null {
   const anchorEventId = runWorkFolding?.statusTail?.anchorEventId;
-  if (anchorEventId === undefined) {
-    return null;
-  }
-  return (
-    groups.find((group) => {
+  if (anchorEventId !== undefined) {
+    const anchorGroup = groups.find((group) => {
       return group.events.some((event) => {
         return event.id === anchorEventId;
       });
-    })?.beginEventId ?? null
-  );
+    });
+    if (anchorGroup !== undefined) {
+      return anchorGroup.beginEventId;
+    }
+  }
+  const lastGroup = groups.at(-1);
+  return lastGroup?.role === "assistant" ? lastGroup.beginEventId : null;
 }
 
 function ChatThreadRenderedEventGroups({
@@ -3148,10 +3180,7 @@ function ChatThreadRenderedEventGroups({
   const modelChanges = modelChangesByEventId(renderedActiveGroups);
   const scrollTargetEventId =
     useGet(thread.threadScrollPosition$)?.targetEventId ?? null;
-  const runWorkFolding = buildRunWorkFolding(
-    renderedActiveGroups,
-    new Set(modelChanges.keys()),
-  );
+  const runWorkFolding = buildRunWorkFolding(renderedActiveGroups);
   const runWorkExpandedKeys = useGet(runWorkExpandedKeys$);
   const effectiveRunWorkExpandedKeys = runWorkExpandedKeysForScrollTarget(
     runWorkFolding,
@@ -3160,15 +3189,26 @@ function ChatThreadRenderedEventGroups({
   );
   const toggleRunWorkExpanded = useSet(toggleRunWorkExpanded$);
   const visibleGroups = runWorkFolding?.visibleGroups ?? renderedActiveGroups;
-  const resolvedThinkingIndicatorMode =
-    useLastResolved(thread.thinkingIndicatorMode$) ?? null;
-  const thinkingIndicatorMode = runWorkFolding?.statusTail?.events.length
-    ? null
-    : resolvedThinkingIndicatorMode;
-  const runIndicatorAssistantGroupId = assistantGroupIdForRunWorkIndicator(
-    visibleGroups,
-    runWorkFolding,
+  // Before the first result, or when the summary request fails, show the
+  // default thinking label. A resolved null means the thread is idle.
+  const resolvedThinkingIndicators = useLastResolved(
+    thread.thinkingIndicators$,
+    { equalityFn: equalThinkingIndicators },
   );
+  const thinkingIndicators =
+    resolvedThinkingIndicators === undefined
+      ? DEFAULT_THINKING_INDICATORS
+      : resolvedThinkingIndicators;
+  const runFinished = useLastResolved(thread.runFinished$) ?? false;
+  const statusRow = runStatusRow(
+    runWorkFolding,
+    thinkingIndicators,
+    runFinished,
+  );
+  const statusRowGroupId =
+    statusRow === undefined
+      ? null
+      : statusRowAssistantGroupId(visibleGroups, runWorkFolding);
 
   return withChatScrollLayout(
     <>
@@ -3179,18 +3219,12 @@ function ChatThreadRenderedEventGroups({
         runWorkFolding={runWorkFolding}
         runWorkExpandedKeys={effectiveRunWorkExpandedKeys}
         onToggleRunWork={toggleRunWorkExpanded}
-        thinkingIndicatorMode={thinkingIndicatorMode}
-        runIndicatorAssistantGroupId={runIndicatorAssistantGroupId}
+        statusRow={statusRow}
+        statusRowGroupId={statusRowGroupId}
       />
       <ChatThreadScrollCommitMarker
         thread={thread}
         renderedGroups={resolvedRenderedGroups}
-      />
-      <ChatThreadThinkingIndicator
-        thread={thread}
-        mode={
-          runIndicatorAssistantGroupId === null ? thinkingIndicatorMode : null
-        }
       />
     </>,
   );
@@ -3250,7 +3284,6 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
       renderedGroupsReady.state === "hasData" &&
       renderedGroupsReady.data);
   const scrollContentOnRef = useSet(thread.scrollContentOnRef$);
-  const sharingPhase = useGet(thread.sharing.phase$);
 
   return withChatScrollLayout(
     <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
@@ -3261,7 +3294,6 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
           CHAT_THREAD_MESSAGE_LIST_CLASS,
           // Preserve the mounted layout for scroll restoration while loading.
           !showTranscript && "invisible",
-          sharingPhase !== "idle" && "pr-10 lg:pr-0",
         )}
       >
         <ChatThreadSessionError thread={thread} />
@@ -3271,19 +3303,6 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
       </div>
     </main>,
   );
-}
-
-function ChatThreadThinkingIndicator({
-  thread,
-  mode,
-}: {
-  thread: ChatPanelSignals;
-  mode: ThinkingIndicatorMode;
-}) {
-  const sharingPhase = useGet(thread.sharing.phase$);
-  return sharingPhase === "idle" ? (
-    <ThinkingIndicator thread={thread} mode={mode} />
-  ) : null;
 }
 
 function ChatThreadNextRunModelNotice({
@@ -3298,6 +3317,7 @@ function ChatThreadNextRunModelNotice({
   const runningSelection = useLastResolved(
     thread.composer.model.runningModelSelection$,
   );
+  const catalog = useLastResolved(modelCatalog$);
   if (
     selectedSelection === undefined ||
     selectedSelection === null ||
@@ -3307,8 +3327,9 @@ function ChatThreadNextRunModelNotice({
     return withChatScrollLayout(null);
   }
 
+  // Runs record Auto under its internal run model.
   const selectedRunSelection: ChatRunModelSelection = {
-    selectedModel: selectedSelection.selectedModel,
+    selectedModel: selectedSelection.selectedModel ?? AUTO_RUN_MODEL,
     ...(selectedSelection.codexServiceTier === "fast"
       ? { serviceTier: "priority" as const }
       : {}),
@@ -3319,7 +3340,7 @@ function ChatThreadNextRunModelNotice({
       ($) => {
         return $.chat.run.selectedModelAppliesAfterCurrentRun;
       },
-      { model: runModelDisplayName(t, selectedRunSelection) },
+      { model: runModelDisplayName(t, selectedRunSelection, catalog) },
     );
   } else if (
     fastModeEnabled(selectedRunSelection) !== fastModeEnabled(runningSelection)
@@ -3390,8 +3411,8 @@ function ChatThreadEventGroups({
   runWorkFolding,
   runWorkExpandedKeys,
   onToggleRunWork,
-  thinkingIndicatorMode,
-  runIndicatorAssistantGroupId,
+  statusRow,
+  statusRowGroupId,
 }: {
   thread: ChatPanelSignals;
   groups: readonly ChatEventGroup[];
@@ -3399,18 +3420,20 @@ function ChatThreadEventGroups({
   runWorkFolding: RunWorkFolding | null;
   runWorkExpandedKeys: ReadonlySet<string>;
   onToggleRunWork: (key: string) => void;
-  thinkingIndicatorMode: ThinkingIndicatorMode;
-  runIndicatorAssistantGroupId: string | null;
+  statusRow: RunStatusRow | undefined;
+  statusRowGroupId: string | null;
 }) {
   // A run that ends re-forms the groups around it, so the messages the user
   // sent back to back can land in separate groups with nothing rendered in
   // between. Tracking the last group that actually put something on screen
   // keeps the stack from springing open the moment a run finishes.
+  const lastReadMarker = useGet(thread.lastReadMarker$);
   let previousVisibleGroup: ChatEventGroup | undefined;
+  const groupKeys = chatEventGroupKeys(groups, runWorkFolding);
 
   return (
     <>
-      {groups.map((group) => {
+      {groups.map((group, index) => {
         const runWorkSection = runWorkSectionForGroup(runWorkFolding, group);
         const stackFirstOnPrevious =
           previousVisibleGroup !== undefined &&
@@ -3419,16 +3442,14 @@ function ChatThreadEventGroups({
         if (groupRendersContent(group, runWorkSection)) {
           previousVisibleGroup = group;
         }
-        const runIndicatorMode =
-          group.beginEventId === runIndicatorAssistantGroupId &&
-          thinkingIndicatorMode !== null
-            ? thinkingIndicatorMode
-            : undefined;
+        const groupStatusRow =
+          group.beginEventId === statusRowGroupId ? statusRow : undefined;
         return (
-          <div
-            key={runWorkSection?.key ?? group.beginEventId}
-            className="contents"
-          >
+          <div key={groupKeys[index]} className="contents">
+            {lastReadMarker &&
+              group.events.some((event) => {
+                return event.id === lastReadMarker.eventId;
+              }) && <ChatLastReadDivider marker={lastReadMarker} />}
             <SelectablePagedGroupRow
               group={group}
               thread={thread}
@@ -3439,7 +3460,7 @@ function ChatThreadEventGroups({
                 runWorkExpandedKeys,
                 onToggleRunWork,
               )}
-              runIndicatorMode={runIndicatorMode}
+              statusRow={groupStatusRow}
               statusTailEvents={runWorkFolding?.statusTail?.events.filter(
                 (event) => {
                   return group.events.includes(event);
@@ -3450,6 +3471,27 @@ function ChatThreadEventGroups({
         );
       })}
     </>
+  );
+}
+
+function ChatLastReadDivider({ marker }: { marker: ChatLastReadMarker }) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return marker.previouslyRead
+      ? $.chat.lastReadMarker.previouslyRead
+      : $.chat.lastReadMarker.unread;
+  });
+  return (
+    <div
+      role="separator"
+      aria-label={label}
+      data-chat-last-read-marker-event-id={marker.eventId}
+      className="flex items-center gap-3 py-2 text-xs text-muted-foreground"
+    >
+      <span className="flex-1 border-t border-divider" />
+      <span>{label}</span>
+      <span className="flex-1 border-t border-divider" />
+    </div>
   );
 }
 
@@ -3485,22 +3527,20 @@ function formatCompactDuration(totalSeconds: number): string {
   }
   const totalHours = Math.floor(totalMinutes / 60);
   const remainingMinutes = totalMinutes % 60;
-  const hours = i18n.t(
-    ($) => {
-      return $.chat.run.duration.hoursShort;
-    },
-    { count: totalHours },
-  );
   if (remainingMinutes === 0) {
-    return hours;
+    return i18n.t(
+      ($) => {
+        return $.chat.run.duration.hoursShort;
+      },
+      { count: totalHours },
+    );
   }
-  const minutes = i18n.t(
+  return i18n.t(
     ($) => {
-      return $.chat.run.duration.minutesShort;
+      return $.chat.run.duration.hoursMinutesShort;
     },
-    { count: remainingMinutes },
+    { hours: totalHours, minutes: remainingMinutes },
   );
-  return `${hours} ${minutes}`;
 }
 
 const RUN_SECTION_LABEL_CLASS =
@@ -3562,19 +3602,21 @@ function RunSectionDividerRow({
 
 function ModelChangeDividerRow({ change }: { change: RunModelChange }) {
   const { t } = useTranslation();
-  return <RunSectionDividerRow label={modelChangeLabel(t, change)} />;
+  const catalog = useLastResolved(modelCatalog$);
+  return <RunSectionDividerRow label={modelChangeLabel(t, change, catalog)} />;
 }
 
 function modelChangeLabel(
   t: TFunction<"common">,
   change: RunModelChange,
+  catalog: ModelCatalog | undefined,
 ): string {
   return change.kind === "model"
     ? t(
         ($) => {
           return $.chat.run.modelChangedTo;
         },
-        { model: runModelDisplayName(t, change.selection) },
+        { model: runModelDisplayName(t, change.selection, catalog) },
       )
     : change.enabled
       ? t(($) => {
@@ -3587,9 +3629,10 @@ function modelChangeLabel(
 
 function FoldedModelChangeDivider({ change }: { change: RunModelChange }) {
   const { t } = useTranslation();
+  const catalog = useLastResolved(modelCatalog$);
   return (
     <RunSectionDivider
-      label={modelChangeLabel(t, change)}
+      label={modelChangeLabel(t, change, catalog)}
       labelPosition="right"
     />
   );
@@ -3709,23 +3752,6 @@ function RunWorkSectionRow({
   );
 }
 
-function isRejectedGoalUserMessage(event: EnrichedChatEvent): boolean {
-  return (
-    event.eventType === "input.rejected" &&
-    eventNonContentPart(event)?.type === "goal"
-  );
-}
-
-function isGoalUserMessage(
-  event: EnrichedChatEvent,
-): event is EnrichedChatEvent & ChatInputEvent {
-  return (
-    isInputChatEvent(event) &&
-    !isRejectedGoalUserMessage(event) &&
-    eventNonContentPart(event)?.type === "goal"
-  );
-}
-
 function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
   const initialEventsReady = useGet(thread.initialEventsReady$);
   if (initialEventsReady) {
@@ -3813,6 +3839,7 @@ function ChatThreadNotFound() {
 function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const threadMeta = useGet(thread.threadMeta$);
+  const sharingPhase = useGet(thread.sharing.phase$);
   if (!threadMeta) {
     return <ChatThreadNotFound />;
   }
@@ -3828,16 +3855,18 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
         </div>
       </div>
 
-      <ChatFeedbackSelection
-        feedback={thread.feedback}
-        sourceAgentId={threadMeta.agentId}
-        sourceThreadTitle={
-          threadMeta.title ??
-          t(($) => {
-            return $.chat.newChat;
-          })
-        }
-      />
+      {sharingPhase === "idle" ? (
+        <ChatFeedbackSelection
+          feedback={thread.feedback}
+          sourceAgentId={threadMeta.agentId}
+          sourceThreadTitle={
+            threadMeta.title ??
+            t(($) => {
+              return $.chat.newChat;
+            })
+          }
+        />
+      ) : null}
     </>
   );
 }
@@ -4012,9 +4041,6 @@ function RecommendedFollowupIcon({
 
   if (followup.generationType === "image") {
     return <Image size={16} />;
-  }
-  if (followup.generationType === "video") {
-    return <Video size={16} />;
   }
   if (followup.generationType === "presentation") {
     return <ChartLine size={16} />;
@@ -4316,7 +4342,7 @@ function ChatSkeleton() {
 
 interface ServerThinkingLabel {
   readonly id: string;
-  readonly messages: ThinkingSummaries["messages"];
+  readonly messages: readonly ThinkingMessage[];
 }
 
 function ShimmerText({
@@ -4361,6 +4387,8 @@ function ThinkingLabel({
   const { t } = useTranslation();
   const openQueueDrawer = useSet(openQueueDrawer$);
 
+  // The server holds input without a run. The queue drawer shows the org's
+  // slot usage by member and how to add slots.
   if (isQueued) {
     const waitingIn = t(($) => {
       return $.chat.run.waitingIn;
@@ -4391,6 +4419,7 @@ function ThinkingLabel({
           key={serverThinkingLabel.id}
           messages={serverThinkingLabel.messages}
           fallback={thinkingLabel}
+          intervalMs={5000}
         />
       </ShimmerText>
     );
@@ -4445,6 +4474,60 @@ function InlineThinkingRow({
   );
 }
 
+function RunStatusRowContent({
+  thread,
+  statusRow,
+}: {
+  thread: ChatPanelSignals;
+  statusRow: RunStatusRow;
+}) {
+  return statusRow.kind === "finished" ? (
+    <FinishedStatusRow thread={thread} />
+  ) : (
+    <ThinkingIndicatorRow thread={thread} indicators={statusRow.indicators} />
+  );
+}
+
+function ThinkingIndicatorRow({
+  thread,
+  indicators,
+}: {
+  thread: ChatPanelSignals;
+  indicators: ThinkingIndicators;
+}) {
+  const thinkingLabel = useGet(thread.thinkingPhrase$);
+  const isQueued = indicators.kind === "queued";
+  const serverThinkingLabel =
+    indicators.kind === "thinking" && indicators.messages.length > 0
+      ? { id: indicators.runId ?? "", messages: indicators.messages }
+      : undefined;
+  return (
+    <div
+      {...(isQueued ? {} : { "data-thinking-indicator": true })}
+      data-role="assistant-thinking"
+      className="animate-thinking-in min-w-0"
+    >
+      <InlineThinkingRow
+        isQueued={isQueued}
+        thinkingLabel={thinkingLabel}
+        serverThinkingLabel={serverThinkingLabel}
+      />
+    </div>
+  );
+}
+
+function FinishedStatusRow({ thread }: { thread: ChatPanelSignals }) {
+  const recommendedFollowupSource =
+    useLastResolved(thread.recommendedFollowupSource$, {
+      equalityFn: equalRecommendedFollowupSources,
+    }) ?? null;
+  return (
+    <div data-role="assistant-thinking" className="animate-thinking-in min-w-0">
+      <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
+    </div>
+  );
+}
+
 function FinishedRunRow({
   thread,
   source,
@@ -4488,130 +4571,6 @@ function FinishedRunRow({
   );
 }
 
-function WaitingForAssistantResponse({
-  thread,
-  isQueued,
-  thinkingLabel,
-  serverThinkingLabel,
-  inAssistantGroup,
-}: {
-  thread: ChatPanelSignals;
-  isQueued: boolean;
-  thinkingLabel: string;
-  serverThinkingLabel?: ServerThinkingLabel;
-  inAssistantGroup: boolean;
-}) {
-  const thinkingIndicatorProps = isQueued
-    ? {}
-    : { "data-thinking-indicator": true };
-
-  if (inAssistantGroup) {
-    return (
-      <div
-        {...thinkingIndicatorProps}
-        data-role="assistant-thinking"
-        className="animate-thinking-in min-w-0"
-      >
-        <InlineThinkingRow
-          isQueued={isQueued}
-          thinkingLabel={thinkingLabel}
-          serverThinkingLabel={serverThinkingLabel}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      {...thinkingIndicatorProps}
-      data-role="assistant"
-      className="animate-thinking-in flex flex-col gap-2"
-    >
-      <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
-        <AssistantBubbleAvatar thread={thread} />
-        <div
-          className={cn(
-            "relative flex min-w-0 flex-col gap-2",
-            CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
-          )}
-        >
-          <ChatAssistantMessageBody>
-            <InlineThinkingRow
-              isQueued={isQueued}
-              thinkingLabel={thinkingLabel}
-              serverThinkingLabel={serverThinkingLabel}
-            />
-          </ChatAssistantMessageBody>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AssistantThinkingStatusRow({
-  active,
-  isQueued,
-  thinkingLabel,
-  serverThinkingLabel,
-  thread,
-  recommendedFollowupSource,
-  inAssistantGroup,
-}: {
-  active: boolean;
-  isQueued: boolean;
-  thinkingLabel: string;
-  serverThinkingLabel?: ServerThinkingLabel;
-  thread: ChatPanelSignals;
-  recommendedFollowupSource: RecommendedFollowupSource | null;
-  inAssistantGroup: boolean;
-}) {
-  const thinkingIndicatorProps =
-    active && !isQueued ? { "data-thinking-indicator": true } : {};
-
-  const content = active ? (
-    <InlineThinkingRow
-      isQueued={isQueued}
-      thinkingLabel={thinkingLabel}
-      serverThinkingLabel={serverThinkingLabel}
-    />
-  ) : (
-    <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
-  );
-  if (inAssistantGroup) {
-    return (
-      <div
-        {...thinkingIndicatorProps}
-        data-role="assistant-thinking"
-        className="animate-thinking-in min-w-0"
-      >
-        {content}
-      </div>
-    );
-  }
-  return (
-    <div
-      {...thinkingIndicatorProps}
-      data-role="assistant-thinking"
-      className={RUN_SECTION_ROW_CLASS}
-    >
-      <div className="hidden @[900px]:block" />
-      <div className="min-w-0">{content}</div>
-    </div>
-  );
-}
-
-function runStatusIndicatorActive(mode: ThinkingIndicatorMode): boolean {
-  return mode !== null && mode !== "finished";
-}
-
-function thinkingIndicatorQueued(mode: ThinkingIndicatorMode): boolean {
-  return mode === "waiting-queued" || mode === "running-queued";
-}
-
-function thinkingIndicatorUsesStatusRow(mode: ThinkingIndicatorMode): boolean {
-  return mode === "running" || mode === "running-queued" || mode === "finished";
-}
-
 function equalRecommendedFollowupSources(
   previous: RecommendedFollowupSource | null,
   next: RecommendedFollowupSource | null,
@@ -4622,60 +4581,6 @@ function equalRecommendedFollowupSources(
       next !== null &&
       previous.eventId === next.eventId &&
       previous.followups === next.followups)
-  );
-}
-
-function ThinkingIndicator({
-  thread,
-  mode,
-  inAssistantGroup = false,
-}: {
-  thread: ChatPanelSignals;
-  mode: ThinkingIndicatorMode;
-  inAssistantGroup?: boolean;
-}) {
-  const summaries = useLastResolved(thread.thinkingSummaries$);
-  const thinkingRunId = useLastResolved(thread.thinkingRunId$);
-  const recommendedFollowupSource =
-    useLastResolved(thread.recommendedFollowupSource$, {
-      equalityFn: equalRecommendedFollowupSources,
-    }) ?? null;
-  const thinkingLabel = useGet(thread.thinkingPhrase$);
-  const active = runStatusIndicatorActive(mode);
-  const isQueued = thinkingIndicatorQueued(mode);
-  const serverThinkingLabel =
-    summaries && summaries.runId === thinkingRunId && active && !isQueued
-      ? { id: summaries.runId, messages: summaries.messages }
-      : undefined;
-
-  if (mode === null) {
-    return null;
-  }
-
-  // Active and finished states share the response line metrics.
-  if (thinkingIndicatorUsesStatusRow(mode)) {
-    return (
-      <AssistantThinkingStatusRow
-        active={active}
-        isQueued={isQueued}
-        thinkingLabel={thinkingLabel}
-        serverThinkingLabel={serverThinkingLabel}
-        thread={thread}
-        recommendedFollowupSource={recommendedFollowupSource}
-        inAssistantGroup={inAssistantGroup}
-      />
-    );
-  }
-
-  // Waiting for first assistant response — show bubble with avatar
-  return (
-    <WaitingForAssistantResponse
-      thread={thread}
-      isQueued={isQueued}
-      thinkingLabel={thinkingLabel}
-      serverThinkingLabel={serverThinkingLabel}
-      inAssistantGroup={inAssistantGroup}
-    />
   );
 }
 
@@ -4693,14 +4598,23 @@ function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
   const runCallback = useSet(runChatActionCallback$);
+  const completeExactReconnect = useSet(completeExactReconnectChatAction$);
   const pageSignal = useGet(pageSignal$);
   const customConnectors = useLastResolved(customConnectors$);
+  const accountLabelOf = useConnectorAccountLabel();
 
   if (!active) {
     return null;
   }
 
-  const onSuccess = async () => {
+  const onSuccess = async (
+    connectionId: string | null,
+    attemptSignal: AbortSignal,
+  ) => {
+    if (active.kind === "catalog-reconnect") {
+      await completeExactReconnect(active, connectionId, attemptSignal);
+      return;
+    }
     if (active.callbackPrompt && active.threadId) {
       await runCallback(
         {
@@ -4729,6 +4643,26 @@ function ActiveChatConnectorActionConnectModal() {
         onSuccess={onSuccess}
       />
     ) : null;
+  }
+
+  if (active.kind === "catalog-reconnect") {
+    return (
+      <ConnectModal
+        item={active.catalogItem}
+        agentId={active.agentId}
+        accountLabel={accountLabelOf(active.account)}
+        accountMode={{
+          kind: "reconnect",
+          connectionId: active.account.id,
+          authMethod: active.account.authMethod,
+        }}
+        accountOptions={{
+          account: { intent: "reconnect", connectionId: active.account.id },
+        }}
+        onClose={close}
+        onSuccess={onSuccess}
+      />
+    );
   }
 
   const accountOptions = defaultBuiltinConnectorAccountOptions(
@@ -4786,17 +4720,14 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
   return credits;
 }
 
-/**
- * A notice card's height comes from its own rows, so a card that carries only a
- * headline is one row tall. The supporting line keeps a reserved two-line box
- * instead: billing status and failure-recovery classification both resolve
- * asynchronously and swap this text inside an already mounted frame, and
- * `docs/chat-cards.md` requires that swap to leave the frame's geometry
- * untouched. Clamping alone would let a one-line message resize the transcript
- * once the asynchronous read lands.
- */
-const CHAT_NOTICE_DESCRIPTION_CLASS =
-  "line-clamp-2 h-10 text-sm leading-5 text-muted-foreground";
+/** Let resolved billing copy wrap to its actual height, including longer
+ * translations, without leaving an unused second line under short copy. */
+const BILLING_NOTICE_DESCRIPTION_CLASS =
+  "text-sm leading-5 text-muted-foreground";
+
+/** A personal usage limit can resolve to an account plus two exhausted windows.
+ * Ordinary usage limits need only their actual description height. */
+const USAGE_RECOVERY_DESCRIPTION_CLASS = "min-h-20 @[640px]:min-h-10";
 
 /**
  * The billing notice's action is the other row an asynchronous read introduces:
@@ -4808,7 +4739,19 @@ const CHAT_NOTICE_DESCRIPTION_CLASS =
  * and the error card's pending state reserves the same box for its own details
  * trigger.
  */
-const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
+const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex min-h-8 shrink-0 items-center";
+
+/**
+ * Recovery controls keep a one-row floor while classification loads, then grow
+ * only when the controls actually wrap. Reserving a hypothetical second row
+ * leaves resolved mobile cards with false bottom padding.
+ */
+const ASSISTANT_ERROR_ACTION_SLOT_CLASS =
+  "flex min-h-8 shrink-0 items-center justify-end";
+
+/** Let translated recovery actions fit narrow chat cards without clipping. */
+const ERROR_CARD_ACTION_CLASS =
+  "h-auto min-h-8 max-w-full shrink-0 whitespace-normal break-words py-1 text-center";
 
 function creditsAvailableCopy(): {
   readonly headline: string;
@@ -4875,14 +4818,18 @@ function PaidCreditCheckoutActions({
   readonly preparing: boolean;
   readonly handleCreditClick: (
     selection: CreditCheckoutSelection,
-    event: ReactMouseEvent<HTMLButtonElement>,
+    newTab: boolean,
   ) => void;
 }) {
   const { t } = useTranslation();
-  const handleCustomCreditClick = (
-    event: ReactMouseEvent<HTMLButtonElement>,
+  const submitCustomCredits = (
+    form: HTMLFormElement | null,
+    newTab: boolean,
   ) => {
-    const credits = customCreditsFromForm(event.currentTarget.form);
+    if (preparing) {
+      return;
+    }
+    const credits = customCreditsFromForm(form);
     if (credits === null) {
       toast.error(
         t(($) => {
@@ -4891,11 +4838,11 @@ function PaidCreditCheckoutActions({
       );
       return;
     }
-    handleCreditClick({ credits, customAmount: true }, event);
+    handleCreditClick({ credits, customAmount: true }, newTab);
   };
 
   return (
-    <div className="mt-3 flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {CREDIT_TOP_UP_OPTIONS.map((credits) => {
           return (
@@ -4903,7 +4850,7 @@ function PaidCreditCheckoutActions({
               key={credits}
               type="button"
               onClick={(event) => {
-                handleCreditClick({ credits }, event);
+                handleCreditClick({ credits }, event.metaKey || event.ctrlKey);
               }}
               disabled={preparing}
               variant="default"
@@ -4914,36 +4861,61 @@ function PaidCreditCheckoutActions({
             </Button>
           );
         })}
-        <details>
+        <details
+          className="group flex"
+          onToggle={(event) => {
+            if (event.currentTarget.open) {
+              event.currentTarget.querySelector("input")?.focus();
+            }
+          }}
+        >
           <summary
             role="button"
-            className="inline-flex h-8 cursor-pointer list-none items-center rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-state-hover marker:hidden disabled:opacity-60 [&::-webkit-details-marker]:hidden"
+            className={cn(
+              buttonVariants({ size: "sm", variant: "outline" }),
+              "list-none group-open:hidden [&::-webkit-details-marker]:hidden",
+            )}
           >
             {t(($) => {
               return $.chat.billing.custom;
             })}
           </summary>
-          <form className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">$</span>
-            <Input
-              type="text"
-              inputMode="numeric"
-              name="customUsd"
-              defaultValue="100"
-              onInput={(event) => {
-                event.currentTarget.value = event.currentTarget.value.replace(
-                  /\D/g,
-                  "",
-                );
-              }}
-              aria-label={t(($) => {
-                return $.chat.billing.customDollarAmount;
-              })}
-              className="h-8 w-24 px-2"
-            />
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitCustomCredits(event.currentTarget, false);
+            }}
+          >
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-sm text-muted-foreground">
+                $
+              </span>
+              <Input
+                type="text"
+                inputMode="numeric"
+                name="customUsd"
+                defaultValue="100"
+                onInput={(event) => {
+                  event.currentTarget.value = event.currentTarget.value.replace(
+                    /\D/g,
+                    "",
+                  );
+                }}
+                aria-label={t(($) => {
+                  return $.chat.billing.customDollarAmount;
+                })}
+                className="h-8 w-24 pr-2 pl-5"
+              />
+            </div>
             <Button
               type="button"
-              onClick={handleCustomCreditClick}
+              onClick={(event) => {
+                submitCustomCredits(
+                  event.currentTarget.form,
+                  event.metaKey || event.ctrlKey,
+                );
+              }}
               disabled={preparing}
               variant="default"
               size="sm"
@@ -5025,9 +4997,8 @@ function InsufficientCreditsCard() {
 
   const handleCreditClick = (
     selection: CreditCheckoutSelection,
-    event: ReactMouseEvent<HTMLButtonElement>,
+    newTab: boolean,
   ) => {
-    const newTab = event.metaKey || event.ctrlKey;
     detach(
       creditCheckout(selection, newTab, "chat", pageSignal),
       Reason.DomCallback,
@@ -5039,7 +5010,7 @@ function InsufficientCreditsCard() {
       <div className="min-w-0">
         <p
           className={cn(
-            "truncate text-[0.9375rem] font-medium",
+            "break-words text-[0.9375rem] font-medium",
             hasAvailableCredits
               ? "text-emerald-700 dark:text-emerald-300"
               : "text-foreground",
@@ -5047,7 +5018,7 @@ function InsufficientCreditsCard() {
         >
           {headline}
         </p>
-        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
+        <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
       </div>
       <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
         {!canShowBillingAction ? null : shouldStartProCheckout ? (
@@ -5057,7 +5028,7 @@ function InsufficientCreditsCard() {
             disabled={checkoutRedirecting}
             variant="default"
             size="sm"
-            className="shrink-0 disabled:opacity-60"
+            className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
           >
             {checkoutRedirecting
               ? t(($) => {
@@ -5068,18 +5039,10 @@ function InsufficientCreditsCard() {
                 })}
           </Button>
         ) : (
-          <ChatCardDetails
-            title={headline}
-            triggerLabel={t(($) => {
-              return $.runErrors.actions.addCredits;
-            })}
-          >
-            <p>{helper}</p>
-            <PaidCreditCheckoutActions
-              preparing={creditCheckoutPreparing}
-              handleCreditClick={handleCreditClick}
-            />
-          </ChatCardDetails>
+          <PaidCreditCheckoutActions
+            preparing={creditCheckoutPreparing}
+            handleCreditClick={handleCreditClick}
+          />
         )}
       </div>
     </div>
@@ -5091,29 +5054,170 @@ function isBillingRecoveryError(error: string): boolean {
   return normalized === "insufficient_credits" || normalized === "pro_required";
 }
 
-function assistantRecoveryResetText(
+function assistantRecoveryResetTexts(
   recovery: AssistantErrorRecovery,
-): string | null {
-  if (recovery.retryAt) {
-    const formatted = formatSubscriptionUsageReset(recovery.retryAt);
-    if (formatted && "fallbackText" in formatted) {
-      return formatted.fallbackText;
+): readonly string[] {
+  const resetTexts = recovery.resetWindows.flatMap((window) => {
+    if (!window.resetAt) {
+      return [];
     }
-    return formatted?.absoluteResetText ?? null;
+    const formatted = formatSubscriptionUsageReset(window.resetAt);
+    if (!formatted) {
+      return [];
+    }
+    if (recovery.resetWindows.length === 1) {
+      return [
+        "fallbackText" in formatted
+          ? formatted.fallbackText
+          : formatted.absoluteResetText,
+      ];
+    }
+    const time =
+      "fallbackText" in formatted ? window.resetAt : formatted.absoluteText;
+    return [
+      i18n.t(
+        ($) => {
+          return window.limitWindow === "five-hour"
+            ? $.chat.errors.recovery.fiveHourReset
+            : $.chat.errors.recovery.weeklyReset;
+        },
+        { time },
+      ),
+    ];
+  });
+  if (resetTexts.length > 0) {
+    return resetTexts;
   }
   if (!recovery.retryLabel) {
-    return null;
+    return [];
   }
-  return i18n.t(
-    ($) => {
-      return $.chat.errors.recovery.resetsAt;
-    },
-    { time: recovery.retryLabel },
-  );
+  return [
+    i18n.t(
+      ($) => {
+        return $.chat.errors.recovery.resetsAt;
+      },
+      { time: recovery.retryLabel },
+    ),
+  ];
 }
 
 function AssistantRecoveryActionSpinner({ loading }: { loading: boolean }) {
   return loading ? <Loader2 size={16} className="animate-spin" /> : null;
+}
+
+function hasAssistantRecoveryModelPicker(
+  recovery: AssistantErrorRecovery,
+): boolean {
+  return (
+    recovery.kind === "subscription-error" ||
+    recovery.kind === "usage-limit" ||
+    recovery.kind === "model-capacity" ||
+    recovery.kind === "model-unavailable" ||
+    recovery.kind === "safety-policy-refusal" ||
+    (recovery.kind === "provider-retryable" &&
+      recovery.failureReason !== "guest_root_filesystem_full" &&
+      recovery.failureReason !== "codex_access_program_unavailable")
+  );
+}
+
+/**
+ * The retry reads the thread's persisted model, so the card's actions wait for
+ * the selection write this picker starts. `onSelect` is owned by the actions
+ * row, which disables its buttons while the write is pending.
+ */
+function AssistantRecoveryModelPicker({
+  recovery,
+  thread,
+  onSelect,
+}: {
+  readonly recovery: AssistantErrorRecovery;
+  readonly thread: ChatPanelSignals;
+  readonly onSelect: (selection: ModelProviderSelection) => void;
+}) {
+  const { t } = useTranslation();
+  const modelSelection =
+    useLastResolved(thread.composer.model.modelSelection$) ?? null;
+  if (!hasAssistantRecoveryModelPicker(recovery)) {
+    return null;
+  }
+  const handleModelSelection = (
+    selection: ModelProviderSelection | null,
+  ): void => {
+    if (!selection) {
+      return;
+    }
+    onSelect(selection);
+  };
+  return (
+    <ModelProviderPicker
+      value={modelSelection}
+      onChange={handleModelSelection}
+      placeholder={t(($) => {
+        return $.chat.errors.recovery.selectModel;
+      })}
+      triggerClassName="h-8 w-auto min-w-24 max-w-36 bg-background text-sm"
+    />
+  );
+}
+
+function AssistantRecoveryDestinationAction({
+  recovery,
+}: {
+  readonly recovery: AssistantErrorRecovery;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const openSettings = useSet(openSettingsDialogAt$);
+  if (recovery.kind === "provider-settings") {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        variant="neutral"
+        className={ERROR_CARD_ACTION_CLASS}
+        onClick={() => {
+          detach(openSettings("model", pageSignal), Reason.DomCallback);
+        }}
+      >
+        {t(($) => {
+          return $.runErrors.actions.openModelSettings;
+        })}
+      </Button>
+    );
+  }
+  if (recovery.kind === "new-chat-required") {
+    return (
+      <Link
+        pathname="/"
+        className={cn(
+          buttonVariants({ size: "sm", variant: "neutral" }),
+          ERROR_CARD_ACTION_CLASS,
+        )}
+      >
+        {t(($) => {
+          return $.chat.errors.recovery.newChat;
+        })}
+      </Link>
+    );
+  }
+  if (recovery.kind === "terms-acceptance-required") {
+    return (
+      <a
+        href="https://claude.ai"
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          buttonVariants({ size: "sm", variant: "neutral" }),
+          ERROR_CARD_ACTION_CLASS,
+        )}
+      >
+        {t(($) => {
+          return $.chat.errors.recovery.openClaude;
+        })}
+      </a>
+    );
+  }
+  return null;
 }
 
 function AssistantRecoveryActions({
@@ -5125,80 +5229,46 @@ function AssistantRecoveryActions({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const modelSelection =
-    useLastResolved(thread.composer.model.modelSelection$) ?? null;
-  const setModelSelection = useSet(thread.composer.model.setModelSelection$);
   const [retryLoadable, retry] = useLoadableSet(thread.retryAssistantError$);
   const [resetLoadable, resetAndRetry] = useLoadableSet(
     thread.resetCodexSubscriptionAndRetry$,
   );
+  const [selectModelLoadable, selectModel] = useLoadableSet(
+    thread.composer.model.setModelSelection$,
+  );
   const retrying = retryLoadable.state === "loading";
   const resetting = resetLoadable.state === "loading";
-  const hasResetAction = recovery.actions.resetAndTryAgain !== null;
+  const selectingModel = selectModelLoadable.state === "loading";
+  const actionsDisabled = retrying || resetting || selectingModel;
+  const resetAction = recovery.actions.resetAndTryAgain;
   const hasRetryAction = recovery.actions.tryAgain !== null;
-  const hasModelSelectionAction = recovery.framework !== null;
-  // `excludedModel` drops the failed model from the menu, so showing it as the
-  // trigger label would offer a choice the user cannot make. Fall back to the
-  // "Switch model" placeholder until they pick something else.
-  const pickerValue =
-    modelSelection && modelSelection.selectedModel === recovery.failedModel
-      ? null
-      : modelSelection;
-  const handleModelSelection = (
-    selection: ModelProviderSelection | null,
-  ): void => {
-    if (!selection) {
-      return;
-    }
-    detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
-  };
+  const continueAction =
+    recovery.kind === "execution-timeout" ||
+    recovery.kind === "autonomy-budget-exhausted" ||
+    recovery.kind === "output-token-limit";
 
   return (
-    <div className="flex max-w-full flex-wrap items-center gap-2">
-      {hasResetAction && (
-        <Button
-          type="button"
-          size="sm"
-          variant="neutral"
-          disabled={retrying || resetting}
-          onClick={() => {
-            detach(resetAndRetry(pageSignal), Reason.DomCallback);
-          }}
-        >
-          <AssistantRecoveryActionSpinner loading={resetting} />
-          {t(($) => {
-            return $.chat.errors.recovery.resetAndTryAgain;
-          })}
-        </Button>
-      )}
-      {hasModelSelectionAction && (
-        <ModelProviderPicker
-          value={pickerValue}
-          onChange={handleModelSelection}
-          placeholder={t(($) => {
-            return $.chat.errors.recovery.selectModel;
-          })}
-          triggerClassName="h-8 w-auto bg-background text-sm"
-          compactTrigger
-          {...(recovery.failedModel
-            ? { excludedModel: recovery.failedModel }
-            : {})}
-        />
-      )}
+    <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+      <AssistantRecoveryModelPicker
+        recovery={recovery}
+        thread={thread}
+        onSelect={(selection) => {
+          detach(selectModel(selection, pageSignal), Reason.DomCallback);
+        }}
+      />
       {hasRetryAction && (
         <Button
           type="button"
           size="sm"
-          // Filled neutral leads; the plain outline reads as the secondary
-          // action when reset is also offered.
-          variant={hasResetAction ? "outline" : "neutral"}
-          disabled={retrying || resetting}
+          variant="neutral"
+          className={ERROR_CARD_ACTION_CLASS}
+          disabled={actionsDisabled}
           onClick={() => {
             detach(retry(pageSignal), Reason.DomCallback);
           }}
         >
           <AssistantRecoveryActionSpinner loading={retrying} />
-          {recovery.framework === null
+          {continueAction
             ? t(($) => {
                 return $.chat.errors.recovery.continue;
               })
@@ -5207,6 +5277,27 @@ function AssistantRecoveryActions({
               })}
         </Button>
       )}
+      {resetAction && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={ERROR_CARD_ACTION_CLASS}
+          disabled={actionsDisabled}
+          onClick={() => {
+            detach(resetAndRetry(pageSignal), Reason.DomCallback);
+          }}
+        >
+          <AssistantRecoveryActionSpinner loading={resetting} />
+          {t(
+            ($) => {
+              return $.chat.errors.recovery.resetUsageRemaining;
+            },
+            { value: formatLocalizedNumber(resetAction.resetsRemaining) },
+          )}
+        </Button>
+      )}
+      <AssistantRecoveryDestinationAction recovery={recovery} />
     </div>
   );
 }
@@ -5224,31 +5315,40 @@ function AssistantRecoveryActions({
 interface AssistantErrorCardContent {
   readonly icon: LucideIcon;
   readonly title: string;
-  readonly description: string;
+  readonly description: ReactNode;
+  readonly descriptionTitle?: string;
+  readonly descriptionClassName?: string;
   readonly details?: ReactNode;
   readonly actions?: ReactNode;
+  readonly reserveActions?: boolean;
   readonly testId?: string;
 }
 
 /**
  * The classification behind this card resolves over two chained requests, so
  * `pending` is the state before either landed. It keeps the settled card's own
- * frame and reserves the title, supporting-line, and action boxes at their
- * settled heights: `docs/chat-cards.md` requires the resolution to swap what
- * fills those boxes without moving the transcript. Withholding the details
- * trigger is the point of the state — the settled card decides whether that
- * dialog offers a model switch, and offering it early would show a dialog whose
- * contents change under the reader.
+ * frame and renders its synchronous supporting copy invisibly, so short cards
+ * can hug their content without collapsing during classification. Usage limits
+ * reserve the account-and-window rows that load from the provider. Recovery
+ * controls stay inline; only multiline or unusually long raw diagnostics keep
+ * a details dialog.
  */
 function AssistantErrorCard({
   icon: Icon,
   title,
   description,
+  descriptionTitle,
+  descriptionClassName,
   details,
   actions,
+  reserveActions = false,
   testId,
   pending = false,
 }: AssistantErrorCardContent & { readonly pending?: boolean }) {
+  const hasDescription = Boolean(description);
+  const accessibleDescription =
+    descriptionTitle ??
+    (typeof description === "string" ? description : undefined);
   return (
     <div
       role="status"
@@ -5265,64 +5365,318 @@ function AssistantErrorCard({
           <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
         )}
         <div className="min-w-0">
-          <div className="h-6 truncate text-[0.9375rem] font-medium leading-6">
-            {pending ? null : title}
+          <div
+            className={cn(
+              "min-h-6 break-words text-[0.9375rem] font-medium leading-6",
+              pending && "invisible",
+            )}
+            aria-hidden={pending ? true : undefined}
+          >
+            {title}
           </div>
-          {(pending || description !== "") && (
-            <div className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}>
-              {pending ? null : description}
+          {hasDescription && (
+            <div
+              data-testid="assistant-error-description"
+              className={cn(
+                "mt-0.5 break-words text-sm leading-5 text-muted-foreground",
+                descriptionClassName,
+                pending && "invisible",
+              )}
+              title={pending ? undefined : accessibleDescription}
+              aria-hidden={pending ? true : undefined}
+            >
+              {description}
             </div>
           )}
         </div>
       </div>
       {pending ? (
-        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
-      ) : (
-        (description !== "" ||
-          details !== undefined ||
-          actions !== undefined) && (
-          <ChatCardDetails title={title}>
-            {details ?? <p>{description}</p>}
-            {actions}
-          </ChatCardDetails>
-        )
-      )}
+        reserveActions ? (
+          <div className={ASSISTANT_ERROR_ACTION_SLOT_CLASS} />
+        ) : null
+      ) : actions !== undefined || details !== undefined ? (
+        <div className={ASSISTANT_ERROR_ACTION_SLOT_CLASS}>
+          {actions !== undefined ? (
+            actions
+          ) : (
+            <ChatCardDetails title={title}>{details}</ChatCardDetails>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function assistantErrorRecoveryContent(
-  recovery: AssistantErrorRecovery,
-  thread: ChatPanelSignals,
+type StructuredFailureTitle = () => string;
+
+const STRUCTURED_FAILURE_TITLES = Object.freeze({
+  session_history_limit: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.sessionHistoryTitle;
+    });
+  },
+  guest_root_filesystem_full: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.filesystemFullTitle;
+    });
+  },
+  execution_timeout: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.timeoutTitle;
+    });
+  },
+  insufficient_credits: () => {
+    return i18n.t(($) => {
+      return $.chat.billing.outOfCredits;
+    });
+  },
+  provider_insufficient_credits: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerBalanceTitle;
+    });
+  },
+  invalid_api_key: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.invalidApiKeyTitle;
+    });
+  },
+  invalid_credentials: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.invalidCredentialsTitle;
+    });
+  },
+  terms_acceptance_required: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.termsTitle;
+    });
+  },
+  context_window_exceeded: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.contextWindowTitle;
+    });
+  },
+  input_too_large: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.inputTooLargeTitle;
+    });
+  },
+  output_token_limit: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.outputLimitTitle;
+    });
+  },
+  provider_rate_limited: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerRateLimitedTitle;
+    });
+  },
+  provider_overloaded: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.capacityTitle;
+    });
+  },
+  provider_stream_timeout: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerStreamTimeoutTitle;
+    });
+  },
+  provider_queue_timeout: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerQueueTimeoutTitle;
+    });
+  },
+  codex_access_program_unavailable: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.accessProgramTitle;
+    });
+  },
+  provider_server_error: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerServerErrorTitle;
+    });
+  },
+  response_connection_lost: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.connectionLostTitle;
+    });
+  },
+  safety_policy_refusal: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.safetyTitle;
+    });
+  },
+  reconnect_required: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.reconnectTitle;
+    });
+  },
+  unsupported_model: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.unavailableTitle;
+    });
+  },
+  usage_limit: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.usageFallbackTitle;
+    });
+  },
+} satisfies Record<KnownRunFailureReason, StructuredFailureTitle>);
+
+function structuredFailureTitle(reason: KnownRunFailureReason): string {
+  return STRUCTURED_FAILURE_TITLES[reason]();
+}
+
+type StructuredFailureDescription = (t: TFunction<"common">) => string;
+
+const FAILURE_DESCRIPTIONS = Object.freeze({
+  newChat: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.newChatDescription;
+    });
+  },
+  filesystemFull: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.filesystemFullDescription;
+    });
+  },
+  timeout: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.timeoutDescription;
+    });
+  },
+  providerBalance: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.providerBalanceDescription;
+    });
+  },
+  providerConnection: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.providerConnectionDescription;
+    });
+  },
+  terms: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.termsDescription;
+    });
+  },
+  inputTooLarge: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.inputTooLargeDescription;
+    });
+  },
+  outputLimit: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.outputLimitDescription;
+    });
+  },
+  capacity: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.capacityDescription;
+    });
+  },
+  accessProgram: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.accessProgramDescription;
+    });
+  },
+  safety: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.safetyDescription;
+    });
+  },
+  unavailable: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.unavailableDescription;
+    });
+  },
+  usage: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.usageDescription;
+    });
+  },
+});
+
+const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
+  session_history_limit: FAILURE_DESCRIPTIONS.newChat,
+  guest_root_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
+  execution_timeout: FAILURE_DESCRIPTIONS.timeout,
+  insufficient_credits: () => {
+    return "";
+  },
+  provider_insufficient_credits: FAILURE_DESCRIPTIONS.providerBalance,
+  invalid_api_key: FAILURE_DESCRIPTIONS.providerConnection,
+  invalid_credentials: FAILURE_DESCRIPTIONS.providerConnection,
+  terms_acceptance_required: FAILURE_DESCRIPTIONS.terms,
+  context_window_exceeded: FAILURE_DESCRIPTIONS.newChat,
+  input_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
+  output_token_limit: FAILURE_DESCRIPTIONS.outputLimit,
+  provider_rate_limited: FAILURE_DESCRIPTIONS.capacity,
+  provider_overloaded: FAILURE_DESCRIPTIONS.capacity,
+  provider_stream_timeout: FAILURE_DESCRIPTIONS.capacity,
+  provider_queue_timeout: FAILURE_DESCRIPTIONS.capacity,
+  codex_access_program_unavailable: FAILURE_DESCRIPTIONS.accessProgram,
+  provider_server_error: FAILURE_DESCRIPTIONS.capacity,
+  response_connection_lost: FAILURE_DESCRIPTIONS.capacity,
+  safety_policy_refusal: FAILURE_DESCRIPTIONS.safety,
+  reconnect_required: FAILURE_DESCRIPTIONS.providerConnection,
+  unsupported_model: FAILURE_DESCRIPTIONS.unavailable,
+  usage_limit: FAILURE_DESCRIPTIONS.usage,
+} satisfies Record<KnownRunFailureReason, StructuredFailureDescription>);
+
+function structuredFailureDescription(
+  reason: KnownRunFailureReason,
   t: TFunction<"common">,
-): AssistantErrorCardContent {
-  const resetText = assistantRecoveryResetText(recovery);
-  const title = (() => {
-    if (recovery.kind === "subscription-error") {
-      return t(($) => {
-        return $.chat.errors.genericTitle;
-      });
-    }
-    if (recovery.kind === "execution-timeout") {
-      return t(($) => {
-        return $.chat.errors.recovery.timeoutTitle;
-      });
-    }
-    if (recovery.kind === "autonomy-budget-exhausted") {
-      return t(($) => {
-        return $.chat.errors.recovery.autonomyLimitTitle;
-      });
-    }
-    if (recovery.kind === "model-unavailable") {
-      return t(($) => {
-        return $.chat.errors.recovery.unavailableTitle;
-      });
-    }
-    if (recovery.kind === "model-capacity") {
-      return t(($) => {
-        return $.chat.errors.recovery.capacityTitle;
-      });
-    }
+): string {
+  return STRUCTURED_FAILURE_DESCRIPTIONS[reason](t);
+}
+
+function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
+  if (
+    reason === "execution_timeout" ||
+    reason === "output_token_limit" ||
+    reason === "provider_rate_limited" ||
+    reason === "provider_stream_timeout" ||
+    reason === "provider_queue_timeout" ||
+    reason === "usage_limit"
+  ) {
+    return Clock;
+  }
+  if (reason === "safety_policy_refusal") {
+    return Hand;
+  }
+  if (
+    reason === "invalid_api_key" ||
+    reason === "invalid_credentials" ||
+    reason === "reconnect_required" ||
+    reason === "terms_acceptance_required" ||
+    reason === "context_window_exceeded" ||
+    reason === "input_too_large" ||
+    reason === "session_history_limit"
+  ) {
+    return AlertCircle;
+  }
+  return Coffee;
+}
+
+function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
+  return reason !== "insufficient_credits" && reason !== "input_too_large";
+}
+
+function assistantRecoveryTitle(
+  recovery: AssistantErrorRecovery,
+  t: TFunction<"common">,
+): string {
+  if (recovery.kind === "subscription-error") {
+    return t(($) => {
+      return $.chat.errors.genericTitle;
+    });
+  }
+  if (recovery.kind === "autonomy-budget-exhausted") {
+    return t(($) => {
+      return $.chat.errors.recovery.autonomyLimitTitle;
+    });
+  }
+  if (recovery.kind === "usage-limit" && recovery.framework !== null) {
     const framework =
       recovery.framework === "codex"
         ? t(($) => {
@@ -5337,73 +5691,179 @@ function assistantErrorRecoveryContent(
       },
       { framework },
     );
-  })();
-  const description =
-    recovery.kind === "subscription-error"
-      ? recovery.providerMessage
-      : recovery.kind === "execution-timeout"
-        ? t(($) => {
-            return $.chat.errors.recovery.timeoutDescription;
-          })
-        : recovery.kind === "autonomy-budget-exhausted"
-          ? t(($) => {
-              return $.chat.errors.recovery.autonomyLimitDescription;
-            })
-          : recovery.kind === "usage-limit"
-            ? t(($) => {
-                return $.chat.errors.recovery.usageDescription;
-              })
-            : recovery.kind === "model-unavailable"
-              ? t(($) => {
-                  return $.chat.errors.recovery.unavailableDescription;
-                })
-              : t(($) => {
-                  return $.chat.errors.recovery.capacityDescription;
-                });
-  const personalSource = recovery.source?.credentialScope === "member";
-  const sourceDescription = personalSource
-    ? recovery.source?.account.status === "unavailable"
-      ? t(($) => {
-          return $.chat.errors.recovery.originalAccountUnavailable;
-        })
-      : recovery.source?.account.status === "unknown"
-        ? t(($) => {
-            return $.chat.errors.recovery.originalAccountUnknown;
-          })
-        : recovery.accountLabel
-          ? t(
-              ($) => {
-                return $.chat.errors.recovery.originalAccount;
-              },
-              { account: recovery.accountLabel },
-            )
-          : null
-    : null;
+  }
+  if (recovery.failureReason) {
+    return structuredFailureTitle(recovery.failureReason);
+  }
+  if (recovery.kind === "execution-timeout") {
+    return t(($) => {
+      return $.chat.errors.recovery.timeoutTitle;
+    });
+  }
+  if (recovery.kind === "model-unavailable") {
+    return t(($) => {
+      return $.chat.errors.recovery.unavailableTitle;
+    });
+  }
+  if (recovery.kind === "model-capacity") {
+    return t(($) => {
+      return $.chat.errors.recovery.capacityTitle;
+    });
+  }
+  return t(($) => {
+    return $.chat.errors.recovery.usageFallbackTitle;
+  });
+}
 
+function assistantRecoverySourceDescription(
+  recovery: AssistantErrorRecovery,
+  t: TFunction<"common">,
+): string | null {
+  if (recovery.personalSubscription === null) {
+    return null;
+  }
+  if (recovery.personalSubscription === "disconnected") {
+    return t(($) => {
+      return $.chat.errors.recovery.personalAccountDisconnected;
+    });
+  }
+  return recovery.accountLabel
+    ? t(
+        ($) => {
+          return $.chat.errors.recovery.personalAccount;
+        },
+        { account: recovery.accountLabel },
+      )
+    : null;
+}
+
+interface AssistantRecoveryDescription {
+  readonly content: ReactNode;
+  readonly title: string;
+}
+
+function textAssistantRecoveryDescription(
+  text: string,
+): AssistantRecoveryDescription {
+  return { content: text, title: text };
+}
+
+function assistantRecoveryDescription(
+  recovery: AssistantErrorRecovery,
+  t: TFunction<"common">,
+): AssistantRecoveryDescription {
+  if (recovery.kind === "usage-limit") {
+    const sourceDescription = assistantRecoverySourceDescription(recovery, t);
+    const resetTexts = assistantRecoveryResetTexts(recovery);
+    const details = [sourceDescription, ...resetTexts].filter(
+      (part): part is string => {
+        return Boolean(part);
+      },
+    );
+    if (details.length === 0) {
+      return textAssistantRecoveryDescription(
+        t(($) => {
+          return $.chat.errors.recovery.usageDescription;
+        }),
+      );
+    }
+    return {
+      title: details.join(" · "),
+      content: (
+        <>
+          {sourceDescription && <div>{sourceDescription}</div>}
+          {resetTexts.length > 0 && (
+            <div className="flex flex-col @[640px]:flex-row @[640px]:flex-wrap @[640px]:gap-x-4">
+              {resetTexts.map((resetText) => {
+                return <span key={resetText}>{resetText}</span>;
+              })}
+            </div>
+          )}
+        </>
+      ),
+    };
+  }
+  if (recovery.kind === "subscription-error") {
+    return textAssistantRecoveryDescription(
+      localizedRunError(recovery.providerMessage),
+    );
+  }
+  if (recovery.failureReason) {
+    return textAssistantRecoveryDescription(
+      structuredFailureDescription(recovery.failureReason, t),
+    );
+  }
+  if (recovery.kind === "execution-timeout") {
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.timeoutDescription;
+      }),
+    );
+  }
+  if (recovery.kind === "autonomy-budget-exhausted") {
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.autonomyLimitDescription;
+      }),
+    );
+  }
+  if (recovery.kind === "model-unavailable") {
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.unavailableDescription;
+      }),
+    );
+  }
+  if (recovery.kind === "model-capacity") {
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.capacityDescription;
+      }),
+    );
+  }
+  return textAssistantRecoveryDescription("");
+}
+
+function assistantRecoveryIcon(recovery: AssistantErrorRecovery): LucideIcon {
+  if (recovery.kind === "autonomy-budget-exhausted") {
+    return Hand;
+  }
+  if (recovery.failureReason) {
+    return structuredFailureIcon(recovery.failureReason);
+  }
+  return recovery.kind === "usage-limit" ||
+    recovery.kind === "execution-timeout"
+    ? Clock
+    : Coffee;
+}
+
+function assistantErrorRecoveryContent(
+  recovery: AssistantErrorRecovery,
+  thread: ChatPanelSignals,
+  t: TFunction<"common">,
+): AssistantErrorCardContent {
+  const hasActions =
+    recovery.kind !== "input-too-large" &&
+    (recovery.failureReason === null ||
+      structuredFailureHasActions(recovery.failureReason));
+  const description = assistantRecoveryDescription(recovery, t);
   return {
-    icon:
-      recovery.kind === "autonomy-budget-exhausted"
-        ? Hand
-        : recovery.kind === "usage-limit" ||
-            recovery.kind === "execution-timeout"
-          ? Clock
-          : Coffee,
-    title,
-    description: `${description}${resetText ? ` ${resetText}` : ""}`,
-    details: (
-      <>
-        {`${description}${resetText ? ` ${resetText}` : ""}`}
-        {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
-        {personalSource && (
-          <p className="mt-1">
-            {t(($) => {
-              return $.chat.errors.recovery.newRunCurrentSettings;
-            })}
-          </p>
-        )}
-      </>
-    ),
-    actions: <AssistantRecoveryActions recovery={recovery} thread={thread} />,
+    icon: assistantRecoveryIcon(recovery),
+    title: assistantRecoveryTitle(recovery, t),
+    description: description.content,
+    descriptionTitle: description.title,
+    ...(recovery.kind === "usage-limit" &&
+    (recovery.personalSubscription !== null || recovery.resetWindows.length > 0)
+      ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
+      : {}),
+    ...(hasActions
+      ? {
+          actions: (
+            <AssistantRecoveryActions recovery={recovery} thread={thread} />
+          ),
+        }
+      : {}),
+    reserveActions: hasActions,
     testId: "assistant-error-recovery",
   };
 }
@@ -5415,9 +5875,11 @@ function ModelSettingsButton() {
   const pageSignal = useGet(pageSignal$);
 
   return (
-    <button
+    <Button
       type="button"
-      className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+      size="sm"
+      variant="neutral"
+      className={ERROR_CARD_ACTION_CLASS}
       onClick={() => {
         detach(openSettings("model", pageSignal), Reason.DomCallback);
       }}
@@ -5425,7 +5887,7 @@ function ModelSettingsButton() {
       {t(($) => {
         return $.chat.errors.noModelProviderAction;
       })}
-    </button>
+    </Button>
   );
 }
 
@@ -5440,17 +5902,8 @@ function noModelProviderErrorContent(
     description: t(($) => {
       return $.chat.errors.noModelProviderPrefix;
     }),
-    details: (
-      <span>
-        {t(($) => {
-          return $.chat.errors.noModelProviderPrefix;
-        })}{" "}
-        <ModelSettingsButton />{" "}
-        {t(($) => {
-          return $.chat.errors.noModelProviderSuffix;
-        })}
-      </span>
-    ),
+    actions: <ModelSettingsButton />,
+    reserveActions: true,
   };
 }
 
@@ -5460,12 +5913,53 @@ function noModelProviderErrorContent(
  * card is on screen: the recovery classification never claims
  * `insufficient_credits` or `pro_required`.
  */
+function isLegacyUsageLimitError(
+  error: string,
+  failureReason: string | undefined,
+): boolean {
+  if (failureReason !== undefined) {
+    return failureReason === "usage_limit";
+  }
+  return (
+    /you(?:'|’)ve hit your (?:usage|session|weekly|5[- ]hour|opus(?:\s+[\w.-]+)?|sonnet(?:\s+[\w.-]+)?|haiku(?:\s+[\w.-]+)?) limit\b/iu.test(
+      error,
+    ) || /\bclaude(?: code)? (?:rate|usage) limit reached\b/iu.test(error)
+  );
+}
+
+function structuredUsageDescriptionClass(
+  error: string,
+  reason: KnownRunFailureReason,
+): string {
+  return reason === "usage_limit" && isLegacyUsageLimitError(error, undefined)
+    ? USAGE_RECOVERY_DESCRIPTION_CLASS
+    : "";
+}
+
 function assistantErrorFallbackContent(
   error: string,
+  failureReason: string | undefined,
   t: TFunction<"common">,
 ): AssistantErrorCardContent | null {
-  if (isBillingRecoveryError(error)) {
+  const knownReason = knownRunFailureReasonSchema.safeParse(failureReason);
+  if (
+    isBillingRecoveryError(error) ||
+    (knownReason.success && knownReason.data === "insufficient_credits")
+  ) {
     return null;
+  }
+
+  if (knownReason.success) {
+    return {
+      icon: structuredFailureIcon(knownReason.data),
+      title: structuredFailureTitle(knownReason.data),
+      description: structuredFailureDescription(knownReason.data, t),
+      descriptionClassName: structuredUsageDescriptionClass(
+        error,
+        knownReason.data,
+      ),
+      reserveActions: structuredFailureHasActions(knownReason.data),
+    };
   }
 
   if (error.trim().toLowerCase() === "run cancelled") {
@@ -5503,87 +5997,64 @@ function assistantErrorFallbackContent(
       description: t(($) => {
         return $.chat.errors.providerIncompatiblePrefix;
       }),
-      details: (
-        <span>
+      actions: (
+        <Link
+          pathname="/"
+          className={cn(
+            buttonVariants({ size: "sm", variant: "neutral" }),
+            ERROR_CARD_ACTION_CLASS,
+          )}
+        >
           {t(($) => {
-            return $.chat.errors.providerIncompatiblePrefix;
-          })}{" "}
-          <Link
-            pathname="/"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-          >
-            {t(($) => {
-              return $.chat.errors.providerIncompatibleAction;
-            })}
-          </Link>
-        </span>
-      ),
-    };
-  }
-
-  const deletedGuidance = RUN_ERROR_GUIDANCE.PROVIDER_DELETED;
-  const isProviderDeleted =
-    deletedGuidance !== undefined &&
-    (error.toLowerCase().includes(deletedGuidance.title.toLowerCase()) ||
-      error.toLowerCase().includes(deletedGuidance.guidance.toLowerCase()));
-
-  if (isProviderDeleted) {
-    return {
-      icon: AlertCircle,
-      title: t(($) => {
-        return $.chat.errors.genericTitle;
-      }),
-      description: t(($) => {
-        return $.chat.errors.providerDeletedPrefix;
-      }),
-      details: (
-        <span>
-          {t(($) => {
-            return $.chat.errors.providerDeletedPrefix;
-          })}{" "}
-          <Link
-            pathname="/"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-          >
-            {t(($) => {
-              return $.chat.errors.providerDeletedAction;
-            })}
-          </Link>{" "}
-          {t(($) => {
-            return $.chat.errors.providerDeletedSuffix;
+            return $.chat.errors.providerIncompatibleAction;
           })}
-        </span>
+        </Link>
       ),
+      reserveActions: true,
     };
   }
 
+  const description = localizedRunError(error);
+  const showDetails = /[\r\n]/u.test(description) || description.length > 240;
+  const legacyUsageLimit = isLegacyUsageLimitError(error, failureReason);
   return {
     icon: AlertCircle,
     title: t(($) => {
       return $.chat.errors.genericTitle;
     }),
-    description: localizedRunError(error),
-    details: (
-      <Markdown
-        className="!text-muted-foreground"
-        source={localizedRunError(error)}
-      />
-    ),
+    // Keep multiline and unusually long diagnostics in the read-only dialog;
+    // the notice row should remain a compact recovery surface.
+    description: showDetails ? "" : description,
+    ...(showDetails
+      ? {
+          details: (
+            <Markdown className="!text-muted-foreground" source={description} />
+          ),
+        }
+      : {}),
+    reserveActions: showDetails || legacyUsageLimit,
   };
 }
 
 function AssistantErrorContent({
   error,
   eventId,
+  failureReason,
   thread,
 }: {
   error: string;
   eventId: string;
+  failureReason: string | undefined;
   thread: ChatPanelSignals;
 }) {
   return (
     <ChatCard data-testid="assistant-error-card-shell" className="w-full">
-      <AssistantErrorState error={error} eventId={eventId} thread={thread} />
+      <AssistantErrorState
+        error={error}
+        eventId={eventId}
+        failureReason={failureReason}
+        thread={thread}
+      />
     </ChatCard>
   );
 }
@@ -5591,10 +6062,12 @@ function AssistantErrorContent({
 function AssistantErrorState({
   error,
   eventId,
+  failureReason,
   thread,
 }: {
   error: string;
   eventId: string;
+  failureReason: string | undefined;
   thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
@@ -5604,7 +6077,7 @@ function AssistantErrorState({
   // appended event.
   const loadable = useLastLoadable(thread.assistantErrorRecovery$);
   const pendingEventId = useLastResolved(thread.assistantErrorRecoveryEventId$);
-  const fallback = assistantErrorFallbackContent(error, t);
+  const fallback = assistantErrorFallbackContent(error, failureReason, t);
   if (fallback === null) {
     return <InsufficientCreditsCard />;
   }
@@ -5656,7 +6129,7 @@ function PagedGroupRow({
   modelChanges,
   stackFirstOnPrevious = false,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: {
   group: ChatEventGroup;
@@ -5664,7 +6137,7 @@ function PagedGroupRow({
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
   runWorkSection?: RunWorkSectionControl;
-  runIndicatorMode?: Exclude<ThinkingIndicatorMode, null>;
+  statusRow?: RunStatusRow;
   statusTailEvents?: readonly EnrichedChatEvent[];
 }) {
   if (group.role === "user") {
@@ -5683,7 +6156,7 @@ function PagedGroupRow({
       thread={thread}
       modelChanges={modelChanges}
       runWorkSection={runWorkSection}
-      runIndicatorMode={runIndicatorMode}
+      statusRow={statusRow}
       statusTailEvents={statusTailEvents}
     />
   );
@@ -5721,22 +6194,13 @@ function shareableEventFromChatEvent(
     : null;
 }
 
-function clickTargetsExistingInteraction(target: EventTarget | null): boolean {
-  return (
-    target instanceof Element &&
-    target.closest(
-      'a, button, input, textarea, select, [role="button"], [contenteditable="true"]',
-    ) !== null
-  );
-}
-
 function SelectablePagedGroupRow({
   group,
   thread,
   modelChanges,
   stackFirstOnPrevious,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: Parameters<typeof PagedGroupRow>[0]) {
   const { t } = useTranslation();
@@ -5750,9 +6214,9 @@ function SelectablePagedGroupRow({
       group={displayGroup}
       thread={thread}
       modelChanges={modelChanges}
-      stackFirstOnPrevious={stackFirstOnPrevious}
+      stackFirstOnPrevious={sharing ? false : stackFirstOnPrevious}
       runWorkSection={sharing ? undefined : runWorkSection}
-      runIndicatorMode={sharing ? undefined : runIndicatorMode}
+      statusRow={sharing ? undefined : statusRow}
       statusTailEvents={sharing ? undefined : statusTailEvents}
     />
   );
@@ -5767,8 +6231,7 @@ function SelectablePagedGroupRow({
     return selectedEventIds.has(event.id);
   }).length;
   const allSelected = selectedCount === events.length;
-  const checked =
-    selectedCount === 0 ? false : allSelected ? true : "indeterminate";
+  const indeterminate = selectedCount > 0 && !allSelected;
 
   const toggleGroup = () => {
     if (phase !== "selecting") {
@@ -5792,10 +6255,7 @@ function SelectablePagedGroupRow({
           ? [
               ...group.events,
               ...(runWorkSection
-                ? [
-                    ...runWorkSection.hiddenGroups,
-                    ...runWorkSection.hiddenGroupsAfterAnchor,
-                  ].flatMap((hiddenGroup) => {
+                ? runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
                     return hiddenGroup.events;
                   })
                 : []),
@@ -5806,36 +6266,38 @@ function SelectablePagedGroupRow({
               .join(" ")
           : undefined
       }
-      className={cn(
-        // Every row in the transcript is otherwise a direct child of the
-        // message list's flex column. This wrapper interrupts that column, so
-        // it carries the same rhythm itself; without it a group holding a burst
-        // of user messages renders them with no gap at all.
-        "relative -my-1 flex flex-col rounded-lg py-1 transition-colors",
-        CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
-        phase === "selecting" && "cursor-pointer hover:bg-state-hover",
-      )}
-      onClick={(event) => {
-        if (!clickTargetsExistingInteraction(event.target)) {
-          toggleGroup();
-        }
-      }}
+      className="relative -my-1 flex flex-col gap-2 rounded-lg py-1"
     >
-      {content}
-      <Checkbox
-        checked={checked}
-        disabled={phase !== "selecting"}
-        aria-label={t(($) => {
-          return allSelected
-            ? $.chat.sharing.deselectGroup
-            : $.chat.sharing.selectGroup;
-        })}
-        className="absolute -right-9 top-1/2 -translate-y-1/2 lg:-right-10"
-        onClick={(event) => {
-          event.stopPropagation();
-        }}
-        onCheckedChange={toggleGroup}
-      />
+      {/* The full-width label owns selection. Message content stays outside
+          it so text selection, links, and message actions keep their owners. */}
+      <Field.Root className="relative" disabled={phase !== "selecting"}>
+        <Field.Label
+          className={cn(
+            buttonVariants({ variant: "quiet", size: "lg" }),
+            "w-full justify-start pr-10 pl-3 data-disabled:pointer-events-none data-disabled:opacity-50",
+          )}
+        >
+          {t(($) => {
+            return allSelected
+              ? $.chat.sharing.deselectGroup
+              : $.chat.sharing.selectGroup;
+          })}
+        </Field.Label>
+        <Checkbox
+          checked={allSelected}
+          indeterminate={indeterminate}
+          disabled={phase !== "selecting"}
+          className="absolute top-1/2 right-3 -translate-y-1/2"
+          onCheckedChange={toggleGroup}
+        />
+      </Field.Root>
+      <div
+        // Preserve the message list's rhythm inside this group, including
+        // the gaps that back-to-back user bubbles stack into.
+        className={cn("flex flex-col", CHAT_THREAD_MESSAGE_ROW_GAP_CLASS)}
+      >
+        {content}
+      </div>
     </div>
   );
 }
@@ -5869,7 +6331,7 @@ function PagedUserGroup({
             ? rendersUserBubble(previousEvent)
             : stackFirstOnPrevious);
         return (
-          <div key={event.id} className="contents">
+          <div key={chatEventRenderKey(event)} className="contents">
             {modelChange === undefined ? null : (
               <ModelChangeDividerRow change={modelChange} />
             )}
@@ -5885,15 +6347,10 @@ function PagedUserGroup({
   );
 }
 
-// A user event does not always render as a bubble: a workflow run, a historical
-// goal, and a rejected historical goal each render as their own card or as
-// nothing at all.
+// A user event does not always render as a bubble: a workflow run renders as
+// its own card.
 function rendersUserBubble(event: EnrichedChatEvent): boolean {
-  return (
-    !isRejectedGoalUserMessage(event) &&
-    !isWorkflowUserMessage(event) &&
-    !isGoalUserMessage(event)
-  );
+  return !isWorkflowUserMessage(event);
 }
 
 function isWorkflowUserMessage(
@@ -6135,23 +6592,63 @@ function UserMessageAttachments({
   );
 }
 
+function RunLogsAction({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  return (
+    <TooltipProvider delay={300}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              pathname="/activities/:activityRunId"
+              options={{ pathParams: { activityRunId: runId } }}
+              aria-label={t(($) => {
+                return $.chat.run.viewLogs;
+              })}
+              className={cn(
+                buttonVariants({
+                  variant: "quiet",
+                  size: "icon-xs",
+                  iconSize: "sm",
+                }),
+                "text-muted-foreground/60",
+              )}
+            >
+              <ChartLine />
+            </Link>
+          }
+        />
+        <TooltipContent side="bottom">
+          {t(($) => {
+            return $.chat.run.viewActivityLogs;
+          })}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // The row below a user message is part of that message's frame, not a thing the
 // copy button brings with it. It stays even when there is no button to show —
 // a message nobody can copy, or a mode that offers no per-message action — so
 // the burst spacing that is measured against it does not collapse.
 function UserMessageActions({
   showCopy,
+  runId,
   onCopy,
 }: {
   showCopy: boolean;
+  runId: string | undefined;
   onCopy: () => Promise<boolean>;
 }) {
   const { t } = useTranslation();
+  const showActivityLogs = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
   return (
     <div
       data-chat-user-message-actions
       className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
     >
+      {showActivityLogs && runId && <RunLogsAction runId={runId} />}
       {showCopy ? (
         <CopyButton
           copyAction={onCopy}
@@ -6294,19 +6791,13 @@ function MessageAnnotation({
       </div>
     );
   }
-  if (renderPart.type === "goal") {
+  if (renderPart.kind === "mcp") {
+    const label = renderPart.part.clientName ?? "MCP";
     return (
-      <div
-        aria-label={t(($) => {
-          return $.chat.queue.goal;
-        })}
-        className={className}
-      >
-        <Target size={15} className="shrink-0" />
-        <span>
-          {t(($) => {
-            return $.chat.queue.goal;
-          })}
+      <div className={className}>
+        <McpMark size={15} />
+        <span className="min-w-0 truncate" title={label}>
+          {label}
         </span>
       </div>
     );
@@ -6314,6 +6805,23 @@ function MessageAnnotation({
   return (
     <SourceMessageAnnotation renderPart={renderPart} className={className} />
   );
+}
+
+// Discord permalinks always point at discord.com; any other destination is
+// shown as an unlinked source instead of an off-site link.
+const DISCORD_MESSAGE_URL =
+  /^https:\/\/discord\.com\/channels\/(?:\d+|@me)\/\d+\/\d+$/u;
+
+function sourceMessageHref(
+  part: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "external" }
+  >["part"],
+): string | undefined {
+  if (part.kind === "discord" && !DISCORD_MESSAGE_URL.test(part.href ?? "")) {
+    return undefined;
+  }
+  return part.href;
 }
 
 function sourceMessageLinkText(
@@ -6353,6 +6861,11 @@ function sourceMessageLabel(
   >["part"]["kind"],
 ): string {
   switch (kind) {
+    case "discord": {
+      return t(($) => {
+        return $.chat.origins.discord;
+      });
+    }
     case "slack": {
       return t(($) => {
         return $.chat.origins.slack;
@@ -6395,7 +6908,10 @@ function SourceMessageAnnotation({
   renderPart,
   className,
 }: {
-  renderPart: Extract<UserMessageAnnotationRenderPart, { type: "source" }>;
+  renderPart: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "agent" | "external" }
+  >;
   className: string;
 }) {
   const { t } = useTranslation();
@@ -6417,6 +6933,7 @@ function SourceMessageAnnotation({
       ? "lark"
       : part.kind;
   const sourceLabel = sourceMessageLabel(t, sourceKind);
+  const href = sourceMessageHref(part);
   const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
     opensChat && sourceKind !== "feishu" && sourceKind !== "lark"
@@ -6430,29 +6947,35 @@ function SourceMessageAnnotation({
         ? t(($) => {
             return $.chat.origins.openSlackMessage;
           })
-        : sourceKind === "feishu" || sourceKind === "lark"
+        : sourceKind === "discord"
           ? t(($) => {
-              return $.chat.origins[
-                sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
-              ];
+              return $.chat.origins.openDiscordMessage;
             })
-          : sourceKind === "teams"
+          : sourceKind === "feishu" || sourceKind === "lark"
             ? t(($) => {
-                return $.chat.origins.openTeamsMessage;
+                return $.chat.origins[
+                  sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
+                ];
               })
-            : sourceKind === "telegram"
+            : sourceKind === "teams"
               ? t(($) => {
-                  return $.chat.origins.openTelegramMessage;
+                  return $.chat.origins.openTeamsMessage;
                 })
-              : sourceKind === "github"
+              : sourceKind === "telegram"
                 ? t(($) => {
-                    return $.chat.origins.openGithubMessage;
+                    return $.chat.origins.openTelegramMessage;
                   })
-                : openLabel;
+                : sourceKind === "github"
+                  ? t(($) => {
+                      return $.chat.origins.openGithubMessage;
+                    })
+                  : openLabel;
   const content = (
     <>
       {sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
+      ) : sourceKind === "discord" ? (
+        <DiscordMark size={15} />
       ) : (
         <img
           src={annotationIconImgs[sourceKind]}
@@ -6461,7 +6984,7 @@ function SourceMessageAnnotation({
         />
       )}
       <span className="shrink-0">{sourceLabel}</span>
-      {part.href ? (
+      {href ? (
         <>
           <span className="shrink-0">·</span>
           <span className="min-w-0 truncate">{openLabel}</span>
@@ -6470,12 +6993,12 @@ function SourceMessageAnnotation({
       ) : null}
     </>
   );
-  if (!part.href) {
+  if (!href) {
     return <div className={className}>{content}</div>;
   }
   return (
     <a
-      href={part.href}
+      href={href}
       target="_blank"
       rel="noreferrer"
       aria-label={ariaLabel}
@@ -6530,16 +7053,6 @@ function AgentRunSourceMessageAnnotation({
 // File chips carry their own border, so they need more breathing room from the
 // surrounding sentence than a borderless inline mention does.
 const INLINE_FILE_REFERENCE_SPACING_CLASS = "mx-1";
-const STRUCTURED_INLINE_REFERENCE_CLASS =
-  "relative -top-px mx-0.5 inline-flex h-7 max-w-[240px] items-center " +
-  "gap-1.5 rounded-md bg-orange-500/10 px-2 align-middle text-[13px] " +
-  "font-medium text-orange-600 dark:bg-orange-400/15 dark:text-orange-300";
-const STRUCTURED_INLINE_INTERACTIVE_CLASS =
-  "transition-colors hover:bg-orange-500/15 focus-visible:outline-none " +
-  "focus-visible:ring-2 focus-visible:ring-orange-500/30 " +
-  "active:bg-orange-500/20 dark:hover:bg-orange-400/20 " +
-  "dark:active:bg-orange-400/25";
-const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFERENCE_CLASS} ${STRUCTURED_INLINE_INTERACTIVE_CLASS}`;
 
 function UserMessageTemplateReference({
   part,
@@ -6645,33 +7158,6 @@ function UserMessageFileReference({
   );
 }
 
-function UserMessageChatThreadReference({
-  threadId,
-  title,
-}: {
-  threadId: string;
-  title: string;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Link
-      pathname={ROUTES.chat}
-      options={{ pathParams: { threadId } }}
-      aria-label={t(
-        ($) => {
-          return $.chat.thread.openNamedChat;
-        },
-        { title },
-      )}
-      className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-      title={title}
-    >
-      <MessageCircle size={13} className="shrink-0" />
-      <span className="min-w-0 truncate">{title}</span>
-    </Link>
-  );
-}
-
 function UserMessageAgentReference({
   agentId,
   name,
@@ -6722,7 +7208,7 @@ function UserMessageFeedbackNote({
         const key = `${identity}:${String(occurrence)}`;
         if (renderPart.type === "chat_thread") {
           return (
-            <UserMessageChatThreadReference
+            <ChatThreadLinkChip
               key={key}
               threadId={renderPart.part.threadId}
               title={renderPart.part.titleSnapshot}
@@ -6744,7 +7230,13 @@ function UserMessageFeedbackNote({
             <UserMessageTemplateReference key={key} part={renderPart.part} />
           );
         }
-        return <PlainTextWithLinks key={key} text={renderPart.part.text} />;
+        return (
+          <PlainTextWithLinks
+            key={key}
+            text={renderPart.part.text}
+            chatThreadChips
+          />
+        );
       })}
     </div>
   );
@@ -6873,7 +7365,7 @@ function UserMessageFeedbackGroup({
 type UserMessageContentRenderPart = Exclude<
   UserMessageRenderPart,
   {
-    readonly type: "source" | "automation" | "goal" | "model";
+    readonly type: "source" | "automation" | "model";
   }
 >;
 type UserMessageStandaloneRenderPart = Exclude<
@@ -6887,11 +7379,11 @@ function UserMessagePartView({
   renderPart: UserMessageStandaloneRenderPart;
 }): ReactNode {
   if (renderPart.type === "text") {
-    return <PlainTextWithLinks text={renderPart.part.text} />;
+    return <PlainTextWithLinks text={renderPart.part.text} chatThreadChips />;
   }
   if (renderPart.type === "chat_thread") {
     return (
-      <UserMessageChatThreadReference
+      <ChatThreadLinkChip
         threadId={renderPart.part.threadId}
         title={renderPart.part.titleSnapshot}
       />
@@ -7057,6 +7549,33 @@ function UserMessageContent({
   );
 }
 
+function UserMessageTextActions({
+  event,
+  text,
+  thread,
+}: {
+  event: EnrichedChatEvent & ChatInputEvent;
+  text: string;
+  thread: ChatPanelSignals;
+}) {
+  const copyEvent = useSet(thread.copyEvent$);
+  const pageSignal = useGet(pageSignal$);
+  const sharingPhase = useGet(thread.sharing.phase$);
+  if (sharingPhase !== "idle") {
+    return null;
+  }
+
+  return (
+    <UserMessageActions
+      showCopy
+      runId={event.runId}
+      onCopy={() => {
+        return copyEvent({ text, attachments: [] }, pageSignal);
+      }}
+    />
+  );
+}
+
 function WorkflowUserMessage({
   event,
   thread,
@@ -7097,45 +7616,12 @@ function WorkflowUserMessage({
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
           {body}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GoalUserMessage({
-  event,
-  thread,
-}: {
-  event: EnrichedChatEvent & ChatInputEvent;
-  thread: ChatPanelSignals;
-}) {
-  const turnOnRef = useSet(thread.locator.turnOnRef$);
-  const renderPart = userMessageAnnotationRenderPart(
-    event.userMessageRenderDocument,
-  );
-  if (renderPart?.type !== "goal") {
-    return null;
-  }
-  const { part } = renderPart;
-  const goalBrief = part.goalBrief.trim();
-  return (
-    <div
-      data-role="user"
-      data-chat-scroll-anchor-event-id={event.id}
-      data-turn-created-at={event.createdAt}
-      className="relative group"
-      ref={turnOnRef}
-    >
-      <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
-      <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
-        <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
-        <div className="flex w-full flex-col items-end">
-          <MessageAnnotation renderPart={renderPart} />
-          {goalBrief ? (
-            <div className="rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10 bg-gray-200 text-foreground">
-              <div className="px-4 py-3 whitespace-pre-wrap">{goalBrief}</div>
-            </div>
+          {workflowBody ? (
+            <UserMessageTextActions
+              event={event}
+              text={workflowBody}
+              thread={thread}
+            />
           ) : null}
         </div>
       </div>
@@ -7256,16 +7742,8 @@ function PagedUserMessage({
     );
   };
 
-  if (isRejectedGoalUserMessage(event)) {
-    return null;
-  }
-
   if (isWorkflowUserMessage(event)) {
     return <WorkflowUserMessage event={event} thread={thread} />;
-  }
-
-  if (isGoalUserMessage(event)) {
-    return <GoalUserMessage event={event} thread={thread} />;
   }
 
   const nonContentRenderPart = userMessageAnnotationRenderPart(renderDocument);
@@ -7304,6 +7782,7 @@ function PagedUserMessage({
                   still pulled up by the height this row holds. */}
               <UserMessageActions
                 showCopy={canCopy && sharingPhase === "idle"}
+                runId={sharingPhase === "idle" ? inputEvent?.runId : undefined}
                 onCopy={handleCopy}
               />
             </>
@@ -7324,7 +7803,7 @@ type PagedAssistantGroupProps = {
   readonly thread: ChatPanelSignals;
   readonly modelChanges: ReadonlyMap<string, RunModelChange>;
   readonly runWorkSection?: RunWorkSectionControl;
-  readonly runIndicatorMode?: Exclude<ThinkingIndicatorMode, null>;
+  readonly statusRow?: RunStatusRow;
   readonly statusTailEvents?: readonly EnrichedChatEvent[];
 };
 
@@ -7416,14 +7895,6 @@ function buildPagedAssistantTimeline({
       event: anchorEvent,
     });
   }
-  if (showAllHistory) {
-    items.push(
-      ...foldedRunWorkTimelineItems(
-        runWorkSection.hiddenGroupsAfterAnchor,
-        modelChanges,
-      ),
-    );
-  }
   return items;
 }
 
@@ -7505,7 +7976,7 @@ function PagedRunWorkAssistantContent({
   thread,
   modelChanges,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: Pick<
   PagedAssistantGroupProps,
@@ -7513,7 +7984,7 @@ function PagedRunWorkAssistantContent({
   | "thread"
   | "modelChanges"
   | "runWorkSection"
-  | "runIndicatorMode"
+  | "statusRow"
   | "statusTailEvents"
 >) {
   const timelineItems = buildPagedAssistantTimeline({
@@ -7537,6 +8008,7 @@ function PagedRunWorkAssistantContent({
         group={group}
         content={mainEvent.content ?? ""}
         thread={thread}
+        shareEvents={[mainEvent]}
         relatedArtifacts={runWorkSection?.remainingArtifactCards}
         embedded
       />
@@ -7549,7 +8021,7 @@ function PagedRunWorkAssistantContent({
         thread={thread}
         mainActions={mainActions}
       />
-      {(statusTailEvents?.length ?? 0) > 0 || runIndicatorMode !== undefined ? (
+      {(statusTailEvents?.length ?? 0) > 0 || statusRow !== undefined ? (
         <div
           data-chat-run-status-tail
           className={CHAT_THREAD_RESPONSE_STACK_CLASS}
@@ -7564,12 +8036,8 @@ function PagedRunWorkAssistantContent({
                 />
               );
             })
-          ) : runIndicatorMode !== undefined ? (
-            <ThinkingIndicator
-              thread={thread}
-              mode={runIndicatorMode}
-              inAssistantGroup
-            />
+          ) : statusRow !== undefined ? (
+            <RunStatusRowContent thread={thread} statusRow={statusRow} />
           ) : null}
         </div>
       ) : null}
@@ -7582,14 +8050,14 @@ function PagedAssistantGroup({
   thread,
   modelChanges,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: PagedAssistantGroupProps) {
   const turnOnRef = useSet(thread.locator.turnOnRef$);
   const hasRenderableEvent = group.events.some((event) => {
     return isRenderableAssistantEvent(event);
   });
-  if (!hasRenderableEvent && !runWorkSection) {
+  if (!hasRenderableEvent && !runWorkSection && statusRow === undefined) {
     return null;
   }
 
@@ -7603,7 +8071,7 @@ function PagedAssistantGroup({
     .join("\n\n");
   const usesRunWorkPresentation =
     runWorkSection !== undefined ||
-    runIndicatorMode !== undefined ||
+    statusRow !== undefined ||
     (statusTailEvents?.length ?? 0) > 0;
 
   return (
@@ -7637,7 +8105,7 @@ function PagedAssistantGroup({
               thread={thread}
               modelChanges={modelChanges}
               runWorkSection={runWorkSection}
-              runIndicatorMode={runIndicatorMode}
+              statusRow={statusRow}
               statusTailEvents={statusTailEvents}
             />
           ) : (
@@ -7657,6 +8125,7 @@ function PagedAssistantGroup({
           group={group}
           content={fullContent}
           thread={thread}
+          shareEvents={group.events}
         />
       ) : null}
     </div>
@@ -7688,6 +8157,9 @@ function PagedAssistantEventItem({
         <AssistantErrorContent
           error={error}
           eventId={event.id}
+          failureReason={
+            event.eventType === "run.failed" ? event.failureReason : undefined
+          }
           thread={thread}
         />
       </div>
@@ -7751,6 +8223,7 @@ function UsageChip({
   setOpen: (open: boolean) => void;
 }) {
   const total = formatCredits(usage.totalCredits);
+  const catalog = useLastResolved(modelCatalog$);
   const displayRows = buildCreditUsageDisplayRows(
     usage.breakdown.flatMap((kindBreakdown) => {
       return kindBreakdown.providers.map((providerBreakdown) => {
@@ -7761,6 +8234,7 @@ function UsageChip({
         };
       });
     }),
+    catalog,
   );
 
   return (
@@ -8033,12 +8507,79 @@ function RunLangfuseAction({
   return signals ? <RunLangfuseLink signals={signals} /> : null;
 }
 
+function MessageShareAction({
+  onShare,
+}: {
+  onShare: (revert: () => void) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ShareLinkButton
+      onShare={onShare}
+      render={({ onClick, ref }, { copied }) => {
+        const copiedLabel = t(($) => {
+          return $.chat.sharing.shareLinkCopied;
+        });
+        if (copied) {
+          // The button itself confirms the copy; no toast or tooltip.
+          return (
+            <Button
+              ref={ref}
+              type="button"
+              variant="quiet"
+              size="xs"
+              onClick={onClick}
+              className="gap-1 px-1.5 text-muted-foreground"
+              aria-label={copiedLabel}
+              data-testid="chat-message-share"
+            >
+              <Check />
+              {copiedLabel}
+            </Button>
+          );
+        }
+        return (
+          <TooltipProvider delay={300}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    ref={ref}
+                    type="button"
+                    variant="quiet"
+                    size="icon-xs"
+                    iconSize="sm"
+                    onClick={onClick}
+                    className="text-muted-foreground/60"
+                    aria-label={t(($) => {
+                      return $.chat.actions.shareMessage;
+                    })}
+                    data-testid="chat-message-share"
+                  >
+                    <Share2 />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => {
+                  return $.chat.actions.shareMessage;
+                })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      }}
+    />
+  );
+}
+
 function PagedGroupPrimaryActions({
   firstRunId,
   thread,
   hasContent,
   usage,
   onCopy,
+  onShare,
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
@@ -8046,12 +8587,14 @@ function PagedGroupPrimaryActions({
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   onCopy: () => Promise<boolean>;
+  onShare: ((revert: () => void) => void) | undefined;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
-  const showActivityLogs = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
+  const switches = useGet(featureSwitch$);
+  const showDebugActions = switches[FeatureSwitchKey.OkouDebug];
   const hasLeadingIconAction = Boolean(
-    (showActivityLogs && firstRunId) || hasContent,
+    (showDebugActions && firstRunId) || hasContent,
   );
   return (
     <div
@@ -8064,41 +8607,7 @@ function PagedGroupPrimaryActions({
       )}
       data-testid="chat-event-actions"
     >
-      {showActivityLogs && firstRunId && (
-        <TooltipProvider delay={300}>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Link
-                  pathname="/activities/:activityRunId"
-                  options={{
-                    pathParams: { activityRunId: firstRunId },
-                  }}
-                  aria-label={t(($) => {
-                    return $.chat.run.viewLogs;
-                  })}
-                  className={cn(
-                    buttonVariants({
-                      variant: "quiet",
-                      size: "icon-xs",
-                      iconSize: "sm",
-                    }),
-                    "text-muted-foreground/60",
-                  )}
-                >
-                  <ChartLine />
-                </Link>
-              }
-            />
-            <TooltipContent side="bottom">
-              {t(($) => {
-                return $.chat.run.viewActivityLogs;
-              })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
-      {showActivityLogs && firstRunId && (
+      {showDebugActions && firstRunId && (
         <RunLangfuseAction thread={thread} runId={firstRunId} />
       )}
       {hasContent && (
@@ -8141,6 +8650,7 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
+      {onShare && <MessageShareAction onShare={onShare} />}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}
@@ -8153,17 +8663,21 @@ function PagedGroupActions({
   group,
   content,
   thread,
+  shareEvents,
   relatedArtifacts,
   embedded = false,
 }: {
   group: ChatEventGroup;
   content: string;
   thread: ChatPanelSignals;
+  /** The assistant events this action bar shares, with their user prompt. */
+  shareEvents: readonly EnrichedChatEvent[];
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
   embedded?: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
   const copyEvent = useSet(thread.copyEvent$);
+  const shareMessage = useSet(thread.sharing.shareMessage$);
   const sharingPhase = useGet(thread.sharing.phase$);
   if (sharingPhase !== "idle") {
     return null;
@@ -8178,6 +8692,29 @@ function PagedGroupActions({
   const handleCopy = () => {
     return copyEvent({ text: content, attachments: [] }, pageSignal);
   };
+  // Only persisted output messages can be shared; streaming text has no seqId.
+  const shareEventIds = shareEvents
+    .filter((event) => {
+      return (
+        event.eventType === "output.message" &&
+        event.seqId !== undefined &&
+        Boolean(event.content)
+      );
+    })
+    .map((event) => {
+      return event.id;
+    });
+  const handleShare =
+    shareEventIds.length > 0
+      ? (revert: () => void) => {
+          const share = async () => {
+            if (!(await shareMessage(shareEventIds, pageSignal))) {
+              revert();
+            }
+          };
+          detach(share(), Reason.DomCallback, "share chat message");
+        }
+      : undefined;
 
   const actions = (
     <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
@@ -8187,6 +8724,7 @@ function PagedGroupActions({
         hasContent={hasContent}
         usage={usage}
         onCopy={handleCopy}
+        onShare={handleShare}
         relatedArtifacts={relatedArtifacts}
       />
     </div>

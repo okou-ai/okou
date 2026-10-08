@@ -1,15 +1,12 @@
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-
 export const INTEGRATION_DM_SESSION_PREFIX = "direct-message:";
 
-export function integrationDmSessionKey(args: {
-  readonly agentId: string;
-  readonly selectedModel?: string | null;
-  readonly serviceTier?: ChatThreadServiceTier | null;
-}): string {
-  const session = `${INTEGRATION_DM_SESSION_PREFIX}${args.agentId}:${args.selectedModel ?? "default"}`;
-  return args.serviceTier === "priority" ? `${session}:priority` : session;
-}
+/**
+ * Route key for the main direct-message conversation. Each integration
+ * identity (connection row) owns exactly one DM thread, so the key carries no
+ * agent or model. Keys written before Release 7 had the shape
+ * `direct-message:<agentId>:<model>[:priority]`; they still match the prefix.
+ */
+export const INTEGRATION_DM_SESSION_KEY = `${INTEGRATION_DM_SESSION_PREFIX}main`;
 
 export function isIntegrationDmSessionKey(key: string): boolean {
   return key.startsWith(INTEGRATION_DM_SESSION_PREFIX);

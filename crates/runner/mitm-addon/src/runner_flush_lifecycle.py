@@ -5,9 +5,6 @@ import threading
 from typing import Literal
 
 import addon_process_logging
-import anthropic_accounting
-import claude_output_timing
-import codex_output_timing
 import usage
 
 _condition = threading.Condition()
@@ -132,19 +129,11 @@ def _run_worker() -> None:
 
 def _flush_delivery_work(*, trigger: Literal["runner", "shutdown"]) -> None:
     usage.flush_usage_events(trigger=trigger)
-    _retry_retained_diagnostic_reports()
-
-
-def _retry_retained_diagnostic_reports() -> None:
-    anthropic_accounting.retry_all_pending()
-    claude_output_timing.retry_all_pending()
-    codex_output_timing.retry_all_pending()
 
 
 def drain_delivery_work_after_executor_shutdown() -> None:
-    """Join delivery callbacks first; their retained work now delivers synchronously."""
+    """Join delivery callbacks; their retained work now delivers synchronously."""
     usage.drain_usage_events_after_executor_shutdown()
-    _retry_retained_diagnostic_reports()
 
 
 def drain_and_close() -> None:

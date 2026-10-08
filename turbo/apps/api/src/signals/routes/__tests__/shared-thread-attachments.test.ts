@@ -22,7 +22,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
@@ -66,7 +65,7 @@ async function fixture(privateFiles = false) {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Attachment sharing",
   });
@@ -118,30 +117,19 @@ async function fixture(privateFiles = false) {
     };
   }
   async function send(parts: readonly UserMessageInputPart[]) {
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Use these files",
-        userMessage: { version: 1, parts: [...parts] },
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected sent prompt");
-    }
-    if (!sent.body.runId) {
-      throw new Error("Expected a new chat run");
-    }
-    await flushWaitUntilForTest();
-    const history = await chat.listThreadEvents(actor, sent.body.threadId);
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Use these files",
+      userMessage: { version: 1, parts: [...parts] },
+    });
+    const history = await chat.listThreadEvents(actor, sent.threadId);
     const event = history.events.find((row) => {
-      return row.eventType === "input.prompt" && row.runId === sent.body.runId;
+      return row.eventType === "input.prompt" && row.runId === sent.runId;
     });
     if (!event) {
       throw new Error("Expected prompt event");
     }
-    return { threadId: sent.body.threadId, eventId: event.id };
+    return { threadId: sent.threadId, eventId: event.id };
   }
   function share(message: {
     readonly threadId: string;

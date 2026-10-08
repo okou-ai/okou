@@ -26,7 +26,14 @@ const oauthClaimsSchema = z.object({
   aud: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
   sub: z.string().startsWith("user_").min(6),
   org_id: z.string().startsWith("org_").min(5),
-  client_id: z.string().min(1),
+  // Must fit the persisted MCP source contract before any input is accepted.
+  client_id: z
+    .string()
+    .min(1)
+    .max(2048)
+    .refine((value) => {
+      return value.trim().length > 0;
+    }),
   exp: z.number().int().positive(),
   scope: z.string().optional(),
   scp: z.array(z.string().min(1)).optional(),
@@ -501,8 +508,73 @@ export async function retryClerkRead<T>(
 /** Session identity as the API models it, independent of Clerk's auth object. */
 export interface ClerkSessionIdentity {
   readonly userId: string;
+  readonly sessionId: string | null;
   readonly orgId: string | null;
   readonly orgRole: string | null;
+}
+
+export interface ClerkSessionAuthentication {
+  readonly identity: ClerkSessionIdentity | null;
+  readonly failureReason: string | null;
+}
+
+// Temporary #36177 diagnostics: allowlist SDK codes, never its free-form
+// message or the request state, which can contain credentials.
+const clerkSessionFailureReasons: readonly string[] = Object.freeze([
+  ...Object.values(TokenVerificationErrorReason),
+  "client-uat-but-no-session-token",
+  "dev-browser-missing",
+  "dev-browser-sync",
+  "primary-responds-to-syncing",
+  "primary-domain-cross-origin-sync",
+  "satellite-needs-syncing",
+  "session-token-and-uat-missing",
+  "session-token-missing",
+  "session-token-expired",
+  "session-token-iat-before-client-uat",
+  "session-token-nbf",
+  "session-token-iat-in-the-future",
+  "session-token-but-no-client-uat",
+  "active-organization-mismatch",
+  "token-type-mismatch",
+  "unexpected-error",
+]);
+
+// @clerk/backend@3.13.1 decorates an expired token's reason with its
+// refresh outcome. POST requests cannot refresh, so the fixed allowlist above
+// would report their expired Bearer tokens only as `unknown`. The SDK can also
+// append a provider-defined error code: never include an unchecked suffix.
+const expiredSessionRefreshPrefix = "session-token-expired-refresh-";
+const knownExpiredSessionRefreshOutcomes: readonly string[] = Object.freeze([
+  "non-eligible-no-refresh-cookie",
+  "non-eligible-non-get",
+  "invalid-session-token",
+  "missing-api-client",
+  "missing-session-token",
+  "missing-refresh-token",
+  "expired-session-token-decode-failed",
+  "expired-session-token-missing-sid-claim",
+  "fetch-error",
+  "unexpected-sdk-error",
+  "unexpected-bapi-error",
+]);
+
+function safeClerkSessionFailureReason(reason: unknown): string {
+  // Diagnostics must never turn an unauthenticated request into a 500 when
+  // Clerk omits a reason (or changes the rejection payload at runtime).
+  if (typeof reason !== "string") {
+    return "unknown";
+  }
+  if (clerkSessionFailureReasons.includes(reason)) {
+    return reason;
+  }
+  if (reason.startsWith(expiredSessionRefreshPrefix)) {
+    const outcome = reason.slice(expiredSessionRefreshPrefix.length);
+    return knownExpiredSessionRefreshOutcomes.includes(outcome)
+      ? `${expiredSessionRefreshPrefix}${outcome}`
+      : `${expiredSessionRefreshPrefix}other`;
+  }
+  return "unknown";
 }
 
 /** The only two fields the Clerk webhook route reads off an event. */
@@ -697,29 +769,39 @@ export const clerk$: Computed<ClerkClient> = computed((): ClerkClient => {
 /**
  * Clerk's `RequestState` is a wide union whose members disagree about what
  * `toAuth()` returns, so it is collapsed here rather than mirrored: callers
- * only need the signed-in identity, or nothing.
+ * keep the signed-in identity and an allowlisted rejection code.
  */
 export async function authenticateClerkSession(
   request: Request,
-): Promise<ClerkSessionIdentity | null> {
+): Promise<ClerkSessionAuthentication> {
   const requestState = await clerkSdk().authenticateRequest(request, {
     acceptsToken: "session_token",
   });
 
   if (!requestState.isAuthenticated) {
-    return null;
+    return {
+      identity: null,
+      failureReason: safeClerkSessionFailureReason(requestState.reason),
+    };
   }
 
   const auth = requestState.toAuth();
   const userId: unknown = auth.userId;
   if (typeof userId !== "string" || userId.length === 0) {
-    return null;
+    return { identity: null, failureReason: null };
   }
 
   return {
-    userId,
-    orgId: auth.orgId ?? null,
-    orgRole: auth.orgRole ?? null,
+    identity: {
+      userId,
+      sessionId:
+        typeof auth.sessionId === "string" && auth.sessionId.length > 0
+          ? auth.sessionId
+          : null,
+      orgId: auth.orgId ?? null,
+      orgRole: auth.orgRole ?? null,
+    },
+    failureReason: null,
   };
 }
 

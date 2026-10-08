@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { createHtmlArtifactAuthoringPacket } from "../shared/html-artifact-authoring";
+import { createHtmlArtifactAuthoringInstructions } from "../shared/html-artifact-authoring";
 import {
   findDesignSystem,
   findWebsiteTemplateResource,
@@ -156,7 +156,7 @@ ${formatRegistryListing(templates, "website templates")}`;
             "Built-in website candidates have `source.archive`; candidates without it are Open Design templates.",
           ];
 
-      const packet = createHtmlArtifactAuthoringPacket({
+      const instructions = createHtmlArtifactAuthoringInstructions({
         kind: "website",
         prompt,
         slugSource: options.title,
@@ -180,6 +180,6 @@ ${formatRegistryListing(templates, "website templates")}`;
         ],
       });
 
-      console.log(packet.instructions);
+      console.log(instructions);
     }),
   );

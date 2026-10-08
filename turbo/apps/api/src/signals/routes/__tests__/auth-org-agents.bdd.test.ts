@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import {
   createAuthOrgAgentsBddApi,
@@ -12,6 +13,9 @@ import {
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
 /*
 helper gap:
@@ -26,7 +30,7 @@ helper gap:
   the visible read model for the selected default agent.
 */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
 const bdd = createBddApi(context);
 const runsApi = createRunsApi(context);
@@ -76,6 +80,54 @@ async function onboardAdmin(
     );
   }
   return bootstrap.body.agentId;
+}
+
+async function withOwnedInvitationOrg(
+  admin: ApiTestUser,
+  scenario: () => Promise<void>,
+): Promise<void> {
+  const orgId = requiredOrgId(admin);
+  const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+  const owner = createFixtureOperationOwner(async () => {
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+    context.mocks.s3.send.mockResolvedValue({
+      Contents: [],
+      IsTruncated: false,
+    });
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    await flushWaitUntilForTest();
+
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureStripeBillingEnv();
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
+    context.mocks.stripe.invoices.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "organization.deleted",
+      data: { id: orgId },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+    expect(
+      (
+        await createRunReadsApi(context).requestListLogs(
+          admin,
+          { limit: 50 },
+          [200],
+        )
+      ).body.data,
+    ).toStrictEqual([]);
+    // UUID-owned invitation completion receipts intentionally survive deletion.
+  });
+  await owner.run(scenario);
 }
 
 describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
@@ -219,6 +271,7 @@ describe("AUTH-03", () => {
 
     const preferences = await api.updatePreferences(admin, {
       timezone: "UTC",
+      locale: "en-US",
       pinnedAgentIds: [],
       sendMode: "cmd-enter",
       captureNetworkBodiesRemaining: 3,
@@ -274,249 +327,245 @@ describe("ORG-01 and ORG-02", () => {
   it("projects direct invitation redirects to Okou", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const admin = api.user();
-    await upsertOrgPlanEntitlementFixture({
-      orgId: requiredOrgId(admin),
-      showUsagePack: false,
-    });
+    await withOwnedInvitationOrg(admin, async () => {
+      await onboardAdmin(admin);
 
-    const inviteEmail = `okou-invite-${shortId()}@example.test`;
-    context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
-      { id: `inv_${shortId()}` },
-    );
-    await api.inviteMember(admin, { email: inviteEmail, role: "member" });
-    expect(
-      context.mocks.clerk.organizations.createOrganizationInvitation,
-    ).toHaveBeenLastCalledWith({
-      organizationId: admin.orgId,
-      emailAddress: inviteEmail,
-      inviterUserId: admin.userId,
-      role: "org:member",
-      redirectUrl: "https://app.okou.ai",
+      const inviteEmail = `okou-invite-${shortId()}@example.test`;
+      context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
+        { id: `inv_${shortId()}` },
+      );
+      await api.inviteMember(admin, { email: inviteEmail, role: "member" });
+      expect(
+        context.mocks.clerk.organizations.createOrganizationInvitation,
+      ).toHaveBeenLastCalledWith({
+        organizationId: admin.orgId,
+        emailAddress: inviteEmail,
+        inviterUserId: admin.userId,
+        role: "org:member",
+        redirectUrl: "https://app.okou.ai",
+        privateMetadata: { getStartedClaimId: expect.any(String) },
+      });
     });
   });
 
   it("reads, updates, lists, invites, changes membership, handles requests, and leaves orgs through APIs", async () => {
     const admin = api.user();
-    const member = api.user({
-      orgId: admin.orgId,
-      orgRole: "org:member",
-      email: `member-${shortId()}@example.test`,
-    });
-    const requester = api.user({
-      orgId: admin.orgId,
-      orgRole: "org:member",
-      email: `requester-${shortId()}@example.test`,
-    });
-    const baseSlug = slug("bdd-org");
-    const nextSlug = slug("bdd-org-updated");
-    const inviteId = `inv_${shortId()}`;
-    const requestId = `req_${shortId()}`;
+    await withOwnedInvitationOrg(admin, async () => {
+      const member = api.user({
+        orgId: admin.orgId,
+        orgRole: "org:member",
+        email: `member-${shortId()}@example.test`,
+      });
+      const requester = api.user({
+        orgId: admin.orgId,
+        orgRole: "org:member",
+        email: `requester-${shortId()}@example.test`,
+      });
+      const baseSlug = slug("bdd-org");
+      const nextSlug = slug("bdd-org-updated");
+      const inviteId = `inv_${shortId()}`;
+      const requestId = `req_${shortId()}`;
 
-    await onboardAdmin(admin, { slug: baseSlug, name: "BDD Org" });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: requiredOrgId(admin),
-      showUsagePack: false,
-    });
-    api.mockClerkOrg(admin, {
-      slug: baseSlug,
-      name: "BDD Org",
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-      pendingInvitations: [
-        {
-          id: inviteId,
-          email: `invitee-${shortId()}@example.test`,
-          role: "org:member",
-        },
-      ],
-      membershipRequests: [{ id: requestId, actor: requester }],
-    });
+      await onboardAdmin(admin, { slug: baseSlug, name: "BDD Org" });
+      api.mockClerkOrg(admin, {
+        slug: baseSlug,
+        name: "BDD Org",
+        members: [
+          { actor: admin, role: "org:admin" },
+          { actor: member, role: "org:member" },
+        ],
+        pendingInvitations: [
+          {
+            id: inviteId,
+            email: `invitee-${shortId()}@example.test`,
+            role: "org:member",
+          },
+        ],
+        membershipRequests: [{ id: requestId, actor: requester }],
+      });
 
-    const adminOrg = await api.readOrg(admin);
-    expect(adminOrg).toMatchObject({
-      name: "BDD Org",
-      role: "admin",
-    });
+      const adminOrg = await api.readOrg(admin);
+      expect(adminOrg).toMatchObject({
+        name: "BDD Org",
+        role: "admin",
+      });
 
-    api.mockClerkOrg(member, {
-      slug: baseSlug,
-      name: "BDD Org",
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-    });
-    const memberOrg = await api.readOrg(member);
-    expect(memberOrg.role).toBe("member");
+      api.mockClerkOrg(member, {
+        slug: baseSlug,
+        name: "BDD Org",
+        members: [
+          { actor: admin, role: "org:admin" },
+          { actor: member, role: "org:member" },
+        ],
+      });
+      const memberOrg = await api.readOrg(member);
+      expect(memberOrg.role).toBe("member");
 
-    api.mockClerkOrg(admin, {
-      slug: nextSlug,
-      name: "BDD Org Updated",
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-    });
-    const updated = await api.updateOrg(admin, { name: "BDD Org Updated" });
-    expect(updated).toMatchObject({
-      name: "BDD Org Updated",
-    });
-    expect(updated).not.toHaveProperty("slug");
+      api.mockClerkOrg(admin, {
+        slug: nextSlug,
+        name: "BDD Org Updated",
+        members: [
+          { actor: admin, role: "org:admin" },
+          { actor: member, role: "org:member" },
+        ],
+      });
+      const updated = await api.updateOrg(admin, { name: "BDD Org Updated" });
+      expect(updated).toMatchObject({
+        name: "BDD Org Updated",
+      });
+      expect(updated).not.toHaveProperty("slug");
 
-    api.mockClerkOrg(member, {
-      slug: nextSlug,
-      name: "BDD Org Updated",
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-    });
-    const memberUpdate = await api.requestUpdateOrg(
-      member,
-      { name: "Member Update" },
-      [403],
-    );
-    expectApiError(memberUpdate.body);
-    expect(memberUpdate.body.error.code).toBe("FORBIDDEN");
+      api.mockClerkOrg(member, {
+        slug: nextSlug,
+        name: "BDD Org Updated",
+        members: [
+          { actor: admin, role: "org:admin" },
+          { actor: member, role: "org:member" },
+        ],
+      });
+      const memberUpdate = await api.requestUpdateOrg(
+        member,
+        { name: "Member Update" },
+        [403],
+      );
+      expectApiError(memberUpdate.body);
+      expect(memberUpdate.body.error.code).toBe("FORBIDDEN");
 
-    api.mockClerkOrg(admin, {
-      slug: nextSlug,
-      name: "BDD Org Updated",
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-      pendingInvitations: [
-        {
-          id: inviteId,
-          email: `invitee-${shortId()}@example.test`,
-          role: "org:member",
-        },
-      ],
-      membershipRequests: [{ id: requestId, actor: requester }],
-    });
-    const members = await api.listMembers(admin);
-    expect(members.name).toBe("BDD Org Updated");
-    expect(members.role).toBe("admin");
-    expect(
-      members.members.some((candidate) => {
-        return candidate.email === member.email && candidate.role === "member";
-      }),
-    ).toBeTruthy();
-    expect(members.pendingInvitations?.[0]?.id).toBe(inviteId);
-    expect(members.membershipRequests?.[0]?.id).toBe(requestId);
+      api.mockClerkOrg(admin, {
+        slug: nextSlug,
+        name: "BDD Org Updated",
+        members: [
+          { actor: admin, role: "org:admin" },
+          { actor: member, role: "org:member" },
+        ],
+        pendingInvitations: [
+          {
+            id: inviteId,
+            email: `invitee-${shortId()}@example.test`,
+            role: "org:member",
+          },
+        ],
+        membershipRequests: [{ id: requestId, actor: requester }],
+      });
+      const members = await api.listMembers(admin);
+      expect(members.name).toBe("BDD Org Updated");
+      expect(members.role).toBe("admin");
+      expect(
+        members.members.some((candidate) => {
+          return (
+            candidate.email === member.email && candidate.role === "member"
+          );
+        }),
+      ).toBeTruthy();
+      expect(members.pendingInvitations?.[0]?.id).toBe(inviteId);
+      expect(members.membershipRequests?.[0]?.id).toBe(requestId);
 
-    const inviteeEmail = `new-member-${shortId()}@example.test`;
-    const invite = await api.inviteMember(admin, {
-      email: inviteeEmail,
-      role: "member",
-    });
-    expect(invite.message).toContain("Invitation sent");
-    expect(
-      context.mocks.clerk.organizations.createOrganizationInvitation,
-    ).toHaveBeenCalledWith({
-      organizationId: admin.orgId,
-      emailAddress: inviteeEmail,
-      inviterUserId: admin.userId,
-      role: "org:member",
-      redirectUrl: "http://localhost:3002",
-    });
+      const inviteeEmail = `new-member-${shortId()}@example.test`;
+      const invite = await api.inviteMember(admin, {
+        email: inviteeEmail,
+        role: "member",
+      });
+      expect(invite.message).toContain("Invitation sent");
+      expect(
+        context.mocks.clerk.organizations.createOrganizationInvitation,
+      ).toHaveBeenCalledWith({
+        organizationId: admin.orgId,
+        emailAddress: inviteeEmail,
+        inviterUserId: admin.userId,
+        role: "org:member",
+        redirectUrl: "http://localhost:3002",
+        privateMetadata: { getStartedClaimId: expect.any(String) },
+      });
 
-    api.mockClerkOrg(member, {
-      slug: nextSlug,
-      name: "BDD Org Updated",
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-    });
-    const forbiddenInvite = await api.requestInviteMember(
-      member,
-      { email: `forbidden-${shortId()}@example.test`, role: "member" },
-      [403],
-    );
-    expectApiError(forbiddenInvite.body);
-    expect(forbiddenInvite.body.error.code).toBe("FORBIDDEN");
+      api.mockClerkOrg(member, {
+        slug: nextSlug,
+        name: "BDD Org Updated",
+        members: [
+          { actor: admin, role: "org:admin" },
+          { actor: member, role: "org:member" },
+        ],
+      });
+      const forbiddenInvite = await api.requestInviteMember(
+        member,
+        { email: `forbidden-${shortId()}@example.test`, role: "member" },
+        [403],
+      );
+      expectApiError(forbiddenInvite.body);
+      expect(forbiddenInvite.body.error.code).toBe("FORBIDDEN");
 
-    api.mockClerkOrg(admin, {
-      slug: nextSlug,
-      name: "BDD Org Updated",
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-      pendingInvitations: [{ id: inviteId, email: member.email }],
-      membershipRequests: [{ id: requestId, actor: requester }],
-    });
-    await expect(api.revokeInvitation(admin, inviteId)).resolves.toStrictEqual({
-      message: "Invitation revoked",
-    });
-    await expect(
-      api.updateMemberRole(admin, { email: member.email, role: "admin" }),
-    ).resolves.toStrictEqual({
-      message: `Updated role for ${member.email}`,
-    });
-    await expect(
-      api.acceptMembershipRequest(admin, { requestId }),
-    ).resolves.toStrictEqual({
-      message: "Membership request accepted",
-    });
-    await expect(
-      api.rejectMembershipRequest(admin, { requestId }),
-    ).resolves.toStrictEqual({
-      message: "Membership request rejected",
-    });
-    await expect(
-      api.removeMember(admin, { email: member.email }),
-    ).resolves.toStrictEqual({
-      message: `Removed ${member.email} from org`,
-    });
+      api.mockClerkOrg(admin, {
+        slug: nextSlug,
+        name: "BDD Org Updated",
+        members: [
+          { actor: admin, role: "org:admin" },
+          { actor: member, role: "org:member" },
+        ],
+        pendingInvitations: [{ id: inviteId, email: member.email }],
+        membershipRequests: [{ id: requestId, actor: requester }],
+      });
+      await expect(
+        api.revokeInvitation(admin, inviteId),
+      ).resolves.toStrictEqual({
+        message: "Invitation revoked",
+      });
+      await expect(
+        api.updateMemberRole(admin, { email: member.email, role: "admin" }),
+      ).resolves.toStrictEqual({
+        message: `Updated role for ${member.email}`,
+      });
+      await expect(
+        api.acceptMembershipRequest(admin, { requestId }),
+      ).resolves.toStrictEqual({
+        message: "Membership request accepted",
+      });
+      await expect(
+        api.rejectMembershipRequest(admin, { requestId }),
+      ).resolves.toStrictEqual({
+        message: "Membership request rejected",
+      });
+      await expect(
+        api.removeMember(admin, { email: member.email }),
+      ).resolves.toStrictEqual({
+        message: `Removed ${member.email} from org`,
+      });
 
-    api.mockClerkOrg(admin, {
-      slug: nextSlug,
-      name: "BDD Org Updated",
-      members: [{ actor: admin, role: "org:admin" }],
-    });
-    const afterRemove = await api.listMembers(admin);
-    expect(
-      afterRemove.members.some((candidate) => {
-        return candidate.email === member.email;
-      }),
-    ).toBeFalsy();
+      api.mockClerkOrg(admin, {
+        slug: nextSlug,
+        name: "BDD Org Updated",
+        members: [{ actor: admin, role: "org:admin" }],
+      });
+      const afterRemove = await api.listMembers(admin);
+      expect(
+        afterRemove.members.some((candidate) => {
+          return candidate.email === member.email;
+        }),
+      ).toBeFalsy();
 
-    api.mockClerkOrg(member, {
-      slug: nextSlug,
-      name: "BDD Org Updated",
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-    });
-    await expect(api.leaveOrg(member)).resolves.toStrictEqual({
-      message: "Left org",
-    });
+      api.mockClerkOrg(member, {
+        slug: nextSlug,
+        name: "BDD Org Updated",
+        members: [
+          { actor: admin, role: "org:admin" },
+          { actor: member, role: "org:member" },
+        ],
+      });
+      await expect(api.leaveOrg(member)).resolves.toStrictEqual({
+        message: "Left org",
+      });
 
-    api.mockClerkOrg(admin, {
-      slug: nextSlug,
-      name: "BDD Org Updated",
-      members: [{ actor: admin, role: "org:admin" }],
-    });
-    await expect(api.deleteOrg(admin)).resolves.toStrictEqual({
-      message: "Organization deleted",
+      api.mockClerkOrg(admin, {
+        slug: nextSlug,
+        name: "BDD Org Updated",
+        members: [{ actor: admin, role: "org:admin" }],
+      });
+      await expect(api.deleteOrg(admin)).resolves.toStrictEqual({
+        message: "Organization deleted",
+      });
     });
   });
 });
 
 describe("ORG-03 onboarding status mapping", () => {
-  it("rejects onboarding status without authentication", async () => {
-    const unauthenticated = await bdd.requestReadOnboardingStatus(null, [401]);
-    expect(unauthenticated.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
   it.each(["admin", "member"] as const)(
     "protects the default Okou for its %s owner",
     async (role) => {
@@ -669,9 +718,10 @@ describe("ORG-03 onboarding status mapping", () => {
       defaultAgentMetadata: null,
     });
 
+    // A new member has their own source-first onboarding ahead of them.
     const memberStatus = await api.readOnboardingStatus(member);
     expect(memberStatus).toStrictEqual({
-      needsOnboarding: false,
+      needsOnboarding: true,
       onboardingComplete: false,
       isAdmin: false,
       hasOrg: true,
@@ -709,10 +759,15 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingPaymentPending: false,
     });
 
+    // A member's completion is their own and leaves the workspace's setup to
+    // the admin.
     const memberComplete = await api.completeOnboarding(member);
-    expect(memberComplete.status).toBe(403);
-    expectApiError(memberComplete.body);
-    expect(memberComplete.body.error.code).toBe("FORBIDDEN");
+    expect(memberComplete.status).toBe(200);
+    await expect(api.readOnboardingStatus(admin)).resolves.toMatchObject({
+      needsOnboarding: true,
+      onboardingComplete: false,
+      isAdmin: true,
+    });
 
     const completed = await api.completeOnboarding(admin);
     expect(completed.status).toBe(200);

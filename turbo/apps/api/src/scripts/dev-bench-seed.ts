@@ -1,10 +1,10 @@
 #!/usr/bin/env tsx
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 
 import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   serializeChatFollowupsContent,
   type ChatRecommendedFollowup,
@@ -16,14 +16,17 @@ import {
   chatEvents,
   type ChatEventUsagePayload,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
+import { createStore } from "ccstate";
+import { insertBenchmarkRunBatch$ } from "./benchmark-run-seed";
 import { closeDbPool, db } from "../lib/db";
 import { optionalEnv } from "../lib/env";
 import { normalizeRunMetadata } from "../signals/services/agent-run-metadata-write.service";
-import { webChatPublicBrandContextId } from "../signals/services/web-chat-public-brand-context.service";
+import { webChatContextId } from "../signals/services/web-chat-queue-context.service";
 import { onRejection } from "../signals/utils";
 
+const store = createStore();
 const BULK_INSERT_CHUNK = 500;
 const SCRIPT_MARKER = "dev-bench-seed";
 const ALLOW_NON_LOCAL_ENV = "DEV_BENCH_SEED_ALLOW_NON_LOCAL";
@@ -831,16 +834,16 @@ function appendNullRunControlRows(args: {
       id: randomUUID(),
       chatThreadId: args.threadId,
       runId: null,
-      eventType: isInputPrompt ? "input.prompt" : "output.thinking",
+      eventType: isInputPrompt ? "input.prompt" : "output.message",
       ...(isInputPrompt
         ? {
             contextType: "web",
-            contextId: webChatPublicBrandContextId(PUBLIC_BRAND),
+            contextId: webChatContextId(),
             payload: { userMessage },
           }
         : {
             payload: {
-              thinking: `Synthetic background state ${String(controlIndex)}`,
+              content: `Synthetic background state ${String(controlIndex)}`,
             },
           }),
       createdAt,
@@ -925,7 +928,7 @@ async function insertProfileRows(
   rows: BuiltProfileRows,
 ): Promise<void> {
   await chunkedInsert(rows.runRows, (chunk) => {
-    return database.insert(agentRuns).values(chunk);
+    return store.set(insertBenchmarkRunBatch$, chunk);
   });
   const eventRows = rows.eventRows.map((row) => {
     const seqId = row.seqId;
@@ -940,9 +943,17 @@ async function insertProfileRows(
   const lastEvent = eventRows.at(-1);
   if (lastEvent) {
     await database
-      .update(chatThreads)
-      .set({ lastChatEventSeqId: lastEvent.seqId })
-      .where(eq(chatThreads.id, lastEvent.chatThreadId));
+      .insert(chatEventSequences)
+      .values({
+        chatThreadId: lastEvent.chatThreadId,
+        lastSeqId: lastEvent.seqId,
+      })
+      .onConflictDoUpdate({
+        target: chatEventSequences.chatThreadId,
+        set: {
+          lastSeqId: sql`GREATEST(${chatEventSequences.lastSeqId}, ${lastEvent.seqId})`,
+        },
+      });
   }
 }
 

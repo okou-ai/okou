@@ -268,48 +268,12 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
       attempt,
       reconnectCard,
       completedAttempts,
-      oauthAccounts,
     };
   }
 
-  async function expectClosedReconnect() {
-    const progress = screen.getByRole("dialog", {
-      name: "Connecting your account",
-    });
-    click(within(progress).getByLabelText("Close"));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-      expect(screen.queryByText("Reconnecting…")).toBeNull();
-    });
-  }
-
-  it("closing reconnect clears progress for the required account", async () => {
-    await prepareReconnect();
-    await expectClosedReconnect();
-    expect(screen.queryByText("Reconnecting…")).toBeNull();
-  });
-
-  it("retrying a closed reconnect opens mail from the same required account", async () => {
-    const {
-      subject,
-      attempt,
-      reconnectCard,
-      completedAttempts,
-      oauthAccounts,
-    } = await prepareReconnect();
-    await expectClosedReconnect();
-    attempt.oauthAttemptId = crypto.randomUUID();
-    attempt.authorization = openedAuthorizationWindow();
-    click(await findMailCard(subject));
-    await waitFor(() => {
-      expect(attempt.authorization.navigations).toContain(
-        "https://accounts.example.test/gmail/authorize",
-      );
-      expect(oauthAccounts).toStrictEqual([
-        { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
-        { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
-      ]);
-    });
+  it("reconnecting opens mail from the same required account", async () => {
+    const { subject, attempt, reconnectCard, completedAttempts } =
+      await prepareReconnect();
     expect(
       screen.getByRole("dialog", { name: "Connecting your account" }),
     ).toBeVisible();
@@ -352,52 +316,168 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
   });
 });
 
-test.each([404, 500] as const)(
-  "Keep a mail card through a %s read and retry",
-  async (status) => {
-    const gate = context.mocks.deferred<void>();
-    let available = false;
-    const subject = "Recovered draft";
-    installCapabilityChat({
-      events: completedConversation(mailCard(FIRST_MAIL_ID, subject)),
-    });
-    context.mocks.api(
-      mailContract.getDraft,
-      async ({ respond, withSignal }) => {
-        await withSignal(gate.promise);
-        if (available) {
-          return respond(
-            200,
-            mailResponse(FIRST_MAIL_ID, mailDraft(FIRST_MAIL_ID, { subject })),
-          );
-        }
-        return respond(status, {
-          error: {
-            code: status === 404 ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
-            message: "Email unavailable",
-          },
-        });
-      },
-    );
+test("Inline, table, and nested mail links keep their labels and open email details", async () => {
+  const firstDraft = mailDraft(FIRST_MAIL_ID, {
+    subject: "First candidate invitation",
+    body: "The first candidate's email.",
+  });
+  const secondDraft = mailDraft(SECOND_MAIL_ID, {
+    subject: "Second candidate invitation",
+    body: "The second candidate's email.",
+  });
+  const chineseDraft = mailDraft(DETAILS_MAIL_ID, {
+    subject: "Invitation from a Chinese sentence",
+    body: "The email linked before Chinese punctuation.",
+  });
+  const relativeUrl = `/mail/drafts/${SECOND_MAIL_ID}`;
+  const foreignUrl = `https://untrusted.example/mail/drafts/${SECOND_MAIL_ID}`;
+  installCapabilityChat({
+    events: completedConversation(
+      [
+        ` ${mailCard(FIRST_MAIL_ID, "Standalone draft")} `,
+        "",
+        `Review [**Inline draft**](${mailUrl(SECOND_MAIL_ID)}) before sending.`,
+        "",
+        "| Candidate | Email |",
+        "| --- | --- |",
+        `| First candidate | ${mailUrl(FIRST_MAIL_ID)} |`,
+        "",
+        `- [List draft](${mailUrl(SECOND_MAIL_ID)})`,
+        "",
+        `> [Quoted draft](${mailUrl(SECOND_MAIL_ID)})`,
+        "",
+        "A paragraph starts here",
+        mailUrl(SECOND_MAIL_ID),
+        "and continues after the URL.",
+        "",
+        `Also review [Relative draft](${relativeUrl}).`,
+        "",
+        `Relative path: **${relativeUrl}**`,
+        "",
+        `请查看 **${mailUrl(DETAILS_MAIL_ID)}。然后确认内容。**`,
+        "",
+        `A code example: \`${mailUrl(SECOND_MAIL_ID)}\`.`,
+        "",
+        `Untrusted: [External link](${foreignUrl}).`,
+      ].join("\n"),
+    ),
+  });
+  const drafts = new Map([
+    [FIRST_MAIL_ID, firstDraft],
+    [SECOND_MAIL_ID, secondDraft],
+    [DETAILS_MAIL_ID, chineseDraft],
+  ]);
+  context.mocks.api(mailContract.getDraft, ({ params, respond }) => {
+    const draft = drafts.get(params.mailDraftId);
+    if (!draft) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Email not found" },
+      });
+    }
+    return respond(200, mailResponse(params.mailDraftId, draft));
+  });
 
-    await setupPage({ context, path: RUN_PATH, host: APP_HOST });
-    await readyChat();
+  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
+  await readyChat();
+  const card = await findMailCard(firstDraft.subject);
+  expect(card).toBeInTheDocument();
+  const inlineLink = await findControl("link", "Inline draft");
+  expect(inlineLink.querySelector("strong")).toHaveTextContent("Inline draft");
+  expect(inlineLink.closest("p")).toHaveTextContent(
+    "Review Inline draft before sending.",
+  );
+  expect(
+    queryAllByRoleFast("button").filter((button) => {
+      return button.getAttribute("aria-label")?.includes(secondDraft.subject);
+    }),
+  ).toHaveLength(0);
+  const externalLink = await findControl("link", "External link");
+  expect(externalLink).toHaveAttribute("href", foreignUrl);
+  let nativeLinkNavigation = false;
+  document.addEventListener(
+    "click",
+    (event) => {
+      nativeLinkNavigation = !event.defaultPrevented;
+      // Observe React's handling without leaving the test page.
+      event.preventDefault();
+    },
+    { once: true },
+  );
+  click(externalLink);
+  expect(nativeLinkNavigation).toBeTruthy();
+  expect(
+    screen.queryByRole("complementary", { name: "Email details" }),
+  ).not.toBeInTheDocument();
+  const chineseLink = await findControl("link", mailUrl(DETAILS_MAIL_ID));
+  expect(chineseLink.closest("p")).toHaveTextContent(
+    `请查看 ${mailUrl(DETAILS_MAIL_ID)}。然后确认内容。`,
+  );
+
+  const links = [
+    {
+      label: mailUrl(FIRST_MAIL_ID),
+      href: mailUrl(FIRST_MAIL_ID),
+      tag: "table",
+      draft: firstDraft,
+    },
+    {
+      label: "Inline draft",
+      href: mailUrl(SECOND_MAIL_ID),
+      tag: "p",
+      draft: secondDraft,
+    },
+    {
+      label: "List draft",
+      href: mailUrl(SECOND_MAIL_ID),
+      tag: "li",
+      draft: secondDraft,
+    },
+    {
+      label: "Quoted draft",
+      href: mailUrl(SECOND_MAIL_ID),
+      tag: "blockquote",
+      draft: secondDraft,
+    },
+    {
+      label: mailUrl(SECOND_MAIL_ID),
+      href: mailUrl(SECOND_MAIL_ID),
+      tag: "p",
+      draft: secondDraft,
+    },
+    {
+      label: "Relative draft",
+      href: relativeUrl,
+      tag: "p",
+      draft: secondDraft,
+    },
+    {
+      label: relativeUrl,
+      href: relativeUrl,
+      tag: "p",
+      draft: secondDraft,
+    },
+    {
+      label: mailUrl(DETAILS_MAIL_ID),
+      href: mailUrl(DETAILS_MAIL_ID),
+      tag: "p",
+      draft: chineseDraft,
+    },
+  ];
+  for (const { label, href, tag, draft } of links) {
+    const link = await findControl("link", label);
+    expect(link).toHaveAttribute("href", href);
+    expect(link.closest(tag)).toBeInTheDocument();
+    click(link);
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Email details",
+    });
     await expect(
-      screen.findByTestId("mail-draft-card-loading"),
+      within(sidebar).findByText(draft.body),
     ).resolves.toBeInTheDocument();
-    gate.resolve();
-    await expect(
-      screen.findByText("This email is no longer available."),
-    ).resolves.toBeInTheDocument();
-    available = true;
-    click(await findControl("button", "Retry"));
-    await expect(screen.findByText(subject)).resolves.toBeInTheDocument();
-    click(await findMailCard(subject));
-    await expect(
-      screen.findByRole("complementary", { name: "Email details" }),
-    ).resolves.toBeInTheDocument();
-  },
-);
+    expect(within(sidebar).getByText(draft.subject)).toBeInTheDocument();
+    expect(window.location.pathname).toBe(RUN_PATH);
+  }
+});
 
 test("A rejected Gmail send shows correction guidance and keeps the draft", async () => {
   const subject = "Draft requiring review";

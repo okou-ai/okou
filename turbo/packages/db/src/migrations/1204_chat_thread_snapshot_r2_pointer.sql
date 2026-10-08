@@ -1,0 +1,1 @@
+ALTER TABLE "chat_thread_snapshots" ADD COLUMN "object_key" text;

@@ -1,25 +1,30 @@
-import { command, computed } from "ccstate";
-import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
-import {
-  getRunModelAccess,
-  RETIRED_RUN_MODEL_MESSAGE,
-  type OrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
-  isModelReasoningEffortSupported,
-  type ModelSettingsPatch,
-} from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import {
+  type UpdateUserModelPreferenceRequest,
+  userModelPreferenceContract,
+} from "@okouai/api-contracts/contracts/user-model-preference";
+import { command, computed } from "ccstate";
 
 import { badRequestMessage } from "../../lib/error";
-import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
-import { listOrgModelPolicies$ } from "../services/model-policy.service";
-import { isCodexFastServiceTierSupported } from "../services/model-selection.service";
+import {
+  type ModelCatalog,
+  modelCatalog$,
+  resolveCatalogRunModel,
+} from "../services/model-catalog.service";
+import { listAvailableRunModels$ } from "../services/run-models.service";
+
+import {
+  isCatalogFastServiceTierSupported,
+  isCatalogRouteEffortSupported,
+} from "../services/model-route-capabilities.service";
 import {
   updateUserModelPreference$,
   userModelPreference,
@@ -27,9 +32,19 @@ import {
 
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
 
+function configuredRunModelProviderType(
+  runModel: AvailableRunModel | undefined,
+): string | null {
+  return runModel && isMemberRunModelConfigurable(runModel)
+    ? runModel.memberEffective.providerType
+    : null;
+}
+
 function validateModelSettingsPatch(args: {
+  readonly catalog: ModelCatalog;
   readonly patch: ModelSettingsPatch | undefined;
   readonly selectedModel: string | null;
+  readonly configuredRunModel: AvailableRunModel | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (args.patch === undefined) {
     return undefined;
@@ -37,7 +52,14 @@ function validateModelSettingsPatch(args: {
   if (args.patch.model !== args.selectedModel) {
     return badRequestMessage("Reasoning effort must target the selected model");
   }
-  if (!isModelReasoningEffortSupported(args.patch.model, args.patch.effort)) {
+  if (
+    !isCatalogRouteEffortSupported(
+      args.catalog,
+      args.patch.model,
+      args.patch.effort,
+      configuredRunModelProviderType(args.configuredRunModel),
+    )
+  ) {
     return badRequestMessage(
       "Reasoning effort is not supported by the selected model",
     );
@@ -46,22 +68,27 @@ function validateModelSettingsPatch(args: {
 }
 
 function validatePriorityServiceTier(args: {
+  readonly catalog: ModelCatalog;
   readonly requested: boolean;
-  readonly configuredPolicy: OrgModelPolicy | undefined;
+  readonly configuredRunModel: AvailableRunModel | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (!args.requested) {
     return undefined;
   }
   if (
-    !args.configuredPolicy ||
-    !isMemberModelPolicyConfigurable(args.configuredPolicy)
+    !args.configuredRunModel ||
+    !isMemberRunModelConfigurable(args.configuredRunModel)
   ) {
     return badRequestMessage("Invalid request");
   }
   if (
-    !isCodexFastServiceTierSupported({
-      selectedModel: args.configuredPolicy.model,
-    })
+    (args.configuredRunModel.subscriptionOptions &&
+      args.configuredRunModel.subscriptionOptions.serviceTier !== "priority") ||
+    !isCatalogFastServiceTierSupported(
+      args.catalog,
+      args.configuredRunModel.model,
+      configuredRunModelProviderType(args.configuredRunModel),
+    )
   ) {
     return badRequestMessage(
       "Codex fast mode is only available for GPT 5.6 runs",
@@ -78,6 +105,61 @@ const getUserModelPreferenceInner$ = computed(async (get): Promise<unknown> => {
   return { status: 200 as const, body };
 });
 
+const persistUserModelPreference$ = command(
+  async (
+    { get, set },
+    preference: UpdateUserModelPreferenceRequest,
+    signal: AbortSignal,
+  ): Promise<unknown> => {
+    const auth = get(organizationAuthContext$);
+    const result = await set(
+      updateUserModelPreference$,
+      { orgId: auth.orgId, userId: auth.userId, preference },
+      signal,
+    );
+    signal.throwIfAborted();
+    const kinds: UserPreferenceChangedPayload["kinds"] = [
+      "defaultModel",
+      ...("selectedImageModel" in preference
+        ? (["defaultImageModel"] as const)
+        : []),
+    ];
+    await publishUserPreferenceChangedForUserSafely(auth.userId, kinds);
+    signal.throwIfAborted();
+    return { status: 200 as const, body: result };
+  },
+);
+
+/**
+ * A legacy client may send a replaced model ID: store the final model of its
+ * replacement chain. Unknown IDs are rejected explicitly.
+ */
+function resolveRequestedPreferenceModels(
+  catalog: ModelCatalog,
+  request: UpdateUserModelPreferenceRequest,
+): UpdateUserModelPreferenceRequest | ReturnType<typeof badRequestMessage> {
+  const selectedModel =
+    request.selectedModel === null
+      ? null
+      : resolveCatalogRunModel(catalog, request.selectedModel);
+  if (request.selectedModel !== null && selectedModel === null) {
+    return badRequestMessage(`Unknown model "${request.selectedModel}"`);
+  }
+  const patch = request.modelSettingsPatch;
+  if (!patch) {
+    return { ...request, selectedModel };
+  }
+  const patchModel = resolveCatalogRunModel(catalog, patch.model);
+  if (patchModel === null) {
+    return badRequestMessage(`Unknown model "${patch.model}"`);
+  }
+  return {
+    ...request,
+    selectedModel,
+    modelSettingsPatch: { ...patch, model: patchModel },
+  };
+}
+
 const updateUserModelPreferenceInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
     const auth = get(organizationAuthContext$);
@@ -87,66 +169,78 @@ const updateUserModelPreferenceInner$ = command(
       return body.response;
     }
 
-    if (getRunModelAccess(body.data.selectedModel) === "retired") {
-      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+    // Every write carries the run preference, including one that only changes
+    // a media model. Echoing the stored run preference unchanged is not a new
+    // selection, so it skips admission; otherwise a model that has since
+    // become unavailable would block the member from changing their image model.
+    const stored = await get(
+      userModelPreference({ orgId: auth.orgId, userId: auth.userId }),
+    );
+    signal.throwIfAborted();
+    const runPreferenceUnchanged =
+      body.data.selectedModel === stored.selectedModel &&
+      body.data.serviceTier === stored.serviceTier &&
+      body.data.modelSettingsPatch === undefined;
+    if (runPreferenceUnchanged) {
+      return await set(persistUserModelPreference$, body.data, signal);
     }
 
-    const policies =
-      body.data.selectedModel !== null
+    const catalog = await get(modelCatalog$);
+    signal.throwIfAborted();
+    const data = resolveRequestedPreferenceModels(catalog, body.data);
+    if ("status" in data) {
+      return data;
+    }
+
+    const runModels =
+      data.selectedModel !== null
         ? await set(
-            listOrgModelPolicies$,
+            listAvailableRunModels$,
             { orgId: auth.orgId, userId: auth.userId },
             signal,
           )
         : undefined;
-    const configuredPolicy = policies?.policies.find((policy) => {
-      return policy.model === body.data.selectedModel;
+    const configuredRunModel = runModels?.models.find((runModel) => {
+      return runModel.model === data.selectedModel;
     });
-    if (body.data.selectedModel !== null && !configuredPolicy) {
+    if (data.selectedModel !== null && !configuredRunModel) {
       return badRequestMessage("Invalid request");
     }
 
-    const modelSettingsPatch = body.data.modelSettingsPatch;
+    const modelSettingsPatch = data.modelSettingsPatch;
     signal.throwIfAborted();
+    if (
+      modelSettingsPatch &&
+      configuredRunModel?.subscriptionOptions &&
+      !configuredRunModel.subscriptionOptions.efforts.includes(
+        modelSettingsPatch.effort,
+      )
+    ) {
+      return badRequestMessage(
+        "Reasoning effort is not available for this subscription",
+      );
+    }
 
     const modelSettingsError = validateModelSettingsPatch({
+      catalog,
       patch: modelSettingsPatch,
-      selectedModel: body.data.selectedModel,
+      selectedModel: data.selectedModel,
+      configuredRunModel,
     });
     if (modelSettingsError) {
       return modelSettingsError;
     }
 
     const serviceTierError = validatePriorityServiceTier({
-      requested: body.data.serviceTier === "priority",
-      configuredPolicy,
+      catalog,
+      requested: data.serviceTier === "priority",
+      configuredRunModel,
     });
     if (serviceTierError) {
       return serviceTierError;
     }
 
-    const result = await set(
-      updateUserModelPreference$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        preference: body.data,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    const kinds: UserPreferenceChangedPayload["kinds"] = [
-      "defaultModel",
-      ...("selectedVideoModel" in body.data
-        ? (["defaultVideoModel"] as const)
-        : []),
-      ...("selectedImageModel" in body.data
-        ? (["defaultImageModel"] as const)
-        : []),
-    ];
-    await publishUserPreferenceChangedForUserSafely(auth.userId, kinds);
-    signal.throwIfAborted();
-    return { status: 200 as const, body: result };
+    return await set(persistUserModelPreference$, data, signal);
   },
 );
 

@@ -1,9 +1,4 @@
-import {
-  notionWebhookSecrets,
-  notionWorkflowPendingEvents,
-} from "@okouai/db/schema/notion-event";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import { notionWebhookSecrets } from "@okouai/db/schema/notion-event";
 
 import { db } from "../lib/db";
 
@@ -19,29 +14,4 @@ import { db } from "../lib/db";
  */
 export async function resetNotionWebhookVerification(): Promise<void> {
   await db().delete(notionWebhookSecrets);
-}
-
-/** Constructs a pre-migration automation that has no relational account projection. */
-export async function clearNotionAutomationConnectorProjection(
-  automationId: string,
-): Promise<void> {
-  await db()
-    .update(workflowAutomations)
-    .set({ eventConnectorId: null })
-    .where(eq(workflowAutomations.id, automationId));
-}
-
-/** Constructs a pre-migration pending event that has no account projection. */
-export async function clearNotionPendingConnectorProjection(
-  automationId: string,
-): Promise<void> {
-  await db()
-    .update(notionWorkflowPendingEvents)
-    .set({ connectorId: null })
-    .where(
-      and(
-        eq(notionWorkflowPendingEvents.automationId, automationId),
-        eq(notionWorkflowPendingEvents.status, "pending"),
-      ),
-    );
 }

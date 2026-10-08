@@ -27,7 +27,6 @@ const THREAD_ID = "44444444-4444-4444-8444-444444444444";
 const MODEL_ID = "gpt-5.6-sol";
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 const THREAD_METADATA_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/metadata`;
-const MODEL_POLICIES_URL = "http://localhost:3000/api/model-policies";
 
 function okouToken(orgId: string): string {
   const payload = Buffer.from(
@@ -415,40 +414,14 @@ describe("okou workflow automation commands", () => {
     };
   }
 
-  function failThreadModelLookup(
-    boundary: "metadata" | "model-policy" = "metadata",
-  ): void {
-    if (boundary === "metadata") {
-      server.use(
-        http.get(THREAD_METADATA_URL, () => {
-          return HttpResponse.json(
-            {
-              error: {
-                code: "SERVER_ERROR",
-                message: "Thread metadata unavailable",
-              },
-            },
-            { status: 500 },
-          );
-        }),
-      );
-      return;
-    }
-
+  function failThreadModelLookup(): void {
     server.use(
       http.get(THREAD_METADATA_URL, () => {
-        return HttpResponse.json({
-          id: THREAD_ID,
-          title: "Tell a joke",
-          selectedModel: null,
-        });
-      }),
-      http.get(MODEL_POLICIES_URL, () => {
         return HttpResponse.json(
           {
             error: {
               code: "SERVER_ERROR",
-              message: "Model policies unavailable",
+              message: "Thread metadata unavailable",
             },
           },
           { status: 500 },
@@ -522,32 +495,56 @@ describe("okou workflow automation commands", () => {
       expect(logCalls).toContain("okou model list");
     });
 
-    it.each(["metadata", "model-policy"] as const)(
-      "should preserve a successful add when %s lookup fails",
-      async (boundary) => {
-        const captured = captureCreateAutomation(cronAutomation);
-        failThreadModelLookup(boundary);
+    it("should preserve a successful add when thread lookup fails", async () => {
+      const captured = captureCreateAutomation(cronAutomation);
+      failThreadModelLookup();
 
-        await automationCommand.parseAsync([
-          "node",
-          "cli",
-          "add",
-          WORKFLOW_ID,
-          "cron",
-          "--expr",
-          "0 9 * * *",
-        ]);
+      await automationCommand.parseAsync([
+        "node",
+        "cli",
+        "add",
+        WORKFLOW_ID,
+        "cron",
+        "--expr",
+        "0 9 * * *",
+      ]);
 
-        expect(captured.workflowId).toBe(WORKFLOW_ID);
-        expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-          `Automation added to workflow "${WORKFLOW_ID}"`,
-        );
-        expect(mockConsoleWarn.mock.calls.flat().join("\n")).toContain(
-          "Automation changed, but thread model details could not be loaded",
-        );
-        expect(mockExit).not.toHaveBeenCalled();
-      },
-    );
+      expect(captured.workflowId).toBe(WORKFLOW_ID);
+      expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+        `Automation added to workflow "${WORKFLOW_ID}"`,
+      );
+      expect(mockConsoleWarn.mock.calls.flat().join("\n")).toContain(
+        "Automation changed, but thread model details could not be loaded",
+      );
+      expect(mockExit).not.toHaveBeenCalled();
+    });
+
+    it("should report Auto for a null thread selection", async () => {
+      captureCreateAutomation(cronAutomation);
+      server.use(
+        http.get(THREAD_METADATA_URL, () => {
+          return HttpResponse.json({
+            id: THREAD_ID,
+            title: "Tell a joke",
+            selectedModel: null,
+          });
+        }),
+      );
+
+      await automationCommand.parseAsync([
+        "node",
+        "cli",
+        "add",
+        WORKFLOW_ID,
+        "cron",
+        "--expr",
+        "0 9 * * *",
+      ]);
+
+      expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+        "Thread model: Auto\n",
+      );
+    });
 
     it("should resolve a workflow name under OKOU_AGENT_ID", async () => {
       vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);

@@ -1,14 +1,12 @@
 import type { ReactNode } from "react";
-import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Button } from "@okouai/ui";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   disabledPaidTools$,
   paidToolDisabledMessage,
   reloadDisabledPaidTools$,
+  type AvailablePaidToolId,
 } from "../../signals/okou-page/paid-tools.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -21,11 +19,13 @@ interface PaidToolNoticeRow {
   readonly kind: "pending" | "settled";
   readonly message: string;
   readonly action: { readonly label: string; readonly run: () => void } | null;
+  readonly discard?: { readonly label: string; readonly run: () => void };
 }
 
-/** Only called behind the rollout gate, so an unreleased member reads nothing. */
+/** Only called for a non-empty tool list, so other surfaces read nothing. */
 function usePaidToolNoticeRow(
-  tools: readonly PaidToolId[],
+  tools: readonly AvailablePaidToolId[],
+  onDiscardImage?: () => void,
 ): PaidToolNoticeRow | null {
   const { t } = useTranslation();
   const disabled = useLoadable(disabledPaidTools$);
@@ -66,6 +66,16 @@ function usePaidToolNoticeRow(
   return {
     kind: "settled",
     message: blocked.map(paidToolDisabledMessage).join(" "),
+    ...(blocked.includes("image-generation") && onDiscardImage
+      ? {
+          discard: {
+            label: t(($) => {
+              return $.settings.shared.discard;
+            }),
+            run: onDiscardImage,
+          },
+        }
+      : {}),
     action: {
       label: t(($) => {
         return $.settings.paidTools.openSettings;
@@ -77,19 +87,10 @@ function usePaidToolNoticeRow(
   };
 }
 
-function usePaidToolNoticeEnabled(tools: readonly PaidToolId[]): boolean {
-  const features = useGet(featureSwitch$);
-  return (
-    features[FeatureSwitchKey.SettingsToolsTab] &&
-    features[FeatureSwitchKey.PaidToolControls] &&
-    tools.length > 0
-  );
-}
-
 function PaidToolNoticeContent({
   tools,
 }: {
-  readonly tools: readonly PaidToolId[];
+  readonly tools: readonly AvailablePaidToolId[];
 }) {
   const row = usePaidToolNoticeRow(tools);
   if (!row) {
@@ -115,20 +116,24 @@ function PaidToolNoticeContent({
   );
 }
 
-function PaidToolNotice({ tools }: { readonly tools: readonly PaidToolId[] }) {
-  return usePaidToolNoticeEnabled(tools) ? (
-    <PaidToolNoticeContent tools={tools} />
-  ) : null;
+function PaidToolNotice({
+  tools,
+}: {
+  readonly tools: readonly AvailablePaidToolId[];
+}) {
+  return tools.length > 0 ? <PaidToolNoticeContent tools={tools} /> : null;
 }
 
 function ComposerPaidToolNoticeContent({
   tools,
   fallback,
+  onDiscardImage,
 }: {
-  readonly tools: readonly PaidToolId[];
+  readonly tools: readonly AvailablePaidToolId[];
   readonly fallback: ReactNode;
+  readonly onDiscardImage?: () => void;
 }) {
-  const row = usePaidToolNoticeRow(tools);
+  const row = usePaidToolNoticeRow(tools, onDiscardImage);
   // The tray holds one row. A read in flight has nothing to say yet, so the
   // notice it would replace keeps the tray until the read settles.
   if (!row || row.kind === "pending") {
@@ -139,16 +144,31 @@ function ComposerPaidToolNoticeContent({
       <span className="min-w-0 max-w-full text-muted-foreground">
         {row.message}
       </span>
-      {row.action && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="ml-auto shrink-0 text-xs font-medium text-foreground"
-          onClick={row.action.run}
-        >
-          {row.action.label}
-        </Button>
+      {(row.discard || row.action) && (
+        <div className="ml-auto flex shrink-0 items-center">
+          {row.discard && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="xs"
+              className="bg-transparent text-xs font-normal text-gray-700 hover:bg-state-hover active:bg-state-pressed"
+              onClick={row.discard.run}
+            >
+              {row.discard.label}
+            </Button>
+          )}
+          {row.action && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="text-xs font-medium text-foreground"
+              onClick={row.action.run}
+            >
+              {row.action.label}
+            </Button>
+          )}
+        </div>
       )}
     </ComposerNoticeTray>,
   );
@@ -162,22 +182,27 @@ function ComposerPaidToolNoticeContent({
 export function ComposerPaidToolNotice({
   tools,
   fallback,
+  onDiscardImage,
 }: {
-  readonly tools: readonly PaidToolId[];
+  readonly tools: readonly AvailablePaidToolId[];
   readonly fallback: ReactNode;
+  readonly onDiscardImage?: () => void;
 }) {
-  return usePaidToolNoticeEnabled(tools) ? (
-    <ComposerPaidToolNoticeContent tools={tools} fallback={fallback} />
+  return tools.length > 0 ? (
+    <ComposerPaidToolNoticeContent
+      tools={tools}
+      fallback={fallback}
+      onDiscardImage={onDiscardImage}
+    />
   ) : (
     fallback
   );
 }
 
-const CATEGORY_TOOLS: Readonly<Record<string, readonly PaidToolId[]>> = {
-  illustration: ["image-generation"],
-  video: ["video-generation"],
-  avatar: ["avatar-video-generation"],
-};
+const CATEGORY_TOOLS: Readonly<Record<string, readonly AvailablePaidToolId[]>> =
+  {
+    illustration: ["image-generation"],
+  };
 
 export function TemplatePaidToolNotice({
   category,

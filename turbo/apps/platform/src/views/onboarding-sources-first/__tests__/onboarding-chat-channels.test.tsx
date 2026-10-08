@@ -1,16 +1,12 @@
 import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
-import {
   integrationsSlackContract,
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
+import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
   teamsConnectContract,
   type TeamsConnectStatus,
 } from "@okouai/api-contracts/contracts/teams-connect";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -23,19 +19,19 @@ import { mockNow } from "../../../__tests__/time.ts";
 import { pathname } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  connectedGmailSource,
+  mockOnboardingConnectorCatalog,
+} from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
-
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
 
 const NOW = Date.parse("2026-09-21T10:00:00.000Z");
 const SLACK_INSTALL_URL = "https://slack.example.test/oauth/install";
 const TEAMS_CONNECT_URL = "/api/teams/oauth/connect?orgId=org_default";
 
-const SLACK_TITLE = "Give Okou a job without leaving Slack.";
-const SLACK_CONNECTED_TITLE = "Slack is connected";
+const SLACK_TITLE = "Keep Okou a message away";
+const SLACK_CONNECTED_TITLE = "Your chat is connected";
 const SLACK_ADD = "Add to Slack";
 const SLACK_CONNECTED_STATUS = "Added to your workspace";
 
@@ -53,45 +49,7 @@ function mockOnboardingNeeded(): void {
  * run back to the entry without one.
  */
 function mockConnectedSource(): void {
-  const connector: PublicConnectorCatalogStatusItem = {
-    slug: "gmail",
-    label: "Gmail",
-    description: "Connect Gmail to continue",
-    icon: {
-      url: "https://icons.example.test/onboarding-gmail.svg",
-      invertInDarkMode: false,
-    },
-    category: "productivity",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected: true,
-    connectionStatus: "connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
+  mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
 }
 
 /** The org's Slack installation, as the API reports it while the step is open. */
@@ -116,13 +74,15 @@ function openChatChannelStep(): Promise<void> {
     context,
     locale: "en-US",
     path: ROUTES.onboardingSlack,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 }
 
 function getButtonByName(name: string): HTMLElement {
   const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim() === name;
+    return (
+      candidate.textContent?.trim() === name ||
+      candidate.getAttribute("aria-label") === name
+    );
   });
   if (!button) {
     throw new Error(`Expected button named "${name}"`);
@@ -240,7 +200,6 @@ test("A protected worker preview keeps access on its matching OAuth start URL", 
     locale: "en-US",
     host: "pr-431-app-okou-app-preview.vm0.workers.dev",
     path: `${ROUTES.onboardingSlack}?x-vercel-protection-bypass=preview-secret`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await waitFor(() => {
@@ -322,63 +281,7 @@ test("A workspace this user cannot add to names who can, instead of a dead butto
   expect(getChannelTile("Teams")).toBeDisabled();
 });
 
-test("An admin with no Slack app to add is told so rather than left clicking", async () => {
-  mockOnboardingNeeded();
-  mockConnectedSource();
-  mockSlack({
-    isConnected: false,
-    isInstalled: false,
-    isAdmin: true,
-    installUrl: null,
-    connectUrl: null,
-  });
-  mockTeams({
-    isConnected: false,
-    isInstalled: false,
-    isAdmin: true,
-    installUrl: null,
-    connectUrl: null,
-  });
-
-  await openChatChannelStep();
-
-  await expect(
-    screen.findByText("Slack isn’t available for this workspace yet."),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("Teams isn’t available for this workspace yet."),
-  ).toBeInTheDocument();
-  expect(getButtonByName(SLACK_ADD)).toBeDisabled();
-});
-
-test("A Slack status the step cannot read leaves the rest of the step usable", async () => {
-  mockOnboardingNeeded();
-  mockConnectedSource();
-  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-    return respond(401, {
-      error: { message: "Slack status unavailable", code: "UNAUTHORIZED" },
-    });
-  });
-  mockTeams({
-    isConnected: false,
-    isInstalled: false,
-    isAdmin: true,
-    connectUrl: TEAMS_CONNECT_URL,
-  });
-
-  await openChatChannelStep();
-
-  await expect(
-    screen.findByText("Slack isn’t available for this workspace yet."),
-  ).resolves.toBeInTheDocument();
-  expect(getButtonByName(SLACK_ADD)).toBeDisabled();
-  // Teams answered, so its own tile still works.
-  await waitFor(() => {
-    expect(getChannelTile("Teams")).toBeEnabled();
-  });
-});
-
-test("Telegram hands over to its own setup, which asks for more than a tile can", async () => {
+test("Telegram authorizes the official bot in a new tab and keeps onboarding open", async () => {
   mockOnboardingNeeded();
   mockConnectedSource();
   mockSlack({
@@ -394,6 +297,47 @@ test("Telegram hands over to its own setup, which asks for more than a tile can"
     isAdmin: true,
     connectUrl: TEAMS_CONNECT_URL,
   });
+  context.mocks.data.telegramIntegration({
+    statuses: [
+      {
+        id: "official",
+        kind: "official",
+        username: "okou_bot",
+        avatarUrl: null,
+        agent: null,
+        isOwner: false,
+        isConnected: false,
+        tokenStatus: "valid",
+        domainConfigured: true,
+        environment: {
+          requiredSecrets: [],
+          requiredVars: [],
+          missingSecrets: [],
+          missingVars: [],
+        },
+      },
+    ],
+  });
+  context.mocks.api(
+    integrationsTelegramContract.getLinkStatus,
+    ({ respond }) => {
+      return respond(200, {
+        linked: false,
+        installation: {
+          id: "official",
+          botUsername: "okou_bot",
+          loginBotId: "987654321",
+          domainConfigured: true,
+        },
+      });
+    },
+  );
+  const authorizationWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(authorizationWindow, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  const opened = context.mocks.browser.open(authorizationWindow);
 
   await openChatChannelStep();
 
@@ -401,9 +345,47 @@ test("Telegram hands over to its own setup, which asks for more than a tile can"
     screen.findByRole("heading", { name: SLACK_TITLE }),
   ).resolves.toBeInTheDocument();
 
-  click(getChannelTile("Telegram"));
+  const telegram = getChannelTile("Telegram");
+  expect(telegram).toBeEnabled();
+  click(telegram);
 
-  await waitFor(() => {
-    expect(pathname()).toBe(ROUTES.settingsTelegram);
+  expect(opened.calls).toStrictEqual([
+    { url: "about:blank", target: "_blank", features: null },
+  ]);
+  const authUrl = await waitFor(() => {
+    const url = new URL(authorizationWindow.location.href);
+    expect(url.origin + url.pathname).toBe("https://oauth.telegram.org/auth");
+    expect(url.searchParams.get("bot_id")).toBe("987654321");
+    return url;
   });
+  const callbackUrl = new URL(authUrl.searchParams.get("return_to") ?? "");
+  expect(callbackUrl.pathname).toBe("/api/integrations/telegram/auth-callback");
+  expect(callbackUrl.searchParams.get("targetOrigin")).toBe(
+    window.location.origin,
+  );
+  act(() => {
+    context.mocks.browser.message(
+      {
+        type: "telegram-auth",
+        data: {
+          id: "99001",
+          first_name: "Alice",
+          username: "alice",
+          auth_date: "1700000000",
+          hash: "b".repeat(64),
+        },
+      },
+      { source: authorizationWindow, origin: callbackUrl.origin },
+    );
+  });
+
+  await expect(
+    screen.findByText("Connected to Telegram!"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingSlack);
+  await expect(
+    screen.findByRole("heading", { name: SLACK_CONNECTED_TITLE }),
+  ).resolves.toBeInTheDocument();
+  expect(getChannelTile("Telegram")).toHaveTextContent("Added");
+  expect(getButtonByName("Continue")).toBeEnabled();
 });

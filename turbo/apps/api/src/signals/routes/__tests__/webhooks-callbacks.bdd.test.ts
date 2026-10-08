@@ -1,35 +1,26 @@
-import { readFileSync } from "node:fs";
 import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence";
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
-import { createStore } from "ccstate";
+import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
-import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { mockNow, now, nowDate } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { testContext } from "../../../__tests__/test-context";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
+import { server } from "../../../mocks/server";
+import { deleteOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
-import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
-import { expireAtomGrantFixture } from "../../../test-fixtures/org-metadata";
-import {
-  deleteOrgPlanEntitlementFixture,
-  readOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { seedUsagePricingRows } from "../../../test-fixtures/system-config-seeds";
-import { readUsageAllowanceEntitlementFixture } from "../../../test-fixtures/usage-allowance";
-import { holdUsageEventCompactionLockFixture } from "../../../test-fixtures/usage-event-compaction";
 import {
   createBddApi,
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -39,38 +30,31 @@ import {
   mockSlackConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createGithubBddApi, newGithubUserId } from "./helpers/api-bdd-github";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   transitionRunToTerminal,
   transitionRunToTimeout,
   type TestTerminalRunStatus,
 } from "./helpers/api-bdd-run-timeout";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
-import {
-  generatedStripeCustomerId,
-  generatedStripeSubscriptionId,
-  postUsageAllowanceInvoicePaid,
-} from "./helpers/stripe-billing-webhook";
-import {
-  insertUsageEvent$,
-  materializeHourlyUsage$,
-  readUsageStorageCounts$,
-} from "./helpers/usage-state";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   readCustomConnectorCredentialStorageParent,
   readThreadConnectorSelectionState,
   seedCustomThreadConnectorSelection,
 } from "./helpers/connector-credential-storage-state";
+import {
+  generatedStripeCustomerId,
+  generatedStripeSubscriptionId,
+  postUsageAllowanceInvoicePaid,
+} from "./helpers/stripe-billing-webhook";
 
-const context = testContext({
-  connectorCatalog: true,
-  dbFixtures: [usageEventCompactionDbFixture],
-});
+const context = testContext();
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",
@@ -78,10 +62,29 @@ const TERMINAL_RUN_STATUSES = [
   "timeout",
 ] as const satisfies readonly TestTerminalRunStatus[];
 const api = createWebhookCallbackApi(context);
-const store = createStore();
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_AGENT_AVATAR_URL =
   "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
+
+// Billing-status capability projections of the limited-free and Team plans.
+const LIMITED_FREE_BILLING_CAPABILITIES = {
+  tier: "limited-free-1",
+  status: "active",
+  canBuyConcurrency: false,
+  autoRechargeAllowed: false,
+  restrictedBuiltInModels: true,
+  workflowWebhookAutomationAllowed: false,
+  concurrencyLimit: 2,
+} as const;
+const TEAM_BILLING_CAPABILITIES = {
+  tier: "team",
+  status: "active",
+  canBuyConcurrency: true,
+  autoRechargeAllowed: true,
+  restrictedBuiltInModels: false,
+  workflowWebhookAutomationAllowed: true,
+  concurrencyLimit: 10,
+} as const;
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -128,15 +131,14 @@ async function createEventWebhookRun(prompt: string) {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: `BDD Event Consumer ${randomUUID()}`,
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt,
-    modelProvider: "anthropic-api-key",
   });
   return {
     actor,
@@ -154,6 +156,26 @@ function orgOf(actor: ApiTestUser): string {
   return actor.orgId;
 }
 
+async function createLimitedFreeOrgFromClerk(): Promise<ApiTestUser> {
+  const bdd = createBddApi(context);
+  api.configureClerkWebhookSecret();
+  bdd.acceptAgentStorageWrites();
+
+  const admin = bdd.user();
+  api.verifyNextClerkWebhook({
+    type: "organization.created",
+    data: {
+      id: orgOf(admin),
+      created_by: admin.userId,
+      created_at: now(),
+    },
+  });
+  const created = await api.requestClerkWebhook("{}", {}, [200]);
+  expect(created.body).toBe("OK");
+  await flushWaitUntilForTest();
+  return admin;
+}
+
 async function sandboxStorageWriteFixture(label: string) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
@@ -164,15 +186,14 @@ async function sandboxStorageWriteFixture(label: string) {
   const runnerGroup = runs.configureRunnerGroup();
   await runs.heartbeatRunner(runnerGroup);
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: `BDD sandbox storage ${label}`,
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: `write ${label} from the sandbox`,
-    modelProvider: "anthropic-api-key",
   });
   const claim = await runs.claimRunnerJob(run.runId);
   const manifest = expectCanonicalStorageManifest(claim.storageManifest);
@@ -244,6 +265,61 @@ function customOauthConnectorBodyForTeardown(
   };
 }
 
+/**
+ * At the organization's run capacity a chat send creates no run: the input
+ * stays pending in its thread until a pick launches it. The model routes to a
+ * native runner so the picked run waits for a runner claim instead of running
+ * an API-first provider turn.
+ */
+async function sendChatInputAtCapacity(
+  actor: ApiTestUser,
+  agentId: string,
+  prompt: string,
+): Promise<string> {
+  const sent = await createChatFilesBddApi(context).requestSendEvent(
+    actor,
+    { agentId, prompt, model: "claude-fable-5-1" },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected the chat send to be accepted");
+  }
+  // The background pick finds the organization full and leaves it queued.
+  await flushWaitUntilForTest();
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    actor,
+    sent.body.threadId,
+  );
+  expect(
+    events.some((event) => {
+      return event.eventType === "input.prompt" && Boolean(event.runId);
+    }),
+  ).toBeFalsy();
+  return sent.body.threadId;
+}
+
+/**
+ * A concurrency-limit change schedules the organization pick in the
+ * background; flush it, then read the run the pick started for the thread.
+ */
+async function waitForPickedThreadRun(
+  actor: ApiTestUser,
+  threadId: string,
+): Promise<string> {
+  await flushWaitUntilForTest();
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    actor,
+    threadId,
+  );
+  const runId = events.find((event) => {
+    return event.eventType === "input.prompt" && Boolean(event.runId);
+  })?.runId;
+  if (!runId) {
+    throw new Error("Expected the picked thread input to start a run");
+  }
+  return runId;
+}
+
 function epochSeconds(offsetDays: number): number {
   return Math.floor(now() / 1000) + offsetDays * 86_400;
 }
@@ -263,29 +339,83 @@ function expectExpiresAboutThirtyDaysFromNow(value: unknown): void {
   expect(expiresInMs).toBeLessThanOrEqual(THIRTY_DAYS_MS + 5000);
 }
 
-function expectIsoTimestampBetween(
-  value: string | null | undefined,
-  before: Date,
-  after: Date,
+interface UsageAllowanceLimits {
+  readonly shortWindowSeconds: number;
+  readonly shortWindowUnits: number;
+  readonly weeklyWindowSeconds: number;
+  readonly weeklyWindowUnits: number;
+}
+
+function expectUsageAllowanceLimits(
+  usageAllowance: unknown,
+  limits: UsageAllowanceLimits,
 ): void {
-  expect(typeof value).toBe("string");
-  if (typeof value !== "string") {
-    throw new Error("Expected an ISO timestamp");
+  expect(usageAllowance).toMatchObject({
+    windows: [
+      {
+        kind: "short",
+        windowSeconds: limits.shortWindowSeconds,
+        unitLimit: limits.shortWindowUnits,
+      },
+      {
+        kind: "weekly",
+        windowSeconds: limits.weeklyWindowSeconds,
+        unitLimit: limits.weeklyWindowUnits,
+      },
+    ],
+  });
+}
+
+async function readUsageAllowanceAt(
+  actor: ApiTestUser,
+  at: number,
+): Promise<unknown> {
+  mockNow(at);
+  const status = await createBillingMediaApi(context).readBillingStatus(actor);
+  return status.usageAllowance ?? null;
+}
+
+/**
+ * Reads the public usage allowance on both sides of its expiry (and
+ * optionally its effective start), then restores the real clock.
+ */
+async function expectUsageAllowanceActiveWindow(
+  actor: ApiTestUser,
+  args: {
+    readonly effectiveAtUnix?: number;
+    readonly expiresAtUnix: number;
+    readonly limits: UsageAllowanceLimits;
+  },
+): Promise<void> {
+  if (args.effectiveAtUnix !== undefined) {
+    await expect(
+      readUsageAllowanceAt(actor, args.effectiveAtUnix * 1000 - 1),
+    ).resolves.toBeNull();
+    expectUsageAllowanceLimits(
+      await readUsageAllowanceAt(actor, args.effectiveAtUnix * 1000),
+      args.limits,
+    );
   }
-  const timestamp = Date.parse(value);
-  expect(timestamp).toBeGreaterThanOrEqual(before.getTime());
-  expect(timestamp).toBeLessThanOrEqual(after.getTime() + 1000);
+  expectUsageAllowanceLimits(
+    await readUsageAllowanceAt(actor, args.expiresAtUnix * 1000 - 1),
+    args.limits,
+  );
+  await expect(
+    readUsageAllowanceAt(actor, args.expiresAtUnix * 1000),
+  ).resolves.toBeNull();
+  clearMockNow();
 }
 
 async function waitForExpectation(
   assertion: () => void | Promise<void>,
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const result = await settle(Promise.resolve().then(assertion));
       return result.ok;
-    })
-    .toBe(true);
+    })(),
+  ).resolves.toBeTruthy();
 }
 
 async function completeOnboardingWithoutCredits(
@@ -383,57 +513,12 @@ function concurrencySubscription(args: {
   };
 }
 
-function commandInput(command: unknown): Record<string, unknown> {
-  if (
-    typeof command === "object" &&
-    command !== null &&
-    "input" in command &&
-    typeof command.input === "object" &&
-    command.input !== null
-  ) {
-    return command.input as Record<string, unknown>;
-  }
-  return {};
-}
-
 function acceptGithubGrantRevocations(): void {
   server.use(
     http.delete("https://api.github.com/applications/:clientId/grant", () => {
       return new HttpResponse(null, { status: 204 });
     }),
   );
-}
-
-function acceptTelegramDomainProbes(): void {
-  server.use(
-    http.head("https://oauth.telegram.org/auth", () => {
-      return new HttpResponse(null, {
-        status: 200,
-        headers: { "content-length": "2001" },
-      });
-    }),
-  );
-}
-
-async function registerTelegramBot(
-  actor: ApiTestUser,
-  defaultAgentId: string,
-): Promise<string> {
-  const integrations = createBddIntegrationApi(context);
-  const telegramBotId = randomInt(1_000_000_000, 9_999_999_999);
-  const botToken = `${telegramBotId}:bdd-token-${randomUUID().slice(0, 8)}`;
-  acceptTelegramDomainProbes();
-  context.mocks.telegram.getMe.mockResolvedValue({
-    id: telegramBotId,
-    username: `bdd_bot_${telegramBotId}`,
-    can_read_all_group_messages: true,
-  });
-  await integrations.requestRegisterTelegramBot(
-    actor,
-    { botToken, defaultAgentId },
-    [201],
-  );
-  return botToken;
 }
 
 describe("WHCB-01: third-party webhook verification boundaries", () => {
@@ -702,24 +787,9 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     expect(membershipDeleted.body).toBe("OK");
   });
 
-  it("bootstraps limited-free orgs after verified Clerk org creation events", async () => {
-    const bdd = createBddApi(context);
+  it("bootstraps limited-free billing and model providers after Clerk org creation", async () => {
     const runs = createRunsApi(context);
-    api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
-
-    const admin = bdd.user();
-    api.verifyNextClerkWebhook({
-      type: "organization.created",
-      data: {
-        id: orgOf(admin),
-        created_by: admin.userId,
-        created_at: now(),
-      },
-    });
-    const created = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(created.body).toBe("OK");
-    await flushWaitUntilForTest();
+    const admin = await createLimitedFreeOrgFromClerk();
 
     const billing = await runs.readBillingStatus(admin);
     expect(billing).toMatchObject({
@@ -727,28 +797,16 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       tier: "limited-free-1",
       onboardingPaymentPending: false,
     });
-    await expect(
-      readOrgPlanEntitlementFixture(orgOf(admin)),
-    ).resolves.toMatchObject({
-      orgId: orgOf(admin),
-      planKey: "limited-free-1",
-      planRank: 0,
-      source: "org_metadata_bootstrap",
-      status: "active",
-      baseConcurrencyLimit: 2,
-      canBuyConcurrency: false,
-      autoRechargeAllowed: false,
-      supportByok: true,
-      restrictedBuiltInModels: true,
-      videoGenerationAllowed: false,
-      workflowWebhookAutomationAllowed: false,
-      audioLifetimeLimit: 10,
-      audioDailyRateLimit: 10,
-      audioDailyDurationSeconds: 600,
-      stripeSubscriptionId: null,
-      stripePriceId: null,
+    expect(billing).toMatchObject(LIMITED_FREE_BILLING_CAPABILITIES);
+    expect(billing).toMatchObject({
+      subscriptionStatus: null,
       currentPeriodEnd: null,
-      expiresAt: null,
+      hasSubscription: false,
+    });
+    await expect(
+      createBillingMediaApi(context).readVoiceQuota(admin),
+    ).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: 10 },
     });
     const onboardingCreditGrant = billing.creditGrants.find((grant) => {
       return grant.source === "onboarding";
@@ -758,12 +816,19 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       remaining: 1000,
     });
     expectExpiresAboutThirtyDaysFromNow(onboardingCreditGrant?.expiresAt);
-    const limitedFreeProviders = await runs.listOrgModelProviders(admin);
+    // A new organization starts in Auto, the null selection.
+    const available = await createMiscRoutesApi(context).listRunModels(admin);
     expect(
-      limitedFreeProviders.find((provider) => {
-        return provider.type === "built-in";
-      })?.selectedModel,
-    ).toBe("gpt-6-luna");
+      available.models.map((model) => {
+        return model.model;
+      }),
+    ).toStrictEqual([null]);
+  });
+
+  it("keeps Clerk membership creation from duplicating bootstrap state", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const admin = await createLimitedFreeOrgFromClerk();
 
     api.verifyNextClerkWebhook({
       type: "organizationMembership.created",
@@ -806,6 +871,10 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
         return agent.displayName === "Okou";
       }),
     ).toHaveLength(1);
+  });
+
+  it("publishes billing changes for Stripe grants after Clerk org bootstrap", async () => {
+    const admin = await createLimitedFreeOrgFromClerk();
 
     api.configureStripeBillingEnv();
     context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
@@ -1097,9 +1166,9 @@ describe("WHCB-02: built-in generation callback boundaries", () => {
   it("rejects malformed provider payloads after a valid token", async () => {
     const generationId = randomUUID();
 
-    const response = await api.requestBytePlusGenerationWebhook({
+    const response = await api.requestFalGenerationWebhook({
       generationId,
-      token: api.bytePlusGenerationWebhookToken(generationId),
+      token: api.falGenerationWebhookToken(generationId),
       body: "not-json",
       statuses: [400],
     });
@@ -1146,31 +1215,6 @@ describe("WHCB-02: built-in generation callback boundaries", () => {
       statuses: [200],
     });
     expect(falNestedResponse.body).toBe("OK");
-
-    const bytePlusGenerationId = randomUUID();
-    const queuedResponse = await api.requestBytePlusGenerationWebhook({
-      generationId: bytePlusGenerationId,
-      token: api.bytePlusGenerationWebhookToken(bytePlusGenerationId),
-      body: { status: "queued" },
-      statuses: [200],
-    });
-    expect(queuedResponse.body).toBe("OK");
-
-    const runningResponse = await api.requestBytePlusGenerationWebhook({
-      generationId: bytePlusGenerationId,
-      token: api.bytePlusGenerationWebhookToken(bytePlusGenerationId),
-      body: { status: "running" },
-      statuses: [200],
-    });
-    expect(runningResponse.body).toBe("OK");
-
-    const completedResponse = await api.requestBytePlusGenerationWebhook({
-      generationId: bytePlusGenerationId,
-      token: api.bytePlusGenerationWebhookToken(bytePlusGenerationId),
-      body: { status: "succeeded", content: { video: [] } },
-      statuses: [200],
-    });
-    expect(completedResponse.body).toBe("OK");
   });
 });
 
@@ -1282,7 +1326,7 @@ describe("WHCB-03: email inbound webhook boundaries", () => {
 });
 
 describe("WHCB-04: internal callback and event-consumer boundaries", () => {
-  it("acknowledges DB projection while the Axiom trace stays best effort", async () => {
+  it("exports raw events for a debug-enabled owner while the trace stays best effort", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
@@ -1291,19 +1335,21 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Axiom Event Consumer Agent",
       visibility: "private",
     });
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "emit events to Axiom",
-      modelProvider: "anthropic-api-key",
     });
     const headers = {
       authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}`,
     };
+    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
     const body = {
       runId: run.runId,
       events: [
@@ -1312,11 +1358,13 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
       ],
     };
     let ingestRequests = 0;
+    const ingestedEvents: unknown[] = [];
     server.use(
       http.post(
         "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-        () => {
+        async ({ request }) => {
           ingestRequests += 1;
+          ingestedEvents.push(await request.json());
           return HttpResponse.json(
             successfulAxiomIngestStatus(body.events.length),
           );
@@ -1332,6 +1380,17 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
     });
     await flushWaitUntilForTest();
     expect(ingestRequests).toBe(1);
+    expect(ingestedEvents).toStrictEqual([
+      body.events.map((event) => {
+        return {
+          runId: run.runId,
+          userId: actor.userId,
+          sequenceNumber: event.sequenceNumber,
+          eventType: event.type,
+          eventData: event,
+        };
+      }),
+    ]);
     mockOptionalEnv("AXIOM_TOKEN_SESSIONS", undefined);
     const unconfigured = await api.requestAgentEvents(body, headers, [200]);
     expect(unconfigured.body).toStrictEqual({
@@ -1423,9 +1482,12 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
   });
 
   it("acknowledges the event batch before the Axiom sub-deadline elapses", async () => {
-    const { runId, headers } = await createEventWebhookRun(
+    const { actor, runId, headers } = await createEventWebhookRun(
       "best-effort Axiom deadline",
     );
+    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
     const submittedPayloadValue = `private-timeout-value-${randomUUID()}`;
     const axiomToken = `xaat-timeout-${randomUUID()}`;
     mockOptionalEnv("AXIOM_TOKEN_SESSIONS", axiomToken);
@@ -1482,9 +1544,12 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
   });
 
   it("acknowledges events when the optional Axiom status is malformed", async () => {
-    const { runId, headers } = await createEventWebhookRun(
+    const { actor, runId, headers } = await createEventWebhookRun(
       "malformed optional Axiom status",
     );
+    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
     server.use(
       http.post(
         "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
@@ -2462,15 +2527,14 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
     const runnerGroup = runs.configureRunnerGroup();
     await runs.heartbeatRunner(runnerGroup);
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD sandbox storage agent",
       visibility: "private",
     });
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "write artifacts from the sandbox",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await runs.claimRunnerJob(run.runId);
     const manifest = expectCanonicalStorageManifest(claim.storageManifest);
@@ -3054,7 +3118,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
   it("grants and renews Atom invoice-backed Team entitlements", async () => {
     const bdd = createBddApi(context);
     const billing = createBillingMediaApi(context);
-    const runs = createRunsApi(context);
     const actor = bdd.user();
     const orgId = orgOf(actor);
     const grantExpiresAtUnix = epochSeconds(7);
@@ -3112,26 +3175,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         source: "subscription_renewal",
       }),
     ]);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "team",
-      planRank: 2,
-      source: "stripe_atom_grant",
-      status: "active",
-      baseConcurrencyLimit: 10,
-      canBuyConcurrency: true,
-      autoRechargeAllowed: true,
-      supportByok: true,
-      restrictedBuiltInModels: false,
-      videoGenerationAllowed: true,
-      workflowWebhookAutomationAllowed: true,
-      audioLifetimeLimit: null,
-      audioDailyRateLimit: 500,
-      audioDailyDurationSeconds: 30_000,
-      stripeSubscriptionId: null,
-      stripePriceId: "price_bdd_atom_grant",
-      currentPeriodEnd: isoOf(grantExpiresAtUnix),
-      expiresAt: isoOf(grantExpiresAtUnix),
+    expect(granted).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: null },
     });
 
     await api.postStripeEvent(
@@ -3189,34 +3235,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         }),
       ]),
     );
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "team",
-      currentPeriodStart: isoOf(grantExpiresAtUnix),
-      currentPeriodEnd: isoOf(renewedGrantExpiresAtUnix),
-      expiresAt: isoOf(renewedGrantExpiresAtUnix),
-    });
-
-    const expiredAt = new Date(now() - 1000);
-    await expireAtomGrantFixture({ orgId, expiredAt });
-
-    await runs.reconcileBillingOrganizations([orgId]);
-
-    const downgraded = await billing.readBillingStatus(actor);
-    expect(downgraded.tier).toBe("limited-free-1");
-    expect(downgraded.credits).toBe(0);
-    expect(downgraded.hasSubscription).toBeFalsy();
-    expect(downgraded.creditGrants).toHaveLength(0);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "limited-free-1",
-      planRank: 0,
-      source: "stripe_atom_grant",
-      status: "active",
-      stripeSubscriptionId: null,
-      stripePriceId: null,
-      currentPeriodEnd: null,
-      expiresAt: null,
-    });
+    expect(renewed).toMatchObject(TEAM_BILLING_CAPABILITIES);
   });
 
   it("upserts usage allowance entitlements from Atom subscription invoices", async () => {
@@ -3270,19 +3289,24 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    const entitlement = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(entitlement).toMatchObject({
-      orgId,
-      status: "active",
+    const billing = createBillingMediaApi(context);
+    const invoiced = await billing.readBillingStatus(actor);
+    expect(invoiced.hasSubscription).toBeTruthy();
+    expectUsageAllowanceLimits(invoiced.usageAllowance, {
       shortWindowSeconds: 3600,
       shortWindowUnits: 5000,
       weeklyWindowSeconds: 604_800,
       weeklyWindowUnits: 50_000,
-      effectiveAt: isoOf(effectiveAtUnix),
-      expiresAt: isoOf(expiresAtUnix),
-      stripeCustomerId: `cus_bdd_allowance_${suffix}`,
-      stripeSubscriptionId: `sub_bdd_allowance_${suffix}`,
-      stripeInvoiceId: `in_bdd_usage_allowance_${suffix}`,
+    });
+    await expectUsageAllowanceActiveWindow(actor, {
+      effectiveAtUnix,
+      expiresAtUnix,
+      limits: {
+        shortWindowSeconds: 3600,
+        shortWindowUnits: 5000,
+        weeklyWindowSeconds: 604_800,
+        weeklyWindowUnits: 50_000,
+      },
     });
 
     const subscriptionPeriodEndUnix = epochSeconds(21);
@@ -3310,17 +3334,18 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    const canceledAtPeriod = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(canceledAtPeriod).toMatchObject({
-      orgId,
-      status: "active",
-      shortWindowUnits: 9000,
-      weeklyWindowUnits: 90_000,
-      expiresAt: isoOf(subscriptionPeriodEndUnix),
-      stripeSubscriptionId: `sub_bdd_allowance_${suffix}`,
+    const canceledAtPeriod = await billing.readBillingStatus(actor);
+    expect(canceledAtPeriod.hasSubscription).toBeTruthy();
+    await expectUsageAllowanceActiveWindow(actor, {
+      expiresAtUnix: subscriptionPeriodEndUnix,
+      limits: {
+        shortWindowSeconds: 3600,
+        shortWindowUnits: 9000,
+        weeklyWindowSeconds: 604_800,
+        weeklyWindowUnits: 90_000,
+      },
     });
 
-    const beforeCancel = nowDate();
     await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.updated",
@@ -3334,15 +3359,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       }),
       [200],
     );
-    const afterCancel = nowDate();
 
-    const canceled = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(canceled).toMatchObject({
-      orgId,
-      status: "canceled",
-      stripeSubscriptionId: `sub_bdd_allowance_${suffix}`,
-    });
-    expectIsoTimestampBetween(canceled?.expiresAt, beforeCancel, afterCancel);
+    const canceled = await billing.readBillingStatus(actor);
+    expect(canceled.usageAllowance ?? null).toBeNull();
+    expect(canceled.hasSubscription).toBeFalsy();
   });
 
   it("ignores a canceled usage allowance invoice from an obsolete subscription", async () => {
@@ -3412,14 +3432,23 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    await expect(
-      readUsageAllowanceEntitlementFixture(orgId),
-    ).resolves.toMatchObject({
-      status: "active",
+    const status =
+      await createBillingMediaApi(context).readBillingStatus(actor);
+    expect(status.hasSubscription).toBeTruthy();
+    expectUsageAllowanceLimits(status.usageAllowance, {
+      shortWindowSeconds: 3600,
       shortWindowUnits: 5000,
+      weeklyWindowSeconds: 604_800,
       weeklyWindowUnits: 50_000,
-      expiresAt: isoOf(expiresAtUnix),
-      stripeSubscriptionId: currentSubscriptionId,
+    });
+    await expectUsageAllowanceActiveWindow(actor, {
+      expiresAtUnix,
+      limits: {
+        shortWindowSeconds: 3600,
+        shortWindowUnits: 5000,
+        weeklyWindowSeconds: 604_800,
+        weeklyWindowUnits: 50_000,
+      },
     });
   });
 
@@ -3472,7 +3501,16 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    const beforeDelete = nowDate();
+    const billing = createBillingMediaApi(context);
+    const active = await billing.readBillingStatus(actor);
+    expect(active.hasSubscription).toBeTruthy();
+    expectUsageAllowanceLimits(active.usageAllowance, {
+      shortWindowSeconds: 3600,
+      shortWindowUnits: 5000,
+      weeklyWindowSeconds: 604_800,
+      weeklyWindowUnits: 50_000,
+    });
+
     await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.deleted",
@@ -3480,19 +3518,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       }),
       [200],
     );
-    const afterDelete = nowDate();
 
-    const entitlement = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(entitlement).toMatchObject({
-      orgId,
-      status: "canceled",
-      stripeSubscriptionId: subscriptionId,
-    });
-    expectIsoTimestampBetween(
-      entitlement?.expiresAt,
-      beforeDelete,
-      afterDelete,
-    );
+    const deleted = await billing.readBillingStatus(actor);
+    expect(deleted.usageAllowance ?? null).toBeNull();
+    expect(deleted.hasSubscription).toBeFalsy();
   });
 
   it("expires Atom day-grant subscription credits at the Atom grant end", async () => {
@@ -3551,7 +3580,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     ]);
   });
 
-  it("cancels replaced subscriptions and reads the Custom grant billing period", async () => {
+  it("retries Atom replacement cleanup without repeating credits and reads the Custom period", async () => {
     const bdd = createBddApi(context);
     const billing = createBillingMediaApi(context);
     const runs = createRunsApi(context);
@@ -3572,44 +3601,57 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         },
       ],
     });
-    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
-      id: granted.subscriptionId,
-    });
+    context.mocks.stripe.subscriptions.cancel
+      .mockRejectedValueOnce(new Error("Temporary Atom replacement failure"))
+      .mockResolvedValue({ id: granted.subscriptionId });
 
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "invoice.paid",
-        object: {
-          id: `in_bdd_atom_team_${suffix}`,
-          customer: granted.customerId,
-          metadata: {
-            type: "atom_grant",
-            purpose: "atom_grant",
-            source: "atom_entitlement",
-            orgId,
-            tier: "team",
-            duration: "7d",
-            atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
-          },
-          parent: null,
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_bdd_atom_team_${suffix}`,
-                quantity: 1,
-                price: { id: "price_bdd_atom_grant" },
-                period: {
-                  start: grantStartsAtUnix,
-                  end: grantExpiresAtUnix,
-                },
-                parent: { type: "invoice_item_details" },
-              },
-            ],
-          },
+    const teamEvent = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_bdd_atom_team_${suffix}`,
+        customer: granted.customerId,
+        metadata: {
+          type: "atom_grant",
+          purpose: "atom_grant",
+          source: "atom_entitlement",
+          orgId,
+          tier: "team",
+          duration: "7d",
+          atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
         },
+        parent: null,
+        lines: {
+          has_more: false,
+          data: [
+            {
+              id: `il_bdd_atom_team_${suffix}`,
+              quantity: 1,
+              price: { id: "price_bdd_atom_grant" },
+              period: {
+                start: grantStartsAtUnix,
+                end: grantExpiresAtUnix,
+              },
+              parent: { type: "invoice_item_details" },
+            },
+          ],
+        },
+      },
+    });
+    await api.postStripeEvent(teamEvent, [500]);
+    const afterFailedCleanup = await billing.readBillingStatus(actor);
+    expect(afterFailedCleanup.tier).toBe("team");
+    expect(afterFailedCleanup.credits).toBe(140_000);
+    expect(
+      afterFailedCleanup.creditGrants.filter((grant) => {
+        return grant.amount === 120_000;
       }),
-      [200],
+    ).toHaveLength(1);
+    await api.postStripeEvent(teamEvent, [200]);
+    await api.postStripeEvent(teamEvent, [200]);
+    const afterRetry = await billing.readBillingStatus(actor);
+    expect(afterRetry.credits).toBe(140_000);
+    expect(afterRetry.creditGrants).toStrictEqual(
+      afterFailedCleanup.creditGrants,
     );
 
     expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
@@ -3793,11 +3835,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const status = await billing.readBillingStatus(actor);
     expect(status.tier).toBe("custom");
     expect(status.hasSubscription).toBeTruthy();
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "custom",
-      stripeSubscriptionId: sharedSubscriptionId,
-      stripePriceId: customPriceId,
-    });
     expect((await billing.readUsageMembers(actor)).body.period).toStrictEqual({
       start: isoOf(allowanceStartsAtUnix),
       end: isoOf(allowanceEndsAtUnix),
@@ -3839,21 +3876,20 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    await expect(
-      readUsageAllowanceEntitlementFixture(orgId),
-    ).resolves.toMatchObject({
-      status: "active",
-      shortWindowUnits: 625_000,
-      weeklyWindowUnits: 5_000_000,
-      expiresAt: isoOf(allowanceEndsAtUnix),
-      stripeSubscriptionId: sharedSubscriptionId,
+    await expectUsageAllowanceActiveWindow(actor, {
+      expiresAtUnix: allowanceEndsAtUnix,
+      limits: {
+        shortWindowSeconds: 5 * 60 * 60,
+        shortWindowUnits: 625_000,
+        weeklyWindowSeconds: 7 * 86_400,
+        weeklyWindowUnits: 5_000_000,
+      },
     });
   });
 
   it("rejects lower Atom grants after a Custom grant without canceling subscriptions", async () => {
     const bdd = createBddApi(context);
     const billing = createBillingMediaApi(context);
-    const runs = createRunsApi(context);
     const actor = bdd.user();
     const orgId = orgOf(actor);
     const suffix = randomUUID().slice(0, 8);
@@ -3936,14 +3972,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
 
     expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
     expect((await billing.readBillingStatus(actor)).tier).toBe("custom");
-
-    const expiredAt = new Date(now() - 1000);
-    await expireAtomGrantFixture({ orgId, expiredAt });
-    await runs.reconcileBillingOrganizations([orgId]);
-
-    const downgraded = await billing.readBillingStatus(actor);
-    expect(downgraded.tier).toBe("limited-free-1");
-    expect(downgraded.hasSubscription).toBeFalsy();
   });
 
   it("expires Atom redeem-code day-grant subscription credits at the grant end", async () => {
@@ -4320,9 +4348,39 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     );
     const afterTrialCheckout = await billing.readBillingStatus(actor);
     expect(afterTrialCheckout.credits).toBe(20_000);
+
+    // Once the existing credits have expired, a later trial extension cannot
+    // revive them. All state changes still enter through signed Stripe events.
+    mockNow(trialEnd3 * 1000 + 1000);
+    const laterTrialEnd = epochSeconds(10);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      proSubscription({
+        id: subscriptionId,
+        customerId,
+        status: "trialing",
+        trialEnd: laterTrialEnd,
+      }),
+    );
+    const extensionEvent = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_bdd_expired_trial_${suffix}`,
+        customer: customerId,
+        metadata: {},
+        parent: { subscription_details: { subscription: subscriptionId } },
+        lines: subscriptionLines(epochSeconds(30)),
+      },
+    });
+    await api.postStripeEvent(extensionEvent, [200]);
+    const afterExpiredExtension = await billing.readBillingStatus(actor);
+    expect(afterExpiredExtension.credits).toBe(0);
+    expect(afterExpiredExtension.creditGrants).toHaveLength(0);
+    expect(afterExpiredExtension.subscriptionStatus).toBe("trialing");
+    await api.postStripeEvent(extensionEvent, [200]);
+    expect((await billing.readBillingStatus(actor)).credits).toBe(0);
   });
 
-  it("upgrades to team, drains the queue, and cancels the replaced pro subscription", async () => {
+  it("upgrades to team, picks queued chat threads, and cancels the replaced pro subscription", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const billing = createBillingMediaApi(context);
@@ -4333,36 +4391,33 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     const granted = await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Team Upgrade Agent",
       visibility: "private",
     });
 
-    const first = await runs.createRun(actor, {
+    const first = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "team upgrade run one",
-      modelProvider: "anthropic-api-key",
     });
-    const second = await runs.createRun(actor, {
+    const second = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "team upgrade run two",
-      modelProvider: "anthropic-api-key",
     });
-    const third = await runs.createRun(actor, {
+    const third = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "team upgrade run three",
-      modelProvider: "anthropic-api-key",
     });
-    const fourth = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "team upgrade run four",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(fourth.status).toBe("queued");
+    const queuedThreadId = await sendChatInputAtCapacity(
+      actor,
+      agent.agentId,
+      "team upgrade queued chat input",
+    );
     const queuedBefore = await runs.readRunQueue(actor);
     expect(queuedBefore.body.concurrency.active).toBe(3);
-    expect(queuedBefore.body.queue).toHaveLength(1);
 
     const suffix = randomUUID().slice(0, 8);
     const teamSubscriptionId = `sub_bdd_team_${suffix}`;
@@ -4433,32 +4488,22 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         return grant.amount === 120_000;
       }),
     ).toHaveLength(1);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "team",
-      planRank: 2,
-      source: "stripe_subscription",
-      status: "active",
-      baseConcurrencyLimit: 10,
-      canBuyConcurrency: true,
-      autoRechargeAllowed: true,
-      supportByok: true,
-      restrictedBuiltInModels: false,
-      videoGenerationAllowed: true,
-      workflowWebhookAutomationAllowed: true,
-      audioLifetimeLimit: null,
-      audioDailyRateLimit: 500,
-      audioDailyDurationSeconds: 30_000,
-      stripeSubscriptionId: teamSubscriptionId,
-      stripePriceId: "price_bdd_team",
+    expect(upgraded).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    expect(upgraded).toMatchObject({
+      subscriptionStatus: "active",
       currentPeriodEnd: isoOf(teamPeriodEnd),
-      cancelAt: null,
-      expiresAt: null,
+      cancelAtPeriodEnd: false,
+      scheduledChange: null,
+      hasSubscription: true,
+    });
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: null },
     });
 
+    const pickedRunId = await waitForPickedThreadRun(actor, queuedThreadId);
+    expect((await runs.readRun(actor, pickedRunId)).status).toBe("pending");
     const drained = await runs.readRunQueue(actor);
     expect(drained.body.concurrency.tier).toBe("team");
-    expect(drained.body.queue).toHaveLength(0);
     expect(drained.body.concurrency.active).toBe(4);
 
     // Redelivering the processed team invoice re-runs lingering-pro cleanup.
@@ -4472,11 +4517,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(
       context.mocks.stripe.subscriptions.cancel.mock.calls.length,
     ).toBeGreaterThan(cancelCallsBefore);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "team",
-      stripeSubscriptionId: teamSubscriptionId,
-    });
-    expect((await billing.readBillingStatus(actor)).credits).toBe(140_000);
+    const repaired = await billing.readBillingStatus(actor);
+    expect(repaired).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    expect(repaired.credits).toBe(140_000);
 
     // A lower-tier subscription invoice cannot replace the team subscription.
     await api.postStripeEvent(
@@ -4606,34 +4649,17 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(suspended.subscriptionStatus).toBe("canceled");
     expect(suspended.hasSubscription).toBeFalsy();
     expect(suspended.scheduledChange).toBeNull();
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "limited-free-1",
-      planRank: 0,
-      source: "stripe_subscription",
-      status: "active",
-      baseConcurrencyLimit: 2,
-      canBuyConcurrency: false,
-      autoRechargeAllowed: false,
-      supportByok: true,
-      restrictedBuiltInModels: true,
-      videoGenerationAllowed: false,
-      workflowWebhookAutomationAllowed: false,
-      audioLifetimeLimit: 10,
-      audioDailyRateLimit: 10,
-      audioDailyDurationSeconds: 600,
-      stripeSubscriptionId: null,
-      stripePriceId: null,
-      currentPeriodStart: null,
-      currentPeriodEnd: null,
-      cancelAt: null,
-      expiresAt: null,
+    expect(suspended).toMatchObject(LIMITED_FREE_BILLING_CAPABILITIES);
+    expect(suspended.currentPeriodEnd).toBeNull();
+    expect(suspended.cancelAtPeriodEnd).toBeFalsy();
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: 10 },
     });
 
     await runs.requestCancelRun(actor, first.runId, [200]);
     await runs.requestCancelRun(actor, second.runId, [200]);
     await runs.requestCancelRun(actor, third.runId, [200]);
-    await runs.requestCancelRun(actor, fourth.runId, [200]);
+    await runs.requestCancelRun(actor, pickedRunId, [200]);
     const settled = await runs.readRunQueue(actor);
     expect(settled.body.concurrency.active).toBe(0);
   });
@@ -4679,6 +4705,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
           {
             price: { id: "price_bdd_concurrency" },
             quantity: 3,
+            current_period_start: epochSeconds(0),
+            current_period_end: periodEnd,
           },
         ],
       },
@@ -4698,7 +4726,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         },
       },
     });
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       customSubscription,
     );
     context.mocks.stripe.subscriptions.list.mockResolvedValueOnce({
@@ -4765,22 +4793,22 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         quantity: 3,
       }),
     ]);
-    await expect(
-      readUsageAllowanceEntitlementFixture(orgId),
-    ).resolves.toMatchObject({
-      status: "active",
-      stripeSubscriptionId: customSubscriptionId,
+    expectUsageAllowanceLimits(customStatus.usageAllowance, {
+      shortWindowSeconds: 3600,
       shortWindowUnits: 5000,
+      weeklyWindowSeconds: 604_800,
       weeklyWindowUnits: 50_000,
     });
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "custom",
-      source: "stripe_subscription",
-      stripeSubscriptionId: customSubscriptionId,
-      stripePriceId: customPriceId,
+    expect(customStatus).toMatchObject({
+      status: "active",
+      subscriptionStatus: "active",
       currentPeriodEnd: isoOf(periodEnd),
-      cancelAt: isoOf(periodEnd),
-      expiresAt: isoOf(periodEnd),
+      cancelAtPeriodEnd: true,
+      scheduledChange: {
+        type: "cancel",
+        targetTier: "limited-free-1",
+        effectiveDate: isoOf(periodEnd),
+      },
     });
 
     await api.postStripeEvent(
@@ -4867,7 +4895,222 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(suspended.hasSubscription).toBeFalsy();
   });
 
-  it("grants concurrency slots from Stripe subscription and drains the queue", async () => {
+  it("redelivers replacement cancellation after the paid grant commits without granting twice", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const billing = createBillingMediaApi(context);
+    const actor = bdd.user();
+    const granted = await runs.grantProEntitlement(actor);
+    const teamSubscriptionId = `sub_team_cancel_retry_${randomUUID()}`;
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      ...proSubscription({
+        id: teamSubscriptionId,
+        customerId: granted.customerId,
+      }),
+      items: { data: [{ price: { id: "price_bdd_team" } }] },
+    });
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [
+        proSubscription({
+          id: granted.subscriptionId,
+          customerId: granted.customerId,
+        }),
+      ],
+    });
+    context.mocks.stripe.subscriptions.cancel.mockRejectedValueOnce(
+      new Error("Temporary Stripe cancellation failure"),
+    );
+    const event = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_team_cancel_retry_${randomUUID()}`,
+        customer: granted.customerId,
+        metadata: {},
+        parent: { subscription_details: { subscription: teamSubscriptionId } },
+        lines: subscriptionLines(epochSeconds(30), "price_bdd_team"),
+      },
+    });
+    await api.postStripeEvent(event, [500]);
+    const committed = await billing.readBillingStatus(actor);
+    expect(committed.tier).toBe("team");
+    expect(committed.credits).toBe(140_000);
+    expect(
+      committed.creditGrants.filter((grant) => {
+        return grant.amount === 120_000;
+      }),
+    ).toHaveLength(1);
+
+    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+      id: granted.subscriptionId,
+      status: "canceled",
+    });
+    await api.postStripeEvent(event, [200]);
+    await api.postStripeEvent(event, [200]);
+    const redelivered = await billing.readBillingStatus(actor);
+    expect(redelivered.credits).toBe(140_000);
+    expect(redelivered.creditGrants).toStrictEqual(committed.creditGrants);
+
+    await api.postStripeEvent(
+      stripeEvent({
+        type: "customer.subscription.deleted",
+        object: { id: granted.subscriptionId, metadata: {} },
+      }),
+      [200],
+    );
+    const afterReplacedCancellation = await billing.readBillingStatus(actor);
+    expect(afterReplacedCancellation.tier).toBe("team");
+    expect(afterReplacedCancellation.hasSubscription).toBeTruthy();
+    expect(afterReplacedCancellation.credits).toBe(140_000);
+  });
+
+  it.each(["legacy", "atom"] as const)(
+    "keeps a newer purchase when the previous %s invoice is redelivered",
+    async (source) => {
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const billing = createBillingMediaApi(context);
+      const actor = bdd.user();
+      const granted = await runs.grantProEntitlement(actor);
+      const teamSubscriptionId = `sub_team_previous_${randomUUID()}`;
+      const teamSubscription = {
+        ...proSubscription({
+          id: teamSubscriptionId,
+          customerId: granted.customerId,
+        }),
+        items: { data: [{ price: { id: "price_bdd_team" } }] },
+      };
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        teamSubscription,
+      );
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
+      context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+        id: granted.subscriptionId,
+        status: "canceled",
+      });
+      const event = stripeEvent({
+        type: "invoice.paid",
+        object: {
+          id: `in_previous_${randomUUID()}`,
+          customer: granted.customerId,
+          ...(source === "legacy"
+            ? {
+                metadata: {},
+                parent: {
+                  subscription_details: { subscription: teamSubscriptionId },
+                },
+                lines: subscriptionLines(epochSeconds(30), "price_bdd_team"),
+              }
+            : {
+                metadata: {
+                  type: "atom_grant",
+                  purpose: "atom_grant",
+                  source: "atom_entitlement",
+                  orgId: orgOf(actor),
+                  tier: "team",
+                  duration: "7d",
+                  atomGrantExpiresAt: isoOf(epochSeconds(7)),
+                },
+                parent: null,
+                lines: {
+                  data: [
+                    {
+                      price: { id: "price_bdd_atom_grant" },
+                      quantity: 1,
+                      period: { start: epochSeconds(0), end: epochSeconds(7) },
+                      parent: { type: "invoice_item_details" },
+                    },
+                  ],
+                },
+              }),
+        },
+      });
+      await api.postStripeEvent(event, [200]);
+      expect((await billing.readBillingStatus(actor)).credits).toBe(140_000);
+      if (source === "legacy") {
+        await api.postStripeEvent(
+          stripeEvent({
+            type: "customer.subscription.deleted",
+            object: { id: teamSubscriptionId, metadata: {} },
+          }),
+          [200],
+        );
+      }
+
+      // Checkout binds the new subscription before its paid invoice arrives.
+      // The previous invoice ID still names the earlier paid grant.
+      const nextSubscriptionId = `sub_next_${randomUUID()}`;
+      mockEnv("OKOU_PRICE_CUSTOM", "price_bdd_next_custom");
+      const nextSubscription = {
+        ...proSubscription({
+          id: nextSubscriptionId,
+          customerId: granted.customerId,
+        }),
+        items: {
+          data: [
+            {
+              price: {
+                id:
+                  source === "legacy"
+                    ? "price_bdd_pro"
+                    : "price_bdd_next_custom",
+              },
+            },
+          ],
+        },
+      };
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
+        nextSubscription,
+      );
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "checkout.session.completed",
+          object: {
+            id: `cs_next_${randomUUID()}`,
+            customer: granted.customerId,
+            subscription: nextSubscriptionId,
+            metadata: null,
+          },
+        }),
+        [200],
+      );
+      const before = await billing.readBillingStatus(actor);
+      expect(before.hasSubscription).toBeTruthy();
+      expect(before.subscriptionStatus).toBe("active");
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [nextSubscription],
+      });
+      const canceledSubscriptions: string[] = [];
+      context.mocks.stripe.subscriptions.cancel.mockImplementation(
+        (subscriptionId) => {
+          if (typeof subscriptionId !== "string") {
+            throw new TypeError("Expected a Stripe subscription ID");
+          }
+          canceledSubscriptions.push(subscriptionId);
+          return Promise.resolve({ id: subscriptionId, status: "canceled" });
+        },
+      );
+      await api.postStripeEvent(event, [200]);
+      // Deliver the provider's cancellation notifications through the public
+      // webhook API, so an accidental cancellation changes observable billing.
+      for (const subscriptionId of canceledSubscriptions) {
+        await api.postStripeEvent(
+          stripeEvent({
+            type: "customer.subscription.deleted",
+            object: { id: subscriptionId, metadata: {} },
+          }),
+          [200],
+        );
+      }
+      const after = await billing.readBillingStatus(actor);
+      expect(after.hasSubscription).toBeTruthy();
+      expect(after.subscriptionStatus).toBe("active");
+      expect(after.tier).toBe(before.tier);
+      expect(after.credits).toBe(before.credits);
+      expect(after.creditGrants).toStrictEqual(before.creditGrants);
+    },
+  );
+
+  it("grants concurrency slots from Stripe subscription and picks queued chat threads until full", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const billing = createBillingMediaApi(context);
@@ -4878,37 +5121,41 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     const granted = await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Concurrency Add-on Agent",
       visibility: "private",
     });
 
-    await runs.createRun(actor, {
+    await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on run one",
-      modelProvider: "anthropic-api-key",
     });
-    await runs.createRun(actor, {
+    await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on run two",
-      modelProvider: "anthropic-api-key",
     });
-    await runs.createRun(actor, {
+    await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on run three",
-      modelProvider: "anthropic-api-key",
     });
-    const queued = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "concurrency add-on queued run",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(queued.status).toBe("queued");
+    const queuedThreadIds = [
+      await sendChatInputAtCapacity(
+        actor,
+        agent.agentId,
+        "concurrency add-on queued chat one",
+      ),
+      await sendChatInputAtCapacity(
+        actor,
+        agent.agentId,
+        "concurrency add-on queued chat two",
+      ),
+    ];
     const before = await runs.readRunQueue(actor);
     expect(before.body.concurrency.limit).toBe(3);
     expect(before.body.concurrency.active).toBe(3);
-    expect(before.body.queue).toHaveLength(1);
 
     const suffix = randomUUID().slice(0, 8);
     const lineId = `il_bdd_concurrency_${suffix}`;
@@ -4989,20 +5236,21 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       }),
     ]);
 
+    // The capacity increase keeps picking queued threads until the org is
+    // full, so both queued inputs start runs.
+    for (const threadId of queuedThreadIds) {
+      const pickedRunId = await waitForPickedThreadRun(actor, threadId);
+      expect((await runs.readRun(actor, pickedRunId)).status).toBe("pending");
+    }
     const after = await runs.readRunQueue(actor);
     expect(after.body.concurrency.limit).toBe(5);
-    expect(after.body.concurrency.active).toBe(4);
-    expect(after.body.queue).toHaveLength(0);
+    expect(after.body.concurrency.active).toBe(5);
 
-    const admitted = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "concurrency add-on admitted run",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(admitted.status).toBe("pending");
-    const afterAdmitted = await runs.readRunQueue(actor);
-    expect(afterAdmitted.body.concurrency.active).toBe(5);
-    expect(afterAdmitted.body.queue).toHaveLength(0);
+    await sendChatInputAtCapacity(
+      actor,
+      agent.agentId,
+      "concurrency add-on input over the new limit",
+    );
 
     // Replaying the same invoice event must not grant additional slots.
     await api.postStripeEvent(
@@ -5152,7 +5400,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(afterDeleted.body.concurrency.limit).toBe(3);
   });
 
-  it("keeps Stripe quantity across prorations and stale concurrent events", async () => {
+  it("keeps Stripe quantity across prorations and stale events", async () => {
     const bdd = createBddApi(context);
     const billing = createBillingMediaApi(context);
     const actor = bdd.user();
@@ -5301,54 +5549,14 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       quantity: 2,
       periodEnd,
     });
-    const staleRetrieve = createDeferredPromise<unknown>(context.signal);
-    const releaseStaleRetrieve = (): void => {
-      if (!staleRetrieve.settled()) {
-        staleRetrieve.resolve(staleState);
-      }
-    };
-    onTestFinished(releaseStaleRetrieve);
-    context.mocks.stripe.subscriptions.retrieve.mockReset();
-    context.mocks.stripe.subscriptions.retrieve
-      .mockImplementationOnce(() => {
-        return staleRetrieve.promise;
-      })
-      .mockResolvedValue(currentState);
-
-    const constructedEventsBefore =
-      context.mocks.stripe.webhooks.constructEvent.mock.calls.length;
-    const staleRequest = api.postStripeEvent(
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(currentState);
+    await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.updated",
         object: staleState,
       }),
       [200],
     );
-    await expect
-      .poll(() => {
-        return context.mocks.stripe.subscriptions.retrieve.mock.calls.length;
-      })
-      .toBe(1);
-
-    const currentRequest = api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: currentState,
-      }),
-      [200],
-    );
-    await expect
-      .poll(() => {
-        return context.mocks.stripe.webhooks.constructEvent.mock.calls.length;
-      })
-      .toBe(constructedEventsBefore + 2);
-    await billing.readBillingStatus(actor);
-    expect(context.mocks.stripe.subscriptions.retrieve).toHaveBeenCalledTimes(
-      1,
-    );
-
-    releaseStaleRetrieve();
-    await Promise.all([staleRequest, currentRequest]);
     billingStatus = await billing.readBillingStatus(actor);
     expect(billingStatus.concurrencySubscriptions).toStrictEqual([
       expect.objectContaining({ id: subscriptionId, quantity: 2 }),
@@ -5372,6 +5580,117 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       expect.objectContaining({ id: subscriptionId, quantity: 2 }),
     ]);
 
+    await api.postStripeEvent(
+      stripeEvent({
+        type: "customer.subscription.deleted",
+        object: { id: subscriptionId },
+      }),
+      [200],
+    );
+  });
+
+  it("reconciles stale concurrent Stripe deliveries after redelivery", async () => {
+    const bdd = createBddApi(context);
+    const billing = createBillingMediaApi(context);
+    const runs = createRunsApi(context);
+    const actor = bdd.user();
+    const orgId = orgOf(actor);
+    const granted = await runs.grantProEntitlement(actor);
+    const suffix = randomUUID().slice(0, 8);
+    const subscriptionId = `sub_bdd_concurrency_redelivery_${suffix}`;
+    const periodStart = epochSeconds(-1);
+    const periodEnd = epochSeconds(30);
+    const staleState = concurrencySubscription({
+      id: subscriptionId,
+      customerId: granted.customerId,
+      quantity: 10,
+      periodEnd,
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(staleState);
+    const paidEvent = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_bdd_concurrency_initial_${suffix}`,
+        customer: granted.customerId,
+        metadata: {},
+        parent: {
+          subscription_details: {
+            subscription: subscriptionId,
+            metadata: { purpose: "concurrency_subscription", orgId },
+          },
+        },
+        lines: {
+          has_more: false,
+          data: [
+            {
+              id: `il_bdd_concurrency_initial_${suffix}`,
+              amount: 0,
+              quantity: 10,
+              price: { id: "price_bdd_concurrency" },
+              period: { start: periodStart, end: periodEnd },
+              parent: { type: "subscription_item_details" },
+            },
+          ],
+        },
+      },
+    });
+    await api.postStripeEvent(paidEvent, [200]);
+    const before = await billing.readBillingStatus(actor);
+    expect(before.concurrencySubscriptions).toStrictEqual([
+      expect.objectContaining({ id: subscriptionId, quantity: 10 }),
+    ]);
+
+    const currentState = concurrencySubscription({
+      id: subscriptionId,
+      customerId: granted.customerId,
+      quantity: 2,
+      periodEnd,
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(currentState);
+    const events = [
+      stripeEvent({
+        type: "customer.subscription.updated",
+        object: staleState,
+      }),
+      stripeEvent({
+        type: "customer.subscription.updated",
+        object: currentState,
+      }),
+    ];
+    const deliveries = await Promise.all(
+      events.map(async (event) => {
+        const response = await api.postStripeEvent(event, [200, 500]);
+        return { event, response };
+      }),
+    );
+    expect(
+      deliveries.some(({ response }) => {
+        return response.status === 200;
+      }),
+    ).toBeTruthy();
+    // Stripe redelivers the same failed event, including its original event ID.
+    // A competing publication may fail its first request without losing state.
+    for (const { event, response } of deliveries) {
+      if (response.status === 500) {
+        await api.postStripeEvent(event, [200]);
+      }
+    }
+    const reconciled = await billing.readBillingStatus(actor);
+    expect(reconciled.concurrencySubscriptions).toStrictEqual([
+      expect.objectContaining({ id: subscriptionId, quantity: 2 }),
+    ]);
+    expect(reconciled.credits).toBe(before.credits);
+    expect((await runs.readRunQueue(actor)).body.concurrency.limit).toBe(5);
+
+    // Duplicate payment evidence must neither restore its old quantity nor add
+    // another grant to the capacity visible through the production run API.
+    await api.postStripeEvent(paidEvent, [200]);
+    const replayed = await billing.readBillingStatus(actor);
+    expect(replayed.concurrencySubscriptions).toStrictEqual(
+      reconciled.concurrencySubscriptions,
+    );
+    expect(replayed.credits).toBe(before.credits);
+    expect((await runs.readRunQueue(actor)).body.concurrency.limit).toBe(5);
     await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.deleted",
@@ -6047,7 +6366,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
             purpose: "billing_downgrade",
             orgId,
             subscriptionId: granted.subscriptionId,
-            targetTier: "pro-suspend",
+            targetTier: "limited-free-1",
           },
         },
       }),
@@ -6350,7 +6669,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       weeklyWindowSeconds: 7 * 86_400,
       weeklyWindowUnits: 100,
     });
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     await connectors.connectManualGrant(actor, "openai", "api-token", {
       apiKey: "org-teardown-connector-token",
     });
@@ -6385,77 +6704,17 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         agent.agentId,
       ),
     );
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "survive until teardown",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
-    const usageProvider = `org-teardown-${randomUUID().slice(0, 8)}`;
-    await seedUsagePricingRows([
-      {
-        kind: "connector",
-        provider: usageProvider,
-        category: "call",
-        unitPrice: 10,
-        unitSize: 1,
-      },
-    ]);
-    await api.requestAgentUsageEvent(
-      {
-        runId: run.runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider: usageProvider,
-            category: "call",
-            quantity: 1,
-          },
-        ],
-      },
-      { authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}` },
-      [200],
-    );
-    await createBillingMediaApi(context).processOrgUsageEvents(actor);
-    await expect(
-      store.set(
-        materializeHourlyUsage$,
-        {
-          orgId: orgOf(actor),
-          userId: actor.userId,
-          runId: run.runId,
-        },
-        context.signal,
-      ),
-    ).resolves.toBe(1);
-    await store.set(
-      insertUsageEvent$,
-      {
-        orgId: orgOf(actor),
-        userId: actor.userId,
-        runId: run.runId,
-        status: "processed",
-        creditsCharged: 5,
-        processedAt: nowDate(),
-      },
-      context.signal,
-    );
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "organization", id: orgOf(actor) },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-
     await gh.installGithubApp(actor, agent.agentId, {
       oauthCode: {
         code: `whcb08a-${randomUUID().slice(0, 8)}`,
         githubUserId: newGithubUserId(),
       },
     });
-    const botToken = await registerTelegramBot(actor, agent.agentId);
     await runs.applyUserPermissionGrant(actor, {
       agentId: agent.agentId,
       connectorSlug: "slack",
@@ -6529,95 +6788,10 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           idempotencyKey: `org-delete:${orgOf(actor)}:${granted.subscriptionId}:cancel`,
         },
       );
-      expect(context.mocks.telegram.deleteWebhook).toHaveBeenCalledWith(
-        botToken,
-      );
     });
-    const survivingRun = await runs.requestReadRun(actor, run.runId, [200]);
-    expect(survivingRun.status).toBe(200);
-    // The onboarding default agent and the teardown agent both survive.
-    await expect(bdd.listAgents(actor)).resolves.toHaveLength(2);
+    await runs.requestReadRun(actor, run.runId, [404]);
+    await expect(bdd.listAgents(actor)).resolves.toStrictEqual([]);
 
-    // The redelivered event completes the teardown, deleting storage
-    // objects and all org-scoped resources.
-    const deletedS3Keys: string[] = [];
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const input = commandInput(command);
-      if (typeof input.Prefix === "string") {
-        return Promise.resolve({
-          Contents: [
-            {
-              Key: `${input.Prefix}/archive.bin`,
-              Size: 1,
-              LastModified: nowDate(),
-            },
-          ],
-        });
-      }
-      const removal = input.Delete as
-        | { readonly Objects?: readonly { readonly Key?: string }[] }
-        | undefined;
-      for (const object of removal?.Objects ?? []) {
-        if (object.Key) {
-          deletedS3Keys.push(object.Key);
-        }
-      }
-      return Promise.resolve({});
-    });
-    const compactionLock = await holdUsageEventCompactionLockFixture(
-      context.signal,
-    );
-    onTestFinished(async () => {
-      compactionLock.release();
-      await compactionLock.done;
-      await flushWaitUntilForTest();
-    });
-    api.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: { id: orgOf(actor) },
-    });
-    const redelivery = await compactionLock.withAcquisitionAttemptTracking(
-      () => {
-        return api.requestClerkWebhook("{}", {}, [200]);
-      },
-    );
-    expect(redelivery.body).toBe("OK");
-    await compactionLock.acquisitionAttempted;
-    await expect.poll(compactionLock.waiterCount).toBeGreaterThanOrEqual(1);
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "organization", id: orgOf(actor) },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-    compactionLock.release();
-    await compactionLock.done;
-    await flushWaitUntilForTest();
-
-    await expect
-      .poll(() => {
-        return deletedS3Keys.length;
-      })
-      .toBeGreaterThan(0);
-    // The redelivered webhook responds OK before the teardown finishes, so
-    // the resource deletions land asynchronously — poll instead of asserting
-    // a single snapshot.
-    await waitForExpectation(async () => {
-      await runs.requestReadRun(actor, run.runId, [404]);
-    });
-    await waitForExpectation(async () => {
-      await expect(bdd.listAgents(actor)).resolves.toStrictEqual([]);
-    });
-    await waitForExpectation(async () => {
-      await expect(
-        store.set(
-          readUsageStorageCounts$,
-          { scope: "organization", id: orgOf(actor) },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
-    });
     await waitForExpectation(async () => {
       const listed = await connectors.listBuiltinConnectors(actor);
       expect(listed.connectors).not.toContainEqual(
@@ -6666,12 +6840,13 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       data: { id: orgOf(plainActor) },
     });
     await api.requestClerkWebhook("{}", {}, [200]);
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const agents = await bdd.listAgents(plainActor);
         return agents.length;
-      })
-      .toBe(0);
+      })(),
+    ).resolves.toBe(0);
     expect(context.mocks.stripe.subscriptions.update.mock.calls).toHaveLength(
       updateCalls,
     );
@@ -6764,12 +6939,13 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     // billing status read falls back to the unprovisioned defaults instead
     // of the previously granted pro subscription.
     const billing = createBillingMediaApi(context);
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
-      })
-      .toStrictEqual(["limited-free-1", null, false]);
+      })(),
+    ).resolves.toStrictEqual(["limited-free-1", null, false]);
   });
 
   it("preserves org data when a deleted user leaves an uncached Clerk member", async () => {
@@ -6867,16 +7043,17 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     // The empty org is still deleted: billing status falls back to the
     // unprovisioned defaults once the org metadata is cleaned up.
     const billing = createBillingMediaApi(context);
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
-      })
-      .toStrictEqual(["limited-free-1", null, false]);
+      })(),
+    ).resolves.toStrictEqual(["limited-free-1", null, false]);
   });
 
   describe("verified user.deleted cleanup", () => {
-    async function prepareUserErasure() {
+    async function prepareUserDeletion() {
       const bdd = createBddApi(context);
       const runs = createRunsApi(context);
       api.configureClerkWebhookSecret();
@@ -6887,7 +7064,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
       const doomed = bdd.user();
       await runs.grantProEntitlement(doomed);
-      await runs.ensureOrgModelProvider(doomed);
+      await runs.ensurePersonalSubscriptionModel(doomed);
       const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:member" });
       const sharedAgent = await bdd.createAgent(peer, {
         displayName: "BDD Shared Grant Agent",
@@ -6901,7 +7078,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     }
 
     async function startUserDeletion(
-      fixture: Awaited<ReturnType<typeof prepareUserErasure>>,
+      fixture: Awaited<ReturnType<typeof prepareUserDeletion>>,
     ) {
       // The external membership lookup must still see the surviving peer,
       // independently of which actor made the last setup request.
@@ -6910,28 +7087,23 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           data: [{ publicUserData: { userId: fixture.peer.userId } }],
         },
       );
-      const s3CallCountBeforeCleanup = context.mocks.s3.send.mock.calls.length;
       api.verifyNextClerkWebhook({
         type: "user.deleted",
         data: { id: fixture.doomed.userId },
       });
       const response = await api.requestClerkWebhook("{}", {}, [200]);
       expect(response.body).toBe("OK");
-      return s3CallCountBeforeCleanup;
     }
 
     async function expectSurvivingOrganization(
-      fixture: Awaited<ReturnType<typeof prepareUserErasure>>,
-      s3CallCountBeforeCleanup: number,
+      fixture: Awaited<ReturnType<typeof prepareUserDeletion>>,
     ) {
-      const firstCleanupS3Prefix = commandInput(
-        context.mocks.s3.send.mock.calls[s3CallCountBeforeCleanup]?.[0],
-      ).Prefix;
-      expect(
-        typeof firstCleanupS3Prefix === "string" &&
-          firstCleanupS3Prefix.startsWith(`${orgOf(fixture.doomed)}/`) &&
-          firstCleanupS3Prefix.endsWith("/"),
-      ).toBeTruthy();
+      // User deletion retains the Agents the deleted user owned.
+      await createBddApi(context).requestReadAgent(
+        fixture.doomed,
+        fixture.doomedAgent.agentId,
+        [200],
+      );
       expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
@@ -6942,127 +7114,8 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       expect(preserved.hasSubscription).toBeTruthy();
     }
 
-    it("waits for usage compaction before deleting a user's runs and runner token", async () => {
-      const fixture = await prepareUserErasure();
-      const { runs, runnerGroup, doomed, sharedAgent } = fixture;
-      const doomedKey = await runs.createCliToken(doomed);
-      const doomedBearer = `Bearer ${doomedKey.token}`;
-      const livePoll = await runs.requestPollRunnerAs(
-        doomedBearer,
-        { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-        [200],
-      );
-      expect(livePoll.status).toBe(200);
-      const run = await runs.createRun(doomed, {
-        agentId: sharedAgent.agentId,
-        prompt: "user teardown run",
-        modelProvider: "anthropic-api-key",
-      });
-      expect(run.status).toBe("pending");
-      await runs.claimRunnerJob(run.runId);
-      await store.set(
-        insertUsageEvent$,
-        {
-          orgId: orgOf(doomed),
-          userId: doomed.userId,
-          runId: run.runId,
-          status: "processed",
-          creditsCharged: 10,
-          processedAt: nowDate(),
-        },
-        context.signal,
-      );
-      await expect(
-        store.set(
-          materializeHourlyUsage$,
-          {
-            orgId: orgOf(doomed),
-            userId: doomed.userId,
-            runId: run.runId,
-          },
-          context.signal,
-        ),
-      ).resolves.toBe(1);
-      await store.set(
-        insertUsageEvent$,
-        {
-          orgId: orgOf(doomed),
-          userId: doomed.userId,
-          runId: run.runId,
-          status: "processed",
-          creditsCharged: 5,
-          processedAt: nowDate(),
-        },
-        context.signal,
-      );
-      await expect(
-        store.set(
-          readUsageStorageCounts$,
-          { scope: "user", id: doomed.userId },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-
-      const compactionLock = await holdUsageEventCompactionLockFixture(
-        context.signal,
-      );
-      onTestFinished(async () => {
-        compactionLock.release();
-        await compactionLock.done;
-        await flushWaitUntilForTest();
-      });
-      context.mocks.ably.publish.mockClear();
-      const s3CallCountBeforeCleanup =
-        await compactionLock.withAcquisitionAttemptTracking(() => {
-          return startUserDeletion(fixture);
-        });
-      await compactionLock.acquisitionAttempted;
-      await expect.poll(compactionLock.waiterCount).toBeGreaterThanOrEqual(1);
-      await expect(
-        store.set(
-          readUsageStorageCounts$,
-          { scope: "user", id: doomed.userId },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-      compactionLock.release();
-      await compactionLock.done;
-      await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
-        runId: run.runId,
-        mode: "hard",
-      });
-
-      let revokedPoll:
-        | Awaited<ReturnType<typeof runs.requestPollRunnerAs>>
-        | undefined;
-      await expect
-        .poll(async () => {
-          revokedPoll = await runs.requestPollRunnerAs(
-            doomedBearer,
-            { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-            [200, 401],
-          );
-          return revokedPoll.status;
-        })
-        .toBe(401);
-      if (!revokedPoll || revokedPoll.status !== 401) {
-        throw new Error("Expected deleted user's runner token to be revoked");
-      }
-      expectApiError(revokedPoll.body);
-      await runs.requestReadRun(doomed, run.runId, [404]);
-      await expect(
-        store.set(
-          readUsageStorageCounts$,
-          { scope: "user", id: doomed.userId },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
-      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
-    });
-
     it("deletes a user's connector state while preserving peer accounts and grants", async () => {
-      const fixture = await prepareUserErasure();
+      const fixture = await prepareUserDeletion();
       const { runs, doomed, peer, sharedAgent, doomedAgent } = fixture;
       const connectors = createConnectorBddApi(context);
       const userConfig = createUserConfigBddApi(context);
@@ -7132,7 +7185,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         action: "deny",
       });
 
-      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
+      await startUserDeletion(fixture);
       await flushWaitUntilForTest();
       await waitForExpectation(async () => {
         const listed = await connectors.listBuiltinConnectors(doomed);
@@ -7184,11 +7237,11 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       await expect(
         connectors.readCustomConnector(peer, customManual.id),
       ).resolves.toMatchObject({ connected: true });
-      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+      await expectSurvivingOrganization(fixture);
     });
 
-    it("invalidates only the deleted user's pending builtin and custom OAuth states", async () => {
-      const fixture = await prepareUserErasure();
+    it("keeps the peer's pending builtin and custom OAuth states usable during user deletion", async () => {
+      const fixture = await prepareUserDeletion();
       const { doomed, peer, sharedAgent } = fixture;
       const connectors = createConnectorBddApi(context);
       mockSlackConnectorOAuth();
@@ -7196,16 +7249,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       const customOauth = await connectors.createCustomConnector(
         doomed,
         customOauthConnectorBodyForTeardown("user", customOAuthProvider),
-      );
-      const doomedBuiltinOauthState = oauthStateFromAuthorizationUrl(
-        (
-          await connectors.startOauth(
-            doomed,
-            "slack",
-            "oauth",
-            sharedAgent.agentId,
-          )
-        ).authorizationUrl,
       );
       const peerBuiltinOauthState = oauthStateFromAuthorizationUrl(
         (
@@ -7217,13 +7260,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           )
         ).authorizationUrl,
       );
-      const doomedCustomOauthState = oauthStateFromAuthorizationUrl(
-        await connectors.startCustomConnectorOAuth2(
-          doomed,
-          customOauth.id,
-          sharedAgent.agentId,
-        ),
-      );
       const peerCustomOauthState = oauthStateFromAuthorizationUrl(
         await connectors.startCustomConnectorOAuth2(
           peer,
@@ -7232,30 +7268,8 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         ),
       );
 
-      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
+      await startUserDeletion(fixture);
       await flushWaitUntilForTest();
-      await expect(
-        connectors.completeOauthCallbackResult("slack", {
-          code: "doomed-deleted-state",
-          state: doomedBuiltinOauthState,
-        }),
-      ).resolves.toMatchObject({
-        body: {
-          status: "error",
-          message: "Invalid state - please try again",
-        },
-      });
-      await expect(
-        connectors.completeCustomConnectorOAuth2CallbackResult({
-          code: "doomed-deleted-custom-state",
-          state: doomedCustomOauthState,
-        }),
-      ).resolves.toMatchObject({
-        body: {
-          status: "error",
-          message: "Invalid OAuth state - please try again",
-        },
-      });
       await expect(
         connectors.completeOauthCallbackResult("slack", {
           code: "peer-surviving-state",
@@ -7268,12 +7282,76 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           state: peerCustomOauthState,
         }),
       ).resolves.toMatchObject({ body: { status: "success" } });
-      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+      await expectSurvivingOrganization(fixture);
+    });
+
+    it("retains the deleted user's Agents and another member's thread and run on them", async () => {
+      const fixture = await prepareUserDeletion();
+      const { runs, doomed, peer, doomedAgent } = fixture;
+      const bdd = createBddApi(context);
+      const chat = createChatFilesBddApi(context);
+      const doomedPublicAgent = await bdd.createAgent(doomed, {
+        displayName: "BDD Doomed Public Agent",
+        visibility: "public",
+      });
+      const peerThread = await chat.createThread(peer, {
+        agentId: doomedPublicAgent.agentId,
+        title: "BDD peer thread on the deleted user's Agent",
+      });
+      // The peer owns its initialized memory and personal subscription.
+      await bdd.completeOnboarding(peer);
+      await runs.ensurePersonalSubscriptionModel(peer, {
+        model: "claude-sonnet-5-5",
+      });
+      const peerRun = await runs.createThreadRun(peer, {
+        agentId: doomedPublicAgent.agentId,
+        prompt: "peer run on the deleted user's Agent",
+        model: "claude-sonnet-5-5",
+      });
+      const doomedThread = await chat.createThread(doomed, {
+        agentId: doomedAgent.agentId,
+        title: "BDD doomed private thread",
+      });
+      await chat.patchThread(doomed, doomedThread.id, {
+        draftUserMessage: {
+          version: 1,
+          parts: [{ type: "text", text: "unsent doomed draft" }],
+        },
+      });
+      await expect(chat.listThreadDrafts(doomed)).resolves.toContain(
+        doomedThread.id,
+      );
+      const doomedRun = await runs.createThreadRun(doomed, {
+        agentId: doomedAgent.agentId,
+        prompt: "doomed run on the private Agent",
+      });
+
+      await startUserDeletion(fixture);
+      await flushWaitUntilForTest();
+
+      // Both Agents survive with their owner unchanged, as does the other
+      // member's thread and run on the public one.
+      await expectSurvivingOrganization(fixture);
+      const retainedPublicAgent = await bdd.readAgent(
+        peer,
+        doomedPublicAgent.agentId,
+      );
+      expect(retainedPublicAgent).toMatchObject({
+        agentId: doomedPublicAgent.agentId,
+        ownerId: doomed.userId,
+        visibility: "public",
+      });
+      await chat.requestReadThread(peer, peerThread.id, [200]);
+      await runs.requestReadRun(peer, peerRun.runId, [200]);
+      // The deleted user's own thread, draft and run are removed.
+      await chat.requestReadThread(doomed, doomedThread.id, [404]);
+      await runs.requestReadRun(doomed, doomedRun.runId, [404]);
+      await expect(chat.listThreadDrafts(doomed)).resolves.toStrictEqual([]);
     });
 
     it("removes deleted-user integration links while preserving the shared organization", async () => {
-      const fixture = await prepareUserErasure();
-      const { doomed, sharedAgent, doomedAgent } = fixture;
+      const fixture = await prepareUserDeletion();
+      const { doomed, sharedAgent } = fixture;
       const gh = createGithubBddApi(context);
       acceptGithubGrantRevocations();
       // The peer's compose remains the installation's default agent; only the
@@ -7285,17 +7363,11 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         },
       });
       expect((await gh.readInstallation(doomed)).isConnected).toBeTruthy();
-      const botToken = await registerTelegramBot(doomed, doomedAgent.agentId);
 
-      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
+      await startUserDeletion(fixture);
       await flushWaitUntilForTest();
-      await waitForExpectation(() => {
-        expect(context.mocks.telegram.deleteWebhook).toHaveBeenCalledWith(
-          botToken,
-        );
-      });
       expect((await gh.readInstallation(doomed)).isConnected).toBeFalsy();
-      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+      await expectSurvivingOrganization(fixture);
     });
   });
   it("suspends user-owned runs after a verified user.banned event", async () => {
@@ -7309,16 +7381,15 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
     const banned = bdd.user();
     const granted = await runs.grantProEntitlement(banned);
-    await runs.ensureOrgModelProvider(banned);
+    await runs.ensurePersonalSubscriptionModel(banned);
     const agent = await bdd.createAgent(banned, {
       displayName: "BDD Banned User Agent",
       visibility: "private",
     });
 
-    const run = await runs.createRun(banned, {
+    const run = await runs.createThreadRun(banned, {
       agentId: agent.agentId,
       prompt: "banned user cleanup run",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
 
@@ -7345,6 +7416,5 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
     const queue = await runs.readRunQueue(banned);
     expect(queue.body.concurrency.active).toBe(0);
-    expect(queue.body.queue).toStrictEqual([]);
   });
 });

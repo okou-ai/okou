@@ -52,6 +52,10 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         "你好\"\\\n".repeat(450_000)
     );
     let input = format!("input-head-{SECRET}-{}-input-tail", "x".repeat(LIMIT));
+    // Numeric values reach the traversal bound without becoming reduction
+    // candidates. The final string makes the event oversized after that bound.
+    let mut structure_values = vec![json!(0); 4_100];
+    structure_values.push(json!("x".repeat(LIMIT)));
     let messages = vec![
         assistant(
             "small",
@@ -83,7 +87,7 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         ),
         assistant(
             "structure",
-            json!([{"type":"toolCall","id":"structure-id","name":"read","arguments":{"values":vec![0;2_200_000]}}]),
+            json!([{"type":"toolCall","id":"structure-id","name":"read","arguments":{"values":structure_values}}]),
             false,
         ),
         tool_result("tool-input-id", json!([{"type":"text","text":text}]), true),
@@ -470,8 +474,7 @@ async fn deliver_pi_rpc(
         paths.runtime_dir(),
         &guest_contracts::env::RunPayload {
             prompt: "test bounded Pi delivery".into(),
-            pi_launch_config:
-                r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#.into(),
+            pi_launch_config: r#"{"schemaVersion":2}"#.into(),
             pi_model_config: "{}".into(),
             pi_session_id: session_id.clone(),
             secret_values: secrets

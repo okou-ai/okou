@@ -13,7 +13,7 @@ export const slackMessageCommand = new Command()
     "after",
     `
 Examples:
-  okou slack message send -c <channel-id> -t "Hello!"
+  okou slack message send --to <channel-id> -t "Hello!"
   okou slack message history -c <channel-or-dm-id> --json
   okou slack message replies -c <channel-or-dm-id> --thread <parent-ts> --json`,
   );

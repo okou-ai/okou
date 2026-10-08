@@ -1,32 +1,27 @@
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { command } from "ccstate";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
-import {
-  getBuiltInVisibleModels,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { feishuPlatformUserAgentPreferences } from "@okouai/db/schema/feishu-user-agent-preference";
-import { agents } from "@okouai/db/schema/agent";
+import { command } from "ccstate";
+import { and, eq, isNull, or } from "drizzle-orm";
+import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import {
   buildFeishuHelpMessage,
   buildFeishuLoginMessage,
   buildFeishuNoticeMessage,
 } from "../../lib/feishu-message-card";
-import { logger } from "../../lib/log";
 import {
   formatFeishuMessageContent,
   parseFeishuMessageContent,
   type FeishuPromptFile,
 } from "../../lib/feishu-message-content";
-import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
+import { logger } from "../../lib/log";
+import { nowDate } from "../../lib/time";
+import type { Db } from "../external/db";
 import {
   addFeishuMessageReaction,
   listFeishuMessages,
@@ -34,22 +29,24 @@ import {
   type FeishuHistoryMessage,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
-import type { Db } from "../external/db";
-import { nowDate } from "../../lib/time";
 import { tapError } from "../utils";
-import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
+import {
+  feishuRouteThreadId,
+  findFeishuRoutedChatThreadId$,
+} from "./feishu-chat-ingress.service";
+import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
 import {
-  updateUserModelPreference$,
-  userModelPreference,
-} from "./user-data.service";
+  integrationModelOptionValue,
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 
 const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
-const FEISHU_AGENT_PICKER_MAX_OPTIONS = 100;
 const FEISHU_MODEL_PICKER_MAX_OPTIONS = 100;
 interface FeishuPromptContext {
   readonly text: string;
@@ -87,7 +84,6 @@ export interface FeishuDispatchInstallation {
   readonly defaultAgentId: string;
   readonly botName: string | null;
   readonly messageReceivedAt: Date | null;
-  readonly publicBrand: PublicBrand;
 }
 
 export interface FeishuDispatchConnection {
@@ -98,7 +94,8 @@ export interface FeishuDispatchConnection {
 }
 
 interface FeishuModelOption {
-  readonly model: SupportedRunModel;
+  /** Null is Auto. */
+  readonly model: string | null;
   readonly label: string;
   readonly isDefault: boolean;
 }
@@ -123,10 +120,6 @@ type EffectiveAgentResolution =
   | {
       readonly status: "not_accessible" | "not_found";
     };
-
-function agentLabel(agent: FeishuAgent): string {
-  return agent.displayName ?? agent.name;
-}
 
 function parseFeishuCommand(text: string): FeishuCommand | null {
   const match = /^\/(\S+)(?:\s+(.+))?$/u.exec(text.trim());
@@ -187,7 +180,6 @@ export async function replyToUnconnectedFeishuMessage(
   args: {
     readonly db: Db;
     readonly message: FeishuInboundMessage;
-    readonly publicBrand: PublicBrand;
     readonly botName: string | null;
   },
   signal: AbortSignal,
@@ -227,7 +219,6 @@ export async function replyToUnconnectedFeishuMessage(
     installationId: args.message.installationId,
     openId: args.message.openId,
     chatId: args.message.chatId,
-    publicBrand: args.publicBrand,
   });
   await reply(
     {
@@ -266,100 +257,11 @@ async function getVisibleAgent(args: {
   return agent;
 }
 
-async function getVisibleAgents(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<readonly FeishuAgent[]> {
-  return await args.db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, args.orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-      ),
-    )
-    .orderBy(desc(agents.updatedAt))
-    .limit(FEISHU_AGENT_PICKER_MAX_OPTIONS);
-}
-
-async function getUserAgentPreference(args: {
-  readonly platform: FeishuPlatform;
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<string | null> {
-  const [preference] = await args.db
-    .select({
-      selectedAgentId: feishuPlatformUserAgentPreferences.selectedAgentId,
-    })
-    .from(feishuPlatformUserAgentPreferences)
-    .where(
-      and(
-        eq(feishuPlatformUserAgentPreferences.userId, args.userId),
-        eq(feishuPlatformUserAgentPreferences.orgId, args.orgId),
-        eq(feishuPlatformUserAgentPreferences.platform, args.platform),
-      ),
-    )
-    .limit(1);
-  return preference?.selectedAgentId ?? null;
-}
-
-async function setUserAgentPreference(args: {
-  readonly platform: FeishuPlatform;
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly composeId: string | null;
-}): Promise<void> {
-  await args.db
-    .insert(feishuPlatformUserAgentPreferences)
-    .values({
-      platform: args.platform,
-      userId: args.userId,
-      orgId: args.orgId,
-      selectedAgentId: args.composeId,
-    })
-    .onConflictDoUpdate({
-      target: [
-        feishuPlatformUserAgentPreferences.userId,
-        feishuPlatformUserAgentPreferences.orgId,
-        feishuPlatformUserAgentPreferences.platform,
-      ],
-      set: {
-        selectedAgentId: args.composeId,
-        updatedAt: nowDate(),
-      },
-    });
-}
-
 export async function resolveEffectiveFeishuAgent(args: {
   readonly db: Db;
   readonly installation: FeishuDispatchInstallation;
   readonly connection: FeishuDispatchConnection;
 }): Promise<EffectiveAgentResolution> {
-  const preference = await getUserAgentPreference({
-    platform: args.installation.platform,
-    db: args.db,
-    orgId: args.installation.orgId,
-    userId: args.connection.userId,
-  });
-  if (preference) {
-    const preferredAgent = await getVisibleAgent({
-      db: args.db,
-      composeId: preference,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-    });
-    if (preferredAgent) {
-      return { status: "resolved", agent: preferredAgent };
-    }
-  }
   const composeId = args.installation.defaultAgentId;
   const agent = await getVisibleAgent({
     db: args.db,
@@ -391,7 +293,7 @@ export async function replyFeishuAgentUnavailable(
   const providerName = FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name;
   const text =
     args.status === "not_accessible"
-      ? `The configured agent is not available to your ${providerName} account. Use \`/switch\` to choose an accessible agent.`
+      ? `The configured agent is not available to your ${providerName} account. Ask an admin to update the organization default agent.`
       : `The configured ${providerName} agent could not be found. Ask an admin to select another agent.`;
   await replyNotice(
     {
@@ -650,7 +552,7 @@ export function buildFeishuSystemPrompt(args: {
   const typeLabel = isDirectMessage ? "Direct message" : "Group mention";
   const groupIdLine = isDirectMessage
     ? ""
-    : `Group ID: ${args.chatId} (same as Chat ID; use it directly as the \`--chat\` value for \`okou ${args.platform ?? "feishu"} message send\`)`;
+    : `Group ID: ${args.chatId} (same as Chat ID; use it directly as the \`--to\` value for \`okou ${args.platform ?? "feishu"} message send\`)`;
   const currentIntegration = [
     "# Current Integration",
     `You are currently running inside: ${platformName}`,
@@ -712,38 +614,32 @@ export async function markFeishuMessageReceived(
 
 const feishuModelPickerState$ = command(
   async (
-    { get, set },
+    { set },
     orgId: string,
     userId: string,
+    currentSelectedModel: string | null,
     signal: AbortSignal,
   ): Promise<{
     readonly options: readonly FeishuModelOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
-      set(listOrgModelPolicies$, { orgId, userId }, signal),
-      get(userModelPreference({ orgId, userId })),
-    ]);
+    const runModels = await set(
+      listAvailableRunModels$,
+      { orgId, userId },
+      signal,
+    );
     signal.throwIfAborted();
     return {
-      options: policies.policies
-        .flatMap((policy) => {
-          if (
-            !isSupportedRunModel(policy.model) ||
-            !visibleModels.has(policy.model) ||
-            policy.routeStatus !== "valid"
-          ) {
-            return [];
-          }
+      options: runModels.models
+        .map((runModel) => {
           return {
-            model: policy.model,
-            label: policy.modelLabel,
-            isDefault: policy.isDefault,
+            model: runModel.model,
+            label: runModel.modelLabel,
+            isDefault: runModel.model === null,
           };
         })
         .slice(0, FEISHU_MODEL_PICKER_MAX_OPTIONS),
-      currentSelectedModel: preference.selectedModel,
+      currentSelectedModel,
     };
   },
 );
@@ -755,7 +651,7 @@ function commandOptionsText(args: {
     readonly label: string;
     readonly current: boolean;
   }[];
-  readonly command: "model" | "switch";
+  readonly command: "model";
 }): string {
   return [
     args.intro,
@@ -809,161 +705,46 @@ async function handleDisconnectCommand(
   );
 }
 
-async function replyAgentPicker(
-  args: {
-    readonly commandArgs: ConnectedCommandArgs;
-    readonly agents: readonly FeishuAgent[];
-    readonly defaultAgent: FeishuAgent | undefined;
-    readonly currentPreference: string | null;
-  },
+async function replyModelUnavailable(
+  args: ConnectedCommandArgs,
   signal: AbortSignal,
 ): Promise<void> {
   await replyNotice(
     {
-      db: args.commandArgs.db,
-      message: args.commandArgs.message,
-      title: "Choose an agent",
-      text: commandOptionsText({
-        intro: `Send one of these commands to choose which agent responds to your ${FEISHU_PLATFORMS[args.commandArgs.message.platform ?? "feishu"].name} messages.`,
-        command: "switch",
-        options: [
-          ...(args.defaultAgent
-            ? [
-                {
-                  commandValue: "default",
-                  label: `${agentLabel(args.defaultAgent)} (installation default)`,
-                  current: args.currentPreference === null,
-                },
-              ]
-            : []),
-          ...args.agents
-            .filter((agent) => {
-              return agent.id !== args.commandArgs.installation.defaultAgentId;
-            })
-            .map((agent) => {
-              return {
-                commandValue: agent.id,
-                label: agentLabel(agent),
-                current: args.currentPreference === agent.id,
-              };
-            }),
-        ],
-      }),
+      db: args.db,
+      message: args.message,
+      title: "Model unavailable",
+      text: "You don't have access to that model. Use `/model` to list available models.",
+      kind: "error",
     },
     signal,
   );
 }
 
-async function handleSwitchCommand(
-  args: ConnectedCommandArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  const [agents, defaultAgent, currentPreference] = await Promise.all([
-    getVisibleAgents({
-      db: args.db,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-    }),
-    getVisibleAgent({
-      db: args.db,
-      composeId: args.installation.defaultAgentId,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-    }),
-    getUserAgentPreference({
-      platform: args.installation.platform,
-      db: args.db,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-    }),
-  ]);
-  signal.throwIfAborted();
-  if (!args.command.argument) {
-    await replyAgentPicker(
-      {
-        commandArgs: args,
-        agents,
-        defaultAgent,
-        currentPreference,
-      },
-      signal,
-    );
-    return;
-  }
-  if (args.command.argument.toLowerCase() === "default") {
-    if (!defaultAgent) {
-      await replyNotice(
-        {
-          db: args.db,
-          message: args.message,
-          title: "Agent unavailable",
-          text: "You don't have access to the installation default agent.",
-          kind: "error",
-        },
-        signal,
-      );
-      return;
-    }
-    await setUserAgentPreference({
-      platform: args.installation.platform,
-      db: args.db,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-      composeId: null,
-    });
-    signal.throwIfAborted();
-    await replyNotice(
-      {
-        db: args.db,
-        message: args.message,
-        title: "Agent switched",
-        text: `Switched to **${agentLabel(defaultAgent)}**.`,
-        kind: "success",
-      },
-      signal,
-    );
-    return;
-  }
-  const normalized = args.command.argument.toLowerCase();
-  const selected = agents.find((agent) => {
+function feishuModelCommandOptions(
+  options: readonly FeishuModelOption[],
+  currentSelectedModel: string | null,
+) {
+  return options.map((option) => {
+    return {
+      commandValue: integrationModelOptionValue(option.model),
+      label: `${option.label}${option.isDefault ? " (default)" : ""}`,
+      current: currentSelectedModel === option.model,
+    };
+  });
+}
+
+function findFeishuModelOption(
+  options: readonly FeishuModelOption[],
+  input: string,
+) {
+  const normalized = input.toLowerCase();
+  return options.find((option) => {
     return (
-      agent.id === args.command.argument ||
-      agent.name.toLowerCase() === normalized ||
-      agent.displayName?.toLowerCase() === normalized
+      integrationModelOptionValue(option.model).toLowerCase() === normalized ||
+      option.label.toLowerCase() === normalized
     );
   });
-  if (!selected) {
-    await replyNotice(
-      {
-        db: args.db,
-        message: args.message,
-        title: "Agent unavailable",
-        text: "You don't have access to that agent. Use `/switch` to list available agents.",
-        kind: "error",
-      },
-      signal,
-    );
-    return;
-  }
-  await setUserAgentPreference({
-    platform: args.installation.platform,
-    db: args.db,
-    orgId: args.installation.orgId,
-    userId: args.connection.userId,
-    composeId:
-      selected.id === args.installation.defaultAgentId ? null : selected.id,
-  });
-  signal.throwIfAborted();
-  await replyNotice(
-    {
-      db: args.db,
-      message: args.message,
-      title: "Agent switched",
-      text: `Switched to **${agentLabel(selected)}**.`,
-      kind: "success",
-    },
-    signal,
-  );
 }
 
 const handleModelCommand$ = command(
@@ -972,10 +753,45 @@ const handleModelCommand$ = command(
     args: ConnectedCommandArgs,
     signal: AbortSignal,
   ): Promise<void> => {
+    const chatThreadId = await set(
+      findFeishuRoutedChatThreadId$,
+      {
+        connectionId: args.connection.id,
+        chatId: args.message.chatId,
+        threadId: feishuRouteThreadId(args.message),
+        userId: args.connection.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+        chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (currentModel.kind === "no_thread") {
+      await replyNotice(
+        {
+          db: args.db,
+          message: args.message,
+          title: "No conversation",
+          text: "Start or enter an existing Okou conversation before using /model.",
+          kind: "error",
+        },
+        signal,
+      );
+      return;
+    }
     const picker = await set(
       feishuModelPickerState$,
       args.installation.orgId,
       args.connection.userId,
+      currentModel.selectedModel,
       signal,
     );
     signal.throwIfAborted();
@@ -999,52 +815,53 @@ const handleModelCommand$ = command(
           message: args.message,
           title: "Choose a model",
           text: commandOptionsText({
-            intro: `Send one of these commands to choose the model for your own ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} runs.`,
+            intro: `Send one of these commands to choose the model for this ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} conversation.`,
             command: "model",
-            options: picker.options.map((option) => {
-              return {
-                commandValue: option.model,
-                label: `${option.label}${option.isDefault ? " (workspace default)" : ""}`,
-                current:
-                  picker.currentSelectedModel === option.model ||
-                  (!picker.currentSelectedModel && option.isDefault),
-              };
-            }),
+            options: feishuModelCommandOptions(
+              picker.options,
+              picker.currentSelectedModel,
+            ),
           }),
         },
         signal,
       );
       return;
     }
-    const normalized = args.command.argument.toLowerCase();
-    const selected = picker.options.find((option) => {
-      return (
-        option.model.toLowerCase() === normalized ||
-        option.label.toLowerCase() === normalized
-      );
-    });
+    const selected = findFeishuModelOption(
+      picker.options,
+      args.command.argument,
+    );
     if (!selected) {
-      await replyNotice(
-        {
-          db: args.db,
-          message: args.message,
-          title: "Model unavailable",
-          text: "You don't have access to that model. Use `/model` to list available models.",
-          kind: "error",
-        },
-        signal,
-      );
+      await replyModelUnavailable(args, signal);
       return;
     }
-    await set(
-      updateUserModelPreference$,
+    const threadModel = await set(
+      updateIntegrationChatThreadModel$,
       {
         orgId: args.installation.orgId,
         userId: args.connection.userId,
-        preference: { selectedModel: selected.model, serviceTier: null },
+        chatThreadId,
+        model: selected.model,
       },
       signal,
     );
+    if (threadModel.kind !== "updated") {
+      if (threadModel.kind === "no_thread") {
+        await replyNotice(
+          {
+            db: args.db,
+            message: args.message,
+            title: "No conversation",
+            text: "Start or enter an existing Okou conversation before using /model.",
+            kind: "error",
+          },
+          signal,
+        );
+        return;
+      }
+      await replyModelUnavailable(args, signal);
+      return;
+    }
     signal.throwIfAborted();
     await replyNotice(
       {
@@ -1086,7 +903,7 @@ const handleConnectedCommand$ = command(
             db: args.db,
             message: args.message,
             title: "Already connected",
-            text: `Your ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} account is already connected to ${PUBLIC_BRAND_PRESENTATION.brandName}. Send a task to start working with your agent.`,
+            text: `Your ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} account is already connected to ${BRAND_PRESENTATION.brandName}. Send a task to start working with your agent.`,
             kind: "success",
           },
           signal,
@@ -1095,10 +912,6 @@ const handleConnectedCommand$ = command(
       }
       case "disconnect": {
         await handleDisconnectCommand(args, signal);
-        return;
-      }
-      case "switch": {
-        await handleSwitchCommand(args, signal);
         return;
       }
       case "model": {

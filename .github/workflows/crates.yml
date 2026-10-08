@@ -466,11 +466,11 @@ jobs:
           done
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-llvm-cov@0.9.1
 
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           working-directory: crates/runner/mitm-addon
           enable-cache: true
@@ -599,7 +599,7 @@ jobs:
         with:
           python-version-file: crates/runner/mitm-addon/.python-version
 
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           working-directory: crates/runner/mitm-addon
           enable-cache: true
@@ -637,7 +637,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version-file: crates/runner/mitm-addon/.python-version
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           working-directory: crates/runner/mitm-addon
           enable-cache: true
@@ -714,14 +714,8 @@ jobs:
         env:
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           HOST: ${{ steps.selected-host.outputs.host }}
-          JOB_REF: ${{ needs.detect.outputs.metal-job-ref }}
           RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
-        run: |
-          REMOTE="${METAL_USER}@${HOST}"
-          REMOTE_BIN="/tmp/nbd-cow-test-${JOB_REF}-${RUNNER_HOST_GROUP_ID}"
-          scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
-          # shellcheck disable=SC2029
-          ssh "$REMOTE" "trap 'rm -f ${REMOTE_BIN}' EXIT && sudo modprobe nbd nbds_max=4096 && sudo ${REMOTE_BIN} --ignored --test-threads=1"
+        run: bash .github/scripts/run-nbd-cow-tests.sh
 
       - name: Report peak memory
         if: always()

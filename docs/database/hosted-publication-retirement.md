@@ -142,7 +142,7 @@ column; pointer identity, ownership, status and reference checks remain.
 | Uploaded files / thumbnails     | Deployment ID, site ID, URL and legacy metadata                                          | Preserve external ID, file ID, preview and artifact-reference mappings                                                  |
 | Sharing                         | DB `artifact_shares.target_id` is a **site ID** for HTML; R2 policy selects a deployment | Preserve each share ID, selected target, snapshot, audience and revocation state                                        |
 | Delivery / previews / snapshots | Stored manifests, reference index, aliases, policy and object prefixes                   | Validate original links and authorization against retained byte locations                                               |
-| Erasure                         | Site/deployment ownership, chat scope and existing cascades                              | Preserve deletion scope; never turn a historical group delete into unrelated publication deletion                       |
+| Account deletion                | Site/deployment ownership, chat scope and existing cascades                              | Preserve deletion scope; never turn a historical group delete into unrelated publication deletion                       |
 | ORM / schema                    | Canonical runtime mapping omits the four physical version columns                        | Runtime transition must serve and define the rollback floor before physical contraction                                 |
 
 The Runner itself does not select a hosted publication version, but execution

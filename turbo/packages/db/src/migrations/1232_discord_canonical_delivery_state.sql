@@ -1,0 +1,1 @@
+ALTER TABLE "canonical_asset_deliveries" ADD COLUMN "provider_state" jsonb;

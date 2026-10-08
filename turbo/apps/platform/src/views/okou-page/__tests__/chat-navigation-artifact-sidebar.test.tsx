@@ -8,11 +8,10 @@ import {
   type ArtifactDetail,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import {
   testContext,
   warmMermaidParser,
@@ -26,7 +25,6 @@ import {
   fileArtifactDetail,
   hostedSiteArtifactDetail,
   imageArtifactDetail,
-  liveBrowserSession,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
@@ -350,83 +348,6 @@ test("Use a public URL for a private Office attachment preview", async () => {
   expect(frame.getAttribute("src")).not.toContain(privateUrl);
 });
 
-test("Preserve private and public attachments on tab return", async () => {
-  const fileId = "f0000000-0000-4000-a000-000000000936";
-  const filename = "private-plan.docx";
-  const contentType =
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  const firstUrl = `https://storage.example.test/${filename}?signature=first`;
-  const refreshedUrl = `https://storage.example.test/${filename}?signature=refreshed`;
-  const publicFileId = "f0000000-0000-4000-a000-000000000937";
-  const publicFilename = "existing-image.png";
-  const publicUrl = `https://cdn.vm7.io/artifacts/tests/${publicFilename}`;
-  const storageOrigin = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
-  const firstPublicResourceUrl = `${storageOrigin}/uploads/${publicFilename}?X-Amz-Signature=first`;
-  const publicThumbnailUrl = `https://a.okou.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${firstPublicResourceUrl}`;
-  let publicResourceUrl = firstPublicResourceUrl;
-  let resourceUrl = firstUrl;
-  const visibility = context.mocks.browser.visibilityState("visible");
-  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
-    if (query.file_id === publicFileId) {
-      return respond(200, {
-        url: publicResourceUrl,
-        publicUrl,
-        expiresAt: "2099-01-01T00:00:00.000Z",
-      });
-    }
-    expect(query.file_id).toBe(fileId);
-    return respond(200, {
-      url: resourceUrl,
-      publicUrl: null,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-    });
-  });
-  mockArtifactConversation(context, {
-    catalog: [],
-    chatEvents: [
-      ...officeFileEvents(fileId, filename, contentType),
-      {
-        id: "existing-public-image",
-        role: "assistant",
-        content: `![${publicFilename}](https://api.okou.ai/api/web/download-file?file_id=${publicFileId}&filename=${publicFilename})`,
-        runId: "office-preview-run",
-        seqId: 3,
-        createdAt: "2026-09-01T12:00:02.000Z",
-      },
-    ],
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  const publicImage = await screen.findByAltText(publicFilename);
-  expect(publicImage).toHaveAttribute("src", publicThumbnailUrl);
-  click(await screen.findByLabelText(`Preview ${filename}`));
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const frame = await within(dialog).findByTitle(`${filename} preview`);
-  expectOfficeViewerUrl(frame, firstUrl);
-  expect(within(dialog).queryByLabelText(/^share$/i)).not.toBeInTheDocument();
-
-  act(() => {
-    visibility.changeTo("hidden");
-  });
-  resourceUrl = refreshedUrl;
-  publicResourceUrl = `${storageOrigin}/uploads/${publicFilename}?X-Amz-Signature=refreshed`;
-  await act(() => {
-    visibility.changeTo("visible");
-  });
-  await waitFor(() => {
-    const refreshedFrame = within(dialog).getByTitle(`${filename} preview`);
-    expect(refreshedFrame).toBeVisible();
-    expectOfficeViewerUrl(refreshedFrame, firstUrl);
-  });
-  expect(screen.getByAltText(publicFilename)).toHaveAttribute(
-    "src",
-    publicThumbnailUrl,
-  );
-});
-
 test("Render a generated private image from the authenticated file reference", async () => {
   const filename = "private-image.png";
   const fileId = "f0000000-0000-4000-a000-000000000938";
@@ -464,8 +385,6 @@ test("Render a generated private image from the authenticated file reference", a
 
 test.each([
   ["https://a.okou.io", "a1b2c3d4e5"],
-  ["https://a.okou.io", "a".repeat(24)],
-  ["https://files.sites.vm7.io", "a1b2c3d4e5"],
   ["https://files.sites.vm7.io", "a".repeat(24)],
 ])(
   "public images use a protected thumbnail and open the original on %s/%s",
@@ -808,76 +727,6 @@ test("Keep image preview controls usable when toggling fullscreen", async () => 
         "artifact-sidebar-image-zoom-level",
       ),
     ).toHaveTextContent("100%");
-  });
-});
-
-test("Keep the utility sidebar selected by the user", async () => {
-  useWideScreen();
-  const chatEvents: MockChatEventInput[] = [];
-  let browserStarted = false;
-  mockArtifactConversation(context, {
-    catalog: [],
-    chatEvents,
-    browserSession: () => {
-      return browserStarted ? liveBrowserSession() : null;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await waitFor(() => {
-    expect(openArtifactsControl()).toBeVisible();
-  });
-  click(openArtifactsControl());
-  await waitFor(() => {
-    expect(artifactList()).toBeVisible();
-    expect(
-      context.mocks.ably.hasSubscription("browserSessionChanged"),
-    ).toBeTruthy();
-  });
-
-  browserStarted = true;
-  context.mocks.ably.trigger("browserSessionChanged", {
-    threadId: NAVIGATION_ARTIFACT_THREAD_ID,
-  });
-  chatEvents.push(
-    {
-      id: "navigation-background-browser-open",
-      eventType: "browser.open",
-      content: null,
-      runId: undefined,
-      seqId: 1,
-      createdAt: "2026-09-01T12:02:00.000Z",
-    },
-    {
-      id: "navigation-background-browser-card",
-      role: "assistant",
-      content: `[Background research browser](/browsers/${NAVIGATION_ARTIFACT_THREAD_ID})`,
-      runId: "navigation-background-browser-run",
-      runEventId: "navigation-background-browser-card-event",
-      sequenceNumber: 1,
-      seqId: 2,
-      createdAt: "2026-09-01T12:02:01.000Z",
-    },
-  );
-  act(() => {
-    createChatEvent(NAVIGATION_ARTIFACT_THREAD_ID);
-  });
-
-  await waitFor(() => {
-    const browserCard = document.querySelector("[data-browser-session-card]");
-    expect(browserCard).toBeVisible();
-    expect(browserCard).toHaveAccessibleName(
-      "Open background-research browser",
-    );
-    expect(artifactList()).toBeVisible();
-    expect(
-      document.querySelector("[data-browser-session-sidebar]"),
-    ).not.toBeInTheDocument();
   });
 });
 

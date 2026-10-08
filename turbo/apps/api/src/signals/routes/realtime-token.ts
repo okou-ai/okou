@@ -24,13 +24,14 @@ const createInner$ = command(async ({ set }, signal: AbortSignal) => {
 
   set(setAuthContext$, auth);
 
-  const tokenRequest = await createPlatformRealtimeToken(
+  const token = await createPlatformRealtimeToken(
     auth.userId,
     auth.orgId,
+    signal,
   );
   signal.throwIfAborted();
 
-  return { status: 200 as const, body: tokenRequest };
+  return { status: 200 as const, body: token };
 });
 
 export const realtimeTokenRoutes: readonly RouteEntry[] = [

@@ -10,10 +10,8 @@ const c = initContract();
  * `ai-okou-desktop` is the only line the API still serves. `okou` and `zero`
  * are retired and their `:product` routes answer 404; `zero` is retired harder,
  * because the API can no longer name its manifest at all. They stay in the
- * union because it is not API-private — `apps/desktop/src/config.ts` validates
- * `desktop-identities.json`'s `updateLine` against it, and the desktop `zero`
- * identity that #31372 deliberately kept still declares `updateLine: "zero"`.
- * Keeping them here also lets a retired line answer a truthful 404 rather than
+ * union for installed Electron clients. Keeping them here lets a retired line
+ * answer a truthful 404 rather than
  * a path-param validation error.
  */
 const DESKTOP_UPDATE_LINES = ["zero", "okou", "ai-okou-desktop"] as const;
@@ -75,6 +73,25 @@ export type SquirrelMacReleases = z.infer<typeof squirrelMacReleasesSchema>;
  * invalid"), which stay loud because they need a human.
  */
 export const desktopUpdatesContract = c.router({
+  productAppcast: {
+    method: "GET",
+    path: "/api/desktop/updates/:product/:channel/:platform/:arch/appcast.xml",
+    pathParams: z.object({
+      product: desktopUpdateLineSchema,
+      channel: desktopUpdateChannelSchema,
+      platform: desktopUpdatePlatformSchema,
+      arch: desktopUpdateArchitectureSchema,
+    }),
+    responses: {
+      200: c.otherResponse({
+        contentType: "application/rss+xml",
+        body: z.string(),
+      }),
+      404: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Get the native desktop Sparkle update feed",
+  },
   migrationPolicy: {
     method: "GET",
     path: "/api/desktop/migration-policy",

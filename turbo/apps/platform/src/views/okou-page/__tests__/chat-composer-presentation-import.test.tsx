@@ -104,38 +104,6 @@ test("Import a presentation deck into chat", async () => {
   ).toStrictEqual([]);
 });
 
-test("Import a legacy presentation deck into an existing chat", async () => {
-  const capture = mockTemplateChat();
-  context.mocks.upload.success({
-    id: "81000000-0000-4000-a000-000000000002",
-    filename: "legacy-deck.ppt",
-    contentType: "application/vnd.ms-powerpoint",
-    size: 6,
-    url: "https://cdn.example.test/legacy-deck.ppt",
-  });
-  const user = userEvent.setup();
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await importDeck(
-    user,
-    new File(["legacy"], "legacy-deck.ppt", {
-      type: "application/vnd.ms-powerpoint",
-    }),
-  );
-  await waitFor(() => {
-    expect(capture.sentMessages).toHaveLength(1);
-  });
-  const file = uploadedFilePart(capture.sentMessages[0]!);
-  expect(file.filenameSnapshot).toBe("legacy-deck.ppt");
-  expect(file.contentType).toBe("application/vnd.ms-powerpoint");
-  expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
-});
-
 test("Import a presentation deck from a new chat", async () => {
   const capture = mockTemplateChat();
   context.mocks.upload.success({

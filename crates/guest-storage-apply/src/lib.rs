@@ -48,6 +48,7 @@ mod download;
 mod error;
 mod files;
 mod http_failure;
+pub mod input_telemetry;
 mod instructions;
 mod manifest;
 mod path;
@@ -109,15 +110,29 @@ pub fn run_manifest_bytes(manifest_json: &[u8]) -> bool {
 
 /// Apply bounded binary storage input after validating all mount bindings and files.
 pub fn run_storage_files_bytes(input: &[u8]) -> bool {
+    use input_telemetry::{InputPhase, measure_phase, record_payload_size};
+
     let parsed = (|| {
-        let (json, payload) = guest_contracts::storage_files::split_input(input)?;
-        let manifest = manifest::parse(json)
-            .map_err(|_| std::io::Error::other("invalid storage manifest JSON"))?;
-        let files = guest_contracts::storage_files::decode(payload)?;
-        guest_contracts::storage_files::validate_bindings(
-            &manifest,
-            files.iter().map(|group| group.mount_path.as_str()),
-        )?;
+        let framed = measure_phase(InputPhase::Frame, || {
+            guest_contracts::storage_files::split_input(input)
+        });
+        // Framing returns the actual binary payload slice; an invalid frame
+        // cannot be treated as a zero-byte payload.
+        record_payload_size(framed.as_ref().ok().map(|(_, payload)| payload.len()));
+        let (json, payload) = framed?;
+        let manifest = measure_phase(InputPhase::Parse, || {
+            manifest::parse(json)
+                .map_err(|_| std::io::Error::other("invalid storage manifest JSON"))
+        })?;
+        let files = measure_phase(InputPhase::DecodeValidate, || {
+            guest_contracts::storage_files::decode(payload)
+        })?;
+        measure_phase(InputPhase::Bindings, || {
+            guest_contracts::storage_files::validate_bindings(
+                &manifest,
+                files.iter().map(|group| group.mount_path.as_str()),
+            )
+        })?;
         Ok::<_, std::io::Error>((manifest, files))
     })();
     match parsed {

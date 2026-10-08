@@ -12,7 +12,8 @@ pub(super) fn prepare_socket_paths(sandbox: &mut FirecrackerSandbox, dir: &Path)
 }
 
 struct BindObserver {
-    path: PathBuf,
+    rpc_path: PathBuf,
+    duplex_path: PathBuf,
     observed: bool,
 }
 
@@ -20,10 +21,12 @@ impl SandboxStartObserver for BindObserver {
     fn record_stage(&mut self, stage: SandboxStartStage, _duration: Duration, success: bool) {
         if stage == SandboxStartStage::BackendLaunch {
             assert!(!success);
-            assert_eq!(
-                std::fs::metadata(&self.path).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
+            for path in [&self.rpc_path, &self.duplex_path] {
+                assert_eq!(
+                    std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
             self.observed = true;
         }
     }
@@ -47,7 +50,8 @@ async fn fresh_and_restore_entrypoints_bind_before_backend_launch_and_clean_up_o
             });
         }
         let mut observer = BindObserver {
-            path: sandbox.sock_paths.guest_rpc(),
+            rpc_path: sandbox.sock_paths.guest_rpc(),
+            duplex_path: sandbox.sock_paths.guest_duplex(),
             observed: false,
         };
         let error = sandbox
@@ -61,9 +65,26 @@ async fn fresh_and_restore_entrypoints_bind_before_backend_launch_and_clean_up_o
             "COW device"
         }));
         assert!(observer.observed);
-        assert!(!observer.path.exists());
+        assert!(!observer.rpc_path.exists());
+        assert!(!observer.duplex_path.exists());
         assert!(sandbox.guest_rpc("run-a").is_none());
+        assert!(sandbox.guest_duplex("run-a").is_none());
     }
+}
+
+#[tokio::test]
+async fn duplex_bind_collision_cleans_new_rpc_without_unlinking_existing_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut sandbox = test_sandbox_with_state(SandboxState::Created);
+    prepare_socket_paths(&mut sandbox, dir.path());
+    sandbox.bind_run_control("run-a").unwrap();
+    let duplex_path = sandbox.sock_paths.guest_duplex();
+    let existing = tokio::net::UnixListener::bind(&duplex_path).unwrap();
+    let err = sandbox.start().await.unwrap_err();
+    assert!(err.to_string().contains("bind private Guest channel"));
+    assert!(!sandbox.sock_paths.guest_rpc().exists());
+    assert!(duplex_path.exists());
+    drop(existing);
 }
 
 #[tokio::test]
@@ -74,15 +95,20 @@ async fn sandbox_stop_kill_and_drop_remove_the_owned_endpoint() {
         prepare_socket_paths(&mut sandbox, dir.path());
         sandbox.park_coordinator.bind_run_control("run-a").unwrap();
         sandbox.guest_rpc_endpoint = Some(sandbox.bind_guest_rpc_endpoint().unwrap());
+        sandbox.guest_duplex_endpoint = Some(sandbox.bind_guest_duplex_endpoint().unwrap());
         let path = sandbox.sock_paths.guest_rpc();
+        let duplex_path = sandbox.sock_paths.guest_duplex();
         let stale = sandbox.guest_rpc("run-a").unwrap();
+        let stale_duplex = sandbox.guest_duplex("run-a").unwrap();
         match operation {
             "stop" => sandbox.stop().await.unwrap(),
             "kill" => sandbox.kill().await.unwrap(),
             _ => drop(sandbox),
         }
         assert!(!path.exists());
+        assert!(!duplex_path.exists());
         assert!(stale.accept().await.is_err());
+        assert!(stale_duplex.accept().await.is_err());
     }
 }
 
@@ -172,7 +198,7 @@ async fn park_rpc_sandbox(sandbox: &mut FirecrackerSandbox, peer: &mut UnixStrea
 }
 
 #[tokio::test]
-async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
+async fn successful_park_variants_replace_both_guest_endpoint_epochs_before_resume() {
     for (memory_mb, final_exec, handoff, blank) in [balloon::MIN_GUEST_MIB, 4096]
         .into_iter()
         .flat_map(|memory_mb| {
@@ -188,12 +214,16 @@ async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
         let dir = tempfile::tempdir().unwrap();
         let (mut sandbox, mut peer) = running_rpc_sandbox(dir.path()).await;
         sandbox.config.resources.memory_mb = memory_mb;
+        sandbox.guest_duplex_endpoint = Some(sandbox.bind_guest_duplex_endpoint().unwrap());
         let path = sandbox.sock_paths.guest_rpc();
+        let duplex_path = sandbox.sock_paths.guest_duplex();
         let observed_path = path.clone();
+        let observed_duplex_path = duplex_path.clone();
         let target = Arc::new(AtomicU32::new(0));
         let paused = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let mut api = MockFirecrackerApi::with_handler(move |request| {
             let path = observed_path.clone();
+            let duplex_path = observed_duplex_path.clone();
             let target = Arc::clone(&target);
             let paused = Arc::clone(&paused);
             async move {
@@ -220,17 +250,20 @@ async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
                 if mock_request_body_json(&request)["state"] == "Paused" {
                     paused.store(true, Ordering::Relaxed);
                 }
-                // Both the original pause and the subsequent resume must have
-                // their own privately bound RPC endpoint before the API call.
-                assert_eq!(
-                    std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
-                    0o600
-                );
+                // Both endpoints must be bound before the original pause and
+                // before the resumed Guest can attempt a new connection.
+                for path in [path, duplex_path] {
+                    assert_eq!(
+                        std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                        0o600
+                    );
+                }
                 MockResponse::no_content()
             }
         });
         std::os::unix::fs::symlink(api.socket_path(), sandbox.sock_paths.api_sock()).unwrap();
         let stale = sandbox.guest_rpc("run-a").unwrap();
+        let stale_duplex = sandbox.guest_duplex("run-a").unwrap();
         let mut pending = Box::pin(stale.accept());
         assert!(futures_util::poll!(pending.as_mut()).is_pending());
         // Queue a connection without admitting it. It must not survive reuse.
@@ -325,7 +358,9 @@ async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
         );
         assert!(sandbox.park_fence.is_some());
         assert!(!path.exists());
+        assert!(!duplex_path.exists());
         assert!(sandbox.guest_rpc("run-a").is_none());
+        assert!(sandbox.guest_duplex("run-a").is_none());
         assert!(
             tokio::time::timeout(Duration::from_secs(1), pending)
                 .await
@@ -341,10 +376,12 @@ async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
             assert_eq!(request.msg_type, guest_control_proto::MSG_RESUME_OPERATIONS);
             // Running handoff has no VM resume API call at which to check this.
             // Every variant must bind its fresh private endpoint before Guest resume.
-            assert_eq!(
-                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
+            for path in [&path, &duplex_path] {
+                assert_eq!(
+                    std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
             assert!(coordinator.ensure_operation_start_allowed().is_err());
             peer.write_all(
                 &guest_control_proto::encode(
@@ -362,7 +399,35 @@ async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
         assert!(!sandbox.is_parked);
         assert!(sandbox.park_fence.is_none());
         assert!(stale.accept().await.is_err());
+        assert!(stale_duplex.accept().await.is_err());
         assert!(sandbox.guest_rpc("run-a").unwrap().accept().await.is_err());
+        assert!(
+            sandbox
+                .guest_duplex("run-a")
+                .unwrap()
+                .accept()
+                .await
+                .is_err()
+        );
+        let mut duplex_peer = UnixStream::connect(&duplex_path).await.unwrap();
+        assert_eq!(
+            duplex_peer.read_u8().await.unwrap(),
+            guest_contracts::private_duplex::READY
+        );
+        let acceptor = sandbox.guest_duplex("run-b").unwrap();
+        let (accepted_duplex, ()) = tokio::join!(acceptor.accept(), async {
+            assert_eq!(
+                duplex_peer.read_u8().await.unwrap(),
+                guest_contracts::private_duplex::ACTIVATE
+            );
+            duplex_peer
+                .write_all(&[guest_contracts::private_duplex::ACTIVATED])
+                .await
+                .unwrap();
+        });
+        let accepted_duplex = accepted_duplex.unwrap();
+        assert_eq!(accepted_duplex.sandbox_id, sandbox.id());
+        drop(accepted_duplex);
         let mut new_peer = UnixStream::connect(&path).await.unwrap();
         new_peer.write_all(b"new").await.unwrap();
         let mut accepted = sandbox.guest_rpc("run-b").unwrap().accept().await.unwrap();
@@ -377,7 +442,9 @@ async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
         assert_eq!(&bytes, b"new");
         assert!(!accepted.cancelled.is_cancelled());
         drop(stale);
+        drop(stale_duplex);
         assert!(path.exists());
+        assert!(duplex_path.exists());
         let requests = api.drain_requests();
         if handoff {
             assert!(
@@ -640,16 +707,21 @@ async fn blank_park_pause_failure_does_not_publish_a_reusable_sandbox() {
 }
 
 #[tokio::test]
-async fn failed_unpark_removes_the_new_rpc_endpoint() {
+async fn failed_unpark_removes_both_new_guest_endpoints() {
     for fail_guest_resume in [false, true] {
         let dir = tempfile::tempdir().unwrap();
         let (mut sandbox, mut peer) = running_rpc_sandbox(dir.path()).await;
+        sandbox.guest_duplex_endpoint = Some(sandbox.bind_guest_duplex_endpoint().unwrap());
         let path = sandbox.sock_paths.guest_rpc();
+        let duplex_path = sandbox.sock_paths.guest_duplex();
         let observed_path = path.clone();
+        let observed_duplex_path = duplex_path.clone();
         let api = MockFirecrackerApi::with_handler(move |request| {
             let path = observed_path.clone();
+            let duplex_path = observed_duplex_path.clone();
             async move {
                 assert!(path.exists());
+                assert!(duplex_path.exists());
                 if mock_request_body_json(&request)["state"] == "Resumed" && !fail_guest_resume {
                     MockResponse::bad_request_fault("resume rejected")
                 } else {
@@ -679,15 +751,19 @@ async fn failed_unpark_removes_the_new_rpc_endpoint() {
             })
         ));
         assert!(!path.exists());
+        assert!(!duplex_path.exists());
         assert!(sandbox.guest_rpc("run-b").is_none());
+        assert!(sandbox.guest_duplex("run-b").is_none());
         assert!(UnixStream::connect(path).await.is_err());
+        assert!(UnixStream::connect(duplex_path).await.is_err());
     }
 }
 
 #[tokio::test]
-async fn cancelling_unpark_cleans_up_its_locally_owned_rpc_endpoint() {
+async fn cancelling_unpark_cleans_up_both_locally_owned_guest_endpoints() {
     let dir = tempfile::tempdir().unwrap();
     let (mut sandbox, mut peer) = running_rpc_sandbox(dir.path()).await;
+    sandbox.guest_duplex_endpoint = Some(sandbox.bind_guest_duplex_endpoint().unwrap());
     let mut api = MockFirecrackerApi::with_handler(|request| async move {
         if mock_request_body_json(&request)["state"] == "Resumed" {
             std::future::pending::<MockResponse>().await
@@ -700,14 +776,19 @@ async fn cancelling_unpark_cleans_up_its_locally_owned_rpc_endpoint() {
     api.drain_requests();
     sandbox.bind_run_control("run-b").unwrap();
     let path = sandbox.sock_paths.guest_rpc();
+    let duplex_path = sandbox.sock_paths.guest_duplex();
     let mut unpark = Box::pin(sandbox.unpark());
     tokio::select! {
         request = api.next_request() => assert_eq!(mock_request_body_json(&request)["state"], "Resumed"),
         result = &mut unpark => panic!("unpark completed before cancellation: {result:?}"),
     }
     assert!(path.exists());
+    assert!(duplex_path.exists());
     drop(unpark);
     assert!(!path.exists());
+    assert!(!duplex_path.exists());
     assert!(sandbox.guest_rpc("run-b").is_none());
+    assert!(sandbox.guest_duplex("run-b").is_none());
     assert!(UnixStream::connect(path).await.is_err());
+    assert!(UnixStream::connect(duplex_path).await.is_err());
 }

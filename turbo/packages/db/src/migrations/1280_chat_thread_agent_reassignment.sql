@@ -1,0 +1,1 @@
+ALTER TABLE "chat_thread_events" ADD COLUMN "reassigned_agent_id" uuid;

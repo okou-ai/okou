@@ -12,17 +12,15 @@ import {
   captureSourceOnboardingPromptEdited$,
   captureSourceOnboardingStartClicked$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
-import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
+import { runOnboardingRequest$ } from "../../signals/onboarding/onboarding-actions.ts";
 import {
   updateSourcesFirstDraft$,
   type SourcesFirstDraft,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { searchParams$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { useOnboardingNavigation } from "../onboarding/onboarding-navigation.ts";
 import { ONBOARDING_TEXTAREA_CLASS } from "../onboarding/onboarding-shell.tsx";
 import {
   pickStartingPromptSource,
@@ -32,9 +30,10 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 const STARTING_PROMPT_MAX_LENGTH = 1000;
-const SUPPORT_EMAIL = "support@okou.ai";
 const CELEBRATION_URL =
   "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_640.png";
+const CELEBRATION_2X_URL =
+  "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_1280.png";
 
 function isOnboardingSourceSlug(slug: string): boolean {
   return ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS.some((sourceSlug) => {
@@ -161,16 +160,14 @@ export function OnboardingReadyPage() {
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const capturePromptEdited = useSet(captureSourceOnboardingPromptEdited$);
   const captureStartClicked = useSet(captureSourceOnboardingStartClicked$);
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const catalogLoadable = useLastLoadable(onboardingSourceConnectors$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
   const pageSignal = useGet(pageSignal$);
-  const searchParams = useGet(searchParams$);
-  const [completeLoadable, complete] = useLoadableSet(completeOnboarding$);
-  const { runPrompt } = useOnboardingNavigation();
+  const [runLoadable, runRequest] = useLoadableSet(runOnboardingRequest$);
 
   const connected =
     catalogLoadable.state === "hasData"
-      ? catalogLoadable.data.connectors.filter((connector) => {
+      ? catalogLoadable.data.filter((connector) => {
           return (
             isOnboardingSourceSlug(connector.slug) &&
             (connector.connected || justConnected.has(connector.slug))
@@ -203,24 +200,6 @@ export function OnboardingReadyPage() {
       source?.label ?? null,
     );
 
-  /**
-   * Finishing the flow is what marks onboarding complete, so the request goes
-   * out before the first prompt: otherwise `needsOnboarding` stays true and the
-   * bootstrap guard returns the user here on the next load. A member has no
-   * completion of their own to record — the route is admin-only by design — so
-   * their run goes straight to the prompt. When completion fails the rejected
-   * command keeps the user on this step, with the button ready to try again.
-   */
-  const completeAndRun = async (request: string): Promise<void> => {
-    if (flow.flow === "owner") {
-      await complete(
-        searchParams.get("redeemCode")?.trim() || null,
-        pageSignal,
-      );
-    }
-    runPrompt(request);
-  };
-
   return (
     <OnboardingStepLayout
       currentStep={flow.currentStep}
@@ -238,32 +217,22 @@ export function OnboardingReadyPage() {
         const request = text.trim();
         // The request's length, never the request itself.
         captureStartClicked(request.length);
-        detach(completeAndRun(request), Reason.DomCallback);
+        // Starting it completes onboarding first: an owner completes the
+        // workspace's onboarding; a member completes only their own.
+        detach(runRequest(request, null, pageSignal), Reason.DomCallback);
       }}
       primaryDisabled={isLoading || text.trim().length === 0}
-      primaryBusy={completeLoadable.state === "loading"}
+      primaryBusy={runLoadable.state === "loading"}
       onBack={flow.goBack}
-      footnote={
-        <>
-          {t(($) => {
-            return $.onboarding.sourcesFirst.welcome.offerTitle;
-          })}{" "}
-          <a
-            className="text-brand-text hover:text-brand-text-hover"
-            href={`mailto:${SUPPORT_EMAIL}`}
-          >
-            {SUPPORT_EMAIL}
-          </a>
-        </>
-      }
     >
       {/* One column on the step's own sheet: the welcome, then the request it
           starts with. */}
       <div className="mx-auto flex w-full max-w-[520px] flex-col">
         <img
           src={CELEBRATION_URL}
+          srcSet={`${CELEBRATION_2X_URL} 2x`}
           alt=""
-          className="mx-auto h-[104px] max-w-full object-contain"
+          className="mx-auto h-40 max-w-full object-contain"
         />
         <StartingPromptPanel
           isLoading={isLoading}

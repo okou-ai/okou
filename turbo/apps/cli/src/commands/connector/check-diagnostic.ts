@@ -1,4 +1,11 @@
-import type { Command } from "commander";
+import { InvalidArgumentError, Option, type Command } from "commander";
+import {
+  AWS_PREDICATE_VALUE_RE,
+  AWS_QUERY_KEY_RE,
+  AWS_QUERY_VALUE_RE,
+  AWS_S3_PERMISSION_HEADER_NAMES,
+  isSensitiveAwsDiagnosticQueryKey,
+} from "@okouai/connectors/firewall-expander";
 import type {
   ConnectorCheckTargetAwareDiagnosticResult,
   ConnectorCheckRequestBody,
@@ -7,6 +14,9 @@ import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/run
 import { isComputerUsePermissionTarget } from "./computer-use-guidance";
 import { customConnectorIdFromSelector } from "./custom-connector-guidance";
 
+export const AWS_INCOMPLETE_CONTEXT_GUIDANCE =
+  "AWS operation context is insufficient to identify a permission. Re-run with --aws-service and --aws-action, --aws-target, or applicable --aws-query-param/--aws-header-present selectors. Do not request __unknown__ from this incomplete check.";
+
 export interface CheckConnectorOptions {
   readonly json?: boolean;
   readonly connector?: string;
@@ -14,6 +24,67 @@ export interface CheckConnectorOptions {
   readonly url?: string;
   readonly method: string;
   readonly checkPermission?: string;
+  readonly awsService?: string;
+  readonly awsAction?: string;
+  readonly awsTarget?: string;
+  readonly awsQueryParam?: readonly string[];
+  readonly awsHeaderPresent?: readonly string[];
+}
+
+const AWS_S3_PERMISSION_HEADER_NAME_SET = new Set<string>(
+  AWS_S3_PERMISSION_HEADER_NAMES,
+);
+type AwsS3PermissionHeaderName =
+  (typeof AWS_S3_PERMISSION_HEADER_NAMES)[number];
+
+function collectRepeatedOption(
+  value: string,
+  previous: string[] = [],
+): string[] {
+  return [...previous, value];
+}
+
+function collectUniqueAwsOption(flag: string) {
+  return (value: string, previous: string | undefined): string => {
+    if (previous !== undefined) {
+      throw new InvalidArgumentError(`${flag} cannot be repeated.`);
+    }
+    return value;
+  };
+}
+
+export function addAwsDiagnosticOptions(command: Command): Command {
+  return command
+    .addOption(
+      new Option(
+        "--aws-service <SERVICE>",
+        "Explicit AWS SigV4 signing service; required with AWS selectors",
+      ).argParser(collectUniqueAwsOption("--aws-service")),
+    )
+    .addOption(
+      new Option(
+        "--aws-action <ACTION>",
+        "AWS Query API Action selector",
+      ).argParser(collectUniqueAwsOption("--aws-action")),
+    )
+    .addOption(
+      new Option(
+        "--aws-target <TARGET>",
+        "AWS JSON X-Amz-Target selector (mutually exclusive with --aws-action)",
+      ).argParser(collectUniqueAwsOption("--aws-target")),
+    )
+    .addOption(
+      new Option(
+        "--aws-query-param <KEY[=VALUE]>",
+        "Exact AWS query selector; repeat for additional keys; values must not be secret",
+      ).argParser(collectRepeatedOption),
+    )
+    .addOption(
+      new Option(
+        "--aws-header-present <NAME>",
+        "Allowlisted S3 permission-selector header name only; repeat as needed",
+      ).argParser(collectRepeatedOption),
+    );
 }
 
 type ValidatedCheckConnectorOptions = CheckConnectorOptions &
@@ -63,6 +134,199 @@ function rawUrlAuthorityHasUserinfo(url: string): boolean {
   return url.slice(authorityStart, authorityEnd).includes("@");
 }
 
+function parseAwsQueryParam(value: string): {
+  readonly key: string;
+  readonly value?: string;
+} {
+  const separator = value.indexOf("=");
+  const key = separator === -1 ? value : value.slice(0, separator);
+  const queryValue = separator === -1 ? undefined : value.slice(separator + 1);
+  if (isSensitiveAwsDiagnosticQueryKey(key)) {
+    throw new Error(
+      "AWS authentication query parameters cannot be diagnostic selectors.",
+    );
+  }
+  if (
+    !AWS_QUERY_KEY_RE.test(key) ||
+    key.length > 128 ||
+    (queryValue !== undefined &&
+      (queryValue === "" ||
+        queryValue.length > 256 ||
+        (queryValue !== "*" && !AWS_QUERY_VALUE_RE.test(queryValue))))
+  ) {
+    throw new Error(
+      "Invalid --aws-query-param value. Use KEY or KEY=VALUE with a bounded AWS selector value.",
+    );
+  }
+  return queryValue === undefined ? { key } : { key, value: queryValue };
+}
+
+function hasAwsDiagnosticSelectors(
+  options: Pick<
+    CheckConnectorOptions,
+    | "awsService"
+    | "awsAction"
+    | "awsTarget"
+    | "awsQueryParam"
+    | "awsHeaderPresent"
+  >,
+): boolean {
+  return (
+    options.awsService !== undefined ||
+    options.awsAction !== undefined ||
+    options.awsTarget !== undefined ||
+    (options.awsQueryParam?.length ?? 0) > 0 ||
+    (options.awsHeaderPresent?.length ?? 0) > 0
+  );
+}
+
+function requireAwsService(value: string | undefined): string {
+  if (
+    value === undefined ||
+    value.length === 0 ||
+    value.length > 128 ||
+    !AWS_PREDICATE_VALUE_RE.test(value)
+  ) {
+    throw new Error(
+      "--aws-service is required when AWS selectors are used and must be a valid SigV4 service name.",
+    );
+  }
+  return value;
+}
+
+function validateAwsActionAndTarget(
+  action: string | undefined,
+  target: string | undefined,
+): void {
+  if (
+    action !== undefined &&
+    (action.length === 0 ||
+      action.length > 256 ||
+      !AWS_PREDICATE_VALUE_RE.test(action))
+  ) {
+    throw new Error("--aws-action must be a valid bounded AWS action name.");
+  }
+  if (
+    target !== undefined &&
+    (target.length === 0 ||
+      target.length > 256 ||
+      !AWS_PREDICATE_VALUE_RE.test(target))
+  ) {
+    throw new Error("--aws-target must be a valid bounded AWS target name.");
+  }
+  if (action !== undefined && target !== undefined) {
+    throw new Error("--aws-action and --aws-target cannot be combined.");
+  }
+}
+
+function parseAwsQuerySelectors(
+  inputs: readonly string[],
+  action: string | undefined,
+  target: string | undefined,
+): { readonly key: string; readonly value?: string }[] {
+  if (inputs.length > 32) {
+    throw new Error("--aws-query-param can be supplied at most 32 times.");
+  }
+  const query = inputs.map(parseAwsQueryParam);
+  const queryKeys = new Set<string>();
+  for (const selector of query) {
+    if (queryKeys.has(selector.key)) {
+      throw new Error(
+        `--aws-query-param cannot repeat the key "${selector.key}".`,
+      );
+    }
+    queryKeys.add(selector.key);
+  }
+
+  const actionSelectors = query.filter((selector) => {
+    return selector.key === "Action";
+  });
+  if (
+    action !== undefined &&
+    actionSelectors.length > 0 &&
+    (actionSelectors.length !== 1 || actionSelectors[0]?.value !== action)
+  ) {
+    throw new Error(
+      "--aws-query-param Action conflicts with --aws-action; provide the same value or omit the query selector.",
+    );
+  }
+  if (target !== undefined && actionSelectors.length > 0) {
+    throw new Error("--aws-query-param Action conflicts with --aws-target.");
+  }
+  return query;
+}
+
+function parseAwsHeaderNames(
+  inputs: readonly string[],
+  service: string,
+  action: string | undefined,
+  target: string | undefined,
+): AwsS3PermissionHeaderName[] {
+  const headerNames: AwsS3PermissionHeaderName[] = [];
+  const seenHeaderNames = new Set<string>();
+  for (const input of inputs) {
+    if (!AWS_S3_PERMISSION_HEADER_NAME_SET.has(input)) {
+      throw new Error(
+        `Unsupported --aws-header-present name "${input}". Only allowlisted S3 permission-selector header names are accepted.`,
+      );
+    }
+    const headerName = input as AwsS3PermissionHeaderName;
+    if (seenHeaderNames.has(headerName)) {
+      throw new Error(
+        `--aws-header-present cannot repeat the name "${headerName}".`,
+      );
+    }
+    seenHeaderNames.add(headerName);
+    headerNames.push(headerName);
+  }
+  if (
+    headerNames.length > 0 &&
+    (service !== "s3" || action !== undefined || target !== undefined)
+  ) {
+    throw new Error(
+      "--aws-header-present is supported only for actionless S3 diagnostics.",
+    );
+  }
+  return headerNames;
+}
+
+function awsSelectorsFromOptions(
+  options: Pick<
+    CheckConnectorOptions,
+    | "awsService"
+    | "awsAction"
+    | "awsTarget"
+    | "awsQueryParam"
+    | "awsHeaderPresent"
+  >,
+): UrlDiagnosticRequest["aws"] {
+  const queryInputs = options.awsQueryParam ?? [];
+  const headerInputs = options.awsHeaderPresent ?? [];
+  if (!hasAwsDiagnosticSelectors(options)) return undefined;
+
+  const service = requireAwsService(options.awsService);
+  validateAwsActionAndTarget(options.awsAction, options.awsTarget);
+  const query = parseAwsQuerySelectors(
+    queryInputs,
+    options.awsAction,
+    options.awsTarget,
+  );
+  const headerNames = parseAwsHeaderNames(
+    headerInputs,
+    service,
+    options.awsAction,
+    options.awsTarget,
+  );
+
+  return {
+    sigv4Service: service,
+    ...(options.awsAction === undefined ? {} : { action: options.awsAction }),
+    ...(options.awsTarget === undefined ? {} : { target: options.awsTarget }),
+    ...(query.length === 0 ? {} : { query }),
+    ...(headerNames.length === 0 ? {} : { headerNames }),
+  };
+}
+
 export function validateDiagnosticUrl(url: string): void {
   if (rawUrlAuthorityHasUserinfo(url)) {
     throw unsafeInputError("invalid-url");
@@ -74,18 +338,42 @@ function shellQuoteArg(value: string): string {
 }
 
 function connectorSelectionCommand(
-  url: string,
-  method: string,
+  request: UrlDiagnosticRequest,
   selector: string,
 ): string {
   const args = [
-    `--url ${shellQuoteArg(url)}`,
+    `--url ${shellQuoteArg(request.url)}`,
     `--connector ${shellQuoteArg(selector)}`,
   ];
-  if (method !== "GET") {
-    args.push(`--method ${shellQuoteArg(method)}`);
+  if (request.method !== "GET") {
+    args.push(`--method ${shellQuoteArg(request.method)}`);
   }
+  appendAwsSelectorCommandArgs(args, request.aws);
   return `okou connector check ${args.join(" ")}`;
+}
+
+function appendAwsSelectorCommandArgs(
+  args: string[],
+  aws: UrlDiagnosticRequest["aws"],
+): void {
+  if (aws === undefined) return;
+  args.push(`--aws-service ${shellQuoteArg(aws.sigv4Service)}`);
+  if (aws.action !== undefined) {
+    args.push(`--aws-action ${shellQuoteArg(aws.action)}`);
+  }
+  if (aws.target !== undefined) {
+    args.push(`--aws-target ${shellQuoteArg(aws.target)}`);
+  }
+  for (const selector of aws.query ?? []) {
+    const value =
+      selector.value === undefined
+        ? selector.key
+        : `${selector.key}=${selector.value}`;
+    args.push(`--aws-query-param ${shellQuoteArg(value)}`);
+  }
+  for (const headerName of aws.headerNames ?? []) {
+    args.push(`--aws-header-present ${shellQuoteArg(headerName)}`);
+  }
 }
 
 function connectorSelector(target: ConnectorRuntimeTarget): string {
@@ -120,6 +408,10 @@ export function validateCheckConnectorOptions(
   if (opts.url !== undefined) {
     validateDiagnosticUrl(opts.url);
   }
+  const aws = awsSelectorsFromOptions(opts);
+  if (aws !== undefined && !hasUrl) {
+    throw new Error("AWS diagnostic selectors can only be used with --url.");
+  }
   if (opts.connector !== undefined && !hasUrl) {
     throw new Error(
       "--connector can only be used with --url. Add --url <URL> or remove --connector.",
@@ -150,8 +442,14 @@ export function buildConnectorUrlDiagnosticRequest(args: {
   readonly method: string;
   readonly connector?: string;
   readonly environmentName?: string;
+  readonly awsService?: string;
+  readonly awsAction?: string;
+  readonly awsTarget?: string;
+  readonly awsQueryParam?: readonly string[];
+  readonly awsHeaderPresent?: readonly string[];
 }): UrlDiagnosticRequest {
   validateDiagnosticUrl(args.url);
+  const aws = awsSelectorsFromOptions(args);
   const customConnectorId = customConnectorIdFromSelector(args.connector);
   const selection =
     customConnectorId !== undefined
@@ -164,6 +462,7 @@ export function buildConnectorUrlDiagnosticRequest(args: {
     method: args.method.toUpperCase(),
     url: stripUrlQueryAndFragment(args.url),
     ...selection,
+    ...(aws === undefined ? {} : { aws }),
     ...(args.environmentName !== undefined
       ? { environmentName: args.environmentName }
       : {}),
@@ -180,6 +479,15 @@ export function buildDiagnosticRequest(
       url: opts.url,
       connector: opts.connector,
       environmentName: opts.envName,
+      ...(opts.awsService === undefined ? {} : { awsService: opts.awsService }),
+      ...(opts.awsAction === undefined ? {} : { awsAction: opts.awsAction }),
+      ...(opts.awsTarget === undefined ? {} : { awsTarget: opts.awsTarget }),
+      ...(opts.awsQueryParam === undefined
+        ? {}
+        : { awsQueryParam: opts.awsQueryParam }),
+      ...(opts.awsHeaderPresent === undefined
+        ? {}
+        : { awsHeaderPresent: opts.awsHeaderPresent }),
     });
   }
 
@@ -247,7 +555,7 @@ function ambiguousConnectorError(
     );
   });
   const commands = candidates.map((candidate) => {
-    return `  ${connectorSelectionCommand(request.url, request.method, connectorSelector(candidate.target))}`;
+    return `  ${connectorSelectionCommand(request, connectorSelector(candidate.target))}`;
   });
   return new Error(
     `Multiple connectors match ${request.method} ${request.url}: ${candidates
@@ -297,7 +605,7 @@ function connectorMismatchError(
       : (("connectorSlug" in request ? request.connectorSlug : undefined) ??
         "the requested connector");
   return new Error(
-    `Connector ${requestedSlug} does not own ${request.method} ${request.url}; the matching connector is ${connectorSelector(result.connector.target)}\nRun: ${connectorSelectionCommand(request.url, request.method, connectorSelector(result.connector.target))}`,
+    `Connector ${requestedSlug} does not own ${request.method} ${request.url}; the matching connector is ${connectorSelector(result.connector.target)}\nRun: ${connectorSelectionCommand(request, connectorSelector(result.connector.target))}`,
   );
 }
 
@@ -394,7 +702,14 @@ export function connectorPermissionRequestCommand(
   permission: string,
   request: UrlDiagnosticRequest,
 ): string {
-  return `okou connector permission-request ${shellQuoteArg(connectorSlug)} --permission ${shellQuoteArg(permission)} --url ${shellQuoteArg(request.url)} --method ${shellQuoteArg(request.method)}`;
+  const args = [
+    `okou connector permission-request ${shellQuoteArg(connectorSlug)}`,
+    `--permission ${shellQuoteArg(permission)}`,
+    `--url ${shellQuoteArg(request.url)}`,
+    `--method ${shellQuoteArg(request.method)}`,
+  ];
+  appendAwsSelectorCommandArgs(args, request.aws);
+  return args.join(" ");
 }
 
 export function connectorCheckRetryCommand(
@@ -419,6 +734,7 @@ export function connectorCheckRetryCommand(
     if (request.method !== "GET") {
       args.push(`--method ${shellQuoteArg(request.method)}`);
     }
+    appendAwsSelectorCommandArgs(args, request.aws);
   } else {
     args.push(`--env-name ${shellQuoteArg(request.environmentName)}`);
     if (request.permission !== undefined) {
@@ -442,6 +758,11 @@ export function printDiagnosticSummary(
     console.log(
       `URL ${urlRequest.url} matches the ${result.connector.label} connector (${identity}).`,
     );
+    if (urlRequest.aws !== undefined) {
+      console.log(
+        "  AWS selectors describe the intended operation only; no SigV4 signature was validated and no AWS request was sent.",
+      );
+    }
     console.log(`  Matched base URL: ${result.base}`);
     console.log(`  Relative path:    ${result.relativePath}`);
     if (result.environmentNames === null) {

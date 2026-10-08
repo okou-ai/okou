@@ -1,11 +1,11 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { buildFeishuAgentResponseMessage } from "../../lib/feishu-message-card";
 import { logger } from "../../lib/log";
@@ -20,17 +20,13 @@ import {
   feishuOrgCallbackPayloadSchema as callbackPayloadSchema,
   type FeishuOrgCallbackPayload,
 } from "./feishu-org-callback-payload";
-import {
-  loadUserFeatureSwitchContext,
-  userFeatureSwitchOverrides,
-} from "./feature-switches.service";
 import type {
   InternalRunCallbackDispatchResult,
   InternalRunCallbackEnvelope,
 } from "./internal-run-callback";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { getRunOutputText } from "./run-output.service";
-import { saveRunSummary, saveRunSummary$ } from "./run-summary.service";
+import { saveRunSummary$ } from "./run-summary.service";
 import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 
 const L = logger("InternalCallbacksFeishuOrg");
@@ -46,10 +42,6 @@ interface RunContext {
 interface HandleFeishuCallbackInput {
   readonly db: Db;
   readonly callback: InternalRunCallbackEnvelope;
-  readonly getFeatureOverrides: (
-    orgId: string,
-    userId: string,
-  ) => Promise<Record<string, boolean>>;
   readonly formatRunError: (params: {
     readonly runId: string;
     readonly chatThreadId: string | null | undefined;
@@ -191,9 +183,10 @@ async function handleFeishuCallback(
   const [installation] = await args.db
     .select({
       orgId: feishuOrgInstallations.orgId,
-      defaultAgentId: feishuOrgInstallations.defaultAgentId,
+      defaultAgentId: orgMetadata.defaultAgentId,
     })
     .from(feishuOrgInstallations)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
     .where(
       and(
         eq(feishuOrgInstallations.id, payload.installationId),
@@ -235,11 +228,9 @@ async function handleFeishuCallback(
     {
       db: args.db,
       orgId: run.orgId,
-      userId: run.userId,
       runId: args.callback.runId,
       agentId: payload.agentId ?? run.agentId,
       defaultAgentId: installation.defaultAgentId ?? undefined,
-      getFeatureOverrides: args.getFeatureOverrides,
     },
     signal,
   );
@@ -250,7 +241,6 @@ async function handleFeishuCallback(
       : (output ?? "Task completed successfully.");
   const responseMessage = buildFeishuAgentResponseMessage({
     text: responseText,
-    auditUrl: presentation.logsUrl,
     footerText: presentation.footerText,
   });
   await sendFeishuCallbackResponse(
@@ -277,7 +267,7 @@ async function handleFeishuCallback(
 
 export const handleFeishuOrgInternalCallback$ = command(
   async (
-    { get, set },
+    { set },
     callback: InternalRunCallbackEnvelope,
     signal: AbortSignal,
   ): Promise<InternalRunCallbackDispatchResult> => {
@@ -285,9 +275,6 @@ export const handleFeishuOrgInternalCallback$ = command(
       {
         db: set(writeDb$),
         callback,
-        getFeatureOverrides: (orgId, userId) => {
-          return get(userFeatureSwitchOverrides(orgId, userId));
-        },
         formatRunError: (params) => {
           return set(formatRunErrorForRunOwner$, params, signal);
         },
@@ -308,43 +295,3 @@ export const handleFeishuOrgInternalCallback$ = command(
     );
   },
 );
-
-export async function handleFeishuOrgInternalCallbackWithoutCcstate(
-  db: Db,
-  callback: InternalRunCallbackEnvelope,
-  signal = new AbortController().signal,
-): Promise<InternalRunCallbackDispatchResult> {
-  return await handleFeishuCallback(
-    {
-      db,
-      callback,
-      getFeatureOverrides: async (orgId, userId) => {
-        return (
-          (await loadUserFeatureSwitchContext(db, orgId, userId)).overrides ??
-          {}
-        );
-      },
-      formatRunError: (params) => {
-        return Promise.resolve(
-          formatRunErrorForExternalSurface({
-            code: "INTERNAL_SERVER_ERROR",
-            message: params.errorMessage,
-          }),
-        );
-      },
-      saveRunSummary: async (runId, prompt, resultText) => {
-        await saveRunSummary(
-          db,
-          {
-            runId,
-            triggerSource: "feishu",
-            prompt,
-            resultText,
-          },
-          signal,
-        );
-      },
-    },
-    signal,
-  );
-}

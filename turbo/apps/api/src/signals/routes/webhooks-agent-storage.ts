@@ -1,14 +1,16 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
+import type { z } from "zod";
 import {
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
 } from "@okouai/api-contracts/contracts/webhooks";
 
+import type { AuthContext } from "../../types/auth";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
-  commitStorageUploadForAuth$,
+  createSandboxStorageCommit,
   prepareStorageUploadForAuth$,
 } from "../services/storage-write.service";
 import {
@@ -46,21 +48,15 @@ const prepareStorage$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 });
 
-const commitStorage$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const bodyResult = await get(commitBody$);
-  signal.throwIfAborted();
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const body = bodyResult.data;
-  const auth = getSandboxAuthForRun(body.runId, get(authorization$));
-  if (!auth) {
-    return unauthorizedRunMismatch;
-  }
-  return await set(
-    commitStorageUploadForAuth$,
-    {
+function createAuthorizedStorageCommit(
+  body: z.infer<typeof webhookStoragesCommitContract.commit.body>,
+) {
+  return computed((get) => {
+    const auth = getSandboxAuthForRun(body.runId, get(authorization$));
+    if (!auth) {
+      return null;
+    }
+    const commitInput = {
       auth: {
         tokenType: "sandbox",
         userId: auth.userId,
@@ -68,9 +64,36 @@ const commitStorage$ = command(async ({ get, set }, signal: AbortSignal) => {
         runId: auth.runId,
       },
       ...body,
-    },
-    signal,
-  );
+    } satisfies {
+      auth: Extract<AuthContext, { tokenType: "sandbox" }>;
+    } & z.infer<typeof webhookStoragesCommitContract.commit.body>;
+    return createSandboxStorageCommit(commitInput);
+  });
+}
+
+const commitRequest$ = computed(async (get) => {
+  const bodyResult = await get(commitBody$);
+  if (!bodyResult.ok) {
+    return bodyResult;
+  }
+  return {
+    ...bodyResult,
+    authorizedCommit$: createAuthorizedStorageCommit(bodyResult.data),
+  };
+});
+
+const commitStorage$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const bodyResult = await get(commitRequest$);
+  signal.throwIfAborted();
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+
+  const authorized = get(bodyResult.authorizedCommit$);
+  if (!authorized) {
+    return unauthorizedRunMismatch;
+  }
+  return await set(authorized.commit$, signal);
 });
 
 export const webhooksAgentStorageRoutes: readonly RouteEntry[] = [

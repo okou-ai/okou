@@ -1,10 +1,9 @@
 import chalk from "chalk";
 import { Command } from "commander";
 
-import { listConnectorCatalogStatus } from "../../lib/api/domains/connectors";
+import { getConnectorCatalogStatus } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { resolveAgentContext } from "../connector/agent-context";
-import { findConnectorStatusItem } from "../connector/public-catalog";
 import {
   isRunBoundConnectorContext,
   resolveRunConnectorAccountView,
@@ -95,8 +94,13 @@ async function printRunMailList(): Promise<void> {
 
 async function printCurrentMailList(): Promise<void> {
   const agentId = currentAgentId();
-  const [{ connectors }, agent] = await Promise.all([
-    listConnectorCatalogStatus(),
+  const mailConnectors = Object.entries(MAIL_CONNECTOR_SLUG_BY_PROVIDER);
+  const [connectors, agent] = await Promise.all([
+    Promise.all(
+      mailConnectors.map(([, connectorSlug]) => {
+        return getConnectorCatalogStatus(connectorSlug);
+      }),
+    ),
     resolveAgentContext(agentId),
   ]);
   if (!agent) {
@@ -104,28 +108,26 @@ async function printCurrentMailList(): Promise<void> {
   }
 
   printMailRows(
-    Object.entries(MAIL_CONNECTOR_SLUG_BY_PROVIDER).map(
-      ([provider, connectorSlug]) => {
-        const connector = findConnectorStatusItem(connectors, connectorSlug);
-        const authorized = agent.authorizedConnectorSlugs.has(connectorSlug);
-        const ready =
-          authorized &&
-          connector?.connected === true &&
-          connector.connectionStatus === "connected";
-        const sender = authorized
-          ? (connector?.connection?.externalEmail ?? "-")
-          : "-";
-        const status = ready
-          ? chalk.green("ready")
-          : connector?.connectionStatus === "reconnect-required" ||
-              connector?.connectionStatus === "scope-mismatch"
-            ? chalk.yellow("reconnect")
-            : connector?.connected
-              ? chalk.yellow("authorize")
-              : chalk.dim("connect");
-        return { provider, sender, status };
-      },
-    ),
+    mailConnectors.map(([provider, connectorSlug], index) => {
+      const connector = connectors[index];
+      const authorized = agent.authorizedConnectorSlugs.has(connectorSlug);
+      const ready =
+        authorized &&
+        connector?.connected === true &&
+        connector.connectionStatus === "connected";
+      const sender = authorized
+        ? (connector?.connection?.externalEmail ?? "-")
+        : "-";
+      const status = ready
+        ? chalk.green("ready")
+        : connector?.connectionStatus === "reconnect-required" ||
+            connector?.connectionStatus === "scope-mismatch"
+          ? chalk.yellow("reconnect")
+          : connector?.connected
+            ? chalk.yellow("authorize")
+            : chalk.dim("connect");
+      return { provider, sender, status };
+    }),
   );
 }
 

@@ -1,10 +1,9 @@
 [package]
 name = "runner"
-version = "0.213.2"
+version = "0.220.20"
 edition.workspace = true
 
 [dependencies]
-ably-subscriber = { workspace = true }
 api-contracts.workspace = true
 guest-contracts.workspace = true
 sandbox = { workspace = true }
@@ -13,7 +12,6 @@ sandbox-firecracker = { workspace = true }
 shell-quote = { workspace = true }
 
 async-trait = { workspace = true }
-base64 = { workspace = true, features = ["simd-unsafe", "std"] }
 bytes = { workspace = true, features = ["std"] }
 chrono = { workspace = true, features = ["now", "serde"] }
 clap = { workspace = true, features = ["color", "derive", "env", "error-context", "help", "std", "suggestions", "usage"] }
@@ -27,62 +25,60 @@ tokio-util = { workspace = true, features = ["io", "io-util", "rt"] }
 tracing = { workspace = true, features = ["attributes", "std"] }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }
-tower-layer.workspace = true
-tower-service.workspace = true
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
-hyper = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls"] }
 rustix = { workspace = true, features = ["fs", "linux_4_11", "process", "std", "time"] }
 hex = { workspace = true, features = ["std"] }
-idna = { workspace = true, features = ["compiled_data", "std"] }
 libc = { workspace = true, features = ["std"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
 tar = { workspace = true, features = ["xattr"] }
 tempfile = { workspace = true, features = ["getrandom"] }
-unicode-normalization = { workspace = true, features = ["std"] }
 url = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["serde", "std", "v4", "v5"] }
 sentry = { workspace = true, features = ["panic"] }
 which = { workspace = true, features = ["real-sys"] }
 zstd = { workspace = true, features = ["zstdmt"] }
-guest-control-proto = { workspace = true }
-runner-rpc-proto = { workspace = true }
 runner-host.workspace = true
+runner-executor.workspace = true
+runner-lifecycle.workspace = true
 runner-network.workspace = true
 runner-provider.workspace = true
+runner-remote.workspace = true
 runner-storage.workspace = true
+runner-supervisor.workspace = true
 runner-types.workspace = true
-rfb-client = { workspace = true }
-russh = { workspace = true, features = ["ring", "rsa"] }
-pkcs8 = { workspace = true, features = ["encryption", "std"] }
-pkcs5 = { workspace = true, features = ["alloc", "pbes2"] }
-rsa = { workspace = true, features = ["encoding", "std"] }
-zeroize = { workspace = true, features = ["alloc"] }
-rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
-tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
-tokio-tungstenite = { workspace = true, features = ["handshake"] }
-webpki-roots = { workspace = true }
 
 [build-dependencies]
+hex = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
+sha2 = { workspace = true }
 
-# Guest crates are also dev-dependencies for release-please version tracking:
-# cargo-workspace plugin includes dev-dependencies in its dependency graph,
-# so runner-rs gets auto-bumped when any guest crate version changes.
 [dev-dependencies]
+runner-executor = { workspace = true, features = ["test-support"] }
+runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-network = { workspace = true, features = ["test-support"] }
 runner-storage = { workspace = true, features = ["test-support"] }
+runner-supervisor = { workspace = true, features = ["test-support"] }
 guest-control-client = { workspace = true }
-png = { workspace = true }
 log = { workspace = true }
-tracing-log = { workspace = true, features = ["log-tracer", "std"] }
 # `test-util` feature exposes `with_test_defaults_v2()` on `aws_sdk_s3::Config`,
 # which `aws_smithy_mocks::mock_client!` needs. Feature applies only to the
 # test build — no impact on the production binary.
 aws-sdk-s3 = { workspace = true, features = ["test-util"] }
 aws-smithy-mocks = { workspace = true }
+httpmock = { workspace = true, features = ["cookies"] }
+http-body = { workspace = true }
+sandbox-mock = { workspace = true }
+tokio = { workspace = true, features = ["process", "test-util"] }
+tracing-test-support.workspace = true
+
+# Release Please's pinned cargo-workspace plugin tracks these guest package
+# names (including target-specific dev-dependencies) to propagate versions to
+# runner-rs. They are not used by Runner tests; cfg(any()) keeps them out of
+# ordinary native test builds without removing the release graph edges.
+[target.'cfg(any())'.dev-dependencies]
 guest-agent = { workspace = true }
 guest-storage-apply = { workspace = true }
 guest-init = { workspace = true }
@@ -93,12 +89,6 @@ guest-tool-exec = { workspace = true }
 runner-rpc-client = { workspace = true }
 guest-write-file = { workspace = true }
 guest-workspace-mount = { workspace = true }
-httpmock = { workspace = true, features = ["cookies"] }
-http-body = { workspace = true }
-sandbox-mock = { workspace = true }
-tokio = { workspace = true, features = ["process", "test-util"] }
-tracing-test-support.workspace = true
-rcgen = { workspace = true, features = ["crypto", "ring"] }
 
 [lints]
 workspace = true

@@ -9,7 +9,8 @@ function failureMessage(result: Extract<VncOutcome, { reason: string }>) {
     guidance =
       "The operation may have taken effect. Never replay automatically; inspect session list/status and take a fresh screenshot.";
   else if (result.reason === "permission_denied")
-    guidance = "Ask the owner to grant VNC access and start a new Run.";
+    guidance =
+      "Ask the owner to enable this VNC host for this chat; an SSH-backed host also needs its SSH host enabled.";
   else if (result.reason === "stale_geometry")
     guidance =
       "Take a fresh screenshot and re-evaluate the intended coordinates.";

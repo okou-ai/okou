@@ -4,17 +4,20 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { HttpResponse } from "msw";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../__tests__/test-helpers.ts";
 
 const context = testContext();
 
-function preferences(timezone: string | null): UserPreferencesResponse {
+function preferences(
+  timezone: string | null,
+  locale: UserPreferencesResponse["locale"] = "en-US",
+  memoryInitialized = true,
+): UserPreferencesResponse {
   return {
     timezone,
-    locale: "en-US",
+    locale,
     supportedLocales: ["en-US"],
     pinnedAgentIds: [],
     sendMode: "enter",
@@ -22,25 +25,61 @@ function preferences(timezone: string | null): UserPreferencesResponse {
     theme: "system",
     colorTheme: "blue-horizon",
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
+    memoryInitialized,
   };
 }
 
-function mockTimezonePreferences(initialTimezone: string | null) {
-  let stored = preferences(initialTimezone);
-  let initializationBody: { timezone?: string } | undefined;
+function mockTimezonePreferences(
+  initialTimezone: string | null,
+  initialLocale: UserPreferencesResponse["locale"] = "en-US",
+  memoryInitialized = true,
+) {
+  let stored = preferences(initialTimezone, initialLocale, memoryInitialized);
+  let initializationBody:
+    | { timezone?: string; locale?: UserPreferencesResponse["locale"] }
+    | undefined;
+  let reads = 0;
+  let updates = 0;
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    reads += 1;
+    if (stored.timezone === null || stored.locale === null) {
+      return respond(409, {
+        error: {
+          code: "USER_PREFERENCES_UNINITIALIZED",
+          message: "User preferences require timezone or locale initialization",
+        },
+      });
+    }
     return respond(200, stored);
   });
   context.mocks.api(userPreferencesContract.initialize, ({ body, respond }) => {
     initializationBody = body;
-    if (stored.timezone === null && body.timezone !== undefined) {
-      stored = { ...stored, timezone: body.timezone };
-    }
+    stored = {
+      ...stored,
+      timezone: stored.timezone ?? body.timezone ?? null,
+      locale: stored.locale ?? body.locale,
+      memoryInitialized: true,
+    };
     return respond(200, stored);
   });
-  return () => {
-    return initializationBody;
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
+    updates += 1;
+    stored = { ...stored, ...body };
+    return respond(200, stored);
+  });
+  return {
+    initializationBody: () => {
+      return initializationBody;
+    },
+    reads: () => {
+      return reads;
+    },
+    updates: () => {
+      return updates;
+    },
+    stored: () => {
+      return stored;
+    },
   };
 }
 
@@ -53,7 +92,7 @@ function setBrowserTimezone(timezone: string): void {
 }
 
 test("A member's first organization visit stores the browser timezone", async () => {
-  const initializationBody = mockTimezonePreferences(null);
+  const requests = mockTimezonePreferences(null);
   setBrowserTimezone("Asia/Shanghai");
 
   await setupPage({ context, path: "/agents", host: "app.okou.ai" });
@@ -62,12 +101,38 @@ test("A member's first organization visit stores the browser timezone", async ()
     screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeVisible();
   await waitFor(() => {
-    expect(initializationBody()).toStrictEqual({ timezone: "Asia/Shanghai" });
+    expect(requests.initializationBody()).toStrictEqual({
+      timezone: "Asia/Shanghai",
+      locale: "en-US",
+    });
   });
+  expect(requests.reads()).toBe(1);
+  expect(requests.updates()).toBe(0);
+});
+
+test("An initialized member without memory initializes it without replacing preferences", async () => {
+  const requests = mockTimezonePreferences(
+    "America/Los_Angeles",
+    "en-US",
+    false,
+  );
+  setBrowserTimezone("Asia/Shanghai");
+
+  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
+
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(requests.stored().memoryInitialized).toBeTruthy();
+  });
+  expect(requests.stored().timezone).toBe("America/Los_Angeles");
+  expect(requests.reads()).toBe(1);
+  expect(requests.updates()).toBe(0);
 });
 
 test("A stored organization timezone is not replaced on a later visit", async () => {
-  mockTimezonePreferences("America/Los_Angeles");
+  const requests = mockTimezonePreferences("America/Los_Angeles");
   setBrowserTimezone("Asia/Shanghai");
 
   await setupPage({
@@ -80,14 +145,44 @@ test("A stored organization timezone is not replaced on a later visit", async ()
   await expect(
     within(settings).findByText(/Pacific Time \(PT\)/u),
   ).resolves.toBeVisible();
+  expect(requests.initializationBody()).toBeUndefined();
+  expect(requests.reads()).toBe(1);
+  expect(requests.updates()).toBe(0);
 });
 
-test("An API without timezone initialization still opens the application", async () => {
-  context.mocks.http.post("*/api/user-preferences/initialize", () => {
-    return new HttpResponse(null, { status: 404 });
-  });
+test("A missing locale initializes without replacing the stored timezone", async () => {
+  const requests = mockTimezonePreferences("America/Los_Angeles", null);
+  setBrowserTimezone("Asia/Shanghai");
+  context.mocks.browser.languages(["fr-FR"]);
+
   await setupPage({ context, path: "/agents", host: "app.okou.ai" });
   await expect(
     screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(requests.initializationBody()).toStrictEqual({
+      timezone: "Asia/Shanghai",
+      locale: "fr-FR",
+    });
+  });
+  expect(requests.reads()).toBe(1);
+  expect(requests.updates()).toBe(0);
+  expect(requests.stored().timezone).toBe("America/Los_Angeles");
+  expect(requests.stored().locale).toBe("fr-FR");
+});
+
+test("An invalid browser timezone falls back to Pacific Time", async () => {
+  const requests = mockTimezonePreferences(null);
+  setBrowserTimezone("Invalid/Timezone");
+
+  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(requests.initializationBody()).toStrictEqual({
+      timezone: "America/Los_Angeles",
+      locale: "en-US",
+    });
+  });
 });

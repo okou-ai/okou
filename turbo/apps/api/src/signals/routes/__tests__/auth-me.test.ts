@@ -45,6 +45,41 @@ test("reads the authenticated user directly and selects the primary email", asyn
   expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
 });
 
+test("returns the server-verified Clerk session on both fresh and cached profile reads", async () => {
+  const current = actor();
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: true,
+    toAuth: () => {
+      return {
+        userId: current.userId,
+        orgId: current.orgId,
+        orgRole: "org:admin",
+        sessionId: "sess_verified",
+      };
+    },
+  });
+  context.mocks.clerk.users.getUser.mockResolvedValue({
+    id: current.userId,
+    primaryEmailAddressId: "primary",
+    emailAddresses: [
+      { id: "primary", emailAddress: `${current.userId}@example.test` },
+    ],
+  });
+
+  const expected = {
+    ...current,
+    email: `${current.userId}@example.test`,
+    sessionId: "sess_verified",
+  };
+  expect((await accept(client().me({ headers }), [200])).body).toStrictEqual(
+    expected,
+  );
+  expect((await accept(client().me({ headers }), [200])).body).toStrictEqual(
+    expected,
+  );
+  expect(context.mocks.clerk.users.getUser).toHaveBeenCalledOnce();
+});
+
 test("preserves the auth error when Clerk no longer exposes the user", async () => {
   actor();
   context.mocks.clerk.users.getUser.mockRejectedValue(

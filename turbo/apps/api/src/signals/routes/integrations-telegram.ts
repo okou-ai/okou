@@ -14,7 +14,6 @@ import {
 } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
-import { integrationsTelegramBotIdRoutes } from "./integrations-telegram-bot-id";
 import { integrationsTelegramLinkRoutes } from "./integrations-telegram-link";
 import {
   buildFileDownloadUrl,
@@ -30,18 +29,11 @@ import {
 import {
   telegramIntegrationBots,
   telegramIntegrationLinkStatus,
-  telegramBotToken,
   telegramBots,
-  telegramInstallation,
 } from "../services/telegram-data.service";
-import {
-  registerTelegramBot$,
-  setupTelegramStatus$,
-  telegramWebhook$,
-} from "../services/telegram-post.service";
+import { telegramWebhook$ } from "../services/telegram-post.service";
 import { tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 function errorResponse(
   status: number,
@@ -135,11 +127,6 @@ const telegramReadAuth = {
   requiredCapability: "telegram:read",
 } as const;
 
-const telegramSetupAuth = {
-  requireOrganization: true,
-  missingOrganizationStatus: 401,
-} as const;
-
 const getTelegramBotsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const bots = await get(
@@ -167,35 +154,25 @@ const getIntegrationTelegramListInner$ = computed(async (get) => {
 const getIntegrationTelegramLinkStatusInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(integrationsTelegramContract.getLinkStatus));
-  const publicBrand = PUBLIC_BRAND;
   return await get(
     telegramIntegrationLinkStatus({
       orgId: auth.orgId,
       userId: auth.userId,
       botId: query.botId,
       origin: query.origin,
-      publicBrand,
     }),
   );
 });
 
 const getTelegramDownloadFileInner$ = command(
   async ({ get }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
     const query = get(
       queryOf(integrationsTelegramDownloadFileContract.download),
     );
 
-    let botToken: string | null | undefined;
-    if (isOfficialTelegramBotId(query.bot_id)) {
-      botToken = getOfficialTelegramBotConfig().botToken;
-    } else {
-      const installation = await get(
-        telegramInstallation({ orgId: auth.orgId, botId: query.bot_id }),
-      );
-      signal.throwIfAborted();
-      botToken = installation?.botToken;
-    }
+    const botToken = isOfficialTelegramBotId(query.bot_id)
+      ? getOfficialTelegramBotConfig().botToken
+      : null;
 
     if (!botToken) {
       return errorResponse(404, "Telegram bot not found", "NOT_FOUND");
@@ -278,21 +255,6 @@ async function downloadTelegramFile(
   return new Response(fileResponse.body, { status: 200, headers });
 }
 
-const registerTelegramBotInner$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
-    return set(registerTelegramBot$, { auth, publicBrand }, signal);
-  },
-);
-
-const setupTelegramStatusInner$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    return set(setupTelegramStatus$, { auth }, signal);
-  },
-);
-
 const getIntegrationTelegramAvatar$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const pathParams = get(pathParamsOf(integrationsTelegramContract.avatar));
@@ -316,12 +278,6 @@ const getIntegrationTelegramAvatar$ = command(
           botToken = config.botToken;
           profileUserId = telegramProfileUserId(config.botId);
         }
-      } else {
-        const installation = await get(
-          telegramBotToken({ botId: pathParams.botId }),
-        );
-        signal.throwIfAborted();
-        botToken = installation?.botToken ?? null;
       }
     } else {
       const auth = await set(requiredAuthContext$, telegramReadAuth, signal);
@@ -338,18 +294,6 @@ const getIntegrationTelegramAvatar$ = command(
           botToken = config.botToken;
           profileUserId = telegramProfileUserId(config.botId);
         }
-      } else {
-        const installation =
-          auth.orgId === undefined
-            ? null
-            : await get(
-                telegramBotToken({
-                  botId: pathParams.botId,
-                  orgId: auth.orgId,
-                }),
-              );
-        signal.throwIfAborted();
-        botToken = installation?.botToken ?? null;
       }
     }
 
@@ -493,7 +437,6 @@ const getIntegrationTelegramAuthCallback$ = computed((get): Response => {
 
 export const integrationsTelegramRoutes: readonly RouteEntry[] = [
   ...integrationsTelegramLinkRoutes,
-  ...integrationsTelegramBotIdRoutes,
   {
     route: integrationsTelegramContract.list,
     handler: authRoute(telegramReadAuth, getIntegrationTelegramListInner$),
@@ -508,14 +451,6 @@ export const integrationsTelegramRoutes: readonly RouteEntry[] = [
   {
     route: integrationsTelegramContract.authCallback,
     handler: getIntegrationTelegramAuthCallback$,
-  },
-  {
-    route: integrationsTelegramContract.register,
-    handler: authRoute(telegramSetupAuth, registerTelegramBotInner$),
-  },
-  {
-    route: integrationsTelegramContract.setupStatus,
-    handler: authRoute(telegramSetupAuth, setupTelegramStatusInner$),
   },
   {
     route: integrationsTelegramContract.webhook,

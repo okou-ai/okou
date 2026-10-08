@@ -5,6 +5,10 @@ import {
   type BillingStatusResponse,
   type CreditCheckoutRequest,
 } from "@okouai/api-contracts/contracts/billing";
+import {
+  chatEventsContract,
+  chatThreadEventsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -15,16 +19,25 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+import {
+  mockChatEventRows,
+  normalizeMockChatEvents,
+  type MockChatEventInput,
+} from "./chat-event-test-helpers.ts";
 import {
   context,
   findButton,
   installRunChat,
+  NEW_CHAT_PATH,
   promptEvent,
   readyChat,
   RUN_PATH,
+  RUN_THREAD_ID,
+  sendText,
 } from "./chat-run-test-fixtures.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 
 const BILLING_RUN_ID = "d0000000-0000-4000-a000-000000001301";
 
@@ -140,7 +153,7 @@ async function expectProCheckout(): Promise<void> {
 
 test("Direct a workspace member to an admin when billing blocks a run", async () => {
   installBillingState({
-    tier: "free",
+    tier: "limited-free-1",
     role: "member",
     credits: 0,
     canBuyCredits: false,
@@ -160,7 +173,7 @@ test("Direct a workspace member to an admin when billing blocks a run", async ()
 
 test("Let a workspace admin recover from a free-plan billing limit", async () => {
   installBillingState({
-    tier: "free",
+    tier: "limited-free-1",
     role: "admin",
     credits: 0,
     canBuyCredits: false,
@@ -177,7 +190,7 @@ test("Let a workspace admin recover from a free-plan billing limit", async () =>
   await expectProCheckout();
 });
 
-test("Let a limited-free workspace admin unlock a Pro-only video capability", async () => {
+test("Let a limited-free workspace admin unlock a Pro-only capability", async () => {
   installBillingState({
     tier: "limited-free-1",
     role: "admin",
@@ -228,14 +241,16 @@ test("Let a paid workspace admin buy more credits", async () => {
     screen.findByText("You're out of credits"),
   ).resolves.toBeVisible();
   const frame = screen.getByTestId("assistant-error-card-shell");
-  expect(queryButton("$100", frame)).not.toBeInTheDocument();
-  click(button("Add credits", frame));
-  await screen.findByRole("dialog", { name: "You're out of credits" });
   for (const amount of ["$100", "$200", "$300"]) {
-    expect(button(amount)).toBeVisible();
+    expect(button(amount, frame)).toBeVisible();
   }
+  expect(button("Custom", frame)).toBeVisible();
+  expect(queryButton("Add credits", frame)).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "You're out of credits" }),
+  ).not.toBeInTheDocument();
 
-  click(button("$100"));
+  click(button("$100", frame));
 
   let review = await screen.findByRole("dialog", {
     name: "Review credit purchase",
@@ -247,13 +262,11 @@ test("Let a paid workspace admin buy more credits", async () => {
   });
   click(button("Cancel", review));
 
-  click(button("Custom"));
-  const creditOptions = screen.getByRole("dialog", {
-    name: "You're out of credits",
-  });
-  const customAmount = within(creditOptions).getByRole("textbox", {
+  click(button("Custom", frame));
+  const customAmount = within(frame).getByRole("textbox", {
     name: "Custom dollar amount",
   });
+  expect(customAmount).toBeVisible();
   await fill(customAmount, "250");
   click(button("Buy"));
 
@@ -281,6 +294,18 @@ test("Let a paid workspace admin buy more credits", async () => {
     0,
   );
   expect(checkoutRequests).toHaveLength(2);
+
+  await fill(customAmount, "275");
+  await user.type(customAmount, "{enter}");
+  review = await screen.findByRole("dialog", {
+    name: "Review credit purchase",
+  });
+  expect(within(review).getByText("$275.00")).toBeVisible();
+  expect(checkoutRequests[2]).toMatchObject({
+    credits: 275_000,
+    customAmount: true,
+  });
+  expect(window.location.search).not.toContain("customUsd");
 });
 
 test("Offer a plan upgrade when a limited workspace cannot buy top-ups", async () => {
@@ -324,4 +349,155 @@ test("Show that a previously blocked chat can continue after credits return", as
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
   expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
   expect(queryButton("$100")).not.toBeInTheDocument();
+});
+
+// The send response is not read, so the rejection a send turns into arrives as
+// persisted events. The card rendered from them must use the org's current
+// credits rather than the balance loaded before they ran out.
+test("Show a new credit rejection with the current balance", async () => {
+  const tierArgs = { tier: "pro", canBuyCredits: true } as const;
+  installBillingState({ ...tierArgs, role: "admin", credits: 25_000 });
+  installBlockedChat();
+  const events: MockChatEventInput[] = [
+    ...billingFailure("insufficient_credits"),
+  ];
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    ({ params, query, respond }) => {
+      const rows = mockChatEventRows(
+        normalizeMockChatEvents(events, params.threadId),
+      ).filter((row) => {
+        return row.seqId > query.sinceSeqId;
+      });
+      return respond(200, chatEventRowsResponse(rows, query));
+    },
+  );
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    const createdAt = "2026-08-01T10:01:00.000Z";
+    events.push(
+      {
+        id: body.clientEventId,
+        role: "user",
+        eventType: "input.rejected",
+        content: null,
+        error: "insufficient_credits",
+        userMessage: body.userMessage,
+        seqId: 3,
+        createdAt,
+      },
+      {
+        id: "billing-rejection-error",
+        eventType: "output.error",
+        role: "assistant",
+        content: null,
+        error: "insufficient_credits",
+        seqId: 4,
+        createdAt: "2026-08-01T10:01:01.000Z",
+      },
+    );
+    createChatEvent(RUN_THREAD_ID);
+    return respond(201, { runId: null, threadId: RUN_THREAD_ID, createdAt });
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await expect(screen.findByText("Credits available")).resolves.toBeVisible();
+
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, billingStatus({ ...tierArgs, credits: 0 }));
+  });
+  await sendText("Try the brief once more");
+
+  await expect(
+    screen.findAllByText("You're out of credits"),
+  ).resolves.not.toHaveLength(0);
+  expect(screen.queryByText("Credits available")).not.toBeInTheDocument();
+});
+
+// A new thread's first send has no persisted history before its rejection, so
+// the rejection of the page's own pending message is what makes it new.
+test("Show a first-message credit rejection in a new chat with the current balance", async () => {
+  const tierArgs = { tier: "pro", canBuyCredits: true } as const;
+  installBillingState({ ...tierArgs, role: "admin", credits: 25_000 });
+  let billingRequests = 0;
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    billingRequests += 1;
+    return respond(200, billingStatus({ ...tierArgs, credits: 25_000 }));
+  });
+  installRunChat();
+  let sentThreadId: string | null = null;
+  const events: MockChatEventInput[] = [];
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    ({ params, query, respond }) => {
+      const rows =
+        params.threadId === sentThreadId
+          ? mockChatEventRows(
+              normalizeMockChatEvents(events, params.threadId),
+            ).filter((row) => {
+              return row.seqId > query.sinceSeqId;
+            })
+          : [];
+      return respond(200, chatEventRowsResponse(rows, query));
+    },
+  );
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    if (body.threadId === undefined || body.clientEventId === undefined) {
+      throw new Error("Expected a new-thread send with client ids");
+    }
+    const threadId = body.threadId;
+    sentThreadId = threadId;
+    const createdAt = "2026-08-01T10:01:00.000Z";
+    events.push(
+      {
+        id: body.clientEventId,
+        role: "user",
+        eventType: "input.prompt",
+        content: null,
+        userMessage: body.userMessage,
+        seqId: 1,
+        createdAt,
+      },
+      {
+        id: "first-message-rejection",
+        role: "user",
+        eventType: "input.rejected",
+        content: null,
+        error: "insufficient_credits",
+        revokesEventId: body.clientEventId,
+        userMessage: body.userMessage,
+        seqId: 2,
+        createdAt: "2026-08-01T10:01:00.001Z",
+      },
+      {
+        id: "first-message-rejection-error",
+        eventType: "output.error",
+        role: "assistant",
+        content: null,
+        error: "insufficient_credits",
+        seqId: 3,
+        createdAt: "2026-08-01T10:01:00.002Z",
+      },
+    );
+    createChatEvent(threadId);
+    return respond(201, { runId: null, threadId, createdAt });
+  });
+
+  await setupPage({ context, path: NEW_CHAT_PATH });
+
+  await readyChat();
+  await waitFor(() => {
+    expect(billingRequests).toBeGreaterThan(0);
+  });
+
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, billingStatus({ ...tierArgs, credits: 0 }));
+  });
+  await sendText("Draft the first campaign brief");
+
+  await expect(
+    screen.findAllByText("You're out of credits"),
+  ).resolves.not.toHaveLength(0);
+  expect(screen.queryByText("Credits available")).not.toBeInTheDocument();
 });

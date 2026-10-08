@@ -14,9 +14,12 @@ control tests retain their standard-library Python boundary.
 
 ## Running Tests
 
-Use the `local` profile for routine local validation. It retains source locations in backtraces
-while omitting full debug information and incremental artifacts to reduce resource and disk use.
-Omit `--profile local` when full debug information or incremental compilation is more useful.
+Use the `local` profile for routine local validation. It retains source locations in
+backtraces for workspace crates and omits full debug information and incremental
+artifacts. Non-workspace dependencies omit debug information entirely to reduce
+build output and file-cache pressure, so their frames may lack source lines.
+Omit `--profile local` when dependency source lines, full debug information, or
+incremental compilation are more useful.
 
 ```bash
 # All crates
@@ -26,6 +29,10 @@ cargo test --manifest-path crates/Cargo.toml --profile local
 cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
 
 # Extracted Runner host primitives and their owner tests
+# Nine process-identity persistence tests moved from runner/src/cmd/start/identity.rs
+# into runner-host/src/runner_process_identity/persistence.rs, plus a partial
+# failure test (10 persistence tests total); none removed. Runner's start
+# integration test checks identity allocation precedes later setup failure.
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -j 1 -p runner-host -- --test-threads=1
 
@@ -33,13 +40,43 @@ cargo test --manifest-path crates/Cargo.toml --profile local \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-provider -- --test-threads=1
 
-# Extracted Runner network behavior and its owner tests
+# Extracted Runner network behavior, mitmdump recovery, and owner tests
+# Seven focused mitmdump restart tests moved from runner/src/cmd/start/mitm_restart.rs
+# into runner-network/src/proxy/recovery.rs, plus fatal cleanup and cancelled
+# wait coverage (9 recovery tests total); none intentionally removed.
+# Runner's main-loop crash, panic, and shutdown tests remain in runner.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-network -- --test-threads=1
+
+# Extracted Runner guest RPC, usage, SSH, and VNC owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-remote -- --test-threads=1
 
 # Extracted Runner storage planning and cache owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-storage -- --test-threads=1
+
+# Extracted Runner active-run, idle sandbox, workspace and cache snapshot owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-lifecycle -- --test-threads=1
+
+# Extracted Runner claimed-run execution and session-history owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-executor -- --test-threads=1
+
+# Extracted Runner idle, pre-claim admission/rollback and pending-candidate state, finalizing-successor arbitration, claimed activation, post-executor finalizing/report ordering/sandbox finalization/settlement, heartbeat, and orphan-recovery owner tests
+# The pending-candidate policy has three supervisor unit tests; existing Runner
+# main-loop admission/expiry/duplicate tests remain as cross-domain coverage.
+# Exact idle pruning has two supervisor resource/ownership tests; all four Runner
+# operator IPC/reuse tests remain as composition coverage (no tests removed).
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-supervisor -- --test-threads=1
+
+# Complete native Runner and extracted-domain test set, with ordinary Cargo targets
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p runner-types -p runner-host -p runner-provider -p runner-storage \
+  -p runner-network -p runner-remote -p runner-lifecycle -p runner-executor -p runner-supervisor \
+  -p runner -- --test-threads=1
 
 # Specific test by name
 cargo test --manifest-path crates/Cargo.toml --profile local \
@@ -185,9 +222,7 @@ fn command_with_test_env(binary: &Path) -> Command {
 }
 ```
 
-For inline runner tests, reuse `run_ignored_child_test` from `crates/runner/src/test_fixtures.rs`. It invokes one exact ignored test in a bounded child process and accepts per-child environment settings and removals.
-Tests owned by the extracted `runner-host` crate use its crate-local equivalent;
-the helper is intentionally not part of the production API.
+For inline runner tests, reuse `run_ignored_child_test` from `crates/runner-host/src/test_fixtures/ignored_child.rs`. It invokes one exact ignored test in a bounded child process and accepts per-child environment settings and removals. The helper is available only through test-support paths, not the production API.
 
 ### Temp Directories
 

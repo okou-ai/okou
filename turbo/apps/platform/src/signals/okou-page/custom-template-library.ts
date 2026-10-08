@@ -64,10 +64,8 @@ const serverCustomTemplateCatalog$ = computed(
   async (get): Promise<readonly UserTemplateCatalogEntry[]> => {
     get(catalogVersion$);
     // A member without the feature has no catalog, and the routes refuse them
-    // anyway. Answering here rather than at each reader is what keeps the
-    // composer honest: the selected-template chip resolves against this on
-    // every render, for every member, so a reader-side guard would still have
-    // to subscribe — and subscribing is what issues the request.
+    // anyway. Answering here rather than at each reader keeps every reader
+    // honest: the picker and the composer's selection both go through this.
     if (get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] !== true) {
       return [];
     }
@@ -84,6 +82,22 @@ export const customTemplateCatalog$ = computed(
       const projected = project(template);
       return projected === null ? [] : [projected];
     });
+  },
+);
+
+/**
+ * Read the catalog once, when a selection needs it. The composer resolves a
+ * chosen template here instead of subscribing while it renders, so startup and
+ * a closed picker neither request the catalog nor refetch it on invalidation.
+ */
+export const loadCustomTemplateCatalog$ = command(
+  async (
+    { get },
+    signal: AbortSignal,
+  ): Promise<readonly UserTemplateCatalogEntry[]> => {
+    const catalog = await get(customTemplateCatalog$);
+    signal.throwIfAborted();
+    return catalog;
   },
 );
 
@@ -324,10 +338,15 @@ export const deleteCustomTemplate$ = command(
   },
 );
 
-/** Opening the picker always starts from a clean list and no open template. */
-export const resetCustomTemplatePicker$ = command(({ set }) => {
+/** Reopening the current category clears its filters and detail view. */
+export const resetCustomTemplatePickerView$ = command(({ set }) => {
   set(internalSearchQuery$, "");
   set(internalKindFilter$, null);
   set(internalOpenTemplate$, null);
+});
+
+/** Opening the picker always starts from a clean list and a fresh catalog. */
+export const resetCustomTemplatePicker$ = command(({ set }) => {
+  set(resetCustomTemplatePickerView$);
   set(reloadCustomTemplates$);
 });

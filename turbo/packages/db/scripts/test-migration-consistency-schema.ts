@@ -38,11 +38,12 @@ import { Client } from "pg";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateOfficialAutomationResultEmailSchema } from "./test-official-automation-result-email-schema";
-import { validatePermanentBuiltInModelCooldownState } from "./test-built-in-model-cooldown-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
-import { validatePermanentSlackPublicBrandState } from "./test-slack-public-brand-permanent";
+import { validatePermanentDiscordFoundation } from "./test-discord-foundation-permanent";
+import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
-import { validateGpt55Retirement } from "./test-gpt-55-retirement";
+import { validatePermanentModelCatalogConstraints } from "./test-model-catalog-permanent";
+import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -204,29 +205,56 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
       { tableName: "browser_thread_profiles", columnName: "id" },
     ]);
 
-    const lifecycleConstraint = await client.query<{ definition: string }>(
+    const eventTypeConstraint = await client.query<{ definition: string }>(
       `
         SELECT pg_get_constraintdef("oid") AS "definition"
         FROM "pg_constraint"
         WHERE "conname" = 'chat_events_event_type_check'
       `,
     );
-    assert.equal(lifecycleConstraint.rows.length, 1);
-    const lifecycleDefinition = lifecycleConstraint.rows[0]?.definition ?? "";
-    // Only the canonical lifecycle values remain after the old API drain.
-    assert.match(lifecycleDefinition, /browser\.open/u);
-    assert.match(lifecycleDefinition, /browser\.close/u);
-    assert.doesNotMatch(lifecycleDefinition, /browser\.started/u);
-    assert.doesNotMatch(lifecycleDefinition, /browser\.stopped/u);
-    assert.match(lifecycleDefinition, /goal\.open/u);
-    assert.match(lifecycleDefinition, /goal\.close/u);
-    assert.doesNotMatch(lifecycleDefinition, /goal\.changed/u);
+    assert.equal(eventTypeConstraint.rows.length, 1);
+    const eventTypeDefinition = eventTypeConstraint.rows[0]?.definition ?? "";
+    const eventTypes = [...eventTypeDefinition.matchAll(/'([^']+)'/gu)]
+      .map((match) => {
+        return match[1];
+      })
+      .sort();
+    assert.deepEqual(eventTypes, [
+      "control.interrupt",
+      "control.revoke",
+      "input.automation",
+      "input.budget",
+      "input.prompt",
+      "input.rejected",
+      "output.error",
+      "output.followups",
+      "output.message",
+      "run.cancelled",
+      "run.completed",
+      "run.failed",
+      "usage.recorded",
+    ]);
     console.log(
       "   ✅ retired browser tables and identity columns still exist",
     );
-    console.log(
-      "   ✅ browser lifecycle and goal event constraints are canonical\n",
-    );
+    console.log("   ✅ chat event types are the canonical set\n");
+  } finally {
+    await client.end();
+  }
+}
+
+async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+
+  try {
+    const sourceConstraint = await client.query<{ validated: boolean }>(`
+      SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'public.billing_run_attribution'::regclass
+        AND conname = 'billing_run_attribution_source_check'
+    `);
+    assert.deepEqual(sourceConstraint.rows, [{ validated: true }]);
+    console.log("   ✅ Billing attribution source constraint is validated\n");
   } finally {
     await client.end();
   }
@@ -239,41 +267,15 @@ function databaseErrorCode(error: unknown): string | undefined {
   return typeof error.code === "string" ? error.code : undefined;
 }
 
-async function expectAppendOnlyUpdateRejected(
-  client: Client,
-  args: {
-    readonly tableName: "chat_events" | "chat_messages" | "chat_thread_events";
-    readonly query: string;
-    readonly rowId: string;
-  },
-): Promise<void> {
-  try {
-    await client.query(args.query, [args.rowId]);
-  } catch (error) {
-    const expectedMessage = `${args.tableName} is append-only; UPDATE is not allowed`;
-    if (
-      databaseErrorCode(error) === "P0001" &&
-      error instanceof Error &&
-      error.message.includes(expectedMessage)
-    ) {
-      return;
-    }
-    throw error;
-  }
-
-  throw new Error(`${args.tableName} accepted an UPDATE`);
-}
-
 async function validateCanonicalChatMessageStorage(
   client: Client,
   threadId: string,
-): Promise<string> {
+): Promise<void> {
   const sequenceReservation = await client.query<{ lastSeqId: string }>(
     `
-      UPDATE "chat_threads"
-      SET "last_chat_event_seq_id" = "last_chat_event_seq_id" + 2
-      WHERE "id" = $1
-      RETURNING "last_chat_event_seq_id" AS "lastSeqId"
+      INSERT INTO "chat_event_sequences" ("chat_thread_id", "last_seq_id") VALUES ($1, 2)
+      ON CONFLICT ("chat_thread_id") DO UPDATE SET "last_seq_id" = "chat_event_sequences"."last_seq_id" + 2
+      RETURNING "last_seq_id" AS "lastSeqId"
     `,
     [threadId],
   );
@@ -351,15 +353,13 @@ async function validateCanonicalChatMessageStorage(
 
   const sequenceState = await client.query<{ lastSeqId: string }>(
     `
-      SELECT "last_chat_event_seq_id" AS "lastSeqId"
-      FROM "chat_threads"
-      WHERE "id" = $1
+      SELECT "last_seq_id" AS "lastSeqId"
+      FROM "chat_event_sequences"
+      WHERE "chat_thread_id" = $1
     `,
     [threadId],
   );
   assert.equal(sequenceState.rows[0]?.lastSeqId, String(lastSeqId));
-
-  return messageRow.id;
 }
 
 async function validateCanonicalDraftStorage(
@@ -371,30 +371,31 @@ async function validateCanonicalDraftStorage(
     parts: [{ type: "text", text: "canonical API draft" }],
   };
   const canonicalDraft = await client.query<{
+    userId: string | null;
     draftUserMessage: unknown;
   }>(
     `
-      UPDATE "chat_threads"
-      SET "draft_user_message" = $2::jsonb
-      WHERE "id" = $1
+      INSERT INTO "chat_thread_drafts" (
+        "chat_thread_id", "user_id", "draft_user_message"
+      )
+      VALUES ($1, 'append-only-test-user', $2::jsonb)
       RETURNING
+        "user_id" AS "userId",
         "draft_user_message" AS "draftUserMessage"
     `,
     [threadId, JSON.stringify(draftUserMessage)],
   );
+  assert.equal(canonicalDraft.rows[0]?.userId, "append-only-test-user");
   assert.deepEqual(canonicalDraft.rows[0]?.draftUserMessage, draftUserMessage);
 }
 
-async function validateChatEventSourcesAreAppendOnly(
-  dbUrl: string,
-): Promise<void> {
-  console.log("=== Phase 2.5: Validate append-only chat event sources ===\n");
+async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
+  console.log("=== Phase 2.5: Validate explicit chat event storage ===\n");
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
   const agentId = "00000000-0000-4000-8000-000000074401";
   let threadId: string | undefined;
-  let messageId: string | undefined;
 
   try {
     await client.query(
@@ -422,26 +423,22 @@ async function validateChatEventSourcesAreAppendOnly(
     }
 
     // Insert through the canonical table with application-reserved seq_ids.
-    messageId = await validateCanonicalChatMessageStorage(client, threadId);
+    await validateCanonicalChatMessageStorage(client, threadId);
     await validateCanonicalDraftStorage(client, threadId);
 
+    await client.query(`
+      INSERT INTO "chat_thread_event_sequences" (
+        "user_id", "org_id", "last_seq_id"
+      ) VALUES ('append-only-test-user', 'append-only-test-org', 1)
+    `);
     const event = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id",
-          "org_id",
-          "chat_thread_id",
-          "kind",
-          "agent_id",
-          "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
         )
         VALUES (
-          'append-only-test-user',
-          'append-only-test-org',
-          $1,
-          'created',
-          $2,
-          'append-only migration test'
+          'append-only-test-user', 'append-only-test-org', 1,
+          $1, 'created', $2, 'append-only migration test'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
@@ -464,23 +461,22 @@ async function validateChatEventSourcesAreAppendOnly(
     );
     assert.equal(threadEventSequenceState.rows[0]?.lastSeqId, "1");
 
+    const advancedSequence = await client.query<{ lastSeqId: string }>(`
+      UPDATE "chat_thread_event_sequences"
+      SET "last_seq_id" = "last_seq_id" + 1
+      WHERE "user_id" = 'append-only-test-user'
+        AND "org_id" = 'append-only-test-org'
+      RETURNING "last_seq_id" AS "lastSeqId"
+    `);
+    assert.equal(advancedSequence.rows[0]?.lastSeqId, "2");
     const nextEvent = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id",
-          "org_id",
-          "chat_thread_id",
-          "kind",
-          "agent_id",
-          "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
         )
         VALUES (
-          'append-only-test-user',
-          'append-only-test-org',
-          $1,
-          'renamed',
-          $2,
-          'advanced append-only migration test'
+          'append-only-test-user', 'append-only-test-org', 2,
+          $1, 'renamed', $2, 'advanced append-only migration test'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
@@ -495,11 +491,9 @@ async function validateChatEventSourcesAreAppendOnly(
     const snapshot = await client.query<{ latestSeqId: string }>(
       `
         INSERT INTO "chat_thread_snapshots" (
-          "user_id",
-          "org_id",
-          "latest_event_id"
+          "user_id", "org_id", "latest_event_id", "latest_event_seq_id"
         )
-        VALUES ('append-only-test-user', 'append-only-test-org', $1)
+        VALUES ('append-only-test-user', 'append-only-test-org', $1, 1)
         RETURNING "latest_event_seq_id" AS "latestSeqId"
       `,
       [eventId],
@@ -509,7 +503,7 @@ async function validateChatEventSourcesAreAppendOnly(
     const advancedSnapshot = await client.query<{ latestSeqId: string }>(
       `
         UPDATE "chat_thread_snapshots"
-        SET "latest_event_id" = $1
+        SET "latest_event_id" = $1, "latest_event_seq_id" = 2
         WHERE "user_id" = 'append-only-test-user'
           AND "org_id" = 'append-only-test-org'
         RETURNING "latest_event_seq_id" AS "latestSeqId"
@@ -518,21 +512,13 @@ async function validateChatEventSourcesAreAppendOnly(
     );
     assert.equal(advancedSnapshot.rows[0]?.latestSeqId, "2");
 
-    await expectAppendOnlyUpdateRejected(client, {
-      tableName: "chat_events",
-      query: `UPDATE "chat_events" SET "event_type" = "event_type" WHERE "id" = $1`,
-      rowId: messageId,
-    });
-    await expectAppendOnlyUpdateRejected(client, {
-      tableName: "chat_thread_events",
-      query: `UPDATE "chat_thread_events" SET "title" = 'mutated' WHERE "id" = $1`,
-      rowId: eventId,
-    });
-
-    console.log("   ✅ chat_events rejects UPDATE");
-    console.log("   ✅ chat_thread_events rejects UPDATE\n");
-    console.log("   ✅ chat event writes use application-reserved seq_ids\n");
+    console.log(
+      "   ✅ chat events and snapshots accept explicit seq_ids and cursors\n",
+    );
   } finally {
+    await client.query(
+      `DELETE FROM "chat_thread_drafts" WHERE "user_id" = 'append-only-test-user'`,
+    );
     await client.query(
       `
         DELETE FROM "chat_thread_snapshots"
@@ -563,6 +549,36 @@ async function validateChatEventContextPointerConstraints(
   const threadId = "00000000-0000-4000-8000-000000074502";
 
   try {
+    const contextConstraint = await client.query<{
+      definition: string;
+      validated: boolean;
+    }>(`
+      SELECT convalidated AS validated,
+        pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint
+      WHERE conrelid = 'public.chat_events'::regclass
+        AND conname = 'chat_events_context_type_check'
+    `);
+    assert.equal(contextConstraint.rows.length, 1);
+    assert.equal(contextConstraint.rows[0]?.validated, true);
+    const contextTypes = [
+      ...(contextConstraint.rows[0]?.definition ?? "").matchAll(/'([^']+)'/gu),
+    ]
+      .map((match) => {
+        return match[1];
+      })
+      .sort();
+    assert.deepEqual(contextTypes, [
+      "agent_run",
+      "agentphone",
+      "automation",
+      "discord",
+      "feishu",
+      "slack",
+      "teams",
+      "telegram",
+      "web",
+    ]);
     await client.query(
       `
         INSERT INTO "agents" ("id", "org_id", "owner", "name")
@@ -577,18 +593,21 @@ async function validateChatEventContextPointerConstraints(
           "id",
           "user_id",
           "agent_id",
-          "last_chat_event_seq_id",
           "title"
         )
         VALUES (
           $1,
           'context-pointer-test-user',
           $2,
-          2,
           'context pointer test'
         )
       `,
       [threadId, agentId],
+    );
+
+    await client.query(
+      "INSERT INTO chat_event_sequences(chat_thread_id, last_seq_id) VALUES($1, 2)",
+      [threadId],
     );
 
     const accepted = await client.query<{
@@ -637,10 +656,19 @@ async function validateChatEventContextPointerConstraints(
             '00000000-0000-4000-8000-000000074515',
             $1,
             'input.rejected',
-            NULL,
+            'web',
             NULL,
             '{"userMessage":{"version":1,"parts":[{"type":"text","text":"rejected input"}]}}'::jsonb,
             4
+          ),
+          (
+            '00000000-0000-4000-8000-000000074517',
+            $1,
+            'input.prompt',
+            'discord',
+            '00000000-0000-4000-8000-000000074506',
+            '{"userMessage":{"version":1,"parts":[{"type":"text","text":"Discord input"},{"type":"source","kind":"discord"}]}}'::jsonb,
+            6
           )
         RETURNING
           "context_type" AS "contextType",
@@ -655,7 +683,11 @@ async function validateChatEventContextPointerConstraints(
         contextType: "slack",
       },
       { contextId: null, contextType: "web" },
-      { contextId: null, contextType: null },
+      { contextId: null, contextType: "web" },
+      {
+        contextId: "00000000-0000-4000-8000-000000074506",
+        contextType: "discord",
+      },
     ]);
 
     await expectDatabaseError(client, {
@@ -695,7 +727,7 @@ async function validateChatEventContextPointerConstraints(
           '00000000-0000-4000-8000-000000074514',
           $1,
           'output.message',
-          'discord',
+          'unsupported',
           '00000000-0000-4000-8000-000000074505',
           3
         )
@@ -727,9 +759,34 @@ async function validateChatEventContextPointerConstraints(
       `,
       values: [threadId],
     });
+    await expectDatabaseError(client, {
+      code: "23514",
+      messageIncludes: "chat_events_input_context_type_check",
+      query: `
+        INSERT INTO "chat_events" (
+          "id",
+          "chat_thread_id",
+          "event_type",
+          "context_type",
+          "context_id",
+          "payload",
+          "seq_id"
+        )
+        VALUES (
+          '00000000-0000-4000-8000-000000074518',
+          $1,
+          'input.rejected',
+          NULL,
+          NULL,
+          '{"userMessage":{"version":1,"parts":[{"type":"text","text":"missing rejected discriminator"}]}}'::jsonb,
+          7
+        )
+      `,
+      values: [threadId],
+    });
 
     console.log(
-      "   ✅ Chat event contexts require input discriminators while allowing context-less rejected inputs\n",
+      "   ✅ Chat event contexts require input discriminators, including rejected inputs\n",
     );
   } finally {
     await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
@@ -769,7 +826,38 @@ async function restoreMigrations(): Promise<void> {
   await fs.rm(BACKUP_DIR, { recursive: true, force: true });
 }
 
-async function addPgVectorExtensionPreludeToGeneratedMigrations(): Promise<void> {
+type ExtensionPrelude = {
+  readonly extension: string;
+  readonly label: string;
+  readonly usesExtension: (sql: string) => boolean;
+};
+
+// drizzle-kit does not emit CREATE EXTENSION, so a freshly generated chain
+// needs the extensions that shipped migrations create explicitly.
+const GENERATED_MIGRATION_EXTENSION_PRELUDES: readonly ExtensionPrelude[] = [
+  {
+    extension: "vector",
+    label: "pgvector",
+    usesExtension: (sql) => {
+      return (
+        /\bvector\s*\(/i.test(sql) ||
+        /\bvector_cosine_ops\b/i.test(sql) ||
+        /\bUSING\s+hnsw\b/i.test(sql)
+      );
+    },
+  },
+  {
+    extension: "btree_gin",
+    label: "btree_gin",
+    // Multi-column GIN indexes over scalar columns need btree_gin operator
+    // classes.
+    usesExtension: (sql) => {
+      return /\bUSING\s+gin\s*\(\s*"[^"]+"\s*,/i.test(sql);
+    },
+  },
+];
+
+async function addExtensionPreludesToGeneratedMigrations(): Promise<void> {
   const sqlFiles = (await fs.readdir(MIGRATIONS_DIR))
     .filter((file) => {
       return file.endsWith(".sql");
@@ -785,43 +873,34 @@ async function addPgVectorExtensionPreludeToGeneratedMigrations(): Promise<void>
     }),
   );
 
-  const usesPgVector = sqlByFile.some(({ sql }) => {
-    return (
-      /\bvector\s*\(/i.test(sql) ||
-      /\bvector_cosine_ops\b/i.test(sql) ||
-      /\bUSING\s+hnsw\b/i.test(sql)
+  for (const prelude of GENERATED_MIGRATION_EXTENSION_PRELUDES) {
+    const createExtension = new RegExp(
+      `CREATE\\s+EXTENSION\\s+(IF\\s+NOT\\s+EXISTS\\s+)?"?${prelude.extension}"?`,
+      "i",
     );
-  });
-  if (!usesPgVector) {
-    return;
-  }
+    const hasExtension = sqlByFile.some(({ sql }) => {
+      return createExtension.test(sql);
+    });
+    if (hasExtension) {
+      continue;
+    }
 
-  const hasPgVectorExtension = sqlByFile.some(({ sql }) => {
-    return /CREATE\s+EXTENSION\s+(IF\s+NOT\s+EXISTS\s+)?"?vector"?/i.test(sql);
-  });
-  if (hasPgVectorExtension) {
-    return;
-  }
+    const firstMigration = sqlByFile.find(({ sql }) => {
+      return prelude.usesExtension(sql);
+    });
+    if (!firstMigration) {
+      continue;
+    }
 
-  const firstPgVectorMigration = sqlByFile.find(({ sql }) => {
-    return (
-      /\bvector\s*\(/i.test(sql) ||
-      /\bvector_cosine_ops\b/i.test(sql) ||
-      /\bUSING\s+hnsw\b/i.test(sql)
+    firstMigration.sql = `CREATE EXTENSION IF NOT EXISTS ${prelude.extension};--> statement-breakpoint\n${firstMigration.sql}`;
+    await fs.writeFile(
+      path.join(MIGRATIONS_DIR, firstMigration.file),
+      firstMigration.sql,
     );
-  });
-  if (!firstPgVectorMigration) {
-    return;
+    console.log(
+      `   Added ${prelude.label} extension prelude to generated migration ${firstMigration.file}`,
+    );
   }
-
-  const migrationPath = path.join(MIGRATIONS_DIR, firstPgVectorMigration.file);
-  await fs.writeFile(
-    migrationPath,
-    `CREATE EXTENSION IF NOT EXISTS vector;--> statement-breakpoint\n${firstPgVectorMigration.sql}`,
-  );
-  console.log(
-    `   Added pgvector extension prelude to generated migration ${firstPgVectorMigration.file}`,
-  );
 }
 
 async function generateFreshMigrations(): Promise<void> {
@@ -833,7 +912,27 @@ async function generateFreshMigrations(): Promise<void> {
 
   // Generate new migrations (non-interactive)
   execCommand("pnpm drizzle-kit generate", { cwd: PACKAGE_DIR });
-  await addPgVectorExtensionPreludeToGeneratedMigrations();
+  await addExtensionPreludesToGeneratedMigrations();
+  // Drizzle models the account FK identity/action, but not PostgreSQL deferral.
+  // Install the same checked-in current-schema contract on the generated side;
+  // normalized comparison must still compare the complete constraint definition.
+  const generatedSql = (await fs.readdir(MIGRATIONS_DIR))
+    .filter((file) => {
+      return file.endsWith(".sql");
+    })
+    .sort();
+  const finalSql = generatedSql.at(-1);
+  if (finalSql === undefined) {
+    throw new Error("Generated schema has no SQL migration");
+  }
+  const deferral = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/constraints/connector-selection.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${deferral}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -962,63 +1061,15 @@ async function expectDatabaseError(
 }
 
 const INTEGRATION_USER_ID_TABLES = [
-  "agentphone_user_agent_preferences",
   "agentphone_user_links",
   "feishu_org_connections",
-  "feishu_platform_user_agent_preferences",
-  "feishu_user_agent_preferences",
   "github_user_links",
   "slack_org_connections",
-  "slack_user_agent_preferences",
   "teams_org_connections",
-  "teams_user_agent_preferences",
   "telegram_official_user_links",
-  "telegram_user_agent_preferences",
-  "telegram_user_links",
-] as const;
-
-const INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS = [
-  {
-    constraintName: "agentphone_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "agentphone_user_agent_preferences",
-  },
-  {
-    constraintName: "feishu_platform_user_agent_preferences_pk",
-    definition: "PRIMARY KEY (user_id, org_id, platform)",
-    tableName: "feishu_platform_user_agent_preferences",
-  },
-  {
-    constraintName: "feishu_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "feishu_user_agent_preferences",
-  },
-  {
-    constraintName: "slack_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "slack_user_agent_preferences",
-  },
-  {
-    constraintName: "teams_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "teams_user_agent_preferences",
-  },
-  {
-    constraintName: "telegram_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "telegram_user_agent_preferences",
-  },
 ] as const;
 
 const INTEGRATION_USER_ID_CANONICAL_INDEXES = [
-  {
-    definition:
-      "CREATE UNIQUE INDEX agentphone_user_agent_preferences_user_id_org_id_pk ON public.agentphone_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "agentphone_user_agent_preferences_user_id_org_id_pk",
-    tableName: "agentphone_user_agent_preferences",
-  },
   {
     definition:
       "CREATE UNIQUE INDEX idx_agentphone_user_links_user_org ON public.agentphone_user_links USING btree (user_id, org_id)",
@@ -1037,35 +1088,11 @@ const INTEGRATION_USER_ID_CANONICAL_INDEXES = [
   },
   {
     definition:
-      "CREATE UNIQUE INDEX feishu_platform_user_agent_preferences_pk ON public.feishu_platform_user_agent_preferences USING btree (user_id, org_id, platform)",
-    isPrimary: true,
-    isUnique: true,
-    name: "feishu_platform_user_agent_preferences_pk",
-    tableName: "feishu_platform_user_agent_preferences",
-  },
-  {
-    definition:
-      "CREATE UNIQUE INDEX feishu_user_agent_preferences_user_id_org_id_pk ON public.feishu_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "feishu_user_agent_preferences_user_id_org_id_pk",
-    tableName: "feishu_user_agent_preferences",
-  },
-  {
-    definition:
       "CREATE INDEX idx_slack_org_connections_user_id_workspace ON public.slack_org_connections USING btree (user_id, slack_workspace_id)",
     isPrimary: false,
     isUnique: false,
     name: "idx_slack_org_connections_user_id_workspace",
     tableName: "slack_org_connections",
-  },
-  {
-    definition:
-      "CREATE UNIQUE INDEX slack_user_agent_preferences_user_id_org_id_pk ON public.slack_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "slack_user_agent_preferences_user_id_org_id_pk",
-    tableName: "slack_user_agent_preferences",
   },
   {
     definition:
@@ -1077,35 +1104,11 @@ const INTEGRATION_USER_ID_CANONICAL_INDEXES = [
   },
   {
     definition:
-      "CREATE UNIQUE INDEX teams_user_agent_preferences_user_id_org_id_pk ON public.teams_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "teams_user_agent_preferences_user_id_org_id_pk",
-    tableName: "teams_user_agent_preferences",
-  },
-  {
-    definition:
       "CREATE UNIQUE INDEX idx_telegram_official_user_links_user_org ON public.telegram_official_user_links USING btree (user_id, org_id)",
     isPrimary: false,
     isUnique: true,
     name: "idx_telegram_official_user_links_user_org",
     tableName: "telegram_official_user_links",
-  },
-  {
-    definition:
-      "CREATE UNIQUE INDEX telegram_user_agent_preferences_user_id_org_id_pk ON public.telegram_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "telegram_user_agent_preferences_user_id_org_id_pk",
-    tableName: "telegram_user_agent_preferences",
-  },
-  {
-    definition:
-      "CREATE UNIQUE INDEX idx_telegram_user_links_user_id_installation ON public.telegram_user_links USING btree (user_id, installation_id)",
-    isPrimary: false,
-    isUnique: true,
-    name: "idx_telegram_user_links_user_id_installation",
-    tableName: "telegram_user_links",
   },
 ] as const;
 
@@ -1135,36 +1138,6 @@ async function assertCanonicalIntegrationIdentitySchema(
     INTEGRATION_USER_ID_TABLES.map((tableName) => {
       return { columnName: "user_id", isNullable: "NO", tableName };
     }),
-  );
-
-  const primaryKeys = await client.query<{
-    constraintName: string;
-    definition: string;
-    tableName: string;
-  }>(
-    [
-      'SELECT "relation"."relname" AS "tableName",',
-      '  "constraint"."conname" AS "constraintName",',
-      '  pg_get_constraintdef("constraint"."oid", false) AS "definition"',
-      'FROM "pg_constraint" AS "constraint"',
-      'INNER JOIN "pg_class" AS "relation"',
-      '  ON "relation"."oid" = "constraint"."conrelid"',
-      'INNER JOIN "pg_namespace" AS "namespace"',
-      '  ON "namespace"."oid" = "relation"."relnamespace"',
-      'WHERE "namespace"."nspname" = \'public\'',
-      '  AND "constraint"."contype" = \'p\'',
-      '  AND "relation"."relname" = ANY($1::text[])',
-      'ORDER BY "relation"."relname"',
-    ].join("\n"),
-    [
-      INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS.map(({ tableName }) => {
-        return tableName;
-      }),
-    ],
-  );
-  assert.deepEqual(
-    primaryKeys.rows,
-    INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS,
   );
 
   await client.query("SET search_path TO public, pg_catalog");
@@ -1198,74 +1171,6 @@ async function assertCanonicalIntegrationIdentitySchema(
   assert.deepEqual(indexes.rows, INTEGRATION_USER_ID_CANONICAL_INDEXES);
 }
 
-async function assertFeishuPlatformPreferenceConstraints(
-  client: Client,
-): Promise<void> {
-  const agentId = "00000000-0000-4000-8000-000000116401";
-  const userId = "platform-preference-test-user";
-  const orgId = "platform-preference-test-org";
-  const insertPreference = `
-    INSERT INTO "feishu_platform_user_agent_preferences"
-      ("user_id", "org_id", "platform", "selected_agent_id")
-    VALUES ($1, $2, $3, $4)
-  `;
-
-  try {
-    await client.query(
-      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
-       VALUES ($1, $2, $3, 'platform-preference-test')`,
-      [agentId, orgId, userId],
-    );
-    for (const platform of ["feishu", "lark"]) {
-      await client.query(insertPreference, [userId, orgId, platform, agentId]);
-    }
-    await expectDatabaseError(client, {
-      code: "23505",
-      messageIncludes: "feishu_platform_user_agent_preferences_pk",
-      query: insertPreference,
-      values: [userId, orgId, "lark", agentId],
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "chk_feishu_platform_user_agent_preferences_platform",
-      query: insertPreference,
-      values: [userId, orgId, "unknown", agentId],
-    });
-    await expectDatabaseError(client, {
-      code: "23503",
-      query: insertPreference,
-      values: [
-        `${userId}-missing-agent`,
-        orgId,
-        "lark",
-        "00000000-0000-4000-8000-000000116402",
-      ],
-    });
-
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
-    const remaining = await client.query<{
-      platform: string;
-      selectedAgentId: string | null;
-    }>(
-      `SELECT "platform", "selected_agent_id" AS "selectedAgentId"
-       FROM "feishu_platform_user_agent_preferences"
-       WHERE "user_id" = $1 AND "org_id" = $2
-       ORDER BY "platform"`,
-      [userId, orgId],
-    );
-    assert.deepEqual(remaining.rows, [
-      { platform: "feishu", selectedAgentId: null },
-      { platform: "lark", selectedAgentId: null },
-    ]);
-  } finally {
-    await client.query(
-      `DELETE FROM "feishu_platform_user_agent_preferences" WHERE "org_id" = $1`,
-      [orgId],
-    );
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
-  }
-}
-
 async function validateCanonicalIntegrationIdentitySchema(
   dbUrl: string,
 ): Promise<void> {
@@ -1277,9 +1182,8 @@ async function validateCanonicalIntegrationIdentitySchema(
 
   try {
     await assertCanonicalIntegrationIdentitySchema(client);
-    await assertFeishuPlatformPreferenceConstraints(client);
     console.log(
-      "   ✅ Canonical integration identity columns, keys, and indexes match\n",
+      "   ✅ Canonical integration identity columns and indexes match\n",
     );
   } finally {
     await client.end();
@@ -1302,244 +1206,9 @@ type PermanentFunction = {
 
 // Exported from a database built by the existing migration chain. Extension-owned
 // pgcrypto and vector functions are deliberately absent from the function list.
-const EXPECTED_PERMANENT_TRIGGERS = [
-  {
-    definition:
-      "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
-    schemaName: "public",
-    tableName: "agent_runs",
-    triggerName: "capture_billing_run_attribution",
-  },
-  {
-    definition:
-      "CREATE TRIGGER billing_run_attribution_immutable BEFORE UPDATE ON public.billing_run_attribution FOR EACH ROW EXECUTE FUNCTION reject_billing_attribution_update()",
-    schemaName: "public",
-    tableName: "billing_run_attribution",
-    triggerName: "billing_run_attribution_immutable",
-  },
-  {
-    definition:
-      "CREATE TRIGGER capture_usage_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
-    schemaName: "public",
-    tableName: "usage_event",
-    triggerName: "capture_usage_billing_attribution",
-  },
-  {
-    definition:
-      "CREATE TRIGGER capture_hourly_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
-    schemaName: "public",
-    tableName: "usage_event_hourly_rollup",
-    triggerName: "capture_hourly_billing_attribution",
-  },
-  {
-    definition:
-      "CREATE TRIGGER capture_generation_billing_identity BEFORE INSERT OR UPDATE OF billing_run_id, billing_context ON public.built_in_generation_jobs FOR EACH ROW EXECUTE FUNCTION capture_generation_billing_identity()",
-    schemaName: "public",
-    tableName: "built_in_generation_jobs",
-    triggerName: "capture_generation_billing_identity",
-  },
-  {
-    definition:
-      "CREATE TRIGGER mark_raw_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
-    schemaName: "public",
-    tableName: "usage_event",
-    triggerName: "mark_raw_billing_usage_observed",
-  },
-  {
-    definition:
-      "CREATE TRIGGER mark_hourly_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
-    schemaName: "public",
-    tableName: "usage_event_hourly_rollup",
-    triggerName: "mark_hourly_billing_usage_observed",
-  },
-  {
-    definition:
-      "CREATE TRIGGER chat_events_reject_update BEFORE UPDATE ON public.chat_events FOR EACH ROW EXECUTE FUNCTION reject_chat_event_source_update()",
-    schemaName: "public",
-    tableName: "chat_events",
-    triggerName: "chat_events_reject_update",
-  },
-  {
-    definition:
-      "CREATE TRIGGER allocate_legacy_chat_thread_event_seq_id BEFORE INSERT ON public.chat_thread_events FOR EACH ROW EXECUTE FUNCTION allocate_legacy_chat_thread_event_seq_id()",
-    schemaName: "public",
-    tableName: "chat_thread_events",
-    triggerName: "allocate_legacy_chat_thread_event_seq_id",
-  },
-  {
-    definition:
-      "CREATE TRIGGER chat_thread_events_reject_update BEFORE UPDATE ON public.chat_thread_events FOR EACH ROW EXECUTE FUNCTION reject_chat_event_source_update()",
-    schemaName: "public",
-    tableName: "chat_thread_events",
-    triggerName: "chat_thread_events_reject_update",
-  },
-  {
-    definition:
-      "CREATE TRIGGER fill_legacy_chat_thread_snapshot_event_seq_id BEFORE INSERT OR UPDATE ON public.chat_thread_snapshots FOR EACH ROW EXECUTE FUNCTION fill_legacy_chat_thread_snapshot_event_seq_id()",
-    schemaName: "public",
-    tableName: "chat_thread_snapshots",
-    triggerName: "fill_legacy_chat_thread_snapshot_event_seq_id",
-  },
-  {
-    definition:
-      "CREATE TRIGGER chat_threads_normalize_computer_access BEFORE INSERT OR UPDATE OF computer_use_host_id, cloud_browser_enabled ON public.chat_threads FOR EACH ROW EXECUTE FUNCTION chat_threads_normalize_computer_access()",
-    schemaName: "public",
-    tableName: "chat_threads",
-    triggerName: "chat_threads_normalize_computer_access",
-  },
-  {
-    definition:
-      "CREATE TRIGGER hosted_sites_delete_artifact_registry AFTER DELETE ON public.hosted_sites FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('hosted-site')",
-    schemaName: "public",
-    tableName: "hosted_sites",
-    triggerName: "hosted_sites_delete_artifact_registry",
-  },
-  {
-    definition:
-      "CREATE TRIGGER image_artifacts_delete_artifact_registry AFTER DELETE ON public.image_artifacts FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('image')",
-    schemaName: "public",
-    tableName: "image_artifacts",
-    triggerName: "image_artifacts_delete_artifact_registry",
-  },
-  {
-    definition:
-      "CREATE TRIGGER presentation_artifacts_delete_artifact_registry AFTER DELETE ON public.presentation_artifacts FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('presentation')",
-    schemaName: "public",
-    tableName: "presentation_artifacts",
-    triggerName: "presentation_artifacts_delete_artifact_registry",
-  },
-  {
-    definition:
-      "CREATE TRIGGER run_uploaded_files_delete_artifact_registry AFTER DELETE ON public.run_uploaded_files FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('file')",
-    schemaName: "public",
-    tableName: "run_uploaded_files",
-    triggerName: "run_uploaded_files_delete_artifact_registry",
-  },
-  {
-    definition:
-      "CREATE TRIGGER run_uploaded_files_queue_artifact_catalog AFTER INSERT OR UPDATE OF run_id, chat_thread_id, user_id, org_id, external_id, filename, content_type, url, preview_image_url, metadata ON public.run_uploaded_files FOR EACH ROW EXECUTE FUNCTION queue_artifact_catalog_file()",
-    schemaName: "public",
-    tableName: "run_uploaded_files",
-    triggerName: "run_uploaded_files_queue_artifact_catalog",
-  },
-  {
-    definition:
-      "CREATE TRIGGER video_artifacts_delete_artifact_registry AFTER DELETE ON public.video_artifacts FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('video')",
-    schemaName: "public",
-    tableName: "video_artifacts",
-    triggerName: "video_artifacts_delete_artifact_registry",
-  },
-] as const satisfies readonly PermanentTrigger[];
+const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
-const EXPECTED_PERMANENT_FUNCTIONS = [
-  {
-    bodyHash: "8838fc6fbf2d02e7ca8294efda788e90",
-    functionName: "billing_usage_source",
-    identityArguments: "trigger_source text",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "56fbba07cf9d2a5877b03524c215c28b",
-    functionName: "ensure_billing_run_attribution",
-    identityArguments:
-      "billing_id uuid, billed_org text, billed_user text, original_start timestamp without time zone, billing_source text",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "58e58b34a3eb3679ad3ba9d984bf2b8b",
-    functionName: "capture_billing_run_attribution",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "8699ee12596b337ac2df0a58e1ec6d59",
-    functionName: "ensure_billing_run_thread",
-    identityArguments: "billing_id uuid, original_thread uuid",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "a1cded319d3a0e285807a877e8d85b74",
-    functionName: "reject_billing_attribution_update",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "b002912b7bba9df6783801b84490bada",
-    functionName: "capture_usage_billing_attribution",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "81ad11f2d8edaa5b6d708e02e21b792a",
-    functionName: "capture_generation_billing_identity",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "edb73467bdfa0f1f58e388f2df908b89",
-    functionName: "mark_billing_usage_observed",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "9d5c181a9f7d32a4a02430ee95af739c",
-    functionName: "purge_quiescent_provisional_billing_attribution",
-    identityArguments:
-      "billed_org text, billed_user text, quiescent_run_ids uuid[]",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "6b1b5ad47ec35bcbaad3fa95d86ef027",
-    functionName: "allocate_legacy_chat_thread_event_seq_id",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "7f12cb6026b4e6d6638aaa22e0a93514",
-    functionName: "chat_threads_normalize_computer_access",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "3879e0228971b9f64e4bf8439ec5df4b",
-    functionName: "delete_artifact_registry_entity",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "7740cf65befb5e06a73e1f21bcfdd5cc",
-    functionName: "fill_legacy_chat_thread_snapshot_event_seq_id",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "6e1e9c59353aa29b1e0ba58f1406e875",
-    functionName: "queue_artifact_catalog_file",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "519c7504c787a49c4c6bea8a588711fc",
-    functionName: "reject_chat_event_source_update",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-] as const satisfies readonly PermanentFunction[];
+const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [];
 
 function assertPermanentInventory(args: {
   readonly actual: readonly string[];
@@ -1648,250 +1317,6 @@ async function validatePermanentTriggerAndFunctionInventory(
   }
 }
 
-async function validatePermanentArtifactTriggerBehavior(
-  dbUrl: string,
-): Promise<void> {
-  console.log(
-    "=== Phase 2.5.2: Validate permanent artifact trigger behavior ===\n",
-  );
-  const client = new Client({ connectionString: dbUrl });
-  await client.connect();
-
-  const fixture = {
-    agentId: "00000000-0000-4000-8000-000000246701",
-    sessionId: "00000000-0000-4000-8000-000000246702",
-    firstRunId: "00000000-0000-4000-8000-000000246703",
-    secondRunId: "00000000-0000-4000-8000-000000246704",
-    firstThreadId: "00000000-0000-4000-8000-000000246705",
-    secondThreadId: "00000000-0000-4000-8000-000000246706",
-    hostedSiteId: "00000000-0000-4000-8000-000000246707",
-    presentationSiteId: "00000000-0000-4000-8000-000000246708",
-    scopedSiteId: "00000000-0000-4000-8000-000000246709",
-    directFileId: "00000000-0000-4000-8000-000000246710",
-    queuedFileId: "00000000-0000-4000-8000-000000246711",
-    imageFileId: "00000000-0000-4000-8000-000000246712",
-    videoFileId: "00000000-0000-4000-8000-000000246713",
-    imageId: "00000000-0000-4000-8000-000000246714",
-    presentationId: "00000000-0000-4000-8000-000000246715",
-    videoId: "00000000-0000-4000-8000-000000246716",
-    orgId: "permanent-artifact-trigger-org",
-    otherUserId: "permanent-artifact-trigger-other-user",
-    userId: "permanent-artifact-trigger-user",
-  } as const;
-  const registryIds = [
-    "00000000-0000-4000-8000-000000246721",
-    "00000000-0000-4000-8000-000000246722",
-    "00000000-0000-4000-8000-000000246723",
-    "00000000-0000-4000-8000-000000246724",
-    "00000000-0000-4000-8000-000000246725",
-  ] as const;
-
-  try {
-    await client.query(
-      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
-       VALUES ($1, $2, $3, 'permanent-artifact-trigger-test')`,
-      [fixture.agentId, fixture.orgId, fixture.userId],
-    );
-    await client.query(
-      `INSERT INTO "agent_sessions" (
-         "id", "user_id", "org_id", "agent_id"
-       )
-       VALUES ($1, $2, $3, $4)`,
-      [fixture.sessionId, fixture.userId, fixture.orgId, fixture.agentId],
-    );
-    await client.query(
-      `INSERT INTO "agent_runs" (
-         "id", "user_id", "session_id", "status", "prompt", "org_id"
-       )
-       VALUES
-         ($1, $3, $4, 'running', 'first scoped deployment', $5),
-         ($2, $3, $4, 'running', 'second scoped deployment', $5)`,
-      [
-        fixture.firstRunId,
-        fixture.secondRunId,
-        fixture.userId,
-        fixture.sessionId,
-        fixture.orgId,
-      ],
-    );
-    await client.query(
-      `INSERT INTO "chat_threads" (
-         "id", "user_id", "agent_id", "title"
-       )
-       VALUES
-         ($1, $3, $4, 'First permanent artifact trigger chat'),
-         ($2, $5, $4, 'Second permanent artifact trigger chat')`,
-      [
-        fixture.firstThreadId,
-        fixture.secondThreadId,
-        fixture.userId,
-        fixture.agentId,
-        fixture.otherUserId,
-      ],
-    );
-    await client.query(
-      `UPDATE "agent_runs"
-       SET
-         "trigger_source" = 'chat',
-         "autonomy_budget" = 10,
-         "chat_thread_id" = CASE
-           WHEN "id" = $1 THEN $3::uuid
-           ELSE $4::uuid
-         END
-       WHERE "id" IN ($1, $2)`,
-      [
-        fixture.firstRunId,
-        fixture.secondRunId,
-        fixture.firstThreadId,
-        fixture.secondThreadId,
-      ],
-    );
-    await client.query(
-      `INSERT INTO "run_uploaded_files" (
-         "id", "source", "external_id", "user_id", "org_id", "url",
-         "run_id"
-       )
-       VALUES
-         ($1, 'web', 'direct-file', $5, NULL, NULL, NULL),
-         ($2, 'web', 'queued-file', $5, $6,
-          'https://example.invalid/queued-file', $7),
-         ($3, 'web', 'image-file', $5, NULL, NULL, NULL),
-         ($4, 'web', 'video-file', $5, NULL, NULL, NULL)`,
-      [
-        fixture.directFileId,
-        fixture.queuedFileId,
-        fixture.imageFileId,
-        fixture.videoFileId,
-        fixture.userId,
-        fixture.orgId,
-        fixture.firstRunId,
-      ],
-    );
-    const queuedFile = await client.query<{
-      authorUserId: string;
-      orgId: string;
-    }>(
-      `SELECT
-         "author_user_id" AS "authorUserId",
-         "org_id" AS "orgId"
-       FROM "artifact_catalog_pending_files"
-       WHERE "file_id" = $1`,
-      [fixture.queuedFileId],
-    );
-    assert.deepEqual(queuedFile.rows, [
-      { authorUserId: fixture.userId, orgId: fixture.orgId },
-    ]);
-
-    await client.query(
-      `INSERT INTO "hosted_sites" (
-         "id", "org_id", "user_id", "slug", "public_slug",
-         "requested_slug", "chat_thread_id", "created_from_run_id",
-         "public_brand"
-       )
-       VALUES
-         ($1, $4, $5, 'permanent-hosted-site', 'permanent-hosted-site',
-          'permanent-hosted-site', $6, $7, 'vm0'),
-         ($2, $4, $5, 'permanent-presentation', 'permanent-presentation',
-          'permanent-presentation', NULL, NULL, 'vm0'),
-         ($3, $4, $5, 'permanent-scoped-site', 'permanent-scoped-site',
-          'permanent-scoped-site', $6, NULL, 'vm0')`,
-      [
-        fixture.hostedSiteId,
-        fixture.presentationSiteId,
-        fixture.scopedSiteId,
-        fixture.orgId,
-        fixture.userId,
-        fixture.firstThreadId,
-        fixture.firstRunId,
-      ],
-    );
-    await client.query(
-      `INSERT INTO "image_artifacts" ("id", "file_id") VALUES ($1, $2)`,
-      [fixture.imageId, fixture.imageFileId],
-    );
-    await client.query(
-      `INSERT INTO "presentation_artifacts" ("id", "hosted_site_id")
-       VALUES ($1, $2)`,
-      [fixture.presentationId, fixture.presentationSiteId],
-    );
-    await client.query(
-      `INSERT INTO "video_artifacts" ("id", "file_id") VALUES ($1, $2)`,
-      [fixture.videoId, fixture.videoFileId],
-    );
-    await client.query(
-      `INSERT INTO "artifacts" (
-         "id", "org_id", "author_user_id", "kind", "entity_id",
-         "logical_key", "projection_file_id", "projection_created_at", "title"
-       )
-       VALUES
-         ($1, $6, $7, 'hosted-site', $8, 'permanent-hosted-site', $9, now(), 'Hosted site'),
-         ($2, $6, $7, 'image', $10, 'permanent-image', $11, now(), 'Image'),
-         ($3, $6, $7, 'presentation', $12, 'permanent-presentation', $13, now(), 'Presentation'),
-         ($4, $6, $7, 'video', $14, 'permanent-video', $15, now(), 'Video'),
-         ($5, $6, $7, 'file', $16, 'permanent-file', $16, now(), 'File')`,
-      [
-        ...registryIds,
-        fixture.orgId,
-        fixture.userId,
-        fixture.hostedSiteId,
-        fixture.directFileId,
-        fixture.imageId,
-        fixture.imageFileId,
-        fixture.presentationId,
-        fixture.queuedFileId,
-        fixture.videoId,
-        fixture.videoFileId,
-        fixture.directFileId,
-      ],
-    );
-
-    await client.query(`DELETE FROM "hosted_sites" WHERE "id" = $1`, [
-      fixture.hostedSiteId,
-    ]);
-    await client.query(`DELETE FROM "image_artifacts" WHERE "id" = $1`, [
-      fixture.imageId,
-    ]);
-    await client.query(`DELETE FROM "presentation_artifacts" WHERE "id" = $1`, [
-      fixture.presentationId,
-    ]);
-    await client.query(`DELETE FROM "video_artifacts" WHERE "id" = $1`, [
-      fixture.videoId,
-    ]);
-    await client.query(`DELETE FROM "run_uploaded_files" WHERE "id" = $1`, [
-      fixture.directFileId,
-    ]);
-
-    const remainingRegistryRows = await client.query<{ kind: string }>(
-      `SELECT "kind"
-       FROM "artifacts"
-       WHERE "id" = ANY($1::uuid[])
-       ORDER BY "kind"`,
-      [[...registryIds]],
-    );
-    assert.deepEqual(remainingRegistryRows.rows, []);
-
-    console.log("   ✅ Artifact registry cascades and catalog queueing work\n");
-  } finally {
-    await client.query(`DELETE FROM "artifacts" WHERE "org_id" = $1`, [
-      fixture.orgId,
-    ]);
-    await client.query(`DELETE FROM "hosted_deployments" WHERE "org_id" = $1`, [
-      fixture.orgId,
-    ]);
-    await client.query(`DELETE FROM "hosted_sites" WHERE "org_id" = $1`, [
-      fixture.orgId,
-    ]);
-    await client.query(
-      `DELETE FROM "run_uploaded_files" WHERE "user_id" = $1`,
-      [fixture.userId],
-    );
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [
-      fixture.agentId,
-    ]);
-    await client.end();
-  }
-}
-
 async function validatePermanentAgentRunMetadataState(
   dbUrl: string,
 ): Promise<void> {
@@ -1954,7 +1379,6 @@ async function validatePermanentAgentRunMetadataState(
       "model_runtime_model",
       "built_in_model_key_id",
       "codex_service_tier",
-      "selected_video_model",
       "selected_image_model",
       "chat_thread_id",
       "api_started_at",
@@ -1972,27 +1396,11 @@ async function validatePermanentAgentRunMetadataState(
       metadataPresence.definition.includes("autonomy_budget IS NOT NULL"),
     );
 
-    assert.equal(metadataPresence.definition.match(/ IS NULL/gu)?.length, 18);
+    assert.equal(metadataPresence.definition.match(/ IS NULL/gu)?.length, 17);
     assert.equal(
       metadataPresence.definition.match(/ IS NOT NULL/gu)?.length,
       2,
     );
-    const goalObjects = await client.query(`SELECT
-      to_regclass('public.thread_goals') IS NULL AS table_absent,
-      to_regclass('public.idx_agent_runs_goal') IS NULL AS index_absent,
-      NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'agent_runs'::regclass
-        AND attname = 'goal_id' AND NOT attisdropped) AS column_absent,
-      NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN (
-        'agent_runs_goal_id_thread_goals_id_fk', 'agent_runs_metadata_without_goal_check')) AS transitional_constraints_absent`);
-    assert.deepEqual(goalObjects.rows, [
-      {
-        table_absent: true,
-        index_absent: true,
-        column_absent: true,
-        transitional_constraints_absent: true,
-      },
-    ]);
-
     const discriminators = await client.query<{
       columnDefault: string | null;
       columnName: string;
@@ -2042,8 +1450,7 @@ async function validatePermanentAgentRunMetadataState(
               'zero_runs',
               'zero_runs_pkey',
               'idx_zero_runs_chat_thread_id',
-              'idx_zero_runs_workflow_automation',
-              'idx_zero_runs_goal'
+              'idx_zero_runs_workflow_automation'
             )
         ) AS "physicalRelationCount",
         (
@@ -2098,25 +1505,6 @@ async function validatePermanentAgentRunMetadataState(
       },
     ]);
 
-    const metadataReaders = await client.query<{
-      body: string;
-      name: string;
-    }>(`
-      SELECT "proname" AS "name", "prosrc" AS "body"
-      FROM "pg_proc"
-      WHERE "pronamespace" = 'public'::regnamespace
-        AND "proname" IN (
-          'queue_artifact_catalog_file'
-        )
-      ORDER BY "proname"
-    `);
-    assert.equal(metadataReaders.rows.length, 1);
-    for (const reader of metadataReaders.rows) {
-      assert.ok(reader.body.includes('FROM "agent_runs"'));
-      assert.ok(reader.body.includes('"trigger_source" IS NOT NULL'));
-      assert.ok(!reader.body.includes('"zero_runs"'));
-    }
-
     await client.query(
       `INSERT INTO "agents" ("id", "org_id", "owner", "name")
        VALUES ($1, $2, $3, 'permanent-agent-run-metadata')`,
@@ -2144,7 +1532,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     await client.query(
       `UPDATE "agent_runs"
-       SET "trigger_source" = 'chat', "autonomy_budget" = 10
+       SET "trigger_source" = 'chat', "autonomy_budget" = 32
        WHERE "id" = $1`,
       [fixture.productRunId],
     );
@@ -2175,7 +1563,7 @@ async function validatePermanentAgentRunMetadataState(
       query: `INSERT INTO "agent_runs" (
         "id", "user_id", "session_id", "status", "prompt", "org_id",
         "trigger_source", "autonomy_budget"
-      ) VALUES ($1, $2, $3, 'failed', 'invalid budget', $4, 'chat', 11)`,
+      ) VALUES ($1, $2, $3, 'failed', 'invalid budget', $4, 'chat', 33)`,
       values: [
         fixture.outOfRangeRunId,
         fixture.userId,
@@ -2198,7 +1586,6 @@ async function validatePermanentAgentRunMetadataState(
       model_runtime_model: "'fixture'",
       built_in_model_key_id: "gen_random_uuid()",
       codex_service_tier: "'priority'",
-      selected_video_model: "'fixture'",
       selected_image_model: "'fixture'",
       chat_thread_id: "gen_random_uuid()",
       api_started_at: "now()",
@@ -2235,7 +1622,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     assert.deepEqual(validStates.rows, [
       {
-        autonomyBudget: 10,
+        autonomyBudget: 32,
         id: fixture.productRunId,
         summary: null,
         triggerSource: "chat",
@@ -2257,245 +1644,6 @@ async function validatePermanentAgentRunMetadataState(
     ]);
     await client.end();
   }
-}
-
-async function validateConnectorCatalogFinalConstraints(
-  dbUrl: string,
-): Promise<void> {
-  console.log(
-    "=== Phase 2.6: Validate final connector catalog constraints ===\n",
-  );
-  const attemptConstraint =
-    "connector_catalog_sync_state_attempt_cache_reuse_complete";
-  const candidateConstraint =
-    "connector_catalog_sync_state_rejected_candidate_complete";
-  const authorityConstraint =
-    "connector_catalog_sync_state_rejection_authority_complete";
-
-  const client = new Client({ connectionString: dbUrl });
-  await client.connect();
-  try {
-    await client.query(`
-      INSERT INTO "connector_catalog_sync_state" (
-        "source_id",
-        "schema_version",
-        "last_attempt_at",
-        "last_attempt_outcome",
-        "last_attempt_reused_cached_rejection",
-        "last_failure_code",
-        "last_rejected_catalog_version",
-        "last_rejected_catalog_key",
-        "last_rejected_catalog_digest",
-        "last_rejected_pointer_etag",
-        "last_rejected_failure_code",
-        "last_rejected_backend_version",
-        "last_rejected_build_commit_sha"
-      )
-      VALUES
-        (
-          'migration-final-catalog-accepted',
-          1,
-          '2026-07-25 00:00:00',
-          'accepted',
-          FALSE,
-          NULL,
-          NULL,
-          NULL,
-          NULL,
-          NULL,
-          NULL,
-          NULL,
-          NULL
-        ),
-        (
-          'migration-final-catalog-rejected',
-          1,
-          '2026-07-25 00:00:00',
-          'rejected',
-          TRUE,
-          'invalid-artifact',
-          '2026-07-25.1',
-          'connectors/v1/releases/2026-07-25.1/catalog.json',
-          'sha256:${"b".repeat(64)}',
-          '"final-authority-etag"',
-          'invalid-artifact',
-          '1.319.0',
-          '${"a".repeat(40)}'
-        )
-    `);
-    const validRows = await client.query<{ source_id: string }>(`
-      SELECT "source_id"
-      FROM "connector_catalog_sync_state"
-      WHERE "source_id" IN (
-        'migration-final-catalog-accepted',
-        'migration-final-catalog-rejected'
-      )
-      ORDER BY "source_id"
-    `);
-    assert.deepEqual(
-      validRows.rows.map((row) => {
-        return row.source_id;
-      }),
-      ["migration-final-catalog-accepted", "migration-final-catalog-rejected"],
-    );
-
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: attemptConstraint,
-      query: `
-        INSERT INTO "connector_catalog_sync_state"
-          ("source_id", "schema_version", "last_attempt_reused_cached_rejection")
-        VALUES ('invalid-provenance-without-attempt', 1, FALSE)
-      `,
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: attemptConstraint,
-      query: `
-        INSERT INTO "connector_catalog_sync_state" (
-          "source_id",
-          "schema_version",
-          "last_attempt_at",
-          "last_attempt_outcome",
-          "last_failure_code"
-        )
-        VALUES (
-          'invalid-missing-attempt-provenance',
-          1,
-          '2026-07-25 00:00:00',
-          'rejected',
-          'source-unavailable'
-        )
-      `,
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: attemptConstraint,
-      query: `
-        INSERT INTO "connector_catalog_sync_state" (
-          "source_id",
-          "schema_version",
-          "last_attempt_at",
-          "last_attempt_outcome",
-          "last_attempt_reused_cached_rejection"
-        )
-        VALUES (
-          'invalid-reused-accepted-attempt',
-          1,
-          '2026-07-25 00:00:00',
-          'accepted',
-          TRUE
-        )
-      `,
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: candidateConstraint,
-      query: `
-        INSERT INTO "connector_catalog_sync_state" (
-          "source_id",
-          "schema_version",
-          "last_rejected_catalog_version",
-          "last_rejected_failure_code",
-          "last_rejected_backend_version"
-        )
-        VALUES (
-          'invalid-partial-rejected-candidate',
-          1,
-          '2026-07-25.2',
-          'invalid-artifact',
-          '1.319.0'
-        )
-      `,
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: authorityConstraint,
-      query: `
-        INSERT INTO "connector_catalog_sync_state" (
-          "source_id",
-          "schema_version",
-          "last_rejected_catalog_version",
-          "last_rejected_catalog_key",
-          "last_rejected_catalog_digest",
-          "last_rejected_failure_code"
-        )
-        VALUES (
-          'invalid-candidate-without-authority',
-          1,
-          '2026-07-25.3',
-          'connectors/v1/releases/2026-07-25.3/catalog.json',
-          'sha256:${"c".repeat(64)}',
-          'invalid-artifact'
-        )
-      `,
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: authorityConstraint,
-      query: `
-        INSERT INTO "connector_catalog_sync_state"
-          ("source_id", "schema_version", "last_rejected_backend_version")
-        VALUES ('invalid-authority-without-candidate', 1, '1.319.0')
-      `,
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: authorityConstraint,
-      query: `
-        INSERT INTO "connector_catalog_sync_state" (
-          "source_id",
-          "schema_version",
-          "last_rejected_pointer_etag",
-          "last_rejected_failure_code",
-          "last_rejected_backend_version"
-        )
-        VALUES (
-          'invalid-rejection-backend-version',
-          1,
-          '"invalid-version-etag"',
-          'invalid-pointer',
-          '1.319.0-rc.1'
-        )
-      `,
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: authorityConstraint,
-      query: `
-        INSERT INTO "connector_catalog_sync_state" (
-          "source_id",
-          "schema_version",
-          "last_rejected_pointer_etag",
-          "last_rejected_failure_code",
-          "last_rejected_backend_version",
-          "last_rejected_build_commit_sha"
-        )
-        VALUES (
-          'invalid-rejection-build-commit',
-          1,
-          '"invalid-build-etag"',
-          'invalid-pointer',
-          '1.319.0',
-          '${"d".repeat(39)}'
-        )
-      `,
-    });
-
-    await client.query(`
-      DELETE FROM "connector_catalog_sync_state"
-      WHERE "source_id" IN (
-        'migration-final-catalog-accepted',
-        'migration-final-catalog-rejected'
-      )
-    `);
-  } finally {
-    await client.end();
-  }
-
-  console.log(
-    "   ✅ Final connector catalog constraints accept complete state and reject ambiguous state\n",
-  );
 }
 
 async function validateCustomConnectorOauthModeConstraints(
@@ -3510,23 +2658,23 @@ async function main(): Promise<void> {
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
+    await validateCanonicalBillingSources(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
-    await validatePermanentArtifactTriggerBehavior(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
-    await validatePermanentBuiltInModelCooldownState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
-    await validatePermanentSlackPublicBrandState(dbUrl1);
+    await validatePermanentDiscordFoundation(dbUrl1);
+    await validatePermanentDiscordChat(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
-    await validateGpt55Retirement(dbUrl1);
+    await validatePermanentModelCatalogConstraints(dbUrl1);
+    await validateModelCatalogSeed(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
     await validateOfficialAutomationResultEmailSchema(dbUrl1);
     await validateExpandedBrowserSchema(dbUrl1);
-    await validateChatEventSourcesAreAppendOnly(dbUrl1);
+    await validateCanonicalChatEventStorage(dbUrl1);
     await validateChatEventContextPointerConstraints(dbUrl1);
-    await validateConnectorCatalogFinalConstraints(dbUrl1);
     await validateCustomConnectorOauthModeConstraints(dbUrl1);
     await validateConnectorAutomaticOAuthConstraints(dbUrl1);
     await validateCustomConnectorSkillVersionPair(dbUrl1);
@@ -3542,10 +2690,11 @@ async function main(): Promise<void> {
     const dbUrl2 = createTestDbUrl(TEST_DB_2);
     await runMigrations(dbUrl2);
     console.log("   ✅ Fresh migrations applied successfully\n");
-    await validatePermanentBuiltInModelCooldownState(dbUrl2);
     await validatePermanentBuiltInModelKeyState(dbUrl2);
-    await validatePermanentSlackPublicBrandState(dbUrl2);
+    await validatePermanentDiscordFoundation(dbUrl2);
+    await validatePermanentDiscordChat(dbUrl2);
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
+    await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
@@ -3556,7 +2705,6 @@ async function main(): Promise<void> {
     await restoreMigrations();
     migrationsBackedUp = false;
 
-    // Step 5: Run normalized comparison (using pg library)
     console.log("=== Phase 4: Normalized schema comparison ===\n");
     const comparisonPassed = await runNormalizedComparison(dbUrl1, dbUrl2);
 
@@ -3567,11 +2715,10 @@ async function main(): Promise<void> {
       console.log("   ✅ Journal timestamps are strictly increasing");
       console.log("   ✅ Latest snapshot accurately reflects final DB state");
       console.log(
-        "   ✅ Browser state uses canonical thread identity and lifecycle events",
+        "   ✅ Browser state uses canonical thread identity; chat event types are canonical",
       );
-      console.log("   ✅ Chat event source tables reject UPDATE");
       console.log(
-        "   ✅ Final connector catalog constraints reject invalid state",
+        "   ✅ Chat event storage accepts explicit sequences and cursors",
       );
       console.log(
         "   ✅ Custom connector ordinary mode checks, bindings and cascades remain enforced",
@@ -3586,9 +2733,6 @@ async function main(): Promise<void> {
       console.log("   ✅ Permanent trigger and function inventories match");
       console.log(
         "   ✅ Usage-pack pending guards retain uniqueness and count constraints",
-      );
-      console.log(
-        "   ✅ Permanent artifact triggers preserve cascade and queue behavior",
       );
       console.log(
         "   ✅ Permanent inventory matches API-owned Pi candidate accounting",

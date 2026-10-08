@@ -1,5 +1,6 @@
 import {
   chatThreadEventSchema,
+  chatThreadSnapshotProjectionSchema,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -71,7 +72,13 @@ export interface SharedDatabaseQuery<TKey extends SharedDatabaseDataKey> {
   readonly consistency: SharedDatabaseConsistency;
 }
 
-const chatThreadSnapshotSchema = chatThreadsContract.snapshot.responses[200];
+// SharedWorker and IndexedDB hold materialized thread data, never a URL that
+// expires independently of their cache lifetime.
+const chatThreadSnapshotSchema = z.object({
+  chatThreads: z.array(chatThreadSnapshotProjectionSchema),
+  latestEventId: z.string().uuid().nullable(),
+  latestSeqId: z.number().int().positive().nullable(),
+});
 export const chatThreadIndicatorsSchema =
   chatThreadsContract.indicators.responses[200].extend({
     unreadAt: z.record(z.string().uuid(), z.string().datetime()),

@@ -4,12 +4,14 @@ import {
   varchar,
   integer,
   bigint,
+  boolean,
   jsonb,
   timestamp,
   index,
 } from "drizzle-orm/pg-core";
 import type {
   RunnerAdmittableProfiles,
+  RunnerActiveReuseProducers,
   RunnerHeldSandboxStates,
   RunnerHeldWorkspaceStates,
 } from "@okouai/db/jsonb-contracts/runner-state";
@@ -49,13 +51,18 @@ export const runnerState = pgTable(
       .$type<RunnerHeldWorkspaceStates>()
       .default([])
       .notNull(),
+    activeReuseProducers: jsonb("active_reuse_producers")
+      .$type<RunnerActiveReuseProducers>()
+      .default([])
+      .notNull(),
     mode: varchar("mode", { length: 20 }).notNull().default("running"),
+    /** Host-local WSS ingress service observation; not public DNS/TLS reachability. */
+    wssIngressServiceActive: boolean("wss_ingress_service_active")
+      .notNull()
+      .default(false),
     lastSeenAt: timestamp("last_seen_at").notNull(),
   },
   (table) => {
-    return [
-      index("runner_state_group_idx").on(table.runnerGroup),
-      index("runner_state_last_seen_idx").on(table.lastSeenAt),
-    ];
+    return [index("runner_state_group_idx").on(table.runnerGroup)];
   },
 );

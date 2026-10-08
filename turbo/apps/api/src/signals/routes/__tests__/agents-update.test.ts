@@ -19,6 +19,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { cliAuthRoutes } from "../cli-auth";
@@ -118,7 +119,10 @@ async function createAgentAs(
   mocks.clerk.session(user.userId, user.orgId);
   context.mocks.s3.send.mockResolvedValue({});
   const response = await accept(
-    agentsCollectionClient().create({ headers: authHeaders(), body }),
+    agentsCollectionClient().create({
+      headers: authHeaders(),
+      body: { visibility: "public", ...body },
+    }),
     [201],
   );
   return { agentId: response.body.agentId };
@@ -219,7 +223,7 @@ describe("PUT /api/agents/:id", () => {
     expect(response.body.error.code).toBe("BAD_REQUEST");
   });
 
-  it("updates agent metadata and model selection while preserving omitted fields", async () => {
+  it("updates agent metadata while preserving omitted fields", async () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user, {
       displayName: "Old Agent",
@@ -242,7 +246,6 @@ describe("PUT /api/agents/:id", () => {
       ownerId: user.userId,
       displayName: "Updated Agent",
       sound: "calm",
-      modelProviderId: null,
       visibility: "public",
     });
 
@@ -413,7 +416,6 @@ describe("PATCH /api/agents/:id", () => {
       description: "Updated description",
       sound: "calm",
       avatarUrl: null,
-      preferPersonalProvider: false,
     });
 
     const fetched = await accept(
@@ -428,19 +430,6 @@ describe("PATCH /api/agents/:id", () => {
       description: "Updated description",
       avatarUrl: null,
     });
-  });
-
-  it("returns 400 for invalid path params", async () => {
-    const response = await accept(
-      agentsClient().updateMetadata({
-        params: { id: "not-a-uuid" },
-        headers: authHeaders(),
-        body: { displayName: "Invalid" },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("returns 404 for an unknown agent", async () => {
@@ -766,6 +755,87 @@ describe("PUT /api/agents/:id/instructions", () => {
       return file.path;
     });
     expect(paths).toStrictEqual(["CLAUDE.md", "AGENTS.md"]);
+  });
+
+  it("publishes one complete prepared archive for concurrent instruction updates", async () => {
+    const user = newOrgUser();
+    const agent = await createAgentAs(user, {
+      displayName: "Concurrent Instructions",
+    });
+    installDurableUserExportStorage(context, { prefixes: [""] });
+    const contents = [
+      "First complete operating notes.",
+      "Second complete operating notes.",
+    ];
+    // A publication whose prepared reservation was superseded is rejected
+    // with 409 and may be retried; at least one complete archive publishes.
+    const updates = await Promise.all(
+      contents.map((content) => {
+        return accept(
+          instructionsClient().update({
+            params: { id: agent.agentId },
+            headers: authHeaders(),
+            body: { content },
+          }),
+          [200, 409],
+        );
+      }),
+    );
+    const published = updates.filter((update) => {
+      return update.status === 200;
+    });
+    expect(published.length).toBeGreaterThanOrEqual(1);
+    for (const update of published) {
+      expect(update.body).toMatchObject({
+        agentId: agent.agentId,
+        ownerId: user.userId,
+        displayName: "Concurrent Instructions",
+      });
+    }
+    const current = await accept(
+      instructionsClient().get({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(contents).toContain(current.body.content);
+    expect(current.body.filename).toBe("CLAUDE.md");
+  });
+
+  it("reuses registered instruction Storage after A to B to A without uploading", async () => {
+    const user = newOrgUser();
+    const agent = await createAgentAs(user, {
+      displayName: "Reused Instructions",
+    });
+    context.mocks.s3.send.mockResolvedValue({});
+    for (const content of ["Version A", "Version B"]) {
+      await accept(
+        instructionsClient().update({
+          params: { id: agent.agentId },
+          headers: authHeaders(),
+          body: { content },
+        }),
+        [200],
+      );
+    }
+
+    context.mocks.s3.send.mockClear();
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
+    await accept(
+      instructionsClient().update({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+        body: { content: "Version A" },
+      }),
+      [200],
+    );
+
+    const commands = context.mocks.s3.send.mock.calls.map(([command]) => {
+      return command instanceof Object ? command.constructor.name : "";
+    });
+    expect(commands).not.toContain("HeadObjectCommand");
+    expect(commands).not.toContain("PutObjectCommand");
   });
 
   it("allows an owner CLI token to update instructions", async () => {

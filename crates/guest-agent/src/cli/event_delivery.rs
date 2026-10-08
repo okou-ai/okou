@@ -28,7 +28,7 @@ use super::LOG_TAG;
 use super::record_labels::EventLabels;
 
 const EVENT_DELIVERY_QUEUE_CAPACITY: usize = 512;
-const EVENT_DELIVERY_MAX_BYTES: usize = 16 * 1024 * 1024;
+const EVENT_DELIVERY_MAX_BYTES: usize = 32 * 1024 * 1024;
 const EVENT_DELIVERY_MAX_REQUEST_EVENTS: usize = 32;
 const EVENT_DELIVERY_MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 const EVENT_DELIVERY_DRAIN_TIMEOUT: Duration = Duration::from_secs(120);

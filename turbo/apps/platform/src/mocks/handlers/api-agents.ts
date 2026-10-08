@@ -3,6 +3,8 @@ import {
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   agentsByIdContract,
@@ -21,6 +23,7 @@ import {
   chatThreadComputerUseHostContract,
   chatThreadModelSelectionContract,
   chatThreadEventsContract,
+  chatThreadUsageContract,
   chatThreadArtifactsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mockApi } from "../msw-contract.ts";
@@ -34,9 +37,6 @@ const DEFAULT_AGENTS: AgentResponse[] = [
     description: null,
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "private",
   },
 ];
@@ -54,9 +54,6 @@ function createMockAgentResponse(agent: MockAgentResponse): AgentResponse {
     description: null,
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "private",
     ...agent,
   };
@@ -65,6 +62,12 @@ function createMockAgentResponse(agent: MockAgentResponse): AgentResponse {
 export function setMockAgents(agents: MockAgentResponse[]): void {
   mockAgents = agents.map((agent) => {
     return createMockAgentResponse(agent);
+  });
+}
+
+export function mockAgentIds(): string[] {
+  return mockAgents.map((agent) => {
+    return agent.agentId;
   });
 }
 
@@ -129,9 +132,53 @@ function mockCustomConnectorGrantUpdateResponse(
 }
 
 export const apiAgentsHandlers = [
+  mockApi(connectorOverviewContract.agent, ({ params, respond }) => {
+    return respond(200, {
+      enabledConnectorSlugs:
+        mockEnabledConnectorSlugsByAgent.get(params.id) ?? [],
+      customConnectorIds: (
+        mockCustomConnectorGrantsByAgent.get(params.id) ?? []
+      ).map((grant) => {
+        return grant.customConnectorId;
+      }),
+    });
+  }),
   // GET /api/agents
   mockApi(agentsMainContract.list, ({ respond }) => {
     return respond(200, mockAgents);
+  }),
+
+  // GET /api/connectors/agent-access
+  mockApi(connectorAgentAccessContract.get, ({ query, respond }) => {
+    const visibleAgentIds = mockAgentIds();
+    return respond(200, {
+      visibleAgentIds,
+      builtin: visibleAgentIds.flatMap((agentId) => {
+        return (mockEnabledConnectorSlugsByAgent.get(agentId) ?? [])
+          .filter((connectorSlug) => {
+            return !query.builtinSlug || connectorSlug === query.builtinSlug;
+          })
+          .map((connectorSlug) => {
+            return { connectorSlug, agentId };
+          });
+      }),
+      custom: visibleAgentIds.flatMap((agentId) => {
+        return (mockCustomConnectorGrantsByAgent.get(agentId) ?? [])
+          .filter((grant) => {
+            return (
+              !query.customConnectorId ||
+              grant.customConnectorId === query.customConnectorId
+            );
+          })
+          .map((grant) => {
+            return {
+              connectorId: grant.customConnectorId,
+              agentId,
+              permissionNames: grant.permissionNames,
+            };
+          });
+      }),
+    });
   }),
 
   // GET /api/agents/:id/user-connectors
@@ -184,9 +231,6 @@ export const apiAgentsHandlers = [
       displayName: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     });
   }),
@@ -250,10 +294,14 @@ export const apiAgentsHandlers = [
       id: body.clientThreadId ?? "b0000000-0000-4000-a000-000000000001",
       title: null,
       createdAt: "2026-03-10T00:00:00Z",
-      selectedModel: body.model ?? "claude-sonnet-4-6",
+      selectedModel: body.model === undefined ? "claude-sonnet-5" : body.model,
       serviceTier: body.serviceTier ?? null,
     });
   }),
+
+  mockApi(chatThreadUsageContract.read, ({ respond }) =>
+    respond(200, { runs: [] }),
+  ),
 
   // POST /api/chat/events/catch-up
   mockApi(chatThreadEventsContract.catchUp, ({ body, respond }) => {
@@ -339,6 +387,6 @@ export const apiAgentsHandlers = [
 
   // POST /api/chat-threads/:id/mark-read
   mockApi(chatThreadMarkReadContract.markRead, ({ respond }) => {
-    return respond(200, { lastReadAt: null, unreads: [] });
+    return respond(200, { lastReadAt: null });
   }),
 ];

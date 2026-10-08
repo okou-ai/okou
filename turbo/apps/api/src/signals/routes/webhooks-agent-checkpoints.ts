@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   webhookCheckpointsContract,
   webhookCheckpointsPrepareHistoryContract,
@@ -10,7 +10,7 @@ import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
-  createAgentCheckpoint$,
+  createAgentCheckpointOperations,
   prepareCheckpointHistoryUpload$,
 } from "../services/agent-webhook-checkpoints.service";
 import { settle } from "../utils";
@@ -19,22 +19,45 @@ import {
   unauthorizedRunMismatch,
 } from "./agent-webhook-auth";
 
+function createAuthorizedCheckpoint(runId: string) {
+  return computed((get) => {
+    const auth = getSandboxAuthForRun(runId, get(authorization$));
+    if (!auth) {
+      return null;
+    }
+    return {
+      auth,
+      checkpoint: createAgentCheckpointOperations(runId, auth.userId),
+    };
+  });
+}
+
 const createBody$ = bodyResultOf(webhookCheckpointsContract.create);
-const createCheckpoint$ = command(async ({ get, set }, signal: AbortSignal) => {
+const createRequest$ = computed(async (get) => {
   const bodyResult = await get(createBody$);
+  if (!bodyResult.ok) {
+    return bodyResult;
+  }
+  return {
+    ...bodyResult,
+    authorizedCheckpoint$: createAuthorizedCheckpoint(bodyResult.data.runId),
+  };
+});
+const createCheckpoint$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const bodyResult = await get(createRequest$);
   signal.throwIfAborted();
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
 
   const body = bodyResult.data;
-  const auth = getSandboxAuthForRun(body.runId, get(authorization$));
-  if (!auth) {
+  const authorized = get(bodyResult.authorizedCheckpoint$);
+  if (!authorized) {
     return unauthorizedRunMismatch;
   }
 
   const result = await settle(
-    set(createAgentCheckpoint$, { auth, body }, signal),
+    set(authorized.checkpoint.create$, { auth: authorized.auth, body }, signal),
   );
   signal.throwIfAborted();
 

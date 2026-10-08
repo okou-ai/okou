@@ -16,7 +16,6 @@ import {
   openChatListMenu,
   pinnedAgentLink,
   prepareAgents,
-  prepareDefaultAgent,
   queryMenuItemByText,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
@@ -94,18 +93,6 @@ async function setupWorkspaceSearch() {
   return dialog;
 }
 
-test("Show matching workspace chats and messages", async () => {
-  const dialog = await setupWorkspaceSearch();
-  await waitFor(() => {
-    expect(within(dialog).getByText("2 results")).toBeInTheDocument();
-    expect(within(dialog).getByText("Deployment notes")).toBeInTheDocument();
-    expect(within(dialog).getByText("Incident response")).toBeInTheDocument();
-    expect(
-      within(dialog).queryByText("Research Agent"),
-    ).not.toBeInTheDocument();
-  });
-});
-
 test("Filter workspace search to matching messages", async () => {
   const dialog = await setupWorkspaceSearch();
   await waitFor(() => {
@@ -116,18 +103,6 @@ test("Filter workspace search to matching messages", async () => {
     within(dialog).queryByText("Deployment notes"),
   ).not.toBeInTheDocument();
   expect(within(dialog).getByText("Incident response")).toBeInTheDocument();
-});
-
-test("Show an empty workspace-search result", async () => {
-  const dialog = await setupWorkspaceSearch();
-  await fill(
-    within(dialog).getByPlaceholderText("Search workspace..."),
-    "missing",
-  );
-  await waitFor(() => {
-    expect(within(dialog).getByText("No results found")).toBeInTheDocument();
-    expect(within(dialog).getByText("0 results")).toBeInTheDocument();
-  });
 });
 
 test("Filter workspace search to chats and navigate", async () => {
@@ -296,80 +271,6 @@ test("Show useful search-result ages and an illustrated empty state", async () =
   );
 });
 
-test("Show only the selected agent’s unread conversations when switching agents", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID],
-  });
-  const researchThread = createThread(RESEARCH_THREAD_ID, "Research kickoff", {
-    agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-  });
-  const supportThread = createThread(INCIDENT_THREAD_ID, "Support escalation", {
-    agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-  });
-  const olderSupportThread = createThread(
-    AUTOMATION_THREAD_ID,
-    "Support archive",
-    {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    },
-  );
-  mockSidebarThreadStory([researchThread, supportThread, olderSupportThread]);
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      agents: {
-        [RESEARCH_AGENT_ID]: "unread",
-        [SUPPORT_AGENT_ID]: "unread",
-      },
-      threads: {
-        [RESEARCH_THREAD_ID]: "unread",
-        [INCIDENT_THREAD_ID]: "unread",
-        [AUTOMATION_THREAD_ID]: "active",
-      },
-      unreadAt: {
-        [RESEARCH_THREAD_ID]: "2026-03-10T00:05:00Z",
-        [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z",
-      },
-    });
-  });
-
-  await setupSidebarPage({
-    context,
-    path: `/chats/${RESEARCH_THREAD_ID}`,
-  });
-
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Research kickoff")).toBeInTheDocument();
-  });
-  openChatListMenu();
-  click(menuItemByText("Unread"));
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Research kickoff")).toBeInTheDocument();
-  });
-  expect(
-    within(sidebar()).queryByText("Support escalation"),
-  ).not.toBeInTheDocument();
-
-  fireEvent.keyDown(document.body, {
-    key: "}",
-    ctrlKey: true,
-    shiftKey: true,
-  });
-
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
-    expect(
-      within(sidebar()).getByText("Support escalation"),
-    ).toBeInTheDocument();
-    expect(
-      within(sidebar()).queryByText("Research kickoff"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(sidebar()).queryByText("Support archive"),
-    ).not.toBeInTheDocument();
-  });
-});
-
 test("Toggle unread chats by reselecting an unread pinned agent", async () => {
   prepareAgents();
   context.mocks.data.userPreferences({
@@ -455,48 +356,6 @@ test("Toggle unread chats by reselecting an unread pinned agent", async () => {
   );
 });
 
-test("Keep all chats when reselecting a pinned agent without unread", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [SUPPORT_AGENT_ID],
-  });
-  mockSidebarThreadStory([
-    createThread(INCIDENT_THREAD_ID, "Support recent", {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    }),
-    createThread(AUTOMATION_THREAD_ID, "Support older", {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    }),
-  ]);
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
-  });
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${SUPPORT_AGENT_ID}/chat`,
-  });
-
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Support recent")).toBeInTheDocument();
-    expect(within(sidebar()).getByText("Support older")).toBeInTheDocument();
-  });
-  const navigationCount = vi.mocked(window.history.pushState).mock.calls.length;
-  const supportAgent = pinnedAgentLink(
-    screen.getByTestId("pinned-agents-grid"),
-    "Support Agent",
-  );
-
-  click(supportAgent);
-
-  expect(within(sidebar()).getByText("Support recent")).toBeInTheDocument();
-  expect(within(sidebar()).getByText("Support older")).toBeInTheDocument();
-  expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
-  expect(vi.mocked(window.history.pushState)).toHaveBeenCalledTimes(
-    navigationCount,
-  );
-});
-
 test("Use context actions on pinned agents", async () => {
   prepareAgents();
   context.mocks.data.userPreferences({
@@ -540,46 +399,4 @@ test("Use context actions on pinned agents", async () => {
   await waitFor(() => {
     expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
   });
-});
-
-test("Show the three-column chat navigation and actions", async () => {
-  prepareDefaultAgent();
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  const rail = await waitFor(() => {
-    return screen.getByTestId("labeled-nav-rail");
-  });
-
-  const chatLink = within(rail).getByLabelText("Chat");
-  expect(within(rail).getByText("Chat")).toBeInTheDocument();
-  expect(chatLink.querySelector(".lucide-message-circle")).toBeInTheDocument();
-  expect(within(rail).getByText("Agents")).toBeInTheDocument();
-  expect(within(rail).getByText("Connectors")).toBeInTheDocument();
-
-  const list = screen.getByTestId("chat-list-column");
-  expect(within(list).getByText("Chat")).toBeInTheDocument();
-  const searchButton = within(list).getByLabelText("Search workspace");
-  const chatThreadsTitle = buttonByText("Chats with Okou", list);
-  if (!searchButton.parentElement || !chatThreadsTitle.parentElement) {
-    throw new Error("Chat action headers not found");
-  }
-  const headerNewChat = within(searchButton.parentElement).getByLabelText(
-    "New chat",
-  );
-  const threadNewChat = within(chatThreadsTitle.parentElement).getByLabelText(
-    "New chat",
-  );
-  expect(searchButton).toHaveAttribute(
-    "aria-keyshortcuts",
-    "Meta+Shift+F Control+Shift+F",
-  );
-  expect(headerNewChat.querySelector(".lucide-square-pen")).toBeInTheDocument();
-  expect(threadNewChat.querySelector(".lucide-plus")).toBeInTheDocument();
-  expect(
-    within(list).getByTestId("pinned-agents-horizontal"),
-  ).toBeInTheDocument();
 });

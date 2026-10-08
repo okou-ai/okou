@@ -1,39 +1,32 @@
-import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
-import {
-  getProviderRuntimeModel,
-  getSecretNameForType,
-  isModelSupportedByProvider,
-  type BuiltInModelRouteProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
-import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { modelProviders } from "@okouai/db/schema/model-provider";
-import {
-  modelProviderConnections,
-  modelProviderSurfaces,
-} from "@okouai/db/schema/model-provider-gateway";
-import { secrets } from "@okouai/db/schema/secret";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
   isPiAgentModelSupported,
-  resolvePiAgentCredential,
   type PiAgentModelConfig,
 } from "@okouai/pi-agent-runtime";
 import {
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_BYOK_MODEL,
+  PI_MEMORY_STAGE1_PERSONAL_MODEL,
   type PiMemoryStage1Model,
 } from "@okouai/pi-agent-runtime/api";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
-import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
-import { decryptStoredSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { gptApiKeyPiRoute } from "./pi-sandbox-config";
+import { resolvePiMemoryBuiltinRoute } from "./pi-memory-builtin-config";
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import {
+  catalogBuiltInRoute,
+  catalogRoutesFor,
+  type ModelCatalog,
+  ModelCatalogInvariantError,
+} from "./model-catalog.service";
+import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
+
 import {
   personalModelProviderAccountById,
   readPersonalSubscriptionCredentialBundle,
@@ -63,7 +56,7 @@ export class PiMemoryStage1CredentialRefreshError extends Error {
 }
 
 export interface PiMemoryStage1Billing {
-  readonly mode: "builtin" | "byok";
+  readonly mode: "builtin" | "subscription";
   readonly orgId: string;
   readonly userId: string;
 }
@@ -83,6 +76,12 @@ export type PiMemoryStage1CredentialResult =
       readonly selectedModel: PiMemoryStage1Model;
       readonly billing: PiMemoryStage1Billing;
       readonly modelProviderType: string;
+      /**
+       * Long-context threshold of the catalog route pricing this extraction
+       * (null: single tier), captured with the credential like a foreground
+       * run's `modelUsageLongContextMinTotalInputTokens`.
+       */
+      readonly longContextMinTotalInputTokens: number | null;
       readonly quota: PiMemoryQuotaSource;
       /** Re-read the exact binding without refreshing or selecting defaults. */
       readonly validate: (signal: AbortSignal) => Promise<void>;
@@ -109,7 +108,8 @@ interface ResolutionContext {
   readonly binding: NonNullable<Awaited<ReturnType<typeof sourceBinding>>> & {
     readonly type: string;
   };
-  readonly context: Awaited<ReturnType<typeof loadUserFeatureSwitchContext>>;
+  readonly context: Awaited<ReturnType<typeof featureSwitchContextFromRows>>;
+  readonly catalog: ModelCatalog;
 }
 
 function skip(
@@ -122,6 +122,40 @@ function skip(
 interface Stage1Selection {
   readonly selectedModel: PiMemoryStage1Model;
   readonly mode: PiMemoryStage1Billing["mode"];
+  readonly longContextMinTotalInputTokens: number | null;
+}
+
+/**
+ * The long-context threshold of the highest-priority Built-in route of
+ * `model` priced under the model's own ID, the `usage_pricing` provider
+ * extraction usage is recorded and valued under (null: single tier).
+ */
+export function piMemoryStage1ModelPricingThreshold(
+  catalog: ModelCatalog,
+  model: PiMemoryStage1Model,
+): number | null {
+  const route = catalogRoutesFor(catalog, model, "built-in").find(
+    (candidate) => {
+      return candidate.pricingProvider === model;
+    },
+  );
+  return route?.longContextMinTotalInputTokens ?? null;
+}
+
+/**
+ * Personal subscription extraction is not billed; its cost observation values usage with the
+ * `usage_pricing` rows of the model's own ID and so follows that rule's
+ * threshold.
+ */
+function subscriptionStage1Selection(catalog: ModelCatalog): Stage1Selection {
+  return {
+    selectedModel: PI_MEMORY_STAGE1_PERSONAL_MODEL,
+    mode: "subscription",
+    longContextMinTotalInputTokens: piMemoryStage1ModelPricingThreshold(
+      catalog,
+      PI_MEMORY_STAGE1_PERSONAL_MODEL,
+    ),
+  };
 }
 
 function availableCredential(
@@ -140,6 +174,7 @@ function availableCredential(
     model,
     selectedModel: selection.selectedModel,
     modelProviderType: binding.type,
+    longContextMinTotalInputTokens: selection.longContextMinTotalInputTokens,
     quota,
     billing: {
       mode: selection.mode,
@@ -161,40 +196,12 @@ function availableCredential(
     },
   };
 }
-/**
- * Pi provider identity for every built-in route that can serve extraction.
- *
- * The built-in extraction route resolves the native `deepseek` candidate first,
- * so omitting it would skip every built-in Stage 1 run as
- * `provider_model_unsupported`. `openrouter` is the secondary candidate of that
- * same model and must stay mapped, otherwise extraction cannot fall through
- * when the native candidate has no key or is in cooldown. This maps route
- * provider types only; it does not widen which providers may serve the model.
- */
-function builtInStage1PiProvider(
-  type: BuiltInModelRouteProviderType,
-): "deepseek" | "openai" | "openrouter" | null {
-  switch (type) {
-    case "deepseek": {
-      return "deepseek";
-    }
-    case "openai-api-key": {
-      return "openai";
-    }
-    case "openrouter-codex": {
-      return "openrouter";
-    }
-    default: {
-      return null;
-    }
-  }
-}
 
 async function builtinCredential(
   args: ResolutionContext,
   signal: AbortSignal,
 ): Promise<PiMemoryStage1CredentialResult> {
-  const { db, binding, context } = args;
+  const { db, binding } = args;
   // Model-first Chat pins use org scope; direct built-in launches leave it null.
   if (
     binding.id !== null ||
@@ -202,14 +209,11 @@ async function builtinCredential(
   ) {
     return skip("source_binding_invalid");
   }
-  const route = await resolveBuiltInModelRuntimeRoute(
-    db,
-    PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-    context,
-  );
+  // Maintenance has a fixed internal binding, independent of chat admission.
+  // Pricing still uses the held snapshot of the actual served route.
+  const route = await resolvePiMemoryBuiltinRoute(db, signal);
   signal.throwIfAborted();
-  const provider = route ? builtInStage1PiProvider(route.providerType) : null;
-  if (!route || !provider) {
+  if (route?.providerType !== "openrouter-codex") {
     return skip("provider_model_unsupported");
   }
   const endpoint = getModelProviderPiEndpoint(
@@ -218,6 +222,19 @@ async function builtinCredential(
   );
   if (!endpoint) {
     return skip("provider_model_unsupported");
+  }
+  // The served route's own pricing trigger. The route was resolved from this
+  // snapshot, so a miss is a broken invariant: fail closed rather than bill
+  // every token at the base (single-tier) categories.
+  const servedRoute = catalogBuiltInRoute(
+    args.catalog,
+    PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+    route.providerType,
+  );
+  if (!servedRoute) {
+    throw new ModelCatalogInvariantError(
+      "Pi memory Stage 1 pricing threshold is missing",
+    );
   }
   const readKey = async () => {
     const [key] = await db
@@ -235,24 +252,19 @@ async function builtinCredential(
   return availableCredential(
     args,
     {
-      provider,
+      provider: "openrouter",
       apiKey,
       model: route.upstreamModel,
-      baseUrl:
-        provider === "openrouter"
-          ? getOpenRouterBaseUrl("responses", {
-              credentialOwner: "builtin",
-              model: route.upstreamModel,
-              usRoutingEnabled: isFeatureEnabled(
-                FeatureSwitchKey.OpenRouterUsRouting,
-                context,
-              ),
-            })
-          : endpoint.baseUrl,
+      baseUrl: endpoint.baseUrl,
       dialect: "openai-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL, mode: "builtin" },
+    {
+      selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+      mode: "builtin",
+      longContextMinTotalInputTokens:
+        servedRoute.longContextMinTotalInputTokens,
+    },
     async (validationSignal) => {
       const current = await readKey();
       validationSignal.throwIfAborted();
@@ -268,9 +280,6 @@ async function codexCredential(
   signal: AbortSignal,
 ): Promise<PiMemoryStage1CredentialResult> {
   const { db, source, binding, context } = args;
-  if (binding.scope !== "member") {
-    return skip("source_scope_mismatch");
-  }
   const accountArgs = { db, id, orgId: source.orgId, userId: source.userId };
   const account = await personalModelProviderAccountById(accountArgs);
   signal.throwIfAborted();
@@ -324,13 +333,13 @@ async function codexCredential(
     {
       provider: "openai-codex",
       baseUrl: endpoint.baseUrl,
-      model: PI_MEMORY_STAGE1_BYOK_MODEL,
+      model: PI_MEMORY_STAGE1_PERSONAL_MODEL,
       apiKey: token,
       accountId,
       dialect: "openai-codex-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
+    subscriptionStage1Selection(args.catalog),
     async (validationSignal) => {
       const current = await personalModelProviderAccountById(accountArgs);
       validationSignal.throwIfAborted();
@@ -342,17 +351,14 @@ async function codexCredential(
       ) {
         return false;
       }
-      const bundle = await readPersonalSubscriptionCredentialBundle(
-        {
-          db,
-          orgId: source.orgId,
-          userId: source.userId,
-          type: "codex-oauth-token",
-          sourceId: id,
-          featureSwitchContext: context,
-        },
-        validationSignal,
-      );
+      const bundle = await readPersonalSubscriptionCredentialBundle({
+        db,
+        orgId: source.orgId,
+        userId: source.userId,
+        type: "codex-oauth-token",
+        sourceId: id,
+        featureSwitchContext: context,
+      });
       validationSignal.throwIfAborted();
       return (
         bundle?.account.id === id &&
@@ -365,157 +371,9 @@ async function codexCredential(
   );
 }
 
-async function gatewayCredential(
-  args: ResolutionContext,
-  id: string,
-  signal: AbortSignal,
-): Promise<PiMemoryStage1CredentialResult> {
-  const { db, source, binding, context } = args;
-  if (binding.scope !== "org") {
-    return skip("source_scope_mismatch");
-  }
-  const readSurface = async () => {
-    const [row] = await db
-      .select({
-        protocol: modelProviderSurfaces.protocol,
-        baseUrl: modelProviderSurfaces.apiBaseUrl,
-        header: modelProviderSurfaces.authHeaderName,
-        template: modelProviderSurfaces.authHeaderTemplate,
-        mappings: modelProviderSurfaces.modelMappings,
-        encryptedValue: secrets.encryptedValue,
-      })
-      .from(modelProviderSurfaces)
-      .innerJoin(
-        modelProviderConnections,
-        eq(modelProviderConnections.id, modelProviderSurfaces.connectionId),
-      )
-      .innerJoin(secrets, eq(secrets.id, modelProviderConnections.secretId))
-      .where(
-        and(
-          eq(modelProviderSurfaces.id, id),
-          eq(modelProviderConnections.orgId, source.orgId),
-          eq(secrets.orgId, source.orgId),
-          eq(secrets.userId, "__org__"),
-        ),
-      )
-      .limit(1);
-    return row;
-  };
-  const row = await readSurface();
-  signal.throwIfAborted();
-  if (!row) {
-    return skip("credential_unavailable");
-  }
-  const model = row.mappings[PI_MEMORY_STAGE1_BYOK_MODEL];
-  if (row.protocol !== "openai-responses" || !model?.trim()) {
-    return skip("provider_model_unsupported");
-  }
-  // The surface writer validates/canonicalizes the endpoint and header policy.
-  const credential = await decryptStoredSecretValue(
-    row.encryptedValue,
-    context,
-  );
-  signal.throwIfAborted();
-  if (!credential.trim()) {
-    return skip("credential_unavailable");
-  }
-  return availableCredential(
-    args,
-    {
-      provider: "openai",
-      baseUrl: row.baseUrl,
-      model,
-      catalogModel: PI_MEMORY_STAGE1_BYOK_MODEL,
-      ...resolvePiAgentCredential({
-        credential,
-        header: { name: row.header, valueTemplate: row.template },
-        target: "direct",
-      }),
-      dialect: "openai-responses",
-      transport: "sse",
-    },
-    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
-    async (validationSignal) => {
-      const current = await readSurface();
-      validationSignal.throwIfAborted();
-      return JSON.stringify(current) === JSON.stringify(row);
-    },
-    { providerClass: "api_key" },
-  );
-}
-
-async function apiKeyCredential(
-  args: ResolutionContext,
-  id: string,
-  route: NonNullable<ReturnType<typeof gptApiKeyPiRoute>>,
-  signal: AbortSignal,
-): Promise<PiMemoryStage1CredentialResult> {
-  const { db, source, binding, context } = args;
-  const type = route.productProviderType;
-  if (!isModelSupportedByProvider(PI_MEMORY_STAGE1_BYOK_MODEL, type)) {
-    return skip("provider_model_unsupported");
-  }
-  const secretOwner = binding.scope === "org" ? "__org__" : source.userId;
-  const secretName = getSecretNameForType(type);
-  const endpoint = route.endpoint;
-  if (!secretName || !endpoint) {
-    return skip("provider_model_unsupported");
-  }
-  const readKey = async () => {
-    const [row] = await db
-      .select({ encryptedValue: secrets.encryptedValue })
-      .from(modelProviders)
-      .innerJoin(secrets, eq(secrets.id, modelProviders.secretId))
-      .where(
-        and(
-          eq(modelProviders.id, id),
-          eq(modelProviders.orgId, source.orgId),
-          eq(modelProviders.userId, secretOwner),
-          eq(modelProviders.type, type),
-          eq(secrets.orgId, source.orgId),
-          eq(secrets.userId, secretOwner),
-          eq(secrets.name, secretName),
-          eq(secrets.type, "model-provider"),
-        ),
-      )
-      .limit(1);
-    return row?.encryptedValue;
-  };
-  const encrypted = await readKey();
-  signal.throwIfAborted();
-  if (!encrypted) {
-    return skip("credential_unavailable");
-  }
-  const apiKey = await decryptStoredSecretValue(encrypted, context);
-  signal.throwIfAborted();
-  if (!apiKey.trim()) {
-    return skip("credential_unavailable");
-  }
-  return availableCredential(
-    args,
-    {
-      provider: route.provider,
-      baseUrl: endpoint.baseUrl,
-      model: getProviderRuntimeModel(type, PI_MEMORY_STAGE1_BYOK_MODEL),
-      ...(type === "vercel-ai-gateway-codex"
-        ? { catalogModel: PI_MEMORY_STAGE1_BYOK_MODEL }
-        : {}),
-      apiKey,
-      dialect: "openai-responses",
-      transport: "sse",
-    },
-    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
-    async (validationSignal) => {
-      const current = await readKey();
-      validationSignal.throwIfAborted();
-      return current === encrypted;
-    },
-    { providerClass: "api_key" },
-  );
-}
-
 /** Source identity is authority; defaults and foreground settings never participate. */
 export async function resolvePiMemoryStage1Credential(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   source: SourceIdentity,
   signal: AbortSignal,
@@ -531,17 +389,27 @@ export async function resolvePiMemoryStage1Credential(
   if (!binding.type) {
     return skip("source_binding_invalid");
   }
-  const context = await loadUserFeatureSwitchContext(
-    db,
+  const featureSwitchContextRows0 = await db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(source.orgId, source.userId));
+  const context = featureSwitchContextFromRows(
     source.orgId,
     source.userId,
+    featureSwitchContextRows0,
   );
+  signal.throwIfAborted();
+  const catalog = await catalogSnapshot;
   signal.throwIfAborted();
   const args = {
     db,
     source,
     binding: { ...binding, type: binding.type },
     context,
+    catalog,
   };
   if (binding.type === "built-in") {
     return await builtinCredential(args, signal);
@@ -549,19 +417,12 @@ export async function resolvePiMemoryStage1Credential(
   if (!binding.id) {
     return skip("source_binding_invalid");
   }
-  if (binding.scope !== "member" && binding.scope !== "org") {
+  if (binding.scope !== "member") {
     return skip("source_scope_mismatch");
-  }
-  const apiKeyRoute = gptApiKeyPiRoute(binding.type);
-  if (apiKeyRoute) {
-    return await apiKeyCredential(args, binding.id, apiKeyRoute, signal);
   }
   switch (binding.type) {
     case "codex-oauth-token": {
       return await codexCredential(args, binding.id, signal);
-    }
-    case "custom-openai-responses": {
-      return await gatewayCredential(args, binding.id, signal);
     }
     default: {
       return skip("provider_model_unsupported");

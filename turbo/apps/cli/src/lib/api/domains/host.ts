@@ -2,6 +2,7 @@ import type {
   HostedSitePrepareRequest,
   HostedSitePrepareResponse,
   HostedSiteCompleteResponse,
+  HostedSiteDeleteResponse,
   HostedSiteDeploymentsResponse,
   HostedSiteFilesResponse,
 } from "@okouai/api-contracts/contracts/host";
@@ -153,4 +154,25 @@ export async function getHostedSiteDeployments(
   }
   // #35915: every serving API returns complete artifact URLs already.
   return (await response.json()) as HostedSiteDeploymentsResponse;
+}
+
+export async function deleteHostedSite(
+  publicSlug: string,
+): Promise<HostedSiteDeleteResponse> {
+  const { baseUrl, token } = await getAuthContext();
+  const response = await fetch(
+    new URL(`/api/host/sites/${encodeURIComponent(publicSlug)}`, baseUrl),
+    {
+      method: "DELETE",
+      headers: headersWithCliClientHeaders(authHeaders(token)),
+    },
+  );
+  if (!response.ok) {
+    const { message, code } = await parseErrorBody(
+      response,
+      "Failed to delete hosted site",
+    );
+    throw new ApiRequestError(message, code, response.status);
+  }
+  return (await response.json()) as HostedSiteDeleteResponse;
 }

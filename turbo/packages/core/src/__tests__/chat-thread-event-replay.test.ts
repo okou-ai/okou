@@ -11,7 +11,6 @@ const created = chatThreadEventSchema.parse({
   title: null,
   selectedModel: "claude-sonnet-5",
   modelSettings: { "claude-sonnet-5": { effort: "high" } },
-  selectedVideoModel: null,
   createdAt: "2026-09-09T00:00:00.000Z",
 });
 const selected = {
@@ -56,6 +55,217 @@ describe("model settings event replay", () => {
     });
     expect(replayChatThreadEvents([], [created])[0]).toMatchObject({
       modelSettings: { "claude-sonnet-5": { effort: "high" } },
+    });
+  });
+});
+
+describe("mute event replay", () => {
+  it("replays mute payloads without touching ordering or archive and preserves snapshots", () => {
+    const initial = replayChatThreadEvents([], [created]);
+    const muted = {
+      ...created,
+      kind: "sort_touched" as const,
+      muted: true,
+      createdAt: "2026-09-09T01:00:00.000Z",
+    };
+    const projection = replayChatThreadEvents(initial, [muted]);
+    expect(projection[0]).toEqual({ ...initial[0], muted: true });
+    expect(replayChatThreadEvents(projection, [])[0]).toEqual(projection[0]);
+    expect(
+      replayChatThreadEvents(projection, [{ ...muted, muted: false }])[0],
+    ).toEqual(initial[0]);
+    const projectedThread = projection[0];
+    if (!projectedThread) {
+      throw new Error("Expected the created thread in the mute projection");
+    }
+    const { muted: omitted, ...legacySnapshot } = projectedThread;
+    expect(omitted).toBe(true);
+    expect(replayChatThreadEvents([legacySnapshot], [])[0]).toEqual(initial[0]);
+  });
+});
+
+describe("archive event replay", () => {
+  const archived = {
+    ...created,
+    id: "00000000-0000-4000-8000-000000000005",
+    seqId: 2,
+    kind: "archived" as const,
+    createdAt: "2026-09-09T00:00:01.000Z",
+  };
+  const unarchived = {
+    ...created,
+    id: "00000000-0000-4000-8000-000000000006",
+    seqId: 3,
+    kind: "unarchived" as const,
+    createdAt: "2026-09-09T00:00:02.000Z",
+  };
+
+  it("toggles the archived flag without moving the thread", () => {
+    expect(replayChatThreadEvents([], [created])[0]).toMatchObject({
+      archived: false,
+    });
+    expect(replayChatThreadEvents([], [created, archived])[0]).toMatchObject({
+      archived: true,
+      sortAt: created.createdAt,
+    });
+    expect(
+      replayChatThreadEvents([], [created, archived, unarchived])[0],
+    ).toMatchObject({ archived: false });
+  });
+});
+
+describe("integration thread agent changes", () => {
+  it("rebinds an existing thread without resetting its conversation metadata", () => {
+    const renamed = {
+      ...created,
+      kind: "renamed" as const,
+      title: "An existing conversation",
+      createdAt: "2026-09-09T00:00:01.000Z",
+    };
+    const pinned = {
+      ...created,
+      kind: "pinned" as const,
+      pinOrder: "a",
+      createdAt: "2026-09-09T00:00:02.000Z",
+    };
+    const archived = {
+      ...created,
+      kind: "archived" as const,
+      createdAt: "2026-09-09T00:00:03.000Z",
+    };
+    const snapshot = replayChatThreadEvents(
+      [],
+      [created, renamed, pinned, archived],
+    );
+    const rebound = {
+      ...created,
+      kind: "sort_touched" as const,
+      agentId: "00000000-0000-4000-8000-000000000099",
+      reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+      createdAt: "2026-09-09T00:00:04.000Z",
+    };
+
+    const expected = {
+      agentId: rebound.agentId,
+      title: renamed.title,
+      createdAt: created.createdAt,
+      renamedAt: renamed.createdAt,
+      pinnedAt: pinned.createdAt,
+      pinOrder: pinned.pinOrder,
+      archived: true,
+      selectedModel: created.selectedModel,
+      modelSettings: created.modelSettings,
+      sortAt: rebound.createdAt,
+    };
+    expect(replayChatThreadEvents(snapshot, [rebound])[0]).toMatchObject(
+      expected,
+    );
+    expect(
+      replayChatThreadEvents(
+        [],
+        [created, renamed, pinned, archived, rebound],
+      )[0],
+    ).toMatchObject(expected);
+  });
+
+  it("keeps the new agent when later non-identity events carry the former agent", () => {
+    const rebound = {
+      ...created,
+      kind: "sort_touched" as const,
+      agentId: "00000000-0000-4000-8000-000000000099",
+      reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+      createdAt: "2026-09-09T00:00:04.000Z",
+    };
+    expect(
+      replayChatThreadEvents([], [created, rebound, selected])[0],
+    ).toMatchObject({
+      agentId: rebound.agentId,
+      selectedModel: selected.selectedModel,
+    });
+  });
+
+  it.each(["2026-09-09T00:00:03.000Z", "2026-09-09T00:00:05.000Z"])(
+    "ignores a former agent on a later committed activity touch at %s",
+    (createdAt) => {
+      const rebound = {
+        ...created,
+        seqId: 2,
+        kind: "sort_touched" as const,
+        agentId: "00000000-0000-4000-8000-000000000099",
+        reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+        createdAt: "2026-09-09T00:00:04.000Z",
+      };
+      // The activity writer captured the former agent before reassignment,
+      // then appended after the reassignment transaction committed.
+      const lateActivity = {
+        ...created,
+        seqId: 3,
+        kind: "sort_touched" as const,
+        createdAt,
+      };
+      const expected = {
+        agentId: rebound.reassignedAgentId,
+        sortAt: createdAt > rebound.createdAt ? createdAt : rebound.createdAt,
+      };
+      expect(
+        replayChatThreadEvents([], [created, rebound, lateActivity])[0],
+      ).toMatchObject(expected);
+      expect(
+        replayChatThreadEvents(replayChatThreadEvents([], [created, rebound]), [
+          lateActivity,
+        ])[0],
+      ).toMatchObject(expected);
+    },
+  );
+});
+
+describe("independently committed activity touches", () => {
+  it("keeps maximum activity time when sequence order differs from commit time", () => {
+    const later = {
+      ...created,
+      kind: "sort_touched" as const,
+      id: "00000000-0000-4000-8000-000000000021",
+      seqId: 2,
+      createdAt: "2026-09-09T00:00:10.000Z",
+    };
+    const older = {
+      ...later,
+      id: "00000000-0000-4000-8000-000000000022",
+      seqId: 3,
+      createdAt: "2026-09-09T00:00:05.000Z",
+    };
+    expect(replayChatThreadEvents([], [created, later, older])[0]?.sortAt).toBe(
+      later.createdAt,
+    );
+    const snapshot = replayChatThreadEvents([], [created, later]);
+    expect(replayChatThreadEvents(snapshot, [older])[0]?.sortAt).toBe(
+      later.createdAt,
+    );
+  });
+
+  it("still applies explicit pin order independently of activity time", () => {
+    const pinned = {
+      ...created,
+      id: "00000000-0000-4000-8000-000000000023",
+      seqId: 2,
+      kind: "pinned" as const,
+      pinOrder: "b",
+      createdAt: "2026-09-09T00:00:10.000Z",
+    };
+    const moved = {
+      ...pinned,
+      id: "00000000-0000-4000-8000-000000000024",
+      seqId: 3,
+      kind: "sort_touched" as const,
+      pinOrder: "a",
+      createdAt: "2026-09-09T00:00:01.000Z",
+    };
+    expect(
+      replayChatThreadEvents([], [created, pinned, moved])[0],
+    ).toMatchObject({
+      pinOrder: "a",
+      pinnedAt: pinned.createdAt,
+      sortAt: created.createdAt,
     });
   });
 });

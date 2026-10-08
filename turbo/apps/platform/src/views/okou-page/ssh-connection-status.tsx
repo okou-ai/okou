@@ -2,13 +2,8 @@ import { useLoadable, useLastLoadable } from "ccstate-react";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { SshConnectionObservation } from "@okouai/api-contracts/contracts/ssh-connection-observations";
-import {
-  sshIdentity$,
-  sshObservationsSnapshot$,
-  sshSingleConnectionName$,
-} from "../../signals/ssh.ts";
+import { sshIdentity$, sshObservationsSnapshot$ } from "../../signals/ssh.ts";
 import { i18n, currentLocale } from "../../i18n/index.ts";
-import { ConnectorEntryStatus } from "./components/settings/connector-entry-card.tsx";
 
 function useSshObservations():
   | {
@@ -34,58 +29,6 @@ function useSshObservations():
   return retained.data.observations === null
     ? { kind: "unavailable" }
     : { kind: "available", observations: retained.data.observations };
-}
-
-export function SshConnectionSummary({
-  configuredCount,
-}: {
-  readonly configuredCount: number;
-}) {
-  const { t } = useTranslation();
-  const status = useSshObservations();
-  const singleName = useLoadable(sshSingleConnectionName$);
-  const displayName =
-    configuredCount === 1 && singleName.state === "hasData"
-      ? singleName.data
-      : null;
-  const attentionCount =
-    status.kind === "available"
-      ? status.observations.filter((observation) => {
-          return observation.failureReason !== null;
-        }).length
-      : 0;
-  const label =
-    status.kind === "unavailable"
-      ? t(($) => {
-          return $.ssh.connectionStatus.unavailable;
-        })
-      : attentionCount > 0
-        ? t(
-            ($) => {
-              return $.connectors.accounts.summaryWithAttention;
-            },
-            { total: configuredCount, value: attentionCount },
-          )
-        : (displayName ??
-          t(
-            ($) => {
-              return $.ssh.summary;
-            },
-            { count: configuredCount },
-          ));
-  return (
-    <ConnectorEntryStatus
-      label={label}
-      tone={
-        status.kind === "unavailable" || attentionCount > 0
-          ? "warning"
-          : status.kind === "available"
-            ? "success"
-            : "neutral"
-      }
-      className="min-w-0 flex-1 text-xs text-muted-foreground"
-    />
-  );
 }
 
 export function SshAttention() {

@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.18.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.5...guest-contracts-v0.18.6) (2026-10-07)
+
+## [0.18.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.4...guest-contracts-v0.18.5) (2026-10-07)
+
+
+### Refactoring
+
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+
+## [0.18.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.3...guest-contracts-v0.18.4) (2026-10-07)
+
+## [0.18.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.2...guest-contracts-v0.18.3) (2026-10-02)
+
+## [0.18.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.1...guest-contracts-v0.18.2) (2026-10-01)
+
+## [0.18.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.0...guest-contracts-v0.18.1) (2026-09-30)
+
+## [0.18.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.13...guest-contracts-v0.18.0) (2026-09-30)
+
+
+### Features
+
+* **runner:** add private run-scoped guest duplex channel ([#37113](https://github.com/okou-ai/okou/issues/37113)) ([5487cfc](https://github.com/okou-ai/okou/commit/5487cfce060b5072409b8a0d944a7d1528ffbd91))
+
+## [0.17.13](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.12...guest-contracts-v0.17.13) (2026-09-30)
+
+## [0.17.12](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.11...guest-contracts-v0.17.12) (2026-09-29)
+
+## [0.17.11](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.10...guest-contracts-v0.17.11) (2026-09-29)
+
+## [0.17.10](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.9...guest-contracts-v0.17.10) (2026-09-28)
+
+## [0.17.9](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.8...guest-contracts-v0.17.9) (2026-09-28)
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
+## [0.17.8](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.7...guest-contracts-v0.17.8) (2026-09-28)
+
+## [0.17.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.6...guest-contracts-v0.17.7) (2026-09-27)
+
+
+### Performance Improvements
+
+* **storage:** avoid copying decoded files payload on input encoding ([#37046](https://github.com/okou-ai/okou/issues/37046)) ([e7d3762](https://github.com/okou-ai/okou/commit/e7d3762b33c7b491a99d06715f012be08fc4d3e5))
+
+## [0.17.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.5...guest-contracts-v0.17.6) (2026-09-26)
+
+## [0.17.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.4...guest-contracts-v0.17.5) (2026-09-25)
+
+## [0.17.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.3...guest-contracts-v0.17.4) (2026-09-25)
+
+## [0.17.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.2...guest-contracts-v0.17.3) (2026-09-24)
+
+## [0.17.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.1...guest-contracts-v0.17.2) (2026-09-23)
+
+
+### Performance Improvements
+
+* **runner:** avoid redundant storage payload copy ([#36413](https://github.com/okou-ai/okou/issues/36413)) ([cf8de50](https://github.com/okou-ai/okou/commit/cf8de509095c36bdd1f3ac86a2388b675488a228))
+
+## [0.17.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.0...guest-contracts-v0.17.1) (2026-09-23)
+
 ## [0.17.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.16.1...guest-contracts-v0.17.0) (2026-09-22)
 
 

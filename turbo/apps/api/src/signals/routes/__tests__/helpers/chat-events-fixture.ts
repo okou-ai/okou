@@ -1,14 +1,14 @@
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { createHash, randomUUID } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { Header } from "tar";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonical-agent-authority";
 import { createStoragesBddApi } from "./api-bdd-storages";
 import { storageTextFile } from "./api-bdd-storage-files";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
+import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -18,17 +18,13 @@ import {
   type GenerationTemplateRequest,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import {
   getModelProviderFirewall,
-  type UpsertModelProviderRequest,
   type ModelProviderType,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -40,11 +36,6 @@ import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
-import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../../test-fixtures/built-in-model-runtime-route";
-import {
-  holdPiApiFirstTurnLifecycleLockFixture,
-  readRunUsageEventsFixture,
-} from "../../../../test-fixtures/chat-events";
 import {
   readmitPiMemoryStage1CandidateFixture,
   readPiConversationIdentityFixture,
@@ -59,8 +50,6 @@ import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { chatEventsRoutes } from "../../chat-events";
 import { chatThreadRoutes } from "../../chat-threads";
 import { mailRoutes } from "../../mail";
-import { modelProviderGatewayRoutes } from "../../model-provider-gateways";
-import { modelProvidersRoutes } from "../../model-providers";
 import { webhooksWorkflowAutomationsRoutes } from "../../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
 import {
@@ -81,21 +70,16 @@ import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
+import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
 import {
   readRunLaunchSnapshotFixture,
-  resolveBuiltInModelRouteFixture,
-  seedBuiltInModelCandidateKeys,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
 } from "./runtime-state";
-
 const TEST_APP_ROUTES = Object.freeze([
   ...chatEventsRoutes,
   ...chatThreadRoutes,
   ...mailRoutes,
-  ...modelProviderGatewayRoutes,
-  ...modelProvidersRoutes,
 ]);
 
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
@@ -103,11 +87,7 @@ const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 export const CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET =
   "okou web upload-file -f <path>";
 
-export const API_FIRST_TURN_OWNERSHIP_BUDGET_MS = 45_000;
-
-export const API_FIRST_TURN_COORDINATION_BUDGET_MS = 55_000;
-
-const PI_API_FIRST_TURN_BASE_USAGE_CATEGORIES = [
+const PI_BASE_USAGE_CATEGORIES = [
   "tokens.input",
   "tokens.output",
   "tokens.cache_read",
@@ -115,53 +95,17 @@ const PI_API_FIRST_TURN_BASE_USAGE_CATEGORIES = [
 ] as const;
 
 export const GPT_PI_BDD_MODELS = [
-  "gpt-5.6-terra",
-  "gpt-5.6-sol",
-  "gpt-5.6-luna",
+  "gpt-6-luna",
+  "gpt-6-sol",
+  "gpt-6.1-sol",
 ] as const;
 
 export type PiGptBddModel = (typeof GPT_PI_BDD_MODELS)[number];
 
-export const GPT_API_KEY_BDD_ROUTES = GPT_PI_BDD_MODELS.flatMap(
-  (selectedModel) => {
-    return [
-      {
-        name: `OpenAI ${selectedModel}`,
-        selectedModel,
-        type: "openai-api-key",
-        endpoint: "https://api.openai.com/v1/responses",
-        baseUrl: "https://api.openai.com/v1",
-        secretName: "OPENAI_API_KEY",
-        piProvider: "openai",
-        runtimeModel: selectedModel,
-      },
-      {
-        name: `OpenRouter ${selectedModel}`,
-        selectedModel,
-        type: "openrouter-codex",
-        endpoint: "https://openrouter.ai/api/v1/responses",
-        baseUrl: "https://openrouter.ai/api/v1",
-        secretName: "OPENROUTER_API_KEY",
-        piProvider: "openrouter",
-        runtimeModel: `openai/${selectedModel}`,
-      },
-      {
-        name: `Vercel AI Gateway ${selectedModel}`,
-        selectedModel,
-        type: "vercel-ai-gateway-codex",
-        endpoint: "https://ai-gateway.vercel.sh/v1/responses",
-        baseUrl: "https://ai-gateway.vercel.sh/v1",
-        secretName: "VERCEL_AI_GATEWAY_API_KEY",
-        piProvider: "openai",
-        catalogModel: selectedModel,
-        runtimeModel: `openai/${selectedModel}`,
-      },
-    ] as const;
-  },
-);
+const GPT_PI_USAGE_MODELS = GPT_PI_BDD_MODELS;
 
-export const USER_OWNED_GPT_FAST_BDD_ROUTES = [
-  ...GPT_PI_BDD_MODELS.map((selectedModel) => {
+export const USER_OWNED_GPT_FAST_BDD_ROUTES = GPT_PI_BDD_MODELS.map(
+  (selectedModel) => {
     return {
       name: `subscription ${selectedModel}`,
       selectedModel,
@@ -170,11 +114,8 @@ export const USER_OWNED_GPT_FAST_BDD_ROUTES = [
       runtimeModel: selectedModel,
       wireTier: "priority",
     } as const;
-  }),
-  ...GPT_API_KEY_BDD_ROUTES.map((route) => {
-    return { ...route, wireTier: "priority" as const };
-  }),
-] as const;
+  },
+);
 
 const GPT_USAGE_PRICING = [
   "tokens.input",
@@ -194,7 +135,7 @@ const GPT_USAGE_PRICING = [
   "tokens.cache_read.long_context.fast",
   "tokens.cache_creation.long_context.fast",
 ].flatMap((category) => {
-  return GPT_PI_BDD_MODELS.map((provider) => {
+  return GPT_PI_USAGE_MODELS.map((provider) => {
     return {
       kind: "model",
       provider,
@@ -205,15 +146,12 @@ const GPT_USAGE_PRICING = [
   });
 });
 
-export type PiApiFirstTurnUsageProvider =
-  | z.infer<typeof piNativeCatalogModelSchema>
+export type PiUsageProvider =
+  | "claude-fable-5-1"
   | "deepseek-v4-flash"
   | "deepseek-v4.1-flash"
-  | "deepseek-v4-pro"
   | "okou-1.0"
-  | "okou-1.0-pro"
-  | "okou-1.0-max"
-  | PiGptBddModel;
+  | (typeof GPT_PI_USAGE_MODELS)[number];
 
 type UserMessage = Extract<
   ChatEvent,
@@ -239,6 +177,7 @@ export type RunnerClaim = Awaited<
 
 export interface EntitledChatActor {
   readonly actor: ApiTestUser;
+  readonly customerId: string;
   readonly agentId: string;
   readonly runnerGroup: string;
   readonly providerId: string;
@@ -251,7 +190,8 @@ export interface ChatRunSendBody {
   readonly threadId?: string;
   readonly clientThreadId?: string;
   readonly clientEventId?: string;
-  readonly model?: SupportedRunModel;
+  /** Null selects Auto. */
+  readonly model?: string | null;
   readonly runOptions?: ChatRunOptionsRequest;
   readonly template?: GenerationTemplateRequest;
   readonly computerUseHostId?: string | null;
@@ -278,98 +218,11 @@ export function userMessageWithTemplate(
   };
 }
 
-export const openRouterBodySchema = z.object({
-  model: z.string(),
-  messages: z.array(z.object({ role: z.string(), content: z.string() })),
-  max_tokens: z.number().optional(),
-  reasoning: z
-    .object({ effort: z.enum(["none", "minimal", "low", "medium", "high"]) })
-    .optional(),
-});
-
 export function requireOrgId(actor: ApiTestUser): string {
   if (!actor.orgId) {
     throw new Error("Expected entitled chat actor to have an org");
   }
   return actor.orgId;
-}
-
-export function totalChargedCredits(
-  rows: readonly { readonly creditsCharged: number | null }[],
-): number {
-  return rows.reduce((total, row) => {
-    if (row.creditsCharged === null) {
-      throw new Error("Expected processed usage to have charged credits");
-    }
-    return total + row.creditsCharged;
-  }, 0);
-}
-
-export async function expectPiApiUsage(
-  runId: string,
-  provider: PiApiFirstTurnUsageProvider,
-  suffix: "" | ".fast" | ".long_context" | ".long_context.fast",
-  expected: {
-    readonly input: number;
-    readonly output: number;
-    readonly cacheRead: number;
-    readonly cacheCreation: number;
-  },
-): Promise<void> {
-  const usageRows = await readRunUsageEventsFixture(runId);
-  const expectedRows = [
-    ["tokens.cache_creation", expected.cacheCreation],
-    ["tokens.cache_read", expected.cacheRead],
-    ["tokens.input", expected.input],
-    ["tokens.output", expected.output],
-  ]
-    .filter((entry) => {
-      return entry[1] !== 0;
-    })
-    .map(([category, quantity]) => {
-      return expect.objectContaining({
-        provider,
-        category: `${category}${suffix}`,
-        quantity,
-        status: "processed",
-        billingError: null,
-        creditsCharged: expect.any(Number),
-      });
-    });
-  expect(usageRows).toStrictEqual(expectedRows);
-  expect(totalChargedCredits(usageRows)).toBeGreaterThan(0);
-}
-
-export async function expectTerraApiUsage(
-  runId: string,
-  suffix: "" | ".fast" | ".long_context" | ".long_context.fast",
-  expected: {
-    readonly input: number;
-    readonly output: number;
-    readonly cacheRead: number;
-    readonly cacheCreation: number;
-  },
-): Promise<void> {
-  await expectPiApiUsage(runId, "gpt-5.6-terra", suffix, expected);
-}
-
-export async function expectTerraApiFollowUpUsage(
-  runId: string,
-  suffix: "" | ".fast" = "",
-): Promise<void> {
-  await expectTerraApiUsage(runId, suffix, {
-    input: 5,
-    output: 3,
-    cacheRead: 0,
-    cacheCreation: 0,
-  });
-}
-
-export async function expectNoBuiltInModelUsage(runId: string): Promise<void> {
-  // Operational usage rows have no production run-scoped read API. This
-  // test-only observation is required to prove the user-owned no-charge
-  // invariant rather than infer it from the public run status.
-  await expect(readRunUsageEventsFixture(runId)).resolves.toStrictEqual([]);
 }
 
 export async function createGptUsagePricingResolution(): Promise<
@@ -382,18 +235,27 @@ export async function createGptUsagePricingResolution(): Promise<
   return pricing.resolution;
 }
 
-export async function createPiApiFirstTurnUsagePricingResolution(
-  provider: PiApiFirstTurnUsageProvider,
+export async function createPiUsagePricingResolution(
+  provider: PiUsageProvider,
 ): Promise<UsagePricingFixture["resolution"]> {
   if (
-    GPT_PI_BDD_MODELS.some((model) => {
+    GPT_PI_USAGE_MODELS.some((model) => {
       return model === provider;
     })
   ) {
     return await createGptUsagePricingResolution();
   }
+  const categories =
+    provider === "okou-1.0"
+      ? [
+          ...PI_BASE_USAGE_CATEGORIES,
+          ...PI_BASE_USAGE_CATEGORIES.map((category) => {
+            return `${category}.long_context`;
+          }),
+        ]
+      : PI_BASE_USAGE_CATEGORIES;
   const pricing = await createUsagePricingFixture({
-    configured: PI_API_FIRST_TURN_BASE_USAGE_CATEGORIES.map((category) => {
+    configured: categories.map((category) => {
       return {
         kind: "model",
         provider,
@@ -430,7 +292,6 @@ export function okouTokenFromClaim(claim: RunnerClaim): string {
  * run).
  */
 export interface ChatRunCompletionOptions {
-  readonly activeInputDeliveryIds?: readonly string[];
   readonly cliAgentSessionId?: string;
   readonly cliAgentType?: "claude-code" | "codex" | "pi";
   readonly lastEventSequence?: number;
@@ -511,7 +372,10 @@ export async function expectExactPrivatePiMemoryAdmission(args: {
     userId: args.userId,
   });
   expect(beforeAdmission?.sourceRunId).not.toBe(args.runId);
-  await readmitPiMemoryStage1CandidateFixture(args.runId);
+  const admitted = await readmitPiMemoryStage1CandidateFixture(args.runId);
+  if (admitted.outcome === "skipped") {
+    throw new Error(`Private Pi memory admission skipped: ${admitted.reason}`);
+  }
   const candidate = await readPiMemoryStage1CandidateFixture({
     orgId: args.orgId,
     userId: args.userId,
@@ -636,41 +500,18 @@ export function occurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
-export function piResponsesDeveloperPrompt(
-  rawBody: string | undefined,
-): string {
-  if (rawBody === undefined) {
-    throw new Error("Expected a Pi Responses request body");
-  }
-  const body = JSON.parse(rawBody) as unknown;
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("input" in body) ||
-    !Array.isArray(body.input)
-  ) {
-    throw new Error("Expected a Pi Responses input array");
-  }
-  const developer = body.input.find((item) => {
-    return (
-      typeof item === "object" &&
-      item !== null &&
-      "role" in item &&
-      item.role === "developer"
-    );
-  });
-  if (
-    typeof developer !== "object" ||
-    developer === null ||
-    !("content" in developer) ||
-    typeof developer.content !== "string"
-  ) {
-    throw new Error("Expected a Pi Responses developer prompt");
-  }
-  return developer.content;
+export async function readThreadMessagesAfterBackgroundWork(
+  chat: ReturnType<typeof createChatFilesBddApi>,
+  actor: ApiTestUser,
+  threadId: string,
+  predicate: (messages: readonly ChatEvent[]) => boolean,
+) {
+  await flushWaitUntilForTest();
+  const page = await chat.listThreadEvents(actor, threadId);
+  expect(predicate(page.events)).toBeTruthy();
+  return page;
 }
 
-/** Create route helpers for one test file; the caller owns testContext() and its cleanup. */
 export function createChatEventsFixture(context: TestContext) {
   const bdd = createBddApi(context);
 
@@ -705,7 +546,7 @@ export function createChatEventsFixture(context: TestContext) {
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     chatCallbacks.disableVapid();
     const runnerGroup = api.configureRunnerGroup();
-    await api.grantProEntitlement(actor, {
+    const { customerId } = await api.grantProEntitlement(actor, {
       ...(options.orgId === STAFF_ORG_ID
         ? {
             customerId: "cus_bdd_chat_events_staff",
@@ -714,13 +555,37 @@ export function createChatEventsFixture(context: TestContext) {
         : {}),
       tier,
     });
-    const { providerId } = await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD chat messages agent",
       description: "Exercises the web chat send route.",
       visibility: "private",
     });
-    return { actor, agentId: agent.agentId, runnerGroup, providerId };
+    return {
+      actor,
+      customerId,
+      agentId: agent.agentId,
+      runnerGroup,
+      providerId,
+    };
+  }
+
+  /**
+   * An entitled actor with a personal Fable subscription route for sends
+   * that must stay claimable by the native Runner.
+   */
+  async function entitledNativeChatActor(
+    options: ApiTestUserOptions = {},
+    tier: "pro" | "team" = "pro",
+  ): Promise<EntitledChatActor> {
+    const entitled = await entitledChatActor(options, tier);
+    const { providerId } = await api.ensurePersonalSubscriptionModel(
+      entitled.actor,
+      {
+        model: "claude-fable-5-1",
+      },
+    );
+    return { ...entitled, providerId };
   }
 
   async function seedBuiltInModelKey(selectedModel: string): Promise<string> {
@@ -728,99 +593,40 @@ export function createChatEventsFixture(context: TestContext) {
     return fixture.selectedModel;
   }
 
+  /**
+   * Platform execution is fixed to Auto: seed its run model's keys and store
+   * the Auto (null) member preference. Personal subscriptions are separate.
+   */
   async function configureBuiltInPiModel(
     actor: ApiTestUser,
-    selectedModel: PiApiFirstTurnUsageProvider,
+    runModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
   ): Promise<void> {
-    if (selectedModel === "deepseek-v4.1-flash") {
-      configureNativeCliArtifact();
-    }
-    await seedBuiltInModelKey(selectedModel);
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-  }
-
-  async function configureApiKeyGptPiModel(
-    actor: ApiTestUser,
-    route: (typeof GPT_API_KEY_BDD_ROUTES)[number],
-    secret: string,
-  ): Promise<string> {
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: true,
-    });
-    const { providerId } = await upsertOrgModelProvider(actor, {
-      type: route.type,
-      secret,
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: route.selectedModel,
-        isDefault: true,
-        defaultProviderType: route.type,
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-    return providerId;
+    await seedBuiltInModelKey(runModel);
+    await api.updateUserModelPreference(actor, null);
   }
 
   async function configureUserOwnedGptPiModel(
     actor: ApiTestUser,
     route: (typeof USER_OWNED_GPT_FAST_BDD_ROUTES)[number],
-  ): Promise<{ readonly secret: string; readonly accountId: string | null }> {
-    if (route.type === "codex-oauth-token") {
-      const accountId = "subscription-continuity-account";
-      const { oauth } = await configureSubscriptionPiModel(
-        actor,
-        { accountId },
-        route.selectedModel,
-      );
-      return {
-        secret: z.string().parse(oauth.oauthTokenResponses[0]?.access_token),
-        accountId,
-      };
-    }
-    const secret = `${route.type}-pi-fixture-key`;
-    await configureApiKeyGptPiModel(actor, route, secret);
-    return { secret, accountId: null };
-  }
-
-  async function configureOrganizationGptModel(
-    actor: ApiTestUser,
-  ): Promise<void> {
-    const { providerId } = await upsertOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "unused-organization-openai-key",
-    });
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-5.6-terra",
-        isDefault: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+  ) {
+    const accountId = "subscription-continuity-account";
+    const { oauth } = await configureSubscriptionPiModel(
+      actor,
+      { accountId },
+      route.selectedModel,
+    );
+    return {
+      secret: z.string().parse(oauth.oauthTokenResponses[0]?.access_token),
+      accountId,
+    };
   }
 
   async function configureSubscriptionPiModel(
     actor: ApiTestUser,
     options: Parameters<typeof mockCodexDeviceAuthProvider>[0] = {},
-    selectedModel: PiGptBddModel = "gpt-5.6-terra",
+    selectedModel: PiGptBddModel = "gpt-6-luna",
   ) {
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      [FeatureSwitchKey.PiLoop]: true,
-    });
     const oauth = mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       ...options,
     });
     const started = await authDevice.requestCodexStart(
@@ -842,74 +648,24 @@ export function createChatEventsFixture(context: TestContext) {
     if (!("status" in completed.body) || completed.body.status !== "complete") {
       throw new Error("Expected subscription auth to complete");
     }
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        isDefault: true,
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, selectedModel);
     return { oauth, accountSourceId: completed.body.provider.id };
   }
 
+  /** Returns the Auto selection (null) a send names to run on OpenRouter. */
   async function configureBuiltInPiModelOnOpenRouter(
     actor: ApiTestUser,
-    selectedModel: PiApiFirstTurnUsageProvider,
-  ): Promise<<T>(work: () => Promise<T>) => Promise<T>> {
-    await seedBuiltInModelCandidateKeys(context, selectedModel);
-    const primary = await resolveBuiltInModelRouteFixture(
-      context,
-      selectedModel,
-    );
-    const openRouterType = piNativeCatalogModelSchema.safeParse(selectedModel)
-      .success
-      ? "openrouter-api-key"
-      : "openrouter-codex";
-    if (!primary || primary.provider_type === openRouterType) {
-      throw new Error(`Expected a primary managed route for ${selectedModel}`);
-    }
-    const unavailableCandidate = {
-      selectedModel,
-      providerType: primary.provider_type,
-      upstreamModel: primary.upstream_model,
-    };
-    await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-      unavailableCandidate,
-      async () => {
-        const fallback = await resolveBuiltInModelRouteFixture(
-          context,
-          selectedModel,
-        );
-        if (!fallback || fallback.provider_type !== openRouterType) {
-          throw new Error(
-            `Expected an OpenRouter fallback for ${selectedModel}`,
-          );
-        }
-      },
-    );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    return async <T>(work: () => Promise<T>): Promise<T> => {
-      return await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-        unavailableCandidate,
-        work,
-      );
-    };
+    runModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
+  ): Promise<null> {
+    await configureBuiltInPiModel(actor, runModel);
+    return null;
   }
 
   async function sendChatRun(
     actor: ApiTestUser,
     body: ChatRunSendBody,
     usagePricingResolution?: UsagePricingFixture["resolution"],
+    options?: { readonly awaitEnqueuedPick: boolean },
   ): Promise<{ readonly runId: string; readonly threadId: string }> {
     const { template, ...canonicalBody } = body;
     const requestBody = {
@@ -927,9 +683,12 @@ export function createChatEventsFixture(context: TestContext) {
     }
     let runId: string | null | undefined = sent.body.runId;
     if (runId === null) {
-      // A terminal callback may claim the queued row between enqueue and the
-      // inline dispatch decision. Recover as a refreshed client does: read the
-      // appended replacement instead of retrying the client message id.
+      // A successful-run fixture owns the enqueued pick before inspecting its
+      // effects. Tests that intentionally hold publication can opt out and
+      // observe their own explicit intermediate boundary.
+      if (options?.awaitEnqueuedPick !== false) {
+        await flushWaitUntilForTest();
+      }
       const messages = await waitForThreadMessages(
         actor,
         sent.body.threadId,
@@ -952,10 +711,88 @@ export function createChatEventsFixture(context: TestContext) {
     return { runId, threadId: sent.body.threadId };
   }
 
+  async function sendChatRunAfterPick(
+    actor: ApiTestUser,
+    body: ChatRunSendBody,
+    usagePricingResolution?: UsagePricingFixture["resolution"],
+  ): Promise<{ readonly runId: string; readonly threadId: string }> {
+    return await sendChatRun(actor, body, usagePricingResolution, {
+      awaitEnqueuedPick: true,
+    });
+  }
+
+  /**
+   * Send a chat prompt while the organization is at its run limit. The input
+   * is accepted without a run; `launchedRun` waits until a later pick launches
+   * it as the thread head and returns that run.
+   */
+  async function sendWaitingChatInput(
+    actor: ApiTestUser,
+    body: ChatRunSendBody,
+    usagePricingResolution?: UsagePricingFixture["resolution"],
+  ): Promise<{
+    readonly threadId: string;
+    readonly launchedRun: () => Promise<{
+      readonly runId: string;
+      readonly threadId: string;
+    }>;
+  }> {
+    const { template, ...canonicalBody } = body;
+    const clientEventId = body.clientEventId ?? randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        ...canonicalBody,
+        ...(template === undefined
+          ? {}
+          : { userMessage: userMessageWithTemplate(body.prompt, template) }),
+        clientEventId,
+      },
+      [201],
+      { usagePricingResolution },
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the at-capacity chat send to be accepted");
+    }
+    // At capacity the input waits in the thread without a run.
+    expect(sent.body.runId).toBeNull();
+    const threadId = sent.body.threadId;
+    const waiting = await chat.listThreadEvents(actor, threadId);
+    expect(
+      userMessages(waiting.events).filter((message) => {
+        return (
+          message.revokesEventId === clientEventId &&
+          message.runId !== undefined
+        );
+      }),
+    ).toStrictEqual([]);
+    const launchedRun = async (): Promise<{
+      readonly runId: string;
+      readonly threadId: string;
+    }> => {
+      const messages = await waitForThreadMessages(actor, threadId, (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === clientEventId &&
+            message.runId !== undefined
+          );
+        });
+      });
+      const runId = userMessages(messages.events).find((message) => {
+        return message.revokesEventId === clientEventId;
+      })?.runId;
+      if (runId === undefined) {
+        throw new Error("Expected the picked thread head to launch a run");
+      }
+      return { runId, threadId };
+    };
+    return { threadId, launchedRun };
+  }
+
   async function expectThreadCreatedModelEvent(
     actor: ApiTestUser,
     threadId: string,
-    selectedModel: string,
+    selectedModel: string | null,
   ): Promise<void> {
     const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
     expect(threadEvents.status).toBe(200);
@@ -1008,25 +845,10 @@ export function createChatEventsFixture(context: TestContext) {
     };
   }
 
-  async function waitForThreadMessages(
-    actor: ApiTestUser,
-    threadId: string,
-    predicate: (messages: readonly ChatEvent[]) => boolean,
-  ) {
-    let page: Awaited<ReturnType<typeof chat.listThreadEvents>> | undefined;
-    await expect
-      .poll(async () => {
-        page = await chat.listThreadEvents(actor, threadId);
-        return predicate(page.events);
-      })
-      .toBe(true);
-    if (!page) {
-      throw new Error(
-        `Expected chat thread ${threadId} messages to be readable`,
-      );
-    }
-    return page;
-  }
+  const waitForThreadMessages = readThreadMessagesAfterBackgroundWork.bind(
+    null,
+    chat,
+  );
 
   async function waitForRunUserMessage(
     actor: ApiTestUser,
@@ -1054,17 +876,10 @@ export function createChatEventsFixture(context: TestContext) {
       | "queued"
       | "running"
       | "timeout",
-    timeout = 1000,
   ): Promise<void> {
-    await expect
-      .poll(
-        async () => {
-          const run = await api.readRun(actor, runId);
-          return run.status;
-        },
-        { timeout },
-      )
-      .toBe(status);
+    await flushWaitUntilForTest();
+    const run = await api.readRun(actor, runId);
+    expect(run.status).toBe(status);
   }
 
   async function completeChatRunOk(
@@ -1107,9 +922,6 @@ export function createChatEventsFixture(context: TestContext) {
           cliAgentSessionId: options.cliAgentSessionId ?? `bdd-cli-${runId}`,
           cliAgentSessionHistoryHash: historyHash,
         },
-        ...(options.activeInputDeliveryIds === undefined
-          ? {}
-          : { activeInputDeliveryIds: [...options.activeInputDeliveryIds] }),
         ...(options.lastEventSequence === undefined
           ? stagedOutputEvents.length === 0
             ? {}
@@ -1154,18 +966,6 @@ export function createChatEventsFixture(context: TestContext) {
     }
   }
 
-  function modelProvidersClient() {
-    return setupApp({ context, routes: modelProvidersRoutes })(
-      modelProvidersMainContract,
-    );
-  }
-
-  function modelProviderConnectionsClient() {
-    return setupApp({ context, routes: modelProviderGatewayRoutes })(
-      modelProviderConnectionsMainContract,
-    );
-  }
-
   function chatEventsClient(
     usagePricingResolution?: UsagePricingFixture["resolution"],
   ) {
@@ -1185,24 +985,6 @@ export function createChatEventsFixture(context: TestContext) {
   } {
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     return { authorization: "Bearer clerk-session" };
-  }
-
-  /** Org-admin model provider upsert through the public route. */
-  async function upsertOrgModelProvider(
-    actor: ApiTestUser,
-    body: UpsertModelProviderRequest,
-  ): Promise<{ readonly providerId: string; readonly created: boolean }> {
-    const response = await accept(
-      modelProvidersClient().upsert({
-        headers: sessionHeaders(actor),
-        body,
-      }),
-      [200, 201],
-    );
-    return {
-      providerId: response.body.provider.id,
-      created: response.body.created,
-    };
   }
 
   async function readThreadProjection(actor: ApiTestUser, threadId: string) {
@@ -1286,7 +1068,7 @@ export function createChatEventsFixture(context: TestContext) {
       readonly clientEventId?: string;
       readonly prompt: string;
       readonly threadId?: string;
-      readonly model?: SupportedRunModel;
+      readonly model?: string;
       readonly runOptions?: ChatRunOptionsRequest;
       readonly userMessage?: UserMessageInputDocument;
     },
@@ -1326,7 +1108,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly webhookSecret: string;
     readonly payload: string;
     readonly timestamp: number;
-    readonly usagePricingResolution: UsagePricingFixture["resolution"];
+    readonly usagePricingResolution?: UsagePricingFixture["resolution"];
   }) {
     const rawBody = JSON.stringify({ event: args.payload });
     const timestamp = args.timestamp;
@@ -1348,15 +1130,20 @@ export function createChatEventsFixture(context: TestContext) {
       body: rawBody,
     });
     expect(response.status).toBe(200);
-    return z
+    const body = z
       .object({ success: z.literal(true), duplicate: z.boolean() })
       .parse(await response.json());
+    // The webhook enqueues and returns; the pick runs in the background.
+    await flushWaitUntilForTest();
+    return body;
   }
 
   async function lastThreadPiAutomationRun(
     actor: ApiTestUser,
     threadId: string,
   ) {
+    // Automation triggers only enqueue; their picks run in the background.
+    await flushWaitUntilForTest();
     const page = await chat.listThreadEvents(actor, threadId);
     const event = [...page.events].reverse().find((item) => {
       return (
@@ -1377,7 +1164,7 @@ export function createChatEventsFixture(context: TestContext) {
     threadId: string,
     runId: string,
   ) {
-    await waitForRunStatus(actor, runId, "completed", 10_000);
+    await waitForRunStatus(actor, runId, "completed");
     await flushWaitUntilForTest();
     await expect(
       readRunLaunchSnapshotFixture(context, runId),
@@ -1419,36 +1206,6 @@ export function createChatEventsFixture(context: TestContext) {
     });
   }
 
-  async function cancelBeforeLatePiResult(
-    actor: ApiTestUser,
-    runId: string,
-    releaseProvider: () => void,
-    usagePricingResolution?: UsagePricingFixture["resolution"],
-  ): Promise<void> {
-    // No public API holds the lifecycle transaction open; this scoped lock
-    // makes cancellation commit before a completed provider result publishes.
-    const lock = await holdPiApiFirstTurnLifecycleLockFixture({
-      runId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      lock.release();
-      await lock.done;
-    });
-    const cancellation = api.requestCancelRun(
-      actor,
-      runId,
-      [200],
-      usagePricingResolution,
-    );
-    await expect.poll(lock.waiterCount).toBe(1);
-    releaseProvider();
-    await expect.poll(lock.waiterCount).toBe(2);
-    lock.release();
-    await lock.done;
-    await cancellation;
-  }
-
   function mockPiCheckpointObjectStore(): Map<string, Buffer> {
     const objects = new Map<string, Buffer>();
     const fallback = context.mocks.s3.send.getMockImplementation();
@@ -1465,59 +1222,47 @@ export function createChatEventsFixture(context: TestContext) {
     return objects;
   }
 
-  function expectNoPiApiFirstTurnArtifacts(
-    runId: string,
+  /**
+   * Rebuild the session a claimed Pi Sandbox starts from, as the CLI does: the
+   * claim's inline or blob-referenced resume history, else a fresh session.
+   */
+  function piSandboxBaseSession(
+    claim: RunnerClaim,
     objects: ReadonlyMap<string, Buffer>,
-  ): void {
-    const prefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${runId}/`;
-    const artifactKeys = [`${prefix}session.jsonl`, `${prefix}manifest.json`];
-    for (const key of artifactKeys) {
-      expect(objects.has(key)).toBeFalsy();
-    }
-    // Terminal cleanup deletes temporary objects. Inspect the external writes
-    // too, so a briefly published H1 or manifest cannot pass this assertion.
-    const writes = context.mocks.s3.send.mock.calls.flatMap(([command]) => {
-      const candidate = command as PiCheckpointS3Command;
-      const key = piS3ObjectKey(candidate);
-      return candidate.constructor?.name === "PutObjectCommand" &&
-        key !== undefined &&
-        artifactKeys.includes(key)
-        ? [key]
-        : [];
-    });
-    expect(writes).toStrictEqual([]);
-  }
-
-  async function expectPiApiFirstTurnTerminalWithoutOutput(
-    actor: ApiTestUser,
-    run: { readonly runId: string; readonly threadId: string },
-    status: "failed" | "cancelled",
-    failureMessage = "[PI_API_MODEL_OUTPUT_INCOMPLETE] Pi API first-turn model output is incomplete",
-  ): Promise<void> {
-    const terminal = await api.readRun(actor, run.runId);
-    expect(terminal).toMatchObject({
-      status,
-      ...(status === "failed"
-        ? {
-            error: failureMessage,
-          }
-        : {}),
-    });
-    expect(terminal.result).toBeFalsy();
-    const events = (await chat.listThreadEvents(actor, run.threadId)).events;
-    expect(eventBackedContents(events, run.runId)).toStrictEqual([]);
-    expect(
-      events
-        .filter((event) => {
-          return (
-            event.runId === run.runId &&
-            isChatRunTerminalEventType(event.eventType)
-          );
-        })
-        .map((event) => {
-          return event.eventType;
+  ): Buffer {
+    const resume = claim.resumeSession;
+    if (!resume) {
+      if (!claim.piSessionId) {
+        throw new Error("Expected a claimed Pi session id");
+      }
+      return Buffer.from(
+        createPiSessionJsonl({
+          cwd: CANONICAL_WORKING_DIR,
+          sessionId: claim.piSessionId,
+          timestamp: nowDate().toISOString(),
         }),
-    ).toStrictEqual([`run.${status}`]);
+        "utf8",
+      );
+    }
+    if (!("historyRef" in resume)) {
+      return Buffer.from(resume.sessionHistory, "utf8");
+    }
+    const objectKey = new URL(resume.historyRef.url).searchParams.get("object");
+    const encoded = objectKey ? objects.get(objectKey) : undefined;
+    if (!encoded) {
+      throw new Error("Expected the referenced Pi resume history bytes");
+    }
+    switch (resume.historyRef.encoding) {
+      case "gzip": {
+        return gunzipSync(encoded);
+      }
+      case "zstd": {
+        return zstdDecompressSync(encoded);
+      }
+      case "identity": {
+        return encoded;
+      }
+    }
   }
 
   function uploadedPiS3Object(objectKey: string): Buffer | undefined {
@@ -1657,39 +1402,17 @@ export function createChatEventsFixture(context: TestContext) {
     readonly actor: ApiTestUser;
     readonly answer: string;
     readonly outputTokens?: number;
-    readonly nativeModel?: z.infer<typeof piNativeCatalogModelSchema>;
     readonly responsesModel?: {
-      readonly provider: "openai" | "deepseek";
+      readonly provider: "openai" | "openai-codex" | "deepseek" | "openrouter";
       readonly model: string;
     };
     readonly checkpointObjects: Map<string, Buffer>;
     readonly claim: Awaited<ReturnType<typeof claimChatRun>>;
     readonly prompt: string;
     readonly run: { readonly runId: string; readonly threadId: string };
-    readonly usagePricingResolution: UsagePricingFixture["resolution"];
+    readonly usagePricingResolution?: UsagePricingFixture["resolution"];
   }): Promise<void> {
-    const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${args.run.runId}/session.jsonl`;
-    let h0 = args.checkpointObjects.get(sessionKey);
-    if (!h0) {
-      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${args.run.runId}/manifest.json`;
-      const manifestBytes = args.checkpointObjects.get(manifestKey);
-      if (manifestBytes) {
-        const manifest = piApiFirstTurnManifestSchema.parse(
-          JSON.parse(manifestBytes.toString("utf8")),
-        );
-        if (manifest.schemaVersion === 4) {
-          const objectKey = new URL(manifest.history.url).searchParams.get(
-            "object",
-          );
-          if (objectKey) {
-            h0 = args.checkpointObjects.get(objectKey);
-          }
-        }
-      }
-    }
-    if (!h0) {
-      throw new Error("Expected authoritative sandbox-first H0");
-    }
+    const h0 = piSandboxBaseSession(args.claim.claim, args.checkpointObjects);
     const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
     session.appendMessage({
       role: "user",
@@ -1699,11 +1422,9 @@ export function createChatEventsFixture(context: TestContext) {
     session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: args.answer }],
-      api: args.nativeModel ? "anthropic-messages" : "openai-responses",
-      provider: args.nativeModel
-        ? "anthropic"
-        : (args.responsesModel?.provider ?? "openai"),
-      model: args.nativeModel ?? args.responsesModel?.model ?? "gpt-5.6-terra",
+      api: "openai-responses",
+      provider: args.responsesModel?.provider ?? "openai",
+      model: args.responsesModel?.model ?? "gpt-6-luna",
       usage: {
         input: 0,
         output: args.outputTokens ?? 0,
@@ -1763,33 +1484,47 @@ export function createChatEventsFixture(context: TestContext) {
       undefined,
       args.usagePricingResolution,
     );
-    await waitForRunStatus(args.actor, args.run.runId, "completed", 5000);
+    await waitForRunStatus(args.actor, args.run.runId, "completed");
     await flushWaitUntilForTest();
   }
 
+  /**
+   * Hold the organization's only run slot with a native anchor and send a Pi
+   * prompt on a new thread. At capacity the send is accepted without a run;
+   * `launch` completes the anchor so the org pick starts the queued thread
+   * head as the Pi run and returns that run.
+   */
   async function queueCapabilityProvenPiRun(args: {
     readonly actor: ApiTestUser;
     readonly agentId: string;
     readonly runnerGroup: string;
     readonly prompt: string;
     readonly codexServiceTier?: "fast";
-    readonly gptRoute?: "openai" | "openrouter";
-    readonly selectedModel?: PiApiFirstTurnUsageProvider;
+    /** The Auto run model whose keys and pricing are seeded. */
+    readonly selectedModel?: typeof AUTO_RUN_MODEL;
   }): Promise<{
     readonly anchor: { readonly runId: string; readonly threadId: string };
     readonly anchorClaim: Awaited<ReturnType<typeof claimChatRun>>;
-    readonly run: { readonly runId: string; readonly threadId: string };
+    readonly threadId: string;
     readonly usagePricingResolution: UsagePricingFixture["resolution"];
+    readonly launch: (
+      options?: ChatRunCompletionOptions,
+    ) => Promise<{ readonly runId: string; readonly threadId: string }>;
   }> {
     if (!args.actor.orgId) {
       throw new Error("Expected entitled chat actor to have an org");
     }
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     await api.heartbeatRunner(args.runnerGroup);
+    await api.ensurePersonalSubscriptionModel(args.actor, {
+      model: "claude-fable-5-1",
+    });
     const anchor = await sendChatRun(args.actor, {
       agentId: args.agentId,
       prompt: "hold capacity for a capability-proven Pi launch",
-      model: "claude-sonnet-5",
+      // The anchor must stay on the native Runner while the waiting target
+      // proves Pi admission; Sonnet 5 now uses the Pi checkpoint format.
+      model: "claude-fable-5-1",
     });
     await flushWaitUntilForTest();
     const anchorState = await api.readRun(args.actor, anchor.runId);
@@ -1799,41 +1534,40 @@ export function createChatEventsFixture(context: TestContext) {
       );
     }
     const anchorClaim = await claimChatRun(args.runnerGroup, anchor.runId);
-    const selectedModel = args.selectedModel ?? "gpt-5.6-terra";
-    let withModelRoute = async <T>(work: () => Promise<T>): Promise<T> => {
-      return await work();
-    };
-    if (args.gptRoute === "openrouter") {
-      withModelRoute = await configureBuiltInPiModelOnOpenRouter(
-        args.actor,
-        selectedModel,
-      );
-    } else {
-      await configureBuiltInPiModel(args.actor, selectedModel);
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...args.actor, orgId: args.actor.orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
+    const selectedModel = args.selectedModel ?? AUTO_RUN_MODEL;
+    const model = await configureBuiltInPiModelOnOpenRouter(
+      args.actor,
+      selectedModel,
     );
+
     const usagePricingResolution =
-      await createPiApiFirstTurnUsagePricingResolution(selectedModel);
-    const run = await withModelRoute(async () => {
-      return await sendChatRun(
-        args.actor,
-        {
-          agentId: args.agentId,
-          prompt: args.prompt,
-          model: selectedModel,
-          ...(args.codexServiceTier === undefined
-            ? {}
-            : { runOptions: { codexServiceTier: args.codexServiceTier } }),
-        },
+      await createPiUsagePricingResolution(selectedModel);
+    const waiting = await sendWaitingChatInput(
+      args.actor,
+      {
+        agentId: args.agentId,
+        prompt: args.prompt,
+        model,
+        ...(args.codexServiceTier === undefined
+          ? {}
+          : { runOptions: { codexServiceTier: args.codexServiceTier } }),
+      },
+      usagePricingResolution,
+    );
+    const threadId = waiting.threadId;
+
+    const launch = async (
+      options: ChatRunCompletionOptions = {},
+    ): Promise<{ readonly runId: string; readonly threadId: string }> => {
+      // Do not flush background work here: callers may block the launched
+      // run's preparation and release it only after this returns.
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
         usagePricingResolution,
-      );
-    });
-    await waitForRunStatus(args.actor, run.runId, "queued");
-    return { anchor, anchorClaim, run, usagePricingResolution };
+        ...options,
+      });
+      return await waiting.launchedRun();
+    };
+    return { anchor, anchorClaim, threadId, usagePricingResolution, launch };
   }
 
   return {
@@ -1849,14 +1583,15 @@ export function createChatEventsFixture(context: TestContext) {
     routeMocks,
     runStateStore,
     entitledChatActor,
+    entitledNativeChatActor,
     seedBuiltInModelKey,
     configureBuiltInPiModel,
-    configureApiKeyGptPiModel,
     configureUserOwnedGptPiModel,
-    configureOrganizationGptModel,
     configureSubscriptionPiModel,
     configureBuiltInPiModelOnOpenRouter,
     sendChatRun,
+    sendChatRunAfterPick,
+    sendWaitingChatInput,
     expectThreadCreatedModelEvent,
     expectNoThreadModelUpdateEvent,
     claimChatRun,
@@ -1866,11 +1601,9 @@ export function createChatEventsFixture(context: TestContext) {
     completeChatRunOk,
     failChatRun,
     cancelChatRun,
-    modelProviderConnectionsClient,
     chatEventsClient,
     chatThreadsClient,
     sessionHeaders,
-    upsertOrgModelProvider,
     readThreadProjection,
     requestSendEventRaw,
     requestSendEventWithBearer,
@@ -1879,10 +1612,8 @@ export function createChatEventsFixture(context: TestContext) {
     lastThreadPiAutomationRun,
     expectThreadPiTerminal,
     claimGptPiSandbox,
-    cancelBeforeLatePiResult,
     mockPiCheckpointObjectStore,
-    expectNoPiApiFirstTurnArtifacts,
-    expectPiApiFirstTurnTerminalWithoutOutput,
+    piSandboxBaseSession,
     uploadedPiS3Object,
     piS3Object,
     publishPendingPiInstructions,

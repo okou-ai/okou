@@ -7,7 +7,10 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
@@ -57,29 +60,32 @@ function createThread(id: string, title: string): SidebarThread {
 
 function mockSidebarThreadStory(threads: readonly SidebarThread[]): void {
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: threads.map((thread, index) => {
-        return {
-          id: thread.id,
-          agentId: thread.agent.id,
-          title: thread.title,
-          sortAt: new Date(
-            Date.parse("2026-03-10T00:00:00Z") +
-              (threads.length - index) * 1000,
-          ).toISOString(),
-          createdAt: thread.createdAt,
-          updatedAt: thread.updatedAt,
-          pinnedAt: thread.pinnedAt ?? null,
-          renamedAt: thread.renamedAt ?? null,
-          selectedModel: null,
-          serviceTier: null,
-          computerUseHostId: null,
-          selectedVideoModel: null,
-        };
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: threads.map((thread, index) => {
+          return {
+            id: thread.id,
+            agentId: thread.agent.id,
+            title: thread.title,
+            sortAt: new Date(
+              Date.parse("2026-03-10T00:00:00Z") +
+                (threads.length - index) * 1000,
+            ).toISOString(),
+            createdAt: thread.createdAt,
+            updatedAt: thread.updatedAt,
+            pinnedAt: thread.pinnedAt ?? null,
+            archived: false,
+            renamedAt: thread.renamedAt ?? null,
+            selectedModel: null,
+            serviceTier: null,
+            computerUseHostId: null,
+          };
+        }),
+        latestEventId: null,
+        latestSeqId: null,
       }),
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -155,30 +161,4 @@ test("The standalone Mac app copies the current URL with Command-L", async () =>
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([window.location.href]);
   });
-});
-
-test("The browser keeps Command-L outside standalone mode", async () => {
-  context.mocks.browser.standaloneDisplayMode(false);
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  prepareDefaultAgent();
-  mockSidebarThreadStory([createThread(THREAD_ID, "Release plan")]);
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
-
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  composer.focus();
-  const event = new KeyboardEvent("keydown", {
-    key: "l",
-    code: "KeyL",
-    metaKey: true,
-    bubbles: true,
-    cancelable: true,
-  });
-  composer.dispatchEvent(event);
-  expect(event.defaultPrevented).toBeFalsy();
-
-  expect(clipboard.writes).toStrictEqual([]);
 });

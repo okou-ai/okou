@@ -1,10 +1,9 @@
 import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Coins } from "lucide-react";
 import {
-  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -24,10 +23,9 @@ import {
   setQuestIntroKey$,
 } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
-import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
-import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
 import {
+  selectedBuiltinConnectorCatalogItem$,
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
@@ -37,6 +35,11 @@ import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { QuestConnectorPicker } from "./get-started-connector-picker.tsx";
 import { QuestWorkflowPicker } from "./get-started-workflow-picker.tsx";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
+import {
+  QuestFigure,
+  QuestRewardBadge,
+  QuestSplitLayout,
+} from "./get-started-quest-shell.tsx";
 
 /**
  * The quests that explain themselves before they hand the user off.
@@ -63,66 +66,6 @@ function isIntroduced(key: GetStartedQuestKey): key is IntroducedQuestKey {
 
 export function questHasIntro(key: GetStartedQuestKey): boolean {
   return isIntroduced(key);
-}
-
-/**
- * The quest drawings, from the Brand assets library.
- *
- * These replace five figures that were assembled here out of divs -- a replica
- * of Slack's message list, tile pairs joined by dots, a fake report table. That
- * approach put eight off-scale spacings, two off-ladder radii and four type
- * sizes into this file that exist nowhere else in the product, and it produced
- * art that could not be art-directed. The library is drawn by the people who
- * own the brand; the product's job is to frame it.
- *
- * Exported as the artboard group rather than the frame, so each file is
- * transparent and sits on whatever paper the product gives it. Every name
- * carries its own content hash, and `static.okou.io` hard caches for a year,
- * so a re-export lands on a new path instead of serving stale.
- */
-const QUEST_ART = Object.freeze({
-  slack: "get-started-slack-12b969d9d2a7.png",
-  invite: "get-started-invite-09ddee851551.png",
-  checkinWeek: "get-started-checkin-week-b218eb5cd860.png",
-});
-
-function questArtUrl(name: keyof typeof QUEST_ART): string {
-  return platformStaticAssetUrl(`views/okou-page/assets/${QUEST_ART[name]}`);
-}
-
-/**
- * The panel a quest drawing is printed on.
- *
- * One fixed-width column, full bleed to the card's own edge, with the drawing
- * centred in it. The paper is the same value in both themes: it is the sheet
- * the drawing is printed on rather than a UI surface, the argument the style
- * guide already makes for illustration stroke weights -- and it is what lets
- * one asset serve Light and Dark instead of needing a second drawing.
- *
- * The drawing is capped in both directions, not just width. Capping width alone
- * let a portrait drawing set the panel's height from its own aspect ratio: the
- * gears landed at 280x317 and took 57% of the dialog while the landscape art
- * took 43%, so the same shell changed shape depending on which file it got.
- * With both capped the column is a constant and the words decide the height.
- */
-const FIGURE_W = 248;
-const ART_MAX = 188;
-
-function QuestFigure({ art }: { art: keyof typeof QUEST_ART }) {
-  return (
-    <div
-      className="flex shrink-0 items-center justify-center bg-illustration-canvas p-5"
-      style={{ width: FIGURE_W }}
-    >
-      <img
-        src={questArtUrl(art)}
-        alt=""
-        aria-hidden
-        className="block w-full object-contain"
-        style={{ maxHeight: ART_MAX }}
-      />
-    </div>
-  );
 }
 
 /**
@@ -179,21 +122,9 @@ function IntroLayout({
         <DialogTitle className="pr-7">{title}</DialogTitle>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
-      {/* The price is its own row rather than trailing the description: in a
-          column this narrow a chip sharing that line pushes the sentence into
-          an extra wrap. The title is the argument and the price is a fact
-          about it, so it sits directly under both.
-
-          The width has to be the chip's own, because this row lands in two
-          different formatting contexts: the flex column below, and the shell's
-          `grid gap-4 p-6` for a step that keeps the plain padded body. A grid
-          item is blockified and stretched by the initial `justify-self`, so an
-          alignment utility alone left the chip spanning the whole column. */}
-      {reward !== undefined && (
-        <Badge className="w-fit text-xs font-semibold tabular-nums text-brand-text">
-          <Coins />+{formatLocalizedNumber(reward)}
-        </Badge>
-      )}
+      {/* The title is the argument and the price is a fact about it, so it
+          sits directly under both. */}
+      {reward !== undefined && <QuestRewardBadge amount={reward} />}
       {children}
       {/* `sm:items-center` so a link and a button on the same row share a
           baseline: the link has no control height of its own, and a stretched
@@ -244,25 +175,7 @@ function IntroLayout({
     return body;
   }
 
-  /*
-   * The drawing takes a column and the words take the rest.
-   *
-   * Spanning the header across both panels is what left the earlier version
-   * hollow: the picture had nothing beside it at the top and the prose had
-   * nothing to sit under, so three lines floated in the middle of the column
-   * with unowned white above and below. With the whole text block inside the
-   * column, every edge of both panels is doing something.
-   *
-   * `-m-6` cancels the body's own padding so the drawing reaches its own edge.
-   * An inset tile reads as a thumbnail pasted on; a panel reads as part of the
-   * card.
-   */
-  return (
-    <div className="-m-6 flex items-stretch">
-      {figure}
-      <div className="flex min-w-0 flex-1 flex-col gap-3 p-6">{body}</div>
-    </div>
-  );
+  return <QuestSplitLayout figure={figure}>{body}</QuestSplitLayout>;
 }
 
 interface IntroProps {
@@ -286,7 +199,7 @@ function ConnectorIntro({
   onNeedsChoice,
 }: IntroProps & {
   readonly onNeedsChoice: (
-    connector: PlatformConnectorCatalogStatusItem,
+    connector: PlatformConnectorCatalogConnectItem,
   ) => void;
 }) {
   const { t } = useTranslation();
@@ -514,7 +427,7 @@ export function GetStartedQuestIntroDialog({
         })?.rewardAmount
       : undefined;
   const props: IntroProps = { onConfirm: confirm, onClose: close, reward };
-  const needsChoice = (connector: PlatformConnectorCatalogStatusItem) => {
+  const needsChoice = (connector: PlatformConnectorCatalogConnectItem) => {
     setSelectedSlug(connector.slug);
   };
 
@@ -567,13 +480,26 @@ export function GetStartedQuestIntroDialog({
  */
 function QuestConnectModal() {
   const selectedSlug = useGet(selectedBuiltinConnectorSlug$);
+  return selectedSlug === null ? null : (
+    <SelectedQuestConnectModal connectorSlug={selectedSlug} />
+  );
+}
+
+/** Mounted once a connector is picked; the only reader of its catalog entry. */
+function SelectedQuestConnectModal({
+  connectorSlug,
+}: {
+  connectorSlug: ConnectorSlug;
+}) {
   const setSelectedSlug = useSet(setSelectedBuiltinConnectorSlug$);
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const selectedLoadable = useLastLoadable(
+    selectedBuiltinConnectorCatalogItem$,
+  );
+  // The last value is kept across a reload, and dropped once the pick changes.
   const selected =
-    selectedSlug !== null && catalogLoadable.state === "hasData"
-      ? catalogLoadable.data.connectors.find((connector) => {
-          return connector.slug === selectedSlug;
-        })
+    selectedLoadable.state === "hasData" &&
+    selectedLoadable.data?.slug === connectorSlug
+      ? selectedLoadable.data
       : undefined;
   const accountOptions = defaultBuiltinConnectorAccountOptions(selected);
   if (!selected || !accountOptions) {
@@ -607,12 +533,13 @@ export function GetStartedCheckinDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent smMaxWidth={680}>
-        {/* The milestone joins the same two panels as every other quest
-            screen. It keeps the one thing a reward screen needs that a step
-            screen does not -- the amount at display size -- but it stops
-            being the one dialog in the flow with its own shape. */}
-        <div className="-m-6 flex items-stretch">
-          <QuestFigure art="checkinWeek" />
+        {/* The confirmation joins the same two panels as every other quest
+            screen. The amount takes display size so the reward is clear. */}
+        <div className="-m-6 flex min-h-72 items-stretch">
+          {/* On a narrow viewport the copy needs the full width. */}
+          <div className="hidden sm:contents">
+            <QuestFigure art="checkinWeek" />
+          </div>
           <div className="flex min-w-0 flex-1 flex-col gap-3 p-6">
             <DialogHeader>
               <DialogTitle className="pr-7">
@@ -620,11 +547,9 @@ export function GetStartedCheckinDialog({
                   return $.chat.agentPage.getStarted.intro.checkin.title;
                 })}
               </DialogTitle>
-              {/* The streak, not the amount, is what brings someone back
-                  tomorrow, and the screen never said it. It reads as the
-                  subtitle but it is not the dialog's description: a milestone
-                  at streak 0 is reachable, and the slot that names the screen
-                  has to be the line that is always there. */}
+              {/* The streak names the habit that brings someone back tomorrow.
+                  The title remains the dialog's accessible name even if the
+                  refreshed status reports a zero streak. */}
               {streak > 0 && (
                 <p className="text-sm text-muted-foreground">
                   {t(

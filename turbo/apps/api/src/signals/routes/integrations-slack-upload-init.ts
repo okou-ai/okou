@@ -8,10 +8,10 @@ import { createSlackClient } from "../external/slack-message-client";
 import { MAX_SLACK_FILE_SIZE_BYTES } from "../external/slack-file-fetcher";
 import { prepareCanonicalPublishedAsset$ } from "../services/canonical-asset.service";
 import { slackOrgInstallation } from "../services/slack-data.service";
+import { resolveSlackTargetChannel$ } from "../services/slack-message-context.service";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const noInstallation = Object.freeze({
   status: 404 as const,
@@ -43,6 +43,7 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return noInstallation;
   }
 
+  const client = createSlackClient(installation.botToken);
   const runId =
     "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
   if (body.canonical && runId) {
@@ -54,9 +55,24 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (!isAllowedUploadType(contentType)) {
       return badRequestMessage(`Unsupported file type: ${contentType}`);
     }
+    const target = await set(
+      resolveSlackTargetChannel$,
+      {
+        client,
+        userId: auth.userId,
+        orgId: auth.orgId,
+        channel: body.canonical.channel,
+        user: body.canonical.user,
+      },
+      signal,
+    );
+    if ("status" in target) {
+      return target;
+    }
     const prepared = await set(
       prepareCanonicalPublishedAsset$,
       {
+        provider: "slack",
         runId,
         userId: auth.userId,
         orgId: auth.orgId,
@@ -65,9 +81,8 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         contentType,
         size: body.length,
         checksumSha256: body.canonical.checksumSha256,
-        publicBrand: PUBLIC_BRAND,
         destination: {
-          channelId: body.canonical.channel,
+          channelId: target.channelId,
           ...(body.canonical.threadTs
             ? { threadTs: body.canonical.threadTs }
             : {}),
@@ -88,6 +103,7 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         kind: "canonical" as const,
         assetId: prepared.assetId,
         operationId: prepared.operationId,
+        channel: target.channelId,
         ...(prepared.uploadUrl ? { uploadUrl: prepared.uploadUrl } : {}),
         ...(prepared.uploadHeaders
           ? { uploadHeaders: prepared.uploadHeaders }
@@ -97,7 +113,6 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     };
   }
 
-  const client = createSlackClient(installation.botToken);
   const result = await client.getUploadUrlExternal({
     filename: body.filename,
     length: body.length,

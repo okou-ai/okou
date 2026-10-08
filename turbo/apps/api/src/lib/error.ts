@@ -58,10 +58,6 @@ export function providerUnavailable(message: string) {
   return httpError(503, "PROVIDER_UNAVAILABLE", message);
 }
 
-export function modelProviderUnavailable(message: string) {
-  return httpError(503, "MODEL_PROVIDER_UNAVAILABLE", message);
-}
-
 export function notConfigured(message: string) {
   return httpError(503, "NOT_CONFIGURED", message);
 }
@@ -78,7 +74,20 @@ export function insufficientCredits() {
   return httpError(
     402,
     "INSUFFICIENT_CREDITS",
-    "Insufficient credits. Add credits or configure your own API key to continue.",
+    "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
+  );
+}
+
+export function paidPlanRequired(
+  modelName = "Claude Sonnet 5.5",
+  guidance?: string,
+) {
+  return httpError(
+    402,
+    "PRO_REQUIRED",
+    guidance
+      ? `${modelName} requires a paid plan. ${guidance}`
+      : `${modelName} requires a paid plan.`,
   );
 }
 

@@ -10,6 +10,7 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command, computed, type Computed } from "ccstate";
@@ -20,14 +21,13 @@ import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   downloadManifest,
   generatePresignedPutUrl,
   s3ObjectExists,
   s3ObjectHead,
   type S3ObjectHead,
-  verifyS3FilesExist,
 } from "../external/s3";
 import { enqueueMemorySummaryProjection } from "./memory-summary-projection.service";
 import { notifyPiMemoryPhase2ExternalHeadChange } from "./pi-memory-phase2-job.service";
@@ -41,7 +41,6 @@ import {
 } from "./pi-memory-phase2-checkpoint.service";
 
 import { enqueuePiResourceVersionIndexes } from "./pi-resource-version-index.service";
-import { enqueuePiStableContextStorageDemands } from "./pi-stable-context-generation.service";
 
 const ACTIVE_SANDBOX_STORAGE_RUN_STATUSES = ["pending", "running"] as const;
 
@@ -173,16 +172,7 @@ type CommitStorageResponse =
         readonly deduplicated?: boolean;
       };
     }
-  | StorageErrorResponse
-  | {
-      readonly status: 409;
-      readonly body: {
-        readonly error: {
-          readonly message: string;
-          readonly code: "S3_FILES_MISSING";
-        };
-      };
-    };
+  | StorageErrorResponse;
 
 function payloadTooLarge(message: string): StorageErrorResponse {
   return {
@@ -593,50 +583,6 @@ function resolvePreparedFiles(
   });
 }
 
-function existingStorageVersionIsReusable(
-  args: {
-    readonly db: Db;
-    readonly bucket: string;
-    readonly storageId: string;
-    readonly allowMissingObjectsForEmptyVersion: boolean;
-    readonly versionId: string;
-    readonly force: boolean | undefined;
-  },
-  signal: AbortSignal,
-): Computed<Promise<boolean>> {
-  return computed(async (get): Promise<boolean> => {
-    if (args.force) {
-      return false;
-    }
-
-    const existingVersion = await findStorageVersion({
-      db: args.db,
-      storageId: args.storageId,
-      versionId: args.versionId,
-    });
-    signal.throwIfAborted();
-
-    if (!existingVersion) {
-      return false;
-    }
-
-    const exists = await get(
-      verifyS3FilesExist(
-        args.bucket,
-        existingVersion.s3Key,
-        existingVersion.fileCount,
-        {
-          allowMissingObjectsForEmptyVersion:
-            args.allowMissingObjectsForEmptyVersion,
-        },
-      ),
-    );
-    signal.throwIfAborted();
-
-    return exists;
-  });
-}
-
 function createStorageUploadResponse(
   args: {
     readonly bucket: string;
@@ -683,21 +629,6 @@ function createStorageUploadResponse(
       },
     };
   });
-}
-
-function s3FilesMissingConflict(): Extract<
-  CommitStorageResponse,
-  { status: 409 }
-> {
-  return {
-    status: 409,
-    body: {
-      error: {
-        message: "S3 files missing for existing version - please retry upload",
-        code: "S3_FILES_MISSING",
-      },
-    },
-  };
 }
 
 type ArchiveVerification =
@@ -795,36 +726,27 @@ function verifyStorageCommit(
 ): Computed<Promise<VerifiedStorageCommit | CommitStorageResponse>> {
   return computed(
     async (get): Promise<VerifiedStorageCommit | CommitStorageResponse> => {
-      if (args.version?.fileCount === 0) {
+      // Registration follows successful upload verification. Reuse its
+      // committed metadata without probing the objects again.
+      if (args.version) {
         return {
           archiveSize: args.version.archiveSize,
           s3Key: args.version.s3Key,
         };
       }
 
-      const s3Key =
-        args.version?.s3Key ??
-        `${args.storage.s3Prefix}/${args.input.versionId}`;
+      const s3Key = `${args.storage.s3Prefix}/${args.input.versionId}`;
       const verification = await get(
         verifyUploadedStorageFiles(
           {
             bucket: args.bucket,
             s3Key,
-            fileCount: args.version?.fileCount ?? args.input.files.length,
+            fileCount: args.input.files.length,
           },
           signal,
         ),
       );
       signal.throwIfAborted();
-
-      if (args.version) {
-        return verification.kind === "verified"
-          ? {
-              archiveSize: verification.archiveSize,
-              s3Key,
-            }
-          : s3FilesMissingConflict();
-      }
 
       switch (verification.kind) {
         case "verified": {
@@ -940,7 +862,6 @@ async function publishStorageHeadIfChanged(args: {
     "versionId" | "sandboxAuth"
   >;
   readonly size: number;
-  readonly archiveSize: number;
   readonly fileCount: number;
 }): Promise<void> {
   if (args.storage.headVersionId === args.input.versionId) {
@@ -967,12 +888,6 @@ async function publishStorageHeadIfChanged(args: {
   if (!published) {
     throw new Error("Locked Storage HEAD could not be published");
   }
-  await enqueuePiStableContextStorageDemands(args.tx, {
-    storageId: args.storage.id,
-    versionId: args.input.versionId,
-    archiveSize: args.archiveSize,
-    fileCount: args.fileCount,
-  });
   if (
     args.storage.name !== MEMORY_ARTIFACT_NAME ||
     args.storage.userId === VOLUME_ORG_USER_ID
@@ -999,23 +914,11 @@ async function commitExistingActiveStorageVersion(
   },
   signal: AbortSignal,
 ): Promise<CommitStorageResponse> {
-  if (args.version.archiveSize !== args.verification.archiveSize) {
-    await args.tx
-      .update(storageVersions)
-      .set({ archiveSize: args.verification.archiveSize })
-      .where(
-        and(
-          eq(storageVersions.id, args.version.id),
-          eq(storageVersions.storageId, args.storage.id),
-        ),
-      );
-  }
   await publishStorageHeadIfChanged({
     tx: args.tx,
     storage: args.storage,
     input: args.input,
     size: Number(args.version.size),
-    archiveSize: args.verification.archiveSize,
     fileCount: args.version.fileCount,
   });
   await recordStorageLineage({
@@ -1090,30 +993,37 @@ async function commitActiveStorageVersion(
     .onConflictDoNothing()
     .returning({ id: storageVersions.id });
 
-  let committedVersion = insertedVersion;
-  if (!committedVersion) {
-    const [updatedVersion] = await args.tx
-      .update(storageVersions)
-      .set({ archiveSize: args.verification.archiveSize })
-      .where(
-        and(
-          eq(storageVersions.storageId, storage.id),
-          eq(storageVersions.id, args.input.versionId),
-        ),
-      )
-      .returning({ id: storageVersions.id });
-    committedVersion = updatedVersion;
+  const [existingVersion] = insertedVersion
+    ? []
+    : await args.tx
+        .select({
+          id: storageVersions.id,
+          storageId: storageVersions.storageId,
+          s3Key: storageVersions.s3Key,
+          size: storageVersions.size,
+          fileCount: storageVersions.fileCount,
+        })
+        .from(storageVersions)
+        .where(eq(storageVersions.id, args.input.versionId))
+        .limit(1);
+  signal.throwIfAborted();
+  if (
+    !insertedVersion &&
+    (!existingVersion ||
+      existingVersion.storageId !== storage.id ||
+      existingVersion.s3Key !== args.verification.s3Key ||
+      Number(existingVersion.size) !== size ||
+      existingVersion.fileCount !== fileCount)
+  ) {
+    throw new Error(
+      `Storage version ${args.input.versionId} conflicts with committed metadata`,
+    );
   }
-  if (!committedVersion) {
-    throw new Error(`Version ${args.input.versionId} not found after insert`);
-  }
-
   await publishStorageHeadIfChanged({
     tx: args.tx,
     storage,
     input: args.input,
     size,
-    archiveSize: args.verification.archiveSize,
     fileCount,
   });
   await recordStorageLineage({
@@ -1135,7 +1045,7 @@ async function commitActiveStorageVersion(
     versionId: args.input.versionId,
     size,
     fileCount,
-    deduplicated: false,
+    deduplicated: !insertedVersion,
   });
 }
 
@@ -1361,21 +1271,13 @@ export const prepareStorageUploadForStorage$ = command(
     signal.throwIfAborted();
     const versionId = computeContentHashFromHashes(storage.id, mergedFiles);
 
-    const existingReusable = await get(
-      existingStorageVersionIsReusable(
-        {
-          db: writeDb,
-          bucket,
-          storageId: storage.id,
-          allowMissingObjectsForEmptyVersion: true,
-          versionId,
-          force: args.force,
-        },
-        signal,
-      ),
-    );
+    const existingVersion = await findStorageVersion({
+      db: writeDb,
+      storageId: storage.id,
+      versionId,
+    });
     signal.throwIfAborted();
-    if (existingReusable) {
+    if (existingVersion) {
       return { status: 200, body: { versionId, existing: true } };
     }
 
@@ -1526,112 +1428,212 @@ export const prepareStorageUploadForAuth$ = command(
   },
 );
 
-export const commitStorageUploadForAuth$ = command(
-  async (
-    { set },
-    args: CommitStorageInput,
-    signal: AbortSignal,
-  ): Promise<CommitStorageResponse> => {
-    const writeDb = set(writeDb$);
-    const mounted = await findMountedWritebackStorage(
-      {
-        db: writeDb,
-        auth: args.auth,
-        storageId: args.storageId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if ("status" in mounted) {
-      return mounted;
-    }
-
-    const commitInput: CommitStorageForStorageInput = {
-      storageId: args.storageId,
-      versionId: args.versionId,
-      files: args.files,
-      runId: args.runId,
-      parentVersionId: args.parentVersionId,
-      message: args.message,
-      maintenanceAttestation: args.maintenanceAttestation,
-      sandboxAuth: args.auth,
-    };
-    const binding = maintenanceCheckpointBinding(commitInput);
-    const receipt = binding
-      ? await findPiMemoryPhase2Checkpoint(writeDb, binding)
-      : undefined;
-    signal.throwIfAborted();
-    if (receipt) {
-      if (
-        receipt.versionId !== args.versionId ||
-        computeContentHashFromHashes(args.storageId, args.files) !==
-          receipt.versionId
-      ) {
-        return notFound("Pi memory maintenance checkpoint replay mismatch");
-      }
-      const version = await findStorageVersion({
-        db: writeDb,
-        storageId: args.storageId,
-        versionId: receipt.versionId,
-      });
-      signal.throwIfAborted();
-      if (!version) {
-        return notFound("Pi memory maintenance checkpoint version not found");
-      }
-      return storageCommitSuccess({
-        storage: mounted.storage,
-        versionId: version.id,
-        size: Number(version.size),
-        fileCount: version.fileCount,
-        deduplicated: true,
-      });
-    }
-    const terminalRetry = !sandboxStorageRunIsActive(mounted.runStatus);
-    if (terminalRetry) {
-      const parentVersionId = args.parentVersionId;
-      const version = await findStorageVersion({
-        db: writeDb,
-        storageId: mounted.storage.id,
-        versionId: args.versionId,
-      });
-      signal.throwIfAborted();
-      if (
-        !parentVersionId ||
-        !terminalStorageCommitPersistedStateMatches({
-          storage: mounted.storage,
-          version,
-          input: commitInput,
-        })
-      ) {
-        return notFound("Active agent run not found");
-      }
-
-      const [lineage] = await writeDb
-        .select({ id: storageVersionLineage.id })
-        .from(storageVersionLineage)
-        .where(
-          and(
-            eq(storageVersionLineage.storageId, mounted.storage.id),
-            eq(storageVersionLineage.versionId, args.versionId),
-            eq(storageVersionLineage.parentVersionId, parentVersionId),
-            eq(storageVersionLineage.runId, args.auth.runId),
+function createInitialSandboxStorageReceipt(
+  binding: NonNullable<ReturnType<typeof maintenanceCheckpointBinding>>,
+) {
+  return computed(async (get) => {
+    const db = get(db$);
+    const [receipt] = await db
+      .select()
+      .from(piMemoryPhase2Checkpoints)
+      .where(
+        and(
+          eq(piMemoryPhase2Checkpoints.runId, binding.runId),
+          eq(
+            piMemoryPhase2Checkpoints.memoryStorageId,
+            binding.memoryStorageId,
           ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!lineage) {
-        return notFound("Active agent run not found");
-      }
-    }
+          eq(piMemoryPhase2Checkpoints.orgId, binding.orgId),
+          eq(piMemoryPhase2Checkpoints.userId, binding.userId),
+          eq(piMemoryPhase2Checkpoints.leaseToken, binding.leaseToken),
+          eq(
+            piMemoryPhase2Checkpoints.claimedRevision,
+            binding.claimedRevision,
+          ),
+          eq(
+            piMemoryPhase2Checkpoints.claimedBaseVersionId,
+            binding.claimedBaseVersionId,
+          ),
+          eq(
+            piMemoryPhase2Checkpoints.selectionDigest,
+            binding.selectionDigest,
+          ),
+        ),
+      )
+      .limit(1);
+    return receipt;
+  });
+}
 
-    const response = await set(
-      commitStorageUploadForStorage$,
-      commitInput,
-      signal,
-    );
-    return terminalRetry && response.status !== 200
-      ? notFound("Active agent run not found")
-      : response;
-  },
-);
+function createInitialSandboxStorageReplayVersion(
+  storageId: string,
+  versionId: string,
+) {
+  return computed(async (get) => {
+    const db = get(db$);
+    const [version] = await db
+      .select()
+      .from(storageVersions)
+      .where(
+        and(
+          eq(storageVersions.storageId, storageId),
+          eq(storageVersions.id, versionId),
+        ),
+      )
+      .limit(1);
+    return version;
+  });
+}
+
+function createTerminalSandboxStorageRetryVersion(
+  storageId: string,
+  versionId: string,
+) {
+  return computed(async (get) => {
+    const db = get(db$);
+    const [version] = await db
+      .select()
+      .from(storageVersions)
+      .where(
+        and(
+          eq(storageVersions.storageId, storageId),
+          eq(storageVersions.id, versionId),
+        ),
+      )
+      .limit(1);
+    return version;
+  });
+}
+
+function createTerminalSandboxStorageRetryLineage(
+  storageId: string,
+  versionId: string,
+  parentVersionId: string,
+  runId: string,
+) {
+  return computed(async (get) => {
+    const db = get(db$);
+    const [lineage] = await db
+      .select({ id: storageVersionLineage.id })
+      .from(storageVersionLineage)
+      .where(
+        and(
+          eq(storageVersionLineage.storageId, storageId),
+          eq(storageVersionLineage.versionId, versionId),
+          eq(storageVersionLineage.parentVersionId, parentVersionId),
+          eq(storageVersionLineage.runId, runId),
+        ),
+      )
+      .limit(1);
+    return lineage;
+  });
+}
+
+export function createSandboxStorageCommit(args: CommitStorageInput) {
+  const commitInput: CommitStorageForStorageInput = {
+    storageId: args.storageId,
+    versionId: args.versionId,
+    files: args.files,
+    runId: args.runId,
+    parentVersionId: args.parentVersionId,
+    message: args.message,
+    maintenanceAttestation: args.maintenanceAttestation,
+    sandboxAuth: args.auth,
+  };
+  const binding = maintenanceCheckpointBinding(commitInput);
+  const initialReceipt$ = binding
+    ? createInitialSandboxStorageReceipt(binding)
+    : undefined;
+  const initialReplayVersion$ = createInitialSandboxStorageReplayVersion(
+    args.storageId,
+    args.versionId,
+  );
+  const terminalRetryVersion$ = createTerminalSandboxStorageRetryVersion(
+    args.storageId,
+    args.versionId,
+  );
+  const terminalRetryLineage$ = args.parentVersionId
+    ? createTerminalSandboxStorageRetryLineage(
+        args.storageId,
+        args.versionId,
+        args.parentVersionId,
+        args.auth.runId,
+      )
+    : undefined;
+  const commit$ = command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<CommitStorageResponse> => {
+      const writeDb = set(writeDb$);
+      const mounted = await findMountedWritebackStorage(
+        {
+          db: writeDb,
+          auth: args.auth,
+          storageId: args.storageId,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+
+      if ("status" in mounted) {
+        return mounted;
+      }
+
+      const receipt = initialReceipt$ ? await get(initialReceipt$) : undefined;
+      signal.throwIfAborted();
+      if (receipt) {
+        if (
+          receipt.versionId !== args.versionId ||
+          computeContentHashFromHashes(args.storageId, args.files) !==
+            receipt.versionId
+        ) {
+          return notFound("Pi memory maintenance checkpoint replay mismatch");
+        }
+        const version = await get(initialReplayVersion$);
+        signal.throwIfAborted();
+        if (!version) {
+          return notFound("Pi memory maintenance checkpoint version not found");
+        }
+        return storageCommitSuccess({
+          storage: mounted.storage,
+          versionId: version.id,
+          size: Number(version.size),
+          fileCount: version.fileCount,
+          deduplicated: true,
+        });
+      }
+      const terminalRetry = !sandboxStorageRunIsActive(mounted.runStatus);
+      if (terminalRetry) {
+        const version = await get(terminalRetryVersion$);
+        signal.throwIfAborted();
+        if (
+          !terminalRetryLineage$ ||
+          !terminalStorageCommitPersistedStateMatches({
+            storage: mounted.storage,
+            version,
+            input: commitInput,
+          })
+        ) {
+          return notFound("Active agent run not found");
+        }
+
+        const lineage = await get(terminalRetryLineage$);
+        signal.throwIfAborted();
+        if (!lineage) {
+          return notFound("Active agent run not found");
+        }
+      }
+
+      const response = await set(
+        commitStorageUploadForStorage$,
+        commitInput,
+        signal,
+      );
+      return terminalRetry && response.status !== 200
+        ? notFound("Active agent run not found")
+        : response;
+    },
+  );
+  return { commit$ };
+}

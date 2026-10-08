@@ -17,6 +17,7 @@ import { apiClient$ } from "../api-client.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { agents$ } from "../agent.ts";
 import { resetBuiltinManualGrantForm$ } from "../okou-page/settings/connectors.ts";
+import { connectorCatalogItemForSlug } from "../external/connectors.ts";
 
 /**
  * Connector slug extracted from `/connectors/:connectorSlug/connect` route params.
@@ -29,6 +30,10 @@ export const directedConnectSlug$ = computed((get): ConnectorSlug | null => {
   );
   return parsed.success ? parsed.data : null;
 });
+
+/** The catalog entry of the connector the page is directed at. */
+export const directedConnectCatalogItem$ =
+  connectorCatalogItemForSlug(directedConnectSlug$);
 
 export const directedConnectCustomSlug$ = computed(
   (get): CustomConnectorSlug | null => {

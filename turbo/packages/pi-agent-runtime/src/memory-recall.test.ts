@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PiMemoryRecallSelection } from "./api-types";
 import {
   loadPiSandboxMemoryRecall,
-  resolvePiApiMemoryRecall,
+  resolvePiPreheatedMemoryRecall,
 } from "./memory-recall-node";
 import { createPiMemoryTools } from "./memory-tools-node";
 import {
@@ -73,6 +73,12 @@ describe("Pi memory recall compatibility", () => {
     );
     expect(rendered).toContain("including `extensions/ad_hoc/notes/`");
     expect(rendered).toContain(
+      "Call `memories_search` with only `query` to search the frozen memory root; omit `path`",
+    );
+    expect(rendered).toContain(
+      "`MEMORY.md` is a file in the results, not a directory path",
+    );
+    expect(rendered).toContain(
       "Use `add_ad_hoc_note` only when the user explicitly asks you to remember, forget, or update something",
     );
     expect(rendered).toContain(
@@ -88,7 +94,7 @@ describe("Pi memory recall compatibility", () => {
       "Do not claim that the update is durable, published, or persistently saved before the run completes successfully",
     );
     expect(sha256(rendered ?? "")).toBe(
-      "54c661e1d38e525dabe6cab63e94ef7362b02e442448c7b39e968bbc1b045e89",
+      "9e3e063f34d4b4c632cc115c8811ad3aaebb754db3674678c7ccc583f31c0906",
     );
 
     const oversized = Array.from({ length: 4000 }, (_, index) => {
@@ -105,13 +111,13 @@ describe("Pi memory recall compatibility", () => {
     );
   });
 
-  it("renders identical frozen bytes for API-first and sandbox", async () => {
+  it("renders identical frozen bytes for preheated resources and sandbox", async () => {
     const root = await memoryRoot();
     const content = "# Working memory\n\nUse the repository-native checks.";
     const selection = readySelection(content);
     await writeFile(join(root, "memory_summary.md"), content, "utf8");
 
-    const api = resolvePiApiMemoryRecall({
+    const api = resolvePiPreheatedMemoryRecall({
       schemaVersion: 2,
       agentsFiles: [],
       skills: [],
@@ -121,7 +127,7 @@ describe("Pi memory recall compatibility", () => {
 
     expect(api.block).toBe(sandbox.block);
     expect(api.outcome).toMatchObject({
-      mode: "api-first",
+      mode: "preheated",
       status: "hit",
       parity: "frozen-match",
     });
@@ -139,7 +145,7 @@ describe("Pi memory recall compatibility", () => {
 
   it("preserves V1 and frozen no-content as no-byte paths", async () => {
     expect(
-      resolvePiApiMemoryRecall({
+      resolvePiPreheatedMemoryRecall({
         schemaVersion: 1,
         agentsFiles: [],
         skills: [],
@@ -316,7 +322,6 @@ async function readSummaryLines(
   lineCount: number,
 ): Promise<string> {
   const tool = createPiMemoryTools({
-    mode: "sandbox",
     selection: {
       status: "no-content",
       memoryStorageId: "memory-storage",
@@ -358,7 +363,7 @@ describe("Pi memory recall bounded injection", () => {
 
     const selection = readySelection(content);
     await writeFile(join(root, "memory_summary.md"), content, "utf8");
-    const api = resolvePiApiMemoryRecall({
+    const api = resolvePiPreheatedMemoryRecall({
       schemaVersion: 2,
       agentsFiles: [],
       skills: [],
@@ -367,7 +372,7 @@ describe("Pi memory recall bounded injection", () => {
     const sandbox = await loadPiSandboxMemoryRecall(selection, root);
 
     expect(api.outcome).toMatchObject({
-      mode: "api-first",
+      mode: "preheated",
       status: "hit",
       parity: "frozen-match",
       reason: "matched",
@@ -378,7 +383,7 @@ describe("Pi memory recall bounded injection", () => {
       parity: "frozen-match",
       reason: "matched",
     });
-    // API-first and sandbox inject the same excerpt of the same frozen source.
+    // preheated resources and sandbox inject the same excerpt of the same frozen source.
     expect(api.block).toBe(sandbox.block);
     expect(api.outcome.injectedTokenCount).toBe(
       sandbox.outcome.injectedTokenCount,
@@ -512,6 +517,6 @@ describe("Pi memory recall bounded injection", () => {
       sha256(
         renderPiMemoryRecall("Prefer focused targeted tests.")?.block ?? "",
       ),
-    ).toBe("54c661e1d38e525dabe6cab63e94ef7362b02e442448c7b39e968bbc1b045e89");
+    ).toBe("9e3e063f34d4b4c632cc115c8811ad3aaebb754db3674678c7ccc583f31c0906");
   });
 });

@@ -8,10 +8,7 @@ import {
   type ConnectorCatalogAuthMethod,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
 } from "../../../connector-catalog/artifacts/artifacts";
-import {
-  decodeConnectorCatalogSnapshot,
-  encodeConnectorCatalogSnapshot,
-} from "../../../connector-catalog/artifacts/loader";
+import { validateConnectorCatalogCandidateBytes } from "../../../connector-catalog/artifacts/loader";
 import {
   connectorCatalogExecutableCapabilityState,
   evaluateConnectorCatalogCompatibility,
@@ -387,11 +384,13 @@ function decodeCatalog(client: ConnectorCatalogAuthMethod["client"]) {
     ],
   };
   const rawBytes = Buffer.from(JSON.stringify(artifact));
-  return decodeConnectorCatalogSnapshot({
-    catalogGzip: encodeConnectorCatalogSnapshot(rawBytes),
-    catalogRawSize: rawBytes.byteLength,
-    catalogVersion,
-    catalogDigest: `sha256:${createHash("sha256").update(rawBytes).digest("hex")}`,
+  return validateConnectorCatalogCandidateBytes({
+    pointer: {
+      catalogVersion,
+      catalogKey: `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/releases/${catalogVersion}/catalog.json`,
+      catalogDigest: `sha256:${createHash("sha256").update(rawBytes).digest("hex")}`,
+    },
+    rawBytes,
   }).artifact;
 }
 

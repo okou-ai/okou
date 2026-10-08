@@ -1,3 +1,4 @@
+import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
@@ -17,9 +18,9 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 
 const context = testContext();
 beforeEach(() => {
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
 });
-const endpoint = "https://openrouter.ai/api/v1/chat/completions";
+const endpoint = VERTEX_TEXT_URL;
 // Never part of a request an external caller makes, so anything carrying it
 // into a thread came from the provider response.
 const secret = "private-provider-payload";
@@ -27,7 +28,18 @@ const prompt = "Prepare the launch checklist";
 
 function completion(content = "A usable summary") {
   return HttpResponse.json({
-    choices: [{ finish_reason: "stop", message: { content } }],
+    candidates: [
+      {
+        finishReason: "STOP",
+        content: {
+          parts: [
+            {
+              text: content,
+            },
+          ],
+        },
+      },
+    ],
   });
 }
 
@@ -62,7 +74,7 @@ async function prepareChatTitle() {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, { displayName: "Outcome title" });
   let threadId: string | undefined;
   const events = async () => {
@@ -79,7 +91,7 @@ async function prepareChatTitle() {
       const sent = await accept(
         chat.requestSendEvent(
           actor,
-          { agentId: agent.agentId, prompt, model: "claude-sonnet-5" },
+          { agentId: agent.agentId, prompt, model: "claude-sonnet-5-5" },
           [201],
         ),
         [201],
@@ -87,6 +99,15 @@ async function prepareChatTitle() {
       threadId = sent.body.threadId;
     },
     events,
+    rename: async (value: string) => {
+      if (threadId === undefined) {
+        throw new Error("Create the conversation before renaming it");
+      }
+      await accept(
+        chat.requestRenameThread(actor, threadId, value, [204]),
+        [204],
+      );
+    },
     titles: async () => {
       return (await events()).flatMap((event) => {
         return event.kind === "renamed" ? [event.title] : [];
@@ -100,7 +121,7 @@ type TitleCompletion =
   | { readonly content: string; readonly finishReason: "length" };
 
 function mockTitleCompletion(response: () => TitleCompletion) {
-  createChatCallbacksApi(context).mockOpenRouterCompletions((body) => {
+  createChatCallbacksApi(context).mockVertexCompletions((body) => {
     return body.messages[0]?.content.includes(
       "Generate a short, descriptive title",
     )
@@ -154,7 +175,7 @@ const untitledCases = Object.freeze([
 describe("auxiliary generation outcomes", () => {
   it("titles the thread from a usable completion", async () => {
     const title = await prepareChatTitle();
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     mockTitleCompletion(() => {
       return completion();
     });
@@ -163,11 +184,45 @@ describe("auxiliary generation outcomes", () => {
     await expect(title.titles()).resolves.toStrictEqual(["A usable summary"]);
   });
 
+  it("keeps a member rename when a held title completion arrives later", async () => {
+    const title = await prepareChatTitle();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+    });
+    mockGoogleText();
+    createChatCallbacksApi(context).mockVertexCompletions(async (body) => {
+      if (
+        body.messages[0]?.content.includes(
+          "Generate a short, descriptive title",
+        )
+      ) {
+        entered.resolve(undefined);
+        await release.promise;
+        return "Stale generated title";
+      }
+      return "Thinking";
+    });
+    await title.create();
+    await entered.promise;
+    await title.rename("Member chosen title");
+    release.resolve(undefined);
+    await flushWaitUntilForTest();
+    // The public ordered event stream must contain the member's write only:
+    // a generator that lost the conditional UPDATE cannot append a rename.
+    await expect(title.titles()).resolves.toStrictEqual([
+      "Member chosen title",
+    ]);
+  });
+
   it.each(untitledCases)(
     "leaves the thread untitled after $name",
     async ({ response }) => {
       const title = await prepareChatTitle();
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+      mockGoogleText();
       mockTitleCompletion(response);
       await title.create();
       await flushWaitUntilForTest();
@@ -186,7 +241,7 @@ describe("auxiliary generation outcomes", () => {
 
   it("leaves the thread untitled and calls no provider when configuration is missing", async () => {
     const title = await prepareChatTitle();
-    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
     let requests = 0;
     server.use(
       http.post(endpoint, () => {
@@ -215,7 +270,7 @@ describe("auxiliary generation outcomes", () => {
         release.resolve(undefined);
       }
     });
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     server.use(
       http.post(endpoint, async () => {
         entered.resolve(undefined);
@@ -245,8 +300,8 @@ describe("auxiliary generation outcomes", () => {
         releaseTitle.resolve(undefined);
       }
     });
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
-    createChatCallbacksApi(context).mockOpenRouterCompletions(async (body) => {
+    mockGoogleText();
+    createChatCallbacksApi(context).mockVertexCompletions(async (body) => {
       if (
         body.messages[0]?.content.includes(
           "Generate a short, descriptive title",

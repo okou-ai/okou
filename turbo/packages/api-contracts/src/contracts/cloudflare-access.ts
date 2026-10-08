@@ -37,6 +37,12 @@ const sshHostReferenceSchema = z
 export const cloudflareAccessConfigSchema = cloudflareAccessConfigMetadataSchema
   .extend({ sshHosts: z.array(sshHostReferenceSchema) })
   .strict();
+export const scopedCloudflareAccessConfigSchema =
+  cloudflareAccessConfigSchema.extend({
+    scope: z.enum(["personal", "organization"]),
+  });
+const configResponseSchema = scopedCloudflareAccessConfigSchema;
+const viewQuery = z.object({ view: z.literal("scoped").optional() }).strict();
 const c = initContract();
 const errors = {
   400: apiErrorSchema,
@@ -47,7 +53,10 @@ const errors = {
   500: apiErrorSchema,
 };
 const pathParams = z.object({ configId: z.uuid() }).strict();
-const createBody = createCloudflareAccessRequestSchema.extend({ id: z.uuid() });
+const createBody = createCloudflareAccessRequestSchema.extend({
+  id: z.uuid(),
+  scope: z.enum(["personal", "organization"]).optional(),
+});
 const updateBody = z
   .object({
     expectedRevision: revision,
@@ -61,16 +70,41 @@ const updateBody = z
     },
     { message: "At least one Cloudflare Access field must be updated" },
   );
-const deleteBody = z.object({ expectedRevision: revision }).strict();
+const impactSnapshot = z.string().regex(/^[a-f0-9]{64}$/u);
+const deleteBody = z
+  .object({
+    expectedRevision: revision,
+    impactSnapshot: impactSnapshot.optional(),
+  })
+  .strict();
+// Only aggregate SSH host usage is exposed to the reviewing administrator.
+const impactPreviewSchema = z
+  .object({
+    expectedRevision: revision,
+    ownHostCount: z.int().nonnegative(),
+    otherHostCount: z.int().nonnegative(),
+    affectedOwners: z.array(
+      z
+        .object({
+          userId: z.string().min(1),
+          displayName: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    impactSnapshot,
+  })
+  .strict();
+const conversionBody = z
+  .object({ expectedRevision: revision, impactSnapshot })
+  .strict();
 export const cloudflareAccessContract = c.router({
   list: {
     method: "GET",
     path: "/api/cloudflare-access/configs",
     headers: authHeadersSchema,
+    query: viewQuery,
     responses: {
-      200: z
-        .object({ configs: z.array(cloudflareAccessConfigSchema) })
-        .strict(),
+      200: z.object({ configs: z.array(configResponseSchema) }).strict(),
       ...errors,
     },
   },
@@ -78,9 +112,10 @@ export const cloudflareAccessContract = c.router({
     method: "POST",
     path: "/api/cloudflare-access/configs",
     headers: authHeadersSchema,
+    query: viewQuery,
     body: createBody,
     responses: {
-      201: cloudflareAccessConfigSchema,
+      201: configResponseSchema,
       204: c.noBody(),
       ...errors,
     },
@@ -89,23 +124,56 @@ export const cloudflareAccessContract = c.router({
     method: "PATCH",
     path: "/api/cloudflare-access/configs/:configId",
     headers: authHeadersSchema,
+    query: viewQuery,
     pathParams,
     body: updateBody,
-    responses: { 200: cloudflareAccessConfigSchema, ...errors },
+    responses: { 200: configResponseSchema, ...errors },
   },
   delete: {
     method: "DELETE",
     path: "/api/cloudflare-access/configs/:configId",
     headers: authHeadersSchema,
+    query: viewQuery,
     pathParams,
     body: deleteBody,
     responses: { 204: c.noBody(), ...errors },
+  },
+  convertToOrganization: {
+    method: "POST",
+    path: "/api/cloudflare-access/configs/:configId/convert-to-organization",
+    headers: authHeadersSchema,
+    pathParams,
+    body: z.object({ expectedRevision: revision }).strict(),
+    responses: { 200: configResponseSchema, ...errors },
+  },
+  impactPreview: {
+    method: "GET",
+    path: "/api/cloudflare-access/configs/:configId/impact-preview",
+    headers: authHeadersSchema,
+    pathParams,
+    query: z.object({ operation: z.enum(["convert", "delete"]) }).strict(),
+    responses: { 200: impactPreviewSchema, ...errors },
+  },
+  convertToPersonal: {
+    method: "POST",
+    path: "/api/cloudflare-access/configs/:configId/convert-to-personal",
+    headers: authHeadersSchema,
+    pathParams,
+    body: conversionBody,
+    responses: { 200: configResponseSchema, ...errors },
   },
 });
 export type CloudflareAccessConfig = z.infer<
   typeof cloudflareAccessConfigSchema
 >;
+export type ScopedCloudflareAccessConfig = z.infer<
+  typeof scopedCloudflareAccessConfigSchema
+>;
 export type CreateCloudflareAccessRequest = z.infer<
   typeof createCloudflareAccessRequestSchema
 >;
+export type CreateCloudflareAccessConfigRequest = z.infer<typeof createBody>;
 export type UpdateCloudflareAccessRequest = z.infer<typeof updateBody>;
+export type CloudflareAccessImpactPreview = z.infer<typeof impactPreviewSchema>;
+export type ConvertCloudflareAccessRequest = z.infer<typeof conversionBody>;
+export type DeleteCloudflareAccessRequest = z.infer<typeof deleteBody>;

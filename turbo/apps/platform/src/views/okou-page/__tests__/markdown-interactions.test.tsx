@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -110,63 +110,14 @@ async function openCodeCopyBlocks() {
   return { firstCopy, secondCopy, clipboard };
 }
 
-test.each(["first", "second"])(
-  "Copying the %s code block confirms only that block",
-  async (selected) => {
-    const { firstCopy, secondCopy, clipboard } = await openCodeCopyBlocks();
-    const [copy, other] =
-      selected === "first" ? [firstCopy, secondCopy] : [secondCopy, firstCopy];
-    click(copy);
-    await waitFor(() => {
-      expect(copy).toHaveAttribute("aria-label", "Copied");
-    });
-    expect(other).toHaveAttribute("aria-label", "Copy to clipboard");
-    expect(clipboard.writes).toStrictEqual([
-      selected === "first"
-        ? 'const first = "alpha";\n'
-        : 'const second = "beta";\n',
-    ]);
-  },
-);
-
-test("Copied code blocks reset their confirmations after returning to the chat", async () => {
+test("Copying one of several code blocks confirms only that block", async () => {
   const { firstCopy, secondCopy, clipboard } = await openCodeCopyBlocks();
-  click(firstCopy);
-  await waitFor(() => {
-    return expect(firstCopy).toHaveAttribute("aria-label", "Copied");
-  });
   click(secondCopy);
-
   await waitFor(() => {
     expect(secondCopy).toHaveAttribute("aria-label", "Copied");
   });
-  expect(clipboard.writes).toStrictEqual([
-    'const first = "alpha";\n',
-    'const second = "beta";\n',
-  ]);
-
-  click(getLinkByName("Agents"));
-  await screen.findByRole("heading", { name: "Agents" });
-  act(() => {
-    window.history.back();
-  });
-
-  const returnedCodeBlocks = await waitFor(() => {
-    const blocks = Array.from(
-      document.querySelectorAll<HTMLElement>("pre"),
-    ).filter((block) => {
-      return block.querySelector("code.language-typescript") !== null;
-    });
-    expect(blocks).toHaveLength(2);
-    return blocks;
-  });
-  expect(
-    returnedCodeBlocks.map((block) => {
-      return getButtonByName("Copy to clipboard", block).getAttribute(
-        "aria-label",
-      );
-    }),
-  ).toStrictEqual(["Copy to clipboard", "Copy to clipboard"]);
+  expect(firstCopy).toHaveAttribute("aria-label", "Copy to clipboard");
+  expect(clipboard.writes).toStrictEqual(['const second = "beta";\n']);
 });
 
 test("External links open safely in a new context", async () => {

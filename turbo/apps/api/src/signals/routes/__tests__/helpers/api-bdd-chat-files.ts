@@ -1,14 +1,15 @@
+import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
 import { randomUUID } from "node:crypto";
 import {
   chatEventsContract,
   chatSearchContract,
+  chatThreadArchiveContract,
+  chatThreadMuteContract,
   chatThreadArtifactsContract,
   chatThreadByIdContract,
   chatThreadComputerUseHostContract,
   chatThreadDraftContract,
   chatThreadEventsContract,
-  chatThreadImageModelContract,
-  chatThreadVideoModelContract,
   chatThreadMarkAgentReadContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
@@ -19,6 +20,7 @@ import {
   chatThreadRenameContract,
   chatThreadUnpinContract,
   chatThreadsContract,
+  chatThreadSnapshotArchiveSchema,
   type ChatEvent,
   type ChatSearchResponse,
   type ChatThreadArtifactRun,
@@ -35,12 +37,7 @@ import {
   type Indicators,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import type { VideoModelId } from "@okouai/api-contracts/contracts/video-models";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-  type ChatEventCursor,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   artifactCatalogContract,
@@ -49,12 +46,7 @@ import {
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import {
   agentsMainContract,
   type AgentResponse,
@@ -73,6 +65,7 @@ import {
 } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import {
@@ -85,8 +78,6 @@ import { artifactCatalogRoutes } from "../../artifact-catalog";
 import { chatThreadComputerUseHostRoutes } from "../../chat-threads-computer-use-host";
 import { chatThreadCreateRoutes } from "../../chat-threads-create";
 import { chatThreadDeleteRoutes } from "../../chat-threads-delete";
-import { chatThreadImageModelRoutes } from "../../chat-threads-image-model";
-import { chatThreadVideoModelRoutes } from "../../chat-threads-video-model";
 import { chatThreadMarkReadRoutes } from "../../chat-threads-mark-read";
 import { chatThreadModelSelectionRoutes } from "../../chat-threads-model-selection";
 import { chatThreadPatchRoutes } from "../../chat-threads-patch";
@@ -95,9 +86,11 @@ import { chatThreadPinOrderRoutes } from "../../chat-threads-pin-order";
 import { chatThreadRenameRoutes } from "../../chat-threads-rename";
 import { chatThreadRoutes } from "../../chat-threads";
 import { chatThreadUnpinRoutes } from "../../chat-threads-unpin";
+import { chatThreadArchiveRoutes } from "../../chat-threads-archive";
+import { chatThreadMuteRoutes } from "../../chat-threads-mute";
 import { chatThreadsArtifactsSyncRoutes } from "../../chat-threads-artifacts-sync";
 import { hostRoutes } from "../../host";
-import { modelPoliciesRoutes } from "../../model-policies";
+import { runModelsRoutes } from "../../run-models";
 import { uploadsCompleteRoutes } from "../../uploads-complete";
 import { uploadsPrepareRoutes } from "../../uploads-prepare";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
@@ -119,7 +112,8 @@ type BddSendEventBody =
       readonly prompt: string;
       readonly threadId?: string;
       readonly clientThreadId?: string;
-      readonly model?: SupportedRunModel;
+      /** Null selects Auto. */
+      readonly model?: string | null;
       readonly runOptions?: ChatRunOptionsRequest;
       readonly userMessage?: UserMessageDocument;
       readonly hasTextContent?: boolean;
@@ -147,6 +141,10 @@ type BddSendEventBody =
 
 interface RequestSendEventOptions {
   readonly usagePricingResolution?: UsagePricingResolution;
+  /** Request headers beyond authentication, such as a preview bypass. */
+  readonly extraHeaders?: Readonly<Record<string, string>>;
+  /** Request-owned system skill storage lookups for the send's pick. */
+  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
 }
 
 /** Both body fields are optional on the contract, and an omitted
@@ -203,17 +201,6 @@ function authenticate(
   return authHeaders(actor);
 }
 
-function authenticateChatEvent(
-  context: TestContext,
-  actor: ApiTestUser | null,
-) {
-  return {
-    ...authenticate(context, actor),
-    [CHAT_EVENT_SCHEMA_VERSION_HEADER]:
-      CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-  };
-}
-
 function commandName(command: unknown): string {
   return typeof command === "object" && command !== null
     ? command.constructor.name
@@ -241,9 +228,9 @@ const chatFilesRoutes = [
   ...chatThreadPinRoutes,
   ...chatThreadPinOrderRoutes,
   ...chatThreadUnpinRoutes,
+  ...chatThreadArchiveRoutes,
+  ...chatThreadMuteRoutes,
   ...chatThreadRenameRoutes,
-  ...chatThreadImageModelRoutes,
-  ...chatThreadVideoModelRoutes,
   ...chatThreadModelSelectionRoutes,
   ...chatThreadComputerUseHostRoutes,
   ...chatThreadsArtifactsSyncRoutes,
@@ -251,7 +238,7 @@ const chatFilesRoutes = [
   ...uploadsPrepareRoutes,
   ...uploadsCompleteRoutes,
   ...hostRoutes,
-  ...modelPoliciesRoutes,
+  ...runModelsRoutes,
   ...userModelPreferenceRoutes,
   ...webFileUrlRoutes,
 ] as const;
@@ -292,18 +279,6 @@ function unpinQuery(query: EventIdQuery) {
   return query.eventId === undefined ? {} : { eventId: query.eventId };
 }
 
-/** The image or video model pin body; an omitted event id stays omitted so the
- * route keeps generating one for itself. */
-function generationModelBody<TModel extends string>(
-  model: TModel | null,
-  options: EventIdQuery | undefined,
-) {
-  return {
-    model,
-    ...(options?.eventId === undefined ? {} : { eventId: options.eventId }),
-  };
-}
-
 export function persistedAttachment(
   id: string,
   filename: string,
@@ -329,7 +304,7 @@ interface ModelSelectionRequestOptions {
 }
 
 function modelSelectionBody(
-  model: SupportedRunModel | null,
+  model: string | null,
   options: ModelSelectionRequestOptions | undefined,
 ) {
   return {
@@ -371,26 +346,34 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadsContract);
   }
 
-  function modelPoliciesClient() {
-    return chatFilesApp(context)(modelPoliciesMainContract);
+  function runModelsClient() {
+    return chatFilesApp(context)(runModelsMainContract);
   }
 
+  /** The member preference, else Auto (null), as a client sends it. */
   async function defaultCreateThreadModel(
     actor: ApiTestUser | null,
-  ): Promise<SupportedRunModel> {
+  ): Promise<string | null> {
     if (!actor?.orgId) {
-      return DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+      return null;
     }
-    const response = await accept(
-      modelPoliciesClient().list({ headers: authenticate(context, actor) }),
+    const available = await accept(
+      runModelsClient().list({ headers: authenticate(context, actor) }),
       [200],
     );
-    const model =
-      response.body.workspaceDefaultModel ??
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
-    return isSupportedRunModel(model)
-      ? model
-      : DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+    const preference = await accept(
+      userModelPreferenceClient().get({
+        headers: authenticate(context, actor),
+      }),
+      [200],
+    );
+    const preferred = preference.body.selectedModel;
+    return preferred &&
+      available.body.models.some((model) => {
+        return model.model === preferred;
+      })
+      ? preferred
+      : null;
   }
 
   function threadByIdClient() {
@@ -441,6 +424,10 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadUnpinContract);
   }
 
+  function threadArchiveClient() {
+    return chatFilesApp(context)(chatThreadArchiveContract);
+  }
+
   function threadPinOrderClient() {
     return chatFilesApp(context)(chatThreadPinOrderContract);
   }
@@ -451,14 +438,6 @@ export function createChatFilesBddApi(context: TestContext) {
 
   function threadModelSelectionClient() {
     return chatFilesApp(context)(chatThreadModelSelectionContract);
-  }
-
-  function threadImageModelClient() {
-    return chatFilesApp(context)(chatThreadImageModelContract);
-  }
-
-  function threadVideoModelClient() {
-    return chatFilesApp(context)(chatThreadVideoModelContract);
   }
 
   function userModelPreferenceClient() {
@@ -496,7 +475,7 @@ export function createChatFilesBddApi(context: TestContext) {
   return {
     async getDefaultCreateThreadModel(
       actor: ApiTestUser,
-    ): Promise<SupportedRunModel> {
+    ): Promise<string | null> {
       return await defaultCreateThreadModel(actor);
     },
 
@@ -542,7 +521,8 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
-        readonly model?: SupportedRunModel;
+        /** Null selects Auto; omitted, the member default applies. */
+        readonly model?: string | null;
       },
     ): Promise<{ readonly id: string; readonly title: string | null }> {
       const response = await accept(
@@ -555,7 +535,10 @@ export function createChatFilesBddApi(context: TestContext) {
               ? {}
               : { clientThreadId: body.clientThreadId }),
             ...(body.eventId === undefined ? {} : { eventId: body.eventId }),
-            model: body.model ?? (await defaultCreateThreadModel(actor)),
+            model:
+              body.model === undefined
+                ? await defaultCreateThreadModel(actor)
+                : body.model,
           },
         }),
         [201],
@@ -570,7 +553,8 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
-        readonly model?: SupportedRunModel;
+        /** Null selects Auto; omitted, the member default applies. */
+        readonly model?: string | null;
       },
       statuses: readonly (201 | 400 | 401 | 402 | 404)[],
     ) {
@@ -584,7 +568,10 @@ export function createChatFilesBddApi(context: TestContext) {
               ? {}
               : { clientThreadId: body.clientThreadId }),
             ...(body.eventId === undefined ? {} : { eventId: body.eventId }),
-            model: body.model ?? (await defaultCreateThreadModel(actor)),
+            model:
+              body.model === undefined
+                ? await defaultCreateThreadModel(actor)
+                : body.model,
           },
         }),
         statuses,
@@ -596,17 +583,24 @@ export function createChatFilesBddApi(context: TestContext) {
       readonly latestEventId: string | null;
       readonly latestSeqId: number | null;
     }> {
+      const headers = authenticate(context, actor);
       const response = await accept(
-        threadsClient().snapshot({
-          headers: authenticate(context, actor),
-        }),
+        threadsClient().snapshot({ headers }),
         [200],
       );
-      if (response.body.latestSeqId === undefined) {
-        throw new Error("Expected snapshot sequence cursor");
+      if (!("url" in response.body)) {
+        return response.body;
       }
+      const archiveResponse = await fetch(response.body.url);
+      if (!archiveResponse.ok) {
+        throw new Error("Failed to download chat thread snapshot");
+      }
+      const archive = chatThreadSnapshotArchiveSchema.parse(
+        await archiveResponse.json(),
+      );
       return {
-        ...response.body,
+        chatThreads: archive.chatThreads,
+        latestEventId: response.body.latestEventId,
         latestSeqId: response.body.latestSeqId,
       };
     },
@@ -655,8 +649,14 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().snapshot({ headers }),
         [200],
       );
+      const chatThreads =
+        "url" in snapshot.body
+          ? chatThreadSnapshotArchiveSchema.parse(
+              await (await fetch(snapshot.body.url)).json(),
+            ).chatThreads
+          : snapshot.body.chatThreads;
       const agentByThreadId = new Map(
-        snapshot.body.chatThreads.map((thread) => {
+        chatThreads.map((thread) => {
           return [thread.id, thread.agentId];
         }),
       );
@@ -873,20 +873,6 @@ export function createChatFilesBddApi(context: TestContext) {
       return response.body;
     },
 
-    async requestReadThreadDraft(
-      actor: ApiTestUser | null,
-      threadId: string,
-      statuses: readonly (200 | 400 | 401 | 404)[],
-    ) {
-      return await accept(
-        threadDraftClient().get({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-        }),
-        statuses,
-      );
-    },
-
     async patchThread(
       actor: ApiTestUser,
       threadId: string,
@@ -913,34 +899,6 @@ export function createChatFilesBddApi(context: TestContext) {
           body: requestBody,
         }),
         [204],
-      );
-    },
-
-    async requestPatchThread(
-      actor: ApiTestUser | null,
-      threadId: string,
-      body: {
-        readonly draftUserMessage: UserMessageInputDocument | null;
-        readonly draftAttachments?: readonly PersistedAttachment[] | null;
-      },
-      statuses: readonly (204 | 400 | 401 | 404)[],
-    ) {
-      return await accept(
-        threadByIdClient().patch({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: {
-            draftUserMessage: body.draftUserMessage,
-            ...(body.draftAttachments === undefined
-              ? {}
-              : {
-                  draftAttachments: body.draftAttachments
-                    ? [...body.draftAttachments]
-                    : null,
-                }),
-          },
-        }),
-        statuses,
       );
     },
 
@@ -1039,6 +997,44 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
+    async requestSetThreadMuted(
+      actor: ApiTestUser | null,
+      threadId: string,
+      muted: boolean,
+      statuses: readonly (204 | 401 | 403 | 404)[],
+      query: EventIdQuery = {},
+    ) {
+      const client = chatFilesApp(context)(chatThreadMuteContract);
+      const request = {
+        headers: authenticate(context, actor),
+        params: { id: threadId },
+        query: unpinQuery(query),
+      };
+      return await accept(
+        muted ? client.mute(request) : client.unmute(request),
+        statuses,
+      );
+    },
+
+    async requestSetThreadArchived(
+      actor: ApiTestUser | null,
+      threadId: string,
+      archived: boolean,
+      statuses: readonly (204 | 401 | 404)[],
+      query: EventIdQuery = {},
+    ) {
+      const client = threadArchiveClient();
+      const request = {
+        headers: authenticate(context, actor),
+        params: { id: threadId },
+        query: unpinQuery(query),
+      };
+      return await accept(
+        archived ? client.archive(request) : client.unarchive(request),
+        statuses,
+      );
+    },
+
     async reorderPinnedThread(
       actor: ApiTestUser,
       threadId: string,
@@ -1075,7 +1071,6 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
     ): Promise<{
       readonly lastReadAt: string | null;
-      readonly unreads: readonly { threadId: string; unreadAt: string }[];
     }> {
       const response = await accept(
         threadMarkReadClient().markRead({
@@ -1139,7 +1134,6 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
     ): Promise<{
       readonly lastReadAt: string | null;
-      readonly unreads: readonly { threadId: string; unreadAt: string }[];
     }> {
       const response = await accept(
         threadMarkUnreadClient().markUnread({
@@ -1168,7 +1162,7 @@ export function createChatFilesBddApi(context: TestContext) {
     async updateThreadModelSelection(
       actor: ApiTestUser,
       threadId: string,
-      model: SupportedRunModel | null,
+      model: string | null,
       options?: ModelSelectionRequestOptions,
     ): Promise<void> {
       await accept(
@@ -1181,112 +1175,10 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
-    async updateThreadImageModel(
-      actor: ApiTestUser,
-      threadId: string,
-      imageModel: ImageModelId | null,
-      options?: EventIdQuery,
-    ): Promise<void> {
-      await accept(
-        threadImageModelClient().update({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: generationModelBody(imageModel, options),
-        }),
-        [204],
-      );
-    },
-
-    async requestUpdateThreadImageModel(
-      actor: ApiTestUser | null,
-      threadId: string,
-      imageModel: ImageModelId | null,
-      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
-      options?: EventIdQuery,
-    ) {
-      return await accept(
-        threadImageModelClient().update({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: generationModelBody(imageModel, options),
-        }),
-        statuses,
-      );
-    },
-
-    async updateThreadVideoModel(
-      actor: ApiTestUser,
-      threadId: string,
-      videoModel: VideoModelId | null,
-      options?: EventIdQuery,
-    ): Promise<void> {
-      await accept(
-        threadVideoModelClient().update({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: generationModelBody(videoModel, options),
-        }),
-        [204],
-      );
-    },
-
-    async requestUpdateThreadVideoModel(
-      actor: ApiTestUser | null,
-      threadId: string,
-      videoModel: VideoModelId | null,
-      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
-      options?: EventIdQuery,
-    ) {
-      return await accept(
-        threadVideoModelClient().update({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: generationModelBody(videoModel, options),
-        }),
-        statuses,
-      );
-    },
-
-    /**
-     * The image and video model pin writers driven through an app whose
-     * **operation** signal the caller owns, the same mechanism
-     * {@link readCursorWritesWithOperationSignal} documents. The requests are
-     * returned unnarrowed so a caller can assert the off-contract response a
-     * cancelled operation produces.
-     */
-    generationModelWritesWithOperationSignal(signal: AbortSignal) {
-      const operationApp = chatFilesOperationApp(context, signal);
-      return {
-        async updateImageModel(
-          actor: ApiTestUser,
-          threadId: string,
-          imageModel: ImageModelId | null,
-        ) {
-          return await operationApp(chatThreadImageModelContract).update({
-            headers: authenticate(context, actor),
-            params: { id: threadId },
-            body: { model: imageModel },
-          });
-        },
-        async updateVideoModel(
-          actor: ApiTestUser,
-          threadId: string,
-          videoModel: VideoModelId | null,
-        ) {
-          return await operationApp(chatThreadVideoModelContract).update({
-            headers: authenticate(context, actor),
-            params: { id: threadId },
-            body: { model: videoModel },
-          });
-        },
-      };
-    },
-
     async updateUserModelPreference(
       actor: ApiTestUser,
-      selectedModel: SupportedRunModel | null,
+      selectedModel: string | null,
       selectedImageModel?: ImageModelId | null,
-      selectedVideoModel?: VideoModelId | null,
     ): Promise<void> {
       await accept(
         userModelPreferenceClient().update({
@@ -1295,7 +1187,6 @@ export function createChatFilesBddApi(context: TestContext) {
             selectedModel,
             serviceTier: null,
             ...(selectedImageModel === undefined ? {} : { selectedImageModel }),
-            ...(selectedVideoModel === undefined ? {} : { selectedVideoModel }),
           },
         }),
         [200],
@@ -1305,7 +1196,7 @@ export function createChatFilesBddApi(context: TestContext) {
     async requestUpdateThreadModelSelection(
       actor: ApiTestUser | null,
       threadId: string,
-      model: SupportedRunModel | null,
+      model: string | null,
       statuses: readonly (204 | 400 | 401 | 402 | 404)[],
       options?: ModelSelectionRequestOptions,
     ) {
@@ -1376,6 +1267,49 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
+    /**
+     * Send a prompt and return the run its background pick launched. A send
+     * only enqueues; the launched run is read from the input's run-bound
+     * replacement once background work has finished.
+     */
+    async sendAndLaunch(
+      actor: ApiTestUser,
+      body: Extract<BddSendEventBody, { readonly prompt: string }>,
+      options: RequestSendEventOptions = {},
+    ): Promise<{
+      readonly runId: string;
+      readonly threadId: string;
+      readonly clientEventId: string;
+    }> {
+      const clientEventId = body.clientEventId ?? randomUUID();
+      const sent = await this.requestSendEvent(
+        actor,
+        { ...body, clientEventId },
+        [201],
+        options,
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the chat send to be accepted");
+      }
+      await flushWaitUntilForTest();
+      const { events } = await this.listThreadEvents(actor, sent.body.threadId);
+      const launched = events.find((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === clientEventId &&
+          event.runId !== undefined
+        );
+      });
+      if (launched?.runId === undefined) {
+        throw new Error("Expected the chat send to launch a run");
+      }
+      return {
+        runId: launched.runId,
+        threadId: sent.body.threadId,
+        clientEventId,
+      };
+    },
+
     async listThreadEvents(
       actor: ApiTestUser,
       threadId: string,
@@ -1408,7 +1342,7 @@ export function createChatFilesBddApi(context: TestContext) {
     ) {
       const response = await accept(
         threadEventsClient().rows({
-          headers: authenticateChatEvent(context, actor),
+          headers: authenticate(context, actor),
           params: { threadId },
           query:
             query.sinceEventId === undefined
@@ -1440,7 +1374,7 @@ export function createChatFilesBddApi(context: TestContext) {
     ) {
       const response = await accept(
         threadEventsClient().rows({
-          headers: authenticateChatEvent(context, actor),
+          headers: authenticate(context, actor),
           params: { threadId },
           query:
             cursor.lastEventId === null
@@ -1526,6 +1460,20 @@ export function createChatFilesBddApi(context: TestContext) {
         [200],
       );
       return response.body;
+    },
+
+    async requestWebFileUrl(
+      actor: ApiTestUser,
+      fileId: string,
+      statuses: readonly (200 | 401 | 403 | 404)[],
+    ) {
+      return await accept(
+        webFilesClient().fileUrl({
+          headers: authenticate(context, actor),
+          query: { file_id: fileId },
+        }),
+        statuses,
+      );
     },
 
     async getArtifactCatalogEntry(
@@ -1664,6 +1612,12 @@ export function createChatFilesBddApi(context: TestContext) {
         ...(options.usagePricingResolution === undefined
           ? {}
           : { usagePricingResolution: options.usagePricingResolution }),
+        ...(options.systemSkillStorageResolution === undefined
+          ? {}
+          : {
+              systemSkillStorageResolution:
+                options.systemSkillStorageResolution,
+            }),
       })(chatEventsContract);
       const defaultModel =
         "prompt" in body &&
@@ -1674,7 +1628,9 @@ export function createChatFilesBddApi(context: TestContext) {
       const requestBody =
         "prompt" in body
           ? (() => {
-              const selectedModel = body.model ?? defaultModel;
+              // An explicit null selects Auto.
+              const selectedModel =
+                body.model === undefined ? defaultModel : body.model;
               return {
                 agentId: body.agentId,
                 prompt: body.prompt,
@@ -1747,6 +1703,9 @@ export function createChatFilesBddApi(context: TestContext) {
       return await accept(
         client.send({
           headers: authenticate(context, actor),
+          ...(options.extraHeaders === undefined
+            ? {}
+            : { extraHeaders: options.extraHeaders }),
           body: requestBody,
         }),
         statuses,

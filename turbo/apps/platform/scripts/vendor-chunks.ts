@@ -7,6 +7,11 @@ export const VENDOR_GROUP_IDS = [1, 2, 3, 4, 5] as const;
 
 function vendorPackageName(moduleId: string): string | undefined {
   const normalized = moduleId.replaceAll("\\", "/");
+  // ONNX's runtime-selected WASM import receives Vite's preload helper.
+  // Keep that helper in the vendor graph to avoid a vendor -> app cycle.
+  if (normalized === "\0vite/preload-helper.js") {
+    return "vite:preload-helper";
+  }
   if (!isVendorModule(normalized)) {
     return undefined;
   }

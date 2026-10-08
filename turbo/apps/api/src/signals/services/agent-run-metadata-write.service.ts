@@ -2,8 +2,9 @@ import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/mode
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { SQL } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
+import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
 
 type StoredRunMetadataValues = Pick<
   typeof agentRuns.$inferSelect,
@@ -19,7 +20,6 @@ type StoredRunMetadataValues = Pick<
   | "builtInModelKeyId"
   | "reasoningEffort"
   | "codexServiceTier"
-  | "selectedVideoModel"
   | "selectedImageModel"
   | "chatThreadId"
   | "apiStartedAt"
@@ -94,10 +94,9 @@ export function normalizeRunMetadata(
 ): RunMetadataValues {
   return {
     triggerSource: input.triggerSource,
-    autonomyBudget: input.autonomyBudget ?? 10,
+    autonomyBudget: input.autonomyBudget ?? INITIAL_AUTONOMY_BUDGET,
     workflowAutomationId: input.workflowAutomationId ?? null,
     ...normalizeRunModelMetadata(input),
-    selectedVideoModel: input.selectedVideoModel ?? null,
     selectedImageModel: input.selectedImageModel ?? null,
     chatThreadId: input.chatThreadId ?? null,
     apiStartedAt: input.apiStartedAt ?? null,
@@ -108,22 +107,30 @@ export function normalizeRunMetadata(
   };
 }
 
-export async function writeRunMetadataInTransaction(
-  tx: Tx,
-  args: RunMetadataWriteArgs,
-): Promise<readonly RunMetadataRow[]> {
-  return await tx
-    .update(agentRuns)
-    .set(args.patch)
-    .where(args.where)
-    .returning({ id: agentRuns.id, apiStartedAt: agentRuns.apiStartedAt });
+// Owners with an existing write boundary execute this value plan themselves;
+// it contains no executor and does not open another connection or transaction.
+export function runMetadataWritePlan(args: RunMetadataWriteArgs) {
+  return {
+    patch: args.patch,
+    where: args.where,
+    returning: { id: agentRuns.id, apiStartedAt: agentRuns.apiStartedAt },
+  };
 }
 
-export function writeRunMetadata(
-  db: Db,
-  args: RunMetadataWriteArgs,
-): Promise<readonly RunMetadataRow[]> {
-  return db.transaction(async (tx) => {
-    return await writeRunMetadataInTransaction(tx, args);
-  });
-}
+export const writeRunMetadata$ = command(
+  async (
+    { set },
+    args: RunMetadataWriteArgs,
+    signal: AbortSignal,
+  ): Promise<readonly RunMetadataRow[]> => {
+    signal.throwIfAborted();
+    const plan = runMetadataWritePlan(args);
+    const rows = await set(writeDb$)
+      .update(agentRuns)
+      .set(plan.patch)
+      .where(plan.where)
+      .returning(plan.returning);
+    signal.throwIfAborted();
+    return rows;
+  },
+);

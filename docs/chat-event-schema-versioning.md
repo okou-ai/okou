@@ -1,103 +1,100 @@
 # Chat Event schema versioning
 
-Snapshot NDJSON rows and Raw Chat Event API rows are two representations of
-the same Chat Event schema. Clients select that schema with
-`X-Chat-Event-Schema-Version` on both read endpoints, and successful responses
-echo the selected version in the same header.
+Snapshot NDJSON rows and Raw Chat Event API rows are representations of the
+same schema. The current and only served version is V8.
 
-Platform and CLI readers require that echoed header and require Snapshot
-responses to include the paired `lastEventId`; they do not reconstruct missing
-response metadata from the immutable NDJSON body.
+## V8
 
-## Version negotiation
+The event catalog contains:
 
-- The current and only supported version is V7. The request header is required.
-- A malformed version returns `400 CHAT_EVENT_SCHEMA_VERSION_INVALID`.
-- A version below the current version returns
-  `426 CHAT_EVENT_SCHEMA_VERSION_RETIRED` so the client can force an upgrade.
-- A version newer than the API returns
-  `409 CHAT_EVENT_SCHEMA_VERSION_AHEAD`.
+- `input.prompt`, `input.automation`, `input.budget`, `input.rejected`
+- `output.message`, `output.error`, `output.followups`
+- `run.completed`, `run.failed`, `run.cancelled`
+- `control.interrupt`, `control.revoke`, `usage.recorded`
 
-Raw Events are read from the current database schema and returned in V7. The
-API does not downgrade rows or Snapshot objects to retired versions.
+`contextType` is one of `web`, `slack`, `discord`, `feishu`, `teams`, `telegram`,
+`agentphone`, `automation` or `agent_run`. Every input row has a context type.
+Canonical row payloads are projected into public events by the shared contract.
 
-### Optional V7 failure reasons
+## Failure reasons
 
-V7 `run.failed` readers accept an optional `failureReason` field and continue
-to accept historical rows that omit it. Other event types reject the field.
-The field uses the bounded failure-reason wire token, so prepared readers also
-preserve well-formed values that are newer than their known semantic taxonomy.
+A failed-run row may carry an optional `failureReason`. The bounded wire token
+also permits well-formed values newer than the reader's semantic taxonomy.
+Failure reasons belong only to failed-run rows; the strict payload JSON does
+not store them. Rows without a reason remain valid.
 
-Because existing V7 readers are strict, adding the optional field uses a
-reader-first rollout even though the version number does not change:
+## Client compatibility
 
-1. Deploy the tolerant contract to every API, app, CLI, and persisted-history
-   reader while all writers continue to omit the field.
-2. Wait until previous app bundles, commit-addressed CLI artifacts, serving and
-   rollback APIs, and other strict V7 readers have drained or are blocked by an
-   enforced compatibility floor.
-3. Enable writers in a later release.
+Chat Event read endpoints carry no schema-version request or response header.
+The API always serves the current version. Client compatibility follows the
+general client rules:
 
-Reader preparation shipped in release
-`89c6a521944e2ac8550da424f164db08f4f80f0c` and contains reader commit
-`c093e0ffdab988d2a8a071809f90d87fa3e79f20`. Writer activation stores the
-optional value in a nullable `chat_events.failure_reason` column outside the
-strict payload JSON. The minimum supported App version is `0.830.0`, the first
-prepared App build.
+- The Web App is gated by the enforced Web client floor (`X-Client-Version`
+  with `426 Upgrade Required`). A schema change incompatible with supported
+  builds requires advancing that floor after the replacement App is live.
+- Runs may use a commit-addressed CLI captured with their execution context
+  or a compatible CLI installed in the runner rootfs. Neither necessarily
+  advances with each API deployment. Inspect actual readers and gate or drain
+  incompatible callers before changing a persisted shape.
+- App and CLI Snapshot readers require the paired `lastEventId` response
+  metadata; they do not reconstruct it from the NDJSON body.
 
-Commit-addressed CLI contexts created before reader API promotion must drain
-through their two-hour queue lifetime, two-hour execution budget, and bounded
-finalization before writer activation. Production rollback targets must contain
-the reader commit above; the release commit is the first compatible tagged
-baseline. A rollback to an earlier strict V7 reader is unsafe after any
-reason-bearing row has been persisted.
+For release receipts and contraction gates, see
+[deployment compatibility](./deployment-compatibility.md).
 
-The rollout does not change Snapshot pointers, client cache versions, or the V7
-wire version. A V7 cache can therefore contain both historical reasonless
-failures and later failures with a reason.
+## MCP source metadata
+
+A server-owned `source.kind: "mcp"` user-message part carries the verified OAuth
+client ID and an optional client-name display snapshot. The App renders a local
+MCP mark with the saved name or a generic `MCP` label. Existing messages are not
+retroactively labeled by inference.
+
+Direct chat sends reject caller-authored MCP source parts. The MCP writer
+appends source metadata to the same immutable input as its text. An optional,
+bounded name comes from a matching HTTPS CIMD document; this self-asserted name
+is display metadata, not proof of which software is running. Invalid or
+unavailable metadata leaves the name absent without failing the authorized send.
+Replays preserve the original source and name. Retry identity does not require
+the original OAuth client ID.
+
+Before introducing a new persisted source kind, verify every supported
+App/API/history/Snapshot reader and the enforced Web client floor. The CLI
+`okou chat messages` validates rows with `chatEventRowSchema`, whose
+`payload.userMessage` is opaque; do not infer that all clients parse the document
+in the same way. A merged reader PR or release tag alone does not prove that
+the reader is serving.
 
 ## Snapshot storage and reads
 
-The API owns exactly one canonical pointer per
-`(chat_thread_id, archive_schema_version)`, enforced by a unique database
-index. Readers select the current-version pointer directly.
+The API owns one canonical pointer per `(chat_thread_id, archive_schema_version)`,
+enforced by a unique database index. Persisted pointers use version 8 and
+readers select that version directly.
 
-The pointer contains the immutable, content-addressed R2 object key and a
-paired `{lastEventId, lastSeqId}` terminal cursor. `last_event_id` is required.
-Snapshot pointers have no parent or head identity columns.
+Each pointer contains an immutable, content-addressed R2 object key, physical
+coverage (`last_seq_id`, `last_event_id`) and a paired logical terminal cursor
+(`terminal_seq_id`, `terminal_event_id`). The physical event ID is required.
+An empty logical body has terminal sequence zero and a null terminal event ID.
+Snapshot responses expose the logical terminal cursor.
 
-Snapshot reads persist and return the current-version pointer. A request cannot
-fall back to a stored retired-version pointer when the current pointer is
-unavailable.
+Only the first Snapshot for a thread may bootstrap from available Raw Events.
+Sequence positions may start above 1 and contain gaps. Every subsequent refresh:
 
-## Snapshot upgrade invariant
+1. Downloads and validates the persisted immutable object, including its digest,
+   row/projection contract, ordering, thread ownership and terminal metadata.
+2. Reads only Raw Events after the stored physical coverage watermark.
+3. Appends that tail, uploads a new immutable object and publishes its pointer
+   with an exact compare-and-swap against the source metadata.
 
-Only the first Snapshot for a thread may bootstrap from the currently available
-Raw Event prefix. Sequence positions may start above 1 and contain gaps. Once
-any Snapshot exists, every refresh or schema upgrade must:
-
-1. Download and validate the stored Snapshot object.
-2. Run the adjacent Snapshot migration chain on that historical prefix.
-3. Read only Raw Events after the stored paired cursor.
-4. Append that tail, upload a new immutable object, then publish its database
-   pointer with an exact compare-and-swap.
-
-A missing object, invalid Snapshot, missing migration, or missing historical
-prefix fails closed. It must never authorize a full Raw Event rebuild because
-older Raw Events may already have been reclaimed.
-
-Future Chat Event schema bumps must include every required adjacent Snapshot
-migration before release; if an old version is not migratable, all pointers
-relying on it must first converge to a migratable version.
+An unreadable or invalid Snapshot fails closed; it does not authorize rebuilding
+history from Raw Events, because covered rows may already have been reclaimed.
+A future schema change must provide and verify an explicit prefix-preserving
+conversion before activation.
 
 ## Browser cache
 
-The IndexedDB database version combines a cache-layout base version with the
-requested Chat Event schema version. Any IndexedDB version change deletes and
-recreates all Chat Event cache stores. The cache cursor stores the schema
-version and paired event/sequence boundary, and row-plus-cursor writes are
-atomic.
+The IndexedDB version combines a cache-layout base with the current Chat Event
+schema version. A version change recreates the Chat Event cache stores. The
+cache cursor stores the schema version and paired event/sequence boundary;
+row-plus-cursor writes are atomic.
 
-Raw Event retention and orphaned R2 object collection policy are outside this
-change. The invariant above makes later Raw Event reclamation safe without
-adding retention behavior here.
+Raw Event retention and orphaned R2 object collection are separate policies.

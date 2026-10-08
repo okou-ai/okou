@@ -42,6 +42,7 @@ function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
     canManage: workflow.canManage,
     canPublish: workflow.canPublish,
     official: workflow.official,
+    importSource: workflow.importSource,
   };
 }
 
@@ -110,6 +111,24 @@ export const apiWorkflowsHandlers = [
     return respond(200, visible.map(summary));
   }),
 
+  mockApi(workflowsCollectionContract.composer, ({ query, respond }) => {
+    return respond(
+      200,
+      mockWorkflows
+        .filter((workflow) => {
+          return workflow.agentId === query.agentId;
+        })
+        .map((workflow) => {
+          return {
+            id: workflow.id,
+            name: workflow.name,
+            displayName: workflow.displayName,
+            description: workflow.description,
+          };
+        }),
+    );
+  }),
+
   mockApi(workflowsCollectionContract.create, ({ body, respond }) => {
     const now = new Date().toISOString();
     const created: WorkflowDetailResponse = {
@@ -125,6 +144,7 @@ export const apiWorkflowsHandlers = [
       canManage: true,
       canPublish: true,
       official: null,
+      importSource: null,
       createdByUserId: "test-user-123",
       updatedByUserId: "test-user-123",
       createdAt: now,

@@ -1,11 +1,8 @@
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import {
   SKILL_IMPORT_LIMITS,
+  SKILL_IMPORT_SESSION_TTL_SECONDS,
   skillImportSessionsContract,
 } from "@okouai/api-contracts/contracts/skill-import";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
@@ -13,7 +10,6 @@ import {
   workflowsCollectionContract,
   type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -27,6 +23,10 @@ import { pathname } from "../../../signals/location.ts";
 import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  connectedGmailSource,
+  mockOnboardingConnectorCatalog,
+} from "./onboarding-catalog-test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 vi.hoisted(() => {
@@ -36,22 +36,16 @@ vi.hoisted(() => {
 
 const context = testContext();
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
-const completedDraftStorage = localStorageSignals(
-  "onboarding:sources-first-draft",
-);
 
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
-
-const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
-const SKILLS_QUESTION = "Bring the skills you already wrote.";
+const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
+const SKILLS_QUESTION = "Bring your existing skills into Okou";
 const SKILLS_ARRIVED_TITLE = "Your skills are in Okou";
-const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
+const SLACK_QUESTION = "Keep Okou a message away";
 const CODEX_CARD = "Codex";
 const PROMPT_LABEL = "Skill import prompt";
+const GUIDE_LABEL = "Where to run the prompt";
 /** The prompt's own opening line, as the user's agent would read it. */
-const PROMPT_OPENING = "Import my local skills into Okou.";
+const PROMPT_OPENING = "Import my local personal skills into Okou.";
 const WAITING_FOR_SKILLS = "Imported skills appear here as they arrive.";
 /** The token the mocked session hands out, which only the prompt carries. */
 const SESSION_TOKEN = "vm0_skillimport_mock-session-token";
@@ -64,45 +58,7 @@ const OTHER_AGENT_SKILL = "Someone else's skill";
 
 /** One connected source, which every step after the source step requires. */
 function mockConnectedSource(): void {
-  const connector: PublicConnectorCatalogStatusItem = {
-    slug: "gmail",
-    label: "Gmail",
-    description: "Connect Gmail to continue",
-    icon: {
-      url: "https://icons.example.test/onboarding-gmail.svg",
-      invertInDarkMode: false,
-    },
-    category: "productivity",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected: true,
-    connectionStatus: "connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
+  mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
 }
 
 function workflow(entry: {
@@ -124,6 +80,7 @@ function workflow(entry: {
     createdAt: "2026-09-21T10:00:00.000Z",
     canManage: true,
     canPublish: false,
+    importSource: null,
     official: null,
   };
 }
@@ -171,6 +128,23 @@ function mockAgentWorkflows(): {
       workflows = next;
     },
   };
+}
+
+/** Each session names the tool it was opened for, in the order they opened. */
+function mockSessions(): { readonly providers: string[] } {
+  const providers: string[] = [];
+  context.mocks.api(skillImportSessionsContract.create, ({ body, respond }) => {
+    providers.push(body.provider);
+    return respond(200, {
+      uploadUrl: "https://api.okou.test/api/skill-import/skills",
+      token: SESSION_TOKEN,
+      expiresAt: new Date(
+        now() + SKILL_IMPORT_SESSION_TTL_SECONDS * 1000,
+      ).toISOString(),
+      limits: SKILL_IMPORT_LIMITS,
+    });
+  });
+  return { providers };
 }
 
 function getButtonByName(name: string): HTMLElement {
@@ -260,7 +234,6 @@ async function openSkillsStep(
     locale: "en-US",
     path: fromStart ? ROUTES.onboarding : ROUTES.onboardingExperience,
     host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   if (fromStart) {
@@ -271,11 +244,11 @@ async function openSkillsStep(
     await waitForContinueEnabled();
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
-      name: "Okou is for you, and shared across your whole team.",
+      name: "Connect a work tool",
     });
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
-      name: "Bring the people who do this work with you.",
+      name: "Make Okou useful to your whole team",
     });
     click(getButtonByName("Not now"));
   }
@@ -307,7 +280,6 @@ test("The skills step requires a selected tool", async () => {
     context,
     locale: "en-US",
     path: ROUTES.onboardingSkills,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -345,7 +317,6 @@ test("Refreshing the skills step restores the chosen tool", async () => {
     context,
     locale: "en-US",
     path: ROUTES.onboardingSkills,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -362,6 +333,8 @@ test("A saved draft from another user cannot select the current user's tool", as
     isAdmin: true,
   });
   mockConnectedSource();
+  // Another account left this draft in the browser during a previous app
+  // lifetime; one page lifetime cannot sign in as that account first.
   context.store.set(
     draftStorage.set$,
     JSON.stringify({
@@ -382,7 +355,6 @@ test("A saved draft from another user cannot select the current user's tool", as
     context,
     locale: "en-US",
     path: ROUTES.onboardingExperience,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -396,15 +368,25 @@ test("The step hands over the prompt its session produced, and copies it whole",
   const posthog = context.mocks.posthog();
   const clipboard = context.mocks.browser.clipboardWriteText();
   mockAgentWorkflows();
+  const sessions = mockSessions();
 
   await openSkillsStep();
 
   expect(screen.getByText("Run this in Codex")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Paste this prompt into your own Codex session and it brings the skills on your machine into Okou.",
+      "Run this prompt in Codex to import the skills you've already built, so Okou can use them from day one.",
     ),
   ).toBeInTheDocument();
+
+  // Codex also runs in the cloud, so the step says where the prompt can read
+  // this machine's skills.
+  const guide = screen.getByRole("list", { name: GUIDE_LABEL });
+  expect(guide).toHaveTextContent("Open the Codex app and start a New chat");
+  expect(guide).toHaveTextContent("Paste the prompt and send it");
+  expect(guide).toHaveTextContent(
+    "Keep it open until your skills appear below",
+  );
 
   const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
   expect(prompt).toHaveTextContent(PROMPT_OPENING);
@@ -412,6 +394,11 @@ test("The step hands over the prompt its session produced, and copies it whole",
   // upload route it posts to is named.
   expect(prompt.textContent).toContain(SESSION_TOKEN);
   expect(prompt.textContent).toContain("/api/skill-import/skills");
+  expect(prompt.textContent).toContain("Mandatory HTTP client: curl");
+  expect(prompt.textContent).toContain("`--config -`");
+  expect(prompt.textContent).toContain("~/.codex/skills/");
+  expect(prompt.textContent).toContain("~/.agents/skills/");
+  expect(prompt.textContent).not.toContain("~/.claude/skills/");
 
   click(getButtonByName("Copy prompt"));
 
@@ -429,92 +416,86 @@ test("The step hands over the prompt its session produced, and copies it whole",
   );
   // The token is the session; it belongs on the clipboard and nowhere else.
   expect(JSON.stringify(posthog.events)).not.toContain(SESSION_TOKEN);
+  expect(sessions.providers).toStrictEqual(["codex"]);
 });
 
 test("The skills step names Claude Code when it was selected", async () => {
   mockAgentWorkflows();
+  const sessions = mockSessions();
 
   await openSkillsStep("Claude Code");
 
   expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Paste this prompt into your own Claude Code session and it brings the skills on your machine into Okou.",
+      "Run this prompt in Claude Code to import the skills you've already built, so Okou can use them from day one.",
     ),
   ).toBeInTheDocument();
+  // The Claude app's Chat tab cannot read local files; its Code tab can.
+  const guide = screen.getByRole("list", { name: GUIDE_LABEL });
+  expect(guide).toHaveTextContent(
+    "Open the Claude app and switch to the Code tab",
+  );
+  expect(guide).toHaveTextContent("Keep the session on Local");
+  expect(guide).not.toHaveTextContent("New chat");
+  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
+  expect(prompt.textContent).toContain("~/.claude/skills/");
+  expect(prompt.textContent).toContain("~/.agents/skills/");
+  expect(prompt.textContent).not.toContain("~/.codex/skills/");
+  expect(sessions.providers).toStrictEqual(["claudeCode"]);
 });
 
-test.each([
-  {
-    card: "Codex" as const,
-    provider: "codex",
-    fromStart: true,
-    scenario: "full flow",
-    expectedIndustry: "marketing",
-  },
-  {
-    card: "Claude Code" as const,
-    provider: "claudeCode",
-    fromStart: true,
-    scenario: "full flow",
-    expectedIndustry: "marketing",
-  },
-  {
-    card: "Claude Code" as const,
-    provider: "claudeCode",
-    fromStart: false,
-    scenario: "resumed without an industry answer",
-    expectedIndustry: undefined,
-  },
-])(
-  "Finishing onboarding sends the selected $card model preference after a $scenario",
-  async ({ card, provider, fromStart, expectedIndustry }) => {
-    mockAgentWorkflows();
-    mockChatLifecycle(context);
-    let sentProvider: string | undefined;
-    let sentIndustry: string | undefined;
-    context.mocks.api(
-      onboardingCompleteContract.complete,
-      ({ query, body, respond }) => {
-        sentProvider = query?.modelProvider;
-        sentIndustry = body.industry;
-        context.mocks.data.onboardingStatus({
-          needsOnboarding: false,
-          onboardingComplete: true,
-        });
-        return respond(200, {
-          onboardingComplete: true,
-          needsOnboarding: false,
-        });
-      },
-    );
+test("Finishing onboarding sends the industry after a full Codex flow", async () => {
+  mockAgentWorkflows();
+  mockChatLifecycle(context);
+  let sentIndustry: string | undefined;
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    ({ body, respond }) => {
+      sentIndustry = body.industry;
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, {
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
+    },
+  );
 
-    await openSkillsStep(card, fromStart);
-    click(getButtonByName("Continue"));
-    await expect(
-      screen.findByRole("heading", { name: SLACK_QUESTION }),
-    ).resolves.toBeInTheDocument();
-    click(getButtonByName("Skip for now"));
-    await expect(
-      screen.findByRole("heading", { name: "Okou is ready for you" }),
-    ).resolves.toBeInTheDocument();
-    expect(context.store.get(draftStorage.get$)).not.toBeNull();
-    click(getButtonByName("Start with Okou"));
-    await waitFor(() => {
-      expect(sentProvider).toBe(provider);
-    });
-    expect(sentIndustry).toBe(expectedIndustry);
-    await waitFor(() => {
-      expect(context.store.get(completedDraftStorage.get$)).toBeNull();
-    });
-  },
-);
+  await openSkillsStep(CODEX_CARD, true);
+  click(getButtonByName("Not now"));
+  await expect(
+    screen.findByRole("heading", { name: SLACK_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Not now"));
+  await expect(
+    screen.findByRole("heading", { name: "Start with a task that matters" }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Start with Okou"));
+  await waitFor(() => {
+    expect(sentIndustry).toBe("marketing");
+  });
+});
+
+test("A resumed skills step without a work positioning continues to Slack", async () => {
+  mockAgentWorkflows();
+  await openSkillsStep();
+
+  click(getButtonByName("Not now"));
+
+  await expect(
+    screen.findByRole("heading", { name: SLACK_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingSlack);
+});
 
 test("A skill the import writes appears without the step being asked again", async () => {
   const posthog = context.mocks.posthog();
   const agentWorkflows = mockAgentWorkflows();
 
-  await openSkillsStep();
+  await openSkillsStep(CODEX_CARD, true);
 
   await expect(
     screen.findByText(WAITING_FOR_SKILLS),
@@ -551,57 +532,17 @@ test("A skill the import writes appears without the step being asked again", asy
   expect(pathname()).toBe(ROUTES.onboardingSlack);
 });
 
-test("Coming back to the step keeps the prompt it already gave and what arrived", async () => {
-  const agentWorkflows = mockAgentWorkflows();
-  let issued = 0;
-  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
-    issued += 1;
-    return respond(200, {
-      uploadUrl: "https://api.okou.test/api/skill-import/skills",
-      // A second session would carry a token the pasted prompt does not have.
-      token: `${SESSION_TOKEN}-${String(issued)}`,
-      expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
-      limits: SKILL_IMPORT_LIMITS,
-    });
-  });
-
-  await openSkillsStep();
-
-  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
-  expect(prompt.textContent).toContain(`${SESSION_TOKEN}-1`);
-
-  agentWorkflows.write([importedSkill()]);
-  await expect(
-    screen.findByText(SKILL_DISPLAY_NAME),
-  ).resolves.toBeInTheDocument();
-
-  click(getButtonByName("Back"));
-  await expect(
-    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  click(getButtonByName("Continue"));
-
-  await expect(
-    screen.findByRole("heading", { name: SKILLS_ARRIVED_TITLE }),
-  ).resolves.toBeInTheDocument();
-  // The same session the person may already have pasted, and the skill it
-  // wrote: the way back does not restart the import.
-  const returned = await screen.findByRole("region", { name: PROMPT_LABEL });
-  expect(returned.textContent).toContain(`${SESSION_TOKEN}-1`);
-  expect(screen.getByText(SKILL_DISPLAY_NAME)).toBeInTheDocument();
-});
-
 test("The step can be left with nothing imported", async () => {
   const posthog = context.mocks.posthog();
   mockAgentWorkflows();
 
-  await openSkillsStep();
+  await openSkillsStep(CODEX_CARD, true);
 
   await expect(
     screen.findByText(WAITING_FOR_SKILLS),
   ).resolves.toBeInTheDocument();
 
-  click(getButtonByName("Skip for now"));
+  click(getButtonByName("Not now"));
 
   await expect(
     screen.findByRole("heading", { name: SLACK_QUESTION }),
@@ -612,21 +553,14 @@ test("The step can be left with nothing imported", async () => {
   );
 });
 
-test("A session that cannot be opened leaves the step passable and offers it again", async () => {
+test("A session that cannot be opened leaves the step passable", async () => {
   mockAgentWorkflows();
-  let attempts = 0;
   context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
-    attempts += 1;
-    if (attempts === 1) {
-      return respond(403, {
-        error: { message: "Skill import is not enabled", code: "FORBIDDEN" },
-      });
-    }
-    return respond(200, {
-      uploadUrl: "https://api.okou.test/api/skill-import/skills",
-      token: SESSION_TOKEN,
-      expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
-      limits: SKILL_IMPORT_LIMITS,
+    return respond(404, {
+      error: {
+        message: "This organization has no default agent to import into",
+        code: "NOT_FOUND",
+      },
     });
   });
 
@@ -635,11 +569,8 @@ test("A session that cannot be opened leaves the step passable and offers it aga
   await expect(
     screen.findByText("The import session could not be opened."),
   ).resolves.toBeInTheDocument();
-  // Nothing on this step is required, so a failure never holds the run back.
-  expect(getButtonByName("Continue")).toBeEnabled();
-
-  click(getButtonByName("Try again"));
-
-  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
-  expect(prompt).toHaveTextContent(PROMPT_OPENING);
+  // Nothing on this step is required, so a failure never holds the run back:
+  // Not now leaves, while Continue waits for a skill that cannot arrive.
+  expect(getButtonByName("Not now")).toBeEnabled();
+  expect(getButtonByName("Continue")).toBeDisabled();
 });

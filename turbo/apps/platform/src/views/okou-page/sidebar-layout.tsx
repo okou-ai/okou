@@ -8,10 +8,9 @@ import {
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Menu, Package, Share2, UserPlus } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { RouteKey } from "../../signals/route-paths.ts";
 import { Button, cn, useMediaQuery } from "@okouai/ui";
-import { Sidebar } from "./sidebar.tsx";
+import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
 import {
   AutomationMenuButton,
   ChatThreadHeaderTitle,
@@ -45,12 +44,13 @@ import {
 } from "../pwa-install/install-banner.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 import { ChatShortcutHelpDialog } from "./chat-shortcut-help-dialog.tsx";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ConcurrencyConfirmDialog } from "./components/org-manage/org-billing-tab.tsx";
 import { CreditPurchaseConfirmDialog } from "./components/org-manage/credit-purchase-confirm-dialog.tsx";
 import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subscription-purchase-confirm-dialog.tsx";
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
+import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
+import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
 import {
   paletteColorTheme$,
   shellDocumentAttributesRef$,
@@ -58,6 +58,13 @@ import {
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { WorkspaceInset } from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
+import {
+  pwaChatListVisible$,
+  pwaNavigationEnabled$,
+} from "../../signals/okou-page/pwa-navigation.ts";
+import { PwaBackToChats, PwaBottomNavigation } from "./pwa-navigation.tsx";
+import { ChatThreadDialogs } from "./sidebar-threads.tsx";
+import { NotFoundPage } from "../not-found-page.tsx";
 
 function AgentAvatarInTopBar() {
   const agent = useLastResolved(currentChatAgent$);
@@ -269,10 +276,8 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
-  const headerActionsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadHeaderActions];
   const thread = useCurrentThread();
-  if (headerActionsEnabled && activeId === "chat" && thread) {
+  if (activeId === "chat" && thread) {
     return (
       <SettledChatThreadActions thread={thread}>
         <MobileChatThreadActions thread={thread} />
@@ -295,7 +300,7 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
   );
 }
 
-function MobileTopBar() {
+function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
   const setExpanded = useSet(setSidebarExpanded$);
   const { t } = useTranslation();
 
@@ -309,22 +314,28 @@ function MobileTopBar() {
   return (
     <div className="relative md:hidden shrink-0 flex items-center min-h-12 px-3 gap-2 bg-background border-b border-border/50 z-10">
       <MobileSharingOverlayLeaf />
-      <Button
-        showTooltip
-        type="button"
-        onClick={() => {
-          setExpanded(true);
-        }}
-        variant="quiet"
-        size="icon-sm"
-        iconSize="md"
-        className="shrink-0"
-        aria-label={t(($) => {
-          return $.appShell.sidebar.mobile.openMenu;
-        })}
-      >
-        <Menu size={18} />
-      </Button>
+      {pwaNavigation ? (
+        isChatRoute(activeId) ? (
+          <PwaBackToChats />
+        ) : null
+      ) : (
+        <Button
+          showTooltip
+          type="button"
+          onClick={() => {
+            setExpanded(true);
+          }}
+          variant="quiet"
+          size="icon-sm"
+          iconSize="md"
+          className="shrink-0"
+          aria-label={t(($) => {
+            return $.appShell.sidebar.mobile.openMenu;
+          })}
+        >
+          <Menu size={18} />
+        </Button>
+      )}
       {activeId === "chat" ? (
         <div className="flex-1 min-w-0">
           {thread && <ChatThreadHeaderTitle thread={thread} />}
@@ -369,6 +380,12 @@ function AttachmentLightboxMount() {
   return lightboxUrl ? <AttachmentLightbox /> : null;
 }
 
+/** Mounted only while open, so a closed dialog costs the shell nothing. */
+function SkillImportDialogMount() {
+  const open = useGet(skillImportDialogOpen$);
+  return open ? <SkillImportDialog /> : null;
+}
+
 function MobileSidebarMount() {
   const expanded = useGet(sidebarExpanded$);
   const setExpanded = useSet(setSidebarExpanded$);
@@ -399,6 +416,13 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   const chatListHidden = useGet(sidebarOff$);
   const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
+  const pwaNavigation = useGet(pwaNavigationEnabled$);
+  const chatListVisible = useGet(pwaChatListVisible$);
+  const activeRoute = useGet(activeRoute$);
+
+  if (activeRoute === "me" && !pwaNavigation) {
+    return <NotFoundPage />;
+  }
 
   return withChatScrollLayout(
     <div
@@ -416,13 +440,37 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <CreditPurchaseConfirmDialog />
       <SubscriptionPurchaseConfirmDialog />
       <AttachmentLightboxMount />
+      <SkillImportDialogMount />
       <QueueDrawer />
-      {isDesktop ? <Sidebar isDesktop /> : <MobileSidebarMount />}
+      {pwaNavigation ? (
+        <>
+          <ChatThreadDialogs />
+          <ThreeColumnSearchDialogContainer />
+        </>
+      ) : isDesktop ? (
+        <Sidebar isDesktop />
+      ) : (
+        <MobileSidebarMount />
+      )}
       <WorkspaceInset beside={chatListHidden ? "nav-rail" : "chat-list"}>
         <InstallBanner />
         <IosInstallModal />
-        {!isDesktop && <MobileTopBar />}
-        {children}
+        {!isDesktop &&
+          !(
+            pwaNavigation &&
+            (activeRoute === "me" ||
+              (activeRoute === "agentChat" && chatListVisible))
+          ) && <MobileTopBar pwaNavigation={pwaNavigation} />}
+        {pwaNavigation ? (
+          <>
+            <div className="flex min-h-0 flex-1 flex-col [--okou-safe-b:0px]">
+              {children}
+            </div>
+            <PwaBottomNavigation />
+          </>
+        ) : (
+          children
+        )}
       </WorkspaceInset>
     </div>,
   );

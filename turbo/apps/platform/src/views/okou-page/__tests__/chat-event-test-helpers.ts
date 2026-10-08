@@ -9,6 +9,7 @@ import {
   chatEventRowSchema,
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
+import type { ChatEventContextType } from "@okouai/api-contracts/contracts/chat-events";
 
 type UnionKeys<T> = T extends unknown ? keyof T : never;
 type UnionValue<T, K extends PropertyKey> = T extends unknown
@@ -59,20 +60,14 @@ function inferredEventType(
   if (message.runLifecycleEvent === "cancelled") {
     return "run.cancelled";
   }
-  if (message.runEventId === "queue:queued") {
-    return "run.queued";
-  }
-  if (message.runEventId === "queue:dequeued") {
-    return "run.dequeued";
-  }
   if (message.usage !== undefined) {
     return "usage.recorded";
   }
   if (message.followups !== undefined) {
     return "output.followups";
   }
-  if (message.thinking !== undefined || message.content === null) {
-    return "output.thinking";
+  if (message.content === null && message.error === undefined) {
+    throw new Error("Mock assistant events without content need an eventType");
   }
   return message.error === undefined ? "output.message" : "output.error";
 }
@@ -89,7 +84,6 @@ function baseEvent(
     threadId,
     content,
     runId: message.runId,
-    runGroupId: message.runGroupId,
     runEventId: message.runEventId,
     revokesEventId: message.revokesEventId,
     seqId: message.seqId ?? fallbackSeqId,
@@ -145,17 +139,6 @@ const mockChatEventOverrides = {
         } satisfies UserMessageDocument),
     };
   },
-  "input.goal": (message) => {
-    return {
-      content: null,
-      userMessage:
-        message.userMessage ??
-        ({
-          version: 1,
-          parts: [{ type: "goal", goalBrief: "Mock queued goal" }],
-        } satisfies UserMessageDocument),
-    };
-  },
   "input.budget": (message) => {
     return {
       content: null,
@@ -175,31 +158,11 @@ const mockChatEventOverrides = {
   "output.error": (message) => {
     return { error: message.error ?? "Mock output error" };
   },
-  "output.thinking": (message) => {
-    return {
-      content: null,
-      thinking: message.thinking ?? "",
-    };
-  },
   "output.followups": (message) => {
     return {
       content:
         message.content ??
         serializeChatFollowupsContent(message.followups ?? []),
-    };
-  },
-  "run.queued": (message, id) => {
-    return {
-      runId: message.runId ?? `mock-run-${id}`,
-      content: message.content ?? "Waiting in queue...",
-    };
-  },
-  "run.dequeued": (message, id) => {
-    const revokesEventId = message.revokesEventId ?? `mock-queued-${id}`;
-    return {
-      runId: message.runId ?? `mock-run-${id}`,
-      content: null,
-      revokesEventId,
     };
   },
   "run.completed": (message, id) => {
@@ -235,18 +198,6 @@ const mockChatEventOverrides = {
       content: null,
       revokesEventId,
     };
-  },
-  "browser.open": () => {
-    return { content: null };
-  },
-  "browser.close": () => {
-    return { content: null };
-  },
-  "goal.open": (message) => {
-    return { content: message.content ?? "Mock active goal" };
-  },
-  "goal.close": () => {
-    return { content: null };
   },
   "usage.recorded": (message, id) => {
     return {
@@ -359,13 +310,9 @@ export function normalizeMockChatEvents(
 }
 
 const NULL_PAYLOAD_EVENT_TYPES = [
-  "run.dequeued",
   "run.completed",
   "control.interrupt",
   "control.revoke",
-  "browser.open",
-  "browser.close",
-  "goal.close",
 ] as const satisfies readonly ChatEvent["eventType"][];
 
 function mockChatEventRowPayload(event: ChatEvent): ChatEventRow["payload"] {
@@ -378,7 +325,6 @@ function mockChatEventRowPayload(event: ChatEvent): ChatEventRow["payload"] {
   }
   switch (event.eventType) {
     case "input.prompt":
-    case "input.goal":
     case "input.budget": {
       return { userMessage: event.userMessage };
     }
@@ -389,16 +335,11 @@ function mockChatEventRowPayload(event: ChatEvent): ChatEventRow["payload"] {
       return { userMessage: event.userMessage, error: event.error };
     }
     case "output.message":
-    case "output.followups":
-    case "run.queued":
-    case "goal.open": {
+    case "output.followups": {
       return { content: event.content };
     }
     case "output.error": {
       return { error: event.error };
-    }
-    case "output.thinking": {
-      return { thinking: event.thinking };
     }
     case "run.failed":
     case "run.cancelled": {
@@ -411,11 +352,27 @@ function mockChatEventRowPayload(event: ChatEvent): ChatEventRow["payload"] {
   return null;
 }
 
+/** Input rows always record their surface; fixtures default to web chat. */
+export function mockChatEventRowContextType(
+  eventType: ChatEventRow["eventType"],
+): ChatEventContextType | null {
+  if (eventType === "input.automation") {
+    return "automation";
+  }
+  if (
+    eventType === "input.prompt" ||
+    eventType === "input.budget" ||
+    eventType === "input.rejected"
+  ) {
+    return "web";
+  }
+  return null;
+}
+
 export function mockChatEventRows(
   events: readonly ChatEvent[],
 ): ChatEventRow[] {
   return events.map((event) => {
-    const goalContextId = event.runGroupId ?? null;
     return chatEventRowSchema.parse({
       id: event.id,
       chatThreadId: event.threadId,
@@ -426,8 +383,8 @@ export function mockChatEventRows(
       revokesEventId: event.revokesEventId ?? null,
       eventType: event.eventType,
       payload: mockChatEventRowPayload(event),
-      contextType: goalContextId === null ? null : "goal",
-      contextId: goalContextId,
+      contextType: mockChatEventRowContextType(event.eventType),
+      contextId: null,
       runEventSequenceNumber: event.sequenceNumber ?? null,
       runEventId: event.runEventId ?? null,
       ...(event.eventType === "run.failed" && event.failureReason !== undefined

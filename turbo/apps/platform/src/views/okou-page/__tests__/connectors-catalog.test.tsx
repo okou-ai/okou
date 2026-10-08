@@ -4,9 +4,8 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -15,27 +14,85 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  pushState,
-  search as locationSearch,
-} from "../../../signals/location.ts";
+import { search as locationSearch } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   customConnector,
   getConnectorAction,
   getConnectorCard,
+  getConnectorSwitch,
   getConnectorIcon,
   listAgent,
   mockConnectors,
-  mockCustomConnectorStory,
   mockOAuthCompletions,
   mockPublicConnectorStatus,
   publicStatusItem,
   queryConnectorAction,
   queryConnectorCard,
+  mockConnectorAgentAccess,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
+
+test("Authorize one agent without changing another agent", async () => {
+  const researchId = "c0000000-0000-4000-a000-000000000010";
+  const supportId = "c0000000-0000-4000-a000-000000000011";
+  context.mocks.data.agents([
+    listAgent(researchId, "Research", "preset:0"),
+    listAgent(supportId, "Support", "preset:0"),
+  ]);
+  mockConnectors(context, [
+    { connectorSlug: "github", externalUsername: "octocat" },
+  ]);
+  const authorized = new Set<string>();
+  context.mocks.api(connectorAgentAccessContract.get, ({ respond }) => {
+    return respond(200, {
+      visibleAgentIds: [researchId, supportId],
+      builtin: [...authorized].map((agentId) => {
+        return {
+          agentId,
+          connectorSlug: "github",
+        };
+      }),
+      custom: [],
+    });
+  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
+    ({ params, body, respond }) => {
+      if (body.operation === "add") {
+        authorized.add(params.id);
+      } else {
+        authorized.delete(params.id);
+      }
+      return respond(200, {
+        enabledConnectorSlugs: authorized.has(params.id) ? ["github"] : [],
+      });
+    },
+  );
+  await setupPage({ context, path: "/connectors" });
+  const manage = await waitFor(() => {
+    return getConnectorAction("button", "Manage GitHub access");
+  });
+  click(manage);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Manage GitHub access",
+  });
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Authorize GitHub access for Research", dialog),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+  click(getConnectorSwitch("Authorize GitHub access for Research", dialog));
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Revoke GitHub access for Research", dialog),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+  expect(
+    getConnectorSwitch("Authorize GitHub access for Support", dialog),
+  ).toHaveAttribute("aria-checked", "false");
+});
 
 function oauthMethod() {
   return {
@@ -76,117 +133,9 @@ test("Browse connectors by category", async () => {
     });
   expect(labels).toContain("GitHub");
   expect(labels).toContain("Asana");
-  const ai = screen.getByTestId("connector-category-ai");
-  expect(
-    ai.compareDocumentPosition(engineering) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
   // The catalog is browsed a category at a time, and a category is far taller
   // than the viewport. Its marks are fetched as they are reached.
   expect(getConnectorIcon("Asana")).toHaveAttribute("loading", "lazy");
-});
-
-test("Show only connectors present in the current catalog", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, []);
-  await setupPage({ context, path: "/connectors?keywords=stripe" });
-
-  await expect(
-    screen.findByPlaceholderText("Find connectors"),
-  ).resolves.toHaveValue("stripe");
-  await expect(
-    screen.findByText(/No connectors matching/u),
-  ).resolves.toBeInTheDocument();
-  expect(queryConnectorAction("button", "Connect Stripe")).toBeNull();
-});
-
-test("Keep connectors discoverable during category changes", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "github",
-      label: "Fallback GitHub",
-      category: "legacy-category",
-      authMethods: [oauthMethod()],
-    }),
-  ]);
-  await setupPage({ context, path: "/connectors" });
-
-  const section = await screen.findByTestId(
-    "connector-category-legacy-category",
-  );
-  expect(within(section).getByText("Legacy Category")).toBeInTheDocument();
-  expect(queryConnectorCard("Fallback GitHub")).toBeInTheDocument();
-});
-
-test("Avoid duplicate catalog sections during metadata changes", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(
-    context,
-    [
-      publicStatusItem({
-        connectorSlug: "github",
-        label: "Partner GitHub",
-        category: "partner-apps",
-        authMethods: [oauthMethod()],
-      }),
-      publicStatusItem({
-        connectorSlug: "stripe",
-        label: "Billing Stripe",
-        category: "billing-apps",
-        authMethods: [oauthMethod()],
-      }),
-    ],
-    {
-      categories: [
-        {
-          id: "partner-apps",
-          label: "Partner Apps",
-          menuLabel: "Partners",
-          groupId: null,
-        },
-        {
-          id: "partner-apps",
-          label: "Duplicate Partner Apps",
-          menuLabel: "Duplicate Partners",
-          groupId: null,
-        },
-        {
-          id: "billing-apps",
-          label: "Billing Apps",
-          menuLabel: "Billing",
-          groupId: "partner-apps",
-        },
-      ],
-      groups: [
-        {
-          id: "partner-apps",
-          label: "Partner Group",
-          menuLabel: "Partner Group",
-        },
-      ],
-    },
-  );
-  await setupPage({ context, path: "/connectors" });
-
-  await expect(screen.findByText("Partner Apps")).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Duplicate Partner Apps")).not.toBeInTheDocument();
-  expect(screen.getAllByTestId("connector-category-partner-apps")).toHaveLength(
-    1,
-  );
-  expect(screen.getAllByTestId("connector-category-billing-apps")).toHaveLength(
-    1,
-  );
-  expect(screen.getAllByText("Partner GitHub")).toHaveLength(1);
-  expect(queryConnectorCard("Billing Stripe")).toBeInTheDocument();
-});
-
-test("Show Mailchimp OAuth in the connector catalog", async () => {
-  mockConnectors(context, []);
-  await setupPage({ context, path: "/connectors?keywords=mailchimp" });
-
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Connect Mailchimp")).toBeEnabled();
-  });
 });
 
 async function openConnectorFilterCatalog() {
@@ -223,44 +172,20 @@ async function openConnectorFilterCatalog() {
       });
     },
   );
-  await setupPage({ context, path: "/connectors" });
-  await expectCards({ github: true, asana: true });
+  mockConnectorAgentAccess(context, (agentId) => {
+    return { enabledConnectorSlugs: agentId === researchId ? ["github"] : [] };
+  });
+  await setupPage({ context, path: "/connectors?scope=connected" });
+  await expectCards({ github: true, asana: false });
   return { researchId };
 }
 
-test("Switch between connected and disconnected connector filters", async () => {
-  await openConnectorFilterCatalog();
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Connected"));
-  await expectCards({ github: true, asana: false });
-  expect(new URLSearchParams(locationSearch()).get("connection")).toBe(
-    "connected",
-  );
-
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Not connected"));
-  await expectCards({ github: false, asana: true });
-});
-
-test("Retain a text search when clearing the connector connection filter", async () => {
-  await openConnectorFilterCatalog();
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Not connected"));
-  await expectCards({ github: false, asana: true });
-
-  await fill(screen.getByPlaceholderText("Find connectors"), "git");
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "All"));
-  await expectCards({ github: true, asana: false });
-  expect(new URLSearchParams(locationSearch()).get("keywords")).toBe("git");
-  expect(new URLSearchParams(locationSearch()).has("connection")).toBeFalsy();
-});
-
-test("Filter connectors by an agent after clearing the text search", async () => {
+test("Filter connected connectors by an agent after clearing the text search", async () => {
   const { researchId } = await openConnectorFilterCatalog();
-  await fill(screen.getByPlaceholderText("Find connectors"), "git");
+  const search = screen.getByPlaceholderText("Find connected connectors");
+  await fill(search, "git");
   await expectCards({ github: true, asana: false });
-  await fill(screen.getByPlaceholderText("Find connectors"), "");
+  await fill(search, "");
   click(getConnectorAction("button", "Filter connectors"));
   click(
     await waitFor(() => {
@@ -270,38 +195,6 @@ test("Filter connectors by an agent after clearing the text search", async () =>
   await expectCards({ github: true, asana: false });
   expect(locationSearch()).toContain("connection=agent");
   expect(locationSearch()).toContain(researchId);
-});
-
-test("Navigate the connector catalog with a keyboard", async () => {
-  const user = userEvent.setup({ delay: null });
-  mockConnectors(context, []);
-  await setupPage({ context, path: "/connectors" });
-  const ai = await waitFor(() => {
-    return getConnectorAction("button", "AI");
-  });
-  ai.focus();
-  await user.keyboard("{Enter}");
-  const models = getConnectorAction("button", "General models and reasoning");
-  models.focus();
-  await user.keyboard("{Enter}");
-  const engineering = getConnectorAction(
-    "button",
-    "Engineering and team execution",
-  );
-  engineering.focus();
-  await user.keyboard("{Enter}");
-  const axiom = await waitFor(() => {
-    return getConnectorAction("button", "Connect Axiom");
-  });
-
-  axiom.focus();
-  expect(axiom).toHaveFocus();
-  await user.keyboard(" ");
-
-  await expect(
-    screen.findByRole("dialog", { name: "Axiom" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Save")).toBeInTheDocument();
 });
 
 test("Require an application update before using connectors", async () => {
@@ -320,7 +213,7 @@ test("Require an application update before using connectors", async () => {
   expect(screen.queryByText("HTTP 426")).not.toBeInTheDocument();
 });
 
-test("Search connectors and preserve meaningful navigation state", async () => {
+test("Search connectors and keep the query in the URL", async () => {
   mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "octocat" },
     { connectorSlug: "axiom", authMethod: "api-token" },
@@ -338,15 +231,7 @@ test("Search connectors and preserve meaningful navigation state", async () => {
   });
   expect(new URLSearchParams(locationSearch()).get("keywords")).toBe("github");
 
-  pushState({}, "", "/connectors");
-  window.dispatchEvent(new PopStateEvent("popstate"));
-  await waitFor(() => {
-    expect(screen.getByPlaceholderText("Find connectors")).toHaveValue("");
-    expect(queryConnectorCard("GitHub")).toBeInTheDocument();
-    expect(queryConnectorCard("Axiom")).toBeInTheDocument();
-  });
-
-  await fill(screen.getByPlaceholderText("Find connectors"), "missing-service");
+  await fill(search, "missing-service");
   await expect(
     screen.findByText(/No connectors matching/u),
   ).resolves.toBeInTheDocument();
@@ -367,13 +252,10 @@ test("Search the full connector catalog", async () => {
       });
     },
   );
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
+  await setupPage({ context, path: "/connectors" });
   await expect(screen.findByText("GitHub")).resolves.toBeInTheDocument();
   await expect(
-    screen.findByText("Connect 1,236 services for your agents to use."),
+    screen.findByText("Connect 1,234 services for your agents to use."),
   ).resolves.toBeInTheDocument();
 
   await fill(screen.getByPlaceholderText("Find connectors"), "Slack");
@@ -384,39 +266,11 @@ test("Search the full connector catalog", async () => {
   });
   expect(keywords).toContain("Slack");
   await expect(
-    screen.findByText("Connect 1,236 services for your agents to use."),
+    screen.findByText("Connect 1,234 services for your agents to use."),
   ).resolves.toBeInTheDocument();
 });
 
-test("Switch between built-in and custom connectors", async () => {
-  mockCustomConnectorStory(context);
-  await setupPage({ context, path: "/connectors?tab=custom" });
-  const custom = await waitFor(() => {
-    return getConnectorAction("tab", "Custom");
-  });
-  expect(custom).toHaveAttribute("aria-selected", "true");
-  expect(new URLSearchParams(locationSearch()).get("tab")).toBe("custom");
-
-  click(getConnectorAction("tab", "Built-in"));
-  await waitFor(() => {
-    expect(getConnectorAction("tab", "Built-in")).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(new URLSearchParams(locationSearch()).has("tab")).toBeFalsy();
-  });
-
-  click(getConnectorAction("tab", "Custom"));
-  await waitFor(() => {
-    expect(getConnectorAction("tab", "Custom")).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(new URLSearchParams(locationSearch()).get("tab")).toBe("custom");
-  });
-});
-
-test("Present a connector with no accounts and allow closing direct OAuth", async () => {
+test("Present a connector with no accounts and start direct OAuth", async () => {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, [
     publicStatusItem({
@@ -468,34 +322,8 @@ test("Present a connector with no accounts and allow closing direct OAuth", asyn
     "Please wait while we finish setting up your connection.",
   );
   expect(connect).toBeDisabled();
-  click(within(progress).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(connect).toBeEnabled();
-  });
-  expect(popup.closed).toBeTruthy();
   oauthStarted.resolve();
 });
-
-function shelfCategoryMetadata() {
-  return {
-    categories: [
-      {
-        id: "communication-collaboration",
-        label: "Communication and Collaboration",
-        menuLabel: "Communication",
-        groupId: null,
-      },
-      {
-        id: "ai-voice-audio",
-        label: "Voice / Audio",
-        menuLabel: "Voice and Audio",
-        groupId: null,
-      },
-    ],
-    groups: [],
-  };
-}
 
 function shelfCatalog() {
   // Sixteen, so the category holds more than the twelve discovery returns for
@@ -540,14 +368,13 @@ function shelfCatalog() {
 
 test("Browse the catalog as shelves, then enter a category and come back", async () => {
   mockConnectors(context, []);
-  mockPublicConnectorStatus(context, shelfCatalog(), shelfCategoryMetadata(), {
+  mockPublicConnectorStatus(context, shelfCatalog(), {
     "communication-collaboration": 327,
     "ai-voice-audio": 50,
   });
   await setupPage({
     context,
     path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   // Six per shelf, closed by the products it stands for rather than a count.
@@ -558,11 +385,7 @@ test("Browse the catalog as shelves, then enter a category and come back", async
     screen.getByTestId("connector-shelf-communication-collaboration"),
   ).toBeInTheDocument();
 
-  // Status has no control: the page already opens on what is connected. The
-  // agent list is gone from the filter too -- that question is answered on the
-  // connector's own card.
-  expect(screen.queryByRole("radio", { name: "Not connected" })).toBeNull();
-  expect(screen.queryByLabelText("Filter connectors")).toBeInTheDocument();
+  expect(screen.getByLabelText("Filter connectors")).toBeInTheDocument();
 
   // A category is a place: entering it filters the page and leaves a way back.
   await click(screen.getByText(/^See .* and 321 more$/u));
@@ -593,38 +416,6 @@ test("Browse the catalog as shelves, then enter a category and come back", async
   ).toBeInTheDocument();
 });
 
-test("Keep every category in the filter while one of them is open", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, shelfCatalog(), shelfCategoryMetadata(), {
-    "communication-collaboration": 327,
-    "ai-voice-audio": 50,
-  });
-  await setupPage({
-    context,
-    path: "/connectors?category=communication-collaboration",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  await waitFor(() => {
-    expect(getConnectorCard("Zendesk")).toBeInTheDocument();
-  });
-
-  // Inside a category the response carries only that category. The filter
-  // describes the catalog, not the response, or it becomes a dead end: the
-  // only way back out would be the breadcrumb.
-  await click(screen.getByLabelText("Filter connectors"));
-  const menu = await screen.findByRole("menu");
-  const options = queryAllByRoleFast("menuitem", menu).map((item) => {
-    return item.textContent;
-  });
-  expect(options).toContain("All");
-  expect(
-    options.some((option) => {
-      return option?.startsWith("Voice");
-    }),
-  ).toBeTruthy();
-});
-
 function connectedShelfCatalog() {
   return shelfCatalog().map((connector) => {
     return connector.slug === "mail-0" || connector.slug === "mail-1"
@@ -648,16 +439,13 @@ test("Land on Discover, then switch to the connectors this workspace has", async
     { connectorSlug: "mail-0" as ConnectorSlug },
     { connectorSlug: "mail-1" as ConnectorSlug },
   ]);
-  mockPublicConnectorStatus(
-    context,
-    connectedShelfCatalog(),
-    shelfCategoryMetadata(),
-    { "communication-collaboration": 327, "ai-voice-audio": 50 },
-  );
+  mockPublicConnectorStatus(context, connectedShelfCatalog(), {
+    "communication-collaboration": 327,
+    "ai-voice-audio": 50,
+  });
   await setupPage({
     context,
     path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   // Discovery leads: the catalog is what a visit is usually for, and the
@@ -704,34 +492,6 @@ test("Land on Discover, then switch to the connectors this workspace has", async
     return item.textContent;
   });
   expect(options).toContain("All agents");
-  expect(options).not.toContain("Not connected");
-});
-
-test("Leaving a category with the scope control drops the category with it", async () => {
-  mockConnectors(context, [{ connectorSlug: "mail-0" as ConnectorSlug }]);
-  mockPublicConnectorStatus(
-    context,
-    connectedShelfCatalog(),
-    shelfCategoryMetadata(),
-    { "communication-collaboration": 327, "ai-voice-audio": 50 },
-  );
-  await setupPage({
-    context,
-    path: "/connectors?category=communication-collaboration",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  await waitFor(() => {
-    expect(getConnectorCard("Zendesk")).toBeInTheDocument();
-  });
-
-  // A category belongs to the scope it was opened in: carrying it across would
-  // filter the connectors you own by a dimension that does not organise them.
-  await click(screen.getByTestId("connectors-scope-connected"));
-  await waitFor(() => {
-    expect(locationSearch()).toContain("scope=connected");
-  });
-  expect(locationSearch()).not.toContain("category=");
 });
 
 test("Warn on the scope control when a connection this workspace owns needs a reconnect", async () => {
@@ -742,16 +502,13 @@ test("Warn on the scope control when a connection this workspace owns needs a re
       reconnectReason: "authorization_expired_or_revoked",
     },
   ]);
-  mockPublicConnectorStatus(
-    context,
-    connectedShelfCatalog(),
-    shelfCategoryMetadata(),
-    { "communication-collaboration": 327, "ai-voice-audio": 50 },
-  );
+  mockPublicConnectorStatus(context, connectedShelfCatalog(), {
+    "communication-collaboration": 327,
+    "ai-voice-audio": 50,
+  });
   await setupPage({
     context,
     path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   // The list is behind a control, so the control has to carry the one thing a
@@ -776,16 +533,19 @@ test("Find the connectors no agent is using", async () => {
       });
     },
   );
-  mockPublicConnectorStatus(
-    context,
-    connectedShelfCatalog(),
-    shelfCategoryMetadata(),
-    { "communication-collaboration": 327, "ai-voice-audio": 50 },
-  );
+  mockConnectorAgentAccess(context, (agentId) => {
+    return {
+      enabledConnectorSlugs:
+        agentId === researchId ? ["mail-0" as ConnectorSlug] : [],
+    };
+  });
+  mockPublicConnectorStatus(context, connectedShelfCatalog(), {
+    "communication-collaboration": 327,
+    "ai-voice-audio": 50,
+  });
   await setupPage({
     context,
     path: "/connectors?scope=connected",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   await waitFor(() => {
@@ -808,23 +568,20 @@ test("Find the connectors no agent is using", async () => {
 
 test("Reach the connectors this workspace built from their own segment", async () => {
   mockConnectors(context, [{ connectorSlug: "mail-0" as ConnectorSlug }]);
-  mockPublicConnectorStatus(
-    context,
-    connectedShelfCatalog(),
-    shelfCategoryMetadata(),
-    { "communication-collaboration": 327, "ai-voice-audio": 50 },
-  );
+  mockPublicConnectorStatus(context, connectedShelfCatalog(), {
+    "communication-collaboration": 327,
+    "ai-voice-audio": 50,
+  });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [customConnector()] });
   });
   await setupPage({
     context,
     path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
-  // Browsing the catalog no longer trails a block of connectors this workspace
-  // authored; the segment counts them instead.
+  // Connectors this workspace authored have their own scope: browsing the
+  // catalog does not list them, and the segment counts them.
   await waitFor(() => {
     expect(screen.getByTestId("connectors-scope-custom")).toHaveTextContent(
       "Custom1",

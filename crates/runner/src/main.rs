@@ -5,47 +5,49 @@ mod config;
 mod deps;
 mod duration;
 mod error;
-mod executor;
+use runner_executor::executor;
 mod group;
-mod guest_rpc;
-mod guest_timezone;
-mod helper_exec;
-mod http;
-mod idle_pool;
-mod idle_prune_control;
-mod idle_reuse_preparation;
+use runner_host::idle_prune_control;
+use runner_lifecycle::guest_timezone;
+use runner_lifecycle::idle_pool;
+#[cfg(test)]
+use runner_lifecycle::idle_reuse_preparation;
+use runner_provider::http;
 mod image_hash;
 mod io_limits;
-mod lifecycle;
-mod live_runner_instances;
+use runner_host::live_runner_instances;
+use runner_lifecycle::lifecycle;
 mod network_log_http_adapter;
-mod network_provider_adapter;
-mod pre_spawn_admission;
-mod prefetch;
+use runner_executor::pre_spawn_admission;
+use runner_lifecycle::prefetch;
 mod profile;
 #[cfg(test)]
 mod provider_test_support;
-mod resource_budget;
-mod restored_session_identity;
-mod retry;
-mod run_resolution;
-mod run_usage;
-mod runtime_overrides;
-mod ssh;
-mod status;
-mod status_file;
-mod telemetry;
+use runner_lifecycle::resource_budget;
 #[cfg(test)]
-mod test_fixtures;
-mod vnc;
-mod workspace_image_cache;
-mod workspace_mount;
-mod workspace_promotion;
+use runner_lifecycle::restored_session_identity;
+mod run_resolution;
+mod runtime_overrides;
+use runner_lifecycle::status;
+mod status_file;
+use runner_executor::telemetry;
+#[cfg(test)]
+use runner_executor::test_fixtures;
+#[cfg(test)]
+mod test_fixtures_http_body;
+use runner_lifecycle::workspace_image_cache;
+use runner_lifecycle::workspace_mount;
+#[cfg(test)]
+use runner_lifecycle::workspace_promotion;
 
 use runner_network::{
     ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
 };
-use runner_storage::{r2_cache, storage_cache, storage_fingerprints, storage_plan};
+use runner_remote::{guest_rpc, run_usage, ssh, vnc};
+use runner_storage::{r2_cache, storage_cache, storage_fingerprints};
+
+#[cfg(test)]
+use sandbox::helper_exec;
 
 // Runner build.rs owns the embedded addon inventory and passes it to runner-network.
 include!(concat!(env!("OUT_DIR"), "/addon_files.rs"));
@@ -296,6 +298,9 @@ async fn main() -> ExitCode {
     let result = match cli.command {
         Command::Setup => cmd::run_setup().await.map(|()| ExitCode::SUCCESS),
         Command::Build(args) => {
+            // Retain the package bytes until rootfs installation consumes them.
+            #[cfg(bundled_okou_cli)]
+            let _ = std::hint::black_box(cmd::embedded_cli_package());
             cmd::run_build(args, &sandbox_firecracker::FirecrackerSnapshotProvider)
                 .await
                 .map(|()| ExitCode::SUCCESS)

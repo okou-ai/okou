@@ -23,6 +23,11 @@ export function getTriggerSourceLabel(
         return $.activity.sources.web;
       });
     }
+    case "discord": {
+      return i18n.t(($) => {
+        return $.activity.sources.discord;
+      });
+    }
     case "slack": {
       return i18n.t(($) => {
         return $.activity.sources.slack;
@@ -92,11 +97,6 @@ export function getTriggerSourceLabel(
     case "automation-event": {
       return i18n.t(($) => {
         return $.activity.sources.automationEvent;
-      });
-    }
-    case "goal": {
-      return i18n.t(($) => {
-        return $.activity.sources.goal;
       });
     }
   }

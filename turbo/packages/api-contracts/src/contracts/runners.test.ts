@@ -7,19 +7,6 @@ import {
   piResourceSnapshotSchema,
 } from "./runners";
 
-const API_FIRST_TURN = {
-  schemaVersion: 1 as const,
-  resourceSnapshotDigest: "a".repeat(64),
-  manifestUrl: "https://storage.example/manifest.json",
-  sessionUrl: "https://storage.example/session.jsonl",
-  deadlineAt: 2_000_000_000_000,
-  baseSession: {
-    sessionId: "22222222-2222-4222-8222-222222222222",
-    sha256: null,
-  },
-  sandboxEventSequenceStart: 1,
-};
-
 describe("Pi memory recall contracts", () => {
   it("accepts legacy V1 snapshots without rewriting their JSON", () => {
     const v1 = { schemaVersion: 1 as const, agentsFiles: [], skills: [] };
@@ -71,10 +58,7 @@ describe("Pi memory recall contracts", () => {
   });
 
   it("keeps the private launch payload byte-compatible when recall is absent", () => {
-    const launchConfig = {
-      schemaVersion: 2 as const,
-      apiFirstTurn: API_FIRST_TURN,
-    };
+    const launchConfig = { schemaVersion: 2 as const };
     expect(piLaunchConfigSchema.parse(launchConfig)).toStrictEqual(
       launchConfig,
     );
@@ -114,7 +98,6 @@ describe("Pi memory recall contracts", () => {
     expect(
       piLaunchConfigSchema.parse({
         schemaVersion: 2,
-        apiFirstTurn: API_FIRST_TURN,
         maintenance,
       }).maintenance,
     ).toStrictEqual(maintenance);

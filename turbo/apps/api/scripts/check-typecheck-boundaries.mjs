@@ -17,6 +17,8 @@ const sourceRoot = resolve(packageRoot, "src");
 const baselineConfig = "tsconfig.json";
 const programConfigs = [
   "tsconfig.gateways.json",
+  "tsconfig.foundation.json",
+  "tsconfig.admission.json",
   "tsconfig.core.json",
   "tsconfig.routes.json",
   "tsconfig.bootstrap.json",
@@ -209,7 +211,12 @@ const productionJsonRoots = new Set(
     }),
 );
 const jsonOwners = new Map();
-for (const name of ["tsconfig.core.json", "tsconfig.routes.json"]) {
+for (const name of [
+  "tsconfig.foundation.json",
+  "tsconfig.admission.json",
+  "tsconfig.core.json",
+  "tsconfig.routes.json",
+]) {
   for (const file of readConfig(name).fileNames.filter((file) => {
     return extname(file) === ".json";
   })) {
@@ -247,6 +254,11 @@ let createAppCalls = 0;
 const implicitRouteCalls = [];
 const lowerLayerRouteImports = [];
 const nativePiRuntimeImports = [];
+const foundationImports = [];
+const admissionImports = [];
+const foundationRoots = typeScriptRoots("tsconfig.foundation.json");
+const admissionRoots = typeScriptRoots("tsconfig.admission.json");
+const gatewayRoots = typeScriptRoots("tsconfig.gateways.json");
 
 for (const root of baselineRoots) {
   const source = fs.readFileSync(root, "utf8");
@@ -273,6 +285,26 @@ for (const root of baselineRoots) {
       }));
 
   for (const reference of moduleReferences(sourceFile)) {
+    const target = resolveRelativeImport(root, reference.specifier);
+    if (
+      foundationRoots.has(root) &&
+      target &&
+      baselineRoots.has(target) &&
+      !foundationRoots.has(target) &&
+      !gatewayRoots.has(target)
+    ) {
+      foundationImports.push(`${display(root)} -> ${display(target)}`);
+    }
+    if (
+      admissionRoots.has(root) &&
+      target &&
+      baselineRoots.has(target) &&
+      !admissionRoots.has(target) &&
+      !foundationRoots.has(target) &&
+      !gatewayRoots.has(target)
+    ) {
+      admissionImports.push(`${display(root)} -> ${display(target)}`);
+    }
     if (
       !isTestRoot &&
       (reference.specifier === "@okouai/pi-agent-runtime/node" ||
@@ -366,6 +398,18 @@ if (lowerLayerRouteImports.length > 0) {
   fail(
     "Lower layers must not import route or bootstrap aggregation modules:",
     lowerLayerRouteImports,
+  );
+}
+if (foundationImports.length > 0) {
+  fail(
+    "Foundation modules must not import downstream implementation roots:",
+    foundationImports,
+  );
+}
+if (admissionImports.length > 0) {
+  fail(
+    "Admission modules must not import downstream implementation roots:",
+    admissionImports,
   );
 }
 if (nativePiRuntimeImports.length > 0) {

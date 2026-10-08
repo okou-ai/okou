@@ -12,7 +12,6 @@ import {
   cronConnectorOauthStateCleanupContract,
   cronComputerUseScreenshotCleanupContract,
   cronDrainEmailOutboxContract,
-  cronExecuteMorningBriefsContract,
   cronExecuteWorkflowAutomationsContract,
   cronRefreshHomeTaskRecommendationsContract,
   cronMonitorChatEventQueueContract,
@@ -93,10 +92,6 @@ const expectedVercelCrons = [
     schedule: "* * * * *",
   },
   {
-    path: cronExecuteMorningBriefsContract.execute.path,
-    schedule: "* * * * *",
-  },
-  {
     path: cronRefreshHomeTaskRecommendationsContract.refresh.path,
     schedule: "* * * * *",
   },
@@ -118,7 +113,7 @@ const expectedVercelCrons = [
   },
   {
     path: cronCompactChatThreadSnapshotsContract.compact.path,
-    schedule: "0 * * * *",
+    schedule: "*/10 * * * *",
   },
   {
     path: cronReconcileArtifactCatalogContract.reconcile.path,
@@ -146,7 +141,7 @@ const expectedVercelCrons = [
   },
   {
     path: cronConnectorCatalogContract.sync.path,
-    schedule: "* * * * *",
+    schedule: "0 * * * *",
   },
   {
     path: cronOfficialWorkflowCatalogContract.sync.path,

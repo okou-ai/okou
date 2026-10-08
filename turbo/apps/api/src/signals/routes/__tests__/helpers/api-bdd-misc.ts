@@ -8,22 +8,13 @@ import type { z } from "zod";
 import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
-import {
-  isBuiltInModelProviderType,
-  type ModelProviderType,
-  type OrgModelPoliciesResponse,
-  type UpsertModelProviderRequest,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
   type WorkflowFileEntry,
 } from "@okouai/api-contracts/contracts/workflows";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import {
-  modelProvidersByTypeContract,
-  modelProvidersMainContract,
-} from "@okouai/api-contracts/contracts/model-provider-routes";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import {
   personalModelProvidersByTypeContract,
   personalModelProvidersMainContract,
@@ -37,6 +28,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
+
 import { emailUnsubscribeRoutes } from "../../email-unsubscribe";
 import { userExportRoutes } from "../../user-export";
 import { logsRoutes } from "../../logs";
@@ -44,8 +36,7 @@ import { meModelProvidersDeleteRoutes } from "../../me-model-providers-delete";
 import { meModelProvidersListRoutes } from "../../me-model-providers-list";
 import { meModelProvidersResetSubscriptionRoutes } from "../../me-model-providers-reset-subscription";
 import { meModelProvidersUpsertRoutes } from "../../me-model-providers-upsert";
-import { modelPoliciesRoutes } from "../../model-policies";
-import { modelProvidersRoutes } from "../../model-providers";
+import { runModelsRoutes } from "../../run-models";
 import { orgLogoRoutes } from "../../org-logo";
 import { pushSubscriptionsRoutes } from "../../push-subscriptions";
 import { userPreferencesRoutes } from "../../user-preferences";
@@ -278,6 +269,17 @@ export function createMiscRoutesApi(context: TestContext) {
       );
     },
 
+    async readUninitializedPreferences(actor: ApiTestUser) {
+      return await accept(
+        setupApp({ context, routes: userPreferencesRoutes })(
+          userPreferencesContract,
+        ).get({
+          headers: authenticate(context, actor),
+        }),
+        [409],
+      );
+    },
+
     async updatePreferences<TStatus extends 200 | 400 | 401 | 500>(
       actor: ApiTestUser,
       body: UpdateUserPreferencesInput,
@@ -483,79 +485,6 @@ export function createMiscRoutesApi(context: TestContext) {
       );
     },
 
-    async listModelProviders(actor: ApiTestUser) {
-      return await accept(
-        setupApp({ context, routes: modelProvidersRoutes })(
-          modelProvidersMainContract,
-        ).list({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
-    },
-
-    async upsertBuiltInProvider(
-      actor: ApiTestUser,
-      statuses: readonly (200 | 201 | 400 | 401 | 403 | 404 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: modelProvidersRoutes })(
-          modelProvidersMainContract,
-        ).upsert({
-          headers: authenticate(context, actor),
-          body: { type: "built-in" },
-        }),
-        statuses,
-      );
-    },
-
-    async upsertOrgModelProvider(
-      actor: ApiTestUser,
-      body: UpsertModelProviderRequest,
-      statuses: readonly (200 | 201 | 400 | 401 | 403 | 404 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: modelProvidersRoutes })(
-          modelProvidersMainContract,
-        ).upsert({
-          headers: authenticate(context, actor),
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async deleteBuiltInProvider(
-      actor: ApiTestUser,
-      statuses: readonly (204 | 401 | 403 | 404 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: modelProvidersRoutes })(
-          modelProvidersByTypeContract,
-        ).delete({
-          headers: authenticate(context, actor),
-          params: { type: "built-in" },
-        }),
-        statuses,
-      );
-    },
-
-    async deleteOrgModelProvider(
-      actor: ApiTestUser,
-      type: ModelProviderType,
-      statuses: readonly (204 | 401 | 403 | 404 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: modelProvidersRoutes })(
-          modelProvidersByTypeContract,
-        ).delete({
-          headers: authenticate(context, actor),
-          params: { type },
-        }),
-        statuses,
-      );
-    },
-
     async listPersonalModelProviders(
       actor: ApiTestUser | null,
       statuses: readonly (200 | 401 | 404 | 500)[],
@@ -603,62 +532,14 @@ export function createMiscRoutesApi(context: TestContext) {
       );
     },
 
-    async listModelPolicies(
-      actor: ApiTestUser,
-    ): Promise<OrgModelPoliciesResponse> {
+    async listRunModels(actor: ApiTestUser) {
       const response = await accept(
-        setupApp({ context, routes: modelPoliciesRoutes })(
-          modelPoliciesMainContract,
-        ).list({
-          headers: authenticate(context, actor),
-        }),
+        setupApp({ context, routes: runModelsRoutes })(
+          runModelsMainContract,
+        ).list({ headers: authenticate(context, actor) }),
         [200],
       );
       return response.body;
-    },
-
-    async updateModelPolicies(
-      actor: ApiTestUser,
-      policies: OrgModelPoliciesResponse["policies"],
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[],
-      revision?: string,
-    ) {
-      // The write precondition is mandatory, so default to the revision this
-      // actor can read right now unless the caller pinned one.
-      const resolvedRevision =
-        revision ??
-        (
-          await accept(
-            setupApp({ context, routes: modelPoliciesRoutes })(
-              modelPoliciesMainContract,
-            ).list({ headers: authenticate(context, actor) }),
-            [200],
-          )
-        ).body.revision;
-      return await accept(
-        setupApp({ context, routes: modelPoliciesRoutes })(
-          modelPoliciesMainContract,
-        ).update({
-          headers: authenticate(context, actor),
-          body: {
-            revision: resolvedRevision,
-            policies: policies.map((policy) => {
-              return {
-                model: policy.model,
-                isDefault: policy.isDefault,
-                defaultProviderType: isBuiltInModelProviderType(
-                  policy.defaultProviderType,
-                )
-                  ? "built-in"
-                  : policy.defaultProviderType,
-                credentialScope: policy.credentialScope,
-                modelProviderId: policy.modelProviderId,
-              };
-            }),
-          },
-        }),
-        statuses,
-      );
     },
 
     async listLogs(actor: ApiTestUser) {

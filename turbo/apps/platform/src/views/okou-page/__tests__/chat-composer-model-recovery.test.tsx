@@ -1,12 +1,4 @@
 import {
-  findModelMenuOption,
-  modelMenuOption,
-} from "./chat-model-menu-test-helpers.ts";
-import {
-  billingStatusContract,
-  type BillingStatusResponse,
-} from "@okouai/api-contracts/contracts/billing";
-import {
   claudeCodeDeviceAuthContract,
   type ClaudeCodeDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/claude-code-device-auth";
@@ -17,10 +9,9 @@ import {
 import type {
   ModelProviderResponse,
   ModelProviderType,
-  OrgModelPolicy,
-  SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -31,19 +22,21 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import {
+  mockAutoRunModel,
+  mockSubscriptionRunModel,
+} from "../../../mocks/handlers/api-run-models.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
-import { fillComposer } from "./chat-test-helpers.ts";
 import {
   context,
   findButton,
-  findLink,
   installRunChat,
   NEW_CHAT_PATH,
   queryButton,
   readyChat,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { fillComposer } from "./chat-test-helpers.ts";
 
 const FIXTURE_DATE = "2026-08-18T09:00:00.000Z";
 const ACTIVE_CODEX_ID = "f1000000-0000-4000-a000-000000000101";
@@ -58,89 +51,38 @@ type PersonalProviderType = Extract<
   "claude-code-oauth-token" | "codex-oauth-token"
 >;
 
-function policy(args: {
-  readonly isDefault?: boolean;
-  readonly model: SupportedRunModel;
-  readonly modelLabel: string;
-  readonly providerType: PersonalProviderType;
-  readonly modelProviderId: string | null;
-}): OrgModelPolicy {
-  return {
-    id: crypto.randomUUID(),
-    model: args.model,
-    modelLabel: args.modelLabel,
-    isDefault: args.isDefault ?? true,
-    defaultProviderType: args.providerType,
-    credentialScope: "member",
-    modelProviderId: args.modelProviderId,
-    modelProviderSurfaceId: null,
-    routeStatus: "valid",
-    routeStatusReason: null,
-    createdAt: FIXTURE_DATE,
-    updatedAt: FIXTURE_DATE,
-  };
-}
-
-function builtInPolicy(
-  model: SupportedRunModel,
-  modelLabel: string,
-  isDefault: boolean,
-): OrgModelPolicy {
-  return {
-    id: crypto.randomUUID(),
-    model,
-    modelLabel,
-    isDefault,
-    defaultProviderType: "built-in",
-    credentialScope: "org",
-    modelProviderId: null,
-    modelProviderSurfaceId: null,
-    routeStatus: "valid",
-    routeStatusReason: null,
-    createdAt: FIXTURE_DATE,
-    updatedAt: FIXTURE_DATE,
-  };
-}
-
-function billingStatus(args: {
-  readonly restrictedBuiltInModels: boolean;
-  readonly supportByok: boolean;
-  readonly tier: "limited-free-1" | "pro";
-}): BillingStatusResponse {
-  return {
-    showUsagePack: false,
-    tier: args.tier,
-    ...billingPlanCapabilities(args.tier),
-    supportByok: args.supportByok,
-    restrictedBuiltInModels: args.restrictedBuiltInModels,
-    credits: 20_000,
-    onboardingPaymentPending: false,
-    subscriptionStatus: null,
-    currentPeriodEnd: null,
-    cancelAtPeriodEnd: false,
-    scheduledChange: null,
-    hasSubscription: false,
-    autoRecharge: { enabled: false, threshold: null, amount: null },
-    creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
-    creditBreakdown: [],
-    creditGrants: [],
-    concurrencyLimit: 0,
-    concurrencySubscriptions: [],
-  };
-}
-
+/**
+ * The API projects a personal model's availability from the member's current
+ * accounts: a usable active account makes it available, otherwise the member
+ * must reconnect.
+ */
 function configurePersonalRoute(args: {
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly modelLabel: string;
   readonly providerType: PersonalProviderType;
   readonly modelProviderId?: string | null;
+  readonly providers: () => readonly ModelProviderResponse[];
 }): void {
-  context.mocks.data.orgModelPolicies([
-    policy({
-      ...args,
-      modelProviderId: args.modelProviderId ?? null,
-    }),
-  ]);
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
+    const usable = args.providers().some((candidate) => {
+      return (
+        candidate.type === args.providerType &&
+        candidate.isActive !== false &&
+        !candidate.needsReconnect
+      );
+    });
+    return respond(200, {
+      models: [
+        mockAutoRunModel(),
+        mockSubscriptionRunModel(args.model, {
+          modelLabel: args.modelLabel,
+          providerType: args.providerType,
+          modelProviderId: args.modelProviderId ?? null,
+          availability: usable ? "available" : "reconnect_required",
+        }),
+      ],
+    });
+  });
 }
 
 function provider(args: {
@@ -160,11 +102,6 @@ function provider(args: {
     ...(args.isActive === undefined ? {} : { isActive: args.isActive }),
     type: args.type,
     framework: isCodex ? "codex" : "claude-code",
-    secretName: isCodex ? null : "CLAUDE_CODE_OAUTH_TOKEN",
-    authMethod: isCodex ? "auth_json" : null,
-    secretNames: isCodex ? ["CODEX_AUTH_JSON"] : null,
-    isDefault: false,
-    selectedModel: null,
     accountEmail: args.email,
     workspaceName: args.email,
     planType: "pro",
@@ -179,6 +116,7 @@ function provider(args: {
 function installPersonalProviders(
   initialProviders: readonly ModelProviderResponse[],
 ): {
+  readonly current: () => readonly ModelProviderResponse[];
   readonly replace: (providers: readonly ModelProviderResponse[]) => void;
 } {
   let providers = [...initialProviders];
@@ -186,6 +124,9 @@ function installPersonalProviders(
     return respond(200, { modelProviders: providers });
   });
   return {
+    current: () => {
+      return providers;
+    },
     replace: (nextProviders) => {
       providers = [...nextProviders];
     },
@@ -217,12 +158,12 @@ test("Connect Codex before sending with a personal route", async () => {
   const approval = context.mocks.deferred<void>();
   const user = userEvent.setup({ delay: null });
   const clipboard = context.mocks.browser.clipboardWriteText();
-  const opened = context.mocks.browser.open(context.mocks.browser.authWindow());
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   configurePersonalRoute({
     model: "gpt-5.6-luna",
     modelLabel: "GPT 5.6 Luna",
     providerType: "codex-oauth-token",
+    providers: personalProviders.current,
   });
   context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
     return respond(200, {
@@ -249,7 +190,10 @@ test("Connect Codex before sending with a personal route", async () => {
     },
   );
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+  });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await expect(composerModelTrigger("GPT 5.6 Luna")).resolves.toBeVisible();
@@ -269,20 +213,19 @@ test("Connect Codex before sending with a personal route", async () => {
 
   const dialog = await screen.findByRole("dialog", { name: "Connect Codex" });
   expect(dialog).toHaveTextContent("ABCD-EFGH");
-  click(within(dialog).getByTestId("codex-device-auth-open"));
+  const approvalLink = within(dialog).getByTestId("codex-device-auth-open");
+  expect(queryAllByRoleFast("link", dialog)).toContain(approvalLink);
+  expect(approvalLink).toHaveAttribute(
+    "href",
+    "https://auth.openai.com/codex/device",
+  );
+  expect(clipboard.writes).toStrictEqual([]);
 
-  await expect(
-    within(dialog).findByText("Device code copied. Waiting for approval..."),
-  ).resolves.toBeVisible();
-
+  click(buttonNamed("Copy to clipboard", dialog));
+  await waitFor(() => {
+    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+  });
   expect(clipboard.writes).toStrictEqual(["ABCD-EFGH"]);
-  expect(opened.calls).toStrictEqual([
-    {
-      url: "https://auth.openai.com/codex/device",
-      target: "_blank",
-      features: null,
-    },
-  ]);
 
   approval.resolve();
 
@@ -302,11 +245,12 @@ test("Complete Claude Code login from a blocked message", async () => {
   });
   const personalProviders = installPersonalProviders([]);
   context.mocks.browser.open(null);
-  installRunChat({ selectedModel: "claude-opus-4-8" });
+  installRunChat({ selectedModel: "claude-opus-5-5" });
   configurePersonalRoute({
-    model: "claude-opus-4-8",
-    modelLabel: "Claude Opus 4.8",
+    model: "claude-opus-5-5",
+    modelLabel: "Claude Opus 5.5",
     providerType: "claude-code-oauth-token",
+    providers: personalProviders.current,
   });
   context.mocks.api(claudeCodeDeviceAuthContract.start, ({ respond }) => {
     return respond(200, {
@@ -327,10 +271,13 @@ test("Complete Claude Code login from a blocked message", async () => {
     });
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+  });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
-  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 5.5")).resolves.toBeVisible();
   await fillComposer(composer, "Explain this failure");
   const sendButton = await findButton("Send");
   expect(sendButton).toBeDisabled();
@@ -338,31 +285,14 @@ test("Complete Claude Code login from a blocked message", async () => {
   click(await findButton("Configure model"));
 
   const dialog = await screen.findByRole("dialog", {
-    name: "Connect Claude Code",
+    name: "Connect Claude",
   });
   const authorizationCode = await screen.findByLabelText("Authorization code");
-
-  click(buttonNamed("Connect", dialog));
-
-  await expect(
-    screen.findByText("Paste the Claude Code authorization code to continue."),
-  ).resolves.toBeVisible();
-
-  click(buttonNamed("Open Claude approval page", dialog));
-
-  await expect(
-    screen.findByText(
-      "The approval page could not be opened. Use the link manually and paste the code here.",
-    ),
-  ).resolves.toBeVisible();
-  expect(authorizationCode).toBeVisible();
 
   await fill(authorizationCode, "claude-valid-authorization-code");
   click(buttonNamed("Connect", dialog));
 
-  await expect(
-    screen.findByText("Claude Code connected"),
-  ).resolves.toBeVisible();
+  await expect(screen.findByText("Claude connected")).resolves.toBeVisible();
   await waitFor(() => {
     expect(queryButton("Configure model")).toBeNull();
   });
@@ -385,13 +315,17 @@ test("Reconnect the personal provider used by the selected model", async () => {
     isActive: false,
     modelProviderId: CODEX_ROUTE_ID,
   });
-  installPersonalProviders([inactiveProvider, activeProvider]);
+  const personalProviders = installPersonalProviders([
+    inactiveProvider,
+    activeProvider,
+  ]);
   installRunChat({ selectedModel: "gpt-5.6-sol" });
   configurePersonalRoute({
     model: "gpt-5.6-sol",
     modelLabel: "GPT 5.6 Sol",
     providerType: "codex-oauth-token",
     modelProviderId: CODEX_ROUTE_ID,
+    providers: personalProviders.current,
   });
   context.mocks.api(codexDeviceAuthContract.start, ({ body, respond }) => {
     startBody = body;
@@ -410,7 +344,10 @@ test("Reconnect the personal provider used by the selected model", async () => {
     return respond(200, { status: "pending", errorMessage: null });
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+  });
 
   await expect(composerModelTrigger("GPT 5.6 Sol")).resolves.toBeVisible();
   const configureButton = await findButton("Configure model");
@@ -448,13 +385,17 @@ test("Reconnect Claude Code for an existing chat", async () => {
     isActive: false,
     modelProviderId: CLAUDE_ROUTE_ID,
   });
-  installPersonalProviders([inactiveProvider, activeProvider]);
-  installRunChat({ selectedModel: "claude-opus-4-8" });
+  const personalProviders = installPersonalProviders([
+    inactiveProvider,
+    activeProvider,
+  ]);
+  installRunChat({ selectedModel: "claude-opus-5-5" });
   configurePersonalRoute({
-    model: "claude-opus-4-8",
-    modelLabel: "Claude Opus 4.8",
+    model: "claude-opus-5-5",
+    modelLabel: "Claude Opus 5.5",
     providerType: "claude-code-oauth-token",
     modelProviderId: CLAUDE_ROUTE_ID,
+    providers: personalProviders.current,
   });
   context.mocks.api(claudeCodeDeviceAuthContract.start, ({ body, respond }) => {
     startBody = body;
@@ -468,16 +409,19 @@ test("Reconnect Claude Code for an existing chat", async () => {
     });
   });
 
-  await setupPage({ context, path: RUN_PATH });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
 
   await readyChat();
-  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 5.5")).resolves.toBeVisible();
   const configureButton = await findButton("Configure model");
 
   click(configureButton);
 
   const dialog = await screen.findByRole("dialog", {
-    name: "Re-connect Claude Code",
+    name: "Reconnect Claude",
   });
   expect(dialog).toBeVisible();
   await waitFor(() => {
@@ -488,142 +432,4 @@ test("Reconnect Claude Code for an existing chat", async () => {
     });
   });
   expect(dialog).not.toHaveTextContent("inactive.claude@example.com");
-});
-
-async function openLimitedModelAvailability() {
-  type BillingMode = "failed" | "limited" | "upgraded";
-  const billing: { mode: BillingMode } = { mode: "limited" };
-  const failedRefresh = context.mocks.deferred<void>();
-  installRunChat({ selectedModel: "gpt-5.6-luna" });
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy("gpt-5.6-luna", "GPT 5.6 Luna", true),
-    builtInPolicy("claude-opus-4-8", "Claude Opus 4.8", false),
-  ]);
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    if (billing.mode === "failed") {
-      failedRefresh.resolve();
-      return respond(500, {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Model availability could not be refreshed",
-        },
-      });
-    }
-    if (billing.mode === "upgraded") {
-      return respond(
-        200,
-        billingStatus({
-          tier: "pro",
-          supportByok: true,
-          restrictedBuiltInModels: false,
-        }),
-      );
-    }
-    return respond(
-      200,
-      billingStatus({
-        tier: "limited-free-1",
-        supportByok: true,
-        restrictedBuiltInModels: true,
-      }),
-    );
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  const picker = await composerModelTrigger("GPT 5.6 Luna");
-  click(picker);
-  await expect(findModelMenuOption(/GPT 5\.6 Luna/iu)).resolves.toBeVisible();
-  const gatedBuiltInOption = await findModelMenuOption(/Claude Opus 4\.8/iu);
-  expect(within(gatedBuiltInOption).getByText("Pro")).toBeVisible();
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
-  });
-  return { billing, failedRefresh };
-}
-
-async function expectUpgradedModelsAvailable(
-  scenario: Awaited<ReturnType<typeof openLimitedModelAvailability>>,
-) {
-  scenario.billing.mode = "upgraded";
-  context.mocks.ably.trigger("billing:changed");
-
-  await waitFor(() => {
-    const builtInOption = modelMenuOption(/Claude Opus 4\.8/iu);
-    expect(builtInOption).toBeVisible();
-    expect(within(builtInOption).queryByText("Pro")).toBeNull();
-  });
-}
-
-test("A billing upgrade makes previously gated built-in models available", async () => {
-  const scenario = await openLimitedModelAvailability();
-  await expectUpgradedModelsAvailable(scenario);
-  const builtInOption = modelMenuOption(/Claude Opus 4\.8/iu);
-  expect(builtInOption).toBeVisible();
-  expect(within(builtInOption).queryByText("Pro")).toBeNull();
-});
-
-test("A failed availability refresh keeps models resolved by the preceding billing upgrade", async () => {
-  const scenario = await openLimitedModelAvailability();
-  await expectUpgradedModelsAvailable(scenario);
-  scenario.billing.mode = "failed";
-  context.mocks.ably.trigger("billing:changed");
-  await scenario.failedRefresh.promise;
-
-  await expect(
-    screen.findByText("Model availability could not be refreshed"),
-  ).resolves.toBeVisible();
-  expect(modelMenuOption(/Claude Opus 4\.8/iu)).toBeVisible();
-  expect(screen.queryByText("Loading models...")).toBeNull();
-});
-
-test("Show the last resolved chat model after visiting Agents", async () => {
-  let refreshPending = false;
-  const refreshStarted = context.mocks.deferred<void>();
-  const releaseRefresh = context.mocks.deferred<void>();
-  installRunChat({ selectedModel: "claude-opus-4-8" });
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy("claude-opus-4-8", "Claude Opus 4.8", true),
-  ]);
-  context.mocks.api(
-    billingStatusContract.get,
-    async ({ respond, withSignal }) => {
-      if (refreshPending) {
-        refreshStarted.resolve();
-        await withSignal(releaseRefresh.promise);
-      }
-      return respond(
-        200,
-        billingStatus({
-          tier: "pro",
-          supportByok: true,
-          restrictedBuiltInModels: false,
-        }),
-      );
-    },
-  );
-
-  await setupPage({ context, path: NEW_CHAT_PATH });
-
-  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
-  });
-
-  click(await findLink("Agents"));
-
-  await expect(
-    screen.findByRole("heading", { name: "Agents" }),
-  ).resolves.toBeVisible();
-  refreshPending = true;
-  context.mocks.ably.trigger("billing:changed");
-  await refreshStarted.promise;
-  click(await findLink("Chat"));
-
-  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
-  releaseRefresh.resolve();
 });

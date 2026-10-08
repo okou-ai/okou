@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/test-connector-credential-storage-state";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { createApp } from "../../../../app-factory";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { testConnectorCredentialStorageStateRoutes } from "../../test-connector-credential-storage-state";
 
@@ -23,20 +22,6 @@ async function postAction(
     [200],
   );
   return response.body;
-}
-
-async function requestAction(
-  context: TestContext,
-  body: TestConnectorCredentialStorageStateActionBody,
-): Promise<Response> {
-  return await createApp({
-    signal: context.signal,
-    routes: testConnectorCredentialStorageStateRoutes,
-  }).request(testConnectorCredentialStorageStateContract.action.path, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
 }
 
 export async function readConnectorCredentialStorageState(
@@ -183,16 +168,6 @@ export async function readAutomaticOAuthBindingState(
   return response.automatic_oauth_binding;
 }
 
-export async function readConnectorOAuthAccountMutation(
-  context: TestContext,
-  state: string,
-): Promise<TestConnectorCredentialStorageStateActionResponse> {
-  return await postAction(context, {
-    action: "read-oauth-state-account-mutation",
-    state,
-  });
-}
-
 export async function deleteCustomConnectorCredentialValues(
   context: TestContext,
   args: {
@@ -309,36 +284,6 @@ export async function seedConnectorStorageRow(
   return response.connector_id;
 }
 
-export async function seedCustomConnectorRuntimeConnectors(
-  context: TestContext,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId?: string;
-    readonly customConnectors: readonly {
-      readonly id: string;
-      readonly slug: string;
-      readonly displayName: string;
-      readonly prefixTemplate: string;
-    }[];
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "seed-custom-runtime-connectors",
-    org_id: args.orgId,
-    user_id: args.userId,
-    ...(args.agentId === undefined ? {} : { agent_id: args.agentId }),
-    custom_connectors: args.customConnectors.map((connector) => {
-      return {
-        id: connector.id,
-        slug: connector.slug,
-        display_name: connector.displayName,
-        prefix_template: connector.prefixTemplate,
-      };
-    }),
-  });
-}
-
 export async function setConnectorCredentialStorageState(
   context: TestContext,
   args: {
@@ -417,28 +362,6 @@ export async function setConnectorExternalIdState(
     user_id: args.userId,
     connector_id: args.connectorId,
     external_id: args.externalId,
-  });
-}
-
-export async function setConnectorAccountState(
-  context: TestContext,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly needsReconnect: boolean;
-    readonly storageVersion?: number;
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "set-connector-account-state",
-    org_id: args.orgId,
-    user_id: args.userId,
-    connector_id: args.connectorId,
-    needs_reconnect: args.needsReconnect,
-    ...(args.storageVersion === undefined
-      ? {}
-      : { storage_version: args.storageVersion }),
   });
 }
 
@@ -544,24 +467,6 @@ export async function setConnectorVariableOwner(
   },
 ): Promise<void> {
   await postAction(context, {
-    action: "set-variable-owner",
-    connector_id: args.connectorId,
-    name: args.name,
-    org_id: args.orgId,
-    user_id: args.userId,
-  });
-}
-
-export async function requestSetConnectorVariableOwner(
-  context: TestContext,
-  args: {
-    readonly connectorId: string;
-    readonly name: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-): Promise<Response> {
-  return await requestAction(context, {
     action: "set-variable-owner",
     connector_id: args.connectorId,
     name: args.name,

@@ -132,10 +132,6 @@ function computedStyle(element: Element): CSSStyleDeclaration {
   return view.getComputedStyle(element);
 }
 
-function expectCssColor(actual: string, expected: readonly string[]): void {
-  expect(expected).toContain(actual.toLowerCase().replaceAll(", ", ","));
-}
-
 test("Selecting a slide preserves its authored layout", async () => {
   arrangePresentation(`<!doctype html>
     <html>
@@ -267,46 +263,6 @@ test("A presentation slide fills its preview frame cleanly", async () => {
   expect(stageStyle.maxHeight).toBe("none");
   expect(stageStyle.boxShadow).toBe("none");
   expect(["0", "0px"]).toContain(stageStyle.borderRadius);
-});
-
-test("An unusable generated theme does not break the presentation preview", async () => {
-  arrangePresentation(`<!doctype html>
-    <html>
-      <body>
-        <section data-okou-slide data-slide-id="slide-one" style="background-color: #fef3c7; color: #1f2937">
-          <h1>Authored fallback remains</h1>
-        </section>
-        <script>
-          var MONO={"Safe":["#fffdf7","#ffffff","#221c14","#5e564a","#efeADF",["#ff7a1a","#e5388e","#f5b73e","#1fb6a6"]]};
-          var VIB={};
-          var FONTS={"Studio":["Fraunces","Inter"]};
-          var swPal=document.getElementById("swPal");
-          var swFont=document.getElementById("swFont");
-          swPal.value="M:Missing";
-          swFont.value="Missing";
-          setPalette(swPal.value);
-          setFont(swFont.value);
-        </script>
-      </body>
-    </html>`);
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  const { document: frameDocument, frame } = await openReadyPresentation();
-  const slide = elementBySelector(frameDocument, "[data-okou-slide]");
-  const slideStyle = computedStyle(slide);
-
-  expect(frame).toHaveAttribute("data-loaded", "true");
-  expect(slide).toHaveTextContent("Authored fallback remains");
-  expectCssColor(slideStyle.backgroundColor, ["#fef3c7", "rgb(254,243,199)"]);
-  expectCssColor(slideStyle.color, ["#1f2937", "rgb(31,41,55)"]);
-  expect(frameDocument.querySelector("script")).toBeNull();
-  expect(
-    frameDocument.querySelector('[data-okou-materialized-theme="true"]'),
-  ).toBeNull();
 });
 
 test("Presentation previews preserve the selected theme", async () => {

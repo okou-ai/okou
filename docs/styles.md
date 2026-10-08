@@ -213,7 +213,7 @@ The picker's first option, `default`, is the product's own palette rather than
 another preset. `signals/theme.ts` writes no palette attribute while it is
 selected, so every token keeps the shared Amber-on-Linen values and none of the
 `[data-gradient-color-themes]` rules key in — the interface is byte-identical to
-the one the capability's switch turns off. Its `[data-color-theme="default"]`
+the unthemed shell. Its `[data-color-theme="default"]`
 rule therefore declares only an anchor and a companion, for the one element that
 does carry the attribute: the picker's own swatch. Neither is a designed colour:
 both are `primary-300`, the brand stop the interface already paints with, so the
@@ -226,7 +226,7 @@ behind the selected option, is owned at `:root` and refined by the preset rules
 rather than existing only under them: one option's selected card must not read
 heavier than another's.
 
-When `GradientColorThemes` is enabled on the document, each preset's HSL primary
+When a preset carries the palette attributes on the document, each preset's HSL primary
 value supplies both its anchor color and the shared `--primary` token. Primary
 actions, including portaled dialog buttons, immediately use that fill and the
 preset's contrast-checked `--primary-foreground` in Light/Dark. Hover and
@@ -335,9 +335,26 @@ native-title handling and optional tooltip. Their typography, radius and focus
 styles also share one base definition. Dimensions, icon sizing, transitions and
 disabled appearance remain owned by each styled control. `ToggleButton` keeps
 the native button and `onClick` contract; it does not manage state or change
-group keyboard behavior. Single-value settings keep a selection when the active
-choice is activated again. Use the existing `SegmentControl` for a new radio
-group that needs group-level keyboard navigation.
+group keyboard behavior.
+
+Use `Toggle` inside `ToggleGroup` for filters and multi-select controls whose
+arrow keys move focus without selecting. These are thin Base UI wrappers:
+`ToggleGroup` retains array `value`/`onValueChange`, `multiple`, and event details;
+`Toggle` retains `pressed`/`onPressedChange` and the group composition contract.
+The group owns roving focus; Tab enters/leaves the group and Enter/Space activates
+the focused item. The `filter`, `quiet`, and `primary` variants preserve compact
+filter pills, quiet toolbar choices, and filled schedule choices respectively.
+They share button typography/focus and reuse `buttonVariants` for button-shaped
+choices. Filter rings are inset so horizontal scroll clipping cannot hide focus.
+`ToggleButton` remains the compatible standalone `selected`/`onClick` control;
+do not place it inside a `ToggleGroup` as a substitute for `Toggle`.
+
+Business callers that require one selection reject an empty array while keeping
+their controlled value, including an explicit All value. The generic group must
+still permit empty selections. Permission Allow/Deny controls are explicit
+commands and retain `Button` activation, including reapplying the current policy;
+`ask` and `mixed` do not imply Deny. Use `SegmentControl` for radio groups whose
+selection should follow arrow-key focus.
 
 Both buttons keep `showTooltip` off by default. Enabling it requires an
 `aria-label`, which also supplies the tooltip content; the native `title` is
@@ -718,12 +735,24 @@ element with `render` and gets no wrapper. It is App-owned rather than shared,
 because its radius and shadow read the App-only `--okou-chat-card-*` variables,
 which the App stylesheet declares at `:root`.
 
-The border is deliberately `border-[1px] border-gray-400` rather than the shared
-`border` hairline and a semantic border token. A fractional border visibly
-repaints when card contents resolve, so a card would flicker at its edge as an
-image or an iframe lands; a whole pixel does not. Unifying the transcript's
-border width and color with the rest of the product is a separate visual
-decision.
+The base `ChatCard` border keeps a whole pixel rather than the shared `border`
+hairline. A fractional border visibly repaints when card contents resolve, so a
+card would flicker at its edge as an image or an iframe lands; a whole pixel
+does not. Its color uses `border-border/70`, the same neutral stroke used by the
+transcript's connector-action and mail-draft shells. Those shells keep the
+shared half-pixel width, so the stable `ChatCard` edge remains slightly heavier.
+
+The chat-card radius token resolves to 16px, one step below the 20px page-card
+radius. Connector-action and mail-draft cards use the same token. Their content
+uses a 16px horizontal inset; vertical spacing stays with each card's layout.
+Selected and disabled states may still tint or attenuate the neutral stroke.
+
+Keep the component boundary with the behavior. Mail-draft cards own loading,
+error, reconnect, deleted and selected states, and actionable drafts retain a
+native `button`; connector actions have a separate state and confirmation flow.
+Reuse the shared geometry and stroke rule for these shells, and use `ChatCard`
+where its stable edge and shadow fit. Do not add a generic wrapper solely to
+share styling.
 
 `cn()` merges the base with the caller's `className`, so a conflicting base
 utility is dropped rather than outranked and no layer ordering is involved. The
@@ -939,10 +968,11 @@ replaced by it, so the layer would carry the centring offset twice for the whole
 cycle and visibly misplace the indicator at every phase.
 
 Register a keyframe animation as an `--animate-*` theme entry so consumers reach
-it through `animate-*` rather than an `animation` shorthand. A per-instance
-runtime value, such as the indicator's phase-anchoring
-`--running-indicator-delay`, stays a narrowly named custom property that the
-component sets, read through an arbitrary `[animation-delay:var(...)]`.
+it through `animate-*` rather than an `animation` shorthand. Each
+`RunningIndicator` layer aligns its animation start time to the document
+timeline's zero on every `animationstart`, including CSS restarts after an
+ancestor stops being `display: none`. This keeps separately mounted or revealed
+indicators in phase without a wall-clock delay or a timer.
 
 A `@media (prefers-reduced-motion: reduce)` override that resets a value back to
 its initial belongs on `motion-safe:` on the rule it would override, rather than

@@ -59,7 +59,7 @@ export const usagePackCreditGrants = pgTable(
       ),
       check(
         "chk_usage_pack_credit_grants_remaining_amount",
-        sql`${table.remainingAmount} >= 0 AND ${table.remainingAmount} <= ${table.originalAmount}`,
+        sql`${table.remainingAmount} <= ${table.originalAmount}`,
       ),
     ];
   },

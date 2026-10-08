@@ -15,7 +15,6 @@ import {
   storageManifestFilesSchema,
 } from "../storages";
 import {
-  ACTIVE_INPUT_DELIVERY_RECEIPT_MAX_IDS,
   webhookCheckpointsContract,
   webhookCompleteContract,
   webhookEventsContract,
@@ -175,6 +174,52 @@ describe("archive connection attempt telemetry", () => {
           sandboxOperations: [
             { ...operation, archive_connection_attempt: invalid },
           ],
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
+describe("storage batch timing telemetry", () => {
+  const operation = {
+    ts: "2026-09-24T00:00:00Z",
+    action_type: "runner_storage_manifest_batch_apply",
+    duration_ms: 42,
+    success: true,
+    outcome: "dedicated_middle",
+    reason: "32_to_64_kib",
+  };
+
+  it("keeps bounded durations and fixed timing states while accepting legacy batches", () => {
+    const measured = {
+      ...operation,
+      storage_batch_guest_duration_ms: 0,
+      storage_batch_outer_residual_ms: 42,
+      storage_batch_timing: "paired",
+    };
+    const parsed = webhookTelemetryContract.send.body.parse({
+      runId: "run",
+      sandboxOperations: [
+        operation,
+        { ...measured, manifest_json: "private manifest" },
+      ],
+    });
+    expect(parsed.sandboxOperations).toStrictEqual([operation, measured]);
+  });
+
+  it("rejects negative, oversized, and unbounded timing values", () => {
+    for (const invalid of [
+      { storage_batch_guest_duration_ms: -1 },
+      { storage_batch_guest_duration_ms: 4_294_967_296 },
+      { storage_batch_guest_duration_ms: 1.5 },
+      { storage_batch_outer_residual_ms: -1 },
+      { storage_batch_outer_residual_ms: "42" },
+      { storage_batch_timing: "private diagnostic" },
+    ]) {
+      expect(
+        webhookTelemetryContract.send.body.safeParse({
+          runId: "run",
+          sandboxOperations: [{ ...operation, ...invalid }],
         }).success,
       ).toBe(false);
     }
@@ -666,51 +711,6 @@ describe("agent completion reuse outcomes", () => {
         webhookCompleteContract.complete.body.safeParse({
           ...baseBody,
           ...body,
-        }).success,
-      ).toBe(false);
-    }
-  });
-});
-
-describe("agent completion active input receipts", () => {
-  const baseBody = {
-    runId: "00000000-0000-4000-8000-000000000000",
-    exitCode: 0,
-  };
-  const deliveryId = "00000000-0000-4000-8000-000000000001";
-
-  it("accepts optional unique canonical delivery IDs", () => {
-    expect(
-      webhookCompleteContract.complete.body.parse({
-        ...baseBody,
-        activeInputDeliveryIds: [deliveryId],
-      }),
-    ).toMatchObject({ activeInputDeliveryIds: [deliveryId] });
-    expect(
-      webhookCompleteContract.complete.body.safeParse(baseBody).success,
-    ).toBe(true);
-  });
-
-  it("rejects duplicate, malformed, non-canonical, and oversized IDs", () => {
-    const invalidLists = [
-      [deliveryId, deliveryId],
-      ["not-a-uuid"],
-      ["AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"],
-      Array.from(
-        { length: ACTIVE_INPUT_DELIVERY_RECEIPT_MAX_IDS + 1 },
-        (_, index) => {
-          return `00000000-0000-4000-8000-${index
-            .toString(16)
-            .padStart(12, "0")}`;
-        },
-      ),
-    ];
-
-    for (const activeInputDeliveryIds of invalidLists) {
-      expect(
-        webhookCompleteContract.complete.body.safeParse({
-          ...baseBody,
-          activeInputDeliveryIds,
         }).success,
       ).toBe(false);
     }

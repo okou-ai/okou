@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { publicBrandSchema } from "@okouai/api-contracts/contracts/public-brand";
 
 import { teamsFileTokenPayloadSchema } from "./teams-file-token";
 
@@ -24,7 +23,6 @@ export const teamsDeliveryTargetSchema = z.object({
   teamsUserPrincipalName: z.string().nullable(),
   botId: z.string().nullable(),
   botName: z.string().nullable(),
-  publicBrand: publicBrandSchema,
   files: z.array(teamsChatCallbackFileSchema).optional(),
 });
 

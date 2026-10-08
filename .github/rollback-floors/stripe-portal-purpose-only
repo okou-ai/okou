@@ -1,0 +1,4 @@
+The first-parent main commit that adds this marker is the minimum API rollback
+version after removing the legacy brand metadata from the Stripe payment-method
+Billing Portal configuration. Older APIs look up that resource by the brand key
+and can create a duplicate if it is removed. See docs/deployment-compatibility.md.

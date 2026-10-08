@@ -1,50 +1,28 @@
+import { connectorCatalogEntryColumns } from "@okouai/connectors/connector-catalog/entry-columns";
 import { createHash } from "node:crypto";
 
 import { createStore } from "ccstate";
+import { eq } from "drizzle-orm";
 import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
 import {
-  connectorCatalogActiveSnapshot,
-  connectorCatalogCompatibilityEvaluation,
-  connectorCatalogRuntimeProjections,
-  connectorCatalogRuntimeProjectionSets,
-  connectorCatalogSyncState,
+  connectorCatalog,
+  connectorCatalogEntries,
 } from "@okouai/db/schema/connector-catalog";
-import type { ConnectorCatalogCompatibilityEvaluationPayload } from "@okouai/db/jsonb-contracts/connector-catalog";
-import { and, asc, eq } from "drizzle-orm";
 
 import { mockOptionalEnv } from "../lib/env";
-import { writeDb$, type Db } from "../signals/external/db";
-import { nowDate } from "../lib/time";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { closeDbPool } from "../lib/db";
+import { settleIncludingAbort } from "../signals/utils";
+import { writeDb$ } from "../signals/external/db";
 import {
   connectorCatalogArtifactSchema,
-  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { encodeConnectorCatalogSnapshot } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import {
   connectorCatalogFirewallConfig,
   validateConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/relationships";
-import {
-  connectorCatalogExecutableCapabilityState,
-  connectorCatalogCompatibilityEvaluationSchema,
-  persistConnectorCatalogCompatibility,
-} from "../signals/services/connector-catalog-compatibility.service";
-import {
-  clearConnectorCatalogExternalReaderIdentityReadHookForTest,
-  setConnectorCatalogExternalReaderIdentityReadHookForTest,
-} from "../signals/services/connector-catalog-external-reader.service";
-import {
-  CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
-  clearConnectorCatalogRuntimeProjectionIdentityReadHookForTest,
-  persistConnectorCatalogRuntimeProjection,
-  setConnectorCatalogRuntimeProjectionIdentityReadHookForTest,
-} from "../signals/services/connector-catalog-runtime-projection.service";
 import { connectorCatalogSource } from "../signals/services/connector-catalog-source";
-import {
-  currentConnectorCatalogValidatorIdentity,
-  type ConnectorCatalogValidationAuthority,
-} from "../signals/services/connector-catalog-validator-authority";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "./connector-catalog-artifact";
 
 export const API_TEST_CONNECTOR_CATALOG = connectorCatalogArtifactSchema.parse(
@@ -59,15 +37,25 @@ export const API_TEST_CONNECTOR_FIREWALL_CONFIGS =
     return firewall === null ? [] : [firewall];
   });
 
+export const API_TEST_CONNECTOR_CATALOG_SOURCE = connectorCatalogSource();
+
+export async function installSharedApiTestConnectorCatalog(): Promise<void> {
+  const installation = await settleIncludingAbort(
+    installApiTestConnectorCatalog({ ifAbsent: true }),
+  );
+  // Startup owns this connection, not the case's database authority. Cases
+  // may deliberately choose an unavailable endpoint before their first read.
+  const shutdown = await settleIncludingAbort(closeDbPool());
+  if (!installation.ok) {
+    throw installation.error;
+  }
+  if (!shutdown.ok) {
+    throw shutdown.error;
+  }
+}
+
 const DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION =
   API_TEST_CONNECTOR_CATALOG.catalogVersion;
-
-function apiTestConnectorCatalogKey(catalogVersion: string): string {
-  return (
-    `connectors/v${String(SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION)}/` +
-    `releases/${catalogVersion}/catalog.json`
-  );
-}
 
 const store = createStore();
 
@@ -88,12 +76,55 @@ export function mockApiTestConnectorProviderConfiguration(): void {
   }
 }
 
-export async function installApiTestConnectorCatalog(
+async function publishFixtureGeneration<
+  TQueryResult extends PgQueryResultHKT,
+>(args: {
+  readonly database: PgDatabase<TQueryResult>;
+  readonly catalog: ConnectorCatalogArtifact;
+  readonly hash: string;
+  readonly ifAbsent: boolean;
+}): Promise<void> {
+  await args.database.transaction(async (tx) => {
+    // The same entries-then-pointer order as the production writer.
+    await tx
+      .insert(connectorCatalogEntries)
+      .values(
+        args.catalog.connectors.map((connector) => {
+          return {
+            hash: args.hash,
+            slug: connector.slug,
+            payload: connector,
+            ...connectorCatalogEntryColumns(connector),
+          };
+        }),
+      )
+      .onConflictDoNothing();
+    const pointer = {
+      schemaVersion: args.catalog.artifactSchemaVersion,
+      hash: args.hash,
+    };
+    // Shared installation never replaces a pointer that another suite owns;
+    // concurrent workers wait on the conflicting insert instead.
+    await (args.ifAbsent
+      ? tx.insert(connectorCatalog).values(pointer).onConflictDoNothing()
+      : tx
+          .insert(connectorCatalog)
+          .values(pointer)
+          .onConflictDoUpdate({
+            target: connectorCatalog.schemaVersion,
+            set: { hash: args.hash },
+          }));
+  });
+}
+
+export async function installApiTestConnectorCatalog<
+  TQueryResult extends PgQueryResultHKT,
+>(
   options: {
     readonly catalogVersion?: string;
-    readonly runtimeProjection?: boolean;
-    readonly sourceId?: string;
     readonly catalog?: ConnectorCatalogArtifact;
+    readonly ifAbsent?: boolean;
+    readonly database?: PgDatabase<TQueryResult>;
   } = {},
 ): Promise<void> {
   const catalogVersion =
@@ -110,736 +141,106 @@ export async function installApiTestConnectorCatalog(
         }));
   validateConnectorCatalogArtifact(catalog);
   const rawBytes = Buffer.from(`${JSON.stringify(catalog)}\n`);
-  const catalogDigest = sha256Digest(rawBytes);
-  const catalogGzip = encodeConnectorCatalogSnapshot(rawBytes);
-  const sourceId = options.sourceId ?? connectorCatalogSource().sourceId;
-  const capability = connectorCatalogExecutableCapabilityState();
-  const activatedAt = nowDate();
-  const db = store.set(writeDb$);
-  const syncStateValues = {
-    revision: 1,
-    lastObservedCatalogVersion: catalogVersion,
-    lastObservedCatalogKey: apiTestConnectorCatalogKey(catalogVersion),
-    lastObservedCatalogDigest: catalogDigest,
-    lastObservedPointerEtag: null,
-    lastAttemptAt: activatedAt,
-    lastAttemptOutcome: "accepted" as const,
-    lastAttemptReusedCachedRejection: false,
-    lastSuccessAt: activatedAt,
-    lastFailureCode: null,
-    lastRejectedCatalogVersion: null,
-    lastRejectedCatalogKey: null,
-    lastRejectedCatalogDigest: null,
-    lastRejectedPointerEtag: null,
-    lastRejectedFailureCode: null,
-    lastRejectedBackendVersion: null,
-    lastRejectedBuildCommitSha: null,
+  const hash = sha256Digest(rawBytes);
+  const publication = {
+    catalog,
+    hash,
+    ifAbsent: options.ifAbsent ?? false,
   };
-  const snapshotValues = {
-    catalogVersion,
-    catalogKey: apiTestConnectorCatalogKey(catalogVersion),
-    catalogDigest,
-    catalogRawSize: rawBytes.byteLength,
-    catalogGzip,
-    activatedAt,
-  };
-
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(connectorCatalogSyncState)
-      .values({
-        sourceId,
-        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ...syncStateValues,
-      })
-      .onConflictDoUpdate({
-        target: [
-          connectorCatalogSyncState.sourceId,
-          connectorCatalogSyncState.schemaVersion,
-        ],
-        set: syncStateValues,
-      });
-    await tx
-      .insert(connectorCatalogActiveSnapshot)
-      .values({
-        sourceId,
-        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ...snapshotValues,
-      })
-      .onConflictDoUpdate({
-        target: [
-          connectorCatalogActiveSnapshot.sourceId,
-          connectorCatalogActiveSnapshot.schemaVersion,
-        ],
-        set: snapshotValues,
-      });
-    await persistConnectorCatalogCompatibility({
-      db: tx,
-      sourceId,
-      identity: {
-        catalogVersion,
-        catalogDigest,
-      },
-      artifact: catalog,
-      capability,
-      validator: currentConnectorCatalogValidatorIdentity(),
+  if (options.database) {
+    await publishFixtureGeneration({
+      database: options.database,
+      ...publication,
     });
-    if (options.runtimeProjection === true) {
-      await persistConnectorCatalogRuntimeProjection({
-        db: tx,
-        sourceId,
-        identity: { catalogVersion, catalogDigest },
-        artifact: catalog,
-        validator: currentConnectorCatalogValidatorIdentity(),
-      });
-    }
-  });
-}
-
-export async function readApiTestConnectorCatalogSnapshot(
-  sourceId: string,
-): Promise<{
-  readonly catalogVersion: string;
-  readonly catalogDigest: string;
-  readonly catalogRawSize: number;
-  readonly catalogGzip: Buffer;
-}> {
-  const db = store.set(writeDb$);
-  const [snapshot] = await db
-    .select({
-      catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-      catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-      catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
-      catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
-    })
-    .from(connectorCatalogActiveSnapshot)
-    .where(
-      and(
-        eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-        eq(
-          connectorCatalogActiveSnapshot.schemaVersion,
-          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ),
-      ),
-    )
-    .limit(1);
-  if (snapshot === undefined) {
-    throw new Error("Expected an active API test connector catalog snapshot");
+  } else {
+    await publishFixtureGeneration({
+      database: store.set(writeDb$),
+      ...publication,
+    });
   }
-  return snapshot;
 }
 
-export function captureApiTestConnectorCatalogCleanup(): () => Promise<void> {
-  const { sourceId } = connectorCatalogSource();
-  return async () => {
-    await deleteApiTestConnectorCatalogSource(sourceId);
-  };
-}
-
-async function deleteApiTestConnectorCatalogSource(
-  sourceId: string,
+/**
+ * Release 1 still reads entries from outgoing payload-only writers. Scope this
+ * historical shape to a catalog already published through the API in the case.
+ */
+export async function useLegacyConnectorCatalogPayloadFixture(
+  hash: string,
 ): Promise<void> {
-  const db = store.set(writeDb$);
-  await db.transaction(async (tx) => {
-    // Projection rows cascade from their set. The other source children must
-    // be removed before their sync-state parent.
-    await tx
-      .delete(connectorCatalogRuntimeProjectionSets)
-      .where(eq(connectorCatalogRuntimeProjectionSets.sourceId, sourceId));
-    await tx
-      .delete(connectorCatalogCompatibilityEvaluation)
-      .where(eq(connectorCatalogCompatibilityEvaluation.sourceId, sourceId));
-    await tx
-      .delete(connectorCatalogActiveSnapshot)
-      .where(eq(connectorCatalogActiveSnapshot.sourceId, sourceId));
-    await tx
-      .delete(connectorCatalogSyncState)
-      .where(eq(connectorCatalogSyncState.sourceId, sourceId));
-  });
-}
-
-export function setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
-  hook: () => Promise<void>,
-): void {
-  setConnectorCatalogRuntimeProjectionIdentityReadHookForTest(hook);
-}
-
-export function clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements(): void {
-  clearConnectorCatalogRuntimeProjectionIdentityReadHookForTest();
-}
-
-export function setApiTestConnectorCatalogExternalReaderIdentityReadHook(
-  hook: () => Promise<void>,
-): void {
-  setConnectorCatalogExternalReaderIdentityReadHookForTest(hook);
-}
-
-export function setApiTestConnectorCatalogExternalReaderIdentityReplacements(
-  catalogVersions: readonly [first: string, second: string],
-): void {
-  const [firstCatalogVersion, secondCatalogVersion] = catalogVersions;
-  let nextCatalogVersion = firstCatalogVersion;
-  setConnectorCatalogExternalReaderIdentityReadHookForTest(async () => {
-    const catalogVersion = nextCatalogVersion;
-    nextCatalogVersion = secondCatalogVersion;
-    await installApiTestConnectorCatalog({ catalogVersion });
-  });
-}
-
-export function clearApiTestConnectorCatalogExternalReaderIdentityReplacements(): void {
-  clearConnectorCatalogExternalReaderIdentityReadHookForTest();
-}
-
-interface ApiTestConnectorCatalogIdentity {
-  readonly sourceId: string;
-  readonly catalogVersion: string;
-  readonly catalogDigest: string;
-  readonly capabilityDigest: string;
-}
-
-function currentApiTestConnectorCatalogRuntimeProjectionSetWhere(
-  identity: ApiTestConnectorCatalogIdentity,
-) {
-  return and(
-    eq(connectorCatalogRuntimeProjectionSets.sourceId, identity.sourceId),
-    eq(
-      connectorCatalogRuntimeProjectionSets.schemaVersion,
-      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-    ),
-    eq(
-      connectorCatalogRuntimeProjectionSets.catalogVersion,
-      identity.catalogVersion,
-    ),
-    eq(
-      connectorCatalogRuntimeProjectionSets.catalogDigest,
-      identity.catalogDigest,
-    ),
-    eq(
-      connectorCatalogRuntimeProjectionSets.projectionVersion,
-      CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
-    ),
-  );
-}
-
-async function currentApiTestConnectorCatalogRuntimeProjectionSet(
-  db: Db,
-  identity: ApiTestConnectorCatalogIdentity,
-): Promise<
-  { readonly id: string; readonly connectorCount: number } | undefined
-> {
-  const [projectionSet] = await db
-    .select({
-      id: connectorCatalogRuntimeProjectionSets.id,
-      connectorCount: connectorCatalogRuntimeProjectionSets.connectorCount,
+  const updated = await store
+    .set(writeDb$)
+    .update(connectorCatalogEntries)
+    .set({
+      label: null,
+      description: null,
+      category: null,
+      icon: null,
+      tags: null,
+      generation: null,
+      authMethods: null,
+      mcp: null,
+      skill: null,
+      firewall: null,
+      permissionSummary: null,
     })
-    .from(connectorCatalogRuntimeProjectionSets)
-    .where(currentApiTestConnectorCatalogRuntimeProjectionSetWhere(identity))
-    .limit(1);
-  return projectionSet;
-}
-
-async function requireCurrentApiTestConnectorCatalogRuntimeProjectionSet(
-  db: Db,
-  identity: ApiTestConnectorCatalogIdentity,
-): Promise<{ readonly id: string; readonly connectorCount: number }> {
-  const projectionSet =
-    await currentApiTestConnectorCatalogRuntimeProjectionSet(db, identity);
-  if (projectionSet === undefined) {
-    throw new Error("API test connector runtime projection set is unavailable");
-  }
-  return projectionSet;
-}
-
-async function currentApiTestConnectorCatalogIdentity(): Promise<ApiTestConnectorCatalogIdentity> {
-  const sourceId = connectorCatalogSource().sourceId;
-  const capabilityDigest = connectorCatalogExecutableCapabilityState().digest;
-  const db = store.set(writeDb$);
-  const [identity] = await db
-    .select({
-      catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-      catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-    })
-    .from(connectorCatalogActiveSnapshot)
-    .where(
-      and(
-        eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-        eq(
-          connectorCatalogActiveSnapshot.schemaVersion,
-          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ),
-      ),
-    )
-    .limit(1);
-  if (identity === undefined) {
-    throw new Error("Expected an active API test connector catalog");
-  }
-  return { sourceId, capabilityDigest, ...identity };
-}
-
-function currentApiTestConnectorCatalogCompatibilityWhere(
-  identity: ApiTestConnectorCatalogIdentity,
-) {
-  return and(
-    eq(connectorCatalogCompatibilityEvaluation.sourceId, identity.sourceId),
-    eq(
-      connectorCatalogCompatibilityEvaluation.schemaVersion,
-      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-    ),
-    eq(
-      connectorCatalogCompatibilityEvaluation.catalogVersion,
-      identity.catalogVersion,
-    ),
-    eq(
-      connectorCatalogCompatibilityEvaluation.catalogDigest,
-      identity.catalogDigest,
-    ),
-    eq(
-      connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-      identity.capabilityDigest,
-    ),
-  );
-}
-
-function requireSingleCatalogMutation(
-  rows: readonly unknown[],
-  operation: string,
-): void {
-  if (rows.length !== 1) {
+    .where(eq(connectorCatalogEntries.hash, hash))
+    .returning({ slug: connectorCatalogEntries.slug });
+  if (updated.length === 0) {
     throw new Error(
-      `Expected ${operation} to affect one connector catalog row`,
+      "Expected the case's published catalog before replacing its columns",
     );
   }
 }
 
-export function apiTestConnectorCatalogValidationAuthority(): ConnectorCatalogValidationAuthority {
-  const validator = currentConnectorCatalogValidatorIdentity();
-  return {
-    validatorVersion: validator.validatorVersion,
-    buildCommitSha: validator.buildCommitSha,
-  };
-}
+const UNAVAILABLE_PLATFORM_SECRET = "API_TEST_UNAVAILABLE_PLATFORM_SECRET";
 
-interface ApiTestConnectorCatalogCompatibilityEvaluation {
-  readonly catalogVersion: string;
-  readonly catalogDigest: string;
-  readonly capabilityDigest: string;
-  readonly validationAuthority: ConnectorCatalogValidationAuthority | null;
-  readonly evaluatedAt: string;
-  readonly payload: unknown;
-}
-
-export async function readApiTestConnectorCatalogCompatibilityEvaluations(): Promise<
-  readonly ApiTestConnectorCatalogCompatibilityEvaluation[]
-> {
-  const sourceId = connectorCatalogSource().sourceId;
-  const db = store.set(writeDb$);
-  const rows = await db
-    .select({
-      catalogVersion: connectorCatalogCompatibilityEvaluation.catalogVersion,
-      catalogDigest: connectorCatalogCompatibilityEvaluation.catalogDigest,
-      capabilityDigest:
-        connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-      catalogValidationBackendVersion:
-        connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-      catalogValidationBuildCommitSha:
-        connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-      evaluatedAt: connectorCatalogCompatibilityEvaluation.evaluatedAt,
-      payload: connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-    })
-    .from(connectorCatalogCompatibilityEvaluation)
-    .where(
-      and(
-        eq(connectorCatalogCompatibilityEvaluation.sourceId, sourceId),
-        eq(
-          connectorCatalogCompatibilityEvaluation.schemaVersion,
-          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ),
-      ),
-    )
-    .orderBy(
-      asc(connectorCatalogCompatibilityEvaluation.catalogDigest),
-      asc(connectorCatalogCompatibilityEvaluation.executableCapabilityDigest),
-    );
-  return rows.map((row) => {
-    return {
-      catalogVersion: row.catalogVersion,
-      catalogDigest: row.catalogDigest,
-      capabilityDigest: row.capabilityDigest,
-      validationAuthority:
-        row.catalogValidationBackendVersion === null
-          ? null
-          : {
-              validatorVersion: row.catalogValidationBackendVersion,
-              buildCommitSha: row.catalogValidationBuildCommitSha,
+// Requires an undeclared platform secret, so on-demand compatibility reports a
+// provider contract mismatch for exactly these executable methods.
+export function apiTestConnectorCatalogWithUnavailableAuthMethods(
+  catalog: ConnectorCatalogArtifact,
+  methods: readonly {
+    readonly connectorSlug: string;
+    readonly authMethodId: string;
+  }[],
+): ConnectorCatalogArtifact {
+  const remaining = new Set(
+    methods.map((method) => {
+      return `${method.connectorSlug}\0${method.authMethodId}`;
+    }),
+  );
+  const unavailable = {
+    ...catalog,
+    connectors: catalog.connectors.map((connector) => {
+      return {
+        ...connector,
+        authMethods: connector.authMethods.map((method) => {
+          if (!remaining.delete(`${connector.slug}\0${method.id}`)) {
+            return method;
+          }
+          if (
+            method.access.kind !== "static" &&
+            method.access.kind !== "refresh-token"
+          ) {
+            throw new Error(
+              `${connector.slug}/${method.id} has no platform secret contract`,
+            );
+          }
+          return {
+            ...method,
+            access: {
+              ...method.access,
+              platformSecrets: [
+                ...(method.access.platformSecrets ?? []),
+                UNAVAILABLE_PLATFORM_SECRET,
+              ],
             },
-      evaluatedAt: row.evaluatedAt.toISOString(),
-      payload: row.payload,
-    };
-  });
-}
-
-export async function readApiTestConnectorCatalogValidationAuthority(): Promise<ConnectorCatalogValidationAuthority | null> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const [row] = await db
-    .select({
-      catalogValidationBackendVersion:
-        connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-      catalogValidationBuildCommitSha:
-        connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-    })
-    .from(connectorCatalogCompatibilityEvaluation)
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .limit(1);
-  if (row === undefined) {
-    throw new Error(
-      "Expected a current API test connector catalog compatibility evaluation",
-    );
-  }
-  return row.catalogValidationBackendVersion === null
-    ? null
-    : {
-        validatorVersion: row.catalogValidationBackendVersion,
-        buildCommitSha: row.catalogValidationBuildCommitSha,
+          };
+        }),
       };
-}
-
-export async function setApiTestConnectorCatalogValidationAuthority(
-  authority: ConnectorCatalogValidationAuthority | null,
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const updated = await db
-    .update(connectorCatalogCompatibilityEvaluation)
-    .set({
-      catalogValidationBackendVersion: authority?.validatorVersion ?? null,
-      catalogValidationBuildCommitSha: authority?.buildCommitSha ?? null,
-    })
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(updated, "validation-authority update");
-}
-
-export async function replaceApiTestConnectorCatalogStoredBytes(args: {
-  readonly catalogVersion: string;
-  readonly rawBytes: Uint8Array;
-  readonly catalogValidationAuthority: ConnectorCatalogValidationAuthority | null;
-  readonly retainCatalogDigest?: boolean;
-}): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const rawBytes = Buffer.from(args.rawBytes);
-  const catalogDigest =
-    args.retainCatalogDigest === true
-      ? identity.catalogDigest
-      : sha256Digest(rawBytes);
-  const db = store.set(writeDb$);
-  await db.transaction(async (tx) => {
-    const updatedCompatibility = await tx
-      .update(connectorCatalogCompatibilityEvaluation)
-      .set({
-        catalogVersion: args.catalogVersion,
-        catalogDigest,
-        catalogValidationBackendVersion:
-          args.catalogValidationAuthority?.validatorVersion ?? null,
-        catalogValidationBuildCommitSha:
-          args.catalogValidationAuthority?.buildCommitSha ?? null,
-      })
-      .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-      .returning({
-        sourceId: connectorCatalogCompatibilityEvaluation.sourceId,
-      });
-    requireSingleCatalogMutation(
-      updatedCompatibility,
-      "stored compatibility replacement",
-    );
-    const updatedSnapshot = await tx
-      .update(connectorCatalogActiveSnapshot)
-      .set({
-        catalogVersion: args.catalogVersion,
-        catalogDigest,
-        catalogRawSize: rawBytes.byteLength,
-        catalogGzip: encodeConnectorCatalogSnapshot(rawBytes),
-      })
-      .where(
-        and(
-          eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
-          eq(
-            connectorCatalogActiveSnapshot.schemaVersion,
-            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-          ),
-        ),
-      )
-      .returning({ sourceId: connectorCatalogActiveSnapshot.sourceId });
-    requireSingleCatalogMutation(
-      updatedSnapshot,
-      "stored catalog snapshot replacement",
-    );
-  });
-}
-
-export async function corruptApiTestConnectorCatalogActiveSnapshotPayload(): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const updated = await db
-    .update(connectorCatalogActiveSnapshot)
-    .set({ catalogGzip: Buffer.from("invalid-gzip", "utf8") })
-    .where(
-      and(
-        eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
-        eq(
-          connectorCatalogActiveSnapshot.schemaVersion,
-          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ),
-        eq(
-          connectorCatalogActiveSnapshot.catalogVersion,
-          identity.catalogVersion,
-        ),
-        eq(
-          connectorCatalogActiveSnapshot.catalogDigest,
-          identity.catalogDigest,
-        ),
-      ),
-    )
-    .returning({ sourceId: connectorCatalogActiveSnapshot.sourceId });
-  requireSingleCatalogMutation(updated, "active snapshot payload corruption");
-}
-
-export async function invalidateApiTestConnectorCatalogCompatibility(): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const updated = await db
-    .update(connectorCatalogCompatibilityEvaluation)
-    .set({
-      filteredAuthMethods: {
-        filteredAuthMethods: [
-          {
-            connectorSlug: "external-test",
-            authMethodId: "api-token",
-            reasons: [],
-          },
-        ],
-      },
-    })
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(updated, "compatibility corruption");
-}
-
-export async function replaceApiTestConnectorCatalogFilteredAuthMethods(
-  filteredAuthMethods: ConnectorCatalogCompatibilityEvaluationPayload["filteredAuthMethods"],
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const payload = connectorCatalogCompatibilityEvaluationSchema.parse({
-    filteredAuthMethods,
-  });
-  const db = store.set(writeDb$);
-  const updated = await db
-    .update(connectorCatalogCompatibilityEvaluation)
-    .set({ filteredAuthMethods: payload })
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(updated, "compatibility filter replacement");
-}
-
-export async function deleteApiTestConnectorCatalogCompatibility(): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const deleted = await db
-    .delete(connectorCatalogCompatibilityEvaluation)
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(deleted, "compatibility deletion");
-}
-
-export async function deleteApiTestConnectorCatalogCompatibilityEvaluation(
-  capabilityDigest: string,
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const deleted = await db
-    .delete(connectorCatalogCompatibilityEvaluation)
-    .where(
-      currentApiTestConnectorCatalogCompatibilityWhere({
-        ...identity,
-        capabilityDigest,
-      }),
-    )
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(deleted, "compatibility evaluation deletion");
-}
-
-export async function deleteApiTestConnectorCatalogRuntimeProjectionRow(
-  connectorSlug: string,
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const projectionSet =
-    await requireCurrentApiTestConnectorCatalogRuntimeProjectionSet(
-      db,
-      identity,
-    );
-  const deleted = await db
-    .delete(connectorCatalogRuntimeProjections)
-    .where(
-      and(
-        eq(
-          connectorCatalogRuntimeProjections.projectionSetId,
-          projectionSet.id,
-        ),
-        eq(connectorCatalogRuntimeProjections.connectorSlug, connectorSlug),
-      ),
-    )
-    .returning({
-      connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,
-    });
-  requireSingleCatalogMutation(deleted, "runtime projection row deletion");
-}
-
-export async function corruptApiTestConnectorCatalogRuntimeProjectionDigest(
-  connectorSlug: string,
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const projectionSet =
-    await requireCurrentApiTestConnectorCatalogRuntimeProjectionSet(
-      db,
-      identity,
-    );
-  const updated = await db
-    .update(connectorCatalogRuntimeProjections)
-    .set({ connectorDigest: `sha256:${"0".repeat(64)}` })
-    .where(
-      and(
-        eq(
-          connectorCatalogRuntimeProjections.projectionSetId,
-          projectionSet.id,
-        ),
-        eq(connectorCatalogRuntimeProjections.connectorSlug, connectorSlug),
-      ),
-    )
-    .returning({
-      connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,
-    });
-  requireSingleCatalogMutation(updated, "runtime projection digest corruption");
-}
-
-export async function corruptApiTestConnectorCatalogRuntimeProjectionPayload(
-  connectorSlug: string,
-  connectorPayload: Buffer = Buffer.from("{}", "utf8"),
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const projectionSet =
-    await requireCurrentApiTestConnectorCatalogRuntimeProjectionSet(
-      db,
-      identity,
-    );
-  const updated = await db
-    .update(connectorCatalogRuntimeProjections)
-    .set({
-      connectorDigest: sha256Digest(connectorPayload),
-      connectorPayload,
-    })
-    .where(
-      and(
-        eq(
-          connectorCatalogRuntimeProjections.projectionSetId,
-          projectionSet.id,
-        ),
-        eq(connectorCatalogRuntimeProjections.connectorSlug, connectorSlug),
-      ),
-    )
-    .returning({
-      connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,
-    });
-  requireSingleCatalogMutation(
-    updated,
-    "runtime projection payload corruption",
-  );
-}
-
-export async function expireApiTestConnectorCatalogRuntimeProjectionAuthority(): Promise<void> {
-  await setApiTestConnectorCatalogRuntimeProjectionAuthority({
-    validatorVersion: "1.0.0",
-    buildCommitSha: null,
-  });
-}
-
-export async function setApiTestConnectorCatalogRuntimeProjectionAuthority(
-  authority: ConnectorCatalogValidationAuthority,
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const projectionSet =
-    await requireCurrentApiTestConnectorCatalogRuntimeProjectionSet(
-      db,
-      identity,
-    );
-  const updated = await db
-    .update(connectorCatalogRuntimeProjectionSets)
-    .set({
-      catalogValidationBackendVersion: authority.validatorVersion,
-      catalogValidationBuildCommitSha: authority.buildCommitSha,
-    })
-    .where(eq(connectorCatalogRuntimeProjectionSets.id, projectionSet.id))
-    .returning({ id: connectorCatalogRuntimeProjectionSets.id });
-  requireSingleCatalogMutation(updated, "runtime projection authority expiry");
-}
-
-export async function readApiTestConnectorCatalogRuntimeProjectionAuthority(): Promise<ConnectorCatalogValidationAuthority | null> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const [projectionSet] = await db
-    .select({
-      validatorVersion:
-        connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-      buildCommitSha:
-        connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-    })
-    .from(connectorCatalogRuntimeProjectionSets)
-    .where(currentApiTestConnectorCatalogRuntimeProjectionSetWhere(identity))
-    .limit(1);
-  if (projectionSet === undefined || projectionSet.validatorVersion === null) {
-    return null;
-  }
-  return {
-    validatorVersion: projectionSet.validatorVersion,
-    buildCommitSha: projectionSet.buildCommitSha,
-  };
-}
-
-export async function readApiTestConnectorCatalogRuntimeProjection(): Promise<{
-  readonly connectorCount: number;
-  readonly connectorSlugs: readonly string[];
-} | null> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const setRow = await currentApiTestConnectorCatalogRuntimeProjectionSet(
-    db,
-    identity,
-  );
-  if (setRow === undefined) {
-    return null;
-  }
-  const rows = await db
-    .select({ connectorSlug: connectorCatalogRuntimeProjections.connectorSlug })
-    .from(connectorCatalogRuntimeProjections)
-    .where(eq(connectorCatalogRuntimeProjections.projectionSetId, setRow.id))
-    .orderBy(asc(connectorCatalogRuntimeProjections.connectorSlug));
-  return {
-    connectorCount: setRow.connectorCount,
-    connectorSlugs: rows.map((row) => {
-      return row.connectorSlug;
     }),
   };
-}
-
-export async function deleteApiTestConnectorCatalogRuntimeProjectionSet(): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const deleted = await db
-    .delete(connectorCatalogRuntimeProjectionSets)
-    .where(currentApiTestConnectorCatalogRuntimeProjectionSetWhere(identity))
-    .returning({ sourceId: connectorCatalogRuntimeProjectionSets.sourceId });
-  requireSingleCatalogMutation(deleted, "runtime projection set deletion");
+  if (remaining.size > 0) {
+    throw new Error(`Unknown auth methods: ${[...remaining].join(", ")}`);
+  }
+  return connectorCatalogArtifactSchema.parse(unavailable);
 }

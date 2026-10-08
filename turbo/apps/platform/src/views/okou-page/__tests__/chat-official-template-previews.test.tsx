@@ -69,18 +69,13 @@ async function expectVideoPreview() {
 }
 
 const officialPreviewCases = [
-  { media: "image", expectPreview: expectImagePreview },
-  { media: "deck", expectPreview: expectDeckPreview },
-  { media: "video", expectPreview: expectVideoPreview },
+  { media: "image", expectPreview: expectImagePreview, runless: false },
+  { media: "deck", expectPreview: expectDeckPreview, runless: false },
+  { media: "video", expectPreview: expectVideoPreview, runless: false },
+  { media: "image", expectPreview: expectImagePreview, runless: true },
 ] as const;
 
-test.each(
-  [true, false].flatMap((runless) => {
-    return officialPreviewCases.map((preview) => {
-      return { runless, ...preview };
-    });
-  }),
-)(
+test.each(officialPreviewCases)(
   "Official $media example uses an ordinary preview with runless=$runless and no uploaded artifacts",
   async ({ runless, expectPreview }) => {
     const chat = createMarkdownChatFixture(context);

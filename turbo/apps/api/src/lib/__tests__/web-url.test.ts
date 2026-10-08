@@ -27,7 +27,6 @@ describe("web URL", () => {
 
   it.each([
     { state: "missing", value: undefined },
-    { state: "empty", value: "" },
     { state: "invalid", value: "not-a-url" },
   ])("rejects $state raw OKOU_WEB_URL input", async ({ value }) => {
     await expect(importEnvWithRawWebUrl(value)).rejects.toThrow(

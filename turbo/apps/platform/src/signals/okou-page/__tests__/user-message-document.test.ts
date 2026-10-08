@@ -9,9 +9,9 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 import {
+  draftToEditorDoc,
   editorDocToMessageDocument,
   messageDocumentToDisplayText,
-  messageDocumentToEditorDoc,
   messageDocumentToPrompt,
   type MessageDocumentAttachment,
 } from "../user-message-document-codec.ts";
@@ -87,7 +87,7 @@ const CHAT_THREAD_ID = "b0000000-0000-4000-a000-000000000931";
 const AGENT_ID = "c0000000-0000-4000-a000-000000000931";
 
 function restoredEditorDocument(value: unknown): ProseMirrorNode {
-  const restored = messageDocumentToEditorDoc(value);
+  const restored = draftToEditorDoc(value);
   if (!restored) {
     throw new Error("User message could not be restored for editing");
   }
@@ -123,15 +123,11 @@ function expectTextOrder(text: string, segments: readonly string[]): void {
   }
 }
 
-test("Every generation template type restores for editing", () => {
+test("Supported generation templates restore for editing", () => {
   const templates = [
     templatePart("Paper cut", {
       type: "illustration",
       selection: { illustrationStyleId: "paper-cut" },
-    }),
-    templatePart("Epic grandeur", {
-      type: "video",
-      selection: { stylePresetId: "epic-grandeur" },
     }),
     templatePart("Daily review", {
       type: "workflow",
@@ -150,6 +146,24 @@ test("Every generation template type restores for editing", () => {
     };
     expect(saveRestoredMessage(document)).toStrictEqual(document);
   }
+});
+
+test("A saved video template draft restores its brief as editable text", () => {
+  const document: UserMessageDocument = {
+    version: 1,
+    parts: [
+      { type: "text", text: "Make a launch film for our new app" },
+      templatePart("Epic grandeur", {
+        type: "video",
+        selection: { stylePresetId: "epic-grandeur" },
+      }),
+    ],
+  };
+
+  expect(saveRestoredMessage(document)).toStrictEqual({
+    version: 1,
+    parts: [{ type: "text", text: "Make a launch film for our new app" }],
+  });
 });
 
 test("Complex composer content survives saving and restoring", () => {
@@ -480,7 +494,7 @@ test("A malformed rich message is rejected safely", () => {
   ];
 
   for (const malformed of malformedDocuments) {
-    expect(messageDocumentToEditorDoc(malformed)).toBeNull();
+    expect(draftToEditorDoc(malformed)).toBeNull();
     expect(messageDocumentToPrompt(malformed)).toBeNull();
   }
 
@@ -641,35 +655,6 @@ test("A single quoted passage without a note stays singular", () => {
   );
 });
 
-test("Multiple quoted passages can mix notes and references", () => {
-  const document: UserMessageDocument = {
-    version: 1,
-    parts: [
-      {
-        type: "feedback",
-        quote: "First referenced passage",
-        note: [{ type: "text", text: "Keep the evidence concise." }],
-      },
-      {
-        type: "feedback",
-        quote: "Second reference only",
-        note: [],
-        eventId: "assistant-event-quote-only",
-        range: { start: 60, end: 81 },
-      },
-    ],
-  };
-
-  expect(saveRestoredMessage(document)).toStrictEqual(document);
-  expect(messageDocumentToPrompt(document)).toBe(
-    "The user quoted 2 parts of your reply:\n\n" +
-      "> First referenced passage\n\n" +
-      "Keep the evidence concise.\n\n" +
-      "---\n\n" +
-      "> Second reference only",
-  );
-});
-
 test("Routing metadata is not shown as user text", () => {
   const metadataParts: UserMessagePart[] = [
     { type: "source", kind: "slack", href: "https://slack.com/message/931" },
@@ -678,7 +663,6 @@ test("Routing metadata is not shown as user text", () => {
       workflowName: "Release workflow",
       automationBrief: "Internal automation routing",
     },
-    { type: "goal", goalBrief: "Internal rollout goal" },
     {
       type: "automation",
       workflowName: "Morning Brief",
@@ -686,7 +670,7 @@ test("Routing metadata is not shown as user text", () => {
     },
     {
       type: "model",
-      selectedModel: "claude-sonnet-4-6",
+      selectedModel: "claude-sonnet-5",
       serviceTier: "priority",
     },
   ];

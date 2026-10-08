@@ -1,5 +1,6 @@
-import { command, computed } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { command } from "ccstate";
+import { and, eq, sql } from "drizzle-orm";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
@@ -10,10 +11,14 @@ import {
   type SharedThreadArtifactPolicy,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
 import {
+  linkLayoutFromSegment,
+  storedLinkLayoutSegment,
+} from "@okouai/api-contracts/contracts/link-layout";
+import {
   sharedThreadArtifactAuthorUserId,
   sharedThreadArtifactLogicalKey,
 } from "../../lib/shared-thread-artifact";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import {
   isS3NotFoundError,
@@ -22,7 +27,8 @@ import {
   writeArtifactSharePolicyObject,
 } from "../external/s3";
 import { settle } from "../utils";
-import { env } from "../../lib/env";
+import { hostedLinkOrigin } from "../../lib/link-layout";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import {
   privateArtifactCreationEnabled,
@@ -37,8 +43,12 @@ import {
 
 type SnapshotIdentity = Pick<
   typeof sharedThreads.$inferSelect,
-  "id" | "userId" | "orgId" | "publicBrand" | "hasArtifactSnapshot"
->;
+  "id" | "userId" | "orgId" | "hasArtifactSnapshot"
+> & {
+  // The shared thread's stored link-layout segment. Conversation snapshots
+  // created before the layout change stay under the legacy segment.
+  readonly linkLayoutSegment: string;
+};
 
 /** Match the delivery Worker's authority without reopening the owner's live resource. */
 export const resolveSharedThreadHostedDownload$ = command(
@@ -92,7 +102,7 @@ export const resolveSharedThreadHostedDownload$ = command(
       signSharedThreadHostedDownload$,
       {
         publicSlug: args.publicSlug,
-        publicBrand: record.publicBrand,
+        layoutSegment: record.publicBrand,
         target,
       },
       signal,
@@ -106,7 +116,7 @@ export const signSharedThreadHostedDownload$ = command(
     { set },
     args: {
       readonly publicSlug: string;
-      readonly publicBrand: SharedThreadArtifactPolicy["publicBrand"];
+      readonly layoutSegment: SharedThreadArtifactPolicy["publicBrand"];
       readonly target: Extract<
         SharedThreadArtifactPolicy["resources"][string],
         { kind: "html" }
@@ -115,18 +125,10 @@ export const signSharedThreadHostedDownload$ = command(
     signal: AbortSignal,
   ): Promise<HostedSiteFilesResponse> => {
     const { target } = args;
-    const scheme = env(
-      args.publicBrand === "okou" ? "OKOU_HOST_SCHEME" : "ZERO_HOST_SCHEME",
-    );
-    const domain = env(
-      args.publicBrand === "okou"
-        ? "OKOU_PUBLIC_HOST_DOMAIN"
-        : "ZERO_HOST_DOMAIN",
-    );
-    if (!scheme || !domain) {
-      throw new Error("Public hosted artifact delivery is not configured");
-    }
-    const url = `${scheme}://${args.publicSlug}.${domain}/`;
+    const url = `${hostedLinkOrigin(
+      linkLayoutFromSegment(args.layoutSegment),
+      args.publicSlug,
+    )}/`;
     return await set(
       signHostedSiteFiles$,
       {
@@ -140,20 +142,23 @@ export const signSharedThreadHostedDownload$ = command(
           aliasUrl: url,
         },
         manifest: target.manifest,
-        prefix: `shared-artifacts/${args.publicBrand}/${target.snapshotId}/${target.id}`,
+        prefix: `shared-artifacts/${args.layoutSegment}/${target.snapshotId}/${target.id}`,
       },
       signal,
     );
   },
 );
 
-function readPolicy(identity: SnapshotIdentity, signal: AbortSignal) {
-  return computed(async (get) => {
+const readPolicy$ = command(
+  async ({ get }, identity: SnapshotIdentity, signal: AbortSignal) => {
     const read = await settle(
       get(
         readArtifactSharePolicyObject(
           sharedThreadArtifactsBucket(),
-          sharedThreadArtifactPolicyKey(identity.publicBrand, identity.id),
+          sharedThreadArtifactPolicyKey(
+            storedLinkLayoutSegment(identity.linkLayoutSegment),
+            identity.id,
+          ),
           signal,
         ),
       ),
@@ -172,25 +177,23 @@ function readPolicy(identity: SnapshotIdentity, signal: AbortSignal) {
       policy.threadId !== identity.id ||
       policy.ownerId !== identity.userId ||
       policy.orgId !== identity.orgId ||
-      policy.publicBrand !== identity.publicBrand
+      policy.publicBrand !== identity.linkLayoutSegment
     ) {
       throw new Error("Conversation artifact policy does not match its owner");
     }
+    signal.throwIfAborted();
     return { policy, etag: read.value.etag };
-  });
-}
+  },
+);
 
-export function sharedThreadArtifactsReadable(
-  identity: SnapshotIdentity,
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+export const sharedThreadArtifactsReadable$ = command(
+  async ({ set }, identity: SnapshotIdentity, signal: AbortSignal) => {
     return (
       !identity.hasArtifactSnapshot ||
-      (await get(readPolicy(identity, signal)))?.policy.status === "active"
+      (await set(readPolicy$, identity, signal))?.policy.status === "active"
     );
-  });
-}
+  },
+);
 
 export const initializeSharedThreadArtifacts$ = command(
   async ({ get }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
@@ -220,80 +223,112 @@ const changeSharedThreadArtifactPhase$ = command(
     phase: "copy" | "publish",
     signal: AbortSignal,
   ) => {
-    await set(writeDb$).transaction(async (tx) => {
-      // The same row lock serializes publication with owner/account deletion.
-      const [row] = await tx
-        .select()
-        .from(sharedThreads)
-        .where(eq(sharedThreads.id, plan.policy.threadId))
-        .for("update");
-      if (!row?.hasArtifactSnapshot) {
-        throw new Error("Conversation snapshot was removed before publication");
-      }
-      const current = await get(readPolicy(row, signal));
-      if (!current || current.policy.status !== "preparing") {
-        throw new Error(
-          "Conversation snapshot is no longer pending publication",
-        );
-      }
-      // Check the external owner after the durable identity exists. A deletion
-      // webhook either sees and locks this identity, or this fresh membership
-      // check rejects the owner already deleted before its enumeration.
-      const membership = await settle(
-        get(clerk$).organizations.getOrganizationMembershipList(
-          {
-            organizationId: current.policy.orgId,
-            userId: [row.userId],
-            limit: 1,
-          },
-          undefined,
-          signal,
+    const [row] = await get(db$)
+      .select()
+      .from(sharedThreads)
+      .where(
+        and(
+          eq(sharedThreads.id, plan.policy.threadId),
+          eq(sharedThreads.userId, plan.policy.ownerId),
+          eq(sharedThreads.orgId, plan.policy.orgId),
         ),
-        signal,
       );
-      if (!membership.ok) {
-        if (isClerkResourceNotFound(membership.error)) {
-          throw new SharedThreadArtifactUnavailable();
-        }
-        throw membership.error;
-      }
-      if (
-        !membership.value.data.some((member) => {
-          return member.publicUserData?.userId === row.userId;
-        })
-      ) {
+    signal.throwIfAborted();
+    if (!row?.hasArtifactSnapshot) {
+      throw new Error("Conversation snapshot was removed before publication");
+    }
+    const current = await set(readPolicy$, row, signal);
+    if (!current || current.policy.status !== "preparing") {
+      throw new Error("Conversation snapshot is no longer pending publication");
+    }
+    // The durable denied identity is discoverable by owner cleanup. Policy
+    // ETags fence publication against revocation without holding SQL locks.
+    const membership = await settle(
+      get(clerk$).organizations.getOrganizationMembershipList(
+        {
+          organizationId: current.policy.orgId,
+          userId: [row.userId],
+          limit: 1,
+        },
+        undefined,
+        signal,
+      ),
+      signal,
+    );
+    if (!membership.ok) {
+      if (isClerkResourceNotFound(membership.error)) {
         throw new SharedThreadArtifactUnavailable();
       }
-      if (phase === "copy") {
-        await set(copySharedThreadArtifacts$, plan, signal);
-        return;
-      }
-      signal.throwIfAborted();
-      await get(
-        writeArtifactSharePolicyObject(
-          sharedThreadArtifactsBucket(),
-          sharedThreadArtifactPolicyKey(row.publicBrand, row.id),
-          JSON.stringify({ ...current.policy, status: "active" }),
-          current.etag,
-          signal,
+      throw membership.error;
+    }
+    if (
+      !membership.value.data.some((member) => {
+        return member.publicUserData?.userId === row.userId;
+      })
+    ) {
+      throw new SharedThreadArtifactUnavailable();
+    }
+    if (phase === "copy") {
+      await set(copySharedThreadArtifacts$, plan, signal);
+      return;
+    }
+    signal.throwIfAborted();
+    await get(
+      writeArtifactSharePolicyObject(
+        sharedThreadArtifactsBucket(),
+        sharedThreadArtifactPolicyKey(
+          storedLinkLayoutSegment(row.linkLayoutSegment),
+          row.id,
         ),
-      );
-      signal.throwIfAborted();
-      await tx.insert(artifacts).values({
-        orgId: current.policy.orgId,
-        authorUserId: sharedThreadArtifactAuthorUserId(row.userId),
-        kind: "file",
-        entityId: row.id,
-        logicalKey: sharedThreadArtifactLogicalKey(row.id),
-        projectionFileId: null,
-        projectionCreatedAt: row.createdAt,
-        title: row.title,
-        thumbnail: null,
-        createdAt: row.createdAt,
-        updatedAt: row.createdAt,
+        JSON.stringify({ ...current.policy, status: "active" }),
+        current.etag,
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    // Catalog projection is recoverable, not the public grant. Only insert
+    // while the owned thread still exists; deletion removes both SQL records.
+    const database = set(writeDb$);
+    await database
+      .insert(artifacts)
+      .select(
+        database
+          .select({
+            id: sql`${randomUUID()}::uuid`.mapWith(artifacts.id).as("id"),
+            orgId: sql`${current.policy.orgId}`
+              .mapWith(artifacts.orgId)
+              .as("org_id"),
+            authorUserId: sql`${sharedThreadArtifactAuthorUserId(row.userId)}`
+              .mapWith(artifacts.authorUserId)
+              .as("author_user_id"),
+            kind: sql`'file'`.mapWith(artifacts.kind).as("kind"),
+            entityId: sharedThreads.id,
+            logicalKey: sql`${sharedThreadArtifactLogicalKey(row.id)}`
+              .mapWith(artifacts.logicalKey)
+              .as("logical_key"),
+            projectionFileId: sql`NULL::uuid`
+              .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
+              .as("projection_file_id"),
+            projectionCreatedAt: sharedThreads.createdAt,
+            title: sharedThreads.title,
+            thumbnail: sql`NULL::jsonb`
+              .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
+              .as("thumbnail"),
+            createdAt: sharedThreads.createdAt,
+            updatedAt: sharedThreads.createdAt,
+          })
+          .from(sharedThreads)
+          .where(
+            and(
+              eq(sharedThreads.id, row.id),
+              eq(sharedThreads.userId, row.userId),
+              eq(sharedThreads.orgId, current.policy.orgId),
+            ),
+          ),
+      )
+      .onConflictDoNothing({
+        target: [artifacts.orgId, artifacts.authorUserId, artifacts.logicalKey],
       });
-      signal.throwIfAborted();
-    });
     signal.throwIfAborted();
   },
 );
@@ -310,12 +345,12 @@ export const publishSharedThreadArtifacts$ = command(
   },
 );
 
-function revokePolicy(identity: SnapshotIdentity, signal: AbortSignal) {
-  return computed(async (get) => {
+const revokePolicy$ = command(
+  async ({ get, set }, identity: SnapshotIdentity, signal: AbortSignal) => {
     if (!identity.hasArtifactSnapshot) {
       return null;
     }
-    const current = await get(readPolicy(identity, signal));
+    const current = await set(readPolicy$, identity, signal);
     if (!current) {
       return null;
     }
@@ -323,24 +358,25 @@ function revokePolicy(identity: SnapshotIdentity, signal: AbortSignal) {
       await get(
         writeArtifactSharePolicyObject(
           sharedThreadArtifactsBucket(),
-          sharedThreadArtifactPolicyKey(identity.publicBrand, identity.id),
+          sharedThreadArtifactPolicyKey(
+            storedLinkLayoutSegment(identity.linkLayoutSegment),
+            identity.id,
+          ),
           JSON.stringify({ ...current.policy, status: "revoked" }),
           current.etag,
           signal,
         ),
       );
     }
+    signal.throwIfAborted();
     return current.policy;
-  });
-}
+  },
+);
 
 /** Revoke first; storage failures keep a retryable identity and denied URLs. */
-export function removeSharedThreadArtifactCopies(
-  identity: SnapshotIdentity,
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
-    const policy = await get(revokePolicy(identity, signal));
+export const removeSharedThreadArtifactCopies$ = command(
+  async ({ get, set }, identity: SnapshotIdentity, signal: AbortSignal) => {
+    const policy = await set(revokePolicy$, identity, signal);
     if (!policy) {
       return;
     }
@@ -350,7 +386,7 @@ export function removeSharedThreadArtifactCopies(
       if (target.kind === "file") {
         files.push(target.key);
       } else {
-        const prefix = `shared-artifacts/${identity.publicBrand}/${target.snapshotId}/${target.id}`;
+        const prefix = `shared-artifacts/${storedLinkLayoutSegment(identity.linkLayoutSegment)}/${target.snapshotId}/${target.id}`;
         siteFiles.push(
           `${prefix}/manifest.json`,
           ...Object.keys(target.manifest.files).map((path) => {
@@ -379,10 +415,11 @@ export function removeSharedThreadArtifactCopies(
         ),
       );
     }
+    signal.throwIfAborted();
     // Keep the revoked policy and immutable aliases as tombstones. A stale
     // alias/cache entry can never fall back to a different public object.
-  });
-}
+  },
+);
 
 export const deleteSharedThread$ = command(
   async (
@@ -394,43 +431,60 @@ export const deleteSharedThread$ = command(
     },
     signal: AbortSignal,
   ) => {
-    return await set(writeDb$).transaction(async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(sharedThreads)
+    const database = set(writeDb$);
+    const [row] = await database
+      .select()
+      .from(sharedThreads)
+      .where(
+        and(
+          eq(sharedThreads.id, args.id),
+          eq(sharedThreads.userId, args.userId),
+        ),
+      );
+    signal.throwIfAborted();
+    if (!row || (row.orgId !== null && row.orgId !== args.orgId)) {
+      return false;
+    }
+    if (
+      !row.hasArtifactSnapshot &&
+      !(await get(privateArtifactCreationEnabled(args.orgId, args.userId)))
+    ) {
+      return false;
+    }
+    await set(removeSharedThreadArtifactCopies$, row, signal);
+    signal.throwIfAborted();
+    const removed = database.$with("removed_shared_thread").as(
+      database
+        .delete(sharedThreads)
         .where(
           and(
-            eq(sharedThreads.id, args.id),
+            eq(sharedThreads.id, row.id),
             eq(sharedThreads.userId, args.userId),
           ),
         )
-        .for("update");
-      if (!row || (row.orgId !== null && row.orgId !== args.orgId)) {
-        return false;
-      }
-      if (
-        !row.hasArtifactSnapshot &&
-        !(await get(privateArtifactCreationEnabled(args.orgId, args.userId)))
-      ) {
-        return false;
-      }
-      await get(removeSharedThreadArtifactCopies(row, signal));
-      signal.throwIfAborted();
-      await tx
-        .delete(artifacts)
-        .where(
+        .returning({ id: sharedThreads.id }),
+    );
+    await database
+      .with(removed)
+      .delete(artifacts)
+      .where(
+        and(
           eq(artifacts.logicalKey, sharedThreadArtifactLogicalKey(row.id)),
-        );
-      await tx.delete(sharedThreads).where(eq(sharedThreads.id, row.id));
-      return true;
-    });
+          eq(
+            artifacts.authorUserId,
+            sharedThreadArtifactAuthorUserId(args.userId),
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    return true;
   },
 );
 
 function manageSharedThreadArtifacts(removeCopies: boolean) {
   return command(
     async (
-      { get, set },
+      { set },
       owner:
         | { readonly kind: "organization"; readonly orgId: string }
         | { readonly kind: "user"; readonly userId: string },
@@ -449,22 +503,12 @@ function manageSharedThreadArtifacts(removeCopies: boolean) {
           ),
         );
       signal.throwIfAborted();
-      for (const candidate of rows) {
-        await db.transaction(async (tx) => {
-          const [row] = await tx
-            .select()
-            .from(sharedThreads)
-            .where(eq(sharedThreads.id, candidate.id))
-            .for("update");
-          if (!row) {
-            return;
-          }
-          if (removeCopies) {
-            await get(removeSharedThreadArtifactCopies(row, signal));
-          } else {
-            await get(revokePolicy(row, signal));
-          }
-        });
+      for (const row of rows) {
+        if (removeCopies) {
+          await set(removeSharedThreadArtifactCopies$, row, signal);
+        } else {
+          await set(revokePolicy$, row, signal);
+        }
         signal.throwIfAborted();
       }
     },

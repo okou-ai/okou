@@ -2,10 +2,9 @@ import { Loader2, Plus } from "lucide-react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import { cn, ScrollBar, surfaceVariants } from "@okouai/ui";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
-import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
+import { oneClickConnectorCatalog$ } from "../../signals/external/connectors.ts";
+import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
 import {
   builtinConnectFlowSlug$,
   builtinPollingOAuthAuthCodeSlug$,
@@ -20,32 +19,25 @@ import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { SCROLL_FADE_Y_START_WHEN_OVERFLOWING } from "./scroll-fade.ts";
 
 /**
- * The connectors the Get started quest can actually deliver on.
+ * The connectors the Get started quest can actually deliver on, in the order
+ * the picker offers them.
  *
- * The reward pays for a connection that finishes in the browser, so a catalog
- * entry that asks the reader to paste a key from another site belongs to a
- * different errand and is left out of this list rather than shown and then
- * refused.
+ * The reward pays for a connection that finishes in the browser, so the list
+ * comes from the one-click catalog: an entry that asks the reader to paste a
+ * key from another site belongs to a different errand and is never offered
+ * here only to be refused.
  */
-function oneClickConnectors(
-  items: readonly PlatformConnectorCatalogStatusItem[],
-): PlatformConnectorCatalogStatusItem[] {
-  return [...items]
-    .filter((connector) => {
-      return connector.authMethods.some((authMethod) => {
-        return isOneClickConnectorGrantKind(authMethod.grantKind);
-      });
-    })
-    .sort((left, right) => {
-      // The catalog carries the curated business-user ranking; anything
-      // unranked falls to the tail in label order so it is still findable.
-      const rankDelta =
-        (left.popularityRank ?? Number.MAX_SAFE_INTEGER) -
-        (right.popularityRank ?? Number.MAX_SAFE_INTEGER);
-      return rankDelta === 0
-        ? left.label.localeCompare(right.label)
-        : rankDelta;
-    });
+function rankedConnectors(
+  items: readonly PlatformConnectorCatalogConnectItem[],
+): PlatformConnectorCatalogConnectItem[] {
+  return [...items].sort((left, right) => {
+    // The catalog carries the curated business-user ranking; anything
+    // unranked falls to the tail in label order so it is still findable.
+    const rankDelta =
+      (left.popularityRank ?? Number.MAX_SAFE_INTEGER) -
+      (right.popularityRank ?? Number.MAX_SAFE_INTEGER);
+    return rankDelta === 0 ? left.label.localeCompare(right.label) : rankDelta;
+  });
 }
 
 /**
@@ -79,9 +71,9 @@ function ConnectorTile({
   busy,
   onSelect,
 }: {
-  readonly connector: PlatformConnectorCatalogStatusItem;
+  readonly connector: PlatformConnectorCatalogConnectItem;
   readonly busy: boolean;
-  readonly onSelect: (connector: PlatformConnectorCatalogStatusItem) => void;
+  readonly onSelect: (connector: PlatformConnectorCatalogConnectItem) => void;
 }) {
   return (
     <button
@@ -138,9 +130,9 @@ function ConnectorGroup({
   onSelect,
 }: {
   readonly heading: string;
-  readonly connectors: readonly PlatformConnectorCatalogStatusItem[];
-  readonly isBusy: (connector: PlatformConnectorCatalogStatusItem) => boolean;
-  readonly onSelect: (connector: PlatformConnectorCatalogStatusItem) => void;
+  readonly connectors: readonly PlatformConnectorCatalogConnectItem[];
+  readonly isBusy: (connector: PlatformConnectorCatalogConnectItem) => boolean;
+  readonly onSelect: (connector: PlatformConnectorCatalogConnectItem) => void;
 }) {
   if (connectors.length === 0) {
     return null;
@@ -184,11 +176,11 @@ export function QuestConnectorPicker({
   onNeedsChoice,
 }: {
   readonly onNeedsChoice: (
-    connector: PlatformConnectorCatalogStatusItem,
+    connector: PlatformConnectorCatalogConnectItem,
   ) => void;
 }) {
   const { t } = useTranslation();
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const catalogLoadable = useLastLoadable(oneClickConnectorCatalog$);
   const pageSignal = useGet(pageSignal$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
   const connectFlowSlug = useGet(builtinConnectFlowSlug$);
@@ -196,10 +188,10 @@ export function QuestConnectorPicker({
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectors =
     catalogLoadable.state === "hasData"
-      ? oneClickConnectors(catalogLoadable.data.connectors)
+      ? rankedConnectors(catalogLoadable.data)
       : [];
 
-  const isBusy = (connector: PlatformConnectorCatalogStatusItem) => {
+  const isBusy = (connector: PlatformConnectorCatalogConnectItem) => {
     return (
       connectFlowSlug === connector.slug ||
       pollingAuthCodeSlug === connector.slug ||
@@ -207,7 +199,7 @@ export function QuestConnectorPicker({
     );
   };
 
-  const select = (connector: PlatformConnectorCatalogStatusItem) => {
+  const select = (connector: PlatformConnectorCatalogConnectItem) => {
     const direct = getBuiltinConnectorStatusDirectConnectMethod(connector);
     const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
     if (direct?.kind !== "browser-auth" || !accountOptions) {

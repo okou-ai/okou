@@ -1,25 +1,25 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
+import { click } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
-  completedEvent,
   context,
   expectTextOrder,
+  findButton,
+  findEnabledButton,
   installRunChat,
   promptEvent,
   publishRunUpdate,
   queryButton,
   readyChat,
   RUN_PATH,
-  sendText,
 } from "./chat-run-test-fixtures.ts";
 
 const RUN_A = "a0000000-0000-4000-a000-000000000301";
-const RUN_B = "a0000000-0000-4000-a000-000000000302";
 const RESULT = "The API review is in progress.";
 const STEER = "Focus on the authentication boundary first";
 const NEXT_RESULT = "The authentication boundary review is ready.";
@@ -132,58 +132,13 @@ function expectWaitingAfter(text: string): void {
   ).toBeTruthy();
 }
 
-test("Freeze the previous work when a steer is sent, before the send request returns", async () => {
-  const appendGate = context.mocks.deferred<void>();
-  const appendStarted = context.mocks.deferred<void>();
-  installRunChat({
-    chatEvents: resultEvents(),
-    activeRunIds: [RUN_A],
-    appendGate: appendGate.promise,
-    onQueuedEventAppend: () => {
-      appendStarted.resolve();
-    },
-  });
-  await openChat(12);
-  expect(workSummary()).toHaveTextContent("Working for");
-
-  await sendText(STEER);
-  await appendStarted.promise;
-
-  await expect(screen.findByText(STEER)).resolves.toBeVisible();
-  expectWaitingAfter(STEER);
-  await expectRetainedResult();
-  expect(workSummary()).toHaveTextContent("Worked for 12s");
-
-  appendGate.resolve();
-});
-
-test.each([
-  { state: "pending", deliveryEvents: [] },
-  { state: "delivered", deliveryEvents: [deliveredSteer()] },
-])(
-  "Restore the original steer boundary from recorded $state input when opening a chat",
-  async ({ deliveryEvents }) => {
-    installRunChat({
-      chatEvents: [...resultEvents(), pendingSteer(), ...deliveryEvents],
-      activeRunIds: [RUN_A],
-    });
-
-    await openChat(20);
-
-    expect(screen.getAllByText(STEER)).toHaveLength(1);
-    expectWaitingAfter(STEER);
-    await expectRetainedResult();
-    expect(workSummary()).toHaveTextContent("Worked for 12s");
-  },
-);
-
 test("Keep the work boundary and elapsed time stable through steer delivery and completion", async () => {
   const events = [...resultEvents(), pendingSteer()];
   const chat = installRunChat({ chatEvents: events, activeRunIds: [RUN_A] });
   await openChat(12);
   expect(screen.getByText(STEER)).toBeVisible();
   expectWaitingAfter(STEER);
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12s");
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
 
   mockNow(new Date(createdAt(20)), context.signal);
   events.push(
@@ -200,10 +155,13 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
 
   await expect(screen.findByText(NEXT_RESULT)).resolves.toBeVisible();
   expect(screen.getAllByText(STEER)).toHaveLength(1);
+  expect(
+    screen.queryByRole("listitem", { name: "Queued message" }),
+  ).not.toBeInTheDocument();
   await expectRetainedResult();
   expect(queryButton("Copy message", mainResult(NEXT_RESULT))).toBeVisible();
   expectTextOrder(RESULT, STEER, NEXT_RESULT);
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12s");
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
   expect(workSummary(NEXT_RESULT)).toHaveTextContent("Working for");
 
   chat.completeRun();
@@ -211,8 +169,8 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
   await waitFor(() => {
     expect(workSummary(NEXT_RESULT)).toHaveTextContent("Worked for");
   });
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12s");
-  expect.soft(workSummary(NEXT_RESULT)).toHaveTextContent("Worked for 8s");
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
+  expect.soft(workSummary(NEXT_RESULT)).toHaveTextContent("Worked for 8 sec");
 });
 
 test("Keep separate histories, artifacts and actions on both sides of a steer in the same run", async () => {
@@ -306,116 +264,126 @@ test("Keep separate histories, artifacts and actions on both sides of a steer in
   expectTextOrder(RESULT, STEER, NEXT_RESULT);
 });
 
-test.each([
-  { state: "pending", runId: undefined },
-  { state: "delivered", runId: RUN_A },
-])(
-  "Keep consecutive $state steers visible without empty work sections between them",
-  async ({ runId }) => {
-    const secondSteer = "Include the token refresh path as well";
-    installRunChat({
-      chatEvents: [
-        ...resultEvents(),
-        { ...pendingSteer(), runId },
-        promptEvent({
-          id: "second-steer",
-          runId,
-          seqId: 5,
-          text: secondSteer,
-          createdAt: createdAt(16),
-        }),
-      ],
-      activeRunIds: [RUN_A],
-    });
+function textNode(text: string): Text {
+  const node = screen.getByText(text).firstChild;
+  if (!(node instanceof Text)) {
+    throw new Error(`Expected a text node for ${text}`);
+  }
+  return node;
+}
 
-    await openChat(20);
+function statusRow(): HTMLElement {
+  const row = document.querySelector<HTMLElement>(
+    '[data-role="assistant-thinking"]',
+  );
+  if (!row) {
+    throw new Error("Expected a run status row");
+  }
+  return row;
+}
 
-    expect(screen.getAllByText(STEER)).toHaveLength(1);
-    expect(screen.getAllByText(secondSteer)).toHaveLength(1);
-    expectTextOrder(RESULT, STEER, secondSteer);
-    await expectRetainedResult();
-    expect(document.querySelectorAll("[data-chat-run-work-main]")).toHaveLength(
-      1,
-    );
-    expect(document.querySelectorAll("[data-chat-run-work]")).toHaveLength(1);
-    expect(screen.getAllByTestId("chat-event-actions")).toHaveLength(1);
-    expectWaitingAfter(secondSteer);
-  },
-);
+// The user selects the conversation tail, from their message through the run
+// status row, as they would before copying it.
+function selectFromMessageThroughStatus(text: string): void {
+  const row = statusRow();
+  const range = document.createRange();
+  range.setStart(textNode(text), 0);
+  range.setEnd(row, row.childNodes.length);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
 
-test("Wait after a steer before the first output without creating an empty previous result", async () => {
-  const events = [
+function selectedText(): string {
+  return window.getSelection()?.toString().replace(/\s+/gu, " ").trim() ?? "";
+}
+
+test("Keep the selected prompt and status row when a run claims the prompt", async () => {
+  const events: MockChatEventInput[] = [
     promptEvent({
-      id: "empty-request",
-      runId: RUN_A,
+      id: "queued-request",
       seqId: 1,
       text: "Review the API",
       createdAt: createdAt(0),
     }),
-    pendingSteer(),
   ];
+  installRunChat({ chatEvents: events });
+  await openChat(1);
+  await expect(findButton("queue...")).resolves.toBeInTheDocument();
+  selectFromMessageThroughStatus("Review the API");
+
+  events.push({
+    ...promptEvent({
+      id: RUN_A,
+      runId: RUN_A,
+      seqId: 2,
+      text: "Review the API",
+      createdAt: createdAt(1),
+    }),
+    revokesEventId: "queued-request",
+  });
+  publishRunUpdate();
+
+  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
+  expect(queryButton("queue...")).toBeNull();
+  expect(screen.getAllByText("Review the API")).toHaveLength(1);
+  const selected = selectedText();
+  expect(selected.startsWith("Review the API")).toBeTruthy();
+  expect(selected.endsWith("Thinking...")).toBeTruthy();
+});
+
+test("Keep the selected steer and status row through steer delivery and the first result", async () => {
+  const events = [...resultEvents(), pendingSteer()];
   installRunChat({ chatEvents: events, activeRunIds: [RUN_A] });
   await openChat(12);
-
-  expect(screen.getByText(STEER)).toBeVisible();
   expectWaitingAfter(STEER);
-  expect(document.querySelector("[data-chat-run-work-main]")).toBeNull();
-  expect(document.querySelector("[data-chat-run-work]")).toBeNull();
-  expect(screen.queryByTestId("chat-event-actions")).toBeNull();
+  selectFromMessageThroughStatus(STEER);
 
+  mockNow(new Date(createdAt(20)), context.signal);
   events.push(
     deliveredSteer(),
     assistantEvent({
-      id: "first-result-after-steer",
+      id: "result-after-steer",
       runId: RUN_A,
       seqId: 6,
       text: NEXT_RESULT,
-      createdAt: createdAt(20),
+      createdAt: createdAt(18),
     }),
   );
-  mockNow(new Date(createdAt(20)), context.signal);
   publishRunUpdate();
 
-  await expect(screen.findByText(NEXT_RESULT)).resolves.toBeVisible();
-  expectTextOrder("Review the API", STEER, NEXT_RESULT);
-  expect(screen.getAllByText(STEER)).toHaveLength(1);
-  expect(document.querySelectorAll("[data-chat-run-work-main]")).toHaveLength(
-    1,
-  );
-  expect(document.querySelectorAll("[data-chat-run-work]")).toHaveLength(1);
-  expect(queryButton("Copy message", mainResult(NEXT_RESULT))).toBeVisible();
+  await expect(screen.findByText(NEXT_RESULT)).resolves.toBeInTheDocument();
+  expectWaitingAfter(NEXT_RESULT);
+  const selected = selectedText();
+  expect(selected.startsWith(STEER)).toBeTruthy();
+  expect(selected).toContain(NEXT_RESULT);
+  expect(selected.endsWith("Thinking...")).toBeTruthy();
 });
 
-test("Keep an already completed response's original duration when the next user message arrives", async () => {
-  const events = [
-    ...resultEvents(),
-    completedEvent({
-      id: "initial-completion",
-      runId: RUN_A,
-      seqId: 4,
-      createdAt: createdAt(5),
-    }),
-  ];
-  installRunChat({ chatEvents: events, activeRunIds: [RUN_B] });
-  await openChat(12);
-  expect(workSummary()).toHaveTextContent("Worked for 5s");
-
-  events.push(
-    promptEvent({
-      id: "next-request",
-      runId: RUN_B,
-      seqId: 5,
-      text: STEER,
-      createdAt: createdAt(12),
-    }),
-  );
-  mockNow(new Date(createdAt(20)), context.signal);
-  publishRunUpdate();
-
-  await expect(screen.findByText(STEER)).resolves.toBeVisible();
-  await waitFor(() => {
-    expectWaitingAfter(STEER);
+test("Stop interrupts the live run and keeps the queued follow-up", async () => {
+  const interrupted: string[] = [];
+  const recalled: string[] = [];
+  installRunChat({
+    chatEvents: [...resultEvents(), pendingSteer()],
+    activeRunIds: [RUN_A],
+    onInterruptEventAppend: ({ interruptsRunId }) => {
+      interrupted.push(interruptsRunId);
+    },
+    onRecallEventAppend: ({ revokesEventId }) => {
+      recalled.push(revokesEventId);
+    },
   });
-  expect(workSummary()).toHaveTextContent("Worked for 5s");
-  await expectRetainedResult();
+  await openChat(12);
+  expect(screen.getByText(STEER)).toBeVisible();
+
+  click(await findEnabledButton("Stop"));
+
+  await waitFor(() => {
+    expect(interrupted).toStrictEqual([RUN_A]);
+  });
+  expect(recalled).toStrictEqual([]);
+  expect(screen.getByText(STEER)).toBeVisible();
+  expect(
+    screen.queryByRole("listitem", { name: "Queued message" }),
+  ).not.toBeInTheDocument();
 });

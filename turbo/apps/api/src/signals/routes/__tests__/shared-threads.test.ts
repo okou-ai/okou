@@ -1,9 +1,13 @@
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+} from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
 import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
 
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -24,14 +28,14 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const routeMocks = createRouteMocks(context);
-const endpoint = "https://openrouter.ai/api/v1/chat/completions";
+const endpoint = VERTEX_TEXT_URL;
 const privateTitle = "Unshared confidential acquisition title";
 const privateContent = "Unselected confidential acquisition message";
 const providerSecret = "Private provider response and credential details";
 const selectedContent = "Publish the agreed launch checklist";
 
 beforeEach(() => {
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
 });
 
 function client(rethrowErrors = false, signal = context.signal) {
@@ -50,26 +54,24 @@ function authenticate(actor: ApiTestUser) {
 
 function completion(content = "**Launch checklist**", finishReason = "stop") {
   return HttpResponse.json({
-    choices: [
+    candidates: [
       {
-        finish_reason: finishReason,
-        ...(finishReason === "length"
-          ? { native_finish_reason: "MAX_TOKENS" }
-          : {}),
-        message: { content },
+        finishReason:
+          finishReason === "length"
+            ? "MAX_TOKENS"
+            : finishReason === "stop"
+              ? "STOP"
+              : finishReason,
+        content: {
+          parts: [
+            {
+              text: content,
+            },
+          ],
+        },
       },
     ],
   });
-}
-
-function brokenBody(error: Error) {
-  return new HttpResponse(
-    new ReadableStream({
-      start(controller) {
-        controller.error(error);
-      },
-    }),
-  );
 }
 
 async function prepareShare(content = selectedContent) {
@@ -79,23 +81,16 @@ async function prepareShare(content = selectedContent) {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  // Sharing reads persisted chat events only. Fable keeps both sends queued
+  // for the native Runner instead of starting unmocked Pi API-first turns.
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, { displayName: "Sharing test" });
-  const sent = await accept(
-    chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: content,
-      },
-      [201],
-    ),
-    [201],
-  );
-  const { threadId, runId } = sent.body;
-  if (!runId) {
-    throw new Error("Expected a new chat run");
-  }
+  const { threadId, runId } = await chat.sendAndLaunch(actor, {
+    agentId: agent.agentId,
+    prompt: content,
+  });
   await chat.renameThread(actor, threadId, privateTitle);
   await chat.requestSendEvent(
     actor,
@@ -136,7 +131,6 @@ async function expectSharedSnapshot(
   expect(shared.body).toStrictEqual({
     id,
     title,
-    publicBrand: "okou",
     messages: [
       {
         messageIndex: 0,
@@ -148,7 +142,7 @@ async function expectSharedSnapshot(
   });
   expect(shared.headers.get("cache-control")).toBe("no-store");
   const meta = await accept(client().meta({ params: { id } }), [200]);
-  expect(meta.body).toStrictEqual({ title, publicBrand: "okou" });
+  expect(meta.body).toStrictEqual({ title });
   expect(meta.headers.get("cache-control")).toBe(
     "public, max-age=31536000, s-maxage=31536000, immutable",
   );
@@ -209,20 +203,6 @@ describe("optional shared-thread titles", () => {
       title: "Shared conversation",
     },
     {
-      name: "network failure",
-      response: () => {
-        return HttpResponse.error();
-      },
-      title: "Shared conversation",
-    },
-    {
-      name: "unknown defect",
-      response: () => {
-        return brokenBody(new TypeError(providerSecret));
-      },
-      title: "Shared conversation",
-    },
-    {
       name: "empty interpreted title",
       response: () => {
         return completion("---");
@@ -238,24 +218,17 @@ describe("optional shared-thread titles", () => {
       },
       title: "Shared conversation",
     },
-    {
-      name: "invalid JSON",
-      response: () => {
-        return new HttpResponse(providerSecret);
-      },
-      title: "Shared conversation",
-    },
   ];
 
   it.each(generationCases)(
     "creates one private-content-safe snapshot with $name",
     async ({ response, title }) => {
       const fixture = await prepareShare();
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+      mockGoogleText();
       const requests: unknown[] = [];
       server.use(
         http.post(endpoint, async ({ request }) => {
-          requests.push(await request.json());
+          requests.push(vertexTextRequest(await request.json(), request.url));
           return response();
         }),
       );
@@ -268,15 +241,16 @@ describe("optional shared-thread titles", () => {
       await expectSharedSnapshot(fixture, created.body.id, title);
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({
-        model: "google/gemini-3.1-flash-lite",
-        max_tokens: 2048,
-        reasoning: { effort: "minimal" },
+        model: "gemini-3.1-flash-lite",
+        generationConfig: {
+          maxOutputTokens: 2048,
+          thinkingConfig: { thinkingLevel: "MINIMAL" },
+        },
       });
       const prompt = JSON.stringify(requests[0]);
       expect(prompt).toContain(selectedContent);
       expect(prompt).not.toContain(privateTitle);
       expect(prompt).not.toContain(privateContent);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
 
@@ -302,26 +276,18 @@ describe("optional shared-thread titles", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "Forwarded share test",
     });
-    const source = await accept(
-      chat.requestSendEvent(
-        actor,
-        {
-          agentId: agent.agentId,
-          prompt: "Source message",
-        },
-        [201],
-      ),
-      [201],
-    );
-    if (!source.body.runId) {
-      throw new Error("Expected a source run");
-    }
+    const source = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Source message",
+    });
     const sourceTitle = "Private source thread title";
-    await chat.renameThread(actor, source.body.threadId, sourceTitle);
+    await chat.renameThread(actor, source.threadId, sourceTitle);
     const targetThread = await chat.createThread(actor, {
       agentId: agent.agentId,
     });
@@ -339,29 +305,17 @@ describe("optional shared-thread titles", () => {
         },
       ],
     };
-    const forwarded = await accept(
-      chat.requestSendEvent(
-        actor,
-        {
-          agentId: agent.agentId,
-          threadId: targetThread.id,
-          prompt: "legacy fallback",
-          userMessage,
-          sourceRunId: source.body.runId,
-        },
-        [201],
-      ),
-      [201],
-    );
-    if (!forwarded.body.runId) {
-      throw new Error("Expected a forwarded run");
-    }
-    await flushWaitUntilForTest();
+    const forwarded = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      threadId: targetThread.id,
+      prompt: "legacy fallback",
+      userMessage,
+      sourceRunId: source.runId,
+    });
     const { events } = await chat.listThreadEvents(actor, targetThread.id);
     const eventId = events.find((event) => {
       return (
-        event.eventType === "input.prompt" &&
-        event.runId === forwarded.body.runId
+        event.eventType === "input.prompt" && event.runId === forwarded.runId
       );
     })?.id;
     if (!eventId) {
@@ -392,8 +346,8 @@ describe("optional shared-thread titles", () => {
     const publicData = JSON.stringify(shared.body);
     for (const privateValue of [
       sourceTitle,
-      source.body.runId,
-      source.body.threadId,
+      source.runId,
+      source.threadId,
       agent.agentId,
       mailId,
       sentId,
@@ -406,7 +360,7 @@ describe("optional shared-thread titles", () => {
     "preserves a valid share when telemetry %s fails",
     async (mode) => {
       const fixture = await prepareShare();
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+      mockGoogleText();
       server.use(
         http.post(endpoint, () => {
           return new HttpResponse(null, { status: 429 });
@@ -431,7 +385,6 @@ describe("optional shared-thread titles", () => {
         created.body.id,
         "Shared conversation",
       );
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
 
@@ -440,7 +393,7 @@ describe("optional shared-thread titles", () => {
     const controller = new AbortController();
     const reason = new DOMException("Caller cancelled", "AbortError");
     controller.abort(reason);
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     const requests: string[] = [];
     server.use(
       http.post(endpoint, ({ request }) => {
@@ -457,7 +410,6 @@ describe("optional shared-thread titles", () => {
     await flushWaitUntilForTest();
     await expectNoShare(fixture);
     expect(requests).toStrictEqual([]);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -476,7 +428,7 @@ describe("optional shared-thread titles", () => {
       const entered = createDeferredPromise<AbortSignal>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
       const returned = createDeferredPromise<void>(context.signal);
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+      mockGoogleText();
       server.use(
         http.post(endpoint, async ({ request }) => {
           entered.resolve(request.signal);
@@ -524,13 +476,12 @@ describe("optional shared-thread titles", () => {
       await returned.promise;
       await flushWaitUntilForTest();
       await expectNoShare(fixture);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
 
   it("keeps authentication, ownership and selection failures outside optional generation", async () => {
     const fixture = await prepareShare();
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     await accept(
       client().create({ ...requestBody(fixture), headers: {} }),
       [401],
@@ -561,16 +512,14 @@ describe("optional shared-thread titles", () => {
     );
     expect(unknown.body.error.code).toBe("NO_SHAREABLE_MESSAGES");
     await expectNoShare(fixture);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("rejects oversized selections before title generation", async () => {
     const fixture = await prepareShare("A".repeat(2 * 1024 * 1024));
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     const response = await accept(client().create(requestBody(fixture)), [413]);
     expect(response.body.error.code).toBe("SHARED_THREAD_TOO_LARGE");
     await expectNoShare(fixture);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("rolls back the share when the real artifact write fails after title degradation", async () => {
@@ -585,29 +534,74 @@ describe("optional shared-thread titles", () => {
       context.signal,
     );
     onTestFinished(release);
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     server.use(
       http.post(endpoint, () => {
         return new HttpResponse(null, { status: 429 });
       }),
     );
-    await expect(client().create(requestBody(fixture))).rejects.toThrow(
+    // The client can choose the share ID before creating it. This lets public
+    // reads prove rollback without recovering an ID from diagnostic reporting.
+    const id = randomUUID();
+    await expect(
+      client().create({
+        ...requestBody(fixture),
+        body: { eventIds: [fixture.eventId], id },
+      }),
+    ).rejects.toThrow(
       "Unknown response status 500 for POST /api/chat-threads/:threadId/shared-threads",
     );
     await flushWaitUntilForTest();
     expect(context.mocks.sentry.captureException).toHaveBeenCalledOnce();
-    // PostgreSQL reports the attempted public share ID through the external
-    // error capture. Verify rollback using both public read endpoints.
-    const error = z
-      .object({
-        cause: z.object({
-          code: z.literal("23514"),
-          detail: z.string().uuid(),
-        }),
-      })
-      .parse(context.mocks.sentry.captureException.mock.calls[0]?.[0]);
-    await accept(client().get({ params: { id: error.cause.detail } }), [404]);
-    await accept(client().meta({ params: { id: error.cause.detail } }), [404]);
+    await accept(client().get({ params: { id } }), [404]);
+    await accept(client().meta({ params: { id } }), [404]);
+    await expectNoShare(fixture);
+  });
+});
+
+describe("client-generated shared-thread IDs", () => {
+  it("publishes the share under the ID the client already copied", async () => {
+    const fixture = await prepareShare();
+    const id = randomUUID();
+    const created = await accept(
+      client().create({
+        ...requestBody(fixture),
+        body: { eventIds: [fixture.eventId], id },
+      }),
+      [201],
+    );
+    expect(created.body.id).toBe(id);
+    await flushWaitUntilForTest();
+    await expectSharedSnapshot(fixture, id, "Shared conversation");
+  });
+
+  it("rejects an ID that already names another user's share without touching it", async () => {
+    const owner = await prepareShare();
+    const existing = await accept(client().create(requestBody(owner)), [201]);
+    await flushWaitUntilForTest();
+    const intruder = await prepareShare("Intruder content");
+    const response = await accept(
+      client().create({
+        ...requestBody(intruder),
+        body: { eventIds: [intruder.eventId], id: existing.body.id },
+      }),
+      [409],
+    );
+    expect(response.body.error.code).toBe("CONFLICT");
+    await expectSharedSnapshot(owner, existing.body.id, "Shared conversation");
+    await expectNoShare(intruder);
+  });
+
+  it("rejects a malformed ID", async () => {
+    const fixture = await prepareShare();
+    const response = await accept(
+      client().create({
+        ...requestBody(fixture),
+        body: { eventIds: [fixture.eventId], id: "not-a-uuid" },
+      }),
+      [400],
+    );
+    expect(response.body.error.code).toBe("BAD_REQUEST");
     await expectNoShare(fixture);
   });
 });

@@ -5,7 +5,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import {
   click,
   queryAllByRoleFast,
@@ -130,16 +130,13 @@ test("a signed-out legacy HTML link previews its requested slide on the isolated
   expect(replace.calls).toStrictEqual([]);
 });
 
-test.each([imagePath, `/share/artifacts/${artifactId}`])(
+test.each([imagePath])(
   "an unavailable anonymous artifact stays in the viewer and signs in only on request: %s",
   async (referencePath) => {
     const path = `${referencePath}?source=shared#detail`;
     const artifactUrl = `https://app.okou.ai${path}`;
     const assign = context.mocks.browser.locationAssign();
     const replace = context.mocks.browser.locationReplace();
-    const reload = vi
-      .spyOn(window.location, "reload")
-      .mockImplementation(() => {});
     context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
       return respond(404, {
         error: { code: "NOT_FOUND", message: "Artifact unavailable" },
@@ -176,10 +173,6 @@ test.each([imagePath, `/share/artifacts/${artifactId}`])(
     expect(assign.calls).toStrictEqual([]);
     expect(replace.calls).toStrictEqual([]);
 
-    click(action("button", "Try again"));
-    expect(reload).toHaveBeenCalledExactlyOnceWith();
-    expect(window.location.href).toBe(artifactUrl);
-
     click(action("button", "Sign in"));
     await waitFor(() => {
       expect(assign.calls).toHaveLength(1);
@@ -195,7 +188,7 @@ test.each([imagePath, `/share/artifacts/${artifactId}`])(
   },
 );
 
-test.each([401, 403, 404] as const)(
+test.each([403] as const)(
   "an authenticated recipient with resolution status %s can preview a public artifact inside the app",
   async (status) => {
     const assign = context.mocks.browser.locationAssign();

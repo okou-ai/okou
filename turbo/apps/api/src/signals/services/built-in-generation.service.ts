@@ -7,7 +7,6 @@ import {
   type BuiltInGenerationType,
 } from "@okouai/db/schema/built-in-generation-job";
 import type { BuiltInGenerationResponse } from "@okouai/api-contracts/contracts/built-in-generation";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -33,9 +32,8 @@ const BUILT_IN_GENERATION_TIMEOUT_ERROR: BuiltInGenerationError = Object.freeze(
   },
 );
 
-interface CreateBuiltInGenerationJobArgs {
+interface CreateImageGenerationJobArgs {
   readonly generationId: string;
-  readonly type: BuiltInGenerationType;
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string | undefined;
@@ -46,16 +44,11 @@ interface CreateBuiltInGenerationJobArgs {
 interface BuiltInGenerationRequestInternal {
   readonly privateArtifacts?: boolean;
   readonly admissionId?: string;
-  readonly publicBrand?: PublicBrand;
-  readonly provider?: "openai" | "fal" | "byteplus" | "minimax" | "joggai";
+  readonly provider?: "openai" | "fal" | "minimax" | "joggai";
   readonly providerJobId?: string;
-  readonly providerSessionId?: string;
-  readonly providerStatus?: string;
-  readonly providerNotice?: string;
   readonly providerStatusUrl?: string;
   readonly providerResponseUrl?: string;
   readonly providerTask?: string;
-  readonly presentation?: unknown;
 }
 
 export interface BuiltInGenerationWebhookJob {
@@ -112,22 +105,13 @@ export function builtInGenerationRequestWithInternal(
     [BUILT_IN_GENERATION_INTERNAL_REQUEST_KEY]: compactObject({
       admissionId: internal.admissionId,
       privateArtifacts: internal.privateArtifacts,
-      publicBrand: internal.publicBrand,
       provider: internal.provider,
       providerJobId: internal.providerJobId,
-      providerSessionId: internal.providerSessionId,
-      providerStatus: internal.providerStatus,
-      providerNotice: internal.providerNotice,
       providerStatusUrl: internal.providerStatusUrl,
       providerResponseUrl: internal.providerResponseUrl,
       providerTask: internal.providerTask,
-      presentation: internal.presentation,
     }),
   };
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
 }
 
 function parsePrivateArtifactsPolicy(value: unknown): boolean | undefined {
@@ -147,35 +131,19 @@ export function readBuiltInGenerationRequestInternal(
   if (!isRecord(value)) {
     return {};
   }
-  const publicBrand = value.publicBrand;
-  if (
-    Object.hasOwn(value, "publicBrand") &&
-    publicBrand !== "vm0" &&
-    publicBrand !== "okou"
-  ) {
-    throw new Error(
-      `Invalid built-in generation public brand: ${String(publicBrand)}`,
-    );
-  }
   return {
     privateArtifacts: parsePrivateArtifactsPolicy(value.privateArtifacts),
     admissionId:
       typeof value.admissionId === "string" ? value.admissionId : undefined,
-    publicBrand:
-      publicBrand === "vm0" || publicBrand === "okou" ? publicBrand : undefined,
     provider:
       value.provider === "openai" ||
       value.provider === "fal" ||
-      value.provider === "byteplus" ||
       value.provider === "minimax" ||
       value.provider === "joggai"
         ? value.provider
         : undefined,
     providerJobId:
       typeof value.providerJobId === "string" ? value.providerJobId : undefined,
-    providerSessionId: optionalString(value.providerSessionId),
-    providerStatus: optionalString(value.providerStatus),
-    providerNotice: optionalString(value.providerNotice),
     providerStatusUrl:
       typeof value.providerStatusUrl === "string"
         ? value.providerStatusUrl
@@ -186,15 +154,7 @@ export function readBuiltInGenerationRequestInternal(
         : undefined,
     providerTask:
       typeof value.providerTask === "string" ? value.providerTask : undefined,
-    presentation: value.presentation,
   };
-}
-
-export function builtInGenerationPublicBrand(request: unknown): PublicBrand {
-  // Historical pre-brand requests retain their VM0 artifact identity. This
-  // is permanent read compatibility per #28449; current writers set publicBrand.
-  // Invalid present values throw above.
-  return readBuiltInGenerationRequestInternal(request).publicBrand ?? "vm0";
 }
 
 export function builtInGenerationIsPrivate(request: unknown): boolean {
@@ -328,26 +288,27 @@ async function publishJobSafely(job: BuiltInGenerationJobRow): Promise<void> {
   await publishBuiltInGenerationChanged(job.userId, job.id, payload);
 }
 
-export const createBuiltInGenerationJob$ = command(
+export const createImageGenerationJob$ = command(
   async (
     { get, set },
-    args: CreateBuiltInGenerationJobArgs,
+    args: CreateImageGenerationJobArgs,
     signal: AbortSignal,
   ) => {
     const privateArtifacts =
       args.privateArtifacts ??
-      ((args.type === "image" || args.type === "video") &&
-        (await get(privateArtifactCreationEnabled(args.orgId, args.userId))));
+      (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const [job] = await writeDb
       .insert(builtInGenerationJobs)
       .values({
         id: args.generationId,
-        type: args.type,
+        type: "image",
         orgId: args.orgId,
         userId: args.userId,
         runId: args.runId ?? null,
+        billingRunId: args.runId ?? null,
+        billingContext: args.runId === undefined ? "runless" : "run",
         request: builtInGenerationRequestWithInternal(args.request, {
           ...readBuiltInGenerationRequestInternal(args.request),
           privateArtifacts,
@@ -504,7 +465,7 @@ export const mergeBuiltInGenerationJobInternal$ = command(
     const writeDb = set(writeDb$);
     const patch = compactObject({ ...args.internal });
     // Merge in SQL so callbacks and submission/status persistence cannot erase
-    // each other's session ID, video ID, or admission metadata.
+    // each other's provider job or admission metadata.
     await writeDb
       .update(builtInGenerationJobs)
       .set({
@@ -542,55 +503,6 @@ export const getBuiltInGenerationWebhookJob$ = command(
           inArray(builtInGenerationJobs.status, [
             ...ACTIVE_BUILT_IN_GENERATION_STATUSES,
           ]),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!job || !isRecord(job.request)) {
-      return null;
-    }
-    return { ...job, request: job.request };
-  },
-);
-
-export const getBuiltInGenerationWebhookJobByProviderJobId$ = command(
-  async (
-    { set },
-    args: {
-      readonly provider: NonNullable<
-        BuiltInGenerationRequestInternal["provider"]
-      >;
-      readonly providerJobId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<BuiltInGenerationWebhookJob | null> => {
-    const writeDb = set(writeDb$);
-    const [job] = await writeDb
-      .select({
-        id: builtInGenerationJobs.id,
-        type: builtInGenerationJobs.type,
-        status: builtInGenerationJobs.status,
-        orgId: builtInGenerationJobs.orgId,
-        userId: builtInGenerationJobs.userId,
-        runId: builtInGenerationJobs.runId,
-        billingRunId: builtInGenerationJobs.billingRunId,
-        billingContext: builtInGenerationJobs.billingContext,
-        request: builtInGenerationJobs.request,
-      })
-      .from(builtInGenerationJobs)
-      .where(
-        and(
-          inArray(builtInGenerationJobs.status, [
-            ...ACTIVE_BUILT_IN_GENERATION_STATUSES,
-          ]),
-          eq(
-            sql`${builtInGenerationJobs.request}->${BUILT_IN_GENERATION_INTERNAL_REQUEST_KEY}->>'provider'`,
-            args.provider,
-          ),
-          eq(
-            sql`${builtInGenerationJobs.request}->${BUILT_IN_GENERATION_INTERNAL_REQUEST_KEY}->>'providerJobId'`,
-            args.providerJobId,
-          ),
         ),
       )
       .limit(1);

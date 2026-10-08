@@ -23,44 +23,8 @@ export interface OpenRouterTokenCounts {
   readonly reasoningTokens?: number;
 }
 
-/**
- * Optional, caller-owned observation for one attempt. Only first-party finite
- * values enter it; it never holds a response, exception, or provider string.
- * Keeping it separate also preserves primitive rejection and error identity.
- */
-export interface OpenRouterDiagnostics extends OpenRouterTokenCounts {
-  phase:
-    | "configuration"
-    | "fetch"
-    | "status"
-    | "body_read"
-    | "json_validation"
-    | "output_validation"
-    | "usage_validation"
-    | "settlement";
-  detail?:
-    | "invalid_json"
-    | "missing_choices"
-    | "completion_error"
-    | "non_stop"
-    | "invalid_content"
-    | "empty_content";
-  upstreamStatus?: number;
-  finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | "error";
-  nativeFinishReason?:
-    | "MAX_TOKENS"
-    | "STOP"
-    | "SAFETY"
-    | "RECITATION"
-    | "OTHER";
-}
-
 const failureReasons = singleton(() => {
   return new WeakMap<object, OpenRouterFailureReason>();
-});
-
-const failureTokenCounts = singleton(() => {
-  return new WeakMap<object, OpenRouterTokenCounts>();
 });
 
 export function openRouterFailureReason(
@@ -96,28 +60,6 @@ export function recordOpenRouterFailure(
   if (typeof error === "object" && error !== null) {
     failureReasons().set(error, reason);
   }
-}
-
-/**
- * Token counts belonging to the completion that produced this failure. A
- * truncated completion still reports usage, and that usage is the only direct
- * evidence of how much of the shared budget the model spent on thinking.
- */
-export function recordOpenRouterFailureTokenCounts(
-  error: unknown,
-  counts: OpenRouterTokenCounts,
-): void {
-  if (typeof error === "object" && error !== null) {
-    failureTokenCounts().set(error, counts);
-  }
-}
-
-export function openRouterFailureTokenCounts(
-  error: unknown,
-): OpenRouterTokenCounts {
-  return typeof error === "object" && error !== null
-    ? (failureTokenCounts().get(error) ?? {})
-    : {};
 }
 
 function property(value: unknown, key: string): unknown {

@@ -7,15 +7,12 @@ import {
   personalModelProvidersByTypeContract,
   personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { mockNow, now } from "../../../lib/time";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readUserSecrets } from "./helpers/user-config-state";
 import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
@@ -155,14 +152,6 @@ function codexUsageResponse() {
   };
 }
 
-async function enablePersonalModelProviderAccounts(
-  fixture: UserModelProviderFixture,
-): Promise<void> {
-  await updateFeatureSwitchesForUser(context, fixture, {
-    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-  });
-}
-
 describe("POST /api/me/model-providers (upsert)", () => {
   it("returns 401 when unauthenticated", async () => {
     const client = setupApp({
@@ -171,7 +160,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
     })(personalModelProvidersMainContract);
     const response = await accept(
       client.upsert({
-        body: { type: "anthropic-api-key", secret: "sk-ant-test" },
+        body: { type: "claude-code-oauth-token", secret: "sk-ant-test" },
         headers: {},
       }),
       [401],
@@ -187,7 +176,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
     })(personalModelProvidersMainContract);
     const response = await accept(
       client.upsert({
-        body: { type: "anthropic-api-key", secret: "sk-ant-test" },
+        body: { type: "claude-code-oauth-token", secret: "sk-ant-test" },
         headers: { authorization: "Bearer clerk-session" },
       }),
       [401],
@@ -214,46 +203,9 @@ describe("POST /api/me/model-providers (upsert)", () => {
       provider: {
         type: "claude-code-oauth-token",
         framework: "claude-code",
-        isDefault: false,
       },
       created: true,
     });
-
-    const storedSecrets = await readUserSecrets(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-    });
-    expect(
-      storedSecrets.some((secret) => {
-        return secret.type === "model-provider";
-      }),
-    ).toBeTruthy();
-    expect(JSON.stringify(storedSecrets)).not.toContain("sk-ant-test");
-  });
-
-  it("updates an existing personal provider with 200", async () => {
-    const fixture = uniqueOrgUser("zmmp-single-update");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    await accept(
-      client.upsert({
-        body: { type: "claude-code-oauth-token", secret: "first" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-    const response = await accept(
-      client.upsert({
-        body: { type: "claude-code-oauth-token", secret: "second" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(response.body).toMatchObject({ created: false });
   });
 
   it("returns 400 when single-secret provider is missing the secret", async () => {
@@ -274,53 +226,54 @@ describe("POST /api/me/model-providers (upsert)", () => {
     expect(response.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
   });
 
-  it("returns 404 for anthropic-api-key", async () => {
-    const fixture = uniqueOrgUser("zmmp-anthropic-rejected");
+  it("rejects codex auth methods other than auth_json and keeps the active account", async () => {
+    const fixture = uniqueOrgUser("zmmp-codex-other-auth");
     mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const response = await accept(
-      client.upsert({
-        body: { type: "anthropic-api-key", secret: "sk-ant-test" },
-        headers: { authorization: "Bearer clerk-session" },
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+        return HttpResponse.json(codexUsageResponse());
       }),
-      [404],
     );
-    expect(response.body).toMatchObject({
-      error: {
-        code: "NOT_FOUND",
-        message: 'Provider "anthropic-api-key" not found',
-      },
-    });
-  });
-
-  it("returns 404 for openai-api-key", async () => {
-    const fixture = uniqueOrgUser("zmmp-openai-rejected");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const client = setupApp({
       context,
       routes: personalModelProvidersMainTestRoutes,
     })(personalModelProvidersMainContract);
-    const response = await accept(
+    await accept(
       client.upsert({
         body: {
-          type: "openai-api-key",
-          secret: "sk-proj-test",
-          selectedModel: "gpt-5.6-luna",
+          type: "codex-oauth-token",
+          authMethod: "auth_json",
+          secrets: { CODEX_AUTH_JSON: makeAuthJson() },
         },
         headers: { authorization: "Bearer clerk-session" },
       }),
-      [404],
+      [201],
     );
-    expect(response.body).toMatchObject({
-      error: {
-        code: "NOT_FOUND",
-        message: 'Provider "openai-api-key" not found',
-      },
+
+    const rejected = await accept(
+      client.upsert({
+        body: {
+          type: "codex-oauth-token",
+          authMethod: "oauth_token",
+          secrets: {},
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [400],
+    );
+    expect(rejected.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
+
+    const listed = await accept(
+      client.list({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(listed.body.modelProviders).toHaveLength(1);
+    expect(listed.body.modelProviders[0]).toMatchObject({
+      type: "codex-oauth-token",
+      accountEmail: "codex.user@example.com",
     });
   });
 
@@ -409,7 +362,6 @@ describe("POST /api/me/model-providers (upsert)", () => {
     expect(response.body).toMatchObject({
       provider: {
         type: "codex-oauth-token",
-        authMethod: "auth_json",
         workspaceName: "Personal Acme",
         planType: "pro",
         subscriptionResetPeriod: "weekly",
@@ -638,7 +590,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("does not consume a reset credit after terminal Codex refresh failure", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-reset-terminal");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const connectedAt = now();
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: 3600 });
     let refreshCalls = 0;
@@ -714,7 +666,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("retries reset after transient Codex refresh failure", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-reset-transient");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const connectedAt = now();
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: 3600 });
     const idempotencyKey = randomUUID();
@@ -788,9 +740,9 @@ describe("POST /api/me/model-providers (upsert)", () => {
     expect(consumeCalls).toBe(1);
   });
 
-  it("coalesces concurrent refreshes for an expired Codex account", async () => {
+  it("refreshes an expired Codex account once and reuses the rotated token", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-refresh");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
     const refreshedAccessToken = "fresh-chatgpt-access-token";
     const refreshedRefreshToken = "rotated-chatgpt-refresh-token";
@@ -842,22 +794,12 @@ describe("POST /api/me/model-providers (upsert)", () => {
       modelProviderId: expect.any(String),
       needsReconnect: false,
     });
-    const [first, second] = await Promise.all([
-      accept(
-        client.list({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const listed = await accept(
+        client.list({ headers: { authorization: "Bearer clerk-session" } }),
         [200],
-      ),
-      accept(
-        client.list({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      ),
-    ]);
-    for (const response of [first, second]) {
-      expect(response.body.modelProviders[0]).toMatchObject({
+      );
+      expect(listed.body.modelProviders[0]).toMatchObject({
         id: connected.body.provider.id,
         needsReconnect: false,
         subscriptionUsage: {
@@ -872,17 +814,11 @@ describe("POST /api/me/model-providers (upsert)", () => {
       `Bearer ${refreshedAccessToken}`,
       `Bearer ${refreshedAccessToken}`,
     ]);
-
-    await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(refreshCalls).toBe(1);
   });
 
   it("returns and short-circuits terminal Codex reconnect state", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-terminal");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
     let refreshCalls = 0;
     let usageCalls = 0;
@@ -942,7 +878,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("retries transient Codex refresh failure without false reconnect", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-transient");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
     let refreshCalls = 0;
     let usageCalls = 0;
@@ -1018,7 +954,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("isolates Codex usage response failures to account enrichment", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-usage-errors");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     let usageCalls = 0;
     let refreshCalls = 0;
     server.use(
@@ -1082,7 +1018,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("keeps the stored Codex provider on an upstream usage outage", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-usage-unavailable");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     let usageCalls = 0;
     let refreshCalls = 0;
     server.use(

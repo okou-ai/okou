@@ -28,11 +28,11 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
-  s3ObjectHead,
+  isS3NotFoundError,
 } from "../external/s3";
 import { safeJsonParse, safeSync, settle } from "../utils";
 
@@ -510,18 +510,6 @@ const downloadProjectionManifest$ = command(
   ): Promise<ManifestValidationResult> => {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const manifestKey = `${work.s3Key}/manifest.json`;
-    const manifestHead = await get(s3ObjectHead(bucket, manifestKey));
-    signal.throwIfAborted();
-    if (manifestHead.kind === "missing") {
-      return { status: "missing" };
-    }
-    if (
-      manifestHead.contentLength !== undefined &&
-      manifestHead.contentLength > MANIFEST_MAX_BYTES
-    ) {
-      return { status: "over_limit" };
-    }
-
     const manifestDownload = await settle(
       get(
         downloadS3BufferWithMaxBytes(
@@ -534,6 +522,9 @@ const downloadProjectionManifest$ = command(
       signal,
     );
     if (!manifestDownload.ok) {
+      if (isS3NotFoundError(manifestDownload.error)) {
+        return { status: "missing" };
+      }
       if (manifestDownload.error instanceof S3ObjectSizeLimitError) {
         return { status: "over_limit" };
       }
@@ -555,22 +546,9 @@ const downloadProjectionArchive$ = command(
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const work = args.work;
     const archiveKey = `${work.s3Key}/archive.tar.gz`;
-    if (
-      !Number.isSafeInteger(work.archiveSize) ||
-      work.archiveSize <= 0 ||
-      work.archiveSize > ARCHIVE_MAX_BYTES
-    ) {
-      return { status: "over_limit" };
-    }
-    const archiveHead = await get(s3ObjectHead(bucket, archiveKey));
-    signal.throwIfAborted();
-    if (archiveHead.kind === "missing") {
-      return { status: "missing" };
-    }
-    if (archiveHead.contentLength !== work.archiveSize) {
-      return { status: "invalid" };
-    }
-
+    // The registered archiveSize is a hint, not a physical identity. A
+    // previously issued upload URL can leave a different gzip size for the
+    // same logical version; enforce limits on the actual object instead.
     const archiveDownload = await settle(
       get(
         downloadS3BufferWithMaxBytes(
@@ -583,13 +561,13 @@ const downloadProjectionArchive$ = command(
       signal,
     );
     if (!archiveDownload.ok) {
+      if (isS3NotFoundError(archiveDownload.error)) {
+        return { status: "missing" };
+      }
       if (archiveDownload.error instanceof S3ObjectSizeLimitError) {
         return { status: "over_limit" };
       }
       throw archiveDownload.error;
-    }
-    if (archiveDownload.value.length !== work.archiveSize) {
-      return { status: "invalid" };
     }
     const extracted = extractSummaryFromArchive(archiveDownload.value);
     if (extracted.status !== "found") {
@@ -852,110 +830,41 @@ function readyProjectionIsAuthentic(
   );
 }
 
-async function requeueInvalidReadyProjection(
-  db: Db,
-  scope: MemorySummaryProjectionScope,
-  signal: AbortSignal,
-): Promise<void> {
-  await db
-    .update(memorySummaryProjections)
-    .set({
-      status: "pending",
-      leaseId: null,
-      leaseExpiresAt: null,
-      availableAt: nowDate(),
-      lastErrorClass: "read_integrity_mismatch",
-      content: null,
-      sourceHash: null,
-      sourceSize: null,
-      tokenCount: null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(memorySummaryProjections.memoryStorageId, scope.memoryStorageId),
-        eq(memorySummaryProjections.storageVersionId, scope.storageVersionId),
-        eq(memorySummaryProjections.status, "ready"),
-      ),
-    );
-  signal.throwIfAborted();
+export interface MemorySummaryProjectionReadInput {
+  readonly args: ReadMemorySummaryProjectionArgs;
 }
 
-export async function readMemorySummaryProjection(
-  db: Db,
-  args: ReadMemorySummaryProjectionArgs,
-  signal: AbortSignal,
-): Promise<ReadyMemorySummaryProjection | null> {
-  const [row] = await db
-    .select({
-      storageId: storages.id,
-      storageOrgId: storages.orgId,
-      storageUserId: storages.userId,
-      storageName: storages.name,
-      projectionStatus: memorySummaryProjections.status,
-      content: memorySummaryProjections.content,
-      sourceHash: memorySummaryProjections.sourceHash,
-      sourceSize: memorySummaryProjections.sourceSize,
-      tokenCount: memorySummaryProjections.tokenCount,
-    })
-    .from(storages)
-    .innerJoin(
-      storageVersions,
-      and(
-        eq(storageVersions.storageId, storages.id),
-        eq(storageVersions.id, args.storageVersionId),
-      ),
-    )
-    .leftJoin(
-      memorySummaryProjections,
-      and(
-        eq(memorySummaryProjections.memoryStorageId, storages.id),
-        eq(memorySummaryProjections.storageVersionId, storageVersions.id),
-        eq(memorySummaryProjections.orgId, args.orgId),
-        eq(memorySummaryProjections.userId, args.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(storages.id, args.memoryStorageId),
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, args.userId),
-        eq(storages.name, MEMORY_ARTIFACT_NAME),
-        ne(storages.userId, VOLUME_ORG_USER_ID),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
+interface MemorySummaryProjectionReadRow {
+  readonly storageId: string;
+  readonly storageOrgId: string;
+  readonly storageUserId: string;
+  readonly storageName: string;
+  readonly projectionStatus: string | null;
+  readonly content: string | null;
+  readonly sourceHash: string | null;
+  readonly sourceSize: number | null;
+  readonly tokenCount: number | null;
+}
+
+export interface MemorySummaryProjectionReadResult {
+  readonly input: MemorySummaryProjectionReadInput;
+  readonly ready: ReadyMemorySummaryProjection | null;
+  readonly unavailableReason?: "missing" | "invalid";
+}
+
+export function memorySummaryProjectionReadResult(
+  input: MemorySummaryProjectionReadInput,
+  row: MemorySummaryProjectionReadRow | undefined,
+): MemorySummaryProjectionReadResult {
   if (!row) {
-    return null;
+    return { input, ready: null, unavailableReason: "missing" };
   }
   if (row.projectionStatus === null) {
-    const enqueued = await settle(
-      enqueueMemorySummaryProjection(
-        {
-          db,
-          storage: {
-            id: row.storageId,
-            orgId: row.storageOrgId,
-            userId: row.storageUserId,
-            name: row.storageName,
-          },
-          storageVersionId: args.storageVersionId,
-        },
-        signal,
-      ),
-      signal,
-    );
-    if (!enqueued.ok) {
-      log.warn("Memory summary projection read enqueue failed", {
-        orgId: args.orgId,
-        userId: args.userId,
-        memoryStorageId: args.memoryStorageId,
-        storageVersionId: args.storageVersionId,
-        errorClass: retryErrorClass(enqueued.error),
-      });
-    }
-    return null;
+    return {
+      input,
+      ready: null,
+      unavailableReason: "missing",
+    };
   }
   if (
     row.projectionStatus !== "ready" ||
@@ -964,41 +873,77 @@ export async function readMemorySummaryProjection(
     row.sourceSize === null ||
     row.tokenCount === null
   ) {
-    return null;
+    return {
+      input,
+      ready: null,
+      ...(row.projectionStatus === "ready"
+        ? { unavailableReason: "invalid" as const }
+        : {}),
+    };
   }
-
   const ready = {
     content: row.content,
     sourceHash: row.sourceHash,
     sourceSize: row.sourceSize,
     tokenCount: row.tokenCount,
   };
-  if (!readyProjectionIsAuthentic(ready)) {
-    const requeued = await settle(
-      requeueInvalidReadyProjection(
-        db,
-        {
-          memoryStorageId: args.memoryStorageId,
-          storageVersionId: args.storageVersionId,
-        },
-        signal,
-      ),
-      signal,
-    );
-    log.warn("Memory summary projection failed read integrity", {
-      orgId: args.orgId,
-      userId: args.userId,
-      memoryStorageId: args.memoryStorageId,
-      storageVersionId: args.storageVersionId,
-      errorClass: "read_integrity_mismatch",
-      requeueErrorClass: requeued.ok
-        ? undefined
-        : retryErrorClass(requeued.error),
-    });
-    return null;
-  }
-  return ready;
+  return readyProjectionIsAuthentic(ready)
+    ? { input, ready }
+    : { input, ready: null, unavailableReason: "invalid" };
 }
+
+/** Read one immutable projection snapshot without scheduling repair. */
+export const readMemorySummaryProjectionObservation$ = command(
+  async (
+    { get },
+    args: ReadMemorySummaryProjectionArgs,
+    signal: AbortSignal,
+  ): Promise<MemorySummaryProjectionReadResult> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        storageId: storages.id,
+        storageOrgId: storages.orgId,
+        storageUserId: storages.userId,
+        storageName: storages.name,
+        projectionStatus: memorySummaryProjections.status,
+        content: memorySummaryProjections.content,
+        sourceHash: memorySummaryProjections.sourceHash,
+        sourceSize: memorySummaryProjections.sourceSize,
+        tokenCount: memorySummaryProjections.tokenCount,
+      })
+      .from(storages)
+      .innerJoin(
+        storageVersions,
+        and(
+          eq(storageVersions.storageId, storages.id),
+          eq(storageVersions.id, args.storageVersionId),
+        ),
+      )
+      .leftJoin(
+        memorySummaryProjections,
+        and(
+          eq(memorySummaryProjections.memoryStorageId, storages.id),
+          eq(memorySummaryProjections.storageVersionId, storageVersions.id),
+          eq(memorySummaryProjections.orgId, args.orgId),
+          eq(memorySummaryProjections.userId, args.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(storages.id, args.memoryStorageId),
+          eq(storages.orgId, args.orgId),
+          eq(storages.userId, args.userId),
+          eq(storages.name, MEMORY_ARTIFACT_NAME),
+          ne(storages.userId, VOLUME_ORG_USER_ID),
+        ),
+      )
+      .limit(1);
+
+    signal.throwIfAborted();
+    return memorySummaryProjectionReadResult({ args }, row);
+  },
+);
 
 export const readMemorySummaryProjection$ = command(
   async (
@@ -1006,6 +951,17 @@ export const readMemorySummaryProjection$ = command(
     args: ReadMemorySummaryProjectionArgs,
     signal: AbortSignal,
   ): Promise<ReadyMemorySummaryProjection | null> => {
-    return await readMemorySummaryProjection(set(writeDb$), args, signal);
+    const observation = await set(
+      readMemorySummaryProjectionObservation$,
+      args,
+      signal,
+    );
+    if (observation.unavailableReason) {
+      log.warn("Memory summary projection is not ready", {
+        ...args,
+        reason: observation.unavailableReason,
+      });
+    }
+    return observation.ready;
   },
 );

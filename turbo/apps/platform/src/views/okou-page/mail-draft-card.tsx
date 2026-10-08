@@ -59,7 +59,7 @@ function MailDraftCardSkeleton() {
   return (
     <div
       data-testid="mail-draft-card-loading"
-      className="flex h-full w-full items-center gap-3 rounded-[var(--okou-card-radius)] border border-border/70 bg-card px-4 py-3"
+      className="flex h-full w-full items-center gap-3 rounded-[var(--okou-chat-card-radius)] border border-border/70 bg-card px-4 py-3"
     >
       <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
         <Loader2 className="animate-spin text-muted-foreground" size={16} />
@@ -171,7 +171,7 @@ function DeletedMailDraftCard({
       )}
       data-mail-draft-card
       data-mail-draft-status="deleted"
-      className="flex h-full w-full cursor-default items-center gap-3 rounded-[var(--okou-card-radius)] border border-border/60 bg-card px-4 py-3 opacity-70"
+      className="flex h-full w-full cursor-default items-center gap-3 rounded-[var(--okou-chat-card-radius)] border border-border/60 bg-card px-4 py-3 opacity-70"
     >
       <MailDraftCardContent
         draft={draft}
@@ -202,7 +202,7 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
     return (
       <div
         data-mail-draft-status="unavailable"
-        className="flex h-full items-center gap-3 rounded-[var(--okou-card-radius)] border border-border/70 bg-card px-4 py-3"
+        className="flex h-full items-center gap-3 rounded-[var(--okou-chat-card-radius)] border border-border/70 bg-card px-4 py-3"
       >
         <AlertCircle size={20} className="shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 line-clamp-2 text-sm text-muted-foreground">
@@ -265,7 +265,7 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
         )}
         data-mail-draft-card
         data-mail-draft-status={draft.status}
-        className="flex h-full w-full items-center gap-3 rounded-[var(--okou-card-radius)] border border-border/70 bg-card px-4 py-3 text-left transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
+        className="flex h-full w-full items-center gap-3 rounded-[var(--okou-chat-card-radius)] border border-border/70 bg-card px-4 py-3 text-left transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
       >
         {content}
       </button>
@@ -290,7 +290,7 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
       data-mail-draft-status={draft.status}
       onClick={openDraft}
       className={cn(
-        "flex h-full w-full items-center gap-3 rounded-[var(--okou-card-radius)] border bg-card px-4 py-3 text-left transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "flex h-full w-full items-center gap-3 rounded-[var(--okou-chat-card-radius)] border bg-card px-4 py-3 text-left transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         selected ? "border-ring/60 bg-muted/20" : "border-border/70",
       )}
     >

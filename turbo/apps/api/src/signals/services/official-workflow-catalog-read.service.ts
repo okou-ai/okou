@@ -14,9 +14,11 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { command } from "ccstate";
 import { and, asc, eq, or } from "drizzle-orm";
 
-import type { ReadonlyDb } from "../external/db";
+import type { Tx } from "../../lib/db-types";
+import { writeDb$, type ReadonlyDb } from "../external/db";
 
 export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
 
@@ -49,7 +51,7 @@ function officialWorkflowPayloadSchemaVersion(payload: unknown): number {
   return payload.schemaVersion;
 }
 
-function acceptedRevisionFromRow(
+export function acceptedRevisionFromRow(
   row: OfficialWorkflowRevisionRow,
 ): OfficialWorkflowAcceptedRevision {
   const definition = officialWorkflowDefinitionRevisionPayloadSchema.parse(
@@ -69,6 +71,24 @@ function acceptedRevisionFromRow(
       storageVersion: row.storageVersion,
     },
   });
+}
+
+/** Keep the accepted pointer stable until the caller's transaction commits. */
+export async function lockAcceptedOfficialWorkflowCatalog(
+  tx: Tx,
+): Promise<void> {
+  // SHARE conflicts with the publisher's non-key pointer UPDATE. KEY SHARE
+  // would allow that update and would not preserve the accepted revision.
+  await tx
+    .select({ authority: officialWorkflowCatalogState.authority })
+    .from(officialWorkflowCatalogState)
+    .where(
+      eq(
+        officialWorkflowCatalogState.authority,
+        OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+      ),
+    )
+    .for("share");
 }
 
 export async function readAcceptedOfficialWorkflowCatalog(
@@ -96,6 +116,12 @@ export async function readAcceptedOfficialWorkflowCatalog(
     )
     .limit(1);
   signal?.throwIfAborted();
+  return acceptedCatalogFromRow(row);
+}
+
+export function acceptedCatalogFromRow(
+  row: { readonly releaseId: string; readonly payload: unknown } | undefined,
+): AcceptedOfficialWorkflowCatalog | null {
   if (!row) {
     return null;
   }
@@ -110,6 +136,98 @@ export async function readAcceptedOfficialWorkflowCatalog(
     payload: officialWorkflowCatalogReleasePayloadSchema.parse(row.payload),
   };
 }
+
+export const readAcceptedOfficialWorkflowCatalog$ = command(
+  async (
+    { set },
+    signal: AbortSignal,
+  ): Promise<AcceptedOfficialWorkflowCatalog | null> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select({
+        releaseId: officialWorkflowCatalogState.acceptedReleaseId,
+        payload: officialWorkflowCatalogReleases.payload,
+      })
+      .from(officialWorkflowCatalogState)
+      .innerJoin(
+        officialWorkflowCatalogReleases,
+        eq(
+          officialWorkflowCatalogReleases.id,
+          officialWorkflowCatalogState.acceptedReleaseId,
+        ),
+      )
+      .where(
+        eq(
+          officialWorkflowCatalogState.authority,
+          OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !row ||
+      officialWorkflowPayloadSchemaVersion(row.payload) <
+        OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION
+    ) {
+      return null;
+    }
+    return {
+      releaseId: row.releaseId,
+      payload: officialWorkflowCatalogReleasePayloadSchema.parse(row.payload),
+    };
+  },
+);
+
+export const readAcceptedOfficialWorkflowRevision$ = command(
+  async (
+    { set },
+    args: { readonly name: string; readonly revision: string },
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowAcceptedRevision | null> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select({
+        definitionName: officialWorkflowDefinitionRevisions.definitionName,
+        revision: officialWorkflowDefinitionRevisions.revision,
+        payload: officialWorkflowDefinitionRevisions.payload,
+        storageName: officialWorkflowDefinitionRevisions.storageName,
+        storageId: officialWorkflowDefinitionRevisions.storageId,
+        storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
+      })
+      .from(officialWorkflowDefinitionRevisions)
+      .innerJoin(
+        storages,
+        and(
+          eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
+          eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
+          eq(storages.orgId, SYSTEM_ORG_ID),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
+        ),
+      )
+      .innerJoin(
+        storageVersions,
+        and(
+          eq(
+            storageVersions.id,
+            officialWorkflowDefinitionRevisions.storageVersion,
+          ),
+          eq(
+            storageVersions.storageId,
+            officialWorkflowDefinitionRevisions.storageId,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(officialWorkflowDefinitionRevisions.definitionName, args.name),
+          eq(officialWorkflowDefinitionRevisions.revision, args.revision),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return row ? acceptedRevisionFromRow(row) : null;
+  },
+);
 
 export async function readAcceptedOfficialWorkflowDefinition(
   db: ReadonlyDb,

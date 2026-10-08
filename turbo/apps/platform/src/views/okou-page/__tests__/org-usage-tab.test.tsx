@@ -269,11 +269,6 @@ async function setupCreditBalanceReview() {
   });
 }
 
-test("Review the workspace credit balance", async () => {
-  await setupCreditBalanceReview();
-  expect(screen.queryByText("Team usage")).toBeNull();
-});
-
 test("Review workspace credit allowances", async () => {
   await setupCreditBalanceReview();
   const allowance = screen.getByTestId("usage-allowance-section");

@@ -25,69 +25,14 @@ function unsubscribeToken(userId: string): string {
   return `${userId}.${signature}`;
 }
 
-describe("MISC-01: organization logo and profile-adjacent API boundaries", () => {
-  it("chains logo read, upload validation, upload success, and delete through public API", async () => {
-    const { api, admin, member } = testActors();
-
-    const unauthenticated = await api.requestOrgLogo(null, [401]);
-    expectApiError(unauthenticated.body);
-
-    api.setOrgLogoRead({
-      imageUrl: "https://images.example.test/org-logo.png",
-      hasImage: true,
-    });
-    const current = await api.requestOrgLogo(admin, [200]);
-    expect(current.body).toStrictEqual({
-      logoUrl: "https://images.example.test/org-logo.png",
-      hasImage: true,
-    });
-
-    const memberUpload = await api.uploadOrgLogo(
-      member,
-      new File([new Uint8Array([1])], "logo.png", { type: "image/png" }),
-      [403],
-    );
-    expectApiError(memberUpload.body);
-    expect(memberUpload.body.error.message).toBe(
-      "Only admins can upload the logo",
-    );
-
-    const missingFile = await api.uploadOrgLogo(admin, null, [400]);
-    expectApiError(missingFile.body);
-    expect(missingFile.body.error.message).toBe("No file provided");
-
-    api.setOrgLogoUpload({
-      imageUrl: "https://images.example.test/uploaded-logo.png",
-      hasImage: true,
-    });
-    const uploaded = await api.uploadOrgLogo(
-      admin,
-      new File([new Uint8Array([1, 2])], "logo.webp", {
-        type: "image/webp",
-      }),
-      [200],
-    );
-    expect(uploaded.body).toStrictEqual({
-      logoUrl: "https://images.example.test/uploaded-logo.png",
-      hasImage: true,
-    });
-  });
-});
-
 describe("MISC-02: preferences, push subscription, user export, and empty logs", () => {
   it("chains visible user-scoped reads and writes without hidden fixtures", async () => {
     const { api, admin } = testActors();
 
-    const initialPreferences = await api.readPreferences(admin);
-    expect(initialPreferences.body).toMatchObject({
-      timezone: null,
-      locale: null,
-      pinnedAgentIds: [],
-      sendMode: "enter",
-      cloudBrowserEnabledByDefault: true,
-      theme: null,
-      colorTheme: null,
-    });
+    const initialPreferences = await api.readUninitializedPreferences(admin);
+    expect(initialPreferences.body.error.code).toBe(
+      "USER_PREFERENCES_UNINITIALIZED",
+    );
 
     const firstPinnedAgentId = "00000000-0000-0000-0000-000000000001";
     const secondPinnedAgentId = "00000000-0000-0000-0000-000000000002";
@@ -200,6 +145,11 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
 
   it("reads and writes every supported locale through the canonical contract", async () => {
     const { api, admin } = testActors();
+    await api.updatePreferences(
+      admin,
+      { timezone: "UTC", locale: "en-US" },
+      [200],
+    );
     const supportedLocales = [
       "en-US",
       "pt-BR",
@@ -342,55 +292,27 @@ describe("MISC-03: workflows lifecycle through public API", () => {
   });
 });
 
-describe("MISC-04: model providers, policies, and logs visible state", () => {
-  it("chains model provider setup, policy read/update, provider delete, and empty logs", async () => {
+describe("MISC-04: available run models, personal subscriptions, and logs", () => {
+  it("lists the fixed Auto model for both administrators and members", async () => {
     const { api, admin, member } = testActors();
-
-    const initialProviders = await api.listModelProviders(admin);
-    expect(initialProviders.body.modelProviders).toStrictEqual([]);
-
-    const deniedProvider = await api.upsertBuiltInProvider(member, [403]);
-    expectApiError(deniedProvider.body);
-
-    const createdProvider = await api.upsertBuiltInProvider(admin, [201]);
-    expect(createdProvider.body).toMatchObject({
-      created: true,
-      provider: { type: "built-in" },
-    });
-
-    const listedProviders = await api.listModelProviders(admin);
-    expect(
-      listedProviders.body.modelProviders.some((provider) => {
-        return provider.type === "built-in";
-      }),
-    ).toBeTruthy();
-
-    const policies = await api.listModelPolicies(admin);
-    expect(policies.policies.length).toBeGreaterThan(0);
-    const updatedPolicies = await api.updateModelPolicies(
-      admin,
-      policies.policies,
-      [200],
-    );
-    if (updatedPolicies.status !== 200) {
-      throw new Error(
-        `Expected model policies update to succeed, got ${updatedPolicies.status}`,
-      );
+    for (const actor of [admin, member]) {
+      const available = await api.listRunModels(actor);
+      expect(
+        available.models.map((model) => {
+          return model.model;
+        }),
+      ).toStrictEqual([null]);
+      expect(available.models[0]).toMatchObject({
+        memberEffective: expect.objectContaining({
+          providerType: "built-in",
+          credentialScope: "org",
+        }),
+        modelProviderId: null,
+      });
     }
-    expect(updatedPolicies.body.policies).toHaveLength(
-      policies.policies.length,
-    );
-
-    await api.deleteBuiltInProvider(admin, [204]);
-    const afterDelete = await api.listModelProviders(admin);
-    expect(
-      afterDelete.body.modelProviders.some((provider) => {
-        return provider.type === "built-in";
-      }),
-    ).toBeFalsy();
   });
 
-  it("chains personal model provider create, update, list, and delete through public API", async () => {
+  it("chains personal subscription account create, replace, list, and delete through public API", async () => {
     const { api, admin } = testActors();
 
     const unauthenticatedList = await api.listPersonalModelProviders(
@@ -404,19 +326,6 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       throw new Error("Expected personal model provider list response");
     }
     expect(initial.body.modelProviders).toStrictEqual([]);
-
-    const unsupported = await api.upsertPersonalModelProvider(
-      admin,
-      {
-        type: "anthropic-api-key",
-        secret: "bdd-anthropic-key",
-      },
-      [404],
-    );
-    expectApiError(unsupported.body);
-    expect(unsupported.body.error.message).toBe(
-      'Provider "anthropic-api-key" not found',
-    );
 
     const missingSecret = await api.upsertPersonalModelProvider(
       admin,
@@ -435,7 +344,6 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       {
         type: "claude-code-oauth-token",
         secret: "bdd-claude-oauth-token",
-        selectedModel: "claude-sonnet-5",
       },
       [201],
     );
@@ -443,14 +351,24 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       created: true,
       provider: {
         type: "claude-code-oauth-token",
-        secretName: "CLAUDE_CODE_OAUTH_TOKEN",
-        selectedModel: "claude-sonnet-5",
+        modelProviderId: expect.any(String),
+        isActive: true,
       },
     });
     if (!("provider" in created.body)) {
       throw new Error("Expected personal model provider upsert response");
     }
     expect("secret" in created.body.provider).toBeFalsy();
+    const connectedModels = await api.listRunModels(admin);
+    expect(connectedModels.models).toContainEqual(
+      expect.objectContaining({
+        model: "claude-sonnet-5-5",
+        memberEffective: expect.objectContaining({
+          providerType: "claude-code-oauth-token",
+          credentialScope: "member",
+        }),
+      }),
+    );
 
     const listed = await api.listPersonalModelProviders(admin, [200]);
     if (!("modelProviders" in listed.body)) {
@@ -459,25 +377,39 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
     expect(listed.body.modelProviders).toHaveLength(1);
     expect(listed.body.modelProviders[0]).toMatchObject({
       type: "claude-code-oauth-token",
-      secretName: "CLAUDE_CODE_OAUTH_TOKEN",
-      selectedModel: "claude-sonnet-5",
     });
 
-    const updated = await api.upsertPersonalModelProvider(
+    // Tokens without a resolved upstream identity replace the concrete account,
+    // while the logical provider remains the same.
+    const replaced = await api.upsertPersonalModelProvider(
       admin,
       {
         type: "claude-code-oauth-token",
         secret: "bdd-updated-claude-oauth-token",
-        selectedModel: "claude-opus-4-8",
       },
-      [200],
+      [201],
     );
-    expect(updated.body).toMatchObject({
-      created: false,
+    expect(replaced.body).toMatchObject({
+      created: true,
       provider: {
         type: "claude-code-oauth-token",
-        selectedModel: "claude-opus-4-8",
+        modelProviderId: created.body.provider.modelProviderId,
+        isActive: true,
       },
+    });
+    if (!("provider" in replaced.body)) {
+      throw new Error("Expected personal subscription account response");
+    }
+    expect(replaced.body.provider.id).not.toBe(created.body.provider.id);
+    const afterReplace = await api.listPersonalModelProviders(admin, [200]);
+    if (!("modelProviders" in afterReplace.body)) {
+      throw new Error("Expected personal model provider list response");
+    }
+    expect(afterReplace.body.modelProviders).toHaveLength(1);
+    expect(afterReplace.body.modelProviders[0]).toMatchObject({
+      id: replaced.body.provider.id,
+      modelProviderId: created.body.provider.modelProviderId,
+      isActive: true,
     });
 
     await api.deletePersonalModelProvider(
@@ -490,5 +422,11 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       throw new Error("Expected personal model provider list response");
     }
     expect(afterDelete.body.modelProviders).toStrictEqual([]);
+    const disconnectedModels = await api.listRunModels(admin);
+    expect(
+      disconnectedModels.models.map((model) => {
+        return model.model;
+      }),
+    ).toStrictEqual([null]);
   });
 });

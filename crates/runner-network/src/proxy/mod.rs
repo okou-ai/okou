@@ -65,6 +65,7 @@ mod delivery;
 mod log_flush;
 mod managed_process;
 mod process;
+mod recovery;
 mod registry;
 mod registry_application;
 mod run_usage;
@@ -75,6 +76,7 @@ pub use log_flush::{MitmJsonlFlushHandle, MitmRunLogFlush};
 pub use managed_process::ManagedMitmdump;
 pub use process::MitmRestartError;
 pub use process::{MitmProxy, ProxyConfig};
+pub use recovery::MitmRecovery;
 pub use registry::{
     ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication,
     ConnectorRuntimeRegistryTransaction, ConnectorRuntimeRegistryUpdate,

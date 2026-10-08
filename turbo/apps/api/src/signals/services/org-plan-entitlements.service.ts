@@ -83,7 +83,7 @@ export async function writeOrgMetadataWithPlanEntitlements<Row>(
   return rows;
 }
 
-function orgPlanEntitlementValues(
+export function orgPlanEntitlementValues(
   args: UpsertOrgPlanEntitlementArgs,
   stripeSubscriptionSnapshot: ResolvedStripeSubscriptionSnapshot,
 ) {
@@ -103,9 +103,7 @@ function orgPlanEntitlementValues(
     canBuyCredits: limits.canBuyCredits,
     showUsagePack,
     autoRechargeAllowed: limits.autoRechargeAllowed,
-    supportByok: limits.supportByok,
     restrictedBuiltInModels: limits.restrictedBuiltInModels,
-    videoGenerationAllowed: limits.videoGenerationAllowed,
     workflowWebhookTriggerAllowed: limits.workflowWebhookAutomationAllowed,
     audioLifetimeLimit: limits.audioLifetimeLimit,
     audioDailyRateLimit: limits.audioDailyRateLimit,
@@ -200,9 +198,7 @@ export async function upsertOrgPlanEntitlement(
         canBuyCredits: values.canBuyCredits,
         showUsagePack: values.showUsagePack,
         autoRechargeAllowed: values.autoRechargeAllowed,
-        supportByok: values.supportByok,
         restrictedBuiltInModels: values.restrictedBuiltInModels,
-        videoGenerationAllowed: values.videoGenerationAllowed,
         workflowWebhookTriggerAllowed: values.workflowWebhookTriggerAllowed,
         audioLifetimeLimit: values.audioLifetimeLimit,
         audioDailyRateLimit: values.audioDailyRateLimit,

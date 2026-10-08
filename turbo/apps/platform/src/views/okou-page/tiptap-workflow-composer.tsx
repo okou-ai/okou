@@ -9,9 +9,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
 import { Popover } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -289,7 +287,6 @@ interface ComposerSuggestionMenuState {
   readonly selectedIndex: number;
   readonly close: (restoreEditorFocus?: boolean) => void;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
-  /** Non-empty only while ComposerSlashTemplatePanel is on. */
   readonly panelCategories: readonly SlashTemplateCategory[];
   readonly previewIndex: number | null;
   readonly previewSuggestion: (index: number | null) => void;
@@ -299,7 +296,6 @@ interface ComposerSuggestionMenuState {
     category: SlashTemplateCategory,
   ) => void;
   readonly browseAllTemplates: () => void;
-  readonly showTemplatePanel: boolean;
   readonly workflowsLoading: boolean;
   readonly showWorkflows: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
@@ -323,11 +319,7 @@ const SLASH_TEMPLATE_CATEGORY_TASK = {
   website: "website",
 } as const satisfies Record<SlashTemplateCategory, ComposerTask>;
 
-/**
- * The panel's own switch is the only gate: the caller withholds the query while
- * it is off. Reading a second switch here is what used to let the task chips
- * decide whether the panel had any rows to show.
- */
+/** The template categories the typed slash query leaves, or none outside one. */
 function useSlashTemplateCategorySuggestions(
   query: string | undefined,
 ): readonly SlashTemplateCategory[] {
@@ -352,18 +344,12 @@ function useSlashTemplatePanelActions(
   query: string | undefined,
   close: () => void,
 ) {
-  const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerSlashTemplatePanel] ===
-    true;
   const clearSlashRange = useSet(composer.suggestion.clearSlashRange$);
   const openTask = useSet(composer.taskChips.openTask$);
   const insertTemplate = useSet(composer.template.insertTemplate$);
   const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
-  const categories = useSlashTemplateCategorySuggestions(
-    enabled ? query : undefined,
-  );
+  const categories = useSlashTemplateCategorySuggestions(query);
   return {
-    enabled,
     categories,
     /**
      * Consume the token and retire the menu first, then land on the task, and
@@ -409,15 +395,18 @@ function useComposerWorkflowSuggestions(
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
+  // Null means the list is not requested yet; the last loadable keeps that
+  // null while the first request is in flight.
+  const requested =
+    workflowsLoadable.state === "hasData" ? workflowsLoadable.data : undefined;
   const workflows = buildComposerSlashWorkflows({
     agentId: composer.agentId,
-    workflows:
-      workflowsLoadable.state === "hasData" ? workflowsLoadable.data : [],
+    workflows: requested ?? [],
   });
   return {
     workflows:
       query === undefined ? [] : findWorkflowQueryMatches(workflows, query),
-    loading: workflowsLoadable.state === "loading",
+    loading: workflowsLoadable.state === "loading" || requested === null,
   };
 }
 
@@ -472,7 +461,7 @@ interface SuggestionRowActions {
   readonly insertChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
 }
 
-/** The head row for an index; empty while the panel's switch is off. */
+/** The template category row for an index, if it is one. */
 function suggestionHeadRow(
   index: number,
   rows: SuggestionRows,
@@ -548,7 +537,6 @@ function useComposerSuggestionMenu({
     slashRange?.query,
     close,
   );
-  const templatePanelEnabled = templatePanel.enabled;
   const panelCategories = templatePanel.categories;
   const insertWorkflow = useSet(composer.workflow.insertWorkflow$);
   const insertAgent = useSet(composer.suggestion.insertAgent$);
@@ -624,7 +612,6 @@ function useComposerSuggestionMenu({
     selectCategory: templatePanel.selectCategory,
     selectTemplate: templatePanel.selectTemplate,
     browseAllTemplates: templatePanel.browseAll,
-    showTemplatePanel: templatePanelEnabled,
     workflowsLoading: workflowResult.loading,
     showWorkflows,
     agents,
@@ -757,34 +744,26 @@ export function TiptapWorkflowComposer({
             composer.editor.editor,
             suggestionMenu.range,
           )}
-          workflows={suggestionMenu.workflows}
-          loading={suggestionMenu.workflowsLoading}
-          selectedIndex={suggestionMenu.selectedIndex}
-          showWorkflowsPageLink
-          onSelect={suggestionMenu.selectWorkflow}
-          panel={
-            suggestionMenu.showTemplatePanel ? (
-              <SlashTemplatePanel
-                menuRef={setSuggestionMenuRef}
-                categories={suggestionMenu.panelCategories}
-                workflows={suggestionMenu.workflows}
-                workflowsLoading={suggestionMenu.workflowsLoading}
-                selectedIndex={suggestionMenu.selectedIndex}
-                previewIndex={suggestionMenu.previewIndex}
-                onPreview={suggestionMenu.previewSuggestion}
-                onSelectCategory={suggestionMenu.selectCategory}
-                onSelectTemplate={suggestionMenu.selectTemplate}
-                onSelectWorkflow={suggestionMenu.selectWorkflow}
-                onBrowseAll={suggestionMenu.browseAllTemplates}
-                onClose={() => {
-                  suggestionMenu.close(true);
-                }}
-                workflowOptionId={slashWorkflowOptionId}
-                categoryOptionId={slashWorkflowOptionId}
-              />
-            ) : undefined
-          }
-        />
+        >
+          <SlashTemplatePanel
+            menuRef={setSuggestionMenuRef}
+            categories={suggestionMenu.panelCategories}
+            workflows={suggestionMenu.workflows}
+            workflowsLoading={suggestionMenu.workflowsLoading}
+            selectedIndex={suggestionMenu.selectedIndex}
+            previewIndex={suggestionMenu.previewIndex}
+            onPreview={suggestionMenu.previewSuggestion}
+            onSelectCategory={suggestionMenu.selectCategory}
+            onSelectTemplate={suggestionMenu.selectTemplate}
+            onSelectWorkflow={suggestionMenu.selectWorkflow}
+            onBrowseAll={suggestionMenu.browseAllTemplates}
+            onClose={() => {
+              suggestionMenu.close(true);
+            }}
+            workflowOptionId={slashWorkflowOptionId}
+            categoryOptionId={slashWorkflowOptionId}
+          />
+        </SlashWorkflowMenu>
       )}
       {suggestionMenu.showMentions && (
         <ComposerMentionSuggestionMenu

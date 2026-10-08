@@ -223,7 +223,7 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
 }
 
 export function connectorCatalogFirewallConfig(
-  connector: ConnectorCatalogArtifactConnector,
+  connector: Pick<ConnectorCatalogArtifactConnector, "slug" | "firewall">,
 ): FirewallConfig | null {
   return connector.firewall.kind === "none"
     ? null
@@ -301,6 +301,7 @@ export interface ConnectorCatalogFirewallBaseUrlTemplate {
 
 export interface ConnectorCatalogFirewallRoutingApi {
   readonly base: string;
+  readonly usesAwsSigv4: boolean;
   readonly environmentNames: readonly string[];
   readonly routes: readonly {
     readonly permissionName: string;
@@ -350,6 +351,7 @@ export function deriveConnectorCatalogFirewallRouting(
       const references = extractFirewallTemplateReferences([api]);
       return {
         base: api.base,
+        usesAwsSigv4: api.auth.awsSigv4 !== undefined,
         environmentNames: sortedUniqueStrings([
           ...references.secrets,
           ...references.vars,

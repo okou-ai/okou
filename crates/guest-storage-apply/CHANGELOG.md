@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.24.37](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.36...guest-storage-apply-v0.24.37) (2026-10-07)
+
+## [0.24.36](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.35...guest-storage-apply-v0.24.36) (2026-10-07)
+
+## [0.24.35](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.34...guest-storage-apply-v0.24.35) (2026-10-07)
+
+## [0.24.34](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.33...guest-storage-apply-v0.24.34) (2026-10-02)
+
+## [0.24.33](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.32...guest-storage-apply-v0.24.33) (2026-10-01)
+
+## [0.24.32](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.31...guest-storage-apply-v0.24.32) (2026-09-30)
+
+## [0.24.31](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.30...guest-storage-apply-v0.24.31) (2026-09-30)
+
+## [0.24.30](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.29...guest-storage-apply-v0.24.30) (2026-09-30)
+
+## [0.24.29](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.28...guest-storage-apply-v0.24.29) (2026-09-29)
+
+## [0.24.28](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.27...guest-storage-apply-v0.24.28) (2026-09-29)
+
+## [0.24.27](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.26...guest-storage-apply-v0.24.27) (2026-09-28)
+
+## [0.24.26](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.25...guest-storage-apply-v0.24.26) (2026-09-28)
+
+## [0.24.25](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.24...guest-storage-apply-v0.24.25) (2026-09-28)
+
+## [0.24.24](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.23...guest-storage-apply-v0.24.24) (2026-09-27)
+
+
+### Performance Improvements
+
+* **guest:** attribute bounded decoded-storage input phases ([#37062](https://github.com/okou-ai/okou/issues/37062)) ([62535dc](https://github.com/okou-ai/okou/commit/62535dce8732c3ca000d6af075cfdf8cc68abb81))
+
+## [0.24.23](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.22...guest-storage-apply-v0.24.23) (2026-09-26)
+
+## [0.24.22](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.21...guest-storage-apply-v0.24.22) (2026-09-25)
+
+## [0.24.21](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.20...guest-storage-apply-v0.24.21) (2026-09-25)
+
+## [0.24.20](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.19...guest-storage-apply-v0.24.20) (2026-09-24)
+
+## [0.24.19](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.18...guest-storage-apply-v0.24.19) (2026-09-24)
+
+
+### Performance Improvements
+
+* **guest:** attribute local archive phases ([#36521](https://github.com/okou-ai/okou/issues/36521)) ([e11ed66](https://github.com/okou-ai/okou/commit/e11ed662fa7ac110e6cafa103e2ab05bc601dfe3))
+
+## [0.24.18](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.17...guest-storage-apply-v0.24.18) (2026-09-23)
+
+## [0.24.17](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.16...guest-storage-apply-v0.24.17) (2026-09-23)
+
 ## [0.24.16](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.15...guest-storage-apply-v0.24.16) (2026-09-23)
 
 

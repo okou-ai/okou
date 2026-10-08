@@ -11,12 +11,20 @@ export const BROWSER_USER_ACTION_MAX_LABEL_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_VALUE_LENGTH = 4096;
+export const BROWSER_USER_ACTION_MAX_OPTIONS = 32;
+export const BROWSER_USER_ACTION_MAX_RADIO_MEMBERS = 16;
+export const BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH = 128;
+export const BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH = 256;
+export const BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH = 200;
+export const BROWSER_USER_ACTION_MAX_FILE_BYTES = 10 * 1024 * 1024;
+export const BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES = 1024 * 1024 * 1024;
+export const BROWSER_USER_ACTION_MAX_FILES = 3;
+export const BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH = 128;
+export const BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH = 128;
+export const BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH = 512;
+export const BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES = 1_500_000;
 
-export const browserUserActionKindSchema = z.enum([
-  "input",
-  "direct_interaction",
-]);
 export const browserUserActionStateSchema = z.enum([
   "pending",
   "applying",
@@ -30,6 +38,14 @@ export const browserUserActionFieldKindSchema = z.enum([
   "username",
   "password",
   "one_time_code",
+  "number",
+  "range",
+  "color",
+  "date_time",
+  "select",
+  "checkbox",
+  "radio",
+  "file",
 ]);
 
 const boundedNonblank = (maximum: number) => {
@@ -87,27 +103,140 @@ const inputCreateSchema = z
     }
   });
 
-const directInteractionCreateSchema = z
-  .object({
-    kind: z.literal("direct_interaction"),
-    callbackPrompt: boundedNonblank(
-      BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
-    ),
-    reason: boundedNonblank(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH),
-  })
-  .strict();
+export const browserUserActionCreateRequestSchema = inputCreateSchema;
 
-export const browserUserActionCreateRequestSchema = z.discriminatedUnion(
-  "kind",
-  [inputCreateSchema, directInteractionCreateSchema],
-);
-
-export const browserUserActionSubmittedValueSchema = z
+const browserUserActionScalarValueSchema = z
   .object({
     key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
     value: z.string().max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH),
   })
   .strict();
+const selectOptionIndexSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(BROWSER_USER_ACTION_MAX_OPTIONS - 1);
+const browserUserActionSelectValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    optionIndexes: z
+      .array(selectOptionIndexSchema)
+      .max(BROWSER_USER_ACTION_MAX_OPTIONS),
+    optionSetFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (new Set(value.optionIndexes).size !== value.optionIndexes.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Selected option indices must be unique",
+      });
+    }
+  });
+const browserUserActionRangeValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    observedValue: z
+      .string()
+      .min(1)
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH),
+    observedMin: z
+      .string()
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+    observedMax: z
+      .string()
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+    observedStep: z
+      .string()
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+    value: z
+      .string()
+      .min(1)
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH),
+  })
+  .strict();
+const browserUserActionColorValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    observedColor: z.string().regex(/^#[0-9a-f]{6}$/u),
+    value: z.string().regex(/^#[0-9a-f]{6}$/u),
+  })
+  .strict();
+const browserUserActionCheckboxValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    checked: z.boolean(),
+    observedChecked: z.boolean(),
+  })
+  .strict();
+const browserUserActionRadioValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    memberIndex: z
+      .number()
+      .int()
+      .min(-1)
+      .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
+    observedSelectedIndex: z
+      .number()
+      .int()
+      .min(-1)
+      .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
+    groupFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  })
+  .strict();
+const browserUserActionFileValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    observedFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+    operation: z.enum(["keep", "replace", "clear"]),
+    files: z
+      .array(
+        z
+          .object({
+            name: z
+              .string()
+              .min(1)
+              .max(BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH),
+            type: z.string().max(BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH),
+            size: z
+              .number()
+              .int()
+              .min(0)
+              .max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
+          })
+          .strict(),
+      )
+      .max(BROWSER_USER_ACTION_MAX_FILES),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if ((value.operation === "replace") !== value.files.length > 0) {
+      context.addIssue({ code: "custom", message: "Invalid file selection" });
+    }
+    if (
+      value.files.reduce((sum, file) => {
+        return sum + file.size;
+      }, 0) > BROWSER_USER_ACTION_MAX_FILE_BYTES
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "File selection exceeds limit",
+      });
+    }
+  });
+export const browserUserActionSubmittedValueSchema = z.union([
+  browserUserActionScalarValueSchema,
+  browserUserActionRangeValueSchema,
+  browserUserActionColorValueSchema,
+  browserUserActionSelectValueSchema,
+  browserUserActionCheckboxValueSchema,
+  browserUserActionRadioValueSchema,
+  browserUserActionFileValueSchema,
+]);
 
 export const browserUserActionApplyRequestSchema = z
   .object({
@@ -140,6 +269,143 @@ export const browserUserActionDisplayFieldSchema = z
       .optional(),
     fieldKind: browserUserActionFieldKindSchema,
     required: z.boolean(),
+    control: z
+      .object({
+        tagName: z.enum(["INPUT", "TEXTAREA", "SELECT"]),
+        inputType: z.enum([
+          "textarea",
+          "text",
+          "search",
+          "email",
+          "tel",
+          "url",
+          "password",
+          "number",
+          "range",
+          "color",
+          "date",
+          "time",
+          "datetime-local",
+          "month",
+          "week",
+          "select-one",
+          "select-multiple",
+          "checkbox",
+          "radio",
+          "file",
+        ]),
+        siteRequired: z.boolean().optional(),
+        accept: z
+          .string()
+          .max(BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH)
+          .optional(),
+        fileSetFingerprint: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/u)
+          .optional(),
+        files: z
+          .array(
+            z
+              .object({
+                name: z
+                  .string()
+                  .min(1)
+                  .max(BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH),
+                type: z.string().max(BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH),
+                size: z
+                  .number()
+                  .int()
+                  .min(0)
+                  .max(BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES),
+              })
+              .strict(),
+          )
+          .max(BROWSER_USER_ACTION_MAX_FILES)
+          .optional(),
+        checked: z.boolean().optional(),
+        radioGroupFingerprint: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/u)
+          .optional(),
+        radioOptions: z
+          .array(
+            z
+              .object({
+                index: z
+                  .number()
+                  .int()
+                  .min(0)
+                  .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
+                label: z
+                  .string()
+                  .min(1)
+                  .max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
+                disabled: z.boolean(),
+                selected: z.boolean(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS)
+          .optional(),
+        multiple: z.boolean().optional(),
+        optionSetFingerprint: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/u)
+          .optional(),
+        options: z
+          .array(
+            z
+              .object({
+                index: selectOptionIndexSchema,
+                label: z
+                  .string()
+                  .max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
+                disabled: z.boolean(),
+                selected: z.boolean(),
+                empty: z.boolean(),
+              })
+              .strict(),
+          )
+          .max(BROWSER_USER_ACTION_MAX_OPTIONS)
+          .optional(),
+        minLength: z
+          .number()
+          .int()
+          .min(0)
+          .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
+          .optional(),
+        maxLength: z
+          .number()
+          .int()
+          .min(0)
+          .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
+          .optional(),
+        pattern: z.string().max(512).optional(),
+        rangeValue: z
+          .string()
+          .min(1)
+          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+          .optional(),
+        colorValue: z
+          .string()
+          .regex(/^#[0-9a-f]{6}$/u)
+          .optional(),
+        colorMode: z.literal("opaque-srgb").optional(),
+        min: z
+          .string()
+          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+          .optional(),
+        max: z
+          .string()
+          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+          .optional(),
+        step: z
+          .string()
+          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+          .optional(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -170,24 +436,16 @@ const responseBaseSchema = z.object({
   callbackDelivered: z.boolean().optional(),
 });
 
-export const browserUserActionResponseSchema = z.discriminatedUnion("kind", [
-  responseBaseSchema
-    .extend({
-      kind: z.literal("input"),
-      siteOrigin: z.url(),
-      fields: z
-        .array(browserUserActionDisplayFieldSchema)
-        .min(1)
-        .max(BROWSER_USER_ACTION_MAX_FIELDS),
-    })
-    .strict(),
-  responseBaseSchema
-    .extend({
-      kind: z.literal("direct_interaction"),
-      reason: boundedNonblank(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH),
-    })
-    .strict(),
-]);
+export const browserUserActionResponseSchema = responseBaseSchema
+  .extend({
+    kind: z.literal("input"),
+    siteOrigin: z.url(),
+    fields: z
+      .array(browserUserActionDisplayFieldSchema)
+      .min(1)
+      .max(BROWSER_USER_ACTION_MAX_FIELDS),
+  })
+  .strict();
 
 export const browserUserActionCreateResponseSchema = z
   .object({
@@ -198,6 +456,17 @@ export const browserUserActionCreateResponseSchema = z
 
 const requestTokenParamsSchema = z
   .object({ requestToken: z.string().min(1).max(512) })
+  .strict();
+const browserFileUploadPrepareSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    index: z
+      .number()
+      .int()
+      .min(0)
+      .max(BROWSER_USER_ACTION_MAX_FILES - 1),
+    size: z.number().int().min(0).max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
+  })
   .strict();
 const emptyBodySchema = z.object({}).strict();
 const commonErrors = {
@@ -218,7 +487,7 @@ export const browserUserActionsContract = c.router({
     headers: authHeadersSchema,
     body: browserUserActionCreateRequestSchema,
     responses: { 201: browserUserActionCreateResponseSchema, ...commonErrors },
-    summary: "Create an exact Browser input or direct-interaction request",
+    summary: "Create an exact Browser input request",
   },
   get: {
     method: "GET",
@@ -236,6 +505,22 @@ export const browserUserActionsContract = c.router({
     body: emptyBodySchema,
     responses: { 200: browserUserActionResponseSchema, ...commonErrors },
     summary: "Check an exact Browser input target before form entry",
+  },
+  prepareFileUpload: {
+    method: "POST",
+    path: "/api/browser/user-actions/:requestToken/files/prepare",
+    headers: authHeadersSchema,
+    pathParams: requestTokenParamsSchema,
+    body: browserFileUploadPrepareSchema,
+    responses: {
+      200: z
+        .object({
+          uploadUrl: z.url(),
+        })
+        .strict(),
+      ...commonErrors,
+    },
+    summary: "Prepare a temporary direct upload for a Browser file input",
   },
   apply: {
     method: "POST",
@@ -255,18 +540,8 @@ export const browserUserActionsContract = c.router({
     responses: { 200: browserUserActionResponseSchema, ...commonErrors },
     summary: "Cancel a pending Browser user-action request",
   },
-  complete: {
-    method: "POST",
-    path: "/api/browser/user-actions/:requestToken/complete",
-    headers: authHeadersSchema,
-    pathParams: requestTokenParamsSchema,
-    body: emptyBodySchema,
-    responses: { 200: browserUserActionResponseSchema, ...commonErrors },
-    summary: "Record user completion of direct Browser interaction",
-  },
 });
 
-export type BrowserUserActionKind = z.infer<typeof browserUserActionKindSchema>;
 export type BrowserUserActionState = z.infer<
   typeof browserUserActionStateSchema
 >;
@@ -278,6 +553,9 @@ export type BrowserUserActionCreateRequest = z.infer<
 >;
 export type BrowserUserActionApplyRequest = z.infer<
   typeof browserUserActionApplyRequestSchema
+>;
+export type BrowserUserActionPrepareFileUploadRequest = z.infer<
+  typeof browserFileUploadPrepareSchema
 >;
 export type BrowserUserActionResponse = z.infer<
   typeof browserUserActionResponseSchema

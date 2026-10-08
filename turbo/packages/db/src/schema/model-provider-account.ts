@@ -13,9 +13,8 @@ import {
 import { modelProviders } from "./model-provider";
 
 /**
- * Concrete personal subscription credentials attached to one logical model
- * provider route. Organization model providers remain stored only in
- * `model_providers`.
+ * Concrete personal subscription credentials attached to one member-owned
+ * `model_providers` row.
  */
 export const modelProviderAccounts = pgTable(
   "model_provider_accounts",
@@ -60,6 +59,11 @@ export const modelProviderAccounts = pgTable(
       uniqueIndex("idx_model_provider_accounts_one_active")
         .on(table.modelProviderId)
         .where(sql`${table.isActive} = true`),
+      // NULL identities stay distinct; connections merge by upstream identity.
+      uniqueIndex("idx_model_provider_accounts_provider_identity").on(
+        table.modelProviderId,
+        table.externalAccountId,
+      ),
     ];
   },
 );

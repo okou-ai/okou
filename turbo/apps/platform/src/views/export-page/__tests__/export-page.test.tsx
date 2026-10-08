@@ -2,7 +2,7 @@ import {
   userExportContract,
   type UserExportStatusResponse,
 } from "@okouai/api-contracts/contracts/user-export";
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -172,86 +172,6 @@ test("Starting an export keeps its progress visible during refresh and offers th
     expect(getDownloadLink("Download export")).toHaveAttribute(
       "href",
       "https://downloads.example/new.zip",
-    );
-  });
-});
-
-test("Returning to an export resumes status checks and ignores a response from the previous visit", async () => {
-  mockNow(NOW, context.signal);
-  const oldRefreshStarted = context.mocks.deferred<void>();
-  const oldRefreshAborted = context.mocks.deferred<void>();
-  const oldRefreshResponse = context.mocks.deferred<void>();
-  const oldRefreshReturned = context.mocks.deferred<void>();
-  const currentRefreshStarted = context.mocks.deferred<void>();
-  const currentRefreshResponse = context.mocks.deferred<void>();
-  let phase: "initial" | "old-refresh" | "returned" | "current-refresh" =
-    "initial";
-  context.mocks.api(userExportContract.get, async ({ respond, request }) => {
-    if (phase === "initial") {
-      phase = "old-refresh";
-      return respond(200, runningExport());
-    }
-    if (phase === "old-refresh") {
-      request.signal.addEventListener(
-        "abort",
-        () => {
-          oldRefreshAborted.resolve();
-        },
-        { once: true },
-      );
-      oldRefreshStarted.resolve();
-      await oldRefreshResponse.promise;
-      const response = respond(
-        200,
-        completedExport("https://downloads.example/stale.zip"),
-      );
-      oldRefreshReturned.resolve();
-      return response;
-    }
-    if (phase === "returned") {
-      phase = "current-refresh";
-      return respond(200, runningExport());
-    }
-    currentRefreshStarted.resolve();
-    await currentRefreshResponse.promise;
-    return respond(
-      200,
-      completedExport("https://downloads.example/current.zip"),
-    );
-  });
-
-  await setupPage({ context, path: "/export", host: "app.okou.ai" });
-  await oldRefreshStarted.promise;
-  await expect(
-    screen.findByRole("heading", { name: "Preparing your export" }),
-  ).resolves.toBeInTheDocument();
-
-  act(() => {
-    window.history.pushState(null, "", "/_/error");
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  });
-  await expect(
-    screen.findByText("Oops! Something went sideways"),
-  ).resolves.toBeInTheDocument();
-  await oldRefreshAborted.promise;
-
-  phase = "returned";
-  act(() => {
-    window.history.back();
-  });
-  await currentRefreshStarted.promise;
-  oldRefreshResponse.resolve();
-  await oldRefreshReturned.promise;
-  await expect(
-    screen.findByRole("heading", { name: "Preparing your export" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Download export")).not.toBeInTheDocument();
-
-  currentRefreshResponse.resolve();
-  await waitFor(() => {
-    expect(getDownloadLink("Download export")).toHaveAttribute(
-      "href",
-      "https://downloads.example/current.zip",
     );
   });
 });

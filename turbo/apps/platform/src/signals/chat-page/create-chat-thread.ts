@@ -1,7 +1,25 @@
-import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
-import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
-import { literalHistoryTree } from "../../lib/markdown/literal-history.ts";
-import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
+import {
+  chatEventCompatibilityRole,
+  isChatEventContentTextType,
+  isChatRunTerminalEventType,
+  revokedChatEventIds,
+} from "@okouai/api-contracts/contracts/chat-events";
+import {
+  chatThreadArtifactsContract,
+  resolveChatEventRecommendedFollowups,
+  type ChatEventUsagePayload,
+  type ChatRunOptionsRequest,
+  type ChatThreadArtifactRun,
+  type ChatThreadDraft,
+  type FeedbackNotePart,
+  type GenerationTemplateRequest,
+  type ChatEvent as PersistedChatEvent,
+  type ResolvedAttachFile,
+  type UserMessageDocument,
+  type UserMessageInputDocument,
+  type UserMessagePart,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   command,
   computed,
@@ -10,28 +28,26 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import { isVideoModelId } from "@okouai/api-contracts/contracts/video-models";
-import {
-  DEFAULT_IMAGE_MODEL,
-  type ImageModel,
-} from "@okouai/core/image-model-catalog";
-import {
-  DEFAULT_VIDEO_MODEL,
-  type VideoModel,
-} from "@okouai/core/video-model-catalog";
 import { i18n } from "../../i18n/index.ts";
-import { onRejection, resetSignal, settle } from "../utils.ts";
-import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
-import { createThreadSidebarSignals } from "./thread-sidebar.ts";
 import {
-  createThreadSidebarAutoOpenCandidate,
-  threadSidebarAutoOpenCandidateKey,
-} from "./thread-sidebar-auto-open.ts";
-import { activeThreadSidebar$ } from "./thread-sidebar-coordinator.ts";
-import { CHAT_THREAD_SIDEBAR_SPLIT_VIEW_MEDIA_QUERY } from "./chat-thread-sidebar-layout.ts";
+  createDraftSignals,
+  createRestoredAttachment,
+  type DraftSignals,
+} from "../okou-page/chat-draft.ts";
+import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
+import { onRejection, resetSignal, settle } from "../utils.ts";
+import {
+  chatEventDebugSummaries,
+  chatEventTraceTime,
+} from "./chat-event-debug.ts";
+import type {
+  ChatEvent,
+  OptimisticChatEvent,
+  OptimisticUserMessageAssociation,
+} from "./chat-event-types.ts";
+import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
+import { createChatRunUsageSignals } from "./chat-run-usage.ts";
+import { createThreadDraftLoad } from "./chat-thread-draft.ts";
 import {
   createChatThreadScrollSignals,
   createThreadScrollPositionSignals,
@@ -40,222 +56,179 @@ import {
   type ScrollAfterRenderRequest,
   type ThreadScrollPosition,
 } from "./chat-thread-scroll.ts";
-import {
-  createDraftSignals,
-  createRestoredAttachment,
-  type DraftSignals,
-} from "../okou-page/chat-draft.ts";
-import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
-import { createThreadDraftLoad } from "./chat-thread-draft.ts";
+import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
 import {
   collectSuccessfulAttachmentInfos,
   prepareUserMessageFromDraft$,
 } from "./resolve-draft-attachments.ts";
-import type {
-  ChatEvent,
-  OptimisticChatEvent,
-  OptimisticUserMessageAssociation,
-} from "./chat-event-types.ts";
-import {
-  chatEventDebugSummaries,
-  chatEventTraceTime,
-} from "./chat-event-debug.ts";
-import {
-  chatThreadArtifactsContract,
-  resolveChatEventRecommendedFollowups,
-  type ChatRunOptionsRequest,
-  type ChatRunVideoOptionsRequest,
-  type GenerationTemplateRequest,
-  type ChatEvent as PersistedChatEvent,
-  type FeedbackNotePart,
-  type ResolvedAttachFile,
-  type ChatThreadArtifactRun,
-  type ChatThreadDraft,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
-  type UserMessagePart,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  chatEventCompatibilityRole,
-  foldLatestChatUsageByRunId,
-  isChatEventContentTextType,
-  isChatRunTerminalEventType,
-  revokedChatEventIds,
-} from "@okouai/api-contracts/contracts/chat-events";
+import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
+import { createThreadSidebarSignals } from "./thread-sidebar.ts";
 
-import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import { runOptionsFromModelProviderSelection } from "./model-selection-request.ts";
+import {
+  groupSemanticChatEvents,
+  isInterruptControlEvent,
+  isInterruptedAssistantCancellation,
+  isUsageEvent,
+  semanticChatEventsFromChatEvents,
+  type SemanticChatGroups as GenericSemanticChatGroups,
+  type SemanticChatEventState,
+} from "@okouai/api-contracts/contracts/chat-event-semantics";
+import type { Root } from "hast";
 import { accept } from "../../lib/accept.ts";
+import {
+  markdownCardKey,
+  parseMarkdownTree,
+} from "../../lib/markdown/pipeline.ts";
+import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
+import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { apiClient$ } from "../api-client.ts";
 import { artifactReferenceLookupKey } from "../attachment-resource-url.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import { userModelPreference$ } from "../external/user-model-preference.ts";
+import { modelCatalog$ } from "../external/model-catalog.ts";
+import { availableRunModels$ } from "../external/run-models.ts";
 import {
-  writeChatMessageToClipboard,
-  type ChatClipboardPayload,
-} from "../okou-page/clipboard.ts";
-import type {
-  EnrichedChatEvent,
-  ChatEventGroup,
-  UserMessageFeedbackNoteRenderPart,
-  UserMessageRenderDocument,
-  UserMessageRenderPart,
-} from "./chat-event.ts";
-import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
-import {
-  deriveRunIndicatorStateFromChatEvents,
-  liveRunIdsFromChatEvents,
-  queuedEventsFromChatEvents,
-  type RunIndicatorState,
-} from "./chat-event-state.ts";
-import {
-  groupSemanticChatEvents,
-  isGoalMarkerEvent,
-  isInterruptControlEvent,
-  isInterruptedAssistantCancellation,
-  isQueueMarkerEvent,
-  isUsageEvent,
-  semanticChatEventsFromChatEvents,
-  type SemanticChatEventState,
-  type SemanticChatGroups as GenericSemanticChatGroups,
-} from "@okouai/api-contracts/contracts/chat-event-semantics";
+  createImageLoadRegistry,
+  embedImageLoadSignals,
+  type ImageLoadRegistry,
+} from "../image-load.ts";
+import { locale$ } from "../locale.ts";
 import { logger } from "../log.ts";
-import {
-  createCancellationRecoverySignals,
-  createRemoteChatThreadDraft,
-  patchChatThreadComputerUseHost$,
-  patchChatThreadDraft$,
-  patchChatThreadImageModel$,
-  patchChatThreadModelSelection$,
-  patchChatThreadVideoModel$,
-  subscribeChatThreadRealtime$,
-} from "./chat-thread-remote-signals.ts";
-import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
-import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
-import { compareCreatedAt } from "./compare-created-at.ts";
-import { unreadThroughAt } from "./unread-through-at.ts";
-import {
-  cardSlotUrl,
-  classifyChatAttachment,
-  type CardDescriptorBlock,
-} from "./parse-body-blocks.ts";
 import {
   createMermaidDiagramRegistry,
   embedMermaidSignals,
   type MermaidDiagramRegistry,
 } from "../mermaid-diagram.ts";
 import { openDiagramLightbox$ } from "../okou-page/attachment-chips.ts";
-import { embedMarkdownArtifacts$ } from "./markdown-artifacts.ts";
 import {
-  createImageLoadRegistry,
-  embedImageLoadSignals,
-  type ImageLoadRegistry,
-} from "../image-load.ts";
-import {
-  chatEventTreeContent,
-  chatEventTreePlan,
-} from "./chat-event-body-blocks.ts";
-import type { ChatActionContext } from "./chat-action-context.ts";
-import type { Root } from "hast";
-import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
-import {
-  markdownCardKey,
-  parseMarkdownTree,
-} from "../../lib/markdown/pipeline.ts";
-import type { MarkdownCardRef } from "./markdown-card-ref.ts";
-import {
-  createArtifactCardSignalsRegistry,
-  type ArtifactCardSignalsRegistry,
-} from "./artifact-card-signals.ts";
-import {
-  createAgentReferenceSignalsRegistry,
-  type AgentReferenceSignalsRegistry,
-} from "./agent-reference-signals.ts";
-import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
-import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
-import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
-import { createBankingCardSignalsRegistry } from "./banking-action-block.ts";
-import { createBrowserUserActionCardSignalsRegistry } from "./browser-user-action-block.ts";
-import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
-import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
-import { getChatThreadTitleParts } from "./chat-thread-title.ts";
-import {
-  optimisticChatThreadCreateUnsettled,
-  threadMeta,
-  type ThreadMeta,
-} from "./chat-thread-event-sourcing.ts";
-import {
-  previousRunGroupVisualWindowStartIndex,
-  runGroupVisualWindowStartIndex,
-} from "./run-group-visual-window.ts";
-import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
-import { computerUseHostsFromWorker$ } from "../shared-database.ts";
-import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
-import { createPersonalModelProviderAuthSignals } from "../okou-page/personal-model-provider-auth.ts";
-import type {
-  MessageListSignals,
-  ChatPanelSignals,
-  EventImageGroupProjection,
-  QueueMessageOptions,
-  RecommendedFollowupSource,
-  SendMessageOptions,
-  ThinkingIndicatorMode,
-} from "./chat-panel-signals.ts";
-import { reloadMountedComposerWorkflows$ } from "../okou-page/tiptap-workflow-composer.ts";
-import {
-  createMailDraftCardSignalsRegistry,
-  type MailDraftCardSignalsRegistry,
-} from "./mail-draft.ts";
-import {
-  createBrowserSessionSignals,
-  type BrowserLifecycleOptimisticEvents,
-} from "./browser-session-block.ts";
-import { createChatThreadContainerSignals } from "./chat-thread-container.ts";
-import {
-  createThreadActivitySummarySignals,
-  type ThinkingSummaries,
-} from "./thread-activity-summary.ts";
-import { createAssistantErrorRecoverySignals } from "./assistant-error-recovery.ts";
-import {
-  messageDocumentToPrompt,
-  textToMessageDocument,
-} from "../okou-page/user-message-document-codec.ts";
-import { locale$ } from "../locale.ts";
+  writeChatMessageToClipboard,
+  type ChatClipboardPayload,
+} from "../okou-page/clipboard.ts";
 import {
   createComposerSignals,
   type ComposerSignals,
   type ComposerSubmission,
 } from "../okou-page/composer-signals.ts";
-import { createChatThreadFeedbackSignals } from "./chat-thread-feedback.ts";
-import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
-import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
-import {
-  createRunDetailSignalsRegistry,
-  type RunDetailSignals,
-} from "./run-detail.ts";
-import { createChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
-import {
-  createChatEventSignals,
-  type ChatEventSignals,
-  type SendChatEventInput,
-  type SendChatEventResult,
-  type SendInputChatEvent,
-} from "./chat-event-signals.ts";
-import {
-  registerChatEventChangeHandler$,
-  type ChatEventChangeHandler,
-} from "./chat-event-change-registry.ts";
-import {
-  canonicalUserMessageFileUrl,
-  userMessageFileAttachments,
-} from "./user-message-files.ts";
-import type { ChatForwardContext } from "./chat-forward.ts";
+import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
+import { connectorOverview$ } from "../okou-page/connector-overview.ts";
 import {
   createComposerConnectorSignals,
   type ComposerConnectorSignals,
 } from "../okou-page/connectors.ts";
+import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
+import { createPersonalModelProviderAuthSignals } from "../okou-page/personal-model-provider-auth.ts";
+import { reloadMountedComposerWorkflows$ } from "../okou-page/tiptap-workflow-composer.ts";
+import {
+  messageDocumentToPrompt,
+  textToMessageDocument,
+} from "../okou-page/user-message-document-codec.ts";
+import {
+  createAgentReferenceSignalsRegistry,
+  type AgentReferenceSignalsRegistry,
+} from "./agent-reference-signals.ts";
+import {
+  createArtifactCardSignalsRegistry,
+  type ArtifactCardSignalsRegistry,
+} from "./artifact-card-signals.ts";
+import { createAssistantErrorRecoverySignals } from "./assistant-error-recovery.ts";
+import { createBankingCardSignalsRegistry } from "./banking-action-block.ts";
+import { createBrowserSessionSignals } from "./browser-session-block.ts";
+import { createBrowserUserActionCardSignalsRegistry } from "./browser-user-action-block.ts";
+import type { ChatActionContext } from "./chat-action-context.ts";
+import { createChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import {
+  chatEventTreeContent,
+  chatEventTreePlan,
+  isTransientOutputMessage,
+} from "./chat-event-body-blocks.ts";
+import {
+  registerChatEventChangeHandler$,
+  type ChatEventChangeHandler,
+} from "./chat-event-change-registry.ts";
+import { replyTurnKey } from "./chat-event-group-keys.ts";
+import {
+  createChatEventSignals,
+  type ChatEventSignals,
+  type SendChatEventInput,
+  type SendInputChatEvent,
+} from "./chat-event-signals.ts";
+import {
+  liveRunIdsFromChatEvents,
+  queuedEventsFromChatEvents,
+  type RunIndicatorState,
+} from "./chat-event-state.ts";
+import type {
+  ChatEventGroup,
+  EnrichedChatEvent,
+  UserMessageFeedbackNoteRenderPart,
+  UserMessageRenderDocument,
+  UserMessageRenderPart,
+} from "./chat-event.ts";
+import type { ChatForwardContext } from "./chat-forward.ts";
+import type {
+  ChatPanelSignals,
+  EventImageGroupProjection,
+  MessageListSignals,
+  QueueMessageOptions,
+  RecommendedFollowupSource,
+  SendMessageOptions,
+  ThinkingIndicators,
+} from "./chat-panel-signals.ts";
+import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
+import { createChatThreadContainerSignals } from "./chat-thread-container.ts";
+import {
+  optimisticChatThreadCreateUnsettled,
+  threadMeta,
+  type ThreadMeta,
+} from "./chat-thread-event-sourcing.ts";
+import { createChatThreadFeedbackSignals } from "./chat-thread-feedback.ts";
+import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
+import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
+import {
+  createCancellationRecoverySignals,
+  createRemoteChatThreadDraft,
+  patchChatThreadComputerUseHost$,
+  patchChatThreadDraft$,
+  patchChatThreadModelSelection$,
+  subscribeChatThreadRealtime$,
+} from "./chat-thread-remote-signals.ts";
+import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
+import { getChatThreadTitleParts } from "./chat-thread-title.ts";
+import { createChatLastReadMarkerSignals } from "./chat-last-read-marker.ts";
+import { compareCreatedAt } from "./compare-created-at.ts";
+import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
+import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
+import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
+import {
+  createMailDraftCardSignalsRegistry,
+  type MailDraftCardSignalsRegistry,
+} from "./mail-draft.ts";
+import { embedMarkdownArtifacts$ } from "./markdown-artifacts.ts";
+import type { MarkdownCardRef } from "./markdown-card-ref.ts";
+import { embedMarkdownMailDrafts$ } from "./markdown-mail-drafts.ts";
+import { runOptionsFromModelProviderSelection } from "./model-selection-request.ts";
+import {
+  cardSlotUrl,
+  classifyChatAttachment,
+  type CardDescriptorBlock,
+} from "./parse-body-blocks.ts";
+import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
+import { createSubscriptionResetCardSignalsRegistry } from "./subscription-reset-block.ts";
+import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
+import {
+  createRunDetailSignalsRegistry,
+  type RunDetailSignals,
+} from "./run-detail.ts";
+import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
+import {
+  createThreadActivitySummarySignals,
+  type ThinkingSummaries,
+} from "./thread-activity-summary.ts";
+import { unreadThroughAt } from "./unread-through-at.ts";
+import {
+  canonicalUserMessageFileUrl,
+  userMessageFileAttachments,
+} from "./user-message-files.ts";
 
 const L = logger("ChatThread");
 
@@ -281,63 +254,7 @@ function isInputChatEvent(
 // Thinking-indicator constants and helpers
 // ---------------------------------------------------------------------------
 
-const THINKING_PHRASE_COUNT = 10;
 const DONE_PHRASE_COUNT = 8;
-
-function thinkingPhrase(index: number): string {
-  switch (index) {
-    case 0: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.brewing;
-      });
-    }
-    case 1: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.piecingTogether;
-      });
-    }
-    case 2: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.spinningUp;
-      });
-    }
-    case 3: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.onIt;
-      });
-    }
-    case 4: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.assembling;
-      });
-    }
-    case 5: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.sketching;
-      });
-    }
-    case 6: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.mapping;
-      });
-    }
-    case 7: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.wiring;
-      });
-    }
-    case 8: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.shaping;
-      });
-    }
-    default: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.tuningIn;
-      });
-    }
-  }
-}
 
 function formatDonePhrase(lastEvent: ChatEvent | undefined): string {
   const time = lastEvent
@@ -477,10 +394,38 @@ function createModelSelection(
     return get(threadMeta$)?.modelSettings ?? {};
   });
 
+  /**
+   * The selection the composer shows and sends. A pin of a retired model runs
+   * as its catalog replacement; a pin without an offered route runs as Auto
+   * (null).
+   */
+  const effectiveSelectedModel$ = computed(
+    async (get): Promise<string | null> => {
+      const [models, catalog] = await Promise.all([
+        get(availableRunModels$),
+        get(modelCatalog$),
+      ]);
+      const resolvedModel = catalog.resolve(get(selectedModel$));
+      return resolvedModel !== undefined &&
+        models.models.some((runModel) => {
+          return runModel.model === resolvedModel;
+        })
+        ? resolvedModel
+        : null;
+    },
+  );
+
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
-    const selectedModel = await get(selectedModel$);
-    const policies = await get(orgModelPolicies$);
-    if (!isCodexFastModeAvailableForSelection({ policies, selectedModel })) {
+    const [models, selectedModel] = await Promise.all([
+      get(availableRunModels$),
+      get(effectiveSelectedModel$),
+    ]);
+    if (
+      !isCodexFastModeAvailableForSelection({
+        models,
+        selectedModel,
+      })
+    ) {
       return false;
     }
     return get(threadMeta$)?.serviceTier === "priority";
@@ -489,10 +434,11 @@ function createModelSelection(
   const {
     oauthAvailable$: selectedModelOauthAvailable$,
     configure$: configureSelectedModel$,
-  } = createPersonalModelProviderAuthSignals(selectedModel$);
+  } = createPersonalModelProviderAuthSignals(effectiveSelectedModel$);
 
   return {
     selectedModel$,
+    effectiveSelectedModel$,
     codexFastModeActive$,
     modelSettings$,
     selectedModelOauthAvailable$,
@@ -501,121 +447,48 @@ function createModelSelection(
   };
 }
 
+interface ModelSelectionForSend {
+  readonly selection: ModelProviderSelection;
+}
+
 function createModelSelectionForSend({
   selectedModel$,
+  effectiveSelectedModel$,
   codexFastModeActive$,
+  setModelSelection$,
 }: {
   selectedModel$: Computed<string | null>;
+  effectiveSelectedModel$: Computed<Promise<string | null>>;
   codexFastModeActive$: Computed<Promise<boolean>>;
+  setModelSelection$: Command<
+    Promise<void>,
+    [ModelProviderSelection | null, AbortSignal]
+  >;
 }) {
   return command(
     async (
-      { get },
+      { get, set },
       signal: AbortSignal,
-    ): Promise<ModelProviderSelection | null> => {
-      const selectedModel = await get(selectedModel$);
+    ): Promise<ModelSelectionForSend> => {
+      const [selectedModel, codexFastModeActive] = await Promise.all([
+        get(effectiveSelectedModel$),
+        get(codexFastModeActive$),
+      ]);
       signal.throwIfAborted();
-      if (!isSupportedRunModel(selectedModel)) {
-        return null;
+      // A pin without an offered route is shown as Auto. Switch the thread to
+      // Auto the way the picker does, so the send runs what the composer shows
+      // without changing the member's default model.
+      if (selectedModel === null && get(selectedModel$) !== null) {
+        await set(setModelSelection$, { selectedModel: null }, signal);
+        signal.throwIfAborted();
       }
-      const codexFastModeActive = await get(codexFastModeActive$);
-      signal.throwIfAborted();
-      return codexFastModeActive
-        ? { selectedModel, codexServiceTier: "fast" }
-        : { selectedModel };
+      return {
+        selection: codexFastModeActive
+          ? { selectedModel, codexServiceTier: "fast" }
+          : { selectedModel },
+      };
     },
   );
-}
-
-// ---------------------------------------------------------------------------
-// Sub-factory: composer video model pin
-// ---------------------------------------------------------------------------
-
-/**
- * Thread-level video model pin. `null` means the thread follows the member's
- * personal default, so it is a selectable state rather than the absence of one.
- */
-function createVideoModelSelection(
-  threadId: string,
-  threadMeta$: Computed<ThreadMeta | null>,
-) {
-  // Thread meta keeps the pin loose so a model that later leaves the catalog
-  // still replays; the picker only offers catalog models, so narrow here.
-  const selectedVideoModel$ = computed((get): VideoModel | null => {
-    const selected = get(threadMeta$)?.selectedVideoModel ?? null;
-    return selected !== null && isVideoModelId(selected) ? selected : null;
-  });
-
-  // Same three steps the API resolves a run's video model through, so the
-  // composer's parameter panel offers what that run would accept.
-  const effectiveVideoModel$ = computed(async (get): Promise<VideoModel> => {
-    const pinned = get(selectedVideoModel$);
-    if (pinned !== null) {
-      return pinned;
-    }
-    // The member default is contract-typed to the catalog enum, unlike the
-    // loose thread pin above, so it needs no narrowing of its own.
-    return (
-      (await get(userModelPreference$)).selectedVideoModel ??
-      DEFAULT_VIDEO_MODEL
-    );
-  });
-
-  const setVideoModelSelection$ = command(
-    async ({ set }, value: VideoModel | null, signal: AbortSignal) => {
-      await set(
-        patchChatThreadVideoModel$,
-        { threadId, videoModel: value },
-        signal,
-      );
-      signal.throwIfAborted();
-    },
-  );
-
-  return { selectedVideoModel$, effectiveVideoModel$, setVideoModelSelection$ };
-}
-
-// ---------------------------------------------------------------------------
-// Sub-factory: composer image model pin
-// ---------------------------------------------------------------------------
-
-/**
- * Thread-level image model pin. `null` means the thread follows the member's
- * personal default, so the picker still resolves and displays an effective
- * model in that state.
- */
-function createImageModelSelection(
-  threadId: string,
-  threadMeta$: Computed<ThreadMeta | null>,
-) {
-  const selectedImageModel$ = computed((get): ImageModel | null => {
-    const selected = get(threadMeta$)?.selectedImageModel ?? null;
-    return isImageModelId(selected) ? selected : null;
-  });
-
-  const effectiveImageModel$ = computed(async (get): Promise<ImageModel> => {
-    const pinned = get(selectedImageModel$);
-    if (pinned !== null) {
-      return pinned;
-    }
-    return (
-      (await get(userModelPreference$)).selectedImageModel ??
-      DEFAULT_IMAGE_MODEL
-    );
-  });
-
-  const setImageModelSelection$ = command(
-    async ({ set }, value: ImageModel | null, signal: AbortSignal) => {
-      await set(
-        patchChatThreadImageModel$,
-        { threadId, imageModel: value },
-        signal,
-      );
-      signal.throwIfAborted();
-    },
-  );
-
-  return { selectedImageModel$, effectiveImageModel$, setImageModelSelection$ };
 }
 
 // ---------------------------------------------------------------------------
@@ -988,10 +861,12 @@ function orderEventsByRunTurn(
     });
 }
 
-function groupEventsForDisplay(events: EnrichedChatEvent[]): ChatEventGroup[] {
+function groupEventsForDisplay(
+  events: EnrichedChatEvent[],
+  usageByRunId: ReadonlyMap<string, ChatEventUsagePayload>,
+): ChatEventGroup[] {
   const activeEvents: EnrichedChatEvent[] = [];
   const queuedEvents: EnrichedChatEvent[] = [];
-  const usageByRunId = foldLatestChatUsageByRunId(events);
   for (const event of events) {
     if (isUsageEvent(event)) {
       continue;
@@ -1020,12 +895,53 @@ function groupEventsForDisplay(events: EnrichedChatEvent[]): ChatEventGroup[] {
   });
 }
 
+// While a run is active or a prompt is being sent, a conversation that ends
+// with the user turn gets an empty assistant turn whose status row shows the
+// thinking indicator. Queued automation groups trail the active groups.
+function withPendingAssistantGroup(
+  groups: ChatEventGroup[],
+  runActive: boolean,
+): ChatEventGroup[] {
+  if (!runActive) {
+    return groups;
+  }
+  let lastActiveIndex = groups.length - 1;
+  while (
+    lastActiveIndex >= 0 &&
+    groups[lastActiveIndex]!.events.every((event) => {
+      return event.isQueued;
+    })
+  ) {
+    lastActiveIndex--;
+  }
+  // With only queued automation, the empty turn opens the conversation.
+  const lastActive = groups[lastActiveIndex];
+  if (lastActive !== undefined && lastActive.role !== "user") {
+    return groups;
+  }
+  return [
+    ...groups.slice(0, lastActiveIndex + 1),
+    {
+      beginEventId: replyTurnKey(lastActive),
+      role: "assistant",
+      events: [],
+    },
+    ...groups.slice(lastActiveIndex + 1),
+  ];
+}
+
 function createRenderedChatGroups(
   semanticEvents$: Computed<SemanticChatEvent[]>,
+  runActive$: Computed<boolean>,
+  usageByRunId$: Computed<ReadonlyMap<string, ChatEventUsagePayload>>,
 ) {
   const allChatGroups$ = computed((get): ChatEventGroup[] => {
-    return groupEventsForDisplay(
-      enrichedChatEventsFromSemantic(get(semanticEvents$)),
+    return withPendingAssistantGroup(
+      groupEventsForDisplay(
+        enrichedChatEventsFromSemantic(get(semanticEvents$)),
+        get(usageByRunId$),
+      ),
+      get(runActive$),
     );
   });
 
@@ -1116,9 +1032,6 @@ const registerUserMessageRenderPart$ = command(
       case "automation": {
         return { type: "automation", part };
       }
-      case "goal": {
-        return { type: "goal", part };
-      }
       case "model": {
         return { type: "model", part };
       }
@@ -1137,7 +1050,9 @@ const registerUserMessageRenderPart$ = command(
               part,
               signals: set(agentReferenceSignals.register$, part.agentId),
             }
-          : { type: part.type, kind: "external", part };
+          : part.kind === "mcp"
+            ? { type: part.type, kind: "mcp", part }
+            : { type: part.type, kind: "external", part };
       }
       case "file": {
         const renderFileId = part.annotatedFileId ?? part.fileId;
@@ -1250,14 +1165,20 @@ function enrichedChatEventsFromSemantic(
   entries: readonly SemanticChatEvent[],
 ): EnrichedChatEvent[] {
   return entries.map((entry) => {
-    const { event, isQueued, inputCreatedAt, userMessageRenderDocument } =
-      entry;
+    const {
+      event,
+      isQueued,
+      inputCreatedAt,
+      inputOriginId,
+      userMessageRenderDocument,
+    } = entry;
     return {
       ...event,
       tree: entry.tree,
       richContentError: entry.richContentError,
       isQueued,
       inputCreatedAt,
+      inputOriginId,
       userMessageRenderDocument,
     };
   });
@@ -1270,7 +1191,6 @@ interface SemanticChatEvent extends SemanticChatEventState {
 }
 
 type SemanticChatGroups = GenericSemanticChatGroups<SemanticChatEvent>;
-type SemanticChatEventGroup = SemanticChatGroups["activeGroups"][number];
 
 function semanticTranscriptEventsFromRaw(
   raw: readonly ChatEventProjectionEntry[],
@@ -1293,154 +1213,24 @@ function semanticTranscriptEventsFromRaw(
   });
 }
 
-function isRenderableAssistantSemanticEvent(entry: SemanticChatEvent): boolean {
-  const { event } = entry;
-  return (
-    chatEventCompatibilityRole(event.eventType) === "assistant" &&
-    ((isChatEventContentTextType(event.eventType) && Boolean(event.content)) ||
-      ("error" in event && Boolean(event.error)))
-  );
-}
-
-function isThinkingMarkerSemanticEvent(entry: SemanticChatEvent): boolean {
-  const { event } = entry;
-  return (
-    event.eventType === "output.thinking" &&
-    event.content === null &&
-    event.thinking.trim().length > 0 &&
-    event.runId !== undefined
-  );
-}
-
-function lastRunThinkingEvent(
-  groups: readonly SemanticChatEventGroup[],
-): SemanticChatEvent | undefined {
-  const events = groups.flatMap((group) => {
-    return group.events;
-  });
-  const lastEvent = events.at(-1);
-  if (!lastEvent || !isThinkingMarkerSemanticEvent(lastEvent)) {
-    return undefined;
-  }
-  const runId = lastEvent.event.runId;
-  const runHasAssistantText = events.some((entry) => {
-    return (
-      entry.event.runId === runId && isRenderableAssistantSemanticEvent(entry)
-    );
-  });
-  return runHasAssistantText ? undefined : lastEvent;
-}
-
-interface ThinkingIndicatorProjection {
-  readonly mode: ThinkingIndicatorMode;
-  readonly thinkingEventId: string | null;
-  readonly thinkingText: string | null;
-}
-
-function assistantGroupOnlyHasThinking(
-  group: SemanticChatEventGroup,
-  thinkingEvent: SemanticChatEvent | undefined,
-): boolean {
-  if (group.role !== "assistant" || thinkingEvent === undefined) {
-    return false;
-  }
-  return !group.events.some((entry) => {
-    return isRenderableAssistantSemanticEvent(entry);
-  });
-}
-
-function shouldHideThinkingIndicator({
-  lastIsAssistant,
-  lastAssistantCancelled,
-  lastAssistantOnlyThinking,
-  running,
-}: {
-  lastIsAssistant: boolean;
-  lastAssistantCancelled: boolean;
-  lastAssistantOnlyThinking: boolean;
-  running: boolean;
-}): boolean {
-  if (running) {
-    return false;
-  }
-  return (
-    lastAssistantCancelled || lastAssistantOnlyThinking || !lastIsAssistant
-  );
-}
-
-function resolveThinkingIndicatorMode({
-  lastIsAssistant,
-  lastAssistantOnlyThinking,
-  queued,
-  running,
-}: {
-  lastIsAssistant: boolean;
-  lastAssistantOnlyThinking: boolean;
-  queued: boolean;
-  running: boolean;
-}): ThinkingIndicatorMode {
-  if (!running) {
-    return "finished";
-  }
-  if (lastIsAssistant && !lastAssistantOnlyThinking) {
-    return queued ? "running-queued" : "running";
-  }
-  return queued ? "waiting-queued" : "waiting";
-}
-
-function thinkingIndicatorProjectionFromGroups(
-  groups: SemanticChatGroups,
-  runState: RunIndicatorState,
-): ThinkingIndicatorProjection {
+// After the thread goes idle, the last assistant turn of a run shows the
+// finished row with its completion time and recommended followups.
+function runFinishedFromGroups(groups: SemanticChatGroups): boolean {
   const { activeGroups } = groups;
   const lastGroup = activeGroups.at(-1);
-  if (!lastGroup) {
-    return { mode: null, thinkingEventId: null, thinkingText: null };
+  if (lastGroup?.role !== "assistant") {
+    return false;
   }
-  const lastIsAssistant = lastGroup.role === "assistant";
-  const lastAssistantEvent = lastIsAssistant
-    ? lastGroup.events.at(-1)?.event
-    : undefined;
-  const rawThinkingEvent = lastRunThinkingEvent(activeGroups);
-  const lastAssistantOnlyThinking = assistantGroupOnlyHasThinking(
-    lastGroup,
-    rawThinkingEvent,
+  const lastAssistantEvent = lastGroup.events.at(-1)?.event;
+  return (
+    lastAssistantEvent !== undefined &&
+    Boolean(lastAssistantEvent.runId) &&
+    !isCancelledRunEvent(lastAssistantEvent)
   );
-  const lastAssistantCancelled = lastAssistantEvent
-    ? isCancelledRunEvent(lastAssistantEvent)
-    : false;
-  const queued = runState === "queued";
-  const running = runState !== null && !lastAssistantCancelled;
+}
 
-  if (
-    (!running && !lastAssistantEvent?.runId) ||
-    shouldHideThinkingIndicator({
-      lastIsAssistant,
-      lastAssistantCancelled,
-      lastAssistantOnlyThinking,
-      running,
-    })
-  ) {
-    return { mode: null, thinkingEventId: null, thinkingText: null };
-  }
-
-  const mode = resolveThinkingIndicatorMode({
-    lastIsAssistant,
-    lastAssistantOnlyThinking,
-    queued,
-    running,
-  });
-  const thinkingText =
-    !queued &&
-    running &&
-    rawThinkingEvent?.event.eventType === "output.thinking"
-      ? rawThinkingEvent.event.thinking?.trim() || null
-      : null;
-  return {
-    mode,
-    thinkingEventId: thinkingText ? (rawThinkingEvent?.event.id ?? null) : null,
-    thinkingText,
-  };
+function defaultThinkingIndicators(): ThinkingIndicators {
+  return { kind: "thinking", runId: null, messages: [] };
 }
 
 function latestRecommendedFollowupsFromGroups(
@@ -1472,7 +1262,13 @@ function latestRecommendedFollowupsFromGroups(
         continue;
       }
       if (event.eventType === "output.followups") {
-        const followups = resolveChatEventRecommendedFollowups(event);
+        // Video generation is retired, so an older run's video suggestion is
+        // not offered as a next step.
+        const followups = resolveChatEventRecommendedFollowups(event).filter(
+          (followup) => {
+            return followup.generationType !== "video";
+          },
+        );
         if (followups.length > 0) {
           return { eventId: event.id, followups };
         }
@@ -1491,37 +1287,49 @@ function latestRecommendedFollowupsFromGroups(
 
 function createEventSemanticSignals(
   semanticEvents$: Computed<SemanticChatEvent[]>,
-  eventRunIndicatorState$: Computed<Promise<RunIndicatorState>>,
+  {
+    serverRunState$,
+    hasOptimisticUserMessage$,
+    thinkingSummaries$,
+    runActive$,
+  }: ThinkingIndicatorSources & { runActive$: Computed<boolean> },
 ) {
   const semanticGroups$ = computed((get): SemanticChatGroups => {
     return groupSemanticChatEvents(get(semanticEvents$));
   });
-  const thinkingIndicatorProjection$ = computed(
-    async (get): Promise<ThinkingIndicatorProjection> => {
-      const runState = await get(eventRunIndicatorState$);
-      return thinkingIndicatorProjectionFromGroups(
-        get(semanticGroups$),
-        runState,
-      );
+  const thinkingIndicators$ = computed(
+    async (get): Promise<ThinkingIndicators | null> => {
+      const serverRunState = get(serverRunState$);
+      if (serverRunState === "running") {
+        const summaries = await get(thinkingSummaries$);
+        return summaries
+          ? {
+              kind: "thinking",
+              runId: summaries.runId,
+              messages: summaries.messages,
+            }
+          : defaultThinkingIndicators();
+      }
+      if (serverRunState === "queued") {
+        return { kind: "queued" };
+      }
+      // A prompt still being sent is about to start or steer a run.
+      return get(hasOptimisticUserMessage$)
+        ? defaultThinkingIndicators()
+        : null;
     },
   );
+  const runFinished$ = computed((get): Promise<boolean> => {
+    return Promise.resolve(
+      !get(runActive$) && runFinishedFromGroups(get(semanticGroups$)),
+    );
+  });
   const hasEvents$ = computed((get): Promise<boolean> => {
     return Promise.resolve(
       get(semanticEvents$).some((entry) => {
         return !isUsageEvent(entry.event);
       }),
     );
-  });
-  const thinkingIndicatorMode$ = computed(
-    async (get): Promise<ThinkingIndicatorMode> => {
-      return (await get(thinkingIndicatorProjection$)).mode;
-    },
-  );
-  const thinkingText$ = computed(async (get): Promise<string | null> => {
-    return (await get(thinkingIndicatorProjection$)).thinkingText;
-  });
-  const thinkingEventId$ = computed(async (get): Promise<string | null> => {
-    return (await get(thinkingIndicatorProjection$)).thinkingEventId;
   });
   const recommendedFollowupSource$ = computed(
     (get): Promise<RecommendedFollowupSource | null> => {
@@ -1539,9 +1347,8 @@ function createEventSemanticSignals(
   });
   return {
     hasEvents$,
-    thinkingIndicatorMode$,
-    thinkingEventId$,
-    thinkingText$,
+    thinkingIndicators$,
+    runFinished$,
     recommendedFollowupSource$,
     donePhrase$,
   };
@@ -1595,8 +1402,6 @@ function latestAssistantTextCreatedAtFromRaw(
       chatEventCompatibilityRole(event.eventType) === "assistant" &&
       isChatEventContentTextType(event.eventType) &&
       !isUsageEvent(event) &&
-      !isQueueMarkerEvent(event) &&
-      !isGoalMarkerEvent(event) &&
       !isInterruptedAssistantCancellation(event, interruptedRunIds) &&
       (event.content?.trim().length ?? 0) > 0
     ) {
@@ -1693,6 +1498,9 @@ function createArtifactPreviewImageUrls(
 
 interface EventTreeRegistries {
   readonly chatActionContext: ChatActionContext;
+  readonly subscriptionResetCardSignals: ReturnType<
+    typeof createSubscriptionResetCardSignalsRegistry
+  >;
   readonly artifactCardSignals: ArtifactCardSignalsRegistry;
   readonly connectorCardSignals: ReturnType<
     typeof createConnectorCardSignalsRegistry
@@ -1724,6 +1532,7 @@ interface EventTreeRegistries {
 }
 
 function createCardRefRegistrar({
+  subscriptionResetCardSignals,
   connectorCardSignals,
   connectorAccountActionCardSignals,
   permissionCardSignals,
@@ -1737,6 +1546,15 @@ function createCardRefRegistrar({
   return command(
     ({ set }, descriptor: CardDescriptorBlock): MarkdownCardRef => {
       switch (descriptor.type) {
+        case "subscription-reset": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              subscriptionResetCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
         case "connector-action": {
           return {
             kind: descriptor.type,
@@ -1774,7 +1592,6 @@ function createCardRefRegistrar({
               browserUserActionCardSignals.register$,
               descriptor.descriptor,
             ),
-            browserSessionSignals,
           };
         }
         case "unavailable-action": {
@@ -1816,6 +1633,8 @@ function createCardRefRegistrar({
 
 interface EventTree {
   readonly content: string;
+  /** The same text and ID can switch from a streaming URL tail to final. */
+  readonly requireUrlTerminator: boolean;
   readonly tree: Root | undefined;
   readonly error: boolean;
   /** Diagram sources this event shows, prepared when it becomes visible. */
@@ -1827,6 +1646,7 @@ interface RichEventTreePlan {
   readonly content: string;
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
+  readonly requireUrlTerminator: boolean;
 }
 
 function createEventTreeParser(registries: EventTreeRegistries) {
@@ -1834,6 +1654,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
     chatActionContext,
     mermaidDiagrams,
     artifactCardSignals,
+    mailDraftCardSignals,
     imageLoads,
   } = registries;
   const registerCardRef$ = createCardRefRegistrar(registries);
@@ -1865,6 +1686,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
         artifactCardSignals,
         chatActionContext.threadId,
       );
+      set(embedMarkdownMailDrafts$, tree, mailDraftCardSignals);
       embedImageLoadSignals(tree, (url) => {
         return set(imageLoads.register$, url);
       });
@@ -1885,26 +1707,15 @@ function planEventTreeUpdates(
   const richPlans: RichEventTreePlan[] = [];
   for (const event of events) {
     const content = chatEventTreeContent(event);
-    if (content === null || current.get(event.id)?.content === content) {
+    if (content === null) {
       continue;
     }
-    // Raw-row projection already checked every 1094 provenance field. Keep
-    // retained run coordinates here so real assistant output stays Markdown.
+    const requireUrlTerminator = isTransientOutputMessage(event);
+    const cached = current.get(event.id);
     if (
-      event.eventType === "output.message" &&
-      event.runId === undefined &&
-      event.runGroupId === undefined &&
-      event.runEventId === undefined &&
-      event.sequenceNumber === null &&
-      event.revokesEventId === undefined &&
-      isRetiredGoalArchiveText(content)
+      cached?.content === content &&
+      cached.requireUrlTerminator === requireUrlTerminator
     ) {
-      next ??= new Map(current);
-      next.set(event.id, {
-        content,
-        tree: literalHistoryTree(content),
-        error: false,
-      });
       continue;
     }
     const plan = chatEventTreePlan(event, chatActionContext);
@@ -1918,6 +1729,7 @@ function planEventTreeUpdates(
     if (plainTree !== null) {
       next.set(event.id, {
         content: plan.content,
+        requireUrlTerminator: plan.requireUrlTerminator,
         tree: plainTree,
         error: false,
       });
@@ -1927,6 +1739,7 @@ function planEventTreeUpdates(
     // body loads. This pending identity also deduplicates concurrent ensures.
     next.set(event.id, {
       content: plan.content,
+      requireUrlTerminator: plan.requireUrlTerminator,
       tree: undefined,
       error: false,
     });
@@ -1944,6 +1757,7 @@ function markPendingEventTreesFailed(
     const entry = current.get(plan.eventId);
     if (
       entry?.content === plan.content &&
+      entry.requireUrlTerminator === plan.requireUrlTerminator &&
       entry.tree === undefined &&
       !entry.error
     ) {
@@ -2053,6 +1867,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         const pendingEntry = pending.get(plan.eventId);
         if (
           pendingEntry?.content !== plan.content ||
+          pendingEntry.requireUrlTerminator !== plan.requireUrlTerminator ||
           pendingEntry.tree !== undefined ||
           pendingEntry.error
         ) {
@@ -2062,6 +1877,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         parsed ??= new Map(pending);
         parsed.set(plan.eventId, {
           content: plan.content,
+          requireUrlTerminator: plan.requireUrlTerminator,
           tree,
           error: false,
           diagramCodes,
@@ -2146,7 +1962,6 @@ function createPagedEventResources({
   previewImageUrlsByUrl$,
   previewRefreshRevision$,
   previewCatalogReady$,
-  browserLifecycleOptimisticEvents,
   connector,
 }: {
   readonly chatActionContext: ChatActionContext;
@@ -2156,15 +1971,11 @@ function createPagedEventResources({
   >;
   readonly previewRefreshRevision$: Computed<number>;
   readonly previewCatalogReady$: Computed<boolean>;
-  readonly browserLifecycleOptimisticEvents: BrowserLifecycleOptimisticEvents;
   readonly connector: ComposerConnectorSignals;
 }) {
   const { threadId } = chatActionContext;
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
-  const browserSessionSignals = createBrowserSessionSignals(
-    threadId,
-    browserLifecycleOptimisticEvents,
-  );
+  const browserSessionSignals = createBrowserSessionSignals(threadId);
   const artifactCardSignals = createArtifactCardSignalsRegistry(
     previewImageUrlsByUrl$,
     previewRefreshRevision$,
@@ -2172,6 +1983,8 @@ function createPagedEventResources({
   );
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const runDetailSignals = createRunDetailSignalsRegistry();
+  const subscriptionResetCardSignals =
+    createSubscriptionResetCardSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
   const connectorAccountActionCardSignals =
     createConnectorAccountActionCardSignalsRegistry(connector);
@@ -2212,6 +2025,7 @@ function createPagedEventResources({
     diagramCodesForEvents$,
   } = createEventTreeSignals({
     chatActionContext,
+    subscriptionResetCardSignals,
     artifactCardSignals,
     connectorCardSignals,
     connectorAccountActionCardSignals,
@@ -2273,18 +2087,23 @@ function createPagedEventResources({
   };
 }
 
-interface BrowserLifecycleOptimisticEvent {
-  readonly eventId: string;
-  readonly eventType: "browser.open" | "browser.close";
+interface ThinkingIndicatorSources {
+  readonly serverRunState$: Computed<RunIndicatorState>;
+  readonly hasOptimisticUserMessage$: Computed<boolean>;
+  readonly thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
 }
 
 function createPagedEventProjections({
   chatEvents$,
+  usageByRunId$,
+  thinkingSources,
   registeredEvents$,
   eventTrees$,
   eventTreeErrors$,
 }: {
   chatEvents$: Computed<ChatEvent[]>;
+  usageByRunId$: Computed<ReadonlyMap<string, ChatEventUsagePayload>>;
+  thinkingSources: ThinkingIndicatorSources;
   registeredEvents$: State<RegisteredChatEvent[]>;
   eventTrees$: Computed<ReadonlyMap<string, Root>>;
   eventTreeErrors$: Computed<ReadonlySet<string>>;
@@ -2298,14 +2117,19 @@ function createPagedEventProjections({
       get(eventTreeErrors$),
     );
   });
-  const eventRunIndicatorState$ = createEventRunIndicatorState(chatEvents$);
+  const { serverRunState$, hasOptimisticUserMessage$ } = thinkingSources;
+  const runActive$ = computed((get): boolean => {
+    return get(serverRunState$) !== null || get(hasOptimisticUserMessage$);
+  });
   return {
     rawEvents$,
     chatEvents$,
-    eventRunIndicatorState$,
     ...createLatestEventSignals(rawEvents$),
-    ...createEventSemanticSignals(semanticEvents$, eventRunIndicatorState$),
-    ...createRenderedChatGroups(semanticEvents$),
+    ...createEventSemanticSignals(semanticEvents$, {
+      ...thinkingSources,
+      runActive$,
+    }),
+    ...createRenderedChatGroups(semanticEvents$, runActive$, usageByRunId$),
   };
 }
 
@@ -2318,12 +2142,9 @@ interface MarkThreadReadDeps {
 /**
  * The newest instant this open thread has to be read through.
  *
- * A Run leaves a terminal event in the local projection, so its timestamp is
- * available without asking the server. A native Morning Brief delivery has no
- * Run and no terminal event at all, so its unread state only exists in the
- * server watermark. Taking the later of the two covers a thread whose only
- * unread is native, a second native delivery arriving while the thread is
- * open, and a Run finishing after a native delivery.
+ * A Run leaves a terminal event in the local projection. The server may have
+ * observed a newer terminal event than the local projection, so read through
+ * the later of the two timestamps.
  */
 function createUnreadThroughAt$(
   threadId: string,
@@ -2386,8 +2207,8 @@ function createMarkThreadReadIfNeeded({
       set(locallyMarkedReadAt$, newLastReadAt);
     }
     // No sidebar reload needed: markRead$ records an optimistic read mark
-    // and applies the response's unread snapshot, so the unread dot clears
-    // without refetching the thread list.
+    // that hides the indicators' `unreadAt` until a newer one arrives, so the
+    // unread dot clears without refetching the thread list.
   });
 }
 
@@ -2396,6 +2217,7 @@ function createEventChangeEffects({
   chatEvents,
   projections,
   scroll,
+  lastReadMarker,
   syncVisibleEventTrees$,
 }: {
   readonly threadId: string;
@@ -2405,6 +2227,7 @@ function createEventChangeEffects({
     "rawEvents$" | "latestRunFinishCreatedAt$"
   >;
   readonly scroll: ChatThreadScrollSignals;
+  readonly lastReadMarker: ReturnType<typeof createChatLastReadMarkerSignals>;
   readonly syncVisibleEventTrees$: Command<
     Promise<void>,
     [boolean, AbortSignal]
@@ -2417,43 +2240,20 @@ function createEventChangeEffects({
     latestRunFinishCreatedAt$: projections.latestRunFinishCreatedAt$,
     locallyMarkedReadAt$,
   });
-  const sidebarAutoOpenCandidate$ = createThreadSidebarAutoOpenCandidate(
-    projections.rawEvents$,
-  );
-  const autoOpenSidebar$ = command(
-    ({ get, set }, signal: AbortSignal): void => {
-      signal.throwIfAborted();
-      if (
-        typeof window === "undefined" ||
-        !window.matchMedia(CHAT_THREAD_SIDEBAR_SPLIT_VIEW_MEDIA_QUERY).matches
-      ) {
-        return;
-      }
-      const candidate = get(sidebarAutoOpenCandidate$);
-      if (
-        !candidate ||
-        get(sidebar.target$) !== null ||
-        get(activeThreadSidebar$) !== null
-      ) {
-        return;
-      }
-      const candidateKey = threadSidebarAutoOpenCandidateKey(candidate);
-      if (!set(sidebar.claimAutoOpenCandidate$, candidateKey)) {
-        return;
-      }
-      set(sidebar.open$, { type: "browser" }, signal);
-    },
-  );
   const updateEventPresentation$ = command(
     async (
-      { set },
+      { get, set },
       scrollPosition: ThreadScrollPosition | null,
       signal: AbortSignal,
     ): Promise<void> => {
-      const eventTreesReady = set(syncVisibleEventTrees$, true, signal);
-      await Promise.all([eventTreesReady, set(autoOpenSidebar$, signal)]);
+      await set(syncVisibleEventTrees$, true, signal);
       signal.throwIfAborted();
-      await set(scroll.autoScroll$, scrollPosition, signal);
+      const initialPosition = set(
+        lastReadMarker.initialScrollPosition$,
+        scrollPosition,
+        get(chatEvents.hasOptimisticUserMessage$),
+      );
+      await set(scroll.autoScroll$, initialPosition, signal);
     },
   );
   const afterEventsChange$ = command(
@@ -2499,12 +2299,15 @@ function createEventChangeEffects({
 
 function createChatEventPresentationLifecycle({
   chatEvents,
+  usage,
   eventChangeHandler,
   syncVisibleEventTrees$,
   enableSidebarEntryAnimations$,
   initialEventsReady$,
+  lastReadMarker,
 }: {
   readonly chatEvents: ChatEventSignals;
+  readonly usage: ReturnType<typeof createChatRunUsageSignals>;
   readonly eventChangeHandler: ChatEventChangeHandler;
   readonly syncVisibleEventTrees$: Command<
     Promise<void>,
@@ -2512,15 +2315,19 @@ function createChatEventPresentationLifecycle({
   >;
   readonly enableSidebarEntryAnimations$: Command<void, []>;
   readonly initialEventsReady$: State<boolean>;
+  readonly lastReadMarker: ReturnType<typeof createChatLastReadMarkerSignals>;
 }) {
   const setup$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
+      await set(lastReadMarker.initialize$, signal);
+      signal.throwIfAborted();
       set(
         registerChatEventChangeHandler$,
         chatEvents.chatEvents$,
         eventChangeHandler,
         signal,
       );
+      set(usage.subscribe$, signal);
       await set(syncVisibleEventTrees$, false, signal);
       set(enableSidebarEntryAnimations$);
       const result = await settle(set(chatEvents.setup$, signal), signal);
@@ -2528,15 +2335,18 @@ function createChatEventPresentationLifecycle({
         set(initialEventsReady$, true);
         throw result.error;
       }
+      set(usage.refresh$, false, signal);
     },
   );
   const catchUp$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
       const result = await settle(set(chatEvents.catchUp$, signal), signal);
+      set(lastReadMarker.finishInitialScroll$);
       set(initialEventsReady$, true);
       if (!result.ok) {
         throw result.error;
       }
+      set(usage.refresh$, true, signal);
     },
   );
   return { setup$, catchUp$ };
@@ -2567,24 +2377,20 @@ function createReadyScrollAfterRenderRequest(
   });
 }
 
-function createBrowserLifecycleOptimisticEvents(
-  chatEvents: ChatEventSignals,
-): BrowserLifecycleOptimisticEvents {
-  return {
-    append$: command(
-      async (
-        { set },
-        event: BrowserLifecycleOptimisticEvent,
-        signal: AbortSignal,
-      ): Promise<void> => {
-        await set(
-          chatEvents.sendEvent$,
-          { kind: "browser-lifecycle", ...event },
-          signal,
-        );
-      },
-    ),
-  };
+function createLoadMoreRenderedChatGroups(
+  scroll: ChatThreadScrollSignals,
+  loadMoreGroups$: Command<Promise<boolean>, [AbortSignal]>,
+) {
+  return command(async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
+    const didPrepend = await set(loadMoreGroups$, signal);
+    signal.throwIfAborted();
+    if (didPrepend) {
+      await set(scroll.autoScroll$, scrollPosition, signal);
+      signal.throwIfAborted();
+    }
+    return didPrepend;
+  });
 }
 
 interface ChatThreadMessagePipelineOptions {
@@ -2594,6 +2400,10 @@ interface ChatThreadMessagePipelineOptions {
   previewRefreshRevision$: Computed<number>;
   previewCatalogReady$: Computed<boolean>;
   connector: ComposerConnectorSignals;
+  thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
+  threadDetail$: ReturnType<
+    typeof createCancellationRecoverySignals
+  >["detail$"];
 }
 
 function createChatThreadMessagePipeline({
@@ -2603,10 +2413,10 @@ function createChatThreadMessagePipeline({
   previewRefreshRevision$,
   previewCatalogReady$,
   connector,
+  thinkingSummaries$,
+  threadDetail$,
 }: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
-  const browserLifecycleOptimisticEvents =
-    createBrowserLifecycleOptimisticEvents(chatEvents);
   // Position is created before scroll writers are wired to the render window.
   const position = createThreadScrollPositionSignals(threadId);
   const resources = createPagedEventResources({
@@ -2615,14 +2425,25 @@ function createChatThreadMessagePipeline({
     previewImageUrlsByUrl$,
     previewRefreshRevision$,
     previewCatalogReady$,
-    browserLifecycleOptimisticEvents,
     connector,
   });
+  const usage = createChatRunUsageSignals(threadId, chatEvents.chatEvents$);
   const projections = createPagedEventProjections({
     chatEvents$: chatEvents.chatEvents$,
+    usageByRunId$: usage.usageByRunId$,
+    thinkingSources: {
+      serverRunState$: chatEvents.serverRunState$,
+      hasOptimisticUserMessage$: chatEvents.hasOptimisticUserMessage$,
+      thinkingSummaries$,
+    },
     registeredEvents$: resources.registeredEvents$,
     eventTrees$: resources.eventTrees$,
     eventTreeErrors$: resources.eventTreeErrors$,
+  });
+  const lastReadMarker = createChatLastReadMarkerSignals({
+    threadDetail$,
+    allChatGroups$: projections.allChatGroups$,
+    threadScrollPosition$: position.threadScrollPosition$,
   });
   const initialEventsReady$ = state(false);
   const initialEventsReadyView$ = computed((get): boolean => {
@@ -2671,45 +2492,37 @@ function createChatThreadMessagePipeline({
     chatEvents,
     projections,
     scroll,
+    lastReadMarker,
     syncVisibleEventTrees$,
   });
   const lifecycle = createChatEventPresentationLifecycle({
     chatEvents,
+    usage,
     eventChangeHandler: effects.eventChangeHandler,
     syncVisibleEventTrees$,
     enableSidebarEntryAnimations$: effects.sidebar.enableEntryAnimations$,
     initialEventsReady$,
+    lastReadMarker,
   });
   const assistantErrorRecovery = createAssistantErrorRecoverySignals({
     threadId,
     chatEvents,
     visibleRenderedChatGroups$: renderWindow.visibleRenderedChatGroups$,
-    runDetails$: resources.publicSignals.runDetails$,
   });
   const readyScrollAfterRenderRequest$ = createReadyScrollAfterRenderRequest(
     scroll.pendingScrollAfterRenderRequest$,
     renderWindow.visibleRenderedChatGroups$,
   );
-  const loadMoreRenderedChatGroups$ = command(
-    async ({ set }, signal: AbortSignal): Promise<boolean> => {
-      const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
-      const didPrepend = await set(
-        renderWindow.loadMoreRenderedChatGroups$,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (didPrepend) {
-        await set(scroll.autoScroll$, scrollPosition, signal);
-        signal.throwIfAborted();
-      }
-      return didPrepend;
-    },
+  const loadMoreRenderedChatGroups$ = createLoadMoreRenderedChatGroups(
+    scroll,
+    renderWindow.loadMoreRenderedChatGroups$,
   );
   return {
     scroll,
     sidebar: effects.sidebar,
     ...lifecycle,
     initialEventsReady$: initialEventsReadyView$,
+    lastReadMarker$: lastReadMarker.marker$,
     ...assistantErrorRecovery,
     ...projections,
     ...resources.publicSignals,
@@ -2739,14 +2552,6 @@ export const ensureDraft$ = command(
     return draft;
   },
 );
-
-function createEventRunIndicatorState(chatEvents$: Computed<ChatEvent[]>) {
-  return computed((get): Promise<RunIndicatorState> => {
-    return Promise.resolve(
-      deriveRunIndicatorStateFromChatEvents(get(chatEvents$)),
-    );
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Factory: createRunTracking
@@ -2782,22 +2587,65 @@ const renderWindowStateByThreadId$ = state(
   new Map<string, ChatRenderWindowState>(),
 );
 
+// A turn without events (the pending assistant turn) takes no window slot of
+// its own; it stays with the turn before it.
+function takesRenderWindowSlot(
+  groups: readonly ChatEventGroup[],
+  groupIndex: number,
+): boolean {
+  return groupIndex === 0 || (groups[groupIndex]?.events.length ?? 0) > 0;
+}
+
+/** The start index that shows `slotCount` window slots before `endIndex`. */
+function renderWindowStartIndexBefore(
+  groups: readonly ChatEventGroup[],
+  endIndex: number,
+  slotCount: number,
+): number {
+  let slots = 0;
+  for (
+    let groupIndex = Math.min(endIndex, groups.length) - 1;
+    groupIndex >= 0;
+    groupIndex--
+  ) {
+    if (takesRenderWindowSlot(groups, groupIndex)) {
+      slots++;
+      if (slots >= slotCount) {
+        return groupIndex;
+      }
+    }
+  }
+  return 0;
+}
+
 function renderWindowStartIndex(
   groups: readonly ChatEventGroup[],
   cursorGroupId: string | null,
 ): number {
-  return runGroupVisualWindowStartIndex(
-    groups,
-    cursorGroupId,
-    INITIAL_RENDER_GROUP_COUNT,
-  );
+  let cursorGroupIndex =
+    cursorGroupId === null
+      ? -1
+      : groups.findIndex((group) => {
+          return group.beginEventId === cursorGroupId;
+        });
+  if (cursorGroupIndex === -1) {
+    return renderWindowStartIndexBefore(
+      groups,
+      groups.length,
+      INITIAL_RENDER_GROUP_COUNT,
+    );
+  }
+  while (!takesRenderWindowSlot(groups, cursorGroupIndex)) {
+    cursorGroupIndex--;
+  }
+  return cursorGroupIndex;
 }
 
 function previousRenderWindowStartIndex(
   groups: readonly ChatEventGroup[],
   currentStartGroupIndex: number,
 ): number {
-  return previousRunGroupVisualWindowStartIndex(
+  return renderWindowStartIndexBefore(
     groups,
     currentStartGroupIndex,
     RENDER_GROUP_LOAD_INCREMENT,
@@ -3277,13 +3125,9 @@ function queueUserMessage(
 function sendRuntimeOptions(
   features: Partial<Record<FeatureSwitchKey, boolean>>,
   modelSelection: ModelProviderSelection | null,
-  videoRunOptions: ChatRunVideoOptionsRequest | undefined,
 ) {
   return {
-    runOptions: runOptionsFromModelProviderSelection(
-      modelSelection,
-      videoRunOptions,
-    ),
+    runOptions: runOptionsFromModelProviderSelection(modelSelection),
     realAgentInPreviewEnabled:
       features[FeatureSwitchKey.RealAgentInPreview] ?? false,
   };
@@ -3293,23 +3137,20 @@ interface SendMessageDeps {
   readonly threadId: string;
   readonly agentId: string;
   modelSelectionForSend$: Command<
-    Promise<ModelProviderSelection | null>,
+    Promise<ModelSelectionForSend>,
     [AbortSignal]
   >;
   draft: DraftSignals;
   cancelDraftSync$: Command<void, []>;
   flushDraftClear$: Command<Promise<void>, [AbortSignal]>;
-  sendEvent$: Command<
-    Promise<SendChatEventResult>,
-    [SendChatEventInput, AbortSignal]
-  >;
+  sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }
 
 interface ValidatedSendMessageRequest {
   readonly prompt: string;
   readonly options: SendMessageOptions | undefined;
   readonly agentId: string;
-  readonly modelSelection: ModelProviderSelection | null;
+  readonly modelSelection: ModelSelectionForSend;
 }
 
 function generationTemplateForSend(
@@ -3353,7 +3194,7 @@ function sendInputForRequest(args: {
     prompt: result.prompt,
     hasTextContent: result.hasTextContent,
     userMessage: args.userMessage,
-    selectedModel: request.modelSelection?.selectedModel ?? null,
+    selectedModel: request.modelSelection.selection.selectedModel,
     ...(args.runOptions === undefined ? {} : { runOptions: args.runOptions }),
     ...(args.realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
     ...(request.options && "computerUseHostId" in request.options
@@ -3414,10 +3255,9 @@ function createPerformSendMessage(deps: SendMessageDeps) {
       set(draft.clear$);
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
         get(featureSwitch$),
-        request.modelSelection,
-        request.options?.videoRunOptions,
+        request.modelSelection.selection,
       );
-      const [, sendResult] = await Promise.all([
+      await Promise.all([
         flushDraftForSend(request.options?.forward, () => {
           return set(flushDraftClear$, signal);
         }),
@@ -3434,10 +3274,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         ),
       ]);
       signal.throwIfAborted();
-      L.debug("sendMessage$ POST accepted", {
-        threadId,
-        runId: sendResult.runId,
-      });
+      L.debug("sendMessage$ POST accepted", { threadId });
       return true;
     },
   );
@@ -3521,8 +3358,7 @@ function createQueueMessage(deps: SendMessageDeps) {
 
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
         features,
-        modelSelection,
-        options.videoRunOptions,
+        modelSelection.selection,
       );
       await Promise.all([
         options.forward ? Promise.resolve() : set(flushDraftClear$, signal),
@@ -3535,7 +3371,7 @@ function createQueueMessage(deps: SendMessageDeps) {
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
             userMessage,
-            selectedModel: modelSelection?.selectedModel ?? null,
+            selectedModel: modelSelection.selection.selectedModel,
             ...(runOptions === undefined ? {} : { runOptions }),
             ...(realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
             ...(options.computerUseHostId === undefined
@@ -3565,10 +3401,7 @@ interface RecallMessageDeps {
   chatEvents$: Computed<ChatEvent[]>;
   draft: DraftSignals;
   queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
-  sendEvent$: Command<
-    Promise<SendChatEventResult>,
-    [SendChatEventInput, AbortSignal]
-  >;
+  sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }
 
 function createRecallMessage(deps: RecallMessageDeps) {
@@ -3667,11 +3500,15 @@ function createThreadMessageActions(deps: MessageCommandsDeps) {
   return {
     ...createMessageCommands(deps),
     skipAutomationEvent$: createSkipAutomationEvent(deps),
-    cancelRun$: createCancelRunWithQueuedRecall(deps),
+    cancelRun$: createInterruptLiveRuns(deps),
   };
 }
 
-function createCancelRunWithQueuedRecall({
+/**
+ * Stop interrupts the thread's live runs only. Queued follow-ups stay in the
+ * queue bar; the user recalls them one by one.
+ */
+function createInterruptLiveRuns({
   threadId,
   agentId,
   chatEvents$,
@@ -3680,10 +3517,7 @@ function createCancelRunWithQueuedRecall({
   readonly threadId: string;
   readonly agentId: string;
   chatEvents$: Computed<ChatEvent[]>;
-  sendEvent$: Command<
-    Promise<SendChatEventResult>,
-    [SendChatEventInput, AbortSignal]
-  >;
+  sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }) {
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
@@ -3694,14 +3528,8 @@ function createCancelRunWithQueuedRecall({
       });
       return;
     }
-    const chatEvents = get(chatEvents$);
-    const queuedEvents = queuedEventsFromChatEvents(chatEvents).filter(
-      (event) => {
-        return event.eventType === "input.prompt";
-      },
-    );
-    await Promise.all([
-      ...liveRunIdsFromChatEvents(chatEvents).map((runId) => {
+    await Promise.all(
+      liveRunIdsFromChatEvents(get(chatEvents$)).map((runId) => {
         return set(
           sendEvent$,
           {
@@ -3712,18 +3540,7 @@ function createCancelRunWithQueuedRecall({
           signal,
         );
       }),
-      ...queuedEvents.map((event) => {
-        return set(
-          sendEvent$,
-          {
-            kind: "revoke",
-            agentId,
-            revokesEventId: event.id,
-          },
-          signal,
-        );
-      }),
-    ]);
+    );
     signal.throwIfAborted();
   });
 }
@@ -3732,52 +3549,14 @@ function createCancelRunWithQueuedRecall({
 // Sub-factory: thinking indicator
 // ---------------------------------------------------------------------------
 
-function createThinkingIndicatorSignals(
-  activity: ReturnType<typeof createThreadActivitySummarySignals>,
-  messages: Pick<MessageListSignals, "thinkingText$" | "thinkingEventId$">,
-) {
-  const thinkingPhraseIndex = Math.floor(Math.random() * THINKING_PHRASE_COUNT);
+function createThinkingIndicatorSignals() {
   const thinkingPhrase$ = computed((get) => {
     get(locale$);
-    return get(activity.enabled$)
-      ? i18n.t(($) => {
-          return $.chat.run.thinking.default;
-        })
-      : thinkingPhrase(thinkingPhraseIndex);
+    return i18n.t(($) => {
+      return $.chat.run.thinking.default;
+    });
   });
-  const thinkingSummaries$ = computed(
-    async (get): Promise<ThinkingSummaries | null> => {
-      if (get(activity.enabled$)) {
-        return await get(activity.thinkingSummaries$);
-      }
-      const text = await get(messages.thinkingText$);
-      const eventId = await get(messages.thinkingEventId$);
-      if (!text || !eventId) {
-        return null;
-      }
-      return {
-        runId: eventId,
-        messages: [
-          ...new Set(
-            text
-              .split(/\r?\n/u)
-              .map((line) => {
-                return line.trim();
-              })
-              .filter(Boolean),
-          ),
-        ].map((line) => {
-          return { id: line, text: line };
-        }),
-      };
-    },
-  );
-  const thinkingRunId$ = computed(async (get) => {
-    return get(activity.enabled$)
-      ? get(activity.thinkingRunId$)
-      : await get(messages.thinkingEventId$);
-  });
-  return { thinkingPhrase$, thinkingSummaries$, thinkingRunId$ };
+  return { thinkingPhrase$ };
 }
 
 // ---------------------------------------------------------------------------
@@ -3793,6 +3572,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     visibleRenderedChatGroupsReady$: events.visibleRenderedChatGroupsReady$,
     readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
+    lastReadMarker$: events.lastReadMarker$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
     assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
     retryAssistantError$: events.retryAssistantError$,
@@ -3800,7 +3580,8 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     eventImageGroups$: events.eventImageGroups$,
     browserSessionSignals: events.browserSessionSignals,
     hasEvents$: events.hasEvents$,
-    thinkingIndicatorMode$: events.thinkingIndicatorMode$,
+    thinkingIndicators$: events.thinkingIndicators$,
+    runFinished$: events.runFinished$,
     recommendedFollowupSource$: events.recommendedFollowupSource$,
     donePhrase$: events.donePhrase$,
     loadMoreRenderedChatGroups$: events.loadMoreRenderedChatGroups$,
@@ -3817,8 +3598,6 @@ interface CreateChatThreadComposerSignalsOptions {
   readonly loadDraft$: Command<Promise<void>, [AbortSignal]>;
   readonly queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
   readonly modelSelection: ReturnType<typeof createModelSelection>;
-  readonly imageModelSelection: ReturnType<typeof createImageModelSelection>;
-  readonly videoModelSelection: ReturnType<typeof createVideoModelSelection>;
   readonly computerUseHostSelection: ReturnType<
     typeof createComputerUseHostSelection
   >;
@@ -3851,7 +3630,7 @@ function createThreadSubmitMessageSignal(
     ): Promise<boolean> => {
       const explicit = get(computerUseHostSelection.computerUseHostIdExplicit$);
       const storedHostId = get(computerUseHostSelection.computerUseHostId$);
-      const hosts = await get(computerUseHostsFromWorker$);
+      const hosts = (await get(connectorOverview$)).computerUseHosts;
       signal.throwIfAborted();
       const computerUseHostId = selectedComputerUseHostId(hosts, storedHostId);
       const cloudBrowserEnabled = get(
@@ -3867,9 +3646,6 @@ function createThreadSubmitMessageSignal(
                 cloudBrowserEnabled: explicit ? cloudBrowserEnabled : undefined,
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
-                ...(submission.videoRunOptions === undefined
-                  ? {}
-                  : { videoRunOptions: submission.videoRunOptions }),
                 ...(options.forward ? { forward: options.forward } : {}),
                 ...(options.onOptimisticSend
                   ? { onOptimisticSend: options.onOptimisticSend }
@@ -3885,9 +3661,6 @@ function createThreadSubmitMessageSignal(
                 ...(explicit ? { cloudBrowserEnabled } : {}),
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
-                ...(submission.videoRunOptions === undefined
-                  ? {}
-                  : { videoRunOptions: submission.videoRunOptions }),
                 ...(options.forward ? { forward: options.forward } : {}),
                 ...(options.onOptimisticSend
                   ? { onOptimisticSend: options.onOptimisticSend }
@@ -3928,11 +3701,8 @@ function createChatThreadComposerSignals(
 ): ComposerSignals {
   const { modelSelection, computerUseHostSelection, messageActions } = options;
   const composerModelSelection$ = computed(
-    async (get): Promise<ModelProviderSelection | null> => {
-      const selectedModel = get(modelSelection.selectedModel$);
-      if (!isSupportedRunModel(selectedModel)) {
-        return null;
-      }
+    async (get): Promise<ModelProviderSelection> => {
+      const selectedModel = await get(modelSelection.effectiveSelectedModel$);
       const modelSettings = get(modelSelection.modelSettings$);
       return {
         selectedModel,
@@ -3962,16 +3732,6 @@ function createChatThreadComposerSignals(
     selectedModelOauthAvailable$: modelSelection.selectedModelOauthAvailable$,
     setModelSelection$: modelSelection.setModelSelection$,
     configureSelectedModel$: modelSelection.configureSelectedModel$,
-    imageModel: {
-      selectedImageModel$: options.imageModelSelection.selectedImageModel$,
-      effectiveImageModel$: options.imageModelSelection.effectiveImageModel$,
-      setImageModel$: options.imageModelSelection.setImageModelSelection$,
-    },
-    videoModel: {
-      selectedVideoModel$: options.videoModelSelection.selectedVideoModel$,
-      effectiveVideoModel$: options.videoModelSelection.effectiveVideoModel$,
-      setVideoModel$: options.videoModelSelection.setVideoModelSelection$,
-    },
     computerUseHostId$: computerUseHostSelection.computerUseHostId$,
     cloudBrowserEnabled$: computerUseHostSelection.cloudBrowserEnabled$,
     setComputerUseHostId$: computerUseHostSelection.setComputerUseHostId$,
@@ -3992,14 +3752,6 @@ function createThreadComposerSignalsWithContext(
   const connector = createComposerConnectorSignals(context.agentId, threadId);
   const modelSelection = createModelSelection(threadId, context.threadMeta$);
   const modelSelectionForSend$ = createModelSelectionForSend(modelSelection);
-  const imageModelSelection = createImageModelSelection(
-    threadId,
-    context.threadMeta$,
-  );
-  const videoModelSelection = createVideoModelSelection(
-    threadId,
-    context.threadMeta$,
-  );
   const computerUseHostSelection = createComputerUseHostSelection(
     threadId,
     context.threadMeta$,
@@ -4029,8 +3781,6 @@ function createThreadComposerSignalsWithContext(
     loadDraft$,
     queueDraftSync$,
     modelSelection,
-    imageModelSelection,
-    videoModelSelection,
     computerUseHostSelection,
     messageActions,
     cancellationRecoveryPending$: context.cancellationRecoveryPending$,
@@ -4120,6 +3870,8 @@ export function createChatPanelSignals(
     previewRefreshRevision$: artifact.previewRefreshRevision$,
     previewCatalogReady$,
     connector: composer.connector,
+    thinkingSummaries$: activity.thinkingSummaries$,
+    threadDetail$: cancellationRecovery.detail$,
   });
   const messages: MessageListSignals = {
     ...messagePipeline,
@@ -4134,6 +3886,7 @@ export function createChatPanelSignals(
     threadId,
     messages.scroll,
     messagePipeline.allChatGroups$,
+    feedback.close$,
   );
   const locator = createChatConversationLocatorSignals({
     threadId,
@@ -4188,7 +3941,7 @@ export function createChatPanelSignals(
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),
     subscribeChatThread$: runTracking.subscribeChatThread$,
-    ...createThinkingIndicatorSignals(activity, messages),
+    ...createThinkingIndicatorSignals(),
     artifacts$: messages.artifacts$,
     reloadArtifacts$: messages.reloadArtifacts$,
   };

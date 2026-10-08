@@ -1,75 +1,67 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import {
-  PUBLIC_BRAND,
-  PUBLIC_BRAND_PRESENTATION,
-} from "@okouai/core/public-brand";
-import { v5 as uuidv5 } from "uuid";
-import {
-  getCanonicalModelDisplayName,
-  getBuiltInVisibleModels,
-  isSupportedRunModel,
-  normalizeRunModelId,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
+import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-group-message-receipt";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
-import { agentphoneUserAgentPreferences } from "@okouai/db/schema/agentphone-user-agent-preference";
+import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { and, desc, eq, isNull, like, notExists, or } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { command } from "ccstate";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { inferMimetype } from "../../lib/mimetype";
-import {
-  INTEGRATION_DM_SESSION_PREFIX,
-  integrationDmSessionKey,
-} from "../../lib/integration-dm-session";
-import { now } from "../../lib/time";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChanged,
-  publishUserSignal,
-} from "../external/realtime";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { now, nowDate } from "../../lib/time";
+import { waitUntil } from "../context/wait-until";
 import {
   sendAgentPhoneMessage,
   sendAgentPhoneTypingIndicator,
 } from "../external/agentphone-client";
-import { bestEffort, safeUrlParse } from "../utils";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
+  publishChatThreadMessageCreatedSafely,
+  publishThreadListChangedSafely,
+  publishUserSignal,
+} from "../external/realtime";
+import { bestEffort, safeUrlParse, settle } from "../utils";
+import {
+  ensureAgentPhoneChatThreadRoute$,
+  findAgentPhoneRoutedChatThreadId$,
+} from "./agentphone-chat-ingress.service";
+import {
+  agentPhoneChannelForLinkedHandle,
   agentPhoneReplyDestination,
   describeAgentPhoneHandleShape,
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
   normalizeAgentPhoneHandle,
+  resolveAgentPhoneConversationVisibilityRecipients,
+  resolveAgentPhoneMessageVisibilityRecipients,
   resolveAgentPhoneUserLink,
   resolveOrgDefaultComposeId,
   storeOutboundAgentPhoneMessage,
-  touchAgentPhoneUserLink,
   type AgentPhoneChannel,
+  type AgentPhoneMessageVisibilityRecipient,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
-import { ensureAgentPhoneChatThreadRoute } from "./agentphone-chat-ingress.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
-import { insertChatEvent } from "./chat-event.service";
-import {
-  chatEventTypeIn,
-  chatInputPromptDispatchCondition,
-} from "./chat-event-type.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
 import { InputFileImportError } from "./canonical-asset.service";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
+import {
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput$,
+  pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import {
+  integrationModelOptionValue,
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
 import {
   canonicalInputFilePrompt,
   integrationInputMessageFiles,
@@ -77,31 +69,27 @@ import {
   readyIntegrationInputAsset,
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
-import {
-  updateUserModelPreference$,
-  userModelPreference,
-} from "./user-data.service";
-
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
 const MAX_CONTEXT_MESSAGES = 10;
 const AGENTPHONE_SMS_MMS_SLASH_COMMAND_RISK_MESSAGE =
-  "Note: SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this AgentPhone number.";
+  "Note: SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.";
 const AGENTPHONE_GROUP_CONNECT_IN_DM_MESSAGE =
   "To connect this phone number, message this number directly in a 1:1 iMessage conversation.";
 const AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE =
-  "Only the linked sender can use AgentPhone account commands in a group. Message this number directly to connect or manage your link.";
+  "Only the linked sender can use account commands in a group. Message this number directly to connect or manage your link.";
 const AGENTPHONE_CHAT_MESSAGE_ID_NAMESPACE =
   "3208d609-59a7-4b0e-9c3b-3db20e9c924f";
-const agentPhoneQueueEventRevoker = alias(
-  chatEvents,
-  "agentphone_queue_event_revoker",
-);
 
 const AGENTPHONE_DM_ROOT_MESSAGE_ID = "dm";
 
 export {
+  agentPhoneChannelForLinkedHandle,
   describeAgentPhoneHandleShape,
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
@@ -127,6 +115,8 @@ export interface AgentPhoneMessageEvent {
   readonly conversationId: string | null;
   readonly groupId: string | null;
   readonly isGroup: boolean;
+  readonly participants: readonly string[];
+  readonly senderIdentifier?: string | null;
   readonly mentioned: boolean;
   readonly agentphoneAgentId: string;
   readonly fromNumber: string;
@@ -137,14 +127,6 @@ export interface AgentPhoneMessageEvent {
   readonly recentHistory: readonly AgentPhoneRecentHistoryMessage[];
 }
 
-type LinkAgentPhoneUserResult =
-  | { readonly ok: true; readonly userLink: AgentPhoneUserLink }
-  | {
-      readonly ok: false;
-      readonly reason: "phone-handle-linked" | "org-linked" | "conflict";
-      readonly userLink?: AgentPhoneUserLink;
-    };
-
 interface WorkspaceAgent {
   readonly composeId: string;
   readonly agentId: string;
@@ -152,22 +134,16 @@ interface WorkspaceAgent {
   readonly displayName: string | null;
 }
 
-type AgentPhoneMessageDispatchResult =
-  | { readonly kind: "ignored" }
-  | {
-      readonly kind: "accepted" | "queued";
-      readonly runId?: string;
-    };
-
-type ModelRoutePin = IntegrationModelRoutePin;
-
 function isAgentPhoneGroupEvent(event: AgentPhoneMessageEvent): boolean {
   return event.channel === "imessage" && event.isGroup;
 }
 
 function agentPhoneThreadRootMessageId(event: AgentPhoneMessageEvent): string {
-  if (!isAgentPhoneGroupEvent(event) || !event.conversationId) {
+  if (!isAgentPhoneGroupEvent(event)) {
     return AGENTPHONE_DM_ROOT_MESSAGE_ID;
+  }
+  if (!event.conversationId) {
+    throw new Error("AgentPhone group message is missing a conversation id");
   }
 
   const root = `group:${event.conversationId}`;
@@ -178,6 +154,15 @@ function agentPhoneThreadRootMessageId(event: AgentPhoneMessageEvent): string {
   return `group:${createHash("sha256")
     .update(event.conversationId)
     .digest("hex")}`;
+}
+
+/** Chat thread route key: group conversations by id, DMs share the main key. */
+function agentPhoneChatRouteRootMessageId(
+  event: AgentPhoneMessageEvent,
+): string {
+  return isAgentPhoneGroupEvent(event)
+    ? agentPhoneThreadRootMessageId(event)
+    : INTEGRATION_DM_SESSION_KEY;
 }
 
 function shouldIgnoreAgentPhoneGroupMessage(
@@ -194,7 +179,6 @@ function isAgentPhoneGroupAccountCommand(
     isAgentPhoneGroupEvent(event) &&
     (commandName === "connect" ||
       commandName === "disconnect" ||
-      commandName === "new_session" ||
       commandName === "model")
   );
 }
@@ -219,23 +203,6 @@ function signAgentPhoneConnectParams(params: {
     .digest("hex");
 }
 
-function signAgentPhoneConnectBrand(params: {
-  readonly phoneHandle: string;
-  readonly agentphoneAgentId: string;
-  readonly timestamp: number;
-  readonly channel: AgentPhoneChannel;
-  readonly publicBrand: PublicBrand;
-  readonly secret: string;
-}): string {
-  return createHmac("sha256", params.secret)
-    .update(
-      `${normalizeHandleForConnect(params.phoneHandle)}:${
-        params.agentphoneAgentId
-      }:${String(params.timestamp)}:${params.channel}:${params.publicBrand}`,
-    )
-    .digest("hex");
-}
-
 function safeHexSignatureEqual(expected: string, actual: string): boolean {
   if (actual.length !== expected.length || !/^[0-9a-f]+$/iu.test(actual)) {
     return false;
@@ -255,8 +222,6 @@ export function verifyAgentPhoneConnectSignature(params: {
   readonly timestamp: number;
   readonly channel: AgentPhoneChannel;
   readonly signature: string;
-  readonly publicBrand: PublicBrand;
-  readonly publicBrandSignature: string;
   readonly secret: string;
 }): boolean {
   const nowSeconds = Math.floor(now() / 1000);
@@ -264,27 +229,15 @@ export function verifyAgentPhoneConnectSignature(params: {
     return false;
   }
 
-  const expected = signAgentPhoneConnectParams({
-    phoneHandle: params.phoneHandle,
-    agentphoneAgentId: params.agentphoneAgentId,
-    timestamp: params.timestamp,
-    channel: params.channel,
-    secret: params.secret,
-  });
-  if (!safeHexSignatureEqual(expected, params.signature)) {
-    return false;
-  }
-
   return safeHexSignatureEqual(
-    signAgentPhoneConnectBrand({
+    signAgentPhoneConnectParams({
       phoneHandle: params.phoneHandle,
       agentphoneAgentId: params.agentphoneAgentId,
       timestamp: params.timestamp,
       channel: params.channel,
-      publicBrand: params.publicBrand,
       secret: params.secret,
     }),
-    params.publicBrandSignature,
+    params.signature,
   );
 }
 
@@ -327,7 +280,6 @@ export function buildAgentPhoneConnectUrl(params: {
   readonly secret: string;
 }): string {
   const timestamp = Math.floor(now() / 1000);
-  const publicBrand = PUBLIC_BRAND;
   const phoneHandle = normalizeAgentPhoneHandle(
     params.phoneHandle,
     params.channel,
@@ -336,11 +288,6 @@ export function buildAgentPhoneConnectUrl(params: {
     handle: phoneHandle,
     agent: params.agentphoneAgentId,
     ts: String(timestamp),
-    // New Platform -> old API rollback compatibility for the full retained
-    // rollback lifetime, which has no fixed maximum evidenced. The old API
-    // validates this Provider-identity signature and ignores the additive brand
-    // fields. Remove with #27750 after that API is no longer serving or retained
-    // for rollback.
     sig: signAgentPhoneConnectParams({
       phoneHandle,
       agentphoneAgentId: params.agentphoneAgentId,
@@ -349,187 +296,46 @@ export function buildAgentPhoneConnectUrl(params: {
       secret: params.secret,
     }),
     channel: params.channel,
-    publicBrand,
-    brandSig: signAgentPhoneConnectBrand({
-      phoneHandle,
-      agentphoneAgentId: params.agentphoneAgentId,
-      timestamp,
-      channel: params.channel,
-      publicBrand,
-      secret: params.secret,
-    }),
   });
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
 }
 
-export async function linkAgentPhoneUser(
-  db: Db,
-  params: {
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
-    readonly userId: string;
-    readonly orgId: string;
-    readonly publicBrand: PublicBrand;
-  },
-): Promise<LinkAgentPhoneUserResult> {
-  const phoneHandle = normalizeAgentPhoneHandle(
-    params.phoneHandle,
-    params.channel,
-  );
-  const [existingPhoneLink] = await db
-    .select()
-    .from(agentphoneUserLinks)
-    .where(eq(agentphoneUserLinks.phoneHandle, phoneHandle))
-    .limit(1);
-
-  if (existingPhoneLink) {
-    if (
-      existingPhoneLink.userId === params.userId &&
-      existingPhoneLink.orgId === params.orgId
-    ) {
-      return {
-        ok: true,
-        userLink: await touchAgentPhoneUserLink(
-          db,
-          existingPhoneLink,
-          phoneHandle,
-          params.channel,
-          params.publicBrand,
-        ),
-      };
-    }
-
-    return {
-      ok: false,
-      reason: "phone-handle-linked",
-      userLink: existingPhoneLink,
-    };
-  }
-
-  const [existingUserOrgLink] = await db
-    .select()
-    .from(agentphoneUserLinks)
-    .where(
-      and(
-        eq(agentphoneUserLinks.userId, params.userId),
-        eq(agentphoneUserLinks.orgId, params.orgId),
-      ),
-    )
-    .limit(1);
-
-  if (existingUserOrgLink) {
-    if (existingUserOrgLink.phoneHandle === phoneHandle) {
-      return {
-        ok: true,
-        userLink: await touchAgentPhoneUserLink(
-          db,
-          existingUserOrgLink,
-          phoneHandle,
-          params.channel,
-          params.publicBrand,
-        ),
-      };
-    }
-
-    return {
-      ok: false,
-      reason: "org-linked",
-      userLink: existingUserOrgLink,
-    };
-  }
-
-  const [inserted] = await db
-    .insert(agentphoneUserLinks)
-    .values({
-      phoneHandle,
-      userId: params.userId,
-      orgId: params.orgId,
-      publicBrand: params.publicBrand,
-    })
-    .onConflictDoNothing()
-    .returning();
-
-  if (inserted) {
-    return { ok: true, userLink: inserted };
-  }
-  return { ok: false, reason: "conflict" };
-}
-
-async function resolveAgentPhoneUserLinkById(
-  db: ReadonlyDb,
-  userLinkId: string,
-): Promise<AgentPhoneUserLink | null> {
-  const [userLink] = await db
-    .select()
-    .from(agentphoneUserLinks)
-    .where(eq(agentphoneUserLinks.id, userLinkId))
-    .limit(1);
-  return userLink ?? null;
-}
-
-async function resolveAgentPhoneConversationUserLink(
-  db: ReadonlyDb,
-  conversationId: string,
-): Promise<AgentPhoneUserLink | null> {
-  const [route] = await db
-    .select({
-      userLinkId: agentphoneChatThreadRoutes.agentphoneUserLinkId,
-    })
-    .from(agentphoneChatThreadRoutes)
-    .where(eq(agentphoneChatThreadRoutes.conversationId, conversationId))
-    .orderBy(desc(agentphoneChatThreadRoutes.createdAt))
-    .limit(1);
-  return route ? resolveAgentPhoneUserLinkById(db, route.userLinkId) : null;
-}
-
-export async function resolveAgentPhoneUserLinkForEvent(
+/**
+ * The sender's own phone link. Group conversations never borrow another
+ * participant's link: an unlinked sender is treated as unlinked even when the
+ * conversation already has a route owned by someone else.
+ */
+export function resolveAgentPhoneUserLinkForEvent(
   db: Db,
   event: AgentPhoneMessageEvent,
 ): Promise<AgentPhoneUserLink | null> {
-  const direct = await resolveAgentPhoneUserLink(
-    db,
-    event.fromNumber,
-    event.channel,
-  );
-  if (direct || !isAgentPhoneGroupEvent(event) || !event.conversationId) {
-    return direct;
-  }
-
-  return resolveAgentPhoneConversationUserLink(db, event.conversationId);
+  return resolveAgentPhoneUserLink(db, event.fromNumber, event.channel);
 }
 
-export async function resolveAgentPhoneUserLinkForOwner(
-  db: Db,
+/**
+ * The member's own phone link. A member has at most one link per organization,
+ * so proactive sends address it directly instead of trusting a caller-supplied
+ * handle.
+ */
+export async function resolveAgentPhoneUserLinkForMember(
+  db: ReadonlyDb,
   params: {
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
     readonly userId: string;
     readonly orgId: string;
   },
 ): Promise<AgentPhoneUserLink | null> {
-  const normalized = normalizeAgentPhoneHandle(
-    params.phoneHandle,
-    params.channel,
-  );
-  if (!normalized) {
-    return null;
-  }
   const [userLink] = await db
     .select()
     .from(agentphoneUserLinks)
     .where(
       and(
-        eq(agentphoneUserLinks.phoneHandle, normalized),
         eq(agentphoneUserLinks.userId, params.userId),
         eq(agentphoneUserLinks.orgId, params.orgId),
       ),
     )
     .limit(1);
 
-  if (!userLink) {
-    return null;
-  }
-  return touchAgentPhoneUserLink(db, userLink, normalized, params.channel);
+  return userLink ?? null;
 }
 
 export async function resolveAgentPhoneAgentIdForUserLink(
@@ -568,80 +374,114 @@ export async function storeInboundAgentPhoneMessage(
   params: {
     readonly event: AgentPhoneMessageEvent;
     readonly userLinkId?: string | null;
-    readonly publicBrand: PublicBrand;
   },
-): Promise<{ readonly inserted: boolean }> {
-  const inserted = await db
-    .insert(agentphoneMessages)
-    .values({
-      webhookId: params.event.webhookId,
-      agentphoneMessageId: params.event.messageId,
-      conversationId: params.event.conversationId,
-      agentphoneAgentId: params.event.agentphoneAgentId,
-      publicBrand: params.publicBrand,
-      agentphoneUserLinkId: params.userLinkId ?? null,
-      phoneHandle: normalizeAgentPhoneHandle(
-        params.event.fromNumber,
-        params.event.channel,
-      ),
-      fromNumber: normalizeAgentPhoneHandle(
-        params.event.fromNumber,
-        params.event.channel,
-      ),
-      toNumber: normalizeAgentPhoneHandle(params.event.toNumber, "sms"),
-      direction: "inbound",
-      channel: params.event.channel,
-      body: params.event.body || null,
-      mediaUrl: params.event.mediaUrl,
-      isBot: false,
-      receivedAt: params.event.receivedAt,
-    })
-    .onConflictDoNothing()
-    .returning({ id: agentphoneMessages.id });
+): Promise<{ readonly inserted: boolean; readonly dispatch: boolean }> {
+  const isGroup = isAgentPhoneGroupEvent(params.event);
+  return await db.transaction(async (tx) => {
+    let visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[] =
+      [];
+    if (isGroup) {
+      const receivedAt = params.event.receivedAt;
+      if (receivedAt === null) {
+        throw new Error("AgentPhone group message is missing receivedAt");
+      }
 
-  return { inserted: inserted.length > 0 };
-}
+      const existingConditions = [
+        eq(agentphoneMessages.agentphoneMessageId, params.event.messageId),
+      ];
+      if (params.event.webhookId) {
+        existingConditions.push(
+          eq(agentphoneMessages.webhookId, params.event.webhookId),
+        );
+      }
+      const [existing] = await tx
+        .select({ id: agentphoneMessages.id })
+        .from(agentphoneMessages)
+        .where(or(...existingConditions))
+        .limit(1);
+      if (existing) {
+        return { inserted: false, dispatch: false };
+      }
 
-async function getAgentPhoneUserAgentPreference(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({
-      selectedAgentId: agentphoneUserAgentPreferences.selectedAgentId,
-    })
-    .from(agentphoneUserAgentPreferences)
-    .where(
-      and(
-        eq(agentphoneUserAgentPreferences.userId, userId),
-        eq(agentphoneUserAgentPreferences.orgId, orgId),
-      ),
-    )
-    .limit(1);
+      const receiptInserted = await tx.transaction(async (receiptTx) => {
+        const [receipt] = await receiptTx
+          .insert(agentphoneGroupMessageReceipts)
+          .values({
+            agentphoneMessageId: params.event.messageId,
+            webhookId: params.event.webhookId,
+          })
+          .onConflictDoNothing()
+          .returning({
+            agentphoneMessageId:
+              agentphoneGroupMessageReceipts.agentphoneMessageId,
+          });
+        return receipt !== undefined;
+      });
+      if (!receiptInserted) {
+        return { inserted: false, dispatch: false };
+      }
 
-  return row?.selectedAgentId ?? null;
-}
-
-async function resolveEffectiveAgentPhoneComposeId(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const preference = await getAgentPhoneUserAgentPreference(db, userId, orgId);
-  if (preference) {
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, preference), eq(agents.orgId, orgId)))
-      .limit(1);
-
-    if (agent?.id) {
-      return preference;
+      visibilityRecipients = await resolveAgentPhoneMessageVisibilityRecipients(
+        tx,
+        params.event.participants,
+        "imessage",
+        receivedAt,
+      );
     }
-  }
+    if (isGroup && visibilityRecipients.length === 0) {
+      return { inserted: false, dispatch: true };
+    }
 
-  return resolveOrgDefaultComposeId(db, orgId);
+    const [inserted] = await tx
+      .insert(agentphoneMessages)
+      .values({
+        webhookId: params.event.webhookId,
+        agentphoneMessageId: params.event.messageId,
+        conversationId: params.event.conversationId,
+        groupId: isGroup ? params.event.groupId : null,
+        agentphoneAgentId: params.event.agentphoneAgentId,
+        agentphoneUserLinkId: params.userLinkId ?? null,
+        phoneHandle: normalizeAgentPhoneHandle(
+          params.event.fromNumber,
+          params.event.channel,
+        ),
+        fromNumber: normalizeAgentPhoneHandle(
+          params.event.senderIdentifier ?? params.event.fromNumber,
+          params.event.channel,
+        ),
+        toNumber:
+          params.event.groupId ??
+          normalizeAgentPhoneHandle(params.event.toNumber, "sms"),
+        direction: "inbound",
+        channel: params.event.channel,
+        body: params.event.body || null,
+        mediaUrl: params.event.mediaUrl,
+        isBot: false,
+        receivedAt: params.event.receivedAt,
+      })
+      .onConflictDoNothing()
+      .returning({ id: agentphoneMessages.id });
+
+    if (inserted && isGroup) {
+      await tx
+        .insert(agentphoneMessageVisibility)
+        .values(
+          visibilityRecipients.map((recipient) => {
+            return {
+              messageId: inserted.id,
+              orgId: recipient.orgId,
+              userId: recipient.userId,
+            };
+          }),
+        )
+        .onConflictDoNothing();
+    }
+
+    return {
+      inserted: Boolean(inserted),
+      dispatch: Boolean(inserted),
+    };
+  });
 }
 
 async function getWorkspaceAgent(
@@ -674,11 +514,7 @@ async function resolveAgentPhoneAgent(
   db: ReadonlyDb,
   userLink: AgentPhoneUserLink,
 ): Promise<WorkspaceAgent | undefined> {
-  const composeId = await resolveEffectiveAgentPhoneComposeId(
-    db,
-    userLink.userId,
-    userLink.orgId,
-  );
+  const composeId = await resolveOrgDefaultComposeId(db, userLink.orgId);
   if (!composeId) {
     return undefined;
   }
@@ -745,13 +581,10 @@ function formatAgentPhoneFileForContext(params: {
   readonly messageId: string;
   readonly mediaUrl: string;
 }): string {
-  const name = agentPhoneFilenameFromMediaUrl(
-    params.mediaUrl,
-    "agentphone-media",
-  );
+  const name = agentPhoneFilenameFromMediaUrl(params.mediaUrl, "phone-media");
   const mimetype = inferMimetype(name);
   return [
-    `[AgentPhone file] ${name} (${mimetype})`,
+    `[Phone file] ${name} (${mimetype})`,
     `   [ID] ${params.messageId}`,
   ].join("\n");
 }
@@ -760,9 +593,13 @@ async function fetchAgentPhoneContext(
   db: ReadonlyDb,
   params: {
     readonly userLinkId: string;
+    readonly userId: string;
+    readonly orgId: string;
     readonly phoneHandle: string;
     readonly channel: AgentPhoneChannel;
     readonly conversationId: string | null;
+    readonly groupId: string | null;
+    readonly agentphoneAgentId: string;
     readonly isGroup: boolean;
     readonly recentHistory: readonly AgentPhoneRecentHistoryMessage[];
     readonly currentMessageId?: string;
@@ -772,17 +609,19 @@ async function fetchAgentPhoneContext(
     params.phoneHandle,
     params.channel,
   );
-  const providerContext = formatAgentPhoneRecentHistoryContext(
-    params.recentHistory,
-    params.currentMessageId,
-    params.isGroup,
-  );
+  const providerContext = params.isGroup
+    ? ""
+    : formatAgentPhoneRecentHistoryContext(
+        params.recentHistory,
+        params.currentMessageId,
+        false,
+      );
   if (providerContext) {
     return { executionContext: providerContext };
   }
 
   const messages =
-    params.isGroup && params.conversationId
+    params.isGroup && params.groupId
       ? await db
           .select({
             messageId: agentphoneMessages.agentphoneMessageId,
@@ -793,13 +632,22 @@ async function fetchAgentPhoneContext(
             fromNumber: agentphoneMessages.fromNumber,
           })
           .from(agentphoneMessages)
+          .innerJoin(
+            agentphoneMessageVisibility,
+            eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
+          )
           .where(
             and(
-              eq(agentphoneMessages.agentphoneUserLinkId, params.userLinkId),
-              eq(agentphoneMessages.conversationId, params.conversationId),
+              eq(
+                agentphoneMessages.agentphoneAgentId,
+                params.agentphoneAgentId,
+              ),
+              eq(agentphoneMessages.groupId, params.groupId),
+              eq(agentphoneMessageVisibility.orgId, params.orgId),
+              eq(agentphoneMessageVisibility.userId, params.userId),
             ),
           )
-          .orderBy(desc(agentphoneMessages.createdAt))
+          .orderBy(desc(agentphoneMessages.receivedAt))
           .limit(MAX_CONTEXT_MESSAGES)
       : await db
           .select({
@@ -815,6 +663,7 @@ async function fetchAgentPhoneContext(
             and(
               eq(agentphoneMessages.agentphoneUserLinkId, params.userLinkId),
               eq(agentphoneMessages.phoneHandle, phoneHandle),
+              isNull(agentphoneMessages.groupId),
             ),
           )
           .orderBy(desc(agentphoneMessages.createdAt))
@@ -928,11 +777,11 @@ function buildAgentPhoneContextBlock(
   isGroup: boolean,
 ): string {
   return [
-    "# AgentPhone Message Context",
+    "# Phone Message Context",
     "",
     isGroup
-      ? "The messages below are from an iMessage group conversation with the shared AgentPhone number. Messages closer to RELATIVE_INDEX 0 are more recent."
-      : "The messages below are from the user's text message conversation with the shared AgentPhone number. Messages closer to RELATIVE_INDEX 0 are more recent.",
+      ? "The messages below are from an iMessage group conversation with the shared phone number. Messages closer to RELATIVE_INDEX 0 are more recent."
+      : "The messages below are from the user's text message conversation with the shared phone number. Messages closer to RELATIVE_INDEX 0 are more recent.",
     "",
     formattedMessages.join("\n\n"),
     "",
@@ -992,13 +841,30 @@ function appendAgentPhoneSlashCommandRiskWarning(
 export async function sendAgentPhoneText(
   event: AgentPhoneMessageEvent,
   body: string,
+  db: Db | undefined,
   signal: AbortSignal,
 ): Promise<void> {
-  await sendAgentPhoneMessage(
+  const isGroup = isAgentPhoneGroupEvent(event);
+  if (isGroup && !db) {
+    throw new Error("AgentPhone group reply requires a database handle");
+  }
+  if (isGroup && !event.conversationId) {
+    throw new Error("AgentPhone group reply is missing a conversation id");
+  }
+  const visibilityRecipients = isGroup
+    ? await resolveAgentPhoneConversationVisibilityRecipients(
+        db!,
+        event.conversationId!,
+        nowDate(),
+        signal,
+      )
+    : [];
+  signal.throwIfAborted();
+  const sent = await sendAgentPhoneMessage(
     {
       agentphoneAgentId: event.agentphoneAgentId,
       toNumber: agentPhoneReplyDestination({
-        isGroup: isAgentPhoneGroupEvent(event),
+        isGroup,
         groupId: event.groupId,
         phoneHandle: event.fromNumber,
       }),
@@ -1009,16 +875,35 @@ export async function sendAgentPhoneText(
     },
     signal,
   );
+  signal.throwIfAborted();
+
+  if (isGroup) {
+    await storeOutboundAgentPhoneMessage(db!, {
+      agentphoneMessageId: sent.id,
+      conversationId: event.conversationId,
+      groupId: event.groupId,
+      agentphoneAgentId: event.agentphoneAgentId,
+      phoneHandle: event.fromNumber,
+      fromNumber: event.toNumber,
+      toNumber: sent.toNumber,
+      body,
+      channel: event.channel,
+      userChannel: event.channel,
+      visibilityRecipients,
+    });
+  }
 }
 
 async function sendAgentPhoneSlashCommandText(
   event: AgentPhoneMessageEvent,
   body: string,
+  db: Db | undefined,
   signal: AbortSignal,
 ): Promise<void> {
   await sendAgentPhoneText(
     event,
     appendAgentPhoneSlashCommandRiskWarning(body, event.channel),
+    db,
     signal,
   );
 }
@@ -1044,7 +929,7 @@ async function refreshTypingIfSupported(
 }
 
 function formatConnectPrompt(event: AgentPhoneMessageEvent): string {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   const connectUrl = buildAgentPhoneConnectUrl({
     phoneHandle: event.fromNumber,
     agentphoneAgentId: event.agentphoneAgentId,
@@ -1053,8 +938,6 @@ function formatConnectPrompt(event: AgentPhoneMessageEvent): string {
   });
 
   return [
-    `This shared AgentPhone number connects you to ${brandName}.`,
-    "",
     "You can text me like a teammate and I'll actually do the work: research something, draft and send emails, summarize long documents, update spreadsheets, triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.",
     "",
     "I'm most useful once I'm connected to the tools you already use — GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, X, and 100+ others.",
@@ -1066,12 +949,11 @@ function formatConnectPrompt(event: AgentPhoneMessageEvent): string {
 }
 
 function formatHelpMessage(): string {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   return [
     `${brandName} text message commands`,
     "",
     `/connect - Connect this phone number to ${brandName}`,
-    "/new_session - Start a new conversation",
     "/model - Choose your model",
     `/disconnect - Disconnect this phone number from ${brandName}`,
     "/help - Show these commands",
@@ -1083,6 +965,7 @@ function formatHelpMessage(): string {
 async function sendConnectPrompt(
   event: AgentPhoneMessageEvent,
   options: { readonly slashCommand: boolean } | undefined,
+  db: Db | undefined,
   signal: AbortSignal,
 ): Promise<void> {
   const body = formatConnectPrompt(event);
@@ -1091,28 +974,33 @@ async function sendConnectPrompt(
     options?.slashCommand
       ? appendAgentPhoneSlashCommandRiskWarning(body, event.channel)
       : body,
+    db,
     signal,
   );
 }
 
 async function sendGroupConnectInDmPrompt(
   event: AgentPhoneMessageEvent,
+  db: Db | undefined,
   signal: AbortSignal,
 ): Promise<void> {
   await sendAgentPhoneText(
     event,
     AGENTPHONE_GROUP_CONNECT_IN_DM_MESSAGE,
+    db,
     signal,
   );
 }
 
 async function sendGroupAccountCommandBlockedMessage(
   event: AgentPhoneMessageEvent,
+  db: Db | undefined,
   signal: AbortSignal,
 ): Promise<void> {
   await sendAgentPhoneText(
     event,
     AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE,
+    db,
     signal,
   );
 }
@@ -1126,42 +1014,36 @@ async function blockUnauthorizedGroupAccountCommand(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (!isAgentPhoneGroupAccountCommand(args.event, args.commandText)) {
+  if (
+    !isAgentPhoneGroupAccountCommand(args.event, args.commandText) ||
+    args.userLink
+  ) {
     return false;
   }
 
-  const directUserLink = await resolveAgentPhoneUserLink(
-    args.db,
-    args.event.fromNumber,
-    args.event.channel,
-  );
-  signal.throwIfAborted();
-
-  if (directUserLink && directUserLink.id === args.userLink?.id) {
-    return false;
-  }
-
-  await sendGroupAccountCommandBlockedMessage(args.event, signal);
+  await sendGroupAccountCommandBlockedMessage(args.event, args.db, signal);
   return true;
 }
 
 async function handleConnectCommand(
   args: {
+    readonly db: Db;
     readonly event: AgentPhoneMessageEvent;
     readonly userLink: AgentPhoneUserLink | null;
   },
   signal: AbortSignal,
 ): Promise<void> {
   if (args.userLink) {
-    const { brandName } = PUBLIC_BRAND_PRESENTATION;
+    const { brandName } = BRAND_PRESENTATION;
     await sendAgentPhoneSlashCommandText(
       args.event,
       `You are already connected. Send a message here to start using ${brandName}.`,
+      args.db,
       signal,
     );
     return;
   }
-  await sendConnectPrompt(args.event, { slashCommand: true }, signal);
+  await sendConnectPrompt(args.event, { slashCommand: true }, args.db, signal);
 }
 
 async function handleDisconnectCommand(
@@ -1176,6 +1058,7 @@ async function handleDisconnectCommand(
     await sendAgentPhoneSlashCommandText(
       args.event,
       "Error: This phone number is not connected.",
+      args.db,
       signal,
     );
     return;
@@ -1188,47 +1071,8 @@ async function handleDisconnectCommand(
 
   await sendAgentPhoneSlashCommandText(
     args.event,
-    `This phone number has been disconnected from ${PUBLIC_BRAND_PRESENTATION.brandName}.`,
-    signal,
-  );
-}
-
-async function handleNewSessionCommand(
-  args: {
-    readonly db: Db;
-    readonly event: AgentPhoneMessageEvent;
-    readonly userLink: AgentPhoneUserLink | null;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (!args.userLink) {
-    await sendConnectPrompt(args.event, { slashCommand: true }, signal);
-    return;
-  }
-
-  const rootMessageId = agentPhoneThreadRootMessageId(args.event);
-  const userLinkId = args.userLink.id;
-  await args.db
-    .delete(agentphoneChatThreadRoutes)
-    .where(
-      and(
-        eq(agentphoneChatThreadRoutes.agentphoneUserLinkId, userLinkId),
-        isAgentPhoneGroupEvent(args.event)
-          ? eq(agentphoneChatThreadRoutes.rootMessageId, rootMessageId)
-          : or(
-              eq(agentphoneChatThreadRoutes.rootMessageId, "dm"),
-              like(
-                agentphoneChatThreadRoutes.rootMessageId,
-                `${INTEGRATION_DM_SESSION_PREFIX}%`,
-              ),
-            ),
-      ),
-    );
-  signal.throwIfAborted();
-
-  await sendAgentPhoneSlashCommandText(
-    args.event,
-    "New session started.",
+    `This phone number has been disconnected from ${BRAND_PRESENTATION.brandName}.`,
+    args.db,
     signal,
   );
 }
@@ -1261,37 +1105,28 @@ function compactLookupKey(value: string): string {
 
 function findModelOption(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string | null;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
   input: string,
 ) {
-  const normalizedInput = normalizeRunModelId(input.trim());
-  const inputKeys = new Set([
-    lookupKey(input),
-    lookupKey(normalizedInput),
-    compactLookupKey(input),
-    compactLookupKey(normalizedInput),
-  ]);
+  const inputKeys = new Set([lookupKey(input), compactLookupKey(input)]);
   return options.find((option) => {
-    return [
-      option.model,
-      normalizeRunModelId(option.model),
-      option.label,
-      getCanonicalModelDisplayName(option.model),
-    ].some((value) => {
-      return (
-        inputKeys.has(lookupKey(value)) ||
-        inputKeys.has(compactLookupKey(value))
-      );
-    });
+    return [integrationModelOptionValue(option.model), option.label].some(
+      (value) => {
+        return (
+          inputKeys.has(lookupKey(value)) ||
+          inputKeys.has(compactLookupKey(value))
+        );
+      },
+    );
   });
 }
 
 function formatAgentPhoneModelOptionsMessage(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string | null;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1300,17 +1135,18 @@ function formatAgentPhoneModelOptionsMessage(
   const optionLines = options.map((option) => {
     const markers = [
       option.model === currentSelectedModel ? "current" : null,
-      option.isDefault ? "workspace default" : null,
+      option.isDefault ? "default" : null,
     ].filter((marker): marker is string => {
       return marker !== null;
     });
     const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
-    return `/model ${option.model} - ${option.label}${suffix}`;
+    return `/model ${integrationModelOptionValue(option.model)} - ${option.label}${suffix}`;
   });
 
-  const current = currentSelectedModel
-    ? getCanonicalModelDisplayName(currentSelectedModel)
-    : "workspace default";
+  const current =
+    options.find((option) => {
+      return option.model === currentSelectedModel;
+    })?.label ?? integrationModelOptionValue(currentSelectedModel);
   return [
     "Available models",
     "",
@@ -1323,37 +1159,57 @@ function formatAgentPhoneModelOptionsMessage(
 
 const handleModelCommand$ = command(
   async (
-    { get, set },
+    { set },
     args: {
+      readonly db: Db;
       readonly event: AgentPhoneMessageEvent;
+      readonly userLinkId: string;
       readonly orgId: string;
       readonly userId: string;
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
-      set(
-        listOrgModelPolicies$,
-        { orgId: args.orgId, userId: args.userId },
+    const chatThreadId = await set(
+      findAgentPhoneRoutedChatThreadId$,
+      {
+        agentphoneUserLinkId: args.userLinkId,
+        rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (currentModel.kind === "no_thread") {
+      await sendAgentPhoneSlashCommandText(
+        args.event,
+        "Error: Start or enter an existing Okou conversation before using /model.",
+        args.db,
         signal,
-      ),
-      get(userModelPreference({ orgId: args.orgId, userId: args.userId })),
-    ]);
+      );
+      return;
+    }
+    const currentSelectedModel = currentModel.selectedModel;
+    const runModels = await set(
+      listAvailableRunModels$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
     signal.throwIfAborted();
 
-    const options = policies.policies.flatMap((policy) => {
-      if (
-        !isSupportedRunModel(policy.model) ||
-        !visibleModels.has(policy.model) ||
-        policy.routeStatus !== "valid"
-      ) {
-        return [];
-      }
+    const options = runModels.models.map((runModel) => {
       return {
-        model: policy.model,
-        label: policy.modelLabel,
-        isDefault: policy.isDefault,
+        model: runModel.model,
+        label: runModel.modelLabel,
+        isDefault: runModel.model === null,
       };
     });
 
@@ -1361,6 +1217,7 @@ const handleModelCommand$ = command(
       await sendAgentPhoneSlashCommandText(
         args.event,
         "Error: No models are configured for this workspace.",
+        args.db,
         signal,
       );
       return;
@@ -1370,7 +1227,8 @@ const handleModelCommand$ = command(
     if (!input) {
       await sendAgentPhoneSlashCommandText(
         args.event,
-        formatAgentPhoneModelOptionsMessage(options, preference.selectedModel),
+        formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
+        args.db,
         signal,
       );
       return;
@@ -1383,29 +1241,40 @@ const handleModelCommand$ = command(
         [
           `Error: Unknown model "${input}".`,
           "",
-          formatAgentPhoneModelOptionsMessage(
-            options,
-            preference.selectedModel,
-          ),
+          formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
         ].join("\n"),
+        args.db,
         signal,
       );
       return;
     }
 
-    await set(
-      updateUserModelPreference$,
+    const threadModel = await set(
+      updateIntegrationChatThreadModel$,
       {
         orgId: args.orgId,
         userId: args.userId,
-        preference: { selectedModel: option.model, serviceTier: null },
+        chatThreadId,
+        model: option.model,
       },
       signal,
     );
+    if (threadModel.kind !== "updated") {
+      await sendAgentPhoneSlashCommandText(
+        args.event,
+        threadModel.kind === "no_thread"
+          ? "Error: Start or enter an existing Okou conversation before using /model."
+          : "Error: You don't have access to that model.",
+        args.db,
+        signal,
+      );
+      return;
+    }
     signal.throwIfAborted();
     await sendAgentPhoneSlashCommandText(
       args.event,
       `Switched to ${option.label}.`,
+      args.db,
       signal,
     );
   },
@@ -1426,6 +1295,7 @@ const dispatchAgentPhoneCommand$ = command(
       case "connect": {
         await handleConnectCommand(
           {
+            db: args.db,
             event: args.event,
             userLink: args.userLink,
           },
@@ -1444,34 +1314,31 @@ const dispatchAgentPhoneCommand$ = command(
         );
         return true;
       }
-      case "new_session": {
-        await handleNewSessionCommand(
-          {
-            db: args.db,
-            event: args.event,
-            userLink: args.userLink,
-          },
-          signal,
-        );
-        return true;
-      }
       case "help": {
         await sendAgentPhoneSlashCommandText(
           args.event,
           formatHelpMessage(),
+          args.db,
           signal,
         );
         return true;
       }
       case "model": {
         if (!args.userLink) {
-          await sendConnectPrompt(args.event, { slashCommand: true }, signal);
+          await sendConnectPrompt(
+            args.event,
+            { slashCommand: true },
+            args.db,
+            signal,
+          );
           return true;
         }
         await set(
           handleModelCommand$,
           {
+            db: args.db,
             event: args.event,
+            userLinkId: args.userLink.id,
             orgId: args.userLink.orgId,
             userId: args.userLink.userId,
           },
@@ -1559,7 +1426,7 @@ function agentPhoneInputFiles(
             if (safeUrlParse(mediaUrl)?.protocol !== "https:") {
               throw new InputFileImportError(
                 "invalid-url",
-                "AgentPhone media URL must use HTTPS",
+                "Phone media URL must use HTTPS",
               );
             }
             return fetch(mediaUrl, { signal: downloadSignal });
@@ -1568,6 +1435,14 @@ function agentPhoneInputFiles(
       ]
     : [];
 }
+
+type PersistedAgentPhoneChatMessage =
+  | {
+      readonly inserted: true;
+      readonly chatThreadId: string;
+      readonly chatEventId: string;
+    }
+  | { readonly inserted: false };
 
 const persistAgentPhoneChatMessage$ = command(
   async (
@@ -1581,30 +1456,32 @@ const persistAgentPhoneChatMessage$ = command(
       readonly prompt: string;
       readonly threadContext: string;
       readonly apiStartTime: number;
-      readonly modelRoute: ModelRoutePin | undefined;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly inserted: true;
-        readonly chatThreadId: string;
-        readonly chatEventId: string;
-      }
-    | { readonly inserted: false }
-  > => {
+  ): Promise<PersistedAgentPhoneChatMessage> => {
     const currentTime = new Date(args.apiStartTime);
-    const route = await ensureAgentPhoneChatThreadRoute(args.db, {
-      agentphoneUserLinkId: args.userLink.id,
-      rootMessageId: args.rootMessageId,
-      conversationId: args.event.conversationId,
-      userId: args.userLink.userId,
-      orgId: args.userLink.orgId,
-      agentId: args.agent.composeId,
-      selectedModel: args.modelRoute?.selectedModel ?? null,
-      serviceTier: args.modelRoute?.serviceTier ?? null,
-      currentTime,
-    });
+    const route = await set(
+      ensureAgentPhoneChatThreadRoute$,
+      {
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          {
+            orgId: args.userLink.orgId,
+            userId: args.userLink.userId,
+            orgPlanCapabilities: undefined,
+          },
+          signal,
+        ),
+        agentphoneUserLinkId: args.userLink.id,
+        rootMessageId: args.rootMessageId,
+        conversationId: args.event.conversationId,
+        userId: args.userLink.userId,
+        orgId: args.userLink.orgId,
+        agentId: args.agent.composeId,
+        currentTime,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const chatEventId = agentPhoneChatMessageId({
@@ -1618,7 +1495,6 @@ const persistAgentPhoneChatMessage$ = command(
         userId: args.userLink.userId,
         orgId: args.userLink.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: args.publicBrand,
         files: agentPhoneInputFiles(args.event, args.userLink.id),
       },
       signal,
@@ -1632,117 +1508,77 @@ const persistAgentPhoneChatMessage$ = command(
           .filter(Boolean)
           .join("\n\n")
       : args.prompt;
-    const inserted = await args.db.transaction(async (tx) => {
-      const event = await insertChatEvent(
-        tx,
-        {
-          id: chatEventId,
-          chatThreadId: route.chatThreadId,
-          eventType: "input.prompt",
-          userMessage: createUserMessageDocument({
-            text: canonicalAsset ? args.event.body.trim() : args.prompt,
-            files: integrationInputMessageFiles(assets),
-            nonContentPart: createChatEventSourcePart({
-              kind: "agentphone",
-              toNumber: normalizeAgentPhoneHandle(args.event.toNumber, "sms"),
-              isGroup: args.event.isGroup,
-            }),
-          }),
-          runId: null,
-          agentphoneContext: {
-            messageText: prompt,
-            threadContext: args.threadContext,
-            messageId: args.event.messageId,
-            rootMessageId: args.rootMessageId,
-            conversationId: args.event.conversationId,
-            groupId: args.event.groupId,
-            channel: args.event.channel,
-            isGroup: isAgentPhoneGroupEvent(args.event),
-            phoneHandle: args.event.fromNumber,
-            fromNumber: args.event.fromNumber,
-            toNumber: args.event.toNumber,
-            userLinkId: args.userLink.id,
-            agentphoneAgentId: args.event.agentphoneAgentId,
-            publicBrand: args.publicBrand,
-          },
-          createdAt: currentTime,
-        },
-        "id",
-      );
-      signal.throwIfAborted();
-      if (!event) {
-        return false;
-      }
-      await touchChatThreadLastMessageAt(
-        tx,
-        route.chatThreadId,
-        currentTime,
-        chatEventId,
-      );
-      return true;
-    });
+    const enqueuedModel = await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: route.chatThreadId,
+        orgId: args.userLink.orgId,
+        userId: args.userLink.userId,
+      },
+      signal,
+    );
+    const values = {
+      id: chatEventId,
+      chatThreadId: route.chatThreadId,
+      eventType: "input.prompt",
+      modelSelection: enqueuedModel.modelSelection,
+      userMessage: createUserMessageDocument({
+        text: canonicalAsset ? args.event.body.trim() : args.prompt,
+        files: integrationInputMessageFiles(assets),
+        nonContentPart: createChatEventSourcePart({
+          kind: "agentphone",
+          toNumber: normalizeAgentPhoneHandle(args.event.toNumber, "sms"),
+          isGroup: args.event.isGroup,
+        }),
+      }),
+      runId: null,
+      agentphoneContext: {
+        messageText: prompt,
+        threadContext: args.threadContext,
+        messageId: args.event.messageId,
+        rootMessageId: args.rootMessageId,
+        conversationId: args.event.conversationId,
+        groupId: args.event.groupId,
+        channel: args.event.channel,
+        isGroup: isAgentPhoneGroupEvent(args.event),
+        phoneHandle: args.event.fromNumber,
+        fromNumber: args.event.fromNumber,
+        toNumber: args.event.toNumber,
+        userLinkId: args.userLink.id,
+        agentphoneAgentId: args.event.agentphoneAgentId,
+      },
+      createdAt: currentTime,
+    } as const;
+    const eventId = await set(
+      enqueueIntegrationChatInput$,
+      {
+        orgId: args.userLink.orgId,
+        input: values,
+        threadModelReplacement: enqueuedModel.threadModelReplacement,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    return inserted
-      ? {
-          inserted: true,
-          chatThreadId: route.chatThreadId,
-          chatEventId,
-        }
-      : { inserted: false };
+    if (eventId === null) {
+      return { inserted: false };
+    }
+    return { inserted: true, chatThreadId: route.chatThreadId, chatEventId };
   },
 );
 
-async function agentPhoneMessageDispatchState(
-  db: Db,
-  args: {
-    readonly chatThreadId: string;
-    readonly chatEventId: string;
+const replyAgentPhoneChatQueueWait$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    reason: ChatQueueWaitReason,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const notice = chatQueueWaitNotice(reason);
+    if (notice) {
+      await sendAgentPhoneText(event, notice, set(writeDb$), signal);
+    }
   },
-): Promise<AgentPhoneMessageDispatchResult> {
-  const [[run], [queued]] = await Promise.all([
-    db
-      .select({ runId: agentRuns.id, status: agentRuns.status })
-      .from(chatEvents)
-      .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
-      .where(
-        chatInputPromptDispatchCondition({
-          eventId: args.chatEventId,
-          chatThreadId: args.chatThreadId,
-        }),
-      )
-      .limit(1),
-    db
-      .select({ id: chatEvents.id })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, args.chatEventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          chatEventTypeIn(["input.prompt"]),
-          isNull(chatEvents.runId),
-          notExists(
-            db
-              .select({ id: agentPhoneQueueEventRevoker.id })
-              .from(agentPhoneQueueEventRevoker)
-              .where(
-                eq(agentPhoneQueueEventRevoker.revokesEventId, chatEvents.id),
-              ),
-          ),
-        ),
-      )
-      .limit(1),
-  ]);
-  if (queued || run?.status === "queued") {
-    return {
-      kind: "queued",
-      ...(run ? { runId: run.runId } : {}),
-    };
-  }
-  return {
-    kind: "accepted",
-    ...(run ? { runId: run.runId } : {}),
-  };
-}
+);
 
 const runAgentForAgentPhone$ = command(
   async (
@@ -1756,11 +1592,9 @@ const runAgentForAgentPhone$ = command(
       readonly prompt: string;
       readonly threadContext: string;
       readonly apiStartTime: number;
-      readonly modelRoute: ModelRoutePin | undefined;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
-  ): Promise<AgentPhoneMessageDispatchResult> => {
+  ): Promise<void> => {
     const persisted = await set(
       persistAgentPhoneChatMessage$,
       {
@@ -1770,47 +1604,77 @@ const runAgentForAgentPhone$ = command(
     );
     signal.throwIfAborted();
     if (!persisted.inserted) {
-      return { kind: "ignored" };
+      return;
     }
 
-    await publishChatThreadMessageCreatedSafely({
-      userId: args.userLink.userId,
-      orgId: args.userLink.orgId,
-      threadId: persisted.chatThreadId,
-    });
-    signal.throwIfAborted();
-    await publishThreadListChanged({
-      userId: args.userLink.userId,
-      orgId: args.userLink.orgId,
-    });
-    signal.throwIfAborted();
-    await set(
-      drainChatThreadQueueForThread$,
-      {
-        chatThreadId: persisted.chatThreadId,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-      },
-      signal,
+    waitUntil(
+      (async () => {
+        const picked = await settle(
+          set(
+            pickEnqueuedChatThread$,
+            {
+              orgId: args.userLink.orgId,
+              chatThreadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await set(
+          touchNativeChatThread$,
+          {
+            chatThreadId: persisted.chatThreadId,
+            createdAt: new Date(args.apiStartTime),
+            eventId: persisted.chatEventId,
+          },
+          signal,
+        );
+        await publishThreadListChangedSafely({
+          userId: args.userLink.userId,
+          orgId: args.userLink.orgId,
+        });
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.userLink.userId,
+          orgId: args.userLink.orgId,
+          threadId: persisted.chatThreadId,
+        });
+        const noticed = await settle(
+          (async () => {
+            const pick = await set(
+              enqueuedChatQueueWaitReason$,
+              {
+                orgId: args.userLink.orgId,
+                chatThreadId: persisted.chatThreadId,
+                eventId: persisted.chatEventId,
+              },
+              signal,
+            );
+            await set(
+              replyAgentPhoneChatQueueWait$,
+              args.event,
+              pick.reason,
+              signal,
+            );
+          })(),
+        );
+        if (!picked.ok && !noticed.ok) {
+          throw new AggregateError(
+            [picked.error, noticed.error],
+            "Enqueued chat thread pick and wait notice failed",
+          );
+        }
+        if (!picked.ok) {
+          throw picked.error;
+        }
+        if (!noticed.ok) {
+          throw noticed.error;
+        }
+      })(),
     );
-    signal.throwIfAborted();
-    return await agentPhoneMessageDispatchState(args.db, persisted);
+    waitUntil(
+      set(notifyRunningChatRunOfPendingInput$, persisted.chatThreadId, signal),
+    );
   },
 );
-
-async function handleAgentPhoneRunResult(
-  event: AgentPhoneMessageEvent,
-  result: AgentPhoneMessageDispatchResult,
-  signal: AbortSignal,
-): Promise<void> {
-  if (result.kind !== "queued") {
-    return;
-  }
-  await sendAgentPhoneText(
-    event,
-    "Run queued because the concurrency limit was reached. It will start automatically when a slot is available.",
-    signal,
-  );
-}
 
 export const handleAgentPhoneMessage$ = command(
   async (
@@ -1819,7 +1683,6 @@ export const handleAgentPhoneMessage$ = command(
       readonly event: AgentPhoneMessageEvent;
       readonly userLink: AgentPhoneUserLink | null;
       readonly apiStartTime: number;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1842,22 +1705,24 @@ export const handleAgentPhoneMessage$ = command(
       return;
     }
 
-    if (!params.userLink) {
+    const userLink = params.userLink;
+    if (!userLink) {
       if (isAgentPhoneGroupEvent(params.event)) {
-        await sendGroupConnectInDmPrompt(params.event, signal);
+        await sendGroupConnectInDmPrompt(params.event, db, signal);
         return;
       }
 
-      await sendConnectPrompt(params.event, undefined, signal);
+      await sendConnectPrompt(params.event, undefined, db, signal);
       return;
     }
 
-    const agent = await resolveAgentPhoneAgent(db, params.userLink);
+    const agent = await resolveAgentPhoneAgent(db, userLink);
     signal.throwIfAborted();
     if (!agent) {
       await sendAgentPhoneText(
         params.event,
-        `The workspace default agent is not configured. Please choose an agent in ${PUBLIC_BRAND_PRESENTATION.brandName} first.`,
+        `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
+        db,
         signal,
       );
       return;
@@ -1866,33 +1731,31 @@ export const handleAgentPhoneMessage$ = command(
     await refreshTypingIfSupported(params.event, signal);
     signal.throwIfAborted();
 
-    const modelRoute = await set(
-      resolveIntegrationModelRouteForUser$,
-      {
-        orgId: params.userLink.orgId,
-        userId: params.userLink.userId,
+    const isGroup = isAgentPhoneGroupEvent(params.event);
+    const rootMessageId = agentPhoneChatRouteRootMessageId(params.event);
+    const userLinkId = userLink.id;
+    const { executionContext } = await loadOptionalChatEnrichment(
+      "agentphone",
+      () => {
+        return fetchAgentPhoneContext(db, {
+          userLinkId,
+          userId: userLink.userId,
+          orgId: userLink.orgId,
+          phoneHandle: params.event.fromNumber,
+          channel: params.event.channel,
+          conversationId: params.event.conversationId,
+          groupId: params.event.groupId,
+          agentphoneAgentId: params.event.agentphoneAgentId,
+          isGroup,
+          recentHistory: params.event.recentHistory,
+          currentMessageId: params.event.messageId,
+        });
+      },
+      () => {
+        return { executionContext: "" };
       },
       signal,
     );
-    signal.throwIfAborted();
-
-    const isGroup = isAgentPhoneGroupEvent(params.event);
-    const rootMessageId = isGroup
-      ? agentPhoneThreadRootMessageId(params.event)
-      : integrationDmSessionKey({
-          agentId: agent.composeId,
-          selectedModel: modelRoute?.selectedModel ?? null,
-          serviceTier: modelRoute?.serviceTier ?? null,
-        });
-    const { executionContext } = await fetchAgentPhoneContext(db, {
-      userLinkId: params.userLink.id,
-      phoneHandle: params.event.fromNumber,
-      channel: params.event.channel,
-      conversationId: params.event.conversationId,
-      isGroup,
-      recentHistory: params.event.recentHistory,
-      currentMessageId: params.event.messageId,
-    });
     signal.throwIfAborted();
 
     const prompt = enrichAgentPhonePrompt({
@@ -1901,24 +1764,21 @@ export const handleAgentPhoneMessage$ = command(
       mediaUrl: params.event.mediaUrl,
     });
 
-    const result = await set(
+    await set(
       runAgentForAgentPhone$,
       {
         db,
-        userLink: params.userLink,
+        userLink,
         agent,
         rootMessageId,
         prompt,
         threadContext: executionContext,
         event: params.event,
         apiStartTime: params.apiStartTime,
-        modelRoute,
-        publicBrand: params.publicBrand,
       },
       signal,
     );
     signal.throwIfAborted();
-    await handleAgentPhoneRunResult(params.event, result, signal);
   },
 );
 
@@ -1926,4 +1786,12 @@ export async function publishAgentPhoneUserChanged(
   userId: string,
 ): Promise<void> {
   await publishUserSignal([userId], "agentphone:changed");
+}
+
+/** A new link may also have completed the Get started iMessage quest. */
+export async function publishAgentPhoneUserLinked(
+  userId: string,
+): Promise<void> {
+  await publishAgentPhoneUserChanged(userId);
+  await publishUserSignal([userId], GET_STARTED_REWARDS_CHANGED_EVENT);
 }

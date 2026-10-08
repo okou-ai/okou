@@ -8,7 +8,6 @@ import {
   setupPage as baseSetupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 
 export const context = testContext();
 
@@ -189,53 +188,6 @@ export function mockPushBrowserSupport(): PushBrowserMock {
   return { register };
 }
 
-export function makeRunGroupMessages(params: {
-  readonly label: string;
-  readonly count: number;
-  readonly runGroupId: string;
-  readonly startMinute: number;
-}): MockChatEventInput[] {
-  return Array.from({ length: params.count }, (_, index) => {
-    const itemNumber = index + 1;
-    const runId = `${params.runGroupId}-run-${itemNumber}`;
-    const createdAt = new Date(
-      Date.UTC(2026, 7, 1, 12, params.startMinute + index, 0),
-    ).toISOString();
-    const assistantCreatedAt = new Date(
-      Date.UTC(2026, 7, 1, 12, params.startMinute + index, 30),
-    ).toISOString();
-    return [
-      {
-        id: `msg-${params.label.toLowerCase()}-${itemNumber}-user`,
-        role: "user" as const,
-        eventType: "input.automation" as const,
-        content: null,
-        userMessage: {
-          version: 1 as const,
-          parts: [
-            {
-              type: "automation" as const,
-              workflowName: params.label.toLowerCase().replaceAll(" ", "-"),
-              automationBrief: params.label,
-            },
-          ],
-        },
-        runId,
-        runGroupId: params.runGroupId,
-        createdAt,
-      },
-      {
-        id: `msg-${params.label.toLowerCase()}-${itemNumber}-assistant`,
-        role: "assistant" as const,
-        content: `${params.label} reply ${itemNumber}`,
-        runId,
-        runGroupId: params.runGroupId,
-        createdAt: assistantCreatedAt,
-      },
-    ];
-  }).flat();
-}
-
 function mockNoBrowserSession(): void {
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(404, {
@@ -300,14 +252,4 @@ export function activeElementIsInside(element: HTMLElement): boolean {
     (document.activeElement instanceof Node &&
       element.contains(document.activeElement))
   );
-}
-
-export function setScrollMetrics(
-  element: HTMLElement,
-  metrics: { scrollHeight: number; clientHeight: number },
-): void {
-  Object.defineProperties(element, {
-    scrollHeight: { configurable: true, value: metrics.scrollHeight },
-    clientHeight: { configurable: true, value: metrics.clientHeight },
-  });
 }

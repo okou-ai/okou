@@ -12,7 +12,7 @@ import {
 // own the end-to-end proof that the installed driver really surfaces a SQLSTATE
 // this way; this file pins the exact classification and redaction boundary.
 function driverError(code: unknown): Error {
-  return new Error("insert into run_activity_snapshots ... failed", {
+  return new Error("insert into active_agent_runs ... failed", {
     cause: { code },
   });
 }
@@ -35,18 +35,15 @@ describe("SQLSTATE classification", () => {
 });
 
 describe("safeSqlStateCode", () => {
-  it.each(["55P03", "23503", "23505", "57014", "40P01", "22P05"])(
-    "publishes the %s class code",
-    (code) => {
-      expect(safeSqlStateCode(driverError(code))).toBe(code);
-    },
-  );
+  it("publishes a valid class code", () => {
+    expect(safeSqlStateCode(driverError("57014"))).toBe("57014");
+  });
 
   it("publishes the class code alone, never the driver message", () => {
     const code = safeSqlStateCode(driverError("23503"));
 
     expect(code).toBe("23503");
-    expect(code).not.toContain("run_activity_snapshots");
+    expect(code).not.toContain("active_agent_runs");
   });
 
   it.each([

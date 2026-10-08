@@ -31,7 +31,6 @@ import {
 } from "vitest";
 
 import { runInIsolatedProcess } from "../../../scripts/run-isolated-test.mjs";
-import { resumePiApiFirstTurn } from "./rpc";
 import { MemoryPiSession } from "./session-memory";
 
 const server = setupServer();
@@ -177,7 +176,7 @@ async function fixture(args: {
     });
   await writeFile(file, memory.toJsonl());
   const model = {
-    ...getBuiltinModel("openai", "gpt-5.6-terra"),
+    ...getBuiltinModel("openai", "gpt-6-luna"),
     baseUrl: "https://pending-tools.example/v1",
     ...(args.preResponseCompaction ? { contextWindow: 10000 } : {}),
   };
@@ -302,7 +301,7 @@ describe("native pending-tool cancellation", () => {
           await releaseEnd.promise;
         }
       });
-      const run = resumePiApiFirstTurn(session, {
+      const run = session.continuePendingTools({
         preflightResult(success) {
           expect(success).toBe(true);
           expect(session.isStreaming).toBe(true);
@@ -310,7 +309,7 @@ describe("native pending-tool cancellation", () => {
         },
       });
       await started.promise;
-      await expect(resumePiApiFirstTurn(session)).rejects.toThrow(
+      await expect(session.continuePendingTools()).rejects.toThrow(
         "already processing",
       );
       await expect(
@@ -373,12 +372,12 @@ describe("native pending-tool cancellation", () => {
         ).toHaveLength(1);
       }
       expect(session.agent.signal).toBeUndefined();
-      await expect(resumePiApiFirstTurn(session)).rejects.toThrow(
+      await expect(session.continuePendingTools()).rejects.toThrow(
         "no pending tool calls",
       );
       const cancelledSession = await reopen();
       expect(cancelledSession.sessionId).toBe(SESSION_ID);
-      await expect(resumePiApiFirstTurn(cancelledSession)).rejects.toThrow(
+      await expect(cancelledSession.continuePendingTools()).rejects.toThrow(
         "no pending tool calls",
       );
       const freshSignals: AbortSignal[] = [];
@@ -471,7 +470,7 @@ describe("native pending-tool cancellation", () => {
           await block();
         };
       }
-      const run = resumePiApiFirstTurn(session);
+      const run = session.continuePendingTools();
       await entered.promise;
       const abort = session.abort();
       release.release();
@@ -522,7 +521,7 @@ describe("native pending-tool cancellation", () => {
       if (event.type === "agent_end")
         await session.steer("accepted during native end");
     });
-    const run = resumePiApiFirstTurn(session);
+    const run = session.continuePendingTools();
     await requested.promise;
     await Promise.all([
       session.abort(),
@@ -577,7 +576,7 @@ describe("native pending-tool cancellation", () => {
       }
       return undefined;
     };
-    const run = resumePiApiFirstTurn(session);
+    const run = session.continuePendingTools();
     await preparing.promise;
     const abort = session.abort();
     release.release();
@@ -644,7 +643,7 @@ describe("native pending-tool cancellation", () => {
         )
           replay.push("assistant");
       });
-      await resumePiApiFirstTurn(session);
+      await session.continuePendingTools();
       expect(requests).toHaveLength(1);
       expect(replay).toEqual([]);
       const results = SessionManager.open(file)
@@ -718,7 +717,7 @@ describe("native pending-tool cancellation", () => {
         abort = session.abort();
       }
     });
-    await resumePiApiFirstTurn(session);
+    await session.continuePendingTools();
     expect(abort).toBeDefined();
     await abort;
     expect(requests).toBe(1);
@@ -746,7 +745,7 @@ describe("native pending-tool cancellation", () => {
         abort = session.abort();
       }
     });
-    await resumePiApiFirstTurn(session);
+    await session.continuePendingTools();
     await abort;
     expect(requests).toHaveLength(1);
     expect(session.getFollowUpMessages()).toEqual([]);
@@ -801,7 +800,7 @@ describe("native pending-tool cancellation", () => {
       }
     });
     let finished = false;
-    const run = resumePiApiFirstTurn(session).then(() => {
+    const run = session.continuePendingTools().then(() => {
       finished = true;
     });
     await Promise.all([secondStarted.promise, listenerFailed.promise]);
@@ -840,7 +839,7 @@ describe("native pending-tool cancellation", () => {
       }
       if (event.type === "compaction_end") compactionAborted = event.aborted;
     });
-    await resumePiApiFirstTurn(session);
+    await session.continuePendingTools();
     expect(abort).toBeDefined();
     await abort;
     expect(compactionAborted).toBe(true);
@@ -872,7 +871,7 @@ describe("native pending-tool cancellation", () => {
         if (event.toolCallId === "call-1") secondEnded.release();
       }
     });
-    await resumePiApiFirstTurn(session);
+    await session.continuePendingTools();
     expect(finished).toEqual(["call-1", "call-0"]);
     expect(requests).toHaveLength(1);
     expect(
@@ -914,7 +913,7 @@ describe("native pending-tool cancellation", () => {
       }
     });
     let finished = false;
-    const run = resumePiApiFirstTurn(session).then(() => {
+    const run = session.continuePendingTools().then(() => {
       finished = true;
     });
     await Promise.all([failed.promise, held.promise]);
@@ -955,7 +954,7 @@ describe("native pending-tool cancellation", () => {
         await session.followUp("late acknowledged input");
       }
     });
-    await resumePiApiFirstTurn(session);
+    await session.continuePendingTools();
     expect(requests).toBe(3);
     expect(executions).toBe(1);
     expect(signals).toHaveLength(3);
@@ -1043,7 +1042,7 @@ describe("native pending-tool cancellation", () => {
         if (event.type === "agent_settled")
           persistedAtSettlement.push(customEntries());
       });
-      const run = resumePiApiFirstTurn(session);
+      const run = session.continuePendingTools();
       await toolStarted.promise;
       await session.sendCustomMessage(
         {
@@ -1170,7 +1169,7 @@ describe("native pending-tool cancellation", () => {
         )
           await session.steer("steering before preparation");
       });
-      const run = resumePiApiFirstTurn(session);
+      const run = session.continuePendingTools();
       await preparing.promise;
       expect(requests).toEqual([]);
       expect(summaryRequests).toBe(0);
@@ -1326,7 +1325,7 @@ describe("native pending-tool cancellation", () => {
           await session.steer("accepted before preparation");
         }
       });
-      const run = resumePiApiFirstTurn(session);
+      const run = session.continuePendingTools();
       await entered.promise;
       await session.steer("accepted during preparation");
       await session.followUp("accepted follow-up during preparation");

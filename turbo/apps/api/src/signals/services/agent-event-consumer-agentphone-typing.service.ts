@@ -64,7 +64,7 @@ async function agentPhoneTypingTargetsForRun(
       and(
         eq(agentRunCallbacks.runId, runId),
         eq(agentRunCallbacks.status, "pending"),
-        inArray(agentRuns.status, ["queued", "pending", "running"]),
+        inArray(agentRuns.status, ["pending", "running"]),
       ),
     );
   signal.throwIfAborted();

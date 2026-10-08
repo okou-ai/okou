@@ -27,7 +27,7 @@ let mockPreferences: UserPreferencesResponse = {
   theme: "system",
   colorTheme: null,
   captureNetworkBodiesRemaining: 0,
-  voiceInputModel: null,
+  memoryInitialized: true,
 };
 
 function normalizePinnedAgentIds(ids: readonly string[]): string[] {
@@ -58,7 +58,7 @@ export function resetMockUserPreferences(): void {
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
+    memoryInitialized: true,
   };
 }
 
@@ -73,10 +73,20 @@ export const apiUserPreferencesHandlers = [
     mockPreferences = {
       ...mockPreferences,
       timezone: mockPreferences.timezone ?? body.timezone ?? null,
+      locale: mockPreferences.locale ?? body.locale,
+      memoryInitialized: true,
     };
     return respond(200, mockPreferences);
   }),
   mockApi(userPreferencesContract.get, ({ respond }) => {
+    if (mockPreferences.timezone === null || mockPreferences.locale === null) {
+      return respond(409, {
+        error: {
+          code: "USER_PREFERENCES_UNINITIALIZED",
+          message: "User preferences require timezone or locale initialization",
+        },
+      });
+    }
     return respond(200, mockPreferences);
   }),
   mockApi(userPreferencesContract.update, ({ body, respond }) => {

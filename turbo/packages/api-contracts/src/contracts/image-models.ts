@@ -1,8 +1,5 @@
 /**
- * Canonical IDs for prompt-based built-in image generation.
- *
- * Promptless transforms such as background removal and upscaling are not
- * selectable defaults and remain private to the image generation service.
+ * Canonical IDs for the member's built-in image generation model setting.
  */
 import { z } from "zod";
 
@@ -17,8 +14,6 @@ export const IMAGE_MODEL_IDS = [
   "alibaba/qwen-image-3/text-to-image",
   "ideogram/v4",
   "fal-ai/bytedance/seedream/v4/text-to-image",
-  "dola-seedream-5-0-pro-260628",
-  "seedream-5-0-lite-260128",
   "fal-ai/nano-banana-2",
   "google/nano-banana-2-lite",
 ] as const;

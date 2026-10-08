@@ -11,9 +11,12 @@ struct ArchiveRequest {
 
 impl ArchiveRequest {
     fn respond(self, status: &str, body: &[u8], close: bool) {
+        self.respond_with_length(status, body, body.len(), close);
+    }
+
+    fn respond_with_length(self, status: &str, body: &[u8], length: usize, close: bool) {
         let mut response = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: {}\r\n\r\n",
-            body.len(),
+            "HTTP/1.1 {status}\r\nContent-Length: {length}\r\nConnection: {}\r\n\r\n",
             if close { "close" } else { "keep-alive" },
         )
         .into_bytes();
@@ -446,9 +449,24 @@ async fn fresh_delivery_failed_requests_stay_terminal_without_poisoning_later_ru
                 .starts_with(&format!("GET /{reason} HTTP/1.1\r\n"))
         );
         if reason == "status" {
-            request.respond("503 Service Unavailable", &[], false);
+            request.respond("403 Forbidden", &[], false);
         } else {
-            request.respond("200 OK", &pending.body[..pending.body.len() - 1], false);
+            // Truncation is transient, but exhaustion still fails the owner
+            // without poisoning later downloads through the shared HTTP pool.
+            request.respond_with_length(
+                "200 OK",
+                &pending.body[..pending.body.len() - 1],
+                pending.body.len(),
+                true,
+            );
+            for _ in 1..OBJECT_DOWNLOAD_MAX_ATTEMPTS {
+                server.request().await.respond_with_length(
+                    "200 OK",
+                    &pending.body[..pending.body.len() - 1],
+                    pending.body.len(),
+                    true,
+                );
+            }
         }
         let sandbox = MockSandbox::new("failed-pooled-archive");
         assert!(

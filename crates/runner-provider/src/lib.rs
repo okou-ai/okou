@@ -6,7 +6,7 @@ mod axiom_layer;
 mod connector_registry;
 mod duration;
 mod error;
-mod http;
+pub mod http;
 pub mod local_queue;
 mod profile;
 pub mod provider;
@@ -16,9 +16,8 @@ mod retry;
 mod run_cancellation;
 
 pub use active_input::{
-    ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, API_ACTIVE_INPUT_RECHECK_INTERVAL, ActiveInputBatch,
-    ActiveInputNotifications, ActiveInputSource, ApiActiveInputRecovery,
-    identified_active_input_payload_len, local_active_input_delivery_id,
+    ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, ActiveInputBatch, ActiveInputNotifications,
+    ActiveInputSource, identified_active_input_payload_len, local_active_input_event_id,
 };
 pub use connector_registry::{
     ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication, ConnectorRuntimeRegistry,
@@ -30,10 +29,7 @@ pub use error::{
     ApiBodyReadError, ApiFailureKind, ApiRequestContext, ApiStatusError, ApiTransportCause,
     ApiTransportError, ProviderError, ProviderResult,
 };
-pub use http::{
-    PreparedProviderHttpRequest, ProviderHttpClient, ProviderHttpRequest, ProviderHttpTransport,
-    provider_http_transport_error,
-};
+pub use http::{HttpClient, HttpClientConfig, normalize_api_base_url};
 pub use provider::*;
 pub use run_cancellation::{
     DuplicateRunCancellationRegistration, RunCancellationHandle, RunCancellationMode,

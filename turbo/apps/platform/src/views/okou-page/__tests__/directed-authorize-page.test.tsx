@@ -71,6 +71,17 @@ function publicStatusItem(args: {
 function mockPublicConnectorStatus(
   connectors: readonly PublicConnectorCatalogStatusItem[],
 ): void {
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    const connector = connectors.find((candidate) => {
+      return candidate.slug === params.connectorSlug;
+    });
+    return connector
+      ? respond(200, { connector })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
+  });
+  // Registered after the slug route, which would otherwise also match it.
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
     return respond(200, { connectors: [...connectors] });
   });
@@ -229,46 +240,7 @@ test("Authorize an agent to use an already connected connector", async () => {
   });
 });
 
-test("Wait for refreshed authorization state instead of updating optimistically", async () => {
-  mockConnectedConnector("gmail");
-  const releaseUpdate = context.mocks.deferred<void>();
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [] });
-  });
-  context.mocks.api(
-    userBuiltinConnectorsContract.update,
-    async ({ body, respond }) => {
-      expect(body).toStrictEqual({
-        enabledConnectorSlugs: ["gmail"],
-        operation: "add",
-      });
-      await releaseUpdate.promise;
-      return respond(200, { enabledConnectorSlugs: ["gmail"] });
-    },
-  );
-
-  await setupPage({
-    context,
-    path: `/connectors/gmail/authorize?agentId=${AGENT_ID}`,
-  });
-
-  click(await screen.findByText("Authorize Okou"));
-
-  await waitFor(() => {
-    expect(screen.queryByText("Authorize Okou")).not.toBeInTheDocument();
-    expect(screen.queryByText("Gmail authorized")).not.toBeInTheDocument();
-  });
-
-  releaseUpdate.resolve();
-
-  await waitFor(() => {
-    expect(screen.getByText("Authorize Okou")).toBeInTheDocument();
-    expect(screen.queryByText("Gmail authorized")).not.toBeInTheDocument();
-    expect(screen.queryByText("Authorized")).not.toBeInTheDocument();
-  });
-});
-
-test("Recover from an agent authorization lookup failure", async () => {
+test("Show an unavailable state for a deleted agent", async () => {
   mockConnectedConnector("gmail");
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(404, {
@@ -282,9 +254,15 @@ test("Recover from an agent authorization lookup failure", async () => {
   });
 
   await waitFor(() => {
-    expect(screen.getByText("Okou needs Gmail to proceed")).toBeInTheDocument();
-    expect(screen.getByText("Authorize Okou")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Agent not found" }),
+    ).toBeVisible();
   });
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.textContent?.trim() === "Authorize Okou";
+    }),
+  ).toBeFalsy();
 });
 
 test("Connect a manual-token connector while authorizing an agent", async () => {

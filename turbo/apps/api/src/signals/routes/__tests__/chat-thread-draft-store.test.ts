@@ -7,22 +7,20 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { settleIncludingAbort } from "../../utils";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
-import {
-  readStoredChatThreadDraftRowFixture,
-  setChatThreadUserFixture,
-  withChatThreadContentBarrierFixture,
-  type StoredChatThreadDraftRow,
-} from "../../../test-fixtures/chat-thread-content-erasure";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
+const runs = createRunsApi(context);
 
 interface DraftFixture {
   readonly actor: ReturnType<typeof bdd.user>;
+  readonly agentId: string;
   readonly threadId: string;
 }
 
@@ -33,7 +31,24 @@ async function createDraftFixture(): Promise<DraftFixture> {
     agentId: agent.agentId,
     title: `Draft ${randomUUID()}`,
   });
-  return { actor, threadId: thread.id };
+  return { actor, agentId: agent.agentId, threadId: thread.id };
+}
+
+async function sendWithoutCredits(fixture: DraftFixture): Promise<void> {
+  const sent = await chat.requestSendEvent(
+    fixture.actor,
+    {
+      agentId: fixture.agentId,
+      threadId: fixture.threadId,
+      prompt: "Send the saved draft",
+      clientEventId: randomUUID(),
+    },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected a no-credit message send");
+  }
+  expect(sent.body.runId).toBeNull();
 }
 
 function draftDocument(text: string): UserMessageInputDocument {
@@ -42,35 +57,6 @@ function draftDocument(text: string): UserMessageInputDocument {
 
 function draftBody(text: string) {
   return { draftUserMessage: draftDocument(text), draftAttachments: null };
-}
-
-function draftText(document: UserMessageInputDocument | null): string | null {
-  if (document === null) {
-    return null;
-  }
-  const [part] = document.parts;
-  if (part === undefined || part.type !== "text") {
-    throw new Error("Expected a single text draft part");
-  }
-  return part.text;
-}
-
-/** The draft text every current reader still serves, from `chat_threads`. */
-async function servedDraftText(fixture: DraftFixture): Promise<string | null> {
-  const draft = await chat.readThreadDraft(fixture.actor, fixture.threadId);
-  return draftText(draft.draftUserMessage);
-}
-
-function storedDraftRow(
-  fixture: DraftFixture,
-): Promise<StoredChatThreadDraftRow | null> {
-  return readStoredChatThreadDraftRowFixture(fixture.threadId);
-}
-
-/** The draft text in the child row, or `null` when it is cleared or absent. */
-async function storedDraftText(fixture: DraftFixture): Promise<string | null> {
-  const stored = await storedDraftRow(fixture);
-  return draftText(stored?.draftUserMessage ?? null);
 }
 
 function draftAttachment(): PersistedAttachment {
@@ -83,206 +69,187 @@ function draftAttachment(): PersistedAttachment {
   };
 }
 
-describe("thread drafts are written to chat_thread_drafts and chat_threads", () => {
-  it("stores the document and its attachments in both places", async () => {
+async function servedDraftText(fixture: DraftFixture): Promise<string | null> {
+  const draft = await chat.readThreadDraft(fixture.actor, fixture.threadId);
+  if (draft.draftUserMessage === null) {
+    return null;
+  }
+  const [part] = draft.draftUserMessage.parts;
+  if (part === undefined || part.type !== "text") {
+    throw new Error("Expected a single text draft part");
+  }
+  return part.text;
+}
+
+function listedDraftIds(fixture: DraftFixture): Promise<readonly string[]> {
+  return chat.listThreadDrafts(fixture.actor);
+}
+
+describe("thread drafts", () => {
+  it("saves, replaces and clears the document and its attachments", async () => {
     const fixture = await createDraftFixture();
-    // Nothing has touched this thread's draft, so it has no child row at all.
-    await expect(storedDraftRow(fixture)).resolves.toBeNull();
+    await expect(servedDraftText(fixture)).resolves.toBeNull();
+    await expect(listedDraftIds(fixture)).resolves.not.toContain(
+      fixture.threadId,
+    );
+
+    await chat.patchThread(fixture.actor, fixture.threadId, {
+      draftUserMessage: draftDocument("first draft"),
+      draftAttachments: [draftAttachment()],
+    });
+    const saved = await chat.readThreadDraft(fixture.actor, fixture.threadId);
+    expect(saved.draftUserMessage).toStrictEqual(draftDocument("first draft"));
+    expect(saved.draftAttachments).toStrictEqual([draftAttachment()]);
+    await expect(listedDraftIds(fixture)).resolves.toContain(fixture.threadId);
 
     await chat.patchThread(
       fixture.actor,
       fixture.threadId,
-      draftBody("first draft"),
+      draftBody("second draft"),
     );
-    await expect(servedDraftText(fixture)).resolves.toBe("first draft");
-    const saved = await storedDraftRow(fixture);
-    expect(draftText(saved?.draftUserMessage ?? null)).toBe("first draft");
-    expect(saved?.draftAttachments).toBeNull();
-
-    await chat.patchThread(fixture.actor, fixture.threadId, {
-      draftUserMessage: draftDocument("second draft"),
-      draftAttachments: [draftAttachment()],
-    });
-    const served = await chat.readThreadDraft(fixture.actor, fixture.threadId);
-    expect(draftText(served.draftUserMessage)).toBe("second draft");
-    expect(served.draftAttachments).toStrictEqual([draftAttachment()]);
-
-    const updated = await storedDraftRow(fixture);
-    expect(draftText(updated?.draftUserMessage ?? null)).toBe("second draft");
-    expect(updated?.draftAttachments).toStrictEqual([draftAttachment()]);
-    // One row per thread: the second write updated the first one in place.
-    expect(updated?.createdAt).toBe(saved?.createdAt);
-  });
-
-  it("records a cleared draft as a retained row with null values", async () => {
-    const fixture = await createDraftFixture();
-    await chat.patchThread(fixture.actor, fixture.threadId, {
-      draftUserMessage: draftDocument("kept draft"),
-      draftAttachments: [draftAttachment()],
-    });
-    const saved = await storedDraftRow(fixture);
-    expect(saved).not.toBeNull();
+    const replaced = await chat.readThreadDraft(
+      fixture.actor,
+      fixture.threadId,
+    );
+    expect(replaced.draftUserMessage).toStrictEqual(
+      draftDocument("second draft"),
+    );
+    expect(replaced.draftAttachments).toBeNull();
 
     await chat.patchThread(fixture.actor, fixture.threadId, {
       draftUserMessage: null,
       draftAttachments: null,
     });
     await expect(servedDraftText(fixture)).resolves.toBeNull();
-
-    // Deleting on clear, the way `agent_drafts` does, would make this thread
-    // indistinguishable from one the table has never held. The later read
-    // cutover falls back to `chat_threads` for a missing row, so it would hand
-    // the user back the draft they just cleared.
-    const cleared = await storedDraftRow(fixture);
-    expect(cleared).not.toBeNull();
-    expect(cleared?.draftUserMessage).toBeNull();
-    expect(cleared?.draftAttachments).toBeNull();
-    expect(cleared?.createdAt).toBe(saved?.createdAt);
-
-    const untouched = await createDraftFixture();
-    await expect(storedDraftRow(untouched)).resolves.toBeNull();
-  });
-
-  it("writes the child row before it locks the thread row", async () => {
-    const fixture = await createDraftFixture();
-
-    await withChatThreadContentBarrierFixture(
-      {
-        chatThreadId: fixture.threadId,
-        stopAt: "draft-child-upsert",
-        work: async (barrier) => {
-          const writing = chat.patchThread(
-            fixture.actor,
-            fixture.threadId,
-            draftBody("ordered draft"),
-          );
-          await barrier.entered;
-          // The child upsert has run and the legacy statement that upgrades the
-          // thread row to FOR NO KEY UPDATE has not, so the hot parent row is
-          // exclusively locked for the shortest part of the transaction. Both
-          // writes are still uncommitted and invisible from here.
-          await expect(servedDraftText(fixture)).resolves.toBeNull();
-          await expect(storedDraftRow(fixture)).resolves.toBeNull();
-          barrier.release();
-          await writing;
-        },
-      },
-      context.signal,
-    );
-
-    await expect(servedDraftText(fixture)).resolves.toBe("ordered draft");
-    await expect(storedDraftText(fixture)).resolves.toBe("ordered draft");
-  });
-
-  it("keeps the 404 and writes no child row when the thread moves away", async () => {
-    const fixture = await createDraftFixture();
-
-    await withChatThreadContentBarrierFixture(
-      {
-        chatThreadId: fixture.threadId,
-        stopAt: "draft-child-upsert",
-        work: async (barrier) => {
-          const writing = chat.requestPatchThread(
-            fixture.actor,
-            fixture.threadId,
-            draftBody("moved thread draft"),
-            [404],
-          );
-          await barrier.entered;
-          // `user_id` is not a key column, so the retained FOR KEY SHARE lock
-          // does not stop this move, and it lands after the fence has already
-          // revalidated the identity. The legacy statement then matches nothing.
-          await setChatThreadUserFixture({
-            chatThreadId: fixture.threadId,
-            userId: `user_${randomUUID()}`,
-          });
-          barrier.release();
-          await writing;
-        },
-      },
-      context.signal,
-    );
-
-    // The staged child row rolled back with the whole transaction rather than
-    // committing one account's draft against a thread another account now owns.
-    await expect(storedDraftRow(fixture)).resolves.toBeNull();
-  });
-
-  it("commits neither store when the thread-row update loses its lock", async () => {
-    const fixture = await createDraftFixture();
-    await chat.patchThread(
-      fixture.actor,
+    await expect(listedDraftIds(fixture)).resolves.not.toContain(
       fixture.threadId,
-      draftBody("saved draft"),
     );
-    const before = await storedDraftRow(fixture);
+  });
 
-    // FOR NO KEY UPDATE is compatible with the fence's own FOR KEY SHARE, so
-    // the writer is admitted, stages its child row and then fails at the legacy
-    // `chat_threads` UPDATE — the exact shape of the production 55P03 in
-    // #36173. Phase 1 still writes that row, so it is still exposed to it.
-    const holder = await holdChatThreadRowLockFixture({
-      threadId: fixture.threadId,
-      mode: "no key update",
-      signal: context.signal,
+  it("keeps drafts separate per thread and per user", async () => {
+    const fixture = await createDraftFixture();
+    const sibling = await chat.createThread(fixture.actor, {
+      agentId: fixture.agentId,
+      title: `Sibling ${randomUUID()}`,
+    });
+    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("mine"));
+
+    await expect(
+      chat.readThreadDraft(fixture.actor, sibling.id),
+    ).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    const foreign = bdd.user({ orgId: fixture.actor.orgId });
+    await expect(chat.listThreadDrafts(foreign)).resolves.not.toContain(
+      fixture.threadId,
+    );
+    // Another user's thread and a missing thread read as the empty draft.
+    await expect(
+      chat.readThreadDraft(foreign, fixture.threadId),
+    ).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
     });
     await expect(
-      chat.requestPatchThread(
+      chat.readThreadDraft(fixture.actor, randomUUID()),
+    ).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+  });
+
+  it("keeps a write to another user's thread out of the owner's draft", async () => {
+    const fixture = await createDraftFixture();
+    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
+    const foreign = bdd.user({ orgId: fixture.actor.orgId });
+
+    // The write is accepted but keyed to the caller, so the owner's draft and
+    // the owner's listing are untouched.
+    await chat.patchThread(foreign, fixture.threadId, draftBody("not mine"));
+
+    await expect(servedDraftText(fixture)).resolves.toBe("owned");
+    await expect(
+      chat.readThreadDraft(foreign, fixture.threadId),
+    ).resolves.toStrictEqual({
+      draftUserMessage: draftDocument("not mine"),
+      draftAttachments: null,
+    });
+    await chat.patchThread(fixture.actor, fixture.threadId, {
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(
+      chat.readThreadDraft(foreign, fixture.threadId),
+    ).resolves.toMatchObject({ draftUserMessage: draftDocument("not mine") });
+  });
+
+  it("saves while another writer holds the thread row", async () => {
+    const fixture = await createDraftFixture();
+    // Event projection, the run queue and the read cursor all lock the thread
+    // row. The draft save writes only its own row, so it must not queue behind
+    // even the strongest row lock (#36173).
+    const holder = await holdChatThreadRowLockFixture({
+      threadId: fixture.threadId,
+      mode: "update",
+      signal: context.signal,
+    });
+    const saving = await settleIncludingAbort(
+      chat.patchThread(
         fixture.actor,
         fixture.threadId,
-        draftBody("blocked draft"),
-        [204, 404],
+        draftBody("saved beside the lock"),
       ),
-    ).rejects.toThrow(/Unknown response status 500/);
+    );
     holder.release();
     await holder.done;
+    if (!saving.ok) {
+      throw saving.error;
+    }
 
-    // The staged child row rolled back with the failed thread-row update: no
-    // half-written draft and no new `updated_at`.
-    await expect(storedDraftRow(fixture)).resolves.toStrictEqual(before);
-    await expect(servedDraftText(fixture)).resolves.toBe("saved draft");
-
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("recovered draft"),
+    await expect(servedDraftText(fixture)).resolves.toBe(
+      "saved beside the lock",
     );
-    await expect(servedDraftText(fixture)).resolves.toBe("recovered draft");
-    await expect(storedDraftText(fixture)).resolves.toBe("recovered draft");
   });
 
-  it("leaves the two stores agreeing after competing writes", async () => {
-    const fixture = await createDraftFixture();
-    const texts = ["competing draft a", "competing draft b"] as const;
-
-    await Promise.all(
-      texts.map((text) => {
-        return chat.patchThread(
-          fixture.actor,
-          fixture.threadId,
-          draftBody(text),
-        );
-      }),
-    );
-
-    // Both writers take the child row's lock before the thread row's, so they
-    // commit in one order and the two stores cannot disagree about the winner.
-    const served = await servedDraftText(fixture);
-    expect(texts).toContain(served);
-    await expect(storedDraftText(fixture)).resolves.toBe(served);
-  });
-
-  it("removes the child row with the thread it belongs to", async () => {
+  it("removes the draft with the thread it belongs to", async () => {
     const fixture = await createDraftFixture();
     await chat.patchThread(
       fixture.actor,
       fixture.threadId,
       draftBody("deleted draft"),
     );
-    await expect(storedDraftRow(fixture)).resolves.not.toBeNull();
+    await expect(listedDraftIds(fixture)).resolves.toContain(fixture.threadId);
 
     await chat.deleteThread(fixture.actor, fixture.threadId);
 
-    await expect(storedDraftRow(fixture)).resolves.toBeNull();
+    await expect(listedDraftIds(fixture)).resolves.not.toContain(
+      fixture.threadId,
+    );
+  });
+});
+
+describe("sends and drafts", () => {
+  it("leaves the saved draft for the client to clear when a message is sent", async () => {
+    const fixture = await createDraftFixture();
+    await runs.ensurePersonalSubscriptionModel(fixture.actor);
+    await chat.patchThread(fixture.actor, fixture.threadId, {
+      draftUserMessage: draftDocument("saved before send"),
+      draftAttachments: [draftAttachment()],
+    });
+
+    // The web client clears its draft with its own PATCH alongside the send;
+    // the send itself does not touch `chat_thread_drafts`.
+    await sendWithoutCredits(fixture);
+
+    await expect(servedDraftText(fixture)).resolves.toBe("saved before send");
+    await chat.patchThread(fixture.actor, fixture.threadId, {
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(servedDraftText(fixture)).resolves.toBeNull();
+    await expect(listedDraftIds(fixture)).resolves.not.toContain(
+      fixture.threadId,
+    );
   });
 });

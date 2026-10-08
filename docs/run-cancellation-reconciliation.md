@@ -22,10 +22,10 @@ backfill, cancellation journal, tombstone, or history-retention change.
 - Threadless cleanup hard-cancels active candidates, but preserves any existing
   cancellation intent when retrying terminal cleanup or losing a race with
   another cancellation. Cleanup redrive is not a new hard request.
-- Member revocation, account/organization deletion, timeout cleanup, and Pi
-  API-first completion persist hard intent in their existing terminal transaction.
+- Member revocation, account/organization deletion and timeout cleanup
+  persist hard intent in their existing terminal transaction.
   Ordinary Guest completion records no new stop intent.
-- Queue-only expiration and pre-claim erasure have no claimed execution to stop;
+- Queue-only expiration and pre-claim deletion have no claimed execution to stop;
   their existing transitions remain unchanged.
 
 Ably publication stays the fast path. Its payload and consumers are unchanged;

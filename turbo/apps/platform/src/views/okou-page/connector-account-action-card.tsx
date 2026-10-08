@@ -61,7 +61,7 @@ function ConnectorAccountActionCardLoading() {
   return (
     <div
       data-testid="connector-account-action-card-loading"
-      className="flex h-full w-full items-center justify-center p-3"
+      className="flex h-full w-full items-center justify-center px-4 py-3"
     >
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
     </div>
@@ -78,7 +78,7 @@ function ConnectorAccountActionCardError({
   return (
     <div
       data-testid="connector-account-action-card-error"
-      className="flex h-full w-full items-center gap-3 p-3"
+      className="flex h-full w-full items-center gap-3 px-4 py-3"
     >
       <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
       <div className="min-w-0 flex-1 line-clamp-3 text-sm leading-5 text-muted-foreground">
@@ -118,7 +118,7 @@ function UnavailableConnectorAccountActionCard() {
   return (
     <div
       data-testid="connector-account-action-card-unavailable"
-      className="flex h-full w-full items-center gap-3 p-3"
+      className="flex h-full w-full items-center gap-3 px-4 py-3"
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
         <AlertCircle size={22} />
@@ -228,7 +228,7 @@ function ReadyConnectorAccountActionCard({
   return (
     <div
       data-testid="connector-account-action-card"
-      className="flex h-full w-full flex-col justify-between gap-3 p-3 text-left sm:flex-row sm:items-center"
+      className="flex h-full w-full flex-col justify-between gap-3 px-4 py-3 text-left sm:flex-row sm:items-center"
     >
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">

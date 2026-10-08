@@ -4,21 +4,21 @@ import {
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
 import { command } from "ccstate";
-import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { connectors } from "@okouai/db/schema/connector";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { testOverride } from "../../lib/singleton";
 import { queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import {
   fetchFeishuUserInfo,
   type FeishuUserInfo,
@@ -59,7 +59,6 @@ import {
   verifyFeishuOAuthState,
 } from "../services/feishu-oauth-state";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { admitPiStableContextSubjects } from "../services/pi-stable-context-erasure.service";
 import {
   addUserCustomConnector,
   lockUserCustomConnectorGrantScope,
@@ -74,30 +73,9 @@ import {
 import { publishFeishuOrgChanged } from "../services/feishu-realtime.service";
 import { notifyFeishuConnect } from "../services/feishu-welcome.service";
 import { tapError } from "../utils";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const L = logger("FeishuOAuth");
 const REDIRECT_STATUS = 307;
-
-interface FeishuOAuthPersistenceHooks {
-  readonly beforeErasureAdmission?: () => Promise<void>;
-}
-
-const feishuOAuthPersistenceHooks = testOverride<FeishuOAuthPersistenceHooks>(
-  () => {
-    return {};
-  },
-);
-
-export function setFeishuOAuthPersistenceHooksForTest(
-  hooks: FeishuOAuthPersistenceHooks,
-): void {
-  feishuOAuthPersistenceHooks.set(hooks);
-}
-
-export function clearFeishuOAuthPersistenceHooksForTest(): void {
-  feishuOAuthPersistenceHooks.clear();
-}
 
 interface FeishuOAuthCallbackQuery {
   readonly code?: string;
@@ -111,7 +89,6 @@ interface FeishuConnectionState {
   readonly installationId: string;
   readonly orgId: string;
   readonly userId: string;
-  readonly publicBrand: PublicBrand;
   readonly accountMutation: ConnectorAccountMutationIntent;
 }
 
@@ -357,7 +334,6 @@ async function upsertFeishuConnection(
       .update(feishuOrgConnections)
       .set({
         feishuUserName: args.userInfo.name,
-        publicBrand: args.state.publicBrand,
         updatedAt: nowDate(),
       })
       .where(eq(feishuOrgConnections.id, existing.id));
@@ -372,7 +348,6 @@ async function upsertFeishuConnection(
         feishuOpenId: args.userInfo.openId,
         userId: args.state.userId,
         feishuUserName: args.userInfo.name,
-        publicBrand: args.state.publicBrand,
       })
       .onConflictDoNothing({
         target: [
@@ -417,7 +392,6 @@ async function loadInstallationForConnector(args: {
   const conditions = [
     eq(feishuOrgInstallations.orgId, args.orgId),
     eq(feishuOrgInstallations.appId, args.appId),
-    isNotNull(feishuOrgInstallations.defaultAgentId),
   ];
   if (args.installationId) {
     conditions.push(eq(feishuOrgInstallations.id, args.installationId));
@@ -430,9 +404,10 @@ async function loadInstallationForConnector(args: {
       tenantKey: feishuOrgInstallations.feishuTenantKey,
       setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
       ownerUserId: feishuOrgInstallations.ownerUserId,
-      defaultAgentId: feishuOrgInstallations.defaultAgentId,
+      defaultAgentId: orgMetadata.defaultAgentId,
     })
     .from(feishuOrgInstallations)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
     .where(and(...conditions))
     .limit(1);
   if (!installation?.defaultAgentId) {
@@ -461,17 +436,6 @@ async function persistFeishuOAuthConnection(
     }
 > {
   return await args.db.transaction(async (tx) => {
-    await feishuOAuthPersistenceHooks.get().beforeErasureAdmission?.();
-    if (
-      !(await admitPiStableContextSubjects(tx, [
-        { subjectKind: "organization", subjectId: args.state.orgId },
-        { subjectKind: "user", subjectId: args.state.userId },
-      ]))
-    ) {
-      throw new Error(
-        "Failed to authorize Feishu custom connector: agentNotFound",
-      );
-    }
     const agentLocked = await lockUserCustomConnectorGrantScope(tx, {
       orgId: args.state.orgId,
       userId: args.state.userId,
@@ -555,10 +519,7 @@ async function persistFeishuOAuthConnection(
         agentId: args.installation.defaultAgentId,
         customConnectorId: args.connector.id,
       },
-      {
-        deferRuntimeWakeupUntilOuterCommit: true,
-        erasureAdmissionAlreadyHeld: true,
-      },
+      { deferRuntimeWakeupUntilOuterCommit: true },
     );
     if (grant.status !== "added") {
       throw new Error(
@@ -617,6 +578,12 @@ async function finishFeishuOAuthConnection(
     args.state.userId,
     signal,
   );
+  await publishUserSignal(
+    [args.state.userId],
+    "composerAgentConnectorsChanged",
+    { agentId: args.installation.defaultAgentId },
+  );
+  signal.throwIfAborted();
 
   await publishFeishuOrgChanged(
     args.db,
@@ -737,7 +704,6 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: state.userId,
       connectorId,
       redirectUri: state.redirectUri,
-      publicBrand: state.publicBrand,
       account,
       feishuContext: {
         installationId: state.installationId,
@@ -986,7 +952,6 @@ const completeClaimedCustomFeishuOAuth$ = command(
       installationId: installation.installationId,
       orgId: args.state.orgId,
       userId: args.state.userId,
-      publicBrand: PUBLIC_BRAND,
       accountMutation: args.state.accountMutation,
     };
     const completed = await finishFeishuOAuthConnection(

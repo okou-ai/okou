@@ -12,9 +12,11 @@ import { IN_VITEST } from "../env.ts";
 import {
   clientTelemetryOutcomeForError,
   type ClientTelemetryOperation,
+  recordClientAuthFailure,
   recordClientTelemetry,
   startClientTelemetryMeasurement,
 } from "../lib/client-telemetry.ts";
+import { now } from "../lib/time.ts";
 import { addClientHeaders } from "./client-headers.ts";
 import { reportForceUpgradeResponse } from "./force-upgrade.ts";
 import { onRejection } from "./utils.ts";
@@ -112,7 +114,7 @@ export function createAuthedContractClient<T extends AppRouter>(
         : args.path;
       signal?.throwIfAborted();
 
-      const requestWithToken = (
+      const requestWithToken = async (
         token: string | null,
         requestSignal?: AbortSignal,
       ) => {
@@ -125,7 +127,8 @@ export function createAuthedContractClient<T extends AppRouter>(
         if (vercelProtectionBypass) {
           headers.set("X-Vercel-Protection-Bypass", vercelProtectionBypass);
         }
-        return trpcRestFetchApi({
+        const startedAt = now();
+        const response = await trpcRestFetchApi({
           ...args,
           fetchOptions: {
             ...args.fetchOptions,
@@ -135,6 +138,15 @@ export function createAuthedContractClient<T extends AppRouter>(
           headers,
           path,
         });
+        if (response.status === 401) {
+          recordClientAuthFailure({
+            headers,
+            method: args.route.method,
+            route: args.route.path,
+            startedAt,
+          });
+        }
+        return response;
       };
 
       const bootstrapResponse = takeBootstrapResponse(

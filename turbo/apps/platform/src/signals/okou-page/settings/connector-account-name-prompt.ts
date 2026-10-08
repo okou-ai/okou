@@ -5,14 +5,8 @@ import {
   builtinAccountConnectDialog$,
   builtinAccountManager$,
   connectorAccountNamePrompt$,
-  customAccountConnectDialog$,
-  customAccountManager$,
 } from "./connector-account-dialogs.ts";
 import { builtinConnectorScopeReviewSelection$ } from "./connectors.ts";
-import {
-  connectorsPageTab$,
-  customConnectorDialog$,
-} from "./custom-connectors.ts";
 
 export const visibleConnectorAccountNamePrompt$ = computed((get) => {
   // A background connection must not interrupt another dialog. Keep its name
@@ -22,11 +16,7 @@ export const visibleConnectorAccountNamePrompt$ = computed((get) => {
     get(builtinAccountManager$) ||
     get(builtinAccountConnectDialog$) ||
     get(managedConnectorAccessSlug$) ||
-    get(builtinConnectorScopeReviewSelection$) ||
-    (get(connectorsPageTab$) === "custom" &&
-      (get(customAccountManager$) ||
-        get(customAccountConnectDialog$) ||
-        get(customConnectorDialog$).kind !== "none"))
+    get(builtinConnectorScopeReviewSelection$)
   ) {
     return null;
   }

@@ -9,7 +9,8 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { and, eq, isNotNull } from "drizzle-orm";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import type { ReadonlyDb } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$, type ReadonlyDb } from "../external/db";
 import { orderByCustomConnectorId } from "./custom-connector-order";
 
 export interface CustomConnectorDefinitionVersion {
@@ -159,15 +160,49 @@ export async function loadAgentConnectorScope(
   return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
 }
 
-/** Transaction-safe form for writers that hold one PostgreSQL client. */
-export async function loadAgentConnectorScopeSerial(
-  db: ReadonlyDb,
-  args: LoadAgentConnectorScopeArgs,
-): Promise<AgentConnectorScopeSnapshot> {
-  const connectorRows = await loadAgentAllowedConnectorSlugRows(db, args);
-  const customConnectorRows = await loadAgentAllowedCustomConnectorRows(
-    db,
-    args,
-  );
-  return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
-}
+export const loadAgentConnectorScope$ = command(
+  async (
+    { set },
+    args: LoadAgentConnectorScopeArgs,
+  ): Promise<AgentConnectorScopeSnapshot> => {
+    const db = set(writeDb$);
+    const connectorRows = await db
+      .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+      .from(userBuiltinConnectors)
+      .where(
+        and(
+          eq(userBuiltinConnectors.orgId, args.orgId),
+          eq(userBuiltinConnectors.userId, args.userId),
+          eq(userBuiltinConnectors.agentId, args.agentId),
+        ),
+      );
+    const customConnectorRows = await db
+      .select({
+        customConnectorId: userCustomConnectors.customConnectorId,
+        permissionNames: userCustomConnectors.permissionNames,
+        connectorSlug: orgCustomConnectors.slug,
+        storageVersion: orgCustomConnectors.storageVersion,
+        skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
+        isMcp: isNotNull(orgCustomConnectors.mcpEndpoint).mapWith(
+          pgBooleanDecoder,
+        ),
+      })
+      .from(userCustomConnectors)
+      .innerJoin(
+        orgCustomConnectors,
+        and(
+          eq(orgCustomConnectors.id, userCustomConnectors.customConnectorId),
+          eq(orgCustomConnectors.orgId, userCustomConnectors.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(userCustomConnectors.orgId, args.orgId),
+          eq(userCustomConnectors.userId, args.userId),
+          eq(userCustomConnectors.agentId, args.agentId),
+          eq(orgCustomConnectors.enabled, true),
+        ),
+      );
+    return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
+  },
+);

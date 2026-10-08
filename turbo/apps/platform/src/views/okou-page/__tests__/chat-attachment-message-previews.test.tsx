@@ -1,24 +1,17 @@
-import mermaid from "@okouai/mermaid-lite";
-import {
-  chatThreadArtifactsContract,
-  type ChatThreadArtifactFile,
-  type UserMessageDocument,
+import type {
+  ChatThreadArtifactFile,
+  UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  testContext,
-  warmMermaidParser,
-} from "../../../signals/__tests__/test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_RUN_ID,
   ATTACHMENT_THREAD_ID,
@@ -40,8 +33,6 @@ import {
 } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
-
-warmMermaidParser();
 const CREATED_AT = "2026-03-10T00:00:01Z";
 
 function assistantMessage(
@@ -203,12 +194,6 @@ test("An embedded video's poster uses a thumbnail while playback keeps its origi
 });
 
 test("Image navigation stays within the current message", async () => {
-  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
-    1600,
-  );
-  vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(
-    900,
-  );
   const first = publicArtifactUrl("gallery-first.png");
   const second = publicArtifactUrl("gallery-second.png");
   const third = publicArtifactUrl("gallery-third.png");
@@ -244,31 +229,12 @@ test("Image navigation stays within the current message", async () => {
   expect(queryNamedButton("Previous image artifact")).toBeNull();
   expect(getNamedButton("Next image artifact")).toBeVisible();
 
-  click(await findNamedButton("Zoom in"));
-  await waitFor(() => {
-    expect(
-      screen.getByTestId("artifact-dialog-image-zoom-level"),
-    ).toHaveTextContent("115%");
-  });
-  click(getNamedButton("Enter fullscreen"));
-  await findNamedButton("Exit fullscreen");
-  expect(
-    screen.getByTestId("artifact-dialog-image-zoom-level"),
-  ).toHaveTextContent("115%");
-  click(getNamedButton("Exit fullscreen"));
-  await findNamedButton("Enter fullscreen");
-  expect(
-    screen.getByTestId("artifact-dialog-image-zoom-level"),
-  ).toHaveTextContent("115%");
   fireEvent.keyDown(document, { key: "ArrowRight" });
   await waitFor(() => {
     expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
       "alt",
       "gallery-second.png",
     );
-    expect(
-      screen.getByTestId("artifact-dialog-image-zoom-level"),
-    ).toHaveTextContent("100%");
   });
   click(getNamedButton("Previous image artifact"));
   await waitFor(() => {
@@ -278,108 +244,9 @@ test("Image navigation stays within the current message", async () => {
     );
   });
   expect(queryNamedButton("Previous image artifact")).toBeNull();
-
-  click(getNamedButton("Enter fullscreen"));
-  click(getNamedButton("Next image artifact"));
-  await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "alt",
-      "gallery-second.png",
-    );
-  });
-  expect(getNamedButton("Exit fullscreen")).toBeVisible();
   expect(
     screen.queryByAltText("unrelated-generated.png"),
   ).not.toBeInTheDocument();
-});
-
-const PAIR_FIRST_URL = publicArtifactUrl("pair-first.png");
-const PAIR_SECOND_URL = publicArtifactUrl("pair-second.png");
-
-/** One assistant message holding two images that are also run artifacts. */
-function mockAssistantImagePair(): void {
-  mockAttachmentChat(context, {
-    chatEvents: [
-      assistantMessage(
-        [
-          `1. ![pair-first.png](${PAIR_FIRST_URL})`,
-          `2. ![pair-second.png](${PAIR_SECOND_URL})`,
-        ].join("\n"),
-      ),
-    ],
-    artifacts: [
-      artifactFile("pair-first.png", {
-        id: "pair-first",
-        url: PAIR_FIRST_URL,
-      }),
-      artifactFile("pair-second.png", {
-        id: "pair-second",
-        url: PAIR_SECOND_URL,
-      }),
-    ],
-  });
-}
-
-/**
- * The artifact list only enriches the images a message already shows, so an
- * assistant group can be stepped through before that list arrives. The sidebar
- * deliberately waits for it and the lightbox deliberately does not, and nothing
- * covered that difference — so a single shared navigation source could quietly
- * flatten the two and no test would notice.
- */
-test("Arrow keys navigate an assistant group while the artifact list is still loading", async () => {
-  mockAssistantImagePair();
-  const user = userEvent.setup({ delay: null });
-  context.mocks.api(chatThreadArtifactsContract.list, ({ never }) => {
-    return never();
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  click(await findPreviewActionForImage("pair-first.png"));
-  await screen.findByRole("dialog", { name: "pair-first.png preview" });
-
-  await user.keyboard("{ArrowRight}");
-
-  await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "alt",
-      "pair-second.png",
-    );
-  });
-});
-
-/**
- * A failed artifact list degrades to "no artifact metadata" rather than taking
- * navigation down with it. Worth pinning because the list is an awaited value:
- * reading it through a rejected promise instead of a loadable would turn this
- * into a dead arrow key, or a thrown error, with no other test objecting.
- */
-test("Arrow keys still navigate when the artifact list request fails", async () => {
-  mockAssistantImagePair();
-  const user = userEvent.setup({ delay: null });
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    return respond(403, {
-      error: {
-        code: "FORBIDDEN",
-        message: "No access to the artifacts of this thread",
-      },
-    });
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  click(await findPreviewActionForImage("pair-first.png"));
-  await screen.findByRole("dialog", { name: "pair-first.png preview" });
-
-  await user.keyboard("{ArrowRight}");
-
-  await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "alt",
-      "pair-second.png",
-    );
-  });
 });
 
 test("Only exact trusted public links receive rich attachment previews", async () => {
@@ -455,14 +322,9 @@ test("Only exact trusted public links receive rich attachment previews", async (
 
 async function setupPersistedAttachmentMessage(): Promise<void> {
   const specifications = [
-    ["private-audio", "voice.mp3", "audio/mpeg"],
     ["private-video", "demo.mp4", "video/mp4"],
-    ["private-json", "payload.json", "application/json"],
-    ["private-csv", "metrics.csv", "text/csv"],
     ["private-pdf", "brief.pdf", "application/pdf"],
-    ["private-html", "prototype.html", "text/html"],
     ["private-markdown", "notes.md", "text/markdown"],
-    ["private-text", "summary.txt", "text/plain"],
     ["private-presentation", "quarterly-deck.html", "text/html"],
   ] as const;
   const artifacts: ChatThreadArtifactFile[] = specifications.map(
@@ -496,17 +358,8 @@ async function setupPersistedAttachmentMessage(): Promise<void> {
   mockPrivateUrlSequence(context, presigned, {
     "private-markdown": markdownShareUrl,
   });
-  context.mocks.http.get("https://private-files.example/payload.json", () => {
-    return HttpResponse.json({ status: "ready", count: 3 });
-  });
-  context.mocks.http.get("https://private-files.example/metrics.csv", () => {
-    return HttpResponse.text("metric,value\nlatency,42");
-  });
   context.mocks.http.get("https://private-files.example/notes.md", () => {
     return HttpResponse.text("# Review notes\n\nEverything is ready.");
-  });
-  context.mocks.http.get("https://private-files.example/summary.txt", () => {
-    return HttpResponse.text("Plain text summary");
   });
   context.mocks.http.get(
     "https://private-files.example/quarterly-deck.html",
@@ -520,16 +373,6 @@ async function setupPersistedAttachmentMessage(): Promise<void> {
     screen.findByText("Files from the completed review"),
   ).resolves.toBeVisible();
 }
-
-test("Persisted audio attachments open from their private URL", async () => {
-  await setupPersistedAttachmentMessage();
-
-  click(await findNamedButton("Open audio preview for voice.mp3"));
-  await expect(
-    screen.findByLabelText("Audio preview for voice.mp3"),
-  ).resolves.toHaveAttribute("src", "https://private-files.example/voice.mp3");
-  await closeFocusedPreview();
-});
 
 test("Persisted video attachments open in the video sidebar", async () => {
   await setupPersistedAttachmentMessage();
@@ -548,80 +391,6 @@ test("Persisted video attachments open in the video sidebar", async () => {
   });
 });
 
-test("A private video refreshes its file-scoped poster without listing thread artifacts", async () => {
-  const fileId = "refreshing-private-video";
-  const poster = publicArtifactUrl("refreshing-private-video-poster.jpg");
-  mockAttachmentChat(context, {
-    chatEvents: [
-      sentUserMessage(
-        userMessage([
-          filePart(fileId, "recording.mov", "video/quicktime"),
-          { type: "text", text: "Review this recording" },
-        ]),
-      ),
-    ],
-  });
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    return respond(404, {
-      error: { code: "THREAD_NOT_FOUND", message: "Chat thread not found" },
-    });
-  });
-  let posterReady = false;
-  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
-    return respond(200, {
-      url: "https://private-files.example/recording.mov",
-      expiresAt: "2099-01-01T00:00:00.000Z",
-      publicUrl: null,
-      previewImageUrl: posterReady ? poster : null,
-    });
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  await screen.findByText("Review this recording");
-  await expect(
-    screen.findByTestId("chat-video-preview-fallback"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryAllByText("Chat thread not found").find((candidate) => {
-      return candidate.closest('[data-sonner-toast][data-visible="true"]');
-    }),
-  ).toBeUndefined();
-
-  posterReady = true;
-  context.mocks.ably.trigger(
-    `chatThreadArtifactsChanged:${ATTACHMENT_THREAD_ID}`,
-  );
-
-  const thumbnail = await screen.findByTestId("chat-video-preview-thumbnail");
-  expect(thumbnail).toHaveAttribute(
-    "src",
-    "https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/artifacts/tests/chat-attachments/refreshing-private-video-poster.jpg",
-  );
-  expect(
-    screen.queryAllByText("Chat thread not found").find((candidate) => {
-      return candidate.closest('[data-sonner-toast][data-visible="true"]');
-    }),
-  ).toBeUndefined();
-});
-
-test("Persisted JSON attachments render their contents", async () => {
-  await setupPersistedAttachmentMessage();
-
-  click(getNamedButton("Open json preview for payload.json"));
-  await expect(screen.findByText(/"status": "ready"/u)).resolves.toBeVisible();
-  await closeFocusedPreview();
-});
-
-test("Persisted CSV attachments render their rows and values", async () => {
-  await setupPersistedAttachmentMessage();
-
-  click(getNamedButton("Open csv preview for metrics.csv"));
-  await expect(screen.findByText("latency")).resolves.toBeVisible();
-  expect(screen.getByText("42")).toBeVisible();
-  await closeFocusedPreview();
-});
-
 test("Persisted PDF attachments use the document sidebar", async () => {
   await setupPersistedAttachmentMessage();
 
@@ -637,21 +406,6 @@ test("Persisted PDF attachments use the document sidebar", async () => {
   });
 });
 
-test("Persisted HTML attachments use the document sidebar", async () => {
-  await setupPersistedAttachmentMessage();
-
-  click(getNamedButton("Open html preview for prototype.html"));
-  click(await findNamedButton("Open in split view"));
-  await expect(
-    screen.findByTestId("artifact-sidebar-body-html"),
-  ).resolves.toBeVisible();
-  expect(screen.queryByTestId("presentation-artifact-viewport")).toBeNull();
-  click(getNamedButton("Close artifact"));
-  await waitFor(() => {
-    expect(screen.queryByTestId("artifact-sidebar-body-html")).toBeNull();
-  });
-});
-
 test("Persisted Markdown attachments render without offering sharing", async () => {
   await setupPersistedAttachmentMessage();
 
@@ -661,14 +415,6 @@ test("Persisted Markdown attachments render without offering sharing", async () 
   // but no share action even though a public URL resolved for it.
   expect(getNamedButton("Download options")).toBeInTheDocument();
   expect(queryNamedLink("Share")).toBeNull();
-  await closeFocusedPreview();
-});
-
-test("Persisted text attachments render their contents", async () => {
-  await setupPersistedAttachmentMessage();
-
-  click(getNamedButton("Open text preview for summary.txt"));
-  await expect(screen.findByText("Plain text summary")).resolves.toBeVisible();
   await closeFocusedPreview();
 });
 
@@ -862,144 +608,4 @@ test("A user's Markdown image syntax stays literal", async () => {
   expect(
     userMessageContainer.querySelector('[data-testid^="attachment-preview-"]'),
   ).toBeNull();
-});
-
-async function setupMarkdownDiagramAttachments(): Promise<void> {
-  const files = [
-    { id: "diagram-first", filename: "first.md", label: "First" },
-    { id: "diagram-second", filename: "second.md", label: "Second" },
-  ];
-  mockAttachmentChat(context, {
-    chatEvents: [
-      sentUserMessage(
-        userMessage(
-          files.map((file) => {
-            return filePart(file.id, file.filename, "text/markdown");
-          }),
-        ),
-      ),
-    ],
-    artifacts: files.map((file) => {
-      return artifactFile(file.filename, {
-        id: file.id,
-        contentType: "text/markdown",
-        url: publicArtifactUrl(file.filename),
-      });
-    }),
-  });
-  mockPrivateUrlSequence(
-    context,
-    Object.fromEntries(
-      files.map((file) => {
-        return [file.id, [publicArtifactUrl(file.filename)]];
-      }),
-    ),
-  );
-  for (const file of files) {
-    context.mocks.http.get(publicArtifactUrl(file.filename), () => {
-      return HttpResponse.text(
-        `# ${file.label} notes\n\n\`\`\`mermaid\nflowchart LR\n  ${file.label} --> Preview\n\`\`\``,
-      );
-    });
-  }
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  await findNamedButton("Open markdown preview for first.md");
-}
-
-test("Markdown diagrams get fresh URLs when reopened or moved to split view", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  await setupMarkdownDiagramAttachments();
-
-  click(getNamedButton("Open markdown preview for first.md"));
-  const firstImage = await screen.findByRole("img", { name: "Diagram" });
-  const firstUrl = firstImage.getAttribute("src");
-  if (!firstUrl) {
-    throw new Error("Expected the Markdown preview diagram URL");
-  }
-  const firstSvg = await browser.blobForUrl(firstUrl)?.text();
-  expect(browser.blobForUrl(firstUrl)?.type).toBe("image/svg+xml");
-
-  await closeFocusedPreview();
-  expect(browser.revokedUrls).toContain(firstUrl);
-
-  click(getNamedButton("Open markdown preview for first.md"));
-  const reopened = await screen.findByRole("img", { name: "Diagram" });
-  const reopenedUrl = reopened.getAttribute("src");
-  expect(reopenedUrl).toMatch(/^blob:/);
-  expect(reopenedUrl).not.toBe(firstUrl);
-
-  click(getNamedButton("Open in split view"));
-  const sidebar = await screen.findByTestId("artifact-sidebar");
-  const splitImage = await within(sidebar).findByRole("img", {
-    name: "Diagram",
-  });
-  const splitUrl = splitImage.getAttribute("src");
-  if (!splitUrl) {
-    throw new Error("Expected the split view diagram URL");
-  }
-  await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-  });
-  expect(browser.revokedUrls).toContain(reopenedUrl);
-  expect(splitUrl).not.toBe(reopenedUrl);
-  expect(browser.revokedUrls).not.toContain(splitUrl);
-  await expect(browser.blobForUrl(splitUrl)?.text()).resolves.toBe(firstSvg);
-});
-
-test("Closing a Markdown preview during layout does not allocate an abandoned image URL", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  const createUrl = vi.spyOn(URL, "createObjectURL");
-  const layoutStarted = context.mocks.deferred<void>();
-  const renderGate = context.mocks.deferred<void>();
-  const renderDiagram = mermaid.render.bind(mermaid);
-  vi.spyOn(mermaid, "render").mockImplementationOnce(async (...args) => {
-    layoutStarted.resolve();
-    await renderGate.promise;
-    return await renderDiagram(...args);
-  });
-  await setupMarkdownDiagramAttachments();
-
-  click(getNamedButton("Open markdown preview for first.md"));
-  await expect(screen.findByText("First notes")).resolves.toBeInTheDocument();
-  expect(getNamedButton("Expand diagram")).toBeDisabled();
-  await layoutStarted.promise;
-  await closeFocusedPreview();
-
-  click(getNamedButton("Open markdown preview for second.md"));
-  await expect(screen.findByText("Second notes")).resolves.toBeInTheDocument();
-  renderGate.resolve();
-
-  const image = await screen.findByRole("img", { name: "Diagram" });
-  const url = image.getAttribute("src");
-  if (!url) {
-    throw new Error("Expected the active preview diagram URL");
-  }
-  expect(browser.blobForUrl(url)?.type).toBe("image/svg+xml");
-  const activeSvg = await browser.blobForUrl(url)?.text();
-  const allocatedDiagrams = createUrl.mock.calls.flatMap(([blob], index) => {
-    const result = createUrl.mock.results[index];
-    if (
-      !(blob instanceof File) ||
-      blob.name !== "diagram.svg" ||
-      result?.type !== "return"
-    ) {
-      return [];
-    }
-    return [{ file: blob, url: result.value }];
-  });
-  // Ref replay can allocate more than one URL for the active image. None
-  // may belong to the closed preview, and every replaced URL must be freed.
-  const allocatedSvgs = await Promise.all(
-    allocatedDiagrams.map(({ file }) => {
-      return file.text();
-    }),
-  );
-  expect(new Set(allocatedSvgs)).toStrictEqual(new Set([activeSvg]));
-  const replacedUrls = allocatedDiagrams.flatMap((diagram) => {
-    return diagram.url === url ? [] : [diagram.url];
-  });
-  expect(browser.revokedUrls).toStrictEqual(
-    expect.arrayContaining(replacedUrls),
-  );
-  expect(browser.revokedUrls).not.toContain(url);
 });

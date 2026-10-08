@@ -207,9 +207,10 @@ pub struct CliFailureDiagnostic {
     /// High-level source of the event-derived failure detail.
     ///
     /// Values produced by [`execute_cli_with_active_input_for_config`] use
-    /// `ClaudeResult` for Claude Code terminal result events and `CodexJsonl`
-    /// for Codex compatibility JSONL failure events. The final run diagnostic
-    /// may still prefer stderr when this event message is generic.
+    /// `ClaudeResult` for Claude Code terminal result events, `PiResult` for Pi
+    /// terminal result events, and `CodexJsonl` for Codex compatibility JSONL
+    /// failure events. The final run diagnostic may select stderr for a generic
+    /// event message or use an exit-code fallback when no detail is available.
     pub source: FailureDetailSource,
 
     /// Optional structured failure reason parsed from supported CLI payloads.
@@ -232,6 +233,12 @@ pub struct CliExecutionResult {
     /// For Claude Code execution, this is the CLI process exit code. On Unix,
     /// signal termination is mapped to `128 + signal`, matching shell
     /// convention, so SIGKILL is reported as `137`.
+    ///
+    /// For Pi execution, this starts with the mapped CLI process exit code.
+    /// In RPC runs, a terminal JSONL `Error` result overrides it to `1`, even
+    /// when the child process exits with `0`; `cli_observed_exit` retains the
+    /// raw process exit observation. Non-RPC Pi runs keep the mapped process
+    /// exit code.
     ///
     /// For Codex app-server execution, completed turns map to `0`, while failed
     /// or interrupted turns and terminal non-retry errors map to `1`. These are
@@ -296,9 +303,6 @@ pub struct CliExecutionResult {
     /// Structured attribution for guest-agent initiated CLI process-group
     /// termination.
     pub cli_termination: Option<CliTerminationDiagnostic>,
-
-    /// Backend-accepted delivery identities settled or recoverable at completion.
-    pub active_input_delivery_ids: Vec<String>,
 }
 
 /// One-shot outcome reported by the heartbeat loop or task while CLI execution is in progress.
@@ -364,7 +368,6 @@ pub(super) struct CliRuntimeConfig<'a> {
     api_start_time: Cow<'a, str>,
     anthropic_model: Cow<'a, str>,
     openai_model: Cow<'a, str>,
-    openai_base_url: Cow<'a, str>,
     codex_runtime_config: Option<CodexRuntimeConfig>,
     codex_oauth_mode: bool,
     codex_fast_mode: bool,
@@ -381,6 +384,7 @@ pub(super) struct CliRuntimeConfig<'a> {
     pi_launch_config: Cow<'a, str>,
     pi_launch_payload_file: Cow<'a, str>,
     pi_model_config: Cow<'a, str>,
+    pi_installed_cli_requirement: Cow<'a, str>,
     user_env: &'a HashMap<String, String>,
 }
 
@@ -438,10 +442,6 @@ impl<'a> CliRuntimeConfig<'a> {
             api_start_time: Cow::Borrowed(&config.api_start_time),
             anthropic_model: Cow::Borrowed(user_env_value(&config.user_env, "ANTHROPIC_MODEL")),
             openai_model: Cow::Borrowed(user_env_value(&config.user_env, "OPENAI_MODEL")),
-            openai_base_url: Cow::Borrowed(user_env_value(
-                &config.user_env,
-                OPENAI_BASE_URL_ENV_KEY,
-            )),
             codex_runtime_config,
             codex_oauth_mode: !user_env_value(&config.user_env, "CHATGPT_ACCOUNT_ID").is_empty(),
             codex_fast_mode: matches!(config.framework, env::Framework::Codex)
@@ -465,6 +465,7 @@ impl<'a> CliRuntimeConfig<'a> {
             pi_launch_config: Cow::Borrowed(&config.pi_launch_config),
             pi_launch_payload_file: Cow::Borrowed(paths.pi_launch_payload_file()),
             pi_model_config: Cow::Borrowed(&config.pi_model_config),
+            pi_installed_cli_requirement: Cow::Borrowed(&config.pi_installed_cli_requirement),
             user_env: &config.user_env,
         })
     }
@@ -479,11 +480,6 @@ impl<'a> CliRuntimeConfig<'a> {
             self.codex_runtime_config.as_ref(),
             Path::new(codex_home),
         );
-        if self.codex_runtime_config.is_none() && !self.openai_base_url.is_empty() {
-            let base_url =
-                codex_runtime_config::quote_toml_basic_string(self.openai_base_url.as_ref());
-            overrides.push(format!("openai_base_url={base_url}"));
-        }
         if self.disable_builtin_web_search {
             overrides.push(CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string());
         }
@@ -551,9 +547,20 @@ fn build_pi_command_for_runtime(
             )));
         }
     }
-    let launch_config: serde_json::Value = serde_json::from_str(runtime.pi_launch_config.as_ref())
-        .map_err(|_| AgentError::Execution("Pi launch config is invalid".to_string()))?;
-    let requirement = okou_cli_launch::PiRuntimeRequirement::from_launch_config(&launch_config);
+    let installed_cli_requirement: Option<serde_json::Value> = if runtime
+        .pi_installed_cli_requirement
+        .is_empty()
+    {
+        None
+    } else {
+        Some(
+            serde_json::from_str(runtime.pi_installed_cli_requirement.as_ref()).map_err(|_| {
+                AgentError::Execution("Pi installed CLI requirement is invalid".to_string())
+            })?,
+        )
+    };
+    let requirement =
+        okou_cli_launch::PiRuntimeRequirement::from_value(installed_cli_requirement.as_ref());
     let decision = okou_cli_launch::select_pi_cli_launch(&requirement, installed_okou_cli);
     record_sandbox_op_with_dimensions(
         "pi_cli_launch_select",
@@ -593,6 +600,8 @@ fn build_pi_command_for_runtime(
             "__agent-loop".to_string(),
         ]);
     }
+    // Keep the task's API-captured package identity on a parity miss; never
+    // substitute a moving latest package or execute the incompatible install.
     let package_url = runtime
         .user_env
         .get(CLI_PACKAGE_URL_ENV_KEY)
@@ -1213,7 +1222,13 @@ async fn execute_cli_inner(
     // fail an otherwise healthy run because this sink is unavailable.
     let mut agent_log = BestEffortAgentLog::open(runtime.agent_log_file.as_ref());
 
+    if let Some(timing) = pi_startup {
+        timing.before_spawn();
+    }
     let mut child = cmd.spawn()?;
+    if let Some(timing) = pi_startup {
+        timing.after_spawn();
+    }
 
     let Some(cli_stdin) = child.stdin.take() else {
         let _ = child.start_kill();
@@ -1239,8 +1254,10 @@ async fn execute_cli_inner(
     } else {
         diagnostics::CliStderrLineObserver::None
     };
+    let startup_segments = pi_startup.map(PiStartupTiming::segment_observer);
     let mut stderr_handle = tokio::spawn(async move {
-        diagnostics::collect_stderr_result_tail_observed(stderr, stderr_observer).await
+        diagnostics::collect_stderr_result_tail_observed(stderr, stderr_observer, startup_segments)
+            .await
     });
 
     let pi_rpc_execution = pi_execution && !maintenance_execution;
@@ -1254,6 +1271,10 @@ async fn execute_cli_inner(
                 http.clone(),
                 runtime.run_id.as_ref(),
                 runtime.pi_session_id.as_ref(),
+                pi_session_output::FirstSessionOutputTiming {
+                    pi_startup_succeeded_at: pi_startup.map(PiStartupTiming::success_boundary),
+                    api_start_time: runtime.api_start_time.to_string(),
+                },
             )
         })
         .flatten();
@@ -1523,21 +1544,19 @@ async fn execute_cli_inner(
 
                         if let Ok(mut event) = serde_json::from_str::<serde_json::Value>(stripped) {
                             if let Some(startup_boundary) = pi_rpc_startup_boundary.as_mut() {
-                                match startup_boundary.admit(&event) {
-                                    Ok(pi_rpc::PiRpcRecordAdmission::InstallBoundary(startup)) => {
+                                match startup_boundary.admit() {
+                                    pi_rpc::PiRpcRecordAdmission::Start => {
                                         match CliEventPipeline::start(
                                             runtime,
                                             session_metadata.clone(),
                                             &http,
-                                            startup.sandbox_event_sequence_start,
+                                            pi_rpc::PI_RPC_FIRST_EVENT_SEQUENCE,
                                             pi_startup,
                                         ) {
                                             Ok(pipeline) => {
                                                 event_pipeline = Some(pipeline);
                                                 if let Some(sender) = pi_rpc_startup_tx.take() {
-                                                    let _ = sender.send(
-                                                        startup.ownership_transfer_mode,
-                                                    );
+                                                    let _ = sender.send(());
                                                 }
                                             }
                                             Err(error) => {
@@ -1556,14 +1575,11 @@ async fn execute_cli_inner(
                                                     },
                                                     termination_deadline.as_mut(),
                                                 );
+                                                continue;
                                             }
                                         }
-                                        // The startup control is private CLI/guest state. It is
-                                        // consumed before official RPC projection and is never
-                                        // written to the agent transcript or public delivery.
-                                        continue;
                                     }
-                                    Ok(pi_rpc::PiRpcRecordAdmission::Project) => {
+                                    pi_rpc::PiRpcRecordAdmission::Project => {
                                         if event_pipeline.is_none() {
                                             startup_boundary.discard_remaining();
                                             let error = AgentError::Execution(
@@ -1586,24 +1602,7 @@ async fn execute_cli_inner(
                                             continue;
                                         }
                                     }
-                                    Ok(pi_rpc::PiRpcRecordAdmission::Discard) => continue,
-                                    Err(error) => {
-                                        pi_rpc_startup_tx.take();
-                                        active_input_controller.close_terminal();
-                                        if cli_status.is_some() {
-                                            break Err(error);
-                                        }
-                                        let error_log = error.to_string();
-                                        termination_runtime.begin_control_failure(
-                                            TerminationReason::StdoutIngestion,
-                                            error,
-                                            ControlTerminationLog::StdoutIngestionFailed {
-                                                error: error_log,
-                                            },
-                                            termination_deadline.as_mut(),
-                                        );
-                                        continue;
-                                    }
+                                    pi_rpc::PiRpcRecordAdmission::Discard => continue,
                                 }
                             }
                             if let Some(projection) = pi_rpc_projection.as_mut() {
@@ -1815,10 +1814,7 @@ async fn execute_cli_inner(
                             }
                         } else if pi_rpc_startup_boundary
                             .as_ref()
-                            .is_some_and(|boundary| {
-                                boundary.requires_boundary()
-                                    || pi_rpc::PiRpcStartupBoundary::looks_like_control(stripped)
-                            })
+                            .is_some_and(pi_rpc::PiRpcStartupBoundary::requires_boundary)
                         {
                             if let Some(boundary) = pi_rpc_startup_boundary.as_mut() {
                                 boundary.discard_remaining();
@@ -2180,15 +2176,13 @@ async fn execute_cli_inner(
         }
     }
 
-    let active_input_delivery_ids = match active_input_controller.finalize_receipts().await {
-        Ok(delivery_ids) => delivery_ids,
-        Err(error) => {
-            if active_input_error.is_none() {
-                active_input_error = Some(error);
-            }
-            Vec::new()
-        }
-    };
+    if let Err(error) = active_input_controller
+        .finalize_steered_declarations()
+        .await
+        && active_input_error.is_none()
+    {
+        active_input_error = Some(error);
+    }
 
     let has_control_error = termination_runtime.has_control_error();
     let event_error = if active_input_error.is_some() {
@@ -2291,7 +2285,6 @@ async fn execute_cli_inner(
         failure_diagnostic,
         control_error,
         cli_termination,
-        active_input_delivery_ids,
     })
 }
 
@@ -2516,6 +2509,7 @@ mod tests {
             pi_launch_config: String::new(),
             pi_model_config: String::new(),
             pi_session_id: String::new(),
+            pi_installed_cli_requirement: String::new(),
             stuck_tool_timeout_secs: constants::STUCK_TOOL_TIMEOUT_SECS,
             post_result_sigterm_grace: Duration::from_secs(
                 constants::POST_RESULT_SIGTERM_GRACE_SECS,
@@ -2572,7 +2566,6 @@ mod tests {
             api_start_time: Cow::Borrowed(""),
             anthropic_model: Cow::Borrowed(""),
             openai_model: Cow::Borrowed(""),
-            openai_base_url: Cow::Borrowed(""),
             codex_runtime_config: None,
             codex_oauth_mode: false,
             codex_fast_mode: false,
@@ -2602,6 +2595,7 @@ mod tests {
             pi_launch_config: Cow::Borrowed(""),
             pi_launch_payload_file: Cow::Borrowed("/tmp/pi-launch-payload/payload.json"),
             pi_model_config: Cow::Borrowed(""),
+            pi_installed_cli_requirement: Cow::Borrowed(""),
             user_env,
         }
     }
@@ -2624,6 +2618,50 @@ mod tests {
     }
 
     #[test]
+    fn pi_command_execs_installed_cli_from_the_execution_context_requirement() {
+        let user_env = HashMap::from([(
+            "CLI_PKG_URL".to_string(),
+            "https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
+        )]);
+        let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
+        runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");
+        runtime.pi_model_config = Cow::Borrowed("{}");
+        runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
+        runtime.pi_installed_cli_requirement = Cow::Borrowed(
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
+        );
+        let mut installed = installed_okou_cli_for_test("9.353.0", "1.36.0");
+        installed.session_construction =
+            Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
+                digest: "d".repeat(64),
+            });
+
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&installed)).unwrap(),
+            vec![
+                OKOU_CLI_LAUNCHER_PATH.to_string(),
+                "__agent-loop".to_string()
+            ]
+        );
+
+        installed.session_construction.as_mut().unwrap().digest = "e".repeat(64);
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&installed)).unwrap(),
+            vec![
+                "npx".to_string(),
+                "--yes".to_string(),
+                "--no-audit".to_string(),
+                "--package=https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
+                "okou".to_string(),
+                "__agent-loop".to_string()
+            ]
+        );
+
+        runtime.pi_installed_cli_requirement = Cow::Borrowed("not json");
+        assert!(build_pi_command_for_runtime(&runtime, Some(&installed)).is_err());
+    }
+
+    #[test]
     fn pi_command_execs_installed_cli_only_for_matching_runtime_version() {
         let user_env = HashMap::from([(
             "CLI_PKG_URL".to_string(),
@@ -2632,10 +2670,11 @@ mod tests {
         let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
         runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");
         runtime.pi_model_config = Cow::Borrowed("{}");
-        runtime.pi_launch_config = Cow::Borrowed(
-            r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1,"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}}"#,
+        runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
+        runtime.pi_installed_cli_requirement = Cow::Borrowed(
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}"#,
         );
-        let npx = vec![
+        let fallback = vec![
             "npx".to_string(),
             "--yes".to_string(),
             "--no-audit".to_string(),
@@ -2643,8 +2682,10 @@ mod tests {
             "okou".to_string(),
             "__agent-loop".to_string(),
         ];
-
-        assert_eq!(build_pi_command_for_runtime(&runtime, None).unwrap(), npx);
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, None).unwrap(),
+            fallback
+        );
         let matching = installed_okou_cli_for_test("9.353.0", "1.36.0");
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
@@ -2656,27 +2697,31 @@ mod tests {
         let mismatched = installed_okou_cli_for_test("9.353.0", "1.35.9");
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&mismatched)).unwrap(),
-            npx
+            fallback
         );
 
-        // Launch configs captured before versioned artifacts carry no requirement.
-        runtime.pi_launch_config =
-            Cow::Borrowed(r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#);
+        // Legacy URL-bearing contexts keep their API-captured package.
+        runtime.pi_installed_cli_requirement = Cow::Borrowed("");
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
-            npx
+            fallback
         );
 
-        // The commit-addressed package stays required for the npx path only.
         let no_url = HashMap::new();
         let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &no_url);
         runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");
         runtime.pi_model_config = Cow::Borrowed("{}");
-        runtime.pi_launch_config = Cow::Borrowed(
-            r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1,"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}}"#,
+        runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
+        runtime.pi_installed_cli_requirement = Cow::Borrowed(
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}"#,
         );
         assert!(build_pi_command_for_runtime(&runtime, Some(&matching)).is_ok());
-        assert!(build_pi_command_for_runtime(&runtime, None).is_err());
+        assert!(
+            build_pi_command_for_runtime(&runtime, None)
+                .unwrap_err()
+                .to_string()
+                .contains("CLI_PKG_URL is required")
+        );
     }
 
     #[test]
@@ -2995,11 +3040,10 @@ mod tests {
         let mut runtime = runtime_for_command_test(env::Framework::Codex, "prompt", "", &user_env);
         runtime.disable_builtin_web_search = true;
         runtime.codex_runtime_config = Some(CodexRuntimeConfig {
-            provider_id: "deepseek".to_string(),
-            name: "DeepSeek".to_string(),
-            base_url: "https://api.deepseek.com/".to_string(),
+            provider_id: "openrouter-codex".to_string(),
+            name: "OpenRouter (Codex)".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
-            http_headers: None,
             requires_openai_auth: None,
             wire_api: "responses".to_string(),
             supports_websockets: false,
@@ -3008,7 +3052,7 @@ mod tests {
 
         let overrides = runtime.codex_startup_config_overrides();
 
-        assert!(overrides.contains(&r#"model_provider="deepseek""#.to_string()));
+        assert!(overrides.contains(&r#"model_provider="openrouter-codex""#.to_string()));
         assert!(overrides.contains(&super::CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string()));
     }
 
@@ -3079,11 +3123,10 @@ mod tests {
         ]);
         let mut runtime = runtime_for_command_test(env::Framework::Codex, "prompt", "", &user_env);
         runtime.codex_runtime_config = Some(CodexRuntimeConfig {
-            provider_id: "deepseek".to_string(),
-            name: "DeepSeek".to_string(),
-            base_url: "https://api.deepseek.com/".to_string(),
+            provider_id: "openrouter-codex".to_string(),
+            name: "OpenRouter (Codex)".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
-            http_headers: None,
             requires_openai_auth: None,
             wire_api: "responses".to_string(),
             supports_websockets: false,

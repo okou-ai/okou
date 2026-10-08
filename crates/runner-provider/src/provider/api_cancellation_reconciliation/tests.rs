@@ -114,10 +114,11 @@ impl Server {
 
 fn controller_for_url(api_url: String) -> CancellationReconciliation {
     CancellationReconciliation::new(
-        HttpClient::create(HttpClientConfig {
+        HttpClient::new(HttpClientConfig {
             api_url,
             vercel_bypass: None,
             client_session_id: "cancellation-test".into(),
+            runner_version: env!("CARGO_PKG_VERSION"),
         })
         .unwrap(),
         "test/group".into(),

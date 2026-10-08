@@ -1,6 +1,6 @@
 {
   "name": "@okouai/cli",
-  "version": "9.356.1",
+  "version": "9.378.22",
   "private": true,
   "description": "Okou command-line interface",
   "repository": {
@@ -29,8 +29,8 @@
     "check-types": "pnpm --filter @okouai/pi-agent-runtime run build && tsc --noEmit"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.86.1",
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@modelcontextprotocol/client": "^2.2.0",
     "@sentry/node": "^10.73.0",
     "@types/node": "^24.3.0",
     "@types/prompts": "^2.4.9",
@@ -44,7 +44,7 @@
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/pi-agent-runtime": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
-    "ably": "^2.21.0",
+    "ably": "^2.28.0",
     "chalk": "^5.6.2",
     "commander": "^14.0.0",
     "entities": "7.0.1",
@@ -61,7 +61,7 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "undici": "^8.10.2",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.1",
     "yaml": "^2.9.0",
     "zod": "^4.3.6"
   }

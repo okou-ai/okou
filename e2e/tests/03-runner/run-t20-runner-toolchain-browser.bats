@@ -1,12 +1,14 @@
 #!/usr/bin/env bats
 
-# Default deployed runner profile toolchain smoke through the public chat API.
+# Deployed runner toolchain smoke through the public chat API.
+# Use the native Codex mock so shell stdout is not paraphrased by a real model.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
+    runner_e2e_use_mock_codex_profile
     runner_e2e_require_environment
     runner_e2e_setup_test
 }
@@ -49,7 +51,7 @@ EOF
     prompt=${prompt//__BROWSER_MARKER__/$browser_marker}
     prompt=${prompt//__OUTPUT_MARKER__/$output_marker}
 
-    run runner_e2e_start_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
+  chatThreadArchiveContract,
   chatThreadPinContract,
   chatThreadUnpinContract,
   chatThreadsContract,
@@ -18,13 +19,15 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { chatListEvent } from "./chat-list-test-helpers.ts";
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
+import { pathname } from "../../../signals/location.ts";
 
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
+const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 async function setupHeaderPage(
-  enabled = true,
   threadEvents: readonly ChatThreadEvent[] = [],
+  archiveEnabled = true,
 ) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -66,7 +69,7 @@ async function setupHeaderPage(
     context,
     path: `/chats/${THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.ChatThreadHeaderActions]: enabled,
+      [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled,
     },
   });
   await screen.findByText("Review the header layout");
@@ -103,21 +106,6 @@ function menuItemNames() {
     return item.textContent?.trim();
   });
 }
-
-test.each([true, false])(
-  "Keep the existing header when the switch is off (desktop: %s)",
-  async (desktop) => {
-    context.mocks.browser.matchMedia(desktop);
-    await setupHeaderPage(false);
-    expect(screen.queryByLabelText("Pin chat")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("More actions")).not.toBeInTheDocument();
-    expect(buttonNamed("Share messages")).toBeInTheDocument();
-    expect(
-      buttonNamed(desktop ? "Open artifacts" : "Open mobile artifacts"),
-    ).toBeInTheDocument();
-    expect(screen.getAllByTestId("chat-thread-header-title")).toHaveLength(1);
-  },
-);
 
 test("Keep rapid pin changes responsive across resize and save without a success toast", async () => {
   const viewport = context.mocks.browser.matchMedia(true);
@@ -157,7 +145,7 @@ test("Keep rapid pin changes responsive across resize and save without a success
       return respond(204);
     },
   );
-  await setupHeaderPage(true, events);
+  await setupHeaderPage(events);
   const title = screen.getByTestId("chat-thread-header-title");
   expect(title.closest("header")).toContainElement(buttonNamed("Pin chat"));
 
@@ -227,6 +215,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   expect(menuItemNames()).toStrictEqual([
     "Pin chat",
     "Rename chat",
+    "Archive chat",
     "Artifacts",
   ]);
   click(menuItemNamed("Rename chat"));
@@ -234,6 +223,139 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   expect(within(dialog).getByPlaceholderText("Chat title")).toHaveValue(
     "😀 Header planning",
   );
+});
+
+test("Archive from the mobile header and return to the thread's agent before saving", async () => {
+  context.mocks.browser.matchMedia(false);
+  const archiveResponse = context.mocks.deferred<void>();
+  const events: ChatThreadEvent[] = [];
+  let archiveRequestAborted = false;
+  context.mocks.api(
+    chatThreadArchiveContract.archive,
+    async ({ params, query, request, respond }) => {
+      request.signal.addEventListener("abort", () => {
+        archiveRequestAborted = true;
+      });
+      await archiveResponse.promise;
+      events.push(
+        chatListEvent(951, 1, "archived", params.id, {
+          id: query?.eventId,
+          agentId: AGENT_ID,
+        }),
+      );
+      changeChatThreadList();
+      return respond(204);
+    },
+  );
+  await setupHeaderPage(events);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Archive chat"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+  });
+  expect(
+    screen.queryByText("Review the header layout"),
+  ).not.toBeInTheDocument();
+
+  archiveResponse.resolve();
+  await waitFor(() => {
+    expect(events).toHaveLength(1);
+  });
+  expect(archiveRequestAborted).toBeFalsy();
+});
+
+test("Show the archive API error after leaving the thread", async () => {
+  context.mocks.browser.matchMedia(false);
+  context.mocks.api(chatThreadArchiveContract.archive, ({ respond }) => {
+    return respond(500, { error: { message: "Archive request failed" } });
+  });
+  await setupHeaderPage();
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Archive chat"));
+  await expect(
+    screen.findByText("Archive request failed"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+});
+
+test("Hide header archiving when the archive switch is off", async () => {
+  context.mocks.browser.matchMedia(false);
+  await setupHeaderPage([], false);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  expect(menuItemNames()).toStrictEqual([
+    "Pin chat",
+    "Rename chat",
+    "Artifacts",
+  ]);
+});
+
+test("Unarchive from the mobile header and stay in the current thread", async () => {
+  context.mocks.browser.matchMedia(false);
+  const unarchiveResponse = context.mocks.deferred<void>();
+  const events: ChatThreadEvent[] = [
+    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
+  ];
+  context.mocks.api(
+    chatThreadArchiveContract.unarchive,
+    async ({ params, query, respond }) => {
+      await unarchiveResponse.promise;
+      events.push(
+        chatListEvent(951, 2, "unarchived", params.id, {
+          id: query?.eventId,
+          agentId: AGENT_ID,
+        }),
+      );
+      changeChatThreadList();
+      return respond(204);
+    },
+  );
+  await setupHeaderPage(events);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  expect(menuItemNames()).toStrictEqual([
+    "Pin chat",
+    "Rename chat",
+    "Unarchive chat",
+    "Artifacts",
+  ]);
+  click(menuItemNamed("Unarchive chat"));
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  expect(menuItemNamed("Archive chat")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+
+  unarchiveResponse.resolve();
+  await waitFor(() => {
+    expect(menuItemNamed("Archive chat")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
+});
+
+test("Stay in the archived thread and show the unarchive API error", async () => {
+  context.mocks.browser.matchMedia(false);
+  context.mocks.api(chatThreadArchiveContract.unarchive, ({ respond }) => {
+    return respond(500, { error: { message: "Unarchive request failed" } });
+  });
+  await setupHeaderPage([
+    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
+  ]);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Unarchive chat"));
+  await expect(
+    screen.findByText("Unarchive request failed"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
 });
 
 test("Open artifacts from the mobile menu", async () => {
@@ -281,6 +403,7 @@ test("Open linked automations from the mobile menu", async () => {
     expect(menuItemNames()).toStrictEqual([
       "Pin chat",
       "Rename chat",
+      "Archive chat",
       "Automations",
       "Artifacts",
     ]);
@@ -300,7 +423,7 @@ test("Retain message selection and restore mobile actions after sharing", async 
   await screen.findAllByText("0 selected");
   expect(screen.queryByLabelText("Pin chat")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("More actions")).not.toBeInTheDocument();
-  click(screen.getByText("Review the header layout"));
+  click(screen.getAllByText("Select message group")[0]!);
   await screen.findAllByText("1 selected");
   click(buttonNamed("Cancel"));
   await waitFor(() => {

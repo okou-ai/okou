@@ -5,6 +5,10 @@ import { ROUTES } from "../route-paths.ts";
 import { detachedNavigateTo$, pathname$, searchParams$ } from "../route.ts";
 import { tapError } from "../utils.ts";
 import { onboardingStatus$ } from "./onboarding.ts";
+import {
+  clearSourcesFirstDraft$,
+  restoreSourcesFirstDraft$,
+} from "../onboarding/onboarding-sources-first-state.ts";
 
 const ONBOARDING_GUARDED_PATHS = [
   ROUTES.activityDetail,
@@ -22,9 +26,6 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.chat,
   ROUTES.computerUseAuthorize,
   ROUTES.connectors,
-  ROUTES.connectorSsh,
-  ROUTES.connectorVnc,
-  ROUTES.connectorCloudflareAccess,
   ROUTES.directedAuthorize,
   ROUTES.directedConnect,
   ROUTES.directedReconnect,
@@ -88,8 +89,9 @@ export const redirectToConfiguredOnboarding$ = command(
  * onboarding. This runs concurrently with route setup so page data does not
  * wait for onboarding status.
  *
- * Onboarding is purely admin workspace setup — only an admin whose org has no
- * default agent yet is sent through onboarding. Non-admins never go through it.
+ * The API decides who still has onboarding ahead of them: an admin whose org
+ * has not finished setting up, and an invited member who has neither finished their own run nor started using the
+ * workspace.
  *
  * When the backend cannot resolve the current org (e.g. it was deleted) but the
  * user still belongs to other orgs, redirect to the app's
@@ -115,12 +117,25 @@ export const bootstrapOnboardingGuard$ = command(
     const status = await tapError(get(onboardingStatus$));
     signal.throwIfAborted();
     if (
-      !status?.needsOnboarding ||
+      !status ||
       clerk.session?.id !== session.id ||
       clerk.user?.id !== user.id ||
       clerk.organization?.id !== organization.id ||
       !isOnboardingGuardedPath(get(pathname$))
     ) {
+      return;
+    }
+
+    // `onboardingComplete` is the organization's answer, so a member can still
+    // be mid-run in a finished org; their draft stays until their own run ends.
+    if (status.onboardingComplete && !status.needsOnboarding) {
+      set(restoreSourcesFirstDraft$, {
+        orgId: organization.id,
+        userId: user.id,
+      });
+      set(clearSourcesFirstDraft$);
+    }
+    if (!status.needsOnboarding) {
       return;
     }
 

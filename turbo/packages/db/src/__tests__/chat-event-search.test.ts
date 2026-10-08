@@ -42,9 +42,15 @@ describe("chat event search projection schema", () => {
       }),
     ).toStrictEqual([
       "chat_event_search_messages_user_org_created_idx",
-      "chat_event_search_messages_user_org_agent_id_created_idx",
-      "chat_event_search_messages_tsv_idx",
+      "chat_event_search_messages_user_tsv_gin_idx",
     ]);
+    expect(
+      config.indexes.find((index) => {
+        return (
+          index.config.name === "chat_event_search_messages_user_tsv_gin_idx"
+        );
+      })?.config.with,
+    ).toStrictEqual({ fastupdate: false });
     expect(config.foreignKeys).toStrictEqual([]);
   });
 

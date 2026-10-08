@@ -16,13 +16,11 @@ import {
   OTHER_THREAD_ID,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
-  SECOND_SCOUT_THREAD_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
   context,
   findComposer,
   findFastControl,
-  queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
@@ -212,44 +210,6 @@ test("Carry a connector account choice into a new chat", async () => {
   });
 });
 
-test("Preserve connector context across chats with the same agent", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({
-    catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-    threads: [
-      {
-        id: SCOUT_THREAD_ID,
-        title: "First Scout chat",
-        agentId: SCOUT_AGENT_ID,
-      },
-      {
-        id: SECOND_SCOUT_THREAD_ID,
-        title: "Second Scout chat",
-        agentId: SCOUT_AGENT_ID,
-      },
-    ],
-    threadId: SCOUT_THREAD_ID,
-  });
-
-  await setupPage({
-    locale: "en-US",
-    context,
-    path: `/chats/${SCOUT_THREAD_ID}`,
-  });
-
-  await loadComposer();
-  await openConnectors();
-  await expect(screen.findByLabelText("Remove GitHub")).resolves.toBeVisible();
-  await user.click(await findFastControl("link", "Second Scout chat"));
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(`/chats/${SECOND_SCOUT_THREAD_ID}`);
-  });
-  await user.click(await findFastControl("button", "Connectors"));
-  expect(screen.getByLabelText("Remove GitHub")).toBeVisible();
-  expect(screen.queryByText("Loading connectors")).toBeNull();
-});
-
 test("Choose an account for a custom MCP connector", async () => {
   const user = userEvent.setup({ delay: null });
   const accounts = [
@@ -315,49 +275,6 @@ test("Choose an account for a custom MCP connector", async () => {
   ).toBeVisible();
 });
 
-test("Keep the selected connector account visible during search", async () => {
-  const user = userEvent.setup({ delay: null });
-  const accounts = githubAccounts(7);
-  const selection = {
-    target: githubTarget(),
-    connectionId: accounts[1]!.id,
-  };
-  installComposerConnectorFixture({
-    catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-    accountSummaries: [accountSummary(githubTarget(), accounts)],
-    accounts,
-    threadSelections: { [SCOUT_THREAD_ID]: [selection] },
-    threadId: SCOUT_THREAD_ID,
-  });
-
-  await setupPage({
-    locale: "en-US",
-    context,
-    path: `/chats/${SCOUT_THREAD_ID}`,
-  });
-
-  await loadComposer();
-  await openConnectors();
-  const chooser = await openAccountChooser(
-    user,
-    "GitHub · Selected account: Personal",
-  );
-  await user.type(
-    within(chooser).getByPlaceholderText("Find accounts"),
-    "missing",
-  );
-  await waitFor(() => {
-    expect(within(chooser).getByText("No accounts found")).toBeVisible();
-    expect(
-      within(chooser).getByRole("option", { name: /Personal/u }),
-    ).toBeVisible();
-    expect(
-      within(chooser).getByRole("option", { name: /Personal/u }),
-    ).toHaveAttribute("aria-selected", "true");
-  });
-});
-
 test("Choose which connector account a chat uses", async () => {
   const user = userEvent.setup({ delay: null });
   const accounts = githubAccounts();
@@ -402,73 +319,5 @@ test("Choose which connector account a chat uses", async () => {
   expect(fixture.builtinAuthorizationUpdates).toHaveLength(0);
   expect(fixture.clearedThreadSelections).toStrictEqual([
     { threadId: SCOUT_THREAD_ID, target: githubTarget() },
-  ]);
-
-  chooser = await openAccountChooser(
-    user,
-    "GitHub · Using default account: Work",
-  );
-  await user.click(await findFastControl("button", "Back", chooser));
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Account for this chat")).toBeNull();
-    expect(queryFastControl("button", "Add connectors")).toBeVisible();
-    expect(
-      queryFastControl("button", "GitHub · Using default account: Work"),
-    ).toBeVisible();
-  });
-});
-
-test("Keep connector access synchronized across split chats for the same agent", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    catalog: [builtinConnector({ slug: SLACK_SLUG, label: "Slack" })],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [SLACK_SLUG] },
-    threads: [
-      { id: SCOUT_THREAD_ID, title: "Scout planning", agentId: SCOUT_AGENT_ID },
-      {
-        id: SECOND_SCOUT_THREAD_ID,
-        title: "Scout research",
-        agentId: SCOUT_AGENT_ID,
-      },
-    ],
-    threadId: SCOUT_THREAD_ID,
-  });
-
-  await setupPage({
-    locale: "en-US",
-    context,
-    path: `/chats/${SCOUT_THREAD_ID}?sidebar=${SECOND_SCOUT_THREAD_ID}`,
-  });
-
-  await waitFor(() => {
-    expect(
-      document.querySelectorAll("[data-chat-thread-container-id]"),
-    ).toHaveLength(2);
-  });
-  const firstPane = pane(SCOUT_THREAD_ID);
-  const secondPane = pane(SECOND_SCOUT_THREAD_ID);
-  await expect(
-    findFastControl("button", "Connectors", firstPane),
-  ).resolves.toBeVisible();
-  await expect(
-    findFastControl("button", "Connectors", secondPane),
-  ).resolves.toBeVisible();
-  await openConnectors(firstPane);
-  await expect(screen.findByLabelText("Remove Slack")).resolves.toBeVisible();
-  await user.keyboard("{Escape}");
-  await openConnectors(secondPane);
-  await expect(screen.findByLabelText("Remove Slack")).resolves.toBeVisible();
-
-  await user.click(screen.getByLabelText("Remove Slack"));
-  await expect(screen.findByLabelText("Add Slack")).resolves.toBeVisible();
-  await user.keyboard("{Escape}");
-  await openConnectors(firstPane);
-  expect(screen.getByLabelText("Add Slack")).toBeVisible();
-  expect(fixture.builtinAuthorizationUpdates).toStrictEqual([
-    {
-      agentId: SCOUT_AGENT_ID,
-      connectorSlugs: [SLACK_SLUG],
-      operation: "remove",
-    },
   ]);
 });

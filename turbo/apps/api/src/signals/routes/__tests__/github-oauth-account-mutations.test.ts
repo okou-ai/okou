@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -13,7 +12,7 @@ import {
 import { createGithubBddApi } from "./helpers/api-bdd-github";
 import { setConnectorExternalIdState } from "./helpers/connector-credential-storage-state";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const github = createGithubBddApi(context);
@@ -61,7 +60,6 @@ describe("GitHub OAuth account mutation selection", () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    await installApiTestConnectorCatalog();
 
     const actor = bdd.user();
     const agent = await bdd.createAgent(actor, {
@@ -80,7 +78,6 @@ describe("GitHub OAuth account mutation selection", () => {
   });
 
   it("adds a new identity and refreshes the exact existing sibling", async () => {
-    await installApiTestConnectorCatalog();
     const actor = bdd.user();
     await connectors.updateFeatureSwitches(actor, {});
 
@@ -148,7 +145,6 @@ describe("GitHub OAuth account mutation selection", () => {
   });
 
   it("serializes concurrent callbacks for the same new identity", async () => {
-    await installApiTestConnectorCatalog();
     const actor = bdd.user();
     await connectors.updateFeatureSwitches(actor, {});
     mockGitHubConnectorOAuth({ userId: 303, login: "github-concurrent" });
@@ -186,7 +182,6 @@ describe("GitHub OAuth account mutation selection", () => {
   });
 
   it("does not match a provider identity owned by another organization", async () => {
-    await installApiTestConnectorCatalog();
     const firstActor = bdd.user();
     const secondActor = bdd.user();
     await connectors.updateFeatureSwitches(firstActor, {});
@@ -223,7 +218,6 @@ describe("GitHub OAuth account mutation selection", () => {
   });
 
   it("fails closed when historical rows duplicate an owned identity", async () => {
-    await installApiTestConnectorCatalog();
     const actor = bdd.user();
     await connectors.updateFeatureSwitches(actor, {});
     await connectGithubAdd(actor, {
@@ -294,7 +288,6 @@ describe("GitHub OAuth account mutation selection", () => {
   });
 
   it("uses the same exact-identity selection for GitHub App setup", async () => {
-    await installApiTestConnectorCatalog();
     const actor = bdd.user();
     await connectors.updateFeatureSwitches(actor, {});
     await connectGithubAdd(actor, {

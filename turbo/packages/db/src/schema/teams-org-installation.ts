@@ -7,7 +7,6 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 /**
  * Org-aware Microsoft Teams installations table.
@@ -30,10 +29,6 @@ export const teamsOrgInstallations = pgTable(
     serviceUrl: text("service_url"),
     orgId: text("org_id"),
     installedByUserId: text("installed_by_user_id"),
-    publicBrand: text("public_brand")
-      .$type<PublicBrand>()
-      .default("okou")
-      .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

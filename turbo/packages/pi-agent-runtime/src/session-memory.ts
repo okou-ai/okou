@@ -1,21 +1,7 @@
 import { randomUUID } from "node:crypto";
-
-import type {
-  Api,
-  AssistantMessage,
-  AssistantMessageEvent,
-  AssistantMessageEventStream,
-  Context,
-  Message,
-  Model,
-  ModelThinkingLevel,
-  StreamFunction,
-  Tool,
-} from "@earendil-works/pi-ai";
-import { clampThinkingLevel, normalizeContext } from "@earendil-works/pi-ai";
+import type { Message } from "@earendil-works/pi-ai";
 import {
   buildSessionContext,
-  convertToLlm,
   CURRENT_SESSION_VERSION,
   type FileEntry,
   type SessionContext,
@@ -28,61 +14,12 @@ import {
   projectPiMemoryCitationSegments,
   visiblePiMemoryCitationText,
 } from "@okouai/api-contracts/contracts/pi-memory-citations";
-import type { PiApiFirstTurnOwnership } from "./provider-ownership";
-import type { PiAgentStreamOptions } from "./stream-options";
-import { PiApiModelRequestError } from "./api-failure";
-import {
-  measurePiPreparationSync,
-  type PiPreparationObserver,
-} from "./preparation-timing";
-
 interface CreateMemoryPiSessionOptions {
   readonly cwd: string;
   readonly id: string;
   readonly parentSession?: string;
   readonly timestamp?: string;
 }
-
-interface RunPiFirstModelTurnOptions<TApi extends Api = Api> {
-  readonly model: Model<TApi>;
-  readonly session: MemoryPiSession;
-  readonly stream: StreamFunction<TApi, PiAgentStreamOptions>;
-  readonly systemPrompt: string;
-  readonly tools: readonly Tool[];
-  readonly prompt: string;
-  readonly thinkingLevel?: ModelThinkingLevel;
-  readonly timestamp?: number;
-  readonly streamOptions?: Omit<PiAgentStreamOptions, "sessionId">;
-  readonly ownership: PiApiFirstTurnOwnership;
-  readonly onPreparationTiming?: PiPreparationObserver;
-  readonly onEvent?: (event: AssistantMessageEvent) => void;
-  readonly providerRequestBoundary?: (
-    markProviderRequestMayHaveStarted: () => void,
-  ) => Promise<void>;
-}
-
-interface PiModelTurnResult {
-  readonly assistantMessage: AssistantMessage;
-  readonly handoffRequired: boolean;
-  readonly responseStatus?: number;
-}
-
-type NewMemorySessionEntry =
-  | { readonly type: "message"; readonly message: Message }
-  | {
-      readonly type: "model_change";
-      readonly provider: string;
-      readonly modelId: string;
-    }
-  | {
-      readonly type: "thinking_level_change";
-      readonly thinkingLevel: string;
-    };
-
-// Keep the memory-backed API slot aligned with the pinned Pi SDK. Pi applies
-// this default when opening a new session, and when opening an older session
-// that has messages but no explicit thinking_level_change entry.
-const PI_DEFAULT_THINKING_LEVEL: ModelThinkingLevel = "medium";
 
 function serializeFileEntries(entries: readonly FileEntry[]): string {
   return `${entries
@@ -141,7 +78,10 @@ export class MemoryPiSession {
     return this.#appendEntry({ type: "message", message });
   }
 
-  #appendEntry(entry: NewMemorySessionEntry): string {
+  #appendEntry(entry: {
+    readonly type: "message";
+    readonly message: Message;
+  }): string {
     const id = generateEntryId(this.#entryIds);
     const completeEntry = {
       ...entry,
@@ -168,41 +108,6 @@ export class MemoryPiSession {
       current = current.parentId ? byId.get(current.parentId) : undefined;
     }
     return branch.reverse();
-  }
-
-  /** Apply the captured run effort while retaining the prior session history. */
-  prepareModelTurn<TApi extends Api>(
-    model: Model<TApi>,
-    thinkingLevel?: ModelThinkingLevel,
-  ): void {
-    const branch = this.#activeBranch();
-    const hasMessages = branch.some((entry) => {
-      return entry.type === "message";
-    });
-    if (!hasMessages) {
-      this.#appendEntry({
-        type: "model_change",
-        provider: model.provider,
-        modelId: model.id,
-      });
-    }
-    const hasThinkingEntry = branch.some((entry) => {
-      return entry.type === "thinking_level_change";
-    });
-    const effectiveThinkingLevel = clampThinkingLevel(
-      model,
-      thinkingLevel ?? PI_DEFAULT_THINKING_LEVEL,
-    );
-    if (
-      !hasThinkingEntry ||
-      (thinkingLevel !== undefined &&
-        this.buildSessionContext().thinkingLevel !== effectiveThinkingLevel)
-    ) {
-      this.#appendEntry({
-        type: "thinking_level_change",
-        thinkingLevel: effectiveThinkingLevel,
-      });
-    }
   }
 
   buildSessionContext(): SessionContext {
@@ -293,115 +198,4 @@ export class MemoryPiSession {
     });
     return serializeFileEntries([this.#header, ...entries]);
   }
-}
-
-function piReasoningLevel(
-  context: SessionContext,
-): PiAgentStreamOptions["reasoning"] {
-  switch (context.thinkingLevel) {
-    case "minimal":
-    case "low":
-    case "medium":
-    case "high":
-    case "xhigh":
-    case "max": {
-      return context.thinkingLevel;
-    }
-    default: {
-      return undefined;
-    }
-  }
-}
-
-async function consumeAssistantMessage(
-  stream: AssistantMessageEventStream,
-  onEvent?: (event: AssistantMessageEvent) => void,
-): Promise<AssistantMessage> {
-  for await (const event of stream) {
-    onEvent?.(event);
-  }
-  return await stream.result();
-}
-
-function piAssistantRequiresHandoff(message: AssistantMessage): boolean {
-  return message.content.some((content) => {
-    return content.type === "toolCall";
-  });
-}
-
-export async function runPiFirstModelTurn<TApi extends Api>(
-  options: RunPiFirstModelTurnOptions<TApi>,
-): Promise<PiModelTurnResult> {
-  const { sessionContext, context } = measurePiPreparationSync(
-    options.onPreparationTiming,
-    "model_context",
-    () => {
-      options.session.prepareModelTurn(options.model, options.thinkingLevel);
-      options.session.appendMessage({
-        role: "user",
-        content: options.prompt,
-        timestamp: options.timestamp ?? Date.now(),
-      });
-      const sessionContext = options.session.buildSessionContext();
-      // 0.86 carries the prompt and tool loadout as transcript system
-      // messages; normalizeContext() is the only producer of that shape.
-      const context = normalizeContext({
-        systemPrompt: options.systemPrompt,
-        messages: convertToLlm(sessionContext.messages),
-        tools: [...options.tools],
-      } satisfies Context);
-      return { sessionContext, context };
-    },
-    options.streamOptions?.signal,
-  );
-  if (options.providerRequestBoundary) {
-    await options.providerRequestBoundary(() => {
-      options.ownership.markProviderRequestMayHaveStarted();
-    });
-    if (options.ownership.stage !== "provider-may-have-started") {
-      throw new Error(
-        "Pi provider request boundary returned without claiming ownership",
-      );
-    }
-  } else {
-    options.ownership.markProviderRequestMayHaveStarted();
-  }
-  let responseStatus: number | undefined;
-  let assistantMessage: AssistantMessage;
-  const streamOptions: PiAgentStreamOptions = {
-    ...options.streamOptions,
-    onObservedResponseStatus(status) {
-      responseStatus = status;
-      options.streamOptions?.onObservedResponseStatus?.(status);
-    },
-    reasoning:
-      options.streamOptions?.reasoning ?? piReasoningLevel(sessionContext),
-    sessionId: options.session.getSessionId(),
-  };
-  // Preparation, durable ownership and session writes are outside this catch:
-  // their failures must never authorize replay of the original H0.
-  try {
-    const responseStream = options.stream(
-      options.model,
-      context,
-      streamOptions,
-    );
-    assistantMessage = await consumeAssistantMessage(
-      responseStream,
-      options.onEvent,
-    );
-  } catch (error) {
-    throw new PiApiModelRequestError(
-      error,
-      options.model.provider,
-      responseStatus,
-      options.streamOptions?.usageObserver?.snapshot(true),
-    );
-  }
-  options.session.appendMessage(assistantMessage);
-  return {
-    assistantMessage,
-    handoffRequired: piAssistantRequiresHandoff(assistantMessage),
-    responseStatus,
-  };
 }

@@ -45,12 +45,21 @@ pub async fn setup_codex_for_config(
         .user_env
         .get("CHATGPT_ACCOUNT_ID")
         .is_some_and(|value| !value.is_empty());
+    let codex_oauth_account_id = config
+        .user_env
+        .get("CODEX_OAUTH_ACCOUNT_ID")
+        .map(String::as_str);
     let api_key = config
         .user_env
         .get("OPENAI_API_KEY")
         .map(String::as_str)
         .unwrap_or("");
-    setup_codex_with_values(codex_oauth_mode, &config.codex_home_dir, api_key)?;
+    setup_codex_with_values(
+        codex_oauth_mode,
+        codex_oauth_account_id,
+        &config.codex_home_dir,
+        api_key,
+    )?;
     codex_runtime_config::write_model_catalog_from_raw(
         &config.codex_home_dir,
         &config.codex_runtime_config,
@@ -59,15 +68,24 @@ pub async fn setup_codex_for_config(
 
 fn setup_codex_with_values(
     codex_oauth_mode: bool,
+    codex_oauth_account_id: Option<&str>,
     codex_home_dir: &str,
     api_key: &str,
 ) -> Result<(), AgentError> {
     let setup_start = Instant::now();
     let codex_home = std::path::PathBuf::from(codex_home_dir);
     let (desired, mode_label) = if codex_oauth_mode {
+        let account_id = codex_oauth_account_id
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                AgentError::Execution(
+                    "Codex OAuth run requires a non-empty CODEX_OAUTH_ACCOUNT_ID".to_string(),
+                )
+            })?;
         (
             DesiredCodexAuth::ChatGpt {
                 now: chrono::Utc::now(),
+                account_id,
             },
             "chatgpt",
         )

@@ -82,7 +82,7 @@ impl ParkCoordinator {
 
     /// Validate assignment and acquire the authoritative reservation while the
     /// policy lock excludes park/termination admission. Never await here.
-    pub(crate) fn reserve_guest_rpc_operation(
+    pub(crate) fn reserve_guest_operation(
         &self,
         expected_run_id: &str,
         guest: &guest_control_client::GuestControlClient,
@@ -96,7 +96,7 @@ impl ParkCoordinator {
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotConnected,
-                "guest RPC assignment unavailable",
+                "guest assignment unavailable",
             ));
         }
         Ok((
@@ -105,7 +105,7 @@ impl ParkCoordinator {
         ))
     }
 
-    pub(crate) fn guest_rpc_assignment_cancellation(
+    pub(crate) fn guest_assignment_cancellation(
         &self,
         expected_run_id: &str,
     ) -> std::io::Result<CancellationToken> {
@@ -115,14 +115,10 @@ impl ParkCoordinator {
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotConnected,
-                "guest RPC assignment unavailable",
+                "guest assignment unavailable",
             ));
         }
         Ok(inner.assignment_cancel.child_token())
-    }
-
-    pub(crate) fn cancel_guest_rpc_operations(&self) {
-        self.inner().assignment_cancel.cancel();
     }
 
     pub(crate) fn begin_prepare_park(&self) -> Result<ParkAttempt, PrepareParkError> {
@@ -591,7 +587,7 @@ mod tests {
         let coordinator = ParkCoordinator::new();
         coordinator.bind_run_control("predecessor").unwrap();
         let old_controls = coordinator
-            .guest_rpc_assignment_cancellation("predecessor")
+            .guest_assignment_cancellation("predecessor")
             .unwrap();
         let attempt = begin_attempt(&coordinator);
         complete_attempt(&coordinator, &attempt);
@@ -609,7 +605,7 @@ mod tests {
         coordinator.bind_run_control("successor").unwrap();
         assert!(
             coordinator
-                .guest_rpc_assignment_cancellation("successor")
+                .guest_assignment_cancellation("successor")
                 .is_err()
         );
         assert_eq!(
@@ -620,7 +616,7 @@ mod tests {
         assert!(coordinator.ensure_operation_start_allowed().is_ok());
         assert!(
             coordinator
-                .guest_rpc_assignment_cancellation("successor")
+                .guest_assignment_cancellation("successor")
                 .is_ok()
         );
     }

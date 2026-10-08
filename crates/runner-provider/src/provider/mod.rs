@@ -517,7 +517,58 @@ pub struct ApiClaimTiming {
     request_elapsed: Duration,
     request_to_response_headers_elapsed: Duration,
     response_body_read_elapsed: Duration,
+    response_first_body_chunk_wait_elapsed: Duration,
     response_decode_elapsed: Duration,
+    response_attribution: ClaimResponseAttribution,
+}
+
+/// Bounded facts about the application-visible successful claim response.
+/// Neither field represents bytes transferred by an intermediary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClaimResponseAttribution {
+    body_size_bucket: &'static str,
+    content_encoding: &'static str,
+}
+
+impl ClaimResponseAttribution {
+    pub fn from_body_and_encoding(
+        body_bytes: usize,
+        content_encoding: Option<&reqwest::header::HeaderValue>,
+    ) -> Self {
+        let body_size_bucket = match body_bytes {
+            0..=4095 => "lt_4_kib",
+            4096..=16383 => "4_16_kib",
+            16384..=65535 => "16_64_kib",
+            65536..=262143 => "64_256_kib",
+            262144..=1048575 => "256_kib_1_mib",
+            _ => "ge_1_mib",
+        };
+        let content_encoding = match content_encoding.map(reqwest::header::HeaderValue::to_str) {
+            None => "absent",
+            Some(Err(_)) => "invalid",
+            Some(Ok(value)) => match value.trim() {
+                value if value.eq_ignore_ascii_case("identity") => "identity",
+                value if value.eq_ignore_ascii_case("gzip") => "gzip",
+                value if value.eq_ignore_ascii_case("br") => "br",
+                value if value.eq_ignore_ascii_case("deflate") => "deflate",
+                value if value.eq_ignore_ascii_case("zstd") => "zstd",
+                "" => "invalid",
+                _ => "other",
+            },
+        };
+        Self {
+            body_size_bucket,
+            content_encoding,
+        }
+    }
+
+    pub const fn body_size_bucket(self) -> &'static str {
+        self.body_size_bucket
+    }
+
+    pub const fn content_encoding(self) -> &'static str {
+        self.content_encoding
+    }
 }
 
 impl ApiClaimTiming {
@@ -525,13 +576,17 @@ impl ApiClaimTiming {
         request_elapsed: Duration,
         request_to_response_headers_elapsed: Duration,
         response_body_read_elapsed: Duration,
+        response_first_body_chunk_wait_elapsed: Duration,
         response_decode_elapsed: Duration,
+        response_attribution: ClaimResponseAttribution,
     ) -> Self {
         Self {
             request_elapsed,
             request_to_response_headers_elapsed,
             response_body_read_elapsed,
+            response_first_body_chunk_wait_elapsed,
             response_decode_elapsed,
+            response_attribution,
         }
     }
 
@@ -547,8 +602,33 @@ impl ApiClaimTiming {
         self.response_body_read_elapsed
     }
 
+    /// Time after response headers until the first non-empty, application-visible body chunk.
+    /// This is not a server-flush or first physical wire-byte measurement.
+    pub const fn response_first_body_chunk_wait_elapsed(self) -> Duration {
+        self.response_first_body_chunk_wait_elapsed
+    }
+
+    /// Reconcile the emitted millisecond durations with the existing total event.
+    /// Subtracting sub-millisecond Durations before serialization can otherwise
+    /// lose one millisecond when each event is truncated independently.
+    pub fn response_body_after_first_chunk_elapsed(self) -> Duration {
+        let total_ms =
+            u64::try_from(self.response_body_read_elapsed.as_millis()).unwrap_or(u64::MAX);
+        let first_ms = u64::try_from(self.response_first_body_chunk_wait_elapsed.as_millis())
+            .unwrap_or(u64::MAX);
+        assert!(
+            first_ms <= total_ms,
+            "first body chunk must arrive before body read completes"
+        );
+        Duration::from_millis(total_ms - first_ms)
+    }
+
     pub const fn response_decode_elapsed(self) -> Duration {
         self.response_decode_elapsed
+    }
+
+    pub const fn response_attribution(self) -> ClaimResponseAttribution {
+        self.response_attribution
     }
 }
 
@@ -808,8 +888,49 @@ mod tests {
             Duration::from_millis(10),
             Duration::from_millis(4),
             Duration::from_millis(2),
+            Duration::from_millis(1),
             Duration::from_millis(3),
+            ClaimResponseAttribution::from_body_and_encoding(100, None),
         )
+    }
+
+    #[test]
+    fn claim_response_attribution_uses_fixed_size_and_encoding_labels() {
+        let cases = [
+            (0, "lt_4_kib"),
+            (4095, "lt_4_kib"),
+            (4096, "4_16_kib"),
+            (16384, "16_64_kib"),
+            (65536, "64_256_kib"),
+            (262144, "256_kib_1_mib"),
+            (1048576, "ge_1_mib"),
+        ];
+        for (bytes, expected) in cases {
+            assert_eq!(
+                ClaimResponseAttribution::from_body_and_encoding(bytes, None).body_size_bucket(),
+                expected,
+            );
+        }
+
+        use reqwest::header::HeaderValue;
+        let cases = [
+            (None, "absent"),
+            (Some(HeaderValue::from_static("identity")), "identity"),
+            (Some(HeaderValue::from_static("GZIP")), "gzip"),
+            (Some(HeaderValue::from_static("br")), "br"),
+            (Some(HeaderValue::from_static("deflate")), "deflate"),
+            (Some(HeaderValue::from_static("zstd")), "zstd"),
+            (Some(HeaderValue::from_static("gzip, br")), "other"),
+            (Some(HeaderValue::from_static(" ")), "invalid"),
+            (Some(HeaderValue::from_bytes(b"\xff").unwrap()), "invalid"),
+        ];
+        for (header, expected) in cases {
+            assert_eq!(
+                ClaimResponseAttribution::from_body_and_encoding(100, header.as_ref())
+                    .content_encoding(),
+                expected,
+            );
+        }
     }
 
     #[test]

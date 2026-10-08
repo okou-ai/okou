@@ -1,5 +1,8 @@
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
+import {
+  mockConnectorAgentAccess,
+  mockOAuthCompletions,
+} from "./connector-page-test-helpers.ts";
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
@@ -133,6 +136,9 @@ function installCustomConnectorApi(args: {
   });
   context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
     return respond(200, { grants });
+  });
+  mockConnectorAgentAccess(context, () => {
+    return { grants };
   });
   context.mocks.api(
     agentCustomConnectorsContract.update,
@@ -550,6 +556,9 @@ test("Connect a single available connector without an unnecessary chooser", asyn
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [slug] });
   });
+  mockConnectorAgentAccess(context, () => {
+    return { enabledConnectorSlugs: [slug] };
+  });
   installActionConversation({
     lines: [
       connectorActionUrl({
@@ -788,6 +797,9 @@ test("Reconnect an expired connector before resuming the task", async () => {
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [slug] });
   });
+  mockConnectorAgentAccess(context, () => {
+    return { enabledConnectorSlugs: [slug] };
+  });
   installActionConversation({
     lines: [
       "Your Drive authorization expired. Reconnect it before I continue the report.",
@@ -829,48 +841,4 @@ test("Reconnect an expired connector before resuming the task", async () => {
       "Continue the report after reconnection",
     ]);
   });
-});
-
-test("Share connector authorization across related action cards", async () => {
-  const sends: CapturedChatSend[] = [];
-  const slug = "shared-documents";
-  const method = browserAuthMethod();
-  installCatalogLookup((requestedSlug) => {
-    return requestedSlug === slug
-      ? catalogConnector({
-          slug,
-          label: "Shared Documents",
-          method,
-          connected: true,
-        })
-      : null;
-  });
-  installActionConversation({
-    lines: [
-      connectorActionUrl({ slug }),
-      connectorActionUrl({
-        slug,
-        callbackPrompt: "Continue the shared document task",
-      }),
-      connectorActionUrl({ slug, action: "connect" }),
-    ],
-    sends,
-  });
-
-  await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
-
-  await readyChat();
-  const cards = await screen.findAllByTestId("connector-action-card");
-  expect(cards).toHaveLength(3);
-  const followupCard = cards[1]!;
-  click(getButton("Authorize", followupCard));
-
-  await waitFor(() => {
-    for (const card of cards) {
-      expect(getButton("Authorized", card)).toBeDisabled();
-    }
-  });
-  expect(sentPrompts(sends)).toStrictEqual([
-    "Continue the shared document task",
-  ]);
 });
