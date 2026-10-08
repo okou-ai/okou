@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.104.5"
+version = "0.104.6"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1894,7 +1894,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.24.38"
+version = "0.24.39"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -2652,7 +2652,7 @@ dependencies = [
 
 [[package]]
 name = "nbd-cow"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "bitvec",
  "libc",
@@ -3432,7 +3432,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -3572,7 +3572,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.220.22"
+version = "0.220.23"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3639,7 +3639,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3708,7 +3708,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.1.35"
+version = "0.1.36"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3739,7 +3739,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3805,7 +3805,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3880,7 +3880,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3921,7 +3921,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.2.26"
+version = "0.2.27"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4225,7 +4225,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.44.7"
+version = "0.44.8"
 dependencies = [
  "async-trait",
  "clap",

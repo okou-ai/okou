@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.735.1](https://github.com/okou-ai/okou/compare/core-v8.735.0...core-v8.735.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **core:** limit presentation conversion rollout to bingjie ([#38044](https://github.com/okou-ai/okou/issues/38044)) ([9894737](https://github.com/okou-ai/okou/commit/98947373070ad1d5b14595d716c217dca0fd28ac))
+
+
+### Refactoring
+
+* remove agent responsibility setup feature switch ([#38069](https://github.com/okou-ai/okou/issues/38069)) ([bbb313e](https://github.com/okou-ai/okou/commit/bbb313e561cf6904565d5b91e7e227e2016557ee))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.539.1
+
 ## [8.735.0](https://github.com/okou-ai/okou/compare/core-v8.734.9...core-v8.735.0) (2026-10-08)
 
 
