@@ -7,18 +7,20 @@ use crate::masker::SecretMasker;
 use base64::Engine as _;
 use httpmock::prelude::*;
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 
 const LIMIT: usize = 4 * 1024 * 1024;
 const RUN_ID: &str = "delivery-\"\\-你好";
 
 fn body(event: &Value, transport: bool) -> Result<String, String> {
-    let mut public = event.clone();
-    let citation = public
-        .as_object_mut()
-        .ok_or("event is not an object")?
-        .remove("memoryCitation");
+    event.as_object().ok_or("event is not an object")?;
+    let mut public = Cow::Borrowed(event);
     let suffix = if transport {
+        let citation = public
+            .to_mut()
+            .as_object_mut()
+            .ok_or("event is not an object")?
+            .remove("memoryCitation");
         let citations = citation
             .map(|citation| json!({"sequenceNumber":19,"citation":citation}))
             .into_iter()
@@ -28,7 +30,6 @@ fn body(event: &Value, transport: bool) -> Result<String, String> {
             json!(citations)
         )
     } else {
-        public = event.clone();
         String::new()
     };
     Ok(format!(
@@ -108,7 +109,8 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
                 if let Some(extra) = overflow {
                     assert_eq!(expected.len(), LIMIT + extra);
                 }
-                let expected_json: Value = serde_json::from_str(&expected).unwrap();
+                let expected_json = (overflow == Some(1))
+                    .then(|| serde_json::from_str::<Value>(&expected).unwrap());
                 let server = MockServer::start_async().await;
                 let request = server.mock(|when, then| {
                     when.method(POST)
@@ -117,6 +119,7 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
                             if overflow != Some(1) {
                                 return request.body_ref() == expected.as_bytes();
                             }
+                            let expected_json = expected_json.as_ref().unwrap();
                             let payload: Value =
                                 serde_json::from_slice(request.body_ref()).unwrap();
                             request.body_ref().len() <= LIMIT
