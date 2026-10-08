@@ -73,6 +73,23 @@ export function acceptedRevisionFromRow(
   });
 }
 
+export function acceptedOfficialWorkflowCatalogReadPlan() {
+  return {
+    columns: {
+      releaseId: officialWorkflowCatalogState.acceptedReleaseId,
+      payload: officialWorkflowCatalogReleases.payload,
+    },
+    join: eq(
+      officialWorkflowCatalogReleases.id,
+      officialWorkflowCatalogState.acceptedReleaseId,
+    ),
+    condition: eq(
+      officialWorkflowCatalogState.authority,
+      OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+    ),
+  };
+}
+
 /** Keep the accepted pointer stable until the caller's transaction commits. */
 export async function lockAcceptedOfficialWorkflowCatalog(
   tx: Tx,
@@ -95,25 +112,12 @@ export async function readAcceptedOfficialWorkflowCatalog(
   db: ReadonlyDb,
   signal?: AbortSignal,
 ): Promise<AcceptedOfficialWorkflowCatalog | null> {
+  const plan = acceptedOfficialWorkflowCatalogReadPlan();
   const [row] = await db
-    .select({
-      releaseId: officialWorkflowCatalogState.acceptedReleaseId,
-      payload: officialWorkflowCatalogReleases.payload,
-    })
+    .select(plan.columns)
     .from(officialWorkflowCatalogState)
-    .innerJoin(
-      officialWorkflowCatalogReleases,
-      eq(
-        officialWorkflowCatalogReleases.id,
-        officialWorkflowCatalogState.acceptedReleaseId,
-      ),
-    )
-    .where(
-      eq(
-        officialWorkflowCatalogState.authority,
-        OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-      ),
-    )
+    .innerJoin(officialWorkflowCatalogReleases, plan.join)
+    .where(plan.condition)
     .limit(1);
   signal?.throwIfAborted();
   return acceptedCatalogFromRow(row);
@@ -143,25 +147,12 @@ export const readAcceptedOfficialWorkflowCatalog$ = command(
     signal: AbortSignal,
   ): Promise<AcceptedOfficialWorkflowCatalog | null> => {
     const db = get(db$);
+    const plan = acceptedOfficialWorkflowCatalogReadPlan();
     const [row] = await db
-      .select({
-        releaseId: officialWorkflowCatalogState.acceptedReleaseId,
-        payload: officialWorkflowCatalogReleases.payload,
-      })
+      .select(plan.columns)
       .from(officialWorkflowCatalogState)
-      .innerJoin(
-        officialWorkflowCatalogReleases,
-        eq(
-          officialWorkflowCatalogReleases.id,
-          officialWorkflowCatalogState.acceptedReleaseId,
-        ),
-      )
-      .where(
-        eq(
-          officialWorkflowCatalogState.authority,
-          OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-        ),
-      )
+      .innerJoin(officialWorkflowCatalogReleases, plan.join)
+      .where(plan.condition)
       .limit(1);
     signal.throwIfAborted();
     return acceptedCatalogFromRow(row);
