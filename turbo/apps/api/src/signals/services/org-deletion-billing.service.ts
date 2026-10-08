@@ -186,7 +186,7 @@ async function subscriptionHasLiveBillingItems(
     ) {
       continue;
     }
-    if (!(await isExcludedStripeBillingPrice(item.price, signal, stripe))) {
+    if (!(await isExcludedStripeBillingPrice(item.price, stripe, signal))) {
       return true;
     }
   }
@@ -630,8 +630,8 @@ async function refundSubscriptionProration(
         invoice.parent?.subscription_details?.metadata,
         args.subscriptionMetadata,
       ],
-      signal,
       stripe,
+      signal,
     );
     prorations.push({
       invoice,

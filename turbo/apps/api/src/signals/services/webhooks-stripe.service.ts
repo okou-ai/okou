@@ -655,6 +655,7 @@ async function invoiceWithoutArchivedAllowanceLines(
   const lines = await survivingStripeBillingInvoiceLines(
     invoice.lines.data,
     [invoice.metadata, invoice.parent?.subscription_details?.metadata],
+    getStripeClient(),
     signal,
   );
   // Do not allow invoice-level grant metadata to resurrect an excluded line.

@@ -1,5 +1,4 @@
 import {
-  getStripeClient,
   isStripeResourceMissingError,
   type StripeClient,
   type StripeProductRef,
@@ -86,8 +85,8 @@ export async function survivingStripeBillingInvoiceLines<
     | null
     | undefined
   )[],
+  stripe: StripeClient,
   signal: AbortSignal,
-  stripe: StripeClient = getStripeClient(),
 ): Promise<T[]> {
   const archivalHeader = metadataCandidates.some(
     isArchivedUsageAllowanceMetadata,
@@ -107,7 +106,7 @@ export async function survivingStripeBillingInvoiceLines<
     ) {
       continue;
     }
-    if (price && (await isExcludedStripeBillingPrice(price, signal, stripe))) {
+    if (price && (await isExcludedStripeBillingPrice(price, stripe, signal))) {
       continue;
     }
     surviving.push(line);
@@ -118,8 +117,8 @@ export async function survivingStripeBillingInvoiceLines<
 /** Exclude archival or explicitly unavailable components, without reconstructing live rights. */
 export async function isExcludedStripeBillingPrice(
   price: { readonly id: string; readonly product?: StripeProductRef | null },
+  stripe: StripeClient,
   signal: AbortSignal,
-  stripe: StripeClient = getStripeClient(),
 ): Promise<boolean> {
   let productRef = price.product;
   if (!productRef) {
