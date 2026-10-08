@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
@@ -16,7 +17,8 @@ import {
   disconnectDiscordBinding$,
 } from "../services/discord-data.service";
 import {
-  discordOrgChangedUserIds,
+  discordOrgAdminsWhere,
+  discordChangedUserIds,
   publishDiscordChanged,
 } from "../services/discord-realtime.service";
 
@@ -56,13 +58,22 @@ async function uninstallDiscordOrganization(
       .from(discordOrgConnections)
       .where(eq(discordOrgConnections.guildId, installation.guildId));
     signal.throwIfAborted();
-    const userIds = await discordOrgChangedUserIds(tx, auth.orgId, [
-      auth.userId,
-      ...connections.map((connection) => {
-        return connection.userId;
-      }),
-    ]);
+    const admins = await tx
+      .select({ userId: orgMembersCache.userId })
+      .from(orgMembersCache)
+      .where(discordOrgAdminsWhere(auth.orgId));
     signal.throwIfAborted();
+    const userIds = discordChangedUserIds(
+      admins.map((admin) => {
+        return admin.userId;
+      }),
+      [
+        auth.userId,
+        ...connections.map((connection) => {
+          return connection.userId;
+        }),
+      ],
+    );
     await tx
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.guildId, installation.guildId));
