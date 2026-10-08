@@ -30,8 +30,9 @@ import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
-import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+} from "./builtin-connector-credential-runtime.service";
+
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";

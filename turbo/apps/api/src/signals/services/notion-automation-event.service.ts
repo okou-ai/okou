@@ -50,8 +50,9 @@ import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
-import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+} from "./builtin-connector-credential-runtime.service";
+
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,

@@ -33,7 +33,8 @@ import {
   materializeConnectorCatalogRuntimeRow,
 } from "./connector-catalog-columns";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
-import type { ReadonlyDb } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
+import { computed } from "ccstate";
 import {
   catalogIdentityFromCapture,
   type ExternalCatalogIdentity,
@@ -185,13 +186,10 @@ export interface ConnectorRuntimeAuthSelection extends ConnectorRuntimeAuthLooku
  * read only for `firewallConnectorSlugs`. Missing entries are omitted, as they
  * are absent from a whole-catalog snapshot.
  */
-export async function loadConnectorRuntimeAuthSelection(
-  db: ReadonlyDb,
-  args: {
-    readonly connectorSlugs: readonly string[];
-    readonly firewallConnectorSlugs?: readonly ConnectorSlug[];
-  },
-): Promise<ConnectorRuntimeAuthSelection> {
+function connectorRuntimeAuthSelectionReadPlan(args: {
+  readonly connectorSlugs: readonly string[];
+  readonly firewallConnectorSlugs?: readonly ConnectorSlug[];
+}) {
   const firewallConnectorSlugs = uniqueSortedConnectorSlugs(
     args.firewallConnectorSlugs ?? [],
   );
@@ -202,8 +200,8 @@ export async function loadConnectorRuntimeAuthSelection(
   const firewallEntry = inArray(connectorCatalogEntries.slug, [
     ...firewallConnectorSlugs,
   ]);
-  const rows = await db
-    .select({
+  return {
+    columns: {
       current: {
         schemaVersion: connectorCatalog.schemaVersion,
         hash: connectorCatalog.hash,
@@ -221,13 +219,31 @@ export async function loadConnectorRuntimeAuthSelection(
             nullableDriverValueDecoder(connectorCatalogEntries.firewall),
           ),
       },
-    })
-    .from(connectorCatalog)
-    .leftJoin(
-      connectorCatalogEntries,
-      connectorCatalogSlugJoin(requestedConnectorSlugs),
-    )
-    .where(connectorCatalogCurrentWhere());
+    },
+    join: connectorCatalogSlugJoin(requestedConnectorSlugs),
+    requestedConnectorSlugs,
+    firewallConnectorSlugs,
+  };
+}
+
+function connectorRuntimeAuthSelectionFromRows(
+  rows: readonly {
+    readonly current: { readonly schemaVersion: number; readonly hash: string };
+    readonly entry: {
+      readonly slug: string;
+      readonly authMethods: Parameters<
+        typeof materializeConnectorCatalogCompatibilityRow
+      >[0]["authMethods"];
+      readonly mcp: Parameters<
+        typeof materializeConnectorCatalogCompatibilityRow
+      >[0]["mcp"];
+      readonly label: string | null;
+      readonly firewall: typeof connectorCatalogEntries.$inferSelect.firewall;
+    } | null;
+  }[],
+  requestedConnectorSlugs: readonly string[],
+  firewallConnectorSlugs: readonly ConnectorSlug[],
+): ConnectorRuntimeAuthSelection {
   const source = connectorCatalogSlugSourceFromRows(
     rows.map(({ current, entry }) => {
       if (entry === null) {
@@ -277,6 +293,45 @@ export async function loadConnectorRuntimeAuthSelection(
       connectorSlugs: firewallConnectorSlugs,
     }),
   };
+}
+
+export async function loadConnectorRuntimeAuthSelection(
+  db: ReadonlyDb,
+  args: {
+    readonly connectorSlugs: readonly string[];
+    readonly firewallConnectorSlugs?: readonly ConnectorSlug[];
+  },
+): Promise<ConnectorRuntimeAuthSelection> {
+  const plan = connectorRuntimeAuthSelectionReadPlan(args);
+  const rows = await db
+    .select(plan.columns)
+    .from(connectorCatalog)
+    .leftJoin(connectorCatalogEntries, plan.join)
+    .where(connectorCatalogCurrentWhere());
+  return connectorRuntimeAuthSelectionFromRows(
+    rows,
+    plan.requestedConnectorSlugs,
+    plan.firewallConnectorSlugs,
+  );
+}
+
+export function createConnectorRuntimeAuthSelection(args: {
+  readonly connectorSlugs: readonly string[];
+  readonly firewallConnectorSlugs?: readonly ConnectorSlug[];
+}) {
+  return computed(async (get) => {
+    const plan = connectorRuntimeAuthSelectionReadPlan(args);
+    const rows = await get(db$)
+      .select(plan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, plan.join)
+      .where(connectorCatalogCurrentWhere());
+    return connectorRuntimeAuthSelectionFromRows(
+      rows,
+      plan.requestedConnectorSlugs,
+      plan.firewallConnectorSlugs,
+    );
+  });
 }
 
 /**
