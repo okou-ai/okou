@@ -3717,6 +3717,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
         [200],
       );
       context.mocks.stripe.subscriptions.update.mockClear();
+      context.mocks.stripe.subscriptions.retrieve.mockClear();
 
       const response = await accept(
         setupApp({
@@ -4492,36 +4493,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
     expect(response.body).toStrictEqual({ success: true });
     expect(
       context.mocks.stripe.subscriptionSchedules.release,
-    ).not.toHaveBeenCalled();
-    expect(
-      context.mocks.stripe.subscriptionSchedules.update,
-    ).toHaveBeenLastCalledWith(
-      scheduleId,
-      expect.objectContaining({
-        end_behavior: "release",
-        phases: [
-          {
-            start_date: periodStartUnix,
-            end_date: periodEndUnix,
-            items: [
-              { price: TEST_PRICE_TEAM, quantity: 1 },
-              { price: TEST_PRICE_CONCURRENCY, quantity: 5 },
-            ],
-            proration_behavior: "none",
-          },
-          {
-            start_date: periodEndUnix,
-            end_date: periodEndUnix + 2_592_000,
-            items: [
-              { price: TEST_PRICE_TEAM, quantity: 1 },
-              { price: TEST_PRICE_CONCURRENCY, quantity: 5 },
-            ],
-            proration_behavior: "none",
-          },
-        ],
-      }),
-      { idempotencyKey: expect.any(String) },
-    );
+    ).toHaveBeenCalledWith(scheduleId, { preserve_cancel_date: true });
     status = await readBillingStatus(fixture);
     expect(
       status.concurrencySubscriptions[0]?.scheduledQuantity,
@@ -5073,10 +5045,10 @@ describe("POST /api/billing/concurrency-checkout", () => {
 
     expect(
       context.mocks.stripe.subscriptionSchedules.release,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledWith(scheduleId, { preserve_cancel_date: true });
     expect(
       context.mocks.stripe.subscriptionSchedules.update,
-    ).toHaveBeenCalledTimes(2);
+    ).toHaveBeenCalledOnce();
     expect(
       context.mocks.stripe.subscriptionSchedules.retrieve,
     ).toHaveBeenCalledTimes(2);
