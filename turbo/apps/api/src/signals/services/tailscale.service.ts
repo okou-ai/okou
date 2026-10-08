@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, asc, eq, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, ne, sql } from "drizzle-orm";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import type {
@@ -11,25 +10,37 @@ import type {
   DeleteTailscaleRequest,
   ConvertTailscaleRequest,
 } from "@okouai/api-contracts/contracts/tailscale";
-import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import type { CreateSshConnectionRequest } from "@okouai/api-contracts/contracts/ssh-connections";
 import { nowDate } from "../../lib/time";
 import { isUniqueViolation } from "../../lib/pg-errors";
-import { writeDb$, type Db } from "../external/db";
-import type { CreateSshConnectionRequest } from "@okouai/api-contracts/contracts/ssh-connections";
+import { writeDb$ } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { sshCreationResult } from "./ssh-creation.service";
 import { publishSshRuntimeInvalidation$ } from "./ssh-runtime-wakeup.service";
 import { publishTailscaleClientInvalidation } from "./tailscale-client-invalidation.service";
 import { settle } from "../utils";
+import {
+  tailscaleFailure,
+  visibleTailscaleConfig,
+  deniedTailscaleConfig as denied,
+  tailscaleConfigResponse as response,
+  referencingHostPredicate,
+  ownHostReferences,
+  exhaustedTailscaleConfig as exhausted,
+  tailscaleImpactSnapshot as impactSnapshot,
+  changesTagMembership,
+  type TailscaleOwner as Owner,
+  type TailscaleActor as Actor,
+  type TailscaleConfigArgs as ConfigArgs,
+  type ReferencingTailscaleHost as ReferencingHost,
+} from "./tailscale-config-model";
+import {
+  planTailscaleMutation,
+  committedTailscaleMutation,
+  type TailscaleMutationArgs,
+} from "./tailscale-mutation-plan";
 
-interface Owner {
-  readonly orgId: string;
-  readonly userId: string;
-}
-interface Actor extends Owner {
-  readonly orgRole?: "admin" | "member";
-}
 const metadata = Object.freeze({
   id: tailscaleConfigs.id,
   name: tailscaleConfigs.name,
@@ -40,78 +51,13 @@ const metadata = Object.freeze({
   createdAt: tailscaleConfigs.createdAt,
   updatedAt: tailscaleConfigs.updatedAt,
 });
-type Metadata = Pick<
-  typeof tailscaleConfigs.$inferSelect,
-  keyof typeof metadata
->;
-const failures = {
-  notFound: {
-    kind: "not_found",
-    code: TAILSCALE_ERROR_CODES.NOT_FOUND,
-    message: "Tailscale configuration not found",
-  },
-  forbidden: {
-    kind: "forbidden",
-    code: TAILSCALE_ERROR_CODES.FORBIDDEN,
-    message:
-      "Only organization admins can manage shared Tailscale configuration",
-  },
-  resourceIdConflict: {
-    kind: "conflict",
-    code: TAILSCALE_ERROR_CODES.RESOURCE_ID_CONFLICT,
-    message: "This resource ID cannot be used for this Tailscale configuration",
-  },
-  conflict: {
-    kind: "conflict",
-    code: TAILSCALE_ERROR_CODES.REVISION_CONFLICT,
-    message: "Tailscale configuration was modified by another request",
-  },
-  impactConflict: {
-    kind: "conflict",
-    code: TAILSCALE_ERROR_CODES.IMPACT_CONFLICT,
-    message: "Tailscale host impact changed; review it again",
-  },
-  exhausted: {
-    kind: "conflict",
-    code: TAILSCALE_ERROR_CODES.REVISION_EXHAUSTED,
-    message: "Tailscale revision limit reached",
-  },
-  inUse: {
-    kind: "conflict",
-    code: TAILSCALE_ERROR_CODES.IN_USE,
-    message: "Tailscale configuration is used by an SSH host",
-  },
-} as const;
-export function tailscaleFailure<K extends keyof typeof failures>(reason: K) {
-  return { ok: false as const, ...failures[reason] };
-}
-export function visibleTailscaleConfig(owner: Owner, id?: string) {
-  return and(
-    eq(tailscaleConfigs.orgId, owner.orgId),
-    or(
-      eq(tailscaleConfigs.scope, "organization"),
-      and(
-        eq(tailscaleConfigs.scope, "personal"),
-        eq(tailscaleConfigs.userId, owner.userId),
-      ),
-    ),
-    id === undefined ? undefined : eq(tailscaleConfigs.id, id),
-  );
-}
-function denied(row: Metadata, actor: Actor) {
-  return row.scope === "organization" && actor.orgRole !== "admin";
-}
-function response(
-  row: Metadata,
-  sshHosts: TailscaleConfig["sshHosts"],
-): TailscaleConfig {
-  return {
-    ...row,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-    sshHosts,
-  };
-}
+const referencingHostFields = Object.freeze({
+  id: sshConnections.id,
+  userId: sshConnections.userId,
+  displayName: sshConnections.displayName,
+  generation: sshConnections.generation,
+});
+
 async function encryptCredentials(
   credentials: CreateTailscaleRequest["credentials"],
   context: FeatureSwitchContext,
@@ -137,7 +83,7 @@ export async function prepareTailscaleConfig(
     ...(await encryptCredentials(body.credentials, context)),
   };
 }
-export function requestedTailscaleConfigId(
+export function requestedTailscaleId(
   transport: CreateSshConnectionRequest["transport"],
   current: string | null = null,
 ): string | null {
@@ -149,7 +95,6 @@ export function requestedTailscaleConfigId(
   }
   return "configId" in transport ? transport.configId : null;
 }
-
 export async function prepareInlineTailscaleConfig(
   transport: CreateSshConnectionRequest["transport"],
   context: FeatureSwitchContext,
@@ -157,50 +102,8 @@ export async function prepareInlineTailscaleConfig(
   if (transport?.type !== "tailscale" || !("create" in transport)) {
     return undefined;
   }
-  const prepared = await prepareTailscaleConfig(transport.create, context);
-  return prepared;
+  return await prepareTailscaleConfig(transport.create, context);
 }
-
-export async function canBindTailscaleConfig(
-  db: Pick<Db, "select">,
-  owner: Owner,
-  id: string | null,
-  inline: Awaited<ReturnType<typeof prepareTailscaleConfig>> | undefined,
-): Promise<boolean> {
-  if (id === null || inline !== undefined) {
-    return true;
-  }
-  const [row] = await db
-    .select({ id: tailscaleConfigs.id })
-    .from(tailscaleConfigs)
-    .where(visibleTailscaleConfig(owner, id))
-    .for("share");
-  return row !== undefined;
-}
-
-export async function insertInlineTailscaleConfig(
-  db: Pick<Db, "insert">,
-  owner: Owner,
-  inline: Awaited<ReturnType<typeof prepareTailscaleConfig>> | undefined,
-): Promise<string | undefined> {
-  if (inline === undefined) {
-    return undefined;
-  }
-  const [created] = await db
-    .insert(tailscaleConfigs)
-    .values({
-      ...inline,
-      orgId: owner.orgId,
-      userId: owner.userId,
-      scope: "personal",
-    })
-    .returning({ id: tailscaleConfigs.id });
-  if (!created) {
-    throw new Error("Tailscale insert returned no row");
-  }
-  return created.id;
-}
-
 export const listTailscaleConfigs$ = command(
   async ({ set }, owner: Owner): Promise<TailscaleConfig[]> => {
     const rows = await set(writeDb$)
@@ -215,7 +118,7 @@ export const listTailscaleConfigs$ = command(
       .leftJoin(
         sshConnections,
         and(
-          eq(sshConnections.tailscaleConfigId, tailscaleConfigs.id),
+          eq(sshConnections.tailscaleId, tailscaleConfigs.id),
           eq(sshConnections.orgId, owner.orgId),
           eq(sshConnections.userId, owner.userId),
         ),
@@ -311,46 +214,13 @@ export const createTailscaleConfig$ = command(
     return created.value;
   },
 );
-type ReferencingHost = Pick<
-  typeof sshConnections.$inferSelect,
-  "id" | "userId" | "displayName" | "generation"
->;
-type Transaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
-interface ConfigArgs {
-  readonly owner: Actor;
-  readonly configId: string;
-}
-function referencingHosts(db: Pick<Db, "select">, args: ConfigArgs) {
-  return db
-    .select({
-      id: sshConnections.id,
-      userId: sshConnections.userId,
-      displayName: sshConnections.displayName,
-      generation: sshConnections.generation,
-    })
-    .from(sshConnections)
-    .where(
-      and(
-        eq(sshConnections.orgId, args.owner.orgId),
-        eq(sshConnections.tailscaleConfigId, args.configId),
-      ),
-    )
-    .orderBy(asc(sshConnections.id));
-}
-// Follow the shared SSH host-before-credential/config order. The exclusive
-// configuration fence also serializes FK admission of a first/new binding.
-// Rescan once only after a known-unwritten transaction, never after an effect.
-async function mutateConfig<T>(
-  db: Db,
-  args: ConfigArgs,
-  change: (
-    tx: Transaction,
-    config: Metadata,
-    hosts: ReferencingHost[],
-  ) => Promise<T>,
-) {
-  const commit = () => {
-    return db.transaction(async (tx) => {
+
+// One attempt owns all SQL: retained UUID-ordered Hosts NKU -> config UPDATE.
+// SHARE admission prevents post-fence arrivals; count equality is identity only
+// because the actual returned locking-reader records remain a stable subset.
+const commitTailscaleMutationAttempt$ = command(
+  async ({ set }, args: TailscaleMutationArgs) => {
+    return await set(writeDb$).transaction(async (tx) => {
       const [initial] = await tx
         .select(metadata)
         .from(tailscaleConfigs)
@@ -367,7 +237,12 @@ async function mutateConfig<T>(
           value: tailscaleFailure("forbidden"),
         };
       }
-      const hosts = await referencingHosts(tx, args).for("no key update");
+      const hosts = await tx
+        .select(referencingHostFields)
+        .from(sshConnections)
+        .where(referencingHostPredicate(args))
+        .orderBy(asc(sshConnections.id))
+        .for("no key update");
       const [config] = await tx
         .select(metadata)
         .from(tailscaleConfigs)
@@ -385,65 +260,97 @@ async function mutateConfig<T>(
           value: tailscaleFailure("forbidden"),
         };
       }
-      const ids = new Set(
-        hosts.map((host) => {
-          return host.id;
-        }),
-      );
-      const current = await referencingHosts(tx, args);
-      if (
-        current.some((host) => {
-          return !ids.has(host.id);
-        })
-      ) {
+      const [references] = await tx
+        .select({ count: count() })
+        .from(sshConnections)
+        .where(referencingHostPredicate(args));
+      if (!references) {
+        throw new Error("Tailscale reference count returned no row");
+      }
+      if (references.count < hosts.length) {
+        throw new Error("Locked Tailscale reference count decreased");
+      }
+      if (references.count > hosts.length) {
         return { retryBindings: true as const };
       }
-      return {
-        retryBindings: false as const,
-        value: await change(tx, config, current),
-      };
+      const planned = planTailscaleMutation(args, config, hosts);
+      if (!planned.ok) {
+        return { retryBindings: false as const, value: planned };
+      }
+      const plan = planned.plan;
+      // Adoption and deletion detach other owners before config scope/removal.
+      if (plan.detachOthers) {
+        await tx
+          .update(sshConnections)
+          .set({
+            tailscaleId: null,
+            transport: "tailscale",
+            legacyNeedsRebind: true,
+            generation: sql`${sshConnections.generation} + 1`,
+            updatedAt: nowDate(),
+          })
+          .where(
+            and(
+              eq(sshConnections.orgId, args.owner.orgId),
+              eq(sshConnections.tailscaleId, args.configId),
+              ne(sshConnections.userId, args.owner.userId),
+            ),
+          );
+      }
+      if (plan.kind === "delete") {
+        await tx
+          .delete(tailscaleConfigs)
+          .where(eq(tailscaleConfigs.id, args.configId));
+        return committedTailscaleMutation(config, hosts, plan);
+      }
+      if (plan.advanceHosts === "own") {
+        await tx
+          .update(sshConnections)
+          .set({
+            generation: sql`${sshConnections.generation} + 1`,
+            updatedAt: nowDate(),
+          })
+          .where(
+            and(
+              eq(sshConnections.orgId, args.owner.orgId),
+              eq(sshConnections.tailscaleId, args.configId),
+              eq(sshConnections.userId, args.owner.userId),
+            ),
+          );
+      }
+      const [updated] = await tx
+        .update(tailscaleConfigs)
+        .set({ ...plan.configUpdate, updatedAt: nowDate() })
+        .where(eq(tailscaleConfigs.id, args.configId))
+        .returning(metadata);
+      if (!updated) {
+        throw new Error(plan.missingRowMessage);
+      }
+      // Update/promotion preserve config-before-generation-write statement order.
+      if (plan.advanceHosts === "all") {
+        await tx
+          .update(sshConnections)
+          .set({
+            generation: sql`${sshConnections.generation} + 1`,
+            updatedAt: nowDate(),
+          })
+          .where(referencingHostPredicate(args));
+      }
+      return committedTailscaleMutation(updated, hosts, plan);
     });
-  };
-  const first = await commit();
-  const result = first.retryBindings ? await commit() : first;
-  return result.retryBindings ? tailscaleFailure("conflict") : result.value;
-}
-function ownHostReferences(hosts: ReferencingHost[], owner: Owner) {
-  return hosts
-    .filter((host) => {
-      return host.userId === owner.userId;
-    })
-    .map(({ id, displayName }) => {
-      return { id, displayName };
-    });
-}
-function exhausted(
-  config: Metadata,
-  hosts: ReferencingHost[],
-  effective = true,
-) {
-  return (
-    config.revision === 2_147_483_647 ||
-    (effective &&
-      (config.generation === 2_147_483_647 ||
-        hosts.some((host) => {
-          return host.generation === 2_147_483_647;
-        })))
-  );
-}
-function impactSnapshot(config: Metadata, hosts: ReferencingHost[]) {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        config.id,
-        config.revision,
-        hosts.map((host) => {
-          return [host.id, host.userId, host.generation];
-        }),
-      ]),
-    )
-    .digest("hex");
-}
+  },
+);
+const commitTailscaleMutation$ = command(
+  async ({ set }, args: TailscaleMutationArgs) => {
+    const first = await set(commitTailscaleMutationAttempt$, args);
+    // Exactly one fresh known-unwritten attempt. Never repeat preparation/KMS,
+    // retry exceptions, or replay a successful/ambiguous effect.
+    const result = first.retryBindings
+      ? await set(commitTailscaleMutationAttempt$, args)
+      : first;
+    return result.retryBindings ? tailscaleFailure("conflict") : result.value;
+  },
+);
 const publishUpdateInvalidation$ = command(
   async (
     { set },
@@ -476,6 +383,76 @@ const publishUpdateInvalidation$ = command(
     }
   },
 );
+const updateTailscaleMetadata$ = command(
+  async (
+    { set },
+    args: ConfigArgs & {
+      readonly body: Pick<
+        UpdateTailscaleRequest,
+        "expectedRevision" | "name" | "tags"
+      >;
+    },
+  ) => {
+    const result = await set(writeDb$).transaction(async (tx) => {
+      const [config] = await tx
+        .select(metadata)
+        .from(tailscaleConfigs)
+        .where(visibleTailscaleConfig(args.owner, args.configId))
+        .for("update");
+      if (!config) {
+        return tailscaleFailure("notFound");
+      }
+      if (denied(config, args.owner)) {
+        return tailscaleFailure("forbidden");
+      }
+      if (
+        config.revision !== args.body.expectedRevision ||
+        changesTagMembership(args.body.tags, config.tags)
+      ) {
+        return tailscaleFailure("conflict");
+      }
+      if (exhausted(config, [], false)) {
+        return tailscaleFailure("exhausted");
+      }
+      const [updated] = await tx
+        .update(tailscaleConfigs)
+        .set({
+          name: args.body.name,
+          tags: args.body.tags,
+          revision: config.revision + 1,
+          updatedAt: nowDate(),
+        })
+        .where(eq(tailscaleConfigs.id, config.id))
+        .returning(metadata);
+      if (!updated) {
+        throw new Error("Tailscale metadata update returned no row");
+      }
+      // Caller MVCC metadata, not impact/authority. No later Host lock or write.
+      const hosts = await tx
+        .select({
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+        })
+        .from(sshConnections)
+        .where(
+          and(
+            referencingHostPredicate(args),
+            eq(sshConnections.userId, args.owner.userId),
+          ),
+        )
+        .orderBy(asc(sshConnections.id));
+      return {
+        ok: true as const,
+        value: response(updated, hosts),
+        scope: config.scope,
+      };
+    });
+    if (result.ok) {
+      await publishTailscaleClientInvalidation(args.owner, result.scope);
+    }
+    return result;
+  },
+);
 export const updateTailscaleConfig$ = command(
   async (
     { set },
@@ -484,8 +461,7 @@ export const updateTailscaleConfig$ = command(
       readonly featureContext: FeatureSwitchContext;
     },
   ) => {
-    const db = set(writeDb$);
-    const [initial] = await db
+    const [initial] = await set(writeDb$)
       .select(metadata)
       .from(tailscaleConfigs)
       .where(visibleTailscaleConfig(args.owner, args.configId));
@@ -498,219 +474,87 @@ export const updateTailscaleConfig$ = command(
     if (initial.revision !== args.body.expectedRevision) {
       return tailscaleFailure("conflict");
     }
+    if (
+      args.body.credentials === undefined &&
+      !changesTagMembership(args.body.tags, initial.tags)
+    ) {
+      return await set(updateTailscaleMetadata$, args);
+    }
     const encrypted =
       args.body.credentials === undefined
         ? undefined
         : await encryptCredentials(args.body.credentials, args.featureContext);
-    const result = await mutateConfig(db, args, async (tx, config, hosts) => {
-      if (config.revision !== args.body.expectedRevision) {
-        return tailscaleFailure("conflict");
-      }
-      const effective =
-        encrypted !== undefined ||
-        (args.body.tags !== undefined &&
-          (args.body.tags.length !== config.tags.length ||
-            args.body.tags.some((tag) => {
-              return !config.tags.includes(tag);
-            })));
-      if (exhausted(config, hosts, effective)) {
-        return tailscaleFailure("exhausted");
-      }
-      const [updated] = await tx
-        .update(tailscaleConfigs)
-        .set({
-          name: args.body.name,
-          tags: args.body.tags,
-          ...encrypted,
-          revision: config.revision + 1,
-          generation: config.generation + (effective ? 1 : 0),
-          updatedAt: nowDate(),
-        })
-        .where(eq(tailscaleConfigs.id, config.id))
-        .returning(metadata);
-      if (!updated) {
-        throw new Error("Tailscale update returned no row");
-      }
-      if (effective && hosts.length > 0) {
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(sshConnections.orgId, args.owner.orgId),
-              eq(sshConnections.tailscaleConfigId, args.configId),
-            ),
-          );
-      }
-      return {
-        ok: true as const,
-        value: response(updated, ownHostReferences(hosts, args.owner)),
-        scope: config.scope,
-        hosts: effective ? hosts : [],
-      };
+    const result = await set(commitTailscaleMutation$, {
+      ...args,
+      operation: "update",
+      encrypted,
     });
-    if (result.ok) {
-      await set(publishUpdateInvalidation$, {
-        owner: args.owner,
-        scope: result.scope,
-        hosts: result.hosts,
-      });
+    if (!result.ok) {
+      return result;
     }
-    return result;
+    await set(publishUpdateInvalidation$, {
+      owner: args.owner,
+      scope: result.scope,
+      hosts: result.invalidatedHosts,
+    });
+    return {
+      ok: true as const,
+      value: response(
+        result.config,
+        ownHostReferences(result.hosts, args.owner),
+      ),
+      scope: result.scope,
+      hosts: result.invalidatedHosts,
+    };
   },
 );
-async function detachOtherHosts(tx: Transaction, args: ConfigArgs) {
-  await tx
-    .update(sshConnections)
-    .set({
-      tailscaleConfigId: null,
-      needsRebind: true,
-      rebindTransport: "tailscale",
-      generation: sql`${sshConnections.generation} + 1`,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(sshConnections.orgId, args.owner.orgId),
-        eq(sshConnections.tailscaleConfigId, args.configId),
-        ne(sshConnections.userId, args.owner.userId),
-      ),
-    );
-}
 export const deleteTailscaleConfig$ = command(
   async (
     { set },
-    args: ConfigArgs & {
-      readonly body: DeleteTailscaleRequest;
-    },
+    args: ConfigArgs & { readonly body: DeleteTailscaleRequest },
   ) => {
-    const result = await mutateConfig(
-      set(writeDb$),
-      args,
-      async (tx, config, hosts) => {
-        if (config.revision !== args.body.expectedRevision) {
-          return tailscaleFailure("conflict");
-        }
-        if (
-          hosts.some((host) => {
-            return host.userId === args.owner.userId;
-          })
-        ) {
-          return tailscaleFailure("inUse");
-        }
-        if (
-          (args.body.impactSnapshot !== undefined &&
-            args.body.impactSnapshot !== impactSnapshot(config, hosts)) ||
-          (hosts.length > 0 &&
-            (config.scope !== "organization" ||
-              args.body.impactSnapshot === undefined))
-        ) {
-          return tailscaleFailure("impactConflict");
-        }
-        if (
-          hosts.some((host) => {
-            return host.generation === 2_147_483_647;
-          })
-        ) {
-          return tailscaleFailure("exhausted");
-        }
-        if (hosts.length > 0) {
-          await detachOtherHosts(tx, args);
-        }
-        await tx
-          .delete(tailscaleConfigs)
-          .where(eq(tailscaleConfigs.id, args.configId));
-        return { ok: true as const, scope: config.scope };
-      },
-    );
-    if (result.ok) {
-      await publishTailscaleClientInvalidation(args.owner, result.scope);
+    const result = await set(commitTailscaleMutation$, {
+      ...args,
+      operation: "delete",
+    });
+    if (!result.ok) {
+      return result;
     }
-    return result;
+    await publishTailscaleClientInvalidation(args.owner, result.scope);
+    return { ok: true as const, scope: result.scope };
   },
 );
 export const convertTailscaleToOrganization$ = command(
-  async (
-    { set },
-    args: ConfigArgs & {
-      readonly expectedRevision: number;
-    },
-  ) => {
+  async ({ set }, args: ConfigArgs & { readonly expectedRevision: number }) => {
     if (args.owner.orgRole !== "admin") {
       return tailscaleFailure("forbidden");
     }
-    const result = await mutateConfig(
-      set(writeDb$),
-      args,
-      async (tx, config, hosts) => {
-        if (config.scope !== "personal") {
-          return tailscaleFailure("notFound");
-        }
-        if (config.revision !== args.expectedRevision) {
-          return tailscaleFailure("conflict");
-        }
-        if (exhausted(config, hosts)) {
-          return tailscaleFailure("exhausted");
-        }
-        if (
-          hosts.some((host) => {
-            return host.userId !== args.owner.userId;
-          })
-        ) {
-          return tailscaleFailure("inUse");
-        }
-        const [converted] = await tx
-          .update(tailscaleConfigs)
-          .set({
-            scope: "organization",
-            userId: null,
-            revision: config.revision + 1,
-            generation: config.generation + 1,
-            updatedAt: nowDate(),
-          })
-          .where(eq(tailscaleConfigs.id, args.configId))
-          .returning(metadata);
-        if (!converted) {
-          throw new Error("Tailscale promotion returned no row");
-        }
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(sshConnections.orgId, args.owner.orgId),
-              eq(sshConnections.tailscaleConfigId, args.configId),
-            ),
-          );
-        return {
-          ok: true as const,
-          value: response(converted, ownHostReferences(hosts, args.owner)),
-          hosts,
-        };
-      },
-    );
-    if (result.ok) {
-      await set(publishUpdateInvalidation$, {
-        owner: args.owner,
-        scope: "organization",
-        hosts: result.hosts,
-      });
+    const result = await set(commitTailscaleMutation$, {
+      ...args,
+      operation: "promote",
+    });
+    if (!result.ok) {
+      return result;
     }
-    return result;
+    await set(publishUpdateInvalidation$, {
+      owner: args.owner,
+      scope: "organization",
+      hosts: result.invalidatedHosts,
+    });
+    return {
+      ok: true as const,
+      value: response(
+        result.config,
+        ownHostReferences(result.hosts, args.owner),
+      ),
+      hosts: result.invalidatedHosts,
+    };
   },
 );
 export const previewTailscaleImpact$ = command(
   async (
     { set },
-    args: ConfigArgs & {
-      readonly operation: "convert" | "delete";
-    },
+    args: ConfigArgs & { readonly operation: "convert" | "delete" },
   ) => {
     if (args.operation === "delete" && args.owner.orgRole !== "admin") {
       return tailscaleFailure("forbidden");
@@ -732,7 +576,11 @@ export const previewTailscaleImpact$ = command(
     if (args.owner.orgRole !== "admin") {
       return tailscaleFailure("forbidden");
     }
-    const hosts = await referencingHosts(db, args);
+    const hosts = await db
+      .select(referencingHostFields)
+      .from(sshConnections)
+      .where(referencingHostPredicate(args))
+      .orderBy(asc(sshConnections.id));
     const others = hosts.filter((host) => {
       return host.userId !== args.owner.userId;
     });
@@ -759,71 +607,30 @@ export const previewTailscaleImpact$ = command(
 export const convertTailscaleToPersonal$ = command(
   async (
     { set },
-    args: ConfigArgs & {
-      readonly body: ConvertTailscaleRequest;
-    },
+    args: ConfigArgs & { readonly body: ConvertTailscaleRequest },
   ) => {
     if (args.owner.orgRole !== "admin") {
       return tailscaleFailure("forbidden");
     }
-    const result = await mutateConfig(
-      set(writeDb$),
-      args,
-      async (tx, config, hosts) => {
-        if (config.scope !== "organization") {
-          return tailscaleFailure("notFound");
-        }
-        if (config.revision !== args.body.expectedRevision) {
-          return tailscaleFailure("conflict");
-        }
-        if (impactSnapshot(config, hosts) !== args.body.impactSnapshot) {
-          return tailscaleFailure("impactConflict");
-        }
-        if (exhausted(config, hosts)) {
-          return tailscaleFailure("exhausted");
-        }
-        await detachOtherHosts(tx, args);
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(sshConnections.orgId, args.owner.orgId),
-              eq(sshConnections.tailscaleConfigId, args.configId),
-              eq(sshConnections.userId, args.owner.userId),
-            ),
-          );
-        const [converted] = await tx
-          .update(tailscaleConfigs)
-          .set({
-            scope: "personal",
-            userId: args.owner.userId,
-            revision: config.revision + 1,
-            generation: config.generation + 1,
-            updatedAt: nowDate(),
-          })
-          .where(eq(tailscaleConfigs.id, args.configId))
-          .returning(metadata);
-        if (!converted) {
-          throw new Error("Tailscale conversion returned no row");
-        }
-        return {
-          ok: true as const,
-          value: response(converted, ownHostReferences(hosts, args.owner)),
-          hosts,
-        };
-      },
-    );
-    if (result.ok) {
-      await set(publishUpdateInvalidation$, {
-        owner: args.owner,
-        scope: "organization",
-        hosts: result.hosts,
-      });
+    const result = await set(commitTailscaleMutation$, {
+      ...args,
+      operation: "adopt",
+    });
+    if (!result.ok) {
+      return result;
     }
-    return result;
+    await set(publishUpdateInvalidation$, {
+      owner: args.owner,
+      scope: "organization",
+      hosts: result.invalidatedHosts,
+    });
+    return {
+      ok: true as const,
+      value: response(
+        result.config,
+        ownHostReferences(result.hosts, args.owner),
+      ),
+      hosts: result.invalidatedHosts,
+    };
   },
 );
