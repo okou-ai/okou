@@ -6994,6 +6994,7 @@ function ComposerConnectorsPopoverBody({
               />
               <input
                 ref={inputRef}
+                data-connector-search
                 type="text"
                 aria-label={t(($) => {
                   return $.chat.connectors.find;
