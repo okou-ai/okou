@@ -408,4 +408,4 @@ rootfs identity and the snapshot identity includes that rootfs. There is no
 cross-version helper negotiation, fallback or replay. CLI stdin/stdout and API
 contracts are unchanged. Business SSH acceptance through snapshot restore/reuse
 is distinct from generic native transport coverage and must identify the artifacts
-exercised. No separate cold-boot business SSH path is required.
+exercised.
