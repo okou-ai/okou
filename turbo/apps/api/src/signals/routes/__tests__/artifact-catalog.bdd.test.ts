@@ -590,38 +590,42 @@ describe("GET /api/artifacts/catalog", () => {
     ]);
   }, 180_000);
 
-  it("lists the source URL for a video without a poster", async () => {
-    const owner = await catalogActor("Artifact catalog video source owner");
-    const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
-      prompt: "Upload an artifact through the Runner protocol",
-    });
-    const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
-    const fileId = randomUUID();
-    stageUploadObject(
-      `artifacts/${owner.actor.userId}/${fileId}/source-fallback.webm`,
-      1024,
-    );
-    const completed = await chat.completeUploadWithBearer(
-      `Bearer ${okouTokenFromClaim(claim)}`,
-      { id: fileId, contentType: "video/webm" },
-      [200],
-    );
-    if (completed.status !== 200) {
-      throw new Error("Expected video upload completion to succeed");
-    }
+  it.each(["mp4", "webm"])(
+    "lists the source URL for a %s video without a poster",
+    async (container) => {
+      const owner = await catalogActor("Artifact catalog video source owner");
+      const run = await sendChatRun(owner.actor, {
+        agentId: owner.agentId,
+        prompt: "Upload an artifact through the Runner protocol",
+      });
+      const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
+      const fileId = randomUUID();
+      stageUploadObject(
+        `artifacts/${owner.actor.userId}/${fileId}/source-fallback.${container}`,
+        1024,
+      );
+      const completed = await chat.completeUploadWithBearer(
+        `Bearer ${okouTokenFromClaim(claim)}`,
+        { id: fileId, contentType: `video/${container}` },
+        [200],
+      );
+      if (completed.status !== 200) {
+        throw new Error("Expected video upload completion to succeed");
+      }
 
-    const catalog = await chat.listArtifactCatalog(owner.actor);
+      const catalog = await chat.listArtifactCatalog(owner.actor);
 
-    expect(catalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "file",
-        videoSourceUrl: completed.body.url,
-        thumbnail: null,
-        title: "source-fallback.webm",
-      }),
-    ]);
-  }, 180_000);
+      expect(catalog.artifacts).toStrictEqual([
+        expect.objectContaining({
+          kind: "file",
+          videoSourceUrl: completed.body.url,
+          thumbnail: null,
+          title: `source-fallback.${container}`,
+        }),
+      ]);
+    },
+    180_000,
+  );
 
   it("keeps owned files and catalog identity after deleting the backing agent", async () => {
     const owner = await catalogActor("Artifact catalog deletion owner");
