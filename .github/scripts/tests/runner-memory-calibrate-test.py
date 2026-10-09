@@ -10,8 +10,8 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
-from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "runner-memory-calibrate.py"
 SPEC = importlib.util.spec_from_file_location("memory_calibrate", SCRIPT)
@@ -139,7 +139,7 @@ os._exit(3)
         )
 
     def test_fixture_does_not_inherit_provider_credentials(self):
-        with mock.patch.dict(
+        with unittest.mock.patch.dict(
             os.environ, {"SYNTHETIC_ONLY_TEST_SECRET": "fixture-placeholder"}
         ):
             result, _, output = self.run_case(
@@ -277,10 +277,10 @@ os._exit(3)
 
     def test_pid_generation_change_discards_residency(self):
         with (
-            mock.patch.object(
+            unittest.mock.patch.object(
                 MODULE, "process_identity", side_effect=[(1, "R"), (2, "R")]
             ),
-            mock.patch.object(
+            unittest.mock.patch.object(
                 MODULE, "bounded_read", return_value=b"Rss: 10 kB\nPss: 8 kB\n"
             ),
         ):

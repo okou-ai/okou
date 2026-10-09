@@ -149,6 +149,8 @@ def signal_owned(owned, sig):
             if after is not None and after[0] == generation:
                 signal.pidfd_send_signal(fd, sig)
         except ProcessLookupError:
+            # Natural exit can race the generation check and pidfd signal. Keep
+            # waiting for owned child proof; PID absence is not exit/relief proof.
             pass
         finally:
             os.close(fd)
