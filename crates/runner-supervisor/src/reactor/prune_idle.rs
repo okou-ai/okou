@@ -5,13 +5,11 @@ use std::sync::Arc;
 use tokio::net::UnixStream;
 use tokio::sync::OwnedSemaphorePermit;
 
+use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, prune_exact_idle_pool};
 use crate::idle_prune_control::{read_request, write_response};
 use crate::lifecycle::{LifecycleController, RunnerMode};
 use crate::status::StatusTracker;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
-use runner_supervisor::idle_lifecycle::{
-    IdleDestroyTracker, SharedIdlePool, prune_exact_idle_pool,
-};
 
 pub(super) struct PruneIdleContext {
     pub identity: RunnerProcessIdentity,

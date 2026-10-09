@@ -140,7 +140,7 @@ generation and the main model are independent and remain unchanged.
 ## Deployment and compatibility
 
 Activity moved from `run_activity_snapshots` to `active_agent_runs` in #36900;
-see [deployment compatibility](deployment-compatibility.md). A new App against
+see the [historical rollout record](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#active-run-state-moves-to-active_agent_runs-2026-09-25-step-1-of-3). A new App against
 an older API without this endpoint receives 404 and retains the generic
 indicator. Older Apps against a
 new API also retain their generic indicator; new runs no longer generate

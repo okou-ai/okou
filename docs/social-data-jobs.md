@@ -108,7 +108,7 @@ are seeded by this change.
 The rollout switch has been removed; quotes and job creation no longer have
 an account-level rollout gate. Schema, credential and pricing prerequisites
 still apply. See the [deployment compatibility
-boundary](deployment-compatibility.md#saved-social-data-jobs) before deployment
+boundary](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#saved-social-data-jobs) before deployment
 or rollback. Public tool inspection informed the catalog; mocked integration
 tests do not establish live paid-provider availability. A bounded live smoke
 test is still required when provisioning a provider.

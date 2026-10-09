@@ -18,20 +18,41 @@ pub(in super::super) fn test_runner_identity() -> RunnerProcessIdentity {
     RunnerProcessIdentity::new(TEST_RUNNER_ID.parse().unwrap(), TEST_HEARTBEAT_GENERATION).unwrap()
 }
 
-pub(in super::super) fn test_profiles() -> BTreeMap<String, config::ProfileConfig> {
-    let mut m = BTreeMap::new();
-    m.insert(
-        "vm0/default".to_string(),
-        config::ProfileConfig {
-            rootfs_hash: "hash".into(),
-            snapshot_hash: "snap".into(),
-            vcpu: 2,
-            memory_mb: 4096,
-            rootfs_disk_mb: 8192,
-            workspace_disk_mb: 10240,
+const TEST_PROFILE_HOME: &str = "fixture-home";
+
+fn test_profile(
+    name: &str,
+    rootfs_hash: &str,
+    snapshot_hash: &str,
+    vcpu: u32,
+    memory_mb: u32,
+    workspace_disk_mb: u32,
+) -> RuntimeProfile {
+    let home = HomePaths::with_root(PathBuf::from(TEST_PROFILE_HOME));
+    let rootfs = runner_host::paths::RootfsPaths::new(&home, rootfs_hash);
+    RuntimeProfile {
+        vcpu,
+        memory_mb,
+        workspace_disk_mb,
+        factory_config: sandbox::FactoryConfig {
+            profile: name.into(),
+            binary_path: PathBuf::new(),
+            kernel_path: PathBuf::new(),
+            rootfs_path: rootfs.rootfs(),
+            base_dir: PathBuf::new(),
+            snapshot: Some(sandbox::SnapshotRef {
+                output_dir: rootfs.snapshot_dir(snapshot_hash),
+                hash: snapshot_hash.into(),
+            }),
         },
-    );
-    m
+    }
+}
+
+pub(in super::super) fn test_profiles() -> BTreeMap<String, RuntimeProfile> {
+    BTreeMap::from([(
+        "vm0/default".into(),
+        test_profile("vm0/default", "hash", "snap", 2, 4096, 10240),
+    )])
 }
 
 /// Everything a test needs to drive the main loop.
@@ -72,7 +93,7 @@ impl MockRunEnv {
 
 /// Assemble a complete `RunConfig` with all mock/noop dependencies.
 pub(in super::super) fn mock_run_config(
-    profiles: BTreeMap<String, config::ProfileConfig>,
+    profiles: BTreeMap<String, RuntimeProfile>,
     budget_vcpu: u32,
     budget_memory_mb: u32,
     max_concurrent: usize,
@@ -88,7 +109,7 @@ pub(in super::super) fn mock_run_config(
 
 /// Variant with an explicit poll delay for regression testing.
 pub(in super::super) fn mock_run_config_with_delay(
-    profiles: BTreeMap<String, config::ProfileConfig>,
+    profiles: BTreeMap<String, RuntimeProfile>,
     budget_vcpu: u32,
     budget_memory_mb: u32,
     max_concurrent: usize,
@@ -104,7 +125,7 @@ pub(in super::super) fn mock_run_config_with_delay(
 }
 
 fn build_mock_run_config(
-    profiles: BTreeMap<String, config::ProfileConfig>,
+    profiles: BTreeMap<String, RuntimeProfile>,
     budget_vcpu: u32,
     budget_memory_mb: u32,
     max_concurrent: usize,
@@ -122,7 +143,7 @@ fn build_mock_run_config(
 }
 
 pub(in super::super) fn mock_run_config_with_runtime(
-    profiles: BTreeMap<String, config::ProfileConfig>,
+    profiles: BTreeMap<String, RuntimeProfile>,
     budget_vcpu: u32,
     budget_memory_mb: u32,
     max_concurrent: usize,
@@ -142,7 +163,7 @@ pub(in super::super) fn mock_run_config_with_runtime(
 /// Variant that points the runner's HTTP client at an explicit URL. Used by
 /// tests that spin up an `httpmock::MockServer` to observe webhook traffic.
 pub(in super::super) fn mock_run_config_with_api_url(
-    profiles: BTreeMap<String, config::ProfileConfig>,
+    profiles: BTreeMap<String, RuntimeProfile>,
     budget_vcpu: u32,
     budget_memory_mb: u32,
     max_concurrent: usize,
@@ -169,7 +190,7 @@ fn healthy_mock_sandbox_runtime() -> Box<dyn sandbox::SandboxRuntime> {
 }
 
 fn build_mock_run_config_with_runtime(
-    profiles: BTreeMap<String, config::ProfileConfig>,
+    mut profiles: BTreeMap<String, RuntimeProfile>,
     budget_vcpu: u32,
     budget_memory_mb: u32,
     max_concurrent: usize,
@@ -189,6 +210,19 @@ fn build_mock_run_config_with_runtime(
     let cancel_tokens = RunCancellationRegistry::new();
 
     let home = HomePaths::with_root(temp_dir.path().to_path_buf());
+    for (name, profile) in &mut profiles {
+        let factory = &mut profile.factory_config;
+        factory.profile = name.clone();
+        factory.base_dir = temp_dir.path().to_path_buf();
+        factory.rootfs_path = temp_dir
+            .path()
+            .join(factory.rootfs_path.strip_prefix(TEST_PROFILE_HOME).unwrap());
+        if let Some(snapshot) = &mut factory.snapshot {
+            snapshot.output_dir = temp_dir
+                .path()
+                .join(snapshot.output_dir.strip_prefix(TEST_PROFILE_HOME).unwrap());
+        }
+    }
     let registry_path = temp_dir.path().join("registry.json");
     let lock_path = temp_dir.path().join("registry.lock");
     // Write empty registry file so ProxyRegistryHandle can read it.
@@ -213,18 +247,13 @@ fn build_mock_run_config_with_runtime(
             identity: test_runner_identity(),
             group: "test-group".into(),
             profiles,
+            release: "test-runner-release",
         },
         paths: RunPaths {
             home: home.clone(),
             base_dir: temp_dir.path().to_path_buf(),
         },
-        sandbox_runtime: SandboxRuntimeConfig {
-            runtime,
-            firecracker: config::FirecrackerConfig {
-                binary: PathBuf::new(),
-                kernel: PathBuf::new(),
-            },
-        },
+        sandbox_runtime: SandboxRuntimeConfig { runtime },
         capacity: CapacityPolicy {
             budget: Arc::new(ResourceBudget::new(
                 budget_vcpu,
@@ -305,6 +334,7 @@ fn build_mock_run_config_with_runtime(
         orphan_reap: OrphanReapState {
             process_discovery: None,
         },
+        diagnostic_error_tail_max_bytes: 4096,
         test_hooks: RunTestHooks {
             outer_job_panic: None,
             test_observer: start_observer.clone(),
@@ -331,43 +361,29 @@ fn build_mock_run_config_with_runtime(
     (config, env)
 }
 
-fn profiles_min_vcpu(profiles: &BTreeMap<String, config::ProfileConfig>) -> u32 {
+fn profiles_min_vcpu(profiles: &BTreeMap<String, RuntimeProfile>) -> u32 {
     profiles.values().map(|p| p.vcpu).min().unwrap_or(1)
 }
 
-fn profiles_min_memory(profiles: &BTreeMap<String, config::ProfileConfig>) -> u32 {
+fn profiles_min_memory(profiles: &BTreeMap<String, RuntimeProfile>) -> u32 {
     profiles.values().map(|p| p.memory_mb).min().unwrap_or(1)
 }
 
-pub(in super::super) fn two_profiles() -> BTreeMap<String, config::ProfileConfig> {
-    let mut m = BTreeMap::new();
-    m.insert(
-        "vm0/default".to_string(),
-        config::ProfileConfig {
-            rootfs_hash: "hash".into(),
-            snapshot_hash: "snap".into(),
-            vcpu: 2,
-            memory_mb: 4096,
-            rootfs_disk_mb: 8192,
-            workspace_disk_mb: 10240,
-        },
-    );
-    m.insert(
-        "vm0/large".to_string(),
-        config::ProfileConfig {
-            rootfs_hash: "hash2".into(),
-            snapshot_hash: "snap2".into(),
-            vcpu: 4,
-            memory_mb: 8192,
-            rootfs_disk_mb: 8192,
-            workspace_disk_mb: 20480,
-        },
-    );
-    m
+pub(in super::super) fn two_profiles() -> BTreeMap<String, RuntimeProfile> {
+    BTreeMap::from([
+        (
+            "vm0/default".into(),
+            test_profile("vm0/default", "hash", "snap", 2, 4096, 10240),
+        ),
+        (
+            "vm0/large".into(),
+            test_profile("vm0/large", "hash2", "snap2", 4, 8192, 20480),
+        ),
+    ])
 }
 
 pub(in super::super) fn mock_run_config_with_overrides(
-    profiles: BTreeMap<String, config::ProfileConfig>,
+    profiles: BTreeMap<String, RuntimeProfile>,
     budget_vcpu: u32,
     budget_memory_mb: u32,
     max_concurrent: usize,
@@ -384,7 +400,7 @@ pub(in super::super) fn mock_run_config_with_overrides(
 }
 
 pub(in super::super) fn mock_run_config_with_overrides_and_api_url(
-    profiles: BTreeMap<String, config::ProfileConfig>,
+    profiles: BTreeMap<String, RuntimeProfile>,
     budget_vcpu: u32,
     budget_memory_mb: u32,
     max_concurrent: usize,

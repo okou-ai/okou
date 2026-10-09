@@ -20,6 +20,7 @@ pub(super) fn log_terminal_job_outcome(
     reused: bool,
     cancelled: bool,
     failure: Option<&executor::ExecutionFailure>,
+    error_tail_max_bytes: usize,
 ) {
     // Single sink for any claimed job's terminal state. Cancellation gets
     // its own info marker; every other failure is represented by a single
@@ -27,7 +28,7 @@ pub(super) fn log_terminal_job_outcome(
     match (cancelled, failure) {
         (true, _) => info!(run_id = %run_id, exit_code, reused, "job cancelled"),
         (false, Some(failure)) => {
-            log_job_execution_failed(run_id, exit_code, reused, failure);
+            log_job_execution_failed(run_id, exit_code, reused, failure, error_tail_max_bytes);
         }
         (false, None) => info!(run_id = %run_id, exit_code, reused, "job finished"),
     }
@@ -38,6 +39,7 @@ fn log_job_execution_failed(
     exit_code: i32,
     reused: bool,
     failure: &executor::ExecutionFailure,
+    error_tail_max_bytes: usize,
 ) {
     let diagnostic = failure.diagnostic.as_ref();
     let cli_termination_fields = JobCliTerminationLogFields::from(
@@ -73,7 +75,7 @@ fn log_job_execution_failed(
                 exit_code,
                 reused,
                 error = %failure.error,
-                error_tail = crate::axiom_layer::error_tail(&failure.error),
+                error_tail = runner_host::log_file::bounded_error_tail(&failure.error, error_tail_max_bytes),
                 timeout_ms,
                 elapsed_ms,
                 guest_duration_ms,
@@ -604,6 +606,7 @@ mod tests {
                 reused,
                 cancelled,
                 failure,
+                4096,
             );
         });
         let events = captured.entries();
@@ -937,7 +940,7 @@ mod tests {
     #[test]
     fn pi_disconnection_keeps_causal_evidence_in_the_existing_log_contract() {
         let message: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-stream-terminated.json"
+            "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-stream-terminated.json"
         )).unwrap();
         let mut diagnostic = FailureDiagnostic::new(
             FailureClass::CliNonzero,

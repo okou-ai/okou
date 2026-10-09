@@ -2,48 +2,36 @@ mod axiom_layer;
 mod cmd;
 mod config;
 mod deps;
-mod duration;
 mod error;
 use runner_executor::executor;
 mod group;
 use runner_host::idle_prune_control;
-use runner_lifecycle::guest_timezone;
 use runner_lifecycle::idle_pool;
-#[cfg(test)]
-use runner_lifecycle::idle_reuse_preparation;
 use runner_provider::http;
 mod image_hash;
 mod io_limits;
+use runner_executor::pre_spawn_admission;
 use runner_host::live_runner_instances;
 use runner_lifecycle::lifecycle;
-mod network_log_http_adapter;
-use runner_executor::pre_spawn_admission;
 use runner_lifecycle::prefetch;
 mod profile;
-#[cfg(test)]
-mod provider_test_support;
 use runner_lifecycle::resource_budget;
-#[cfg(test)]
-use runner_lifecycle::restored_session_identity;
 mod run_resolution;
 mod runtime_overrides;
 use runner_lifecycle::status;
 mod status_file;
-use runner_executor::telemetry;
 #[cfg(test)]
 use runner_executor::test_fixtures;
 #[cfg(test)]
 mod test_fixtures_http_body;
 use runner_lifecycle::workspace_image_cache;
 use runner_lifecycle::workspace_mount;
-#[cfg(test)]
-use runner_lifecycle::workspace_promotion;
 
 use runner_network::{
     ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
 };
 use runner_remote::{guest_rpc, run_usage, ssh, vnc};
-use runner_storage::{r2_cache, storage_cache, storage_fingerprints};
+use runner_storage::{r2_cache, storage_cache};
 
 #[cfg(test)]
 use sandbox::helper_exec;

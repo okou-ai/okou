@@ -1,6 +1,7 @@
 //! Sandbox factory creation and shutdown for `runner start`.
 
 use std::collections::BTreeMap;
+#[cfg(test)]
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -8,9 +9,10 @@ use std::time::Instant;
 use sandbox::{SandboxFactory, SandboxRuntime};
 use tracing::{error, info};
 
+use super::RuntimeProfile as ProfileConfig;
 use super::TeardownTimer;
-use crate::config::{self, ProfileConfig};
-use crate::error::{RunnerError, RunnerResult};
+use super::error::{ReactorError as RunnerError, ReactorResult as RunnerResult};
+#[cfg(test)]
 use runner_host::paths::HomePaths;
 
 /// A sandbox factory shared across concurrent job executors.
@@ -18,7 +20,7 @@ use runner_host::paths::HomePaths;
 /// The runner retains one owner while live jobs and idle sandboxes clone the
 /// `Arc`. Shutdown begins only after the runner recovers exclusive mutable
 /// access to every factory.
-pub(super) type SharedFactory = Arc<Box<dyn SandboxFactory>>;
+use crate::SharedFactory;
 
 /// Build one sandbox factory per configured profile.
 ///
@@ -27,20 +29,11 @@ pub(super) type SharedFactory = Arc<Box<dyn SandboxFactory>>;
 /// the runtime removes their network isolation.
 pub(super) async fn start_factories(
     profiles: &BTreeMap<String, ProfileConfig>,
-    firecracker: &config::FirecrackerConfig,
-    base_dir: &Path,
-    home: &HomePaths,
     runtime: &mut dyn SandboxRuntime,
 ) -> RunnerResult<BTreeMap<String, (SharedFactory, bool)>> {
     let mut factories: BTreeMap<String, (Box<dyn SandboxFactory>, bool)> = BTreeMap::new();
     for (profile_name, profile_config) in profiles {
-        let factory_config = config::RunnerConfig::build_factory_config(
-            firecracker,
-            base_dir,
-            profile_name,
-            profile_config,
-            home,
-        );
+        let factory_config = profile_config.factory_config.clone();
         let restore_guest_state = factory_config.snapshot.is_some();
         let factory_result = runtime.create_factory(factory_config).await;
         let factory = match factory_result {
@@ -239,14 +232,30 @@ mod tests {
         }
     }
 
-    fn profile(rootfs_hash: &str, snapshot_hash: &str) -> ProfileConfig {
+    fn profile(
+        name: &str,
+        rootfs_hash: &str,
+        snapshot_hash: &str,
+        binary_kernel: &(std::path::PathBuf, std::path::PathBuf),
+        base_dir: &Path,
+        home: &HomePaths,
+    ) -> ProfileConfig {
+        let rootfs = runner_host::paths::RootfsPaths::new(home, rootfs_hash);
         ProfileConfig {
-            rootfs_hash: rootfs_hash.into(),
-            snapshot_hash: snapshot_hash.into(),
             vcpu: 2,
             memory_mb: 4096,
-            rootfs_disk_mb: 8192,
             workspace_disk_mb: 10240,
+            factory_config: sandbox::FactoryConfig {
+                profile: name.into(),
+                binary_path: binary_kernel.0.clone(),
+                kernel_path: binary_kernel.1.clone(),
+                rootfs_path: rootfs.rootfs(),
+                base_dir: base_dir.to_path_buf(),
+                snapshot: Some(sandbox::SnapshotRef {
+                    output_dir: rootfs.snapshot_dir(snapshot_hash),
+                    hash: snapshot_hash.into(),
+                }),
+            },
         }
     }
 
@@ -255,27 +264,40 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let home = HomePaths::with_root(temp.path().join("home"));
         let base_dir = temp.path().join("base");
-        let firecracker = config::FirecrackerConfig {
-            binary: temp.path().join("firecracker"),
-            kernel: temp.path().join("vmlinux"),
-        };
+        let binary_kernel = (temp.path().join("firecracker"), temp.path().join("vmlinux"));
         let mut profiles = BTreeMap::new();
+        let default = runner_types::profile_name::DEFAULT_PROFILE;
         profiles.insert(
-            crate::profile::DEFAULT_PROFILE.into(),
-            profile("rootfs-1", "snapshot-1"),
+            default.into(),
+            profile(
+                default,
+                "rootfs-1",
+                "snapshot-1",
+                &binary_kernel,
+                &base_dir,
+                &home,
+            ),
         );
-        profiles.insert("vm0/large".into(), profile("rootfs-2", "snapshot-2"));
+        profiles.insert(
+            "vm0/large".into(),
+            profile(
+                "vm0/large",
+                "rootfs-2",
+                "snapshot-2",
+                &binary_kernel,
+                &base_dir,
+                &home,
+            ),
+        );
         let mut runtime = RecordingRuntime::new(usize::MAX);
 
-        let factories = start_factories(&profiles, &firecracker, &base_dir, &home, &mut runtime)
-            .await
-            .unwrap();
+        let factories = start_factories(&profiles, &mut runtime).await.unwrap();
 
         assert_eq!(runtime.create_calls.load(Ordering::SeqCst), 2);
         assert_eq!(
             factories.keys().cloned().collect::<Vec<_>>(),
             vec![
-                crate::profile::DEFAULT_PROFILE.to_string(),
+                runner_types::profile_name::DEFAULT_PROFILE.to_string(),
                 "vm0/large".to_string()
             ]
         );
@@ -286,16 +308,33 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let home = HomePaths::with_root(temp.path().join("home"));
         let base_dir = temp.path().join("base");
-        let firecracker = config::FirecrackerConfig {
-            binary: temp.path().join("firecracker"),
-            kernel: temp.path().join("vmlinux"),
-        };
+        let binary_kernel = (temp.path().join("firecracker"), temp.path().join("vmlinux"));
         let mut profiles = BTreeMap::new();
-        profiles.insert("vm0/first".into(), profile("rootfs-1", "snapshot-1"));
-        profiles.insert("vm0/second".into(), profile("rootfs-2", "snapshot-2"));
+        profiles.insert(
+            "vm0/first".into(),
+            profile(
+                "vm0/first",
+                "rootfs-1",
+                "snapshot-1",
+                &binary_kernel,
+                &base_dir,
+                &home,
+            ),
+        );
+        profiles.insert(
+            "vm0/second".into(),
+            profile(
+                "vm0/second",
+                "rootfs-2",
+                "snapshot-2",
+                &binary_kernel,
+                &base_dir,
+                &home,
+            ),
+        );
         let mut runtime = RecordingRuntime::new(2);
 
-        let result = start_factories(&profiles, &firecracker, &base_dir, &home, &mut runtime).await;
+        let result = start_factories(&profiles, &mut runtime).await;
 
         match result {
             Err(RunnerError::Sandbox(SandboxError::Initialization { phase, message })) => {
@@ -315,16 +354,33 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let home = HomePaths::with_root(temp.path().join("home"));
         let base_dir = temp.path().join("base");
-        let firecracker = config::FirecrackerConfig {
-            binary: temp.path().join("firecracker"),
-            kernel: temp.path().join("vmlinux"),
-        };
+        let binary_kernel = (temp.path().join("firecracker"), temp.path().join("vmlinux"));
         let mut profiles = BTreeMap::new();
-        profiles.insert("vm0/first".into(), profile("rootfs-1", "snapshot-1"));
-        profiles.insert("vm0/second".into(), profile("rootfs-2", "snapshot-2"));
+        profiles.insert(
+            "vm0/first".into(),
+            profile(
+                "vm0/first",
+                "rootfs-1",
+                "snapshot-1",
+                &binary_kernel,
+                &base_dir,
+                &home,
+            ),
+        );
+        profiles.insert(
+            "vm0/second".into(),
+            profile(
+                "vm0/second",
+                "rootfs-2",
+                "snapshot-2",
+                &binary_kernel,
+                &base_dir,
+                &home,
+            ),
+        );
         let mut runtime = RecordingRuntime::new(1);
 
-        let result = start_factories(&profiles, &firecracker, &base_dir, &home, &mut runtime).await;
+        let result = start_factories(&profiles, &mut runtime).await;
 
         match result {
             Err(RunnerError::Sandbox(SandboxError::Initialization { phase, message })) => {

@@ -589,36 +589,6 @@ async function prepareNextOutboxItem(
     if (!selectedRow) {
       return { kind: "empty" };
     }
-    // Retired Native intents never reach parsing, rendering or provider replay,
-    // including malformed payloads and requests committed by an older API.
-    if (
-      z
-        .object({ template: z.literal("morning-brief-result") })
-        .safeParse(selectedRow.template).success
-    ) {
-      await tx
-        .update(emailOutbox)
-        .set({
-          status: "failed",
-          lastError:
-            selectedRow.provider_request === null
-              ? "Native Morning Brief email retired"
-              : "Native Morning Brief email retired with unresolved provider outcome",
-          providerRequest: null,
-          template: {
-            template: "morning-brief-result",
-            props: {
-              title: "",
-              resultMarkdown: "",
-              threadUrl: "",
-              manageUrl: "",
-            },
-          },
-          nextRetryAt: null,
-        })
-        .where(eq(emailOutbox.id, selectedRow.id));
-      return { kind: "resolved" };
-    }
     const row = outboxRowSchema.parse(selectedRow);
     const itemId = row.id;
     const attempts = row.attempts + 1;

@@ -51,7 +51,6 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 import { settle } from "../utils";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
@@ -1084,9 +1083,6 @@ const deleteChatThreadContent$ = command(
       await tx
         .delete(chatEventSearchMessages)
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
-      signal.throwIfAborted();
-
-      await tx.execute(purgeRetiredMorningBriefEmailSql());
       signal.throwIfAborted();
 
       // Delete the thread after cleanup under its row lock. Cascades chat_events.

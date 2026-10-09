@@ -37,7 +37,7 @@ the older preparation-stage drain/rollback gate is not an acceptance requirement
 for this PR. Other advisory-retirement contracts are unchanged. Same-version
 concurrency, exact-generation compensation and existing stored data remain in
 scope. See the
-[bootstrap scope](deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement)
+[bootstrap scope](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement)
 and [publication proof](storage-version-publication.md#bootstrap-seed-publication).
 
 ## Why we are removing them
@@ -248,7 +248,7 @@ resolution, SSH creation-ID replay, export-job admission, built-in generation
 quotas, and Official catalog publication/organization lock ordering. Seven
 prepared keys retire in the follow-up below; reconciliation needs the additional
 Morning Brief preparation described there. Their replacement protocols are in
-[deployment compatibility](./deployment-compatibility.md#scoped-advisory-cleanup-and-owner-row-preparation-2026-09-26).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#scoped-advisory-cleanup-and-owner-row-preparation-2026-09-26).
 Do not infer necessity from the remaining count or from a test that waits for a
 lock.
 
@@ -289,7 +289,7 @@ Production API 1.682.4 includes #37009's preparation. The rollback resolver now
 requires its merge commit `c639e3397602b5c9b049315c7a99f5ed2e23e660`; the accepted
 serving boundary and the separate copy/device/reconciliation preparation gates
 are recorded in
-[deployment compatibility](./deployment-compatibility.md#prepared-advisory-key-retirement-and-writer-preparation-2026-09-27).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#prepared-advisory-key-retirement-and-writer-preparation-2026-09-27).
 
 ## Single-statement and read-only entrances (2026-09-27)
 
@@ -370,7 +370,7 @@ retains catalog/source row protection and exact source revalidation before any
 publication. Its full-key retirement, Device auth and Official reconciliation
 still have the separate rollout gates above. SSH preparation and the supported
 mixed-writer boundaries are described in
-[deployment compatibility](./deployment-compatibility.md#constraint-arbitration-and-narrower-advisory-entrances-2026-09-27).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#constraint-arbitration-and-narrower-advisory-entrances-2026-09-27).
 
 ## Soft limits and prepared-key retirement (2026-09-27)
 
@@ -412,7 +412,7 @@ the preflight never reserves provider execution. Browser publication and the rem
 SSH/VNC owner operations need further conditional-write preparation and are
 outside this batch. No new lock, constraint, migration or fallback is added.
 Serving evidence and the enforced rollback floor are recorded in
-[deployment compatibility](./deployment-compatibility.md#soft-limits-and-prepared-key-retirement-2026-09-27).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#soft-limits-and-prepared-key-retirement-2026-09-27).
 
 ## Custom account, Browser and bootstrap preparation (2026-09-27)
 
@@ -453,7 +453,7 @@ acquiring the Storage earlier is not a shorter-transaction optimization.
 
 These keys retire only after this new preparation covers the supported serving
 and rollback writers and outgoing requests drain. That gate is separate from
-earlier advisory preparations; see the [compatibility protocol](./deployment-compatibility.md#custom-account-browser-and-bootstrap-owner-protocols-2026-09-27).
+earlier advisory preparations; see the [compatibility protocol](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#custom-account-browser-and-bootstrap-owner-protocols-2026-09-27).
 After retirement, Custom removes one expression and narrows three shared
 expressions to builtin targets; Browser removes six and bootstrap removes two.
 That future change would remove three SQL sites, not twelve.
@@ -475,4 +475,4 @@ after its claim succeeds, in that transaction), so admission is generic and
 holds no lock.
 The literal inventory is unchanged. Mixed old/new API writers can add one extra
 schedule tick during the cutover; see
-[deployment compatibility](./deployment-compatibility.md#unified-chat-queue-release-3).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#unified-chat-queue-release-3).
