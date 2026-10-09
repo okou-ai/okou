@@ -296,18 +296,29 @@ pub struct RecordedRequest {
 }
 
 pub fn event_request_sequences(request: &RecordedRequest) -> Result<Vec<u32>, String> {
-    let body: Value = serde_json::from_str(&request.body)
+    use serde_json::value::RawValue;
+    use std::collections::BTreeMap;
+
+    #[derive(serde::Deserialize)]
+    struct EventRequest<'a> {
+        #[serde(borrow)]
+        events: Vec<BTreeMap<String, &'a RawValue>>,
+    }
+
+    // Serde structs also accept positional arrays; this HTTP boundary requires
+    // an object. Acknowledgement observation needs only sequence metadata, not
+    // owned multi-MiB contents. Callers still assert complete parsed payloads.
+    if !request.body.trim_start().starts_with('{') {
+        return Err("event request omitted events array".into());
+    }
+    let body: EventRequest<'_> = serde_json::from_str(&request.body)
         .map_err(|error| format!("parse event request body: {error}"))?;
-    body.get("events")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "event request omitted events array".to_string())?
-        .iter()
+    body.events
+        .into_iter()
         .map(|event| {
-            event
-                .get("sequenceNumber")
-                .and_then(Value::as_u64)
-                .and_then(|sequence| u32::try_from(sequence).ok())
-                .ok_or_else(|| "event omitted a u32 sequenceNumber".to_string())
+            let invalid = || "event omitted a u32 sequenceNumber".to_string();
+            let sequence = event.get("sequenceNumber").ok_or_else(invalid)?;
+            serde_json::from_str(sequence.get()).map_err(|_| invalid())
         })
         .collect()
 }
