@@ -7,7 +7,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, asc, desc, eq, isNull, or, type SQL } from "drizzle-orm";
 
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import {
   acceptedOfficialWorkflowCatalogReadPlan,
@@ -171,51 +171,61 @@ export function visibleWorkflowCondition(member: WorkflowMember): SQL {
   ) as SQL;
 }
 
-export async function loadVisibleWorkflowById(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly member: WorkflowMember;
-    readonly workflowId: string;
-    readonly includeInstallingOfficial?: boolean;
-  },
-): Promise<{ workflow: WorkflowRow; agent: VisibleWorkflowAgentInfo } | null> {
-  const [row] = await db
-    .select({
-      workflow: workflows,
-      agent: {
-        id: agents.id,
-        orgId: agents.orgId,
-        owner: agents.owner,
-        visibility: agents.visibility,
-        name: agents.name,
-        displayName: agents.displayName,
-      },
-    })
-    .from(workflows)
-    .innerJoin(agents, eq(workflows.agentId, agents.id))
-    .where(
-      and(
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.id, args.workflowId),
-        args.includeInstallingOfficial
-          ? or(
-              visibleWorkflowCondition(args.member),
-              and(
-                eq(workflows.ownerUserId, args.member.userId),
-                eq(workflows.officialInstallationState, "installing"),
-              ),
-            )
-          : visibleWorkflowCondition(args.member),
-      ),
-    )
-    .limit(1);
-
-  if (!row) {
-    return null;
-  }
-  return { workflow: row.workflow, agent: row.agent };
+export interface VisibleWorkflow {
+  readonly workflow: WorkflowRow;
+  readonly agent: VisibleWorkflowAgentInfo;
 }
+
+export const loadVisibleWorkflowById$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly workflowId: string;
+      readonly includeInstallingOfficial?: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<VisibleWorkflow | null> => {
+    const [row] = await get(db$)
+      .select({
+        workflow: workflows,
+        agent: {
+          id: agents.id,
+          orgId: agents.orgId,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          name: agents.name,
+          displayName: agents.displayName,
+        },
+      })
+      .from(workflows)
+      .innerJoin(agents, eq(workflows.agentId, agents.id))
+      .where(
+        and(
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.id, args.workflowId),
+          args.includeInstallingOfficial
+            ? or(
+                visibleWorkflowCondition(args.member),
+                and(
+                  eq(workflows.ownerUserId, args.member.userId),
+                  eq(workflows.officialInstallationState, "installing"),
+                ),
+              )
+            : visibleWorkflowCondition(args.member),
+        ),
+      )
+      .limit(1);
+
+    signal.throwIfAborted();
+
+    if (!row) {
+      return null;
+    }
+    return { workflow: row.workflow, agent: row.agent };
+  },
+);
 
 export function workflowSummary(args: {
   readonly workflow: WorkflowSummaryRow;

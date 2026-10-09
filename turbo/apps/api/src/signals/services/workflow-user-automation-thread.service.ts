@@ -18,7 +18,7 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
@@ -157,29 +157,21 @@ export function workflowUserAutomationThreadOwnerCondition(
   );
 }
 
-async function readWorkflowUserAutomationThreadBinding(
-  db: Pick<ReadonlyDb, "select">,
-  owner: WorkflowUserAutomationThreadOwner,
-): Promise<{ readonly chatThreadId: string | null } | null> {
-  const [binding] = await db
-    .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-    .from(workflowUserAutomationThreads)
-    .where(workflowUserAutomationThreadOwnerCondition(owner))
-    .limit(1);
-  return binding ?? null;
-}
-
-export async function loadWorkflowUserAutomationThreadId(
-  db: Pick<ReadonlyDb, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
+export const loadWorkflowUserAutomationThreadId$ = command(
+  async (
+    { get },
+    args: WorkflowUserAutomationThreadOwner,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const [binding] = await get(db$)
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(workflowUserAutomationThreadOwnerCondition(args))
+      .limit(1);
+    signal.throwIfAborted();
+    return binding?.chatThreadId ?? null;
   },
-): Promise<string | null> {
-  const binding = await readWorkflowUserAutomationThreadBinding(db, args);
-  return binding?.chatThreadId ?? null;
-}
+);
 
 /**
  * Pause every enabled automation that shares a workflow-user chat thread.

@@ -32,7 +32,7 @@ import {
   repairMissingStripeInvoicePaidAutomationProjection,
   validateStripeInvoicePaidAutomationBinding,
 } from "./stripe-invoice-paid-workflow-automation.service";
-import { workflowAutomationCanFire } from "./workflow-automation-access.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { storedWorkflowAutomationContext } from "./workflow-automation-context.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
@@ -1097,17 +1097,6 @@ async function loadDeliveryTarget(
   if (binding.kind !== "ok") {
     return { kind: "skip", reason: "connector_unavailable" };
   }
-  const canFire = await workflowAutomationCanFire(
-    db,
-    {
-      automation: row.automation,
-      agentId: row.agentId,
-    },
-    signal,
-  );
-  if (!canFire) {
-    return { kind: "skip", reason: "automation_access_revoked" };
-  }
   return {
     kind: "ok",
     target: {
@@ -1315,7 +1304,19 @@ const processClaimedDelivery$ = command(
   ): Promise<"executed" | "skipped" | "failed" | "retried" | "lost"> => {
     const db = set(writeDb$);
     await repairMissingStripeDeliveryProjection(db, args.delivery, signal);
-    const validation = await loadDeliveryTarget(db, args.delivery, signal);
+    const prepared = await loadDeliveryTarget(db, args.delivery, signal);
+    const validation: StripeDeliveryValidation =
+      prepared.kind === "ok" &&
+      !(await set(
+        workflowAutomationCanFire$,
+        {
+          automation: prepared.target.automation,
+          agentId: prepared.target.agentId,
+        },
+        signal,
+      ))
+        ? { kind: "skip", reason: "automation_access_revoked" }
+        : prepared;
     if (validation.kind === "skip") {
       const skipped = await set(
         finishDelivery$,
