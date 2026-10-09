@@ -547,11 +547,6 @@
       "owner": "publishCandidate$/result"
     },
     {
-      "id": "TX-0114",
-      "file": "turbo/apps/api/src/signals/services/connector-check.service.ts",
-      "owner": "resolveConnectorCheck$"
-    },
-    {
       "id": "TX-0115",
       "file": "turbo/apps/api/src/signals/services/connector-credential-storage-write.service.ts",
       "owner": "deleteConnectorCredentialStorageConnectionsWhere"
