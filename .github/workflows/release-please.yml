@@ -1421,7 +1421,7 @@ jobs:
           step: start
           token: ${{ github.token }}
           env: api/production
-          ref: ${{ github.ref }}
+          ref: ${{ needs.release-please.outputs.release_target }}
           desc: Deploying API production artifact
 
       - name: Notify Slack - Starting
@@ -1618,7 +1618,7 @@ jobs:
           step: start
           token: ${{ github.token }}
           env: app/production
-          ref: ${{ github.ref }}
+          ref: ${{ needs.release-please.outputs.release_target }}
           desc: Deploying App Worker production
 
       - name: Notify Slack - Starting

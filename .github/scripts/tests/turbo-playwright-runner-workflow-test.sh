@@ -87,10 +87,9 @@ fi
 ruby -ryaml -ropen3 -rtempfile - "$WORKFLOW" "$RUNNER_MOCK_CLAUDE_BOOTSTRAP" <<'RUBY'
 workflow = YAML.load_file(ARGV.fetch(0))
 jobs = workflow.fetch("jobs")
-expected_deployed_ref =
-  "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+expected_deployed_ref = "${{ github.sha }}"
 # Account/shard preparation, execution, reports, and cleanup must all consume
-# the API/CLI revision, including any future E2E lifecycle job.
+# the captured API/CLI merge source, including any future E2E lifecycle job.
 jobs.each do |job_name, job|
   next unless job_name.start_with?("cli-e2e-") ||
     %w[deploy-api deploy-cli].include?(job_name)
@@ -100,7 +99,7 @@ jobs.each do |job_name, job|
   end
   unless checkouts.length == 1 &&
       checkouts.first.dig("with", "ref") == expected_deployed_ref
-    raise "#{job_name} must checkout the deployed PR head, or event SHA outside pull requests"
+    raise "#{job_name} must checkout the captured event source used by preview components"
   end
 end
 prepare = jobs.fetch("prepare")

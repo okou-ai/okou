@@ -27,7 +27,7 @@ if grep -Fq 'deploy-cli' <<<"$deploy_api"; then
   fail "deploy-api must not wait for deploy-cli"
 fi
 
-expected_package_url="cli-pkg-url: https://static.okou.io/okou-cli/\${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}/package.tgz"
+expected_package_url="cli-pkg-url: https://static.okou.io/okou-cli/\${{ github.sha }}/package.tgz"
 package_url_count="$(grep -Fc "$expected_package_url" <<<"$deploy_api" || true)"
 [[ "$package_url_count" == "2" ]] ||
   fail "API seed and deploy environments must derive the CLI package URL from the artifact SHA"
