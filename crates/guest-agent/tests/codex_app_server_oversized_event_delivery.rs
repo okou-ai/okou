@@ -28,6 +28,32 @@ fn image(url: &str) -> CodexOutput<'_> {
     CodexOutput::Image { image_url: url }
 }
 
+fn failed_command_item(output: String) -> Value {
+    Value::Object(serde_json::Map::from_iter([
+        ("type".into(), "commandExecution".into()),
+        ("id".into(), "failed-command".into()),
+        ("command".into(), "false".into()),
+        ("status".into(), "failed".into()),
+        ("exitCode".into(), 7.into()),
+        ("durationMs".into(), 42.into()),
+        ("aggregatedOutput".into(), Value::String(output)),
+    ]))
+}
+
+#[test]
+fn owned_failed_command_fixture_preserves_canonical_bytes() {
+    for output in [String::new(), "你好\"\\\n\0".into(), "x".repeat(4_096)] {
+        let expected = serde_json::json!({
+            "type":"commandExecution", "id":"failed-command", "command":"false",
+            "status":"failed", "exitCode":7, "durationMs":42, "aggregatedOutput":output
+        });
+        assert_eq!(
+            failed_command_item(output).to_string(),
+            expected.to_string()
+        );
+    }
+}
+
 #[test]
 fn borrowed_codex_output_fixtures_preserve_canonical_bytes() {
     for url in ["", "data:image/png;base64,AA==", "你好\"\\\n\0"] {
@@ -97,12 +123,15 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     // A few thousand entries still exceed the reducer's candidate bound;
     // long content keeps the event oversized without allocating 100,000 objects.
     let structure_text = "bounded-content".repeat(80);
-    let mut delivery_items = serde_json::json!([
-        {"type":"functionCallOutput","id":"small-image","name":"read","output":[image(&small_image)]},
-        {"type":"functionCallOutput","id":"large-image","name":"read","namespace":"tools","output":[image(&large_image)]},
-        {"type":"functionCallOutput","id":"aggregate-images","name":"read","output":[image(&half_image),image(&half_image),image(&small_image)]},
-        {"type":"functionCallOutput","id":"structure-output","name":"read","namespace":"tools","output":std::iter::once(image(&half_image)).chain(std::iter::repeat_n(CodexOutput::Text { text: &structure_text },4_100)).collect::<Vec<_>>()},
-        {"type":"commandExecution","id":"failed-command","command":"false","status":"failed","exitCode":7,"durationMs":42,"aggregatedOutput":format!("failed-output-head-{}-failed-output-tail", "x".repeat(MAX_REQUEST_BYTES))}
+    let mut delivery_items = Value::Array(vec![
+        serde_json::json!({"type":"functionCallOutput","id":"small-image","name":"read","output":[image(&small_image)]}),
+        serde_json::json!({"type":"functionCallOutput","id":"large-image","name":"read","namespace":"tools","output":[image(&large_image)]}),
+        serde_json::json!({"type":"functionCallOutput","id":"aggregate-images","name":"read","output":[image(&half_image),image(&half_image),image(&small_image)]}),
+        serde_json::json!({"type":"functionCallOutput","id":"structure-output","name":"read","namespace":"tools","output":std::iter::once(image(&half_image)).chain(std::iter::repeat_n(CodexOutput::Text { text: &structure_text },4_100)).collect::<Vec<_>>()}),
+        failed_command_item(format!(
+            "failed-output-head-{}-failed-output-tail",
+            "x".repeat(MAX_REQUEST_BYTES)
+        )),
     ]);
     let collaboration_items = [
         collaboration_item("large-collaboration", 1, 850_000),

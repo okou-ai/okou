@@ -205,6 +205,10 @@ byte oracles in both map-order configurations. When a fixture exists only to be
 serialized, borrow its fields in a serializable descriptor rather than building
 an intermediate owned `Value`. Share invariant compressed fixture bytes within
 a test, while retaining every independent source file, lock and actual decode.
+Serialize repeated JSONL records directly into their final canonical buffer;
+retain every line, delimiter and independent original-file comparison. Compute
+validation metadata before moving an owned payload into its fixture envelope,
+rather than cloning that payload solely to keep reading its length or hash.
 
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete
