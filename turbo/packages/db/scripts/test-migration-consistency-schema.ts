@@ -1770,6 +1770,7 @@ async function validateCustomConnectorOauthModeConstraints(
       fixture.createdBy,
     ]);
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0396; new non-billing transactions are prohibited.
     await client.query("BEGIN");
     await client.query(insertConnector, [
       fixture.oauthConnectorId,
@@ -2581,6 +2582,7 @@ async function validatePermanentUsagePackPendingSnapshotState(
   console.log("=== Validate permanent usage-pack pending snapshot state ===\n");
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0397; new non-billing transactions are prohibited.
   await client.query("BEGIN");
 
   const orgId = "permanent-usage-pack-pending-snapshot-org";
@@ -2592,6 +2594,7 @@ async function validatePermanentUsagePackPendingSnapshotState(
     );
     // Counts above one represent grandfathered purchases. Admission and release
     // are owned by the API service; the database retains uniqueness and range.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0398; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT guard_constraint");
     await expectDatabaseError(client, {
       code: "23505",
@@ -2600,6 +2603,7 @@ async function validatePermanentUsagePackPendingSnapshotState(
       values: [orgId],
     });
     await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0399; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT guard_constraint");
     await expectDatabaseError(client, {
       code: "23514",
@@ -2609,6 +2613,7 @@ async function validatePermanentUsagePackPendingSnapshotState(
       values: [orgId],
     });
     await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0400; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT guard_constraint");
     await expectDatabaseError(client, {
       code: "23502",

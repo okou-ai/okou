@@ -130,29 +130,6 @@ server-side signing-key ownership are unchanged.
 No database migration, client version floor, feature switch or deployment-order
 fallback is required. This change does not deploy or verify production recovery.
 
-## Video poster extraction retired (2026-10-08)
-
-Video uploads stop scheduling server-side poster extraction. The API removes
-both the public Cloudflare Media Transformations call and the private-video
-capability producer. The host Worker removes the private poster endpoint and
-its `MEDIA` binding. Hosted-page screenshots and image thumbnails keep their
-existing renderers.
-
-- **Old App or CLI → new API:** upload, playback, download and artifact response
-  contracts are unchanged. Videos without a stored poster use the existing
-  playable-video preview; previously stored poster references remain readable.
-- **New API → old Worker:** the API makes no poster requests; the unused Worker
-  endpoint does not affect file delivery.
-- **Old API → new Worker:** a remaining private poster POST receives `405` from
-  the Worker's existing method guard. The old API handles this in its optional
-  background-preview failure path and cleans up its temporary grant. The video
-  and catalog entry are already committed, so upload success and source access
-  are unaffected. In-flight renders may finish during API drain.
-
-No database migration, stored-preview deletion or client-version floor is
-needed. Rolling the API back can resume public poster generation; restoring
-private poster generation also requires the old Worker and `MEDIA` binding.
-
 ## Pi memory Luna routing (2026-10-08)
 
 New Stage 1 extractions and Phase 2 maintenance runs use `gpt-6-luna`.
@@ -719,6 +696,26 @@ and supported rollback packages have drained; track that verification in
 such as `message_end` remain fatal above the 16 MiB line limit. Rolling back
 both components restores the previous oversized-turn failure. No stored data
 migration or API change is required.
+
+## Desktop minimum version 0.51.0 activation
+
+The source-controlled Desktop policy now configures `0.51.0`, the first
+session-authenticated Native release. It becomes active when this API is
+published. Older serving APIs retain their captured disabled policy during
+rollout; the new API rejects legacy host-token registration/claims regardless
+of a claimed version, and rejects Native session hosts below the floor. Native
+`0.51.0` and `0.52.0` remain supported. Heartbeat, authenticated completion/stop,
+sign-in, update feeds, and downloads retain their current contracts.
+
+The published `0.52.0` ZIP is offered by both Squirrel and Sparkle feeds. Sparkle
+marks replacements at or above the floor critical for installed versions below
+it. Keep the Electron ShipIt relaunch bridge. Review an API rollback's bundled
+policy: an older disabled-policy API can restore old admission. Do not retire
+host-token routes or storage until the active policy, claimed-work drain, and
+serving/rollback conditions in [#37997](https://github.com/okou-ai/okou/issues/37997)
+are satisfied. Merge is not evidence that the production floor is active; verify
+the public policy and admission after the API release under
+[#38098](https://github.com/okou-ai/okou/issues/38098).
 
 ## Desktop compatibility policy is source controlled
 
@@ -4935,34 +4932,6 @@ this release. The contract release drops them, backfills any `user_id` left null
 by the rollout and makes `user_id` `NOT NULL`; ship it only after this API is in
 production and set this release as the API rollback floor.
 
-## Morning Brief expired admission containment (2026-09-25)
-
-This is a partial, fail-closed incident slice, **not** the recovery of stalled
-Morning Brief schedules. With the global schedule-expiry switch off, API
-instances at this revision no longer select `daily-delivery` anchors older than
-30 minutes in the legacy due batch. A selected anchor that ages past that
-boundary before queue admission is also refused; the generic, unjournaled
-claim CAS applies the same cutoff to `daily-delivery` and checks that the row
-is still enabled. The cutoff is strict: exactly 30 minutes late remains due.
-The old anchors, historical claims, runs, queue events, native rows, enabled
-choice, Official installation and sent messages are not changed. Other due
-automations keep their existing expiry policy and are selected in stable
-next-run order instead of sharing an unordered batch with stalled briefs.
-
-This does not advance an old anchor to a future occurrence. The global expiry
-flag must **not** be enabled as a substitute: an earlier mismatched Native
-obligation still holds that path. The Native/Official decision fence and old
-callback settlement remain in place; the mixed-version disable/enable and
-reconciliation contract has not been proven under single-statement hot-path
-constraints. An older API poller can still select or claim an expired brief
-during rollout or after rollback. Therefore production release of this
-containment requires a separately approved deployment plan that prevents old
-pollers from admitting overdue briefs throughout the overlap and sets a
-rollback floor at this revision or later; absent that plan, do not promote it
-as a no-backfill guarantee. Already queued or running claims and email/Chat
-outcomes require separate evidence and handling, not age-based settlement.
-No database migration or client protocol change is included.
-
 ## Chat search agent recency index dropped (2026-09-25)
 
 Migration `1242_drop_chat_search_agent_created_idx` drops
@@ -5315,21 +5284,6 @@ skipped, so the old client simply stops purging. Its saved
 are not migrated. A new App against an older API makes no such calls. Rollback
 is safe; an older API resumes serving the routes with the same signing key.
 
-## Sandbox-hosted artifact covers (#36205)
-
-Hosted deployment requests may include a separately uploaded private preview
-when the default-off `artifactPreviews` switch is enabled. The same switch gates
-CLI capture, generation guidance and server prepare/complete admission.
-When disabled, capture is a silent no-op and supplied previews are ignored;
-hosting continues normally. Prepare/complete use `previewSkipped: true` to
-acknowledge an ignored cover, including disabling between those requests.
-Published covers remain readable after disabling the switch.
-Deploy and drain API readers before the new CLI/generation instructions; a
-mixed completion fleet must not ignore the preview requirement. Old requests
-retain backend screenshots until the separately planned retirement. The
-manifest's optional preview metadata and existing file/catalog image reference
-need no database migration. See [the publishing, storage and rollout contract](sandbox-artifact-previews.md).
-
 ## Artifact and hosted-site link layouts (2026-09-25)
 
 The retired VM0 brand survives only as the read-only _legacy link layout_
@@ -5372,9 +5326,7 @@ deployments, integration input files or conversation attachment copies.
 Legacy-layout hosted sites keep serving and keep their names reserved; a new
 publication never redeploys a legacy site and, as before, receives a fallback
 name in the current layout when a legacy site holds the requested name. Artifact
-preview images are new objects and use `current`. Video poster extraction is
-[retired](#video-poster-extraction-retired-2026-10-08); existing poster objects
-retain their original layout.
+preview images are new objects and use `current`.
 
 Migration `1235_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
 on the four `public_brand` columns, so any writer that omits the column
@@ -5534,140 +5486,6 @@ a staggered rollout are not zero-valued timings. Compare deployed cohorts by
 Runner/API version, size, host and time before interpreting a shifted total
 read distribution, because the new observation reads an initial chunk before
 collecting the rest.
-
-## Native Morning Brief execution retirement (stage 2)
-
-Stage 1 removed Native admission in migration 1215 and the public API; the
-2026-09-24 production handoff check found all 456 Native schedule rows in `legacy`, zero
-personal `simpleMorningBrief: true` overrides, ten settled occurrences and
-current Official schedules for each enabled former Native member. Stage 2
-removes the Native cron, internal worker, debug trigger and preview endpoints,
-plus the Native generation/delivery entrypoints. It does not drop or rewrite
-historical tables, messages, email receipts or in-flight source collection rows.
-The two historical source collection attempts still marked `running` had expired
-leases and settled occurrences; their upstream outcomes and billing are not
-inferred and are never replayed by this change.
-
-The old App's Native-only Debug card or a caller of an old preview API may
-receive 404 after API promotion; a new App no longer renders that card. The
-Official Workflow preference, installation and scheduler APIs are retained.
-An older API still in flight can read the persisted `simpleMorningBrief` key;
-new API writes of `true` remain rejected even though the registry key and
-Native collection entrypoints are removed. Historical email admission still
-recognizes the distinct Native template and fails closed; it is not gated by
-the feature switch. No migration drops Native columns or contracts needed by
-retained historical cleanup and scheduling services. Do not remove their fail-closed outbox admission merely because the
-scheduler is gone. Releasing this PR needs a separate authorization and normal
-release/production checks; PR creation is not deployment approval.
-
-## Morning Brief Official-only storage authority (2026-10-07)
-
-This code stage removes all API consumers of the seven retired Native relations.
-`workflow_automations` owns the enabled choice, recurrence and next-run anchor;
-Official automation identities retain dormant choices and stable IDs. Enrollment,
-canonical installation selection, Official schedule claims and result email remain.
-Installation, reconciliation, toggles, timezone edits, admission, completion,
-expiry and lifecycle cleanup neither read nor mirror Native schedules, occurrences,
-collections, generations, deliveries, skips or installed preferences.
-
-Morning Brief expiry is enabled independently of general workflow expiry. A bounded
-lane moves an unclaimed anchor older than 30 minutes to the next future occurrence,
-without creating a Run, incrementing failures or mailing a missed brief. Exact
-Official row predicates and the claim journal fence concurrent admission, edits,
-settlement and expiry. An unsettled Official claim or pending queue input is held;
-reconciliation preserves its empty in-flight slot for completion. Admission holds
-a republished anchor until the current claim settles. Pre-journal callbacks can
-advance only a lineage without any Official claim records.
-
-The distinct historical `morning-brief-result` outbox template is terminally rejected
-before parsing, rendering or provider replay, including a previously committed
-provider request. Its body and rendered request are scrubbed; its provider key and
-an explicit unresolved-outcome error remain until ordinary outbox retention removes
-the failed record. Owner lifecycle cleanup also purges globally retired Native
-unsent intents directly from the outbox, without the former delivery association;
-completed mail and other templates are untouched. Rejection does not imply a previous provider attempt was never
-accepted. `official-automation-result` keeps its existing result callbacks,
-unsubscribe, suppression, retention and idempotent delivery contract.
-
-No database migration accompanies this code stage. Keep all seven tables and their
-columns while the outgoing API drains: old API writers can still require them, and
-old expiry/callback paths may fail to advance an anchor after the new API stops
-mirroring Native state. The new API can recover an unclaimed expired Official anchor
-on a later tick. Neither version re-enables Native execution; old clients continue
-to use the same Official preference and workflow APIs. Rolling back to the previous
-API restores its Native mirror dependency and may restore the stuck-anchor behavior;
-prefer a forward fix. Do not restore an API older than Native execution retirement.
-
-Before removing the Native generation retention worker in production, confirm the
-retired generation store has no remaining content that needs its bounded retention
-and no admitted producer can still write it. Later table contraction requires its
-own release after every outgoing API and worker has drained and the rollback floor
-excludes Native readers. Recheck historical content and Native outbox intents, purge
-as needed, and drop only the seven retired relations. Preserve the anonymous
-`morning_brief_platform_generation_receipts`, Official schedule claims, enrollment,
-workflows, chat events and ordinary email lifecycle. This stage is a code contract,
-not evidence of deployment or production recovery.
-
-## Native Morning Brief storage contraction (2026-10-07)
-
-Migration 1342 drops only the seven retired Native relations: schedule skips,
-occurrences, schedules, deliveries, generations, collection occurrences and
-installed preferences. Child tables are dropped before their parents without
-`CASCADE`; an unexpected dependency aborts the migration transaction. Anonymous
-platform generation cost receipts keep their existing schema and records.
-Official automation identities, claims, enrollment, workflow schedule skips,
-chat history and the ordinary email lifecycle remain authoritative.
-
-The reader/writer retirement in #37874 shipped in API 1.712.4 via #37878. Before
-preparing this contraction, production API 1.712.6 (commit
-`ad381f5bb282aa433ec34ae894a16ed8f4bb4896`) had completed promotion at
-2026-10-07 12:20:41 UTC. The 13:44:55–13:59:55 UTC trace window contained 48,797
-API spans, all on that commit; the API function maximum duration is 300 seconds.
-The existing production rollback floor for migration 1338 is commit
-`a9c3270099034c0f7ee73f6c730b07efa7d1d733`, which includes #37874 and excludes
-APIs that depend on Native storage. Keep that floor when deploying or rolling back.
-
-The production preflight found zero Native generation rows, all 10 Native
-occurrences settled, all 808 schedules in the legacy phase, and no unsent email
-outbox records. Two historical collection rows still say `running`, but their
-leases expired on September 20–21; they are not an active producer. These are
-observations at preparation time, not proof that migration 1342 has run. The
-contraction ships in a separate release; if deployment is delayed or producers
-change, recheck the drain, content, outbox and rollback gates before applying it.
-An API predating #37874 is incompatible with the contracted database; deployed
-retirement APIs and the new API both operate with or without these seven tables.
-
-## Morning Brief settings status and collection account retirement (2026-09-24)
-
-`GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,
-`timezone`, `lastDeliveredAt` or `lastRun`. The App does not validate API
-responses outside tests, so an older App bundle reading the new API sees the
-fields as absent and renders no next-run or delivery badge; a new App reading
-an older API ignores the extra fields.
-
-The `morningBriefChanged` realtime topic is retired: the API no longer
-publishes it and the App no longer subscribes to it, nor refetches the
-preference on `connector:changed`, `slack:changed` or a timezone update. The
-Settings card reflects server state when it loads. An older bundle keeps its
-subscription and simply receives nothing; an older API's publishes reach no
-subscriber in a new bundle. `connector:changed` and `slack:changed` are still
-published for their other consumers.
-
-Native Morning Brief execution no longer computes or writes the per-occurrence
-collection account, whose only reader was `lastRun`. The
-`morning_brief_native_occurrences.collection_facts` column is left in place
-because an older API may still write it during rollout; the new API neither
-reads nor writes it. Mixed versions are compatible: the column is nullable and
-nothing reads it. Rollback is safe; an older API simply resumes writing it.
-
-This API version still declares the column in Drizzle and uses full-row
-`select()`/`returning()` on the table, so the drop follows "Drop a Column as a
-Two-release Contract": first remove the Drizzle declaration in its own release,
-then drop the column in a later migration once every API that declares it has
-drained.
-
-Migration `1274` later dropped the column; see
-[Retired preference and occurrence columns dropped](#retired-preference-and-occurrence-columns-dropped-2026-09-28).
 
 ## Discord verified foundation (2026-09-24)
 
@@ -6073,32 +5891,6 @@ API, a new App may receive an initialize result with no locale; it then uses
 the regular preferences update to save locale before returning preferences.
 An old App that reads preferences before its startup POST against the new API
 can temporarily receive `409`; its existing POST then initializes the member.
-
-The automatic Morning Brief enrollment side effect described by the original
-rollout is retired by #36270; see the explicit-installation cleanup below.
-Preference initialization still fills missing fields and initializes member
-memory, but no longer prepares or installs Morning Brief.
-
-## Morning Brief automatic enrollment retirement (#36270, 2026-10-08)
-
-Remove the historical timezone/no-enrollment admission scan, enrollment cron
-worker, lease/backoff commands and automatic installer. Preference initialization,
-timezone updates, onboarding completion and Clerk membership creation no longer
-start automatic installation or record membership-based enrollment intent.
-Explicit user installation and preference toggles, timezone synchronization for
-existing installations, and scheduled execution remain supported. An explicit
-choice whose prerequisites are unavailable requires another user enable request;
-there is no background enrollment retry.
-
-This is an API-only policy change with no new request/response shape or destructive
-migration. Existing enrollment rows retain selected-workflow ownership, choices
-and cleanup/claim semantics; their schema is not dropped. Old App/new API and
-new App/old API still use the same preference and onboarding protocols. An older
-API serving, draining or restored by rollback can still auto-install/retry until
-it exits; source removal does not prove production drain. Deployment must promote
-and drain the API before automatic enrollment is declared stopped. The historical
-gap and old preference rollout are accepted as converged per Ethan's explicit
-cleanup decision; CLI authentication is not an enrollment entry point.
 
 ## Pi 0.87.1 model admission (2026-09-23)
 
@@ -7101,12 +6893,6 @@ When removing a backend response or request variant consumed by the CLI:
 3. Confirm that no queued or active pre-deployment context, and no explicitly
    supported external caller, can still use the old variant.
 4. Remove compatibility in a later backend release.
-
-Presentation runbook content is independent of the CLI release after the
-current-template download route is deployed. Current CLIs send only the
-resource id and receive the canonical storage HEAD; older CLIs keep using the
-existing digest-pinned route and its immutable archive. Publish new template
-HEADs only after the current-template route and CLI are in production.
 
 This drain is separate from runner binary drain: a current runner can execute an
 older CLI package retained by an older execution context. If the same cleanup
@@ -9526,115 +9312,6 @@ Scale at the time of the change: a fully paginated masked read at 2026-09-16
 attempt. That is retained row inventory under the 15-minute TTL, not historical
 volume, and it does not establish that an ambiguous send never happened.
 
-## Morning Brief installed preference projection (#34693)
-
-Migration 1149 adds the empty `morning_brief_installed_preferences` table, its
-indexes, and its foreign keys to `org_members_cache(org_id, user_id)`,
-`agents(id)` and `chat_threads(id)`. It is purely additive and needs no
-backfill, `LOCK TABLE` or historical scan, so apply it before promoting API
-code. An older API neither reads nor writes the table, and a rollback leaves it
-in place holding only derived rows.
-
-`FeatureSwitchKey.NativeMorningBrief` stays off by default. While it is off the
-Settings read and write paths behave exactly as before; turning it on makes the
-Settings writers copy the member's installed state into the projection and lets
-the Settings GET answer from that copy. Turning it back off immediately restores
-the legacy read and write path and discards nothing: every user choice still
-lives in the legacy installation and its automation.
-
-Both schema directions are therefore closed. Old code after migration never
-names the new table. New code before migration cannot reach it either: every
-statement against `morning_brief_installed_preferences` sits behind that
-default-off switch, so the release's normal migration-before-promotion ordering
-is not the only thing standing between a new API artifact and a `42P01`.
-
-Mixed-version and old-writer behavior is the reason the reader validates instead
-of trusting the row:
-
-- An old API binary changes the legacy state without refreshing the projection.
-  So does the automation poller advancing `next_run_at`, catalog reconciliation,
-  and thread deletion. A new binary therefore accepts a row only when its
-  `projection_version` matches and every copied field — selected installation,
-  automation, Agent, bound thread, enabled, cron expression, timezone and next
-  run — still equals the live canonical state. Any mismatch serves the legacy
-  answer, so a stale row can never restore an old enabled, schedule, timezone or
-  thread state.
-- The projection's own `updated_at` is not freshness evidence and is never used
-  as one.
-- The legacy mutation and the copy are not atomic: the mutation runs on the
-  outer `Db` and commits before the copy starts, even though both are inside the
-  preference advisory lock. A failed copy is reported operationally and the real
-  committed outcome is still returned; the next read falls back to legacy.
-
-The row's lifetime is an evictable cache, not durable ownership. The composite
-key to `org_members_cache` fences the current membership, user and organization
-cleanup paths, and the refresh locks and rechecks that exact parent with
-`FOR KEY SHARE` without ever recreating it. `org_members_cache` is a 60-second
-read-through role cache that a concurrent membership read can refill, and the
-Clerk erasure bridge is still unregistered, so this is a local fence rather than
-global deletion finality. Before native state becomes execution authority, that
-lifetime must be replaced with durable membership and erasure ownership.
-
-This historical slice transferred no execution ownership: it consumed no
-occurrence and added no Run, Chat event, email, provider request or credit
-operation. Its full invariants remain in the
-[archived migration contract](https://github.com/okou-ai/okou/blob/9da771dd0928a7a83f81a418ec3a93cc3da17f0d/docs/morning-brief-migration-state.md#the-installed-preference-projection).
-See the [current Official Morning Brief contract](morning-brief.md) for the
-retained functionality.
-
-## Morning Brief bounded Slack collection (#34727)
-
-Migration 1151 adds the empty `morning_brief_collection_occurrences` table, its
-two indexes, its check constraints, and its foreign keys to
-`org_members_metadata(org_id, user_id)` and `agents(id)`. It is purely additive
-and needs no backfill, `LOCK TABLE` or historical scan, so apply it before
-promoting API code. The production scale note below is automation inventory, not
-a cutover census, and nothing existing is materialized by this slice.
-
-Both schema directions are closed, but for different reasons, and the default-off
-switch is only half the story:
-
-- **Old code after migration** never names the new table. Its only readers and
-  writers ship with this change.
-- **New code before migration** reaches the table from two places. The collector
-  itself is registered in the deployed route table but is gated by the
-  development / protected-preview environment check and by the default-off
-  `FeatureSwitchKey.NativeMorningBrief`, so it cannot run in production at all.
-  The cleanup revocation added to membership, user and organization deletion is
-  **unconditional** — it is a `DELETE` that runs whenever those webhooks fire,
-  with no feature check in front of it. A default-off switch does not protect
-  it. The repository's migration-before-promotion ordering is therefore the
-  actual requirement here, not a convenience: promoting the API artifact before
-  migration 1151 has shipped would make Clerk membership, user and organization
-  cleanup fail with `42P01`.
-- A rollback leaves the table in place holding only operational metadata. An
-  older API neither reads nor deletes it; its rows stay fenced by the two
-  foreign keys until a newer artifact returns.
-
-The row's lifetime is durable member ownership rather than an evictable cache.
-`org_members_metadata` is the source of truth for the member's own preferences,
-including the timezone an enabled brief requires; it is deleted by membership,
-user and organization cleanup and is not refilled by a background reader. This
-is deliberately stronger than the `org_members_cache` parent the installed
-preference projection uses, which a concurrent membership read can refill.
-Claiming and finalizing take erasure admission first and then lock and recheck
-that member row with `FOR KEY SHARE`, so a cleanup either waits for the writer
-and cascades its row away or has already committed and leaves nothing to write.
-
-This slice transfers no execution ownership. It starts no Run, makes no LLM,
-credit or usage operation, writes no Chat event, email or outbox row, and leaves
-`next_run_at` and `last_run_at` untouched. The existing Settings, legacy
-automation and native Slack read contracts are unchanged. Durable membership and
-materialization ownership, global deletion readiness, scheduling and cutover
-remain S7 gates; the Clerk erasure bridge is still unregistered, so this is a
-local fence rather than global deletion finality.
-
-Requests already in flight to Slack cannot be retracted. Revocation guarantees
-only that no result of such a request is accepted, persisted or returned after
-the revoking transaction commits. See
-[the collection contract](morning-brief-collection.md) for the source contract,
-lease semantics, finite budgets and declared coverage limits.
-
 ## Marketing browser funnel events
 
 The App sends both onboarding entry and actual Stripe redirect actions to
@@ -9685,94 +9362,6 @@ successful event response is not a provider delivery receipt. This change
 retains existing provider sending gates, adds no provider activation or replay,
 and leaves checkout coverage at the existing `RedirectToStripe` producers,
 excluding previews and other payment paths without that producer.
-
-## Morning Brief collection revocation stamp (#34860)
-
-Migration 1154 adds the nullable `org_members_metadata.morning_brief_collection_revoked_at`
-column. It is additive, has no default and needs no backfill, scan or
-`LOCK TABLE`, so it applies as an ordinary short transaction.
-
-`FOR KEY SHARE` on the member row only orders two transactions; it does not
-outlive either of them. The revocation decision now persists in this column, so
-a claim admitted against an external membership answer resolved before
-revocation still loses after that cleanup commits — including when the cleanup
-found no occurrence to delete, and long before the member row itself is removed.
-
-- **Old code after migration** never reads or writes the column. It stays `NULL`
-  for every member an old artifact touches, which is exactly the unrevoked
-  state, and the older collector keeps its previous behavior.
-- **New code before migration** must not be promoted. Membership, user and
-  organization cleanup write this column **unconditionally**, in the same
-  transaction that already revokes run authority, with no feature check in front
-  of it; the default-off `FeatureSwitchKey.NativeMorningBrief` switch does not protect it.
-  Promoting the API artifact before migration 1154 has shipped would make those
-  Clerk cleanup webhooks fail with `42703`. Claiming and finalizing read the
-  column in the same unconditional statement that locks the member row.
-- **Rollback** leaves stamped rows behind. An older artifact ignores them, so a
-  member whose cleanup was interrupted after revocation simply keeps their
-  pre-existing behavior; the rows themselves are deleted with the member row at
-  the end of each cleanup path. There is no dual-write window and nothing to
-  contract later.
-
-The companion parent-generation check needs no schema of its own: the admission
-carries the member row's existing `created_at`, and the claim requires it to be
-unchanged. Ordinary preference upserts preserve that value, so no deployed
-writer has to change; only a deleted and recreated row reads differently, which
-is exactly the case it refuses. An older artifact simply does not compare it.
-
-This repair changes no route registration, environment gate, feature switch,
-schedule, Run, credit, Chat or email behavior, and it does not activate the
-still-unregistered Clerk erasure bridge. It is a local serialization boundary
-for one owner's collection authority; durable membership and materialization
-ownership and global deletion finality remain S7 gates.
-
-## Morning Brief retained generation authority (#35054)
-
-Migration 1165 generalizes collection occurrences from Slack-only to an exact
-kind-specific binding and adds the all-source generation provenance:
-instruction version/digest, reported language, retained source descriptors and
-deadline, complete installation/automation/destination ids, and
-`content_purged_at`. Its anchor-wide partial unique index prevents another kind
-or contract version from invoking the same logical morning. The replacement
-decision constraint lets an expired successful delivery retain a content-free
-invocation fence. Binding columns stay nullable only for rows written by the
-older Slack-only writer; every all-source reservation writes the complete
-canonical binding. The migration has no backfill, but its index and replacement
-constraints inspect the existing table under the migration wrapper's ordinary
-bounded lock.
-
-The API and migration therefore have these mixed-version rules:
-
-- **Old code after migration** keeps writing null binding columns and a null
-  purge stamp. Those rows still satisfy the expanded constraint and retain the
-  existing Slack authority checks. Old code ignores binding proof written by a
-  newer API.
-- **New code before migration** must not be promoted. Reservation, stored-result
-  revalidation, and expiry sanitation name the new columns directly; without
-  migration 1165 they fail with `42703`. The default-off feature switch and
-  protected preview route contain provider use, but they are not a substitute
-  for the repository's migration-before-API ordering.
-- **New readers of old rows** preserve only the Slack-only contract. A row whose
-  `collection_kind` is `sources` must have retained source proof and complete
-  installation/automation provenance or its content is withheld. A historical
-  non-`sources` row may use its existing live Slack authority gate during the
-  rollback overlap; this compatibility branch can be removed after the old API
-  rollback window closes and the 24-hour result lifetime has elapsed. The
-  generation-time null destination may become the exact thread recorded by its
-  first S6 delivery receipt; only that receipt-first transition is accepted,
-  and any later destination change is withheld.
-- **Rollback after new writes** ignores the additive binding metadata. Content
-  sanitation starts only at the row's existing `expires_at`, when the old
-  generation contract already refuses the result. The row remains solely as a
-  cross-kind/version invocation fence through the seven-day anchor admission
-  window, and the separate immutable email outbox retains any already committed
-  email body.
-
-Retained descriptors identify every source that supplied model input, including
-uncited material, and survive only through the original result or email
-obligation deadline. They contain no source body, prompt, instruction text, or
-credential. Platform usage receipts remain anonymous and are neither purged nor
-reattributed to a user or organization.
 
 ## Marketing attribution cutover (#33886)
 
@@ -10206,32 +9795,3 @@ existing new template to an old reader. Feature switches are user-overridable
 rollout controls, so operational readiness must precede any enablement.
 Membership/user/organization cleanup removes these receipts and their outbox
 content. In-flight provider calls cannot be recalled.
-
-### Explicit Morning Brief notification purpose
-
-`kind` is an optional mail request field with a permanent `notification` default.
-`morning-brief` requires a server-owned official source automation and accepted
-run provenance; it writes the new `agent-morning-brief` outbox template with a
-server-derived Manage URL. It reuses the original Official result-email
-renderer. Existing `agent-notification` and `official-automation-result` payloads
-and receipt responses are unchanged; no database migration is needed.
-
-- **Old CLI / new API:** omitted kind remains an ordinary notification with
-  identical default idempotency encoding and presentation.
-- **New CLI / old API:** old strict request readers reject the new kind field.
-  Report the error; never retry without the purpose or through another transport.
-- **New producer / old drainer:** unsupported for `agent-morning-brief`. Deploy
-  every drainer reader before releasing the CLI or enabling new production.
-  The feature remains behind default-off `notifyMail`; no dual reader or
-  staff-shape migration is added.
-- **Pending intent / retry:** the outbox captures its resolved template and
-  management URL. The existing committed provider request/key is replayed
-  unchanged, even after the source changes or disappears.
-- **Rollback:** stop new production and drain the new template with compatible
-  workers before restoring an API/drainer that cannot read it.
-
-Morning Brief retains `resultEmail: true` and its existing accepted callback
-snapshots throughout stage one. The later Official revision must change the
-instructions and `resultEmail` together, update Morning Brief readiness checks,
-and let old runs complete their accepted delivery contract. See
-[agent mail notifications](agent-mail-notifications.md) for acceptance gates.

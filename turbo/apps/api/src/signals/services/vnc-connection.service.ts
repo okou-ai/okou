@@ -396,6 +396,7 @@ export const createVncConnection$ = command(
     }
     const { host, security, transport, preparedCredential } = prepared.value;
     const transaction = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0315; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const owner = args.owner;
         const [existing] = await tx
@@ -658,6 +659,7 @@ export const updateVncConnection$ = command(
     }
     const { host, security, preparedCredential } = prepared.value;
     const written = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0316; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const owner = args.owner;
         const [current] = await tx

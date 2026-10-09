@@ -97,17 +97,22 @@ export const loadDiscordChatRouteAccess$ = command(
     // The bot DM channel is shared by every org and DM session of this Discord
     // user, so its history never reaches a run, including context persisted
     // before DM ingress stopped reading it.
+    let messageContentEnabled = sourceAccess.messageContentEnabled;
     let conversationContextAllowed =
-      sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
+      sourceAccess.channel.type !== 1 && messageContentEnabled;
     if (args.hasConversationContext && conversationContextAllowed) {
+      const historyAccess = await set(
+        loadCurrentConversationAccess$,
+        args,
+        args.sourceChannelId,
+        "read",
+        signal,
+      );
+      if (historyAccess) {
+        messageContentEnabled = historyAccess.messageContentEnabled;
+      }
       conversationContextAllowed =
-        (await set(
-          loadCurrentConversationAccess$,
-          args,
-          args.sourceChannelId,
-          "read",
-          signal,
-        )) !== null;
+        historyAccess !== null && messageContentEnabled;
     }
     const access = await set(
       loadCurrentConversationAccess$,
@@ -119,6 +124,11 @@ export const loadDiscordChatRouteAccess$ = command(
     if (!access) {
       return null;
     }
-    return { ...access, routeId: route.id, conversationContextAllowed };
+    return {
+      ...access,
+      routeId: route.id,
+      conversationContextAllowed,
+      messageContentEnabled,
+    };
   },
 );

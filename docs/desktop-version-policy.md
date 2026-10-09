@@ -9,17 +9,23 @@ Normal Desktop releases do not raise the floor. This global policy must not be
 a per-user Lab override: an unsupported host cannot opt out of admission.
 Implementation and activation are tracked by [#38098](https://github.com/okou-ai/okou/issues/38098).
 
-The initial configuration remains:
+The configured policy is:
 
 ```json
 {
-  "minimumSupportedVersion": null
+  "minimumSupportedVersion": "0.51.0"
 }
 ```
 
 No CI, GitHub Environment, or Vercel variable sets the floor. The public policy
 endpoint, host admission, and Sparkle critical-update metadata read the same
 source-controlled configuration.
+
+The `0.51.0` floor takes effect when an API release containing this configuration
+is deployed. Merging the activation PR does not change a serving older API's
+policy. The native `0.52.0` replacement is already published; Electron/Squirrel
+and Native/Sparkle feeds both offer that version. Raising this floor does not
+retire the legacy protocol's completion/stop routes or its storage.
 
 ## Admission and draining
 

@@ -842,6 +842,7 @@ async function createExternalCodeSession(
   },
   signal: AbortSignal,
 ) {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0083; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     // The connector_state lock taken by resolveConnectorConnectionMutation
     // serializes session creation for this owner and connector.

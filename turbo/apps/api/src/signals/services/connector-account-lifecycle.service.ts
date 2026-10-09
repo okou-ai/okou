@@ -937,6 +937,7 @@ export const renameConnectorAccount$ = command(
       readonly displayName: string | null;
     },
   ): Promise<Date | null> => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0110; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       if (args.target.kind === "custom") {
         const [definition] = await tx
@@ -1076,6 +1077,7 @@ export const setDefaultGoogleFormsAccount$ = command(
   ): Promise<Date | "conflict" | null> => {
     const db = set(writeDb$);
     return await settleDefaultChange(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0111; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const owner = connectorAccountOwnerCondition({
           orgId: args.orgId,
@@ -1127,6 +1129,7 @@ export const setDefaultConnectorAccount$ = command(
     };
     const db = set(writeDb$);
     return await settleDefaultChange(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0112; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         if (
           args.target.kind === "custom" &&

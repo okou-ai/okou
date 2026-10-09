@@ -667,6 +667,7 @@ async function handleDisconnectCommand(
   args: ConnectedCommandArgs,
   signal: AbortSignal,
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0164; new non-billing transactions are prohibited.
   await args.db.transaction(async (tx) => {
     await disconnectFeishuCustomConnectorOAuthConnection(
       tx,

@@ -25,8 +25,7 @@ import { workflowUserAutomationThreadOwnerCondition } from "./workflow-user-auto
  *
  * Settings reads the selected Official installation, its current automation
  * and its canonical thread binding here. This is a read-only functional view,
- * not a Native migration executor. Its ownership and state rules are described
- * in [the Morning Brief contract](../../../../../../docs/morning-brief.md).
+ * not a Native migration executor.
  */
 
 interface MorningBriefInstallation {

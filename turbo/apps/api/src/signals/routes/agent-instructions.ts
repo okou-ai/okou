@@ -150,6 +150,7 @@ const publishPreparedAgentInstructions$ = command(
     const reservation = args.reservation;
     const volume = args.volume;
     const writeDb = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0007; new non-billing transactions are prohibited.
     const result = await writeDb.transaction(async (tx) => {
       const current = (
         await tx
@@ -298,6 +299,7 @@ const reserveAgentInstructionPublication$ = command(
   ) => {
     const writeDb = set(writeDb$);
     let reservedFence: StoragePublicationFence | undefined;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0008; new non-billing transactions are prohibited.
     const reservation = writeDb.transaction(async (tx) => {
       const current = (
         await tx
@@ -423,6 +425,7 @@ const settleInstructionPublication$ = command(
     const db = set(writeDb$);
     // Deliberately outlive request cancellation; await exact-token settlement.
     // Scope ownership and exact-token removal commit together in reservation order.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0009; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await tx.execute(lockPublicationScopeSql(fence.scope, nowDate()));
       await tx.execute(completePublicationSql(fence));

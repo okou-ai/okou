@@ -323,6 +323,7 @@ const sendAgentPhoneVerificationText$ = command(
     },
     signal: AbortSignal,
   ) => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0019; new non-billing transactions are prohibited.
     const sendResult = await set(writeDb$).transaction(async (tx) => {
       const sentAt = new Date(now());
       const cooldownCutoff = sentAt.getTime() - VERIFICATION_SEND_COOLDOWN_MS;

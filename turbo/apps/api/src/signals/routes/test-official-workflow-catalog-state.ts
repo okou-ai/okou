@@ -122,6 +122,7 @@ const seedPreviousSchemaRelease$ = command(
         },
       ],
     });
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0033; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await tx.insert(storages).values({
         id: storageId,

@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.221.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.221.4...runner-rs-v0.221.5) (2026-10-09)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.221.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.221.3...runner-rs-v0.221.4) (2026-10-09)
+
+
+### Bug Fixes
+
+* **python:** bound request capture zlib member traversal ([#38343](https://github.com/okou-ai/okou/issues/38343)) ([ae3a5bf](https://github.com/okou-ai/okou/commit/ae3a5bffc597a34537945a0cc301ed9f303f1cd9))
+* **runner:** accept scheme-relative firewall auth proxies ([#38355](https://github.com/okou-ai/okou/issues/38355)) ([139db6b](https://github.com/okou-ai/okou/commit/139db6bed5cd08fe1bbe31677226eaa1c9a9960a))
+* **runner:** reject uninspectable responses before diagnostics ([#38352](https://github.com/okou-ai/okou/issues/38352)) ([2a41db0](https://github.com/okou-ai/okou/commit/2a41db0dcba3c3f4be50e6ea61e03104caebb563))
+
+
+### Refactoring
+
+* **python:** retire firewall api-id base fallback ([#38344](https://github.com/okou-ai/okou/issues/38344)) ([ad4790d](https://github.com/okou-ai/okou/commit/ad4790d632163c7897d733e5912563071880003f))
+
+
+### Performance Improvements
+
+* **runner:** reuse failed registry snapshots after catalog retries ([#38357](https://github.com/okou-ai/okou/issues/38357)) ([4e15b3d](https://github.com/okou-ai/okou/commit/4e15b3d7e246de83025a2c64663a2ea6a1748bf4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.221.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.221.2...runner-rs-v0.221.3) (2026-10-09)
 
 ### Release Dependencies

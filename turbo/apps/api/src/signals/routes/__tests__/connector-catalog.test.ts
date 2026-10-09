@@ -14,7 +14,7 @@ import { afterEach, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
+import { now, withMockNowForTest } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
   deleteOrgMembership$,
@@ -27,6 +27,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
+  mockStripeCliDashboardAuth,
 } from "./helpers/api-bdd-connectors";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { featureSwitchesRoutes } from "../feature-switches";
@@ -795,75 +796,78 @@ describe("GET /api/connector-catalog", () => {
 
   it("returns reconnect-required status for expired non-refreshable connectors", async () => {
     const actor = bdd.user();
-    mockGitHubConnectorOAuth();
-    server.use(
-      http.post("https://github.com/login/oauth/access_token", () => {
-        return HttpResponse.json({
-          access_token: "expired-github-access-token",
-          scope: "",
-          expires_in: -60,
-        });
-      }),
-    );
+    mockStripeCliDashboardAuth();
     const kmsKey = env("SECRETS_KMS_KEY_ID");
     onTestFinished(async () => {
       mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
       for (const account of await connectorsApi.listBuiltinConnectorAccounts(
         actor,
-        "github",
+        "stripe",
       )) {
         await connectorsApi.deleteBuiltinConnectorAccount(
           actor,
-          "github",
+          "stripe",
           account.id,
         );
       }
     });
-    const started = await connectorsApi.requestOauthStart(
-      actor,
-      "github",
-      "oauth",
-      { statuses: [200] },
-    );
-    if (started.status !== 200) {
-      throw new Error("Expected OAuth authorization");
-    }
-    const completed = await connectorsApi.completeOauthCallbackResult(
-      "github",
-      {
-        code: `github-${randomUUID()}`,
-        state: stateFromAuthorizationUrl(started.body.authorizationUrl),
+    const startedAt = now();
+    const session = await withMockNowForTest(startedAt, async () => {
+      return await connectorsApi.startDeviceAuth(actor, "stripe", "cli", {
+        mode: "live",
+      });
+    });
+    const completed = await withMockNowForTest(
+      startedAt + session.interval * 1000 + 1,
+      async () => {
+        return await connectorsApi.pollDeviceAuth(
+          actor,
+          "stripe",
+          session.sessionId,
+          session.sessionToken,
+        );
       },
     );
-    expect(completed.body.status).toBe("success");
+    expect(completed.status).toBe("complete");
+    if (completed.status !== "complete") {
+      throw new Error("Expected successful Stripe CLI device authorization");
+    }
+    expect(completed.connector.connectionStatus).toBe("connected");
+    expect(completed.connector.tokenExpiresAt).toStrictEqual(
+      expect.any(String),
+    );
+    const expiresAt = Date.parse(completed.connector.tokenExpiresAt ?? "");
+    expect(expiresAt).toBeGreaterThan(startedAt);
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.status({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
+    await withMockNowForTest(expiresAt + 1, async () => {
+      const client = setupApp({ context, routes: connectorCatalogRoutes })(
+        connectorCatalogContract,
+      );
+      const response = await accept(
+        client.status({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
 
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    const github = response.body.connectors.find((connector) => {
-      return connector.slug === "github";
+      assertPublicConnectorCatalogHasNoPrivateFields(response.body);
+      const stripe = response.body.connectors.find((connector) => {
+        return connector.slug === "stripe";
+      });
+      expect(stripe).toMatchObject({
+        slug: "stripe",
+        connected: true,
+        connectionStatus: "reconnect-required",
+        scopeMismatch: false,
+        authMethodSupportsRefresh: false,
+      });
+      expect(stripe?.connection).toMatchObject({
+        authMethod: "cli",
+        reconnectReason: "credential_expired",
+      });
+      expect(stripe?.tokenExpiresAt).toBe(completed.connector.tokenExpiresAt);
+      expect(Date.parse(stripe?.tokenExpiresAt ?? "")).toBeLessThan(now());
+      expect(stripe?.connection).not.toHaveProperty("oauthScopes");
     });
-    expect(github).toMatchObject({
-      slug: "github",
-      connected: true,
-      connectionStatus: "reconnect-required",
-      scopeMismatch: false,
-      authMethodSupportsRefresh: false,
-    });
-    expect(github?.connection).toMatchObject({
-      authMethod: "oauth",
-      reconnectReason: "credential_expired",
-    });
-    expect(github?.tokenExpiresAt).toStrictEqual(expect.any(String));
-    expect(Date.parse(github?.tokenExpiresAt ?? "")).toBeLessThan(now());
-    expect(github?.connection).not.toHaveProperty("oauthScopes");
   });
 
   it("returns connector detail without leaking manual field storage names", async () => {

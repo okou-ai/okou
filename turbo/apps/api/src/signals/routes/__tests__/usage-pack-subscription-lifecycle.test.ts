@@ -5,6 +5,7 @@ import {
   billingStatusContract,
   billingUsagePackCheckoutContract,
   billingUsagePackCreditsContract,
+  type UsagePackCreditsResponse,
 } from "@okouai/api-contracts/contracts/billing";
 import type StripeSDK from "stripe";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -1748,9 +1749,33 @@ describe("usage pack subscription Stripe lifecycle", () => {
       expect.arrayContaining(before.body.creditGrants),
     );
 
+    function creditSnapshot(credits: UsagePackCreditsResponse) {
+      // Equal-timestamp grant ordering is not part of the API contract.
+      return {
+        ...credits,
+        creditGrants: [...credits.creditGrants].sort((a, b) => {
+          return a.id.localeCompare(b.id);
+        }),
+        ...(credits.memberCredits
+          ? {
+              memberCredits: credits.memberCredits.map((member) => {
+                return {
+                  ...member,
+                  creditGrants: [...member.creditGrants].sort((a, b) => {
+                    return a.id.localeCompare(b.id);
+                  }),
+                };
+              }),
+            }
+          : {}),
+      };
+    }
+
     await postStripeEvent(stripeEvent("invoice.paid", invoice), 200);
     const replayed = await accept(creditsClient.get({ headers }), [200]);
-    expect(replayed.body).toStrictEqual(after.body);
+    expect(creditSnapshot(replayed.body)).toStrictEqual(
+      creditSnapshot(after.body),
+    );
   });
 
   it.each([0, 5000])(

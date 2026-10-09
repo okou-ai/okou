@@ -66,6 +66,9 @@ export function testContext(): TestContext {
   };
 
   beforeEach(() => {
+    // General route fixtures model the disabled compatibility window. Policy
+    // tests explicitly select the shipped or activated floor through this input.
+    desktopCompatibility.minimumSupportedVersion = null;
     const closeDatabase = beginCaseDatabase();
     // Vitest runs finished callbacks in reverse registration order. Register
     // first so case-owned API cleanup finishes before the database is closed.

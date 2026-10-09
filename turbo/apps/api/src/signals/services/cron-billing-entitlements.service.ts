@@ -711,6 +711,7 @@ async function reconcileCanceledBillingCandidate(
   signal: AbortSignal,
 ): Promise<DowngradedSubscription[]> {
   const { db, now } = context;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0123; new non-billing transactions are prohibited.
   const rows = await db.transaction(async (tx) => {
     return await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {
@@ -761,6 +762,7 @@ async function refreshRecoveredBillingCandidate(
     ? (tierForKnownPlanPrice(planItem.price) ?? undefined)
     : undefined;
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0124; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {
@@ -801,6 +803,7 @@ async function refreshPaymentFailedPaidThroughCandidate(
   signal: AbortSignal,
 ): Promise<void> {
   const { db } = context;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0125; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {
@@ -838,6 +841,7 @@ async function downgradePaymentFailedBillingCandidate(
   signal: AbortSignal,
 ): Promise<DowngradedSubscription[]> {
   const { db } = context;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0126; new non-billing transactions are prohibited.
   const rows = await db.transaction(async (tx) => {
     return await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {
@@ -1000,6 +1004,7 @@ async function reconcileAtomGrantCandidate(
   signal: AbortSignal,
 ): Promise<DowngradedSubscription[]> {
   const { db, now } = context;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0127; new non-billing transactions are prohibited.
   const rows = await db.transaction(async (tx) => {
     return await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {

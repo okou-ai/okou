@@ -9,6 +9,8 @@ import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -21,7 +23,12 @@ import {
 } from "../../../lib/secret-kms-client";
 import { now } from "../../../lib/time";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { automaticMcpCatalogFixture } from "./helpers/connector-automatic-catalog";
+import { createRouteMocks } from "./helpers/route-test";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -136,11 +143,15 @@ async function connectCodexAccount(
   owned.add(id);
 }
 
-async function firewallRun(): Promise<{
-  readonly actor: ApiTestUser;
-  readonly runId: string;
-  readonly headers: { readonly authorization: string };
-}> {
+async function firewallRun(
+  options: {
+    readonly prepareAgent?: (
+      actor: ApiTestUser,
+      agentId: string,
+    ) => Promise<void>;
+    readonly additionalConnectorSlugs?: readonly ConnectorSlug[];
+  } = {},
+) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
@@ -161,15 +172,20 @@ async function firewallRun(): Promise<{
         await support.deletePersonalModelProviderAccount(actor, id);
       }
       const connectors = createConnectorBddApi(context);
-      for (const account of await connectors.listBuiltinConnectorAccounts(
-        actor,
+      for (const slug of [
         "test-oauth",
-      )) {
-        await connectors.deleteBuiltinConnectorAccount(
+        ...(options.additionalConnectorSlugs ?? []),
+      ]) {
+        for (const account of await connectors.listBuiltinConnectorAccounts(
           actor,
-          "test-oauth",
-          account.id,
-        );
+          slug,
+        )) {
+          await connectors.deleteBuiltinConnectorAccount(
+            actor,
+            slug,
+            account.id,
+          );
+        }
       }
       codexAccounts.receipts.delete(actor.userId);
       codexAccounts.owned.delete(actor.userId);
@@ -187,6 +203,7 @@ async function firewallRun(): Promise<{
       visibility: "private",
     });
     agents.push(agent.agentId);
+    await options.prepareAgent?.(actor, agent.agentId);
     const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       model: "claude-fable-5-1",
@@ -197,6 +214,7 @@ async function firewallRun(): Promise<{
     return {
       actor,
       runId: run.runId,
+      claim,
       headers: { authorization: `Bearer ${claim.sandboxToken}` },
     };
   });
@@ -1561,7 +1579,115 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   it("maintains authoritative and unknown OAuth grants across refresh", async () => {
     const fw = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
-    const { actor, headers } = await firewallRun();
+    const catalog = automaticMcpCatalogFixture("oauth");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "oauth",
+      initialExpiresIn: 3600,
+    });
+    const automaticTokenRequests: URLSearchParams[] = [];
+    server.use(
+      http.post(`${provider.issuer}/token`, async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        automaticTokenRequests.push(body);
+        return HttpResponse.json({
+          access_token:
+            body.get("grant_type") === "refresh_token"
+              ? "automatic-refreshed-access-token"
+              : "automatic-initial-access-token",
+          refresh_token: "automatic-refresh-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+        });
+      }),
+    );
+    let automaticConnectionId: string | undefined;
+    const { actor, headers, claim } = await firewallRun({
+      additionalConnectorSlugs: [catalog.slug],
+      prepareAgent: async (owner, agentId) => {
+        mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+        mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+        mockEnv("APP_URL", "https://app.okou.ai");
+        createRouteMocks(context).clerk.session(
+          owner.userId,
+          owner.orgId,
+          owner.orgRole,
+        );
+        const userHeaders = { authorization: "Bearer clerk-session" };
+        const automatic = setupApp({
+          context,
+          routes: builtinConnectorsAutomaticRoutes,
+        })(builtinConnectorAutomaticContract);
+        const started = await accept(
+          automatic.start({
+            headers: userHeaders,
+            params: { connectorSlug: catalog.slug },
+            body: {
+              authMethod: catalog.methodId,
+              account: { intent: "add" },
+              agentId,
+              authorizeAgent: true,
+            },
+          }),
+          [200],
+        );
+        if (started.body.result !== "authorization") {
+          throw new Error("Expected Automatic OAuth authorization redirect");
+        }
+        const state = new URL(started.body.authorizationUrl).searchParams.get(
+          "state",
+        );
+        if (!state) {
+          throw new Error("Expected issued Automatic OAuth state");
+        }
+        const completed = await accept(
+          automatic.callback({
+            query: {
+              state,
+              code: "unknown-grant-code",
+              iss: provider.issuer,
+              responseMode: "json",
+            },
+          }),
+          [200],
+        );
+        expect(completed.body.status).toBe("success");
+        const receipt = await accept(
+          setupApp({ context, routes: connectorAccountRoutes })(
+            connectorAccountsContract,
+          ).oauthCompletion({
+            headers: userHeaders,
+            params: { attemptId: started.body.oauthAttemptId },
+            query: { kind: "builtin", connectorSlug: catalog.slug },
+          }),
+          [200],
+        );
+        automaticConnectionId = receipt.body.connectionId;
+        expect(
+          (await connectors.readConnectorBySlug(owner, catalog.slug))
+            .oauthScopes,
+        ).toBeNull();
+      },
+    });
+    if (!automaticConnectionId || !claim.encryptedSecrets) {
+      throw new Error(
+        "Expected the connected account and actual claimed Runner credentials",
+      );
+    }
+    expect(claim.connectorRuntimeTargets).toContainEqual(
+      expect.objectContaining({
+        kind: "builtin",
+        connectorSlug: catalog.slug,
+        sourceId: automaticConnectionId,
+      }),
+    );
+    expect(claim.firewalls).toContainEqual(
+      expect.objectContaining({
+        kind: "builtin",
+        name: catalog.slug,
+        sourceId: automaticConnectionId,
+      }),
+    );
     if (!actor.orgId) {
       throw new Error("Expected firewall actor to have an organization");
     }
@@ -1649,50 +1775,35 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     );
     expect(preservedConnector.oauthScopes).toStrictEqual(["provider-added"]);
 
-    mockTestOAuthAuthCodeProvider({
-      accessToken: "unknown-scoped-access",
-      refreshToken: "unknown-scoped-refresh",
-      scope: null,
-    });
-    const reconnect = await connectors.requestOauthStart(
-      actor,
-      "test-oauth",
-      "oauth",
+    const unknownGrantRefresh = await fw.requestFirewallAuth(
+      headers,
       {
-        statuses: [200],
-        account: { intent: "reconnect", connectionId: connected.id },
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: catalog.firewallAuthHeaders,
+        matchedFirewall: {
+          name: catalog.slug,
+          apiId: `${catalog.slug}:0`,
+          base: catalog.endpoint,
+          connectorSlug: catalog.slug,
+          sourceId: automaticConnectionId,
+          routingVariables: {},
+        },
+        forceRefresh: true,
       },
+      [200],
     );
-    if (reconnect.status !== 200) {
-      throw new Error("Expected real OAuth reconnect");
-    }
-    const reconnectState = new URL(
-      reconnect.body.authorizationUrl,
-    ).searchParams.get("state");
-    if (!reconnectState) {
-      throw new Error("Expected issued reconnect state");
-    }
-    const reconnected = await connectors.completeOauthCallbackResult(
-      "test-oauth",
-      { state: reconnectState, code: "unknown-grant-reconnect" },
-    );
-    expect(reconnected.body.status).toBe("success");
-    expect(
-      (await connectors.readConnectorBySlug(actor, "test-oauth")).oauthScopes,
-    ).toBeNull();
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "legacy-unknown-access",
-        refreshToken: "legacy-unknown-refresh",
-        expiresIn: 3600,
-      });
+    expect(unknownGrantRefresh.body).toMatchObject({
+      headers: { Authorization: "Bearer automatic-refreshed-access-token" },
+      refreshedConnectors: [],
     });
-    await forceRefresh("unknown-scoped-access");
-    const legacyUnknownConnector = await connectors.readConnectorBySlug(
-      actor,
-      "test-oauth",
-    );
-    expect(legacyUnknownConnector.oauthScopes).toBeNull();
+    expect(
+      automaticTokenRequests.map((body) => {
+        return body.get("grant_type");
+      }),
+    ).toStrictEqual(["authorization_code", "refresh_token"]);
+    expect(
+      (await connectors.readConnectorBySlug(actor, catalog.slug)).oauthScopes,
+    ).toBeNull();
   });
 
   it("resolves a current connector token missing from the runtime namespace", async () => {

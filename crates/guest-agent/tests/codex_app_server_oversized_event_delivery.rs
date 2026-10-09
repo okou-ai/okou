@@ -459,11 +459,53 @@ fn collaboration_item(item_id: &str, child_count: usize, repetitions: usize) -> 
         serde_json::json!({"status": "completed", "message": ""}),
     );
     let receivers = states.keys().collect::<Vec<_>>();
-    serde_json::json!({
-        "id": item_id, "type": "collabAgentToolCall", "tool": "wait", "status": "completed",
-        "senderThreadId": "parent", "receiverThreadIds": receivers,
-        "prompt": null, "model": null, "reasoningEffort": null, "agentsStates": states,
-    })
+    Value::Object(serde_json::Map::from_iter([
+        ("id".into(), item_id.into()),
+        ("type".into(), "collabAgentToolCall".into()),
+        ("tool".into(), "wait".into()),
+        ("status".into(), "completed".into()),
+        ("senderThreadId".into(), "parent".into()),
+        ("receiverThreadIds".into(), serde_json::json!(receivers)),
+        ("prompt".into(), Value::Null),
+        ("model".into(), Value::Null),
+        ("reasoningEffort".into(), Value::Null),
+        ("agentsStates".into(), Value::Object(states)),
+    ]))
+}
+
+#[test]
+fn owned_codex_collaboration_fixture_preserves_canonical_bytes() {
+    for (child_count, repetitions) in [(0, 0), (1, 2), (11, 3)] {
+        let message = format!(
+            "child-head-{SECRET}-{}-child-tail",
+            "α\"\\\n".repeat(repetitions)
+        );
+        let mut states = serde_json::Map::new();
+        for index in 0..child_count {
+            states.insert(
+                format!("child-{index:02}"),
+                serde_json::json!({"status":"errored", "message":message}),
+            );
+        }
+        states.insert(
+            "null-child".into(),
+            serde_json::json!({"status":"running", "message":null}),
+        );
+        states.insert(
+            "empty-child".into(),
+            serde_json::json!({"status":"completed", "message":""}),
+        );
+        let receivers = states.keys().collect::<Vec<_>>();
+        let expected = serde_json::json!({
+            "id":"fixture", "type":"collabAgentToolCall", "tool":"wait", "status":"completed",
+            "senderThreadId":"parent", "receiverThreadIds":receivers,
+            "prompt":null, "model":null, "reasoningEffort":null, "agentsStates":states,
+        });
+        assert_eq!(
+            collaboration_item("fixture", child_count, repetitions).to_string(),
+            expected.to_string()
+        );
+    }
 }
 
 fn delivered_item<'a>(events: &'a [Value], item_id: &str) -> Result<&'a Value, String> {

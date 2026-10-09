@@ -364,6 +364,7 @@ async function seedUsagePackState(
   // This fixture intentionally models rows predating admission serialization;
   // current setup writes use the same explicit boundary as product writers.
   if (body.preSerializationCutover === true) {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0036; new non-billing transactions are prohibited.
     return await db.transaction(seed);
   }
   return await writeUsagePackPendingSnapshots(db, [body.orgId], seed);
@@ -374,6 +375,7 @@ async function seedLegacyMigrationState(
   body: SeedLegacyMigrationAction,
   signal: AbortSignal,
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0037; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const currentPeriodEnd = new Date(body.currentPeriodEnd);
     const orgRows = await tx

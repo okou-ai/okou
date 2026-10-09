@@ -30,7 +30,10 @@ import {
   privateArtifactsBucket,
 } from "./private-artifact-storage.service";
 
-function previewId(deploymentId: string, preview: HostedSitePreview): string {
+export function hostedPreviewArtifactId(
+  deploymentId: string,
+  preview: HostedSitePreview,
+): string {
   return uuidv5(
     `${deploymentId}:sandbox-preview:${preview.sha256}`,
     uuidv5.URL,
@@ -38,7 +41,7 @@ function previewId(deploymentId: string, preview: HostedSitePreview): string {
 }
 
 function uploadKey(deploymentId: string, preview: HostedSitePreview): string {
-  return `private-artifacts/${previewId(deploymentId, preview)}/upload`;
+  return `private-artifacts/${hostedPreviewArtifactId(deploymentId, preview)}/upload`;
 }
 
 export const prepareHostedPreview$ = command(
@@ -161,7 +164,7 @@ export const completeHostedPreview$ = command(
     if (!isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, features)) {
       return { status: "skipped" };
     }
-    const id = previewId(args.deploymentId, args.preview);
+    const id = hostedPreviewArtifactId(args.deploymentId, args.preview);
     const existing = await set(privateArtifactRecord$, id, signal);
     signal.throwIfAborted();
     if (existing?.materializationStatus === "ready") {

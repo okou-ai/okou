@@ -415,6 +415,7 @@ async function projectThread(
   db: Db,
   thread: CandidateThread,
 ): Promise<ThreadProjectionStats> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0130; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const projectionThread = await loadProjectionThread(
       tx,
@@ -452,6 +453,7 @@ async function projectThread(
  * the next cron tick will select it again.
  */
 async function cleanupOrphanedSearchProjection(db: Db): Promise<number> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0131; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const orphanedWatermarks = await tx
       .select({ chatThreadId: chatEventSearchMessageWatermarks.chatThreadId })

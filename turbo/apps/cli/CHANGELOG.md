@@ -1,5 +1,32 @@
 # Changelog
 
+## [9.382.1](https://github.com/okou-ai/okou/compare/cli-v9.382.0...cli-v9.382.1) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.545.1
+    * @okouai/core bumped to 8.738.1
+    * @okouai/pi-agent-runtime bumped to 1.48.3
+
+## [9.382.0](https://github.com/okou-ai/okou/compare/cli-v9.381.1...cli-v9.382.0) (2026-10-09)
+
+
+### Features
+
+* add sandbox covers for hosted artifacts ([#38149](https://github.com/okou-ai/okou/issues/38149)) ([f4a3140](https://github.com/okou-ai/okou/commit/f4a3140275a8c3334135080ed2427e837bc9fc89))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.545.0
+    * @okouai/core bumped to 8.738.0
+    * @okouai/pi-agent-runtime bumped to 1.48.2
+
 ## [9.381.1](https://github.com/okou-ai/okou/compare/cli-v9.381.0...cli-v9.381.1) (2026-10-09)
 
 

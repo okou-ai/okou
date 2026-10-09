@@ -29,27 +29,35 @@ Discord actually requires sharding (at 2,500 guilds) it closes the connection
 with `4011`, a fatal close that stops the relay until a multi-shard Identify
 coordinator exists.
 
-| Variable                          | Checked-in value or role                                                                 |
-| --------------------------------- | ---------------------------------------------------------------------------------------- |
-| `DISCORD_GATEWAY_ENABLED`         | `false` in every environment; deployment also forces `false`                             |
-| `DISCORD_GATEWAY_ENVIRONMENT`     | `test` or `production`                                                                   |
-| `DISCORD_GATEWAY_SHARD_ID`        | `0`                                                                                      |
-| `DISCORD_GATEWAY_SHARD_COUNT`     | `1`; multiple shards are rejected until a shared Identify-budget coordinator exists      |
-| `DISCORD_GATEWAY_MESSAGE_CONTENT` | `false`; enabling the privileged intent needs Discord application approval/configuration |
-| `DISCORD_APPLICATION_ID`          | Exact Discord application snowflake                                                      |
-| `DISCORD_BOT_TOKEN`               | Application-level bot credential                                                         |
-| `DISCORD_GATEWAY_SECRET`          | At least 32 characters; shared with the canonical API for HMAC-SHA256                    |
-| `DISCORD_GATEWAY_CONTROL_SECRET`  | Separate random credential of at least 32 characters for administrative HTTP operations  |
-| `DISCORD_API_ORIGIN`              | Explicit HTTPS API origin, without credentials, path, query or trailing slash            |
+| Variable                         | Checked-in value or role                                                                |
+| -------------------------------- | --------------------------------------------------------------------------------------- |
+| `DISCORD_GATEWAY_ENABLED`        | `false` in every environment; deployment also forces `false`                            |
+| `DISCORD_GATEWAY_ENVIRONMENT`    | `test` or `production`                                                                  |
+| `DISCORD_GATEWAY_SHARD_ID`       | `0`                                                                                     |
+| `DISCORD_GATEWAY_SHARD_COUNT`    | `1`; multiple shards are rejected until a shared Identify-budget coordinator exists     |
+| `DISCORD_APPLICATION_ID`         | Exact Discord application snowflake                                                     |
+| `DISCORD_BOT_TOKEN`              | Application-level bot credential                                                        |
+| `DISCORD_GATEWAY_SECRET`         | At least 32 characters; shared with the canonical API for HMAC-SHA256                   |
+| `DISCORD_GATEWAY_CONTROL_SECRET` | Separate random credential of at least 32 characters for administrative HTTP operations |
+| `DISCORD_API_ORIGIN`             | Explicit HTTPS API origin, without credentials, path, query or trailing slash           |
 
 The five application/origin/secret values are supplied as encrypted Worker
 bindings. Never store them in `wrangler.jsonc`, checked-in environment files,
 issues or logs. Bot, signing and control credentials must all be distinct.
 The API must have the matching application ID and signing secret before any
 Gateway activation. The control secret belongs only to this Worker and its
-authorized operators. Keep the API's `DISCORD_MESSAGE_CONTENT_ENABLED=false`
-aligned with the relay's `DISCORD_GATEWAY_MESSAGE_CONTENT=false`; change both
-together only after the Discord application has the necessary intent enabled.
+authorized operators.
+
+Before each new Identify, the relay reads `GET /applications/@me` with the bot
+credential, verifies the application ID, and requests `MESSAGE_CONTENT` only
+when Discord's `GATEWAY_MESSAGE_CONTENT` or `GATEWAY_MESSAGE_CONTENT_LIMITED`
+application flag grants it. The API reads the same metadata for guild context;
+there are no message-content environment switches to keep synchronized. Enable
+or obtain approval for the privileged intent in the Discord Developer Portal.
+Metadata failures never cause an unverified Identify; authentication failures
+halt, and rate limits/transient failures use the existing discovery recovery.
+Resuming an existing session retains that session's intents; a Portal change
+applies to Gateway events on the next Identify, not by enabling the relay.
 
 ## Supported deployment and secret provisioning
 

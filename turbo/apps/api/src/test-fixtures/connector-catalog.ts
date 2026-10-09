@@ -83,6 +83,7 @@ async function publishFixtureGeneration<
   readonly hash: string;
   readonly ifAbsent: boolean;
 }): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0350; new non-billing transactions are prohibited.
   await args.database.transaction(async (tx) => {
     // The same entries-then-pointer order as the production writer.
     await tx

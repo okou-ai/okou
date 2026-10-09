@@ -398,8 +398,8 @@ Actual fresh/restored KVM boot and packaged-helper execution have separate
 metal-host CI coverage.
 
 The `guest-rpc-firecracker-test` CI job runs the native `guest_rpc` integration
-test against the matching runner-build rootfs and snapshot. It covers a generic
-echo result, an unknown-method rejection, response EOF, and park/reassignment in
+test against the matching rootfs and snapshot supplied by `runner-test-prepare`.
+It covers a generic echo result, an unknown-method rejection, response EOF, and park/reassignment in
 both fresh and snapshot-restored guests. Its test-only consumer does not enable
 methods in local/PAT Runners or establish SSH authorization. Unix parser/helper
 and actual Runner dispatcher tests separately protect bounds, corruption handling

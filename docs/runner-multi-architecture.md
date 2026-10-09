@@ -342,18 +342,20 @@ actual host resolve the host subset inside the job instead of reading hosts from
 the matrix.
 
 Crates plans image validation with `validation-plan KEY` using the same
-deterministic host selection as `runner-build`. That job validates the entire
-selected architecture group; a parallel manifest matrix validates only the
-remaining groups. The full matrix still drives NBD COW and rootfs process tests.
-The CI gate requires both validation paths when applicable, including on reruns.
+deterministic host selection as `runner-test-prepare`. That job waits for the
+shared Runner Image workflow's manifest and validates the entire selected
+architecture group without compiling or building an image. A parallel manifest
+matrix validates only the remaining groups. The full matrix still drives NBD COW
+and rootfs process tests. The CI gate requires both validation paths when
+applicable, including on reruns.
 
 Native CPU fairness and guest RPC tests compile as soon as `runner-host-groups`
-selects a target, in parallel with `runner-build` waiting for the image. The
+selects a target, in parallel with `runner-test-prepare` waiting for the image. The
 `host-cpu-fairness-build` and `guest-rpc-firecracker-build` jobs retain their
 existing `release` and `ci` profiles and separate Cargo cache keys. Compilation
 does not use a metal host, rootfs, or snapshot. Execution waits for both its
 compiled test and the selected image, then uses the same host and immutable image
-hashes supplied by `runner-build`.
+hashes supplied by `runner-test-prepare`.
 
 Each producer uploads its compressed test binary and provenance to R2 under
 `runner-binaries/<target>/<run_id>/<producer_attempt>/<test>.zst` and the matching
