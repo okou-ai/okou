@@ -316,18 +316,6 @@ still painting when it meets a clipping ancestor or the pane edge ends in a
 visible straight seam instead of fading out, and the gap is not a place to
 absorb an arbitrarily wide shadow.
 
-With `chatComposerLayout` enabled, the chat footer owns one bottom reserve inside the composer's scrollport with
-`pb-safe-or-4`: the larger of the 16px gutter and the keyboard-aware safe area.
-The content wrapper adds no bottom padding. The gutter and safe area protect
-the same space; adding them would enlarge the blank when a mobile browser
-restores its safe area after dismissing the keyboard. Negative margins must
-not offset the reserve. This preserves the 16px desktop gap, lets the veil fade
-inside the clipping boundary, and keeps the scrollport inside the footer.
-The switch also uses `overflow-clip` on the desktop workspace so descendants
-own scrolling. It defaults off and is enabled for Bingjie by account and email;
-Lab overrides support comparing both layouts. With it off, preserve the
-original footer padding, negative scrollport margin, and workspace overflow.
-
 Standalone selectable controls use the shared `ToggleButton` and its required
 `selected` prop. Its default `inline` layout keeps compact icon/text choices;
 `layout="tile"` fills a grid cell with centered text and 12px horizontal / 10px
@@ -1234,10 +1222,6 @@ through `bg-workspace-canvas` and `bg-workspace-canvas-image`, registered as
 `@theme inline` entries over `--okou-workspace-canvas-fill` and
 `--okou-workspace-canvas-image`. `inline` keeps the reference, so the theme and
 palette attributes decide at use time.
-
-At desktop sizes the pane uses `overflow-clip` to frame its children without
-becoming a scroll container. Messages, editors and page content own their
-scrolling; focus reveal must not scroll the pane and displace its header.
 
 The four variants — default and gradient palette, each in Light and Dark —
 differ only in a fill color and a gradient, so they are two runtime values
