@@ -35,7 +35,7 @@ import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   deleteS3Objects,
   downloadS3Buffer,
@@ -1030,10 +1030,6 @@ interface R2GcStats {
   readonly failed: boolean;
 }
 
-interface R2GcOptions {
-  readonly deleteQuota: number;
-}
-
 function chatEventSnapshotGcPrefixes(now: Date): readonly string[] {
   const slot = Math.floor(now.getTime() / R2_GC_SLOT_MS);
   const first = (slot * R2_GC_SHARDS_PER_RUN) % R2_GC_SHARD_COUNT;
@@ -1048,25 +1044,14 @@ function chatEventSnapshotGcPrefixes(now: Date): readonly string[] {
   });
 }
 
-const deleteUnreferencedR2SnapshotPage$ = command(
-  async function deleteUnreferencedR2SnapshotPage(
+// Reference reads must follow this page's cancellation before deletion starts.
+const findR2SnapshotGarbage$ = command(
+  async (
     { get },
-    args: {
-      readonly db: Db;
-      readonly bucket: string;
-      readonly objects: readonly S3Object[];
-      readonly olderThan: Date;
-      readonly stats: {
-        measured: number;
-        bytesMeasured: number;
-        deleteAttempts: number;
-        deleted: number;
-        bytesDeleted: number;
-      };
-    },
+    objects: readonly S3Object[],
+    olderThan: Date,
     signal: AbortSignal,
-  ): Promise<void> {
-    const { db, bucket, objects, olderThan, stats } = args;
+  ): Promise<{ readonly keys: readonly string[]; readonly bytes: number }> => {
     signal.throwIfAborted();
     const oldObjects = objects.filter((object) => {
       return (
@@ -1079,8 +1064,9 @@ const deleteUnreferencedR2SnapshotPage$ = command(
       );
     });
     if (oldObjects.length === 0) {
-      return;
+      return { keys: [], bytes: 0 };
     }
+    const db = get(db$);
     const keys = oldObjects.map((object) => {
       return object.key;
     });
@@ -1102,28 +1088,14 @@ const deleteUnreferencedR2SnapshotPage$ = command(
     const garbage = oldObjects.filter((object) => {
       return !protectedKeys.has(object.key);
     });
-    const garbageBytes = garbage.reduce((total, object) => {
-      return total + object.size;
-    }, 0);
-    stats.measured += garbage.length;
-    stats.bytesMeasured += garbageBytes;
-    if (garbage.length === 0) {
-      return;
-    }
-    // Failed and uncertain provider attempts consume the allowance too.
-    stats.deleteAttempts += garbage.length;
-    await get(
-      deleteS3Objects(
-        bucket,
-        garbage.map((object) => {
-          return object.key;
-        }),
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    stats.deleted += garbage.length;
-    stats.bytesDeleted += garbageBytes;
+    return {
+      keys: garbage.map((object) => {
+        return object.key;
+      }),
+      bytes: garbage.reduce((total, object) => {
+        return total + object.size;
+      }, 0),
+    };
   },
 );
 
@@ -1148,14 +1120,11 @@ function exactSnapshotGcState(
 const collectR2SnapshotGarbage$ = command(
   async function collectR2SnapshotGarbage(
     { get, set },
-    args: {
-      readonly db: Db;
-      readonly bucket: string;
-      readonly options: R2GcOptions;
-    },
+    bucket: string,
     signal: AbortSignal,
   ): Promise<R2GcStats> {
-    const { db, bucket, options } = args;
+    signal.throwIfAborted();
+    const db = set(writeDb$);
     const now = nowDate();
     const olderThan = hoursBefore(now, R2_GC_GRACE_HOURS);
     const stats = {
@@ -1179,7 +1148,9 @@ const collectR2SnapshotGarbage$ = command(
     // truncated shard resumes at its own cursor when the rotation visits it next.
     for (const prefix of chatEventSnapshotGcPrefixes(now)) {
       signal.throwIfAborted();
-      if (stats.deleteAttempts >= options.deleteQuota || workSignal.aborted) {
+      const remainingDeleteQuota =
+        SNAPSHOT_GC_DELETE_QUOTA - stats.deleteAttempts;
+      if (remainingDeleteQuota <= 0 || workSignal.aborted) {
         stats.deferred = true;
         break;
       }
@@ -1210,10 +1181,7 @@ const collectR2SnapshotGarbage$ = command(
           listS3ObjectsPage(
             bucket,
             prefix,
-            Math.min(
-              R2_GC_PAGE_SIZE,
-              options.deleteQuota - stats.deleteAttempts,
-            ),
+            Math.min(R2_GC_PAGE_SIZE, remainingDeleteQuota),
             state.cursorObjectKey ?? undefined,
             workSignal,
           ),
@@ -1222,13 +1190,24 @@ const collectR2SnapshotGarbage$ = command(
         stats.shardsScanned++;
         stats.pagesScanned++;
         stats.scanned += page.objects.length;
-        // A failed page leaves only this shard's position replayable.
-        await set(
-          deleteUnreferencedR2SnapshotPage$,
-          { db, bucket, objects: page.objects, olderThan, stats },
+        const garbage = await set(
+          findR2SnapshotGarbage$,
+          page.objects,
+          olderThan,
           workSignal,
         );
         workSignal.throwIfAborted();
+        stats.measured += garbage.keys.length;
+        stats.bytesMeasured += garbage.bytes;
+        if (garbage.keys.length > 0) {
+          // Failed and uncertain provider attempts consume the allowance too.
+          stats.deleteAttempts += garbage.keys.length;
+          // A failed page leaves only this shard's position replayable.
+          await get(deleteS3Objects(bucket, garbage.keys, workSignal));
+          workSignal.throwIfAborted();
+          stats.deleted += garbage.keys.length;
+          stats.bytesDeleted += garbage.bytes;
+        }
         const nextCursor = page.isTruncated ? page.objects.at(-1)?.key : null;
         if (nextCursor === undefined) {
           throw new Error("Chat Event Snapshot GC page has no resume position");
@@ -1741,17 +1720,7 @@ export const snapshotChatEvents$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const r2Gc = await set(
-      collectR2SnapshotGarbage$,
-      {
-        db,
-        bucket,
-        options: {
-          deleteQuota: SNAPSHOT_GC_DELETE_QUOTA,
-        },
-      },
-      signal,
-    );
+    const r2Gc = await set(collectR2SnapshotGarbage$, bucket, signal);
     signal.throwIfAborted();
     return {
       ...outcomeStats,
