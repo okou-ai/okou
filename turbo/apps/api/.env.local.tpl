@@ -93,7 +93,6 @@ DISCORD_APPLICATION_ID=
 DISCORD_PUBLIC_KEY=
 DISCORD_GATEWAY_SECRET=
 # Set true only when the bot has the MESSAGE_CONTENT intent enabled.
-DISCORD_MESSAGE_CONTENT_ENABLED=false
 
 # Optional: Official Telegram Bot
 TELEGRAM_OFFICIAL_BOT_TOKEN=op://Development/telegram/TELEGRAM_OFFICIAL_BOT_TOKEN

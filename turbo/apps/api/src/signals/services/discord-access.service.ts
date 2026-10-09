@@ -6,8 +6,10 @@ import {
   createDiscordUserBinding,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
-import type { DiscordChannel } from "../external/discord-client";
+import { discordClient, type DiscordChannel } from "../external/discord-client";
+import { discordMessageContentCapability } from "./discord-application-capability.service";
 import {
+  discordApiFailure,
   discordDmReadDenied,
   discordUnavailable,
   type DiscordFailureResponse,
@@ -30,7 +32,7 @@ export type DiscordBindingAccess =
       kind: "allowed";
       binding: DiscordVerifiedBinding;
       botToken: string;
-      messageContentEnabled: boolean;
+      applicationId: string;
     }
   | { kind: "denied"; response: DiscordFailureResponse };
 
@@ -103,7 +105,7 @@ function createDiscordBindingAccess(
       kind: "allowed",
       binding,
       botToken: config.botToken,
-      messageContentEnabled: config.messageContentEnabled,
+      applicationId: config.applicationId,
     };
   });
 }
@@ -144,6 +146,7 @@ export function discordConversationAccess(
   >,
 ): Computed<Promise<DiscordConversationAccess | null>> {
   const binding$ = createDiscordBindingAccess(input$);
+  const capability$ = discordMessageContentCapability();
   return computed(async (get): Promise<DiscordConversationAccess | null> => {
     const input = await get(input$);
     if (!input) {
@@ -159,9 +162,24 @@ export function discordConversationAccess(
       channelId: input.channelId,
       mode: input.mode,
     });
-    return access.kind === "denied"
-      ? access
-      : { ...current, channel: access.channel };
+    if (access.kind === "denied") {
+      return access;
+    }
+    if (input.mode === "write" || access.channel.type === 1) {
+      return {
+        ...current,
+        channel: access.channel,
+        messageContentEnabled: false,
+      };
+    }
+    const capability = await get(capability$);
+    return capability.kind === "denied"
+      ? capability
+      : {
+          ...current,
+          channel: access.channel,
+          messageContentEnabled: capability.enabled,
+        };
   });
 }
 
@@ -198,7 +216,25 @@ export const requireDiscordConversationAccess$ = command(
     if (access.kind === "denied") {
       return access;
     }
-    return { ...current, channel: access.channel };
+    if (args.mode === "write" || access.channel.type === 1) {
+      return {
+        ...current,
+        channel: access.channel,
+        messageContentEnabled: false,
+      };
+    }
+    const application = await discordClient.fetchDiscordCurrentApplication(
+      current,
+      signal,
+    );
+    if (application.kind !== "ok") {
+      return { kind: "denied", response: discordApiFailure(application) };
+    }
+    return {
+      ...current,
+      channel: access.channel,
+      messageContentEnabled: application.data.messageContentEnabled,
+    };
   },
 );
 

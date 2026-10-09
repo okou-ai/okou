@@ -173,7 +173,6 @@ const SCHEMA = {
     .regex(/^[a-fA-F0-9]{64}$/)
     .optional(),
   DISCORD_GATEWAY_SECRET: z.string().min(32).optional(),
-  DISCORD_MESSAGE_CONTENT_ENABLED: z.enum(["true", "false"]).default("false"),
   MICROSOFT_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   MICROSOFT_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   MICROSOFT_TEAMS_BOT_APP_ID: z.string().min(1).optional(),
