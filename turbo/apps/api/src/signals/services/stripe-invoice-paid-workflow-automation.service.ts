@@ -9,6 +9,7 @@ import type { Db, ReadonlyDb } from "../external/db";
 import {
   loadBuiltinConnectorCredentialConnection,
   loadBuiltinConnectorCredentialValues,
+  builtinConnectorCredentialValuesReadPlan,
   type BuiltinConnectorCredentialConnection,
   type BuiltinConnectorCredentialConnectionResult,
 } from "./builtin-connector-credential-runtime.service";
@@ -88,6 +89,12 @@ export function stripeConnectionReadiness(
   return { kind: "ok", connection, stripeAccountId };
 }
 
+export function stripeBindingConnectionReadiness(
+  loaded: BuiltinConnectorCredentialConnectionResult,
+): ReadyStripeConnectionResult {
+  return stripeConnectionReadiness(loaded, STRIPE_BINDING_MISMATCH_MESSAGE);
+}
+
 export function stripeLiveModeReadinessMessage(
   value: string | undefined,
 ): string | null {
@@ -95,6 +102,26 @@ export function stripeLiveModeReadinessMessage(
     return STRIPE_LIVE_MODE_REQUIRED_MESSAGE;
   }
   return value === "true" ? null : RECONNECT_STRIPE_OAUTH_MESSAGE;
+}
+
+export function stripeLiveModeValuesPlan(
+  connection: BuiltinConnectorCredentialConnection,
+) {
+  return builtinConnectorCredentialValuesReadPlan({
+    connection,
+    valueRefs: [STRIPE_LIVEMODE_VALUE_REF],
+  });
+}
+
+export function stripeLiveBindingMatches(
+  ready: { readonly stripeAccountId: string },
+  config: StripeInvoicePaidEventConfig,
+  values: ReadonlyMap<string, string>,
+): boolean {
+  return (
+    stripeLiveModeReadinessMessage(values.get(STRIPE_LIVEMODE_VALUE_REF)) ===
+      null && ready.stripeAccountId === config.stripeAccountId
+  );
 }
 
 async function loadReadyStripeConnection(
