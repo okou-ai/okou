@@ -60,11 +60,16 @@ def check_gate(root, gate, step, matrix:, needed: "true", cpu_needed: "true", re
   raise "unresolved gate expression" if script.include?("${{")
   env = {"IS_RELEASE" => release, "RUNNER_IMAGE_NEEDED" => needed,
          "COVERAGE_NEEDED" => "true", "FIREWALL_CONTRACT_NEEDED" => "false",
+         "QEMU_PRODUCER_NEEDED" => "true",
          "CPU_FAIRNESS_NEEDED" => cpu_needed, "IMAGE_VALIDATION_MATRIX" => matrix}
   run_step(root, env, script, success: success)
 end
 
-Dir.mktmpdir("crates-image-waiters") do |dir|
+target = File.join(root, "crates/target")
+raise "test target must not be a symlink" if File.symlink?(target)
+FileUtils.mkdir_p(target)
+raise "test target must be canonical" unless File.realpath(target) == target
+Dir.mktmpdir("crates-image-waiters", target) do |dir|
   bin = File.join(dir, "bin")
   FileUtils.mkdir_p(bin)
   ssh = File.join(bin, "ssh")

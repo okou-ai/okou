@@ -60,10 +60,17 @@ def assert_gate(values, results, expected, label):
     assert (result.returncode == 0) == expected, f'{label}: {result.stdout}{result.stderr}'
 
 
+qemu_producer = 'native-full-qemu-producer'
 scenarios = [
     ('runner-types', ['crates/runner-types/src/types.rs'], 'coverage', True, True),
     ('other-crate', ['crates/xtask/src/main.rs'], 'coverage', False, True),
     ('ci', ['.github/workflows/crates.yml'], 'coverage', True, True),
+    ('qemu-producer', ['.github/scripts/prepare-qemu-gssapi-fixture.py'], 'coverage', True, True),
+    ('qemu-wrapper', ['.github/scripts/check-full-qemu-producer.sh'], 'coverage', True, True),
+    ('qemu-download', ['.github/scripts/download-verified.sh'], 'coverage', True, True),
+    ('qemu-producer-tests', ['.github/scripts/tests/test-qemu-gssapi-producer.py'], 'coverage', True, True),
+    ('qemu-runtime', ['crates/rfb-client/tests/fixtures/qemu_gssapi.py'], None, False, False),
+    ('qemu-pins', ['crates/rfb-client/tests/fixtures/qemu_gssapi_full_pins.json'], None, False, False),
     ('fixture-only', [corpus], standalone, False, True),
     ('fixture-and-rust', [corpus, 'crates/runner-types/src/types.rs'], 'coverage', True, True),
     ('fixture-and-ci', [corpus, '.github/workflows/crates.yml'], 'coverage', True, True),
@@ -73,7 +80,11 @@ scenarios = [
      standalone, False, True),
 ]
 
-with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-') as temporary:
+target = root / 'crates/target'
+assert not target.is_symlink() and target.resolve() == target
+assert subprocess.run(['git', 'check-ignore', '-q', str(target)], cwd=root).returncode == 0
+target.mkdir(exist_ok=True)
+with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-', dir=target) as temporary:
     directory = Path(temporary)
     repo = directory / 'repo'
     repo.mkdir()
@@ -142,6 +153,7 @@ cat "$CARGO_METADATA_FIXTURE"
         values.update({f'needs.detect.outputs.{name}': value for name, value in outputs.items()})
         values.update({f'needs.{name}.result': 'success' for name in gate['needs']})
         values.update({
+            'github.event_name': 'pull_request',
             'needs.detect-release.outputs.skip': 'false',
             'needs.detect.outputs.metal-job-ref': 'pr-1-test',
             'needs.runner-host-groups.outputs.validation-matrix': '[]',
@@ -149,9 +161,21 @@ cat "$CARGO_METADATA_FIXTURE"
         actual_owners = [name for name in ['coverage', standalone] if selected(name, values)]
         assert actual_owners == ([] if owner is None else [owner]), f'{label}: {actual_owners}'
         assert selected('mitm-addon-test', values) == addon_needed, label
+        qemu_needed = '.github/workflows/crates.yml' in paths or label.startswith('qemu-')
+        assert selected(qemu_producer, values) == qemu_needed, f'{label}: unexpected QEMU rebuild selection'
+        assert outputs['qemu-producer-needed'] == str(qemu_needed).lower(), label
+        for name in ['native-kerberos-runtime', 'native-gssapi-independent-peer']:
+            assert selected(name, values) == (owner == 'coverage'), f'{label}: native Rust coverage changed'
         contexts[label] = values
         normal = {name: 'success' if name == owner else 'skipped' for name in ['coverage', standalone]}
+        normal[qemu_producer] = 'success' if qemu_needed else 'skipped'
         assert_gate(values, normal, True, label)
+        for result in ['failure', 'cancelled', ''] + (['skipped'] if qemu_needed else []):
+            assert_gate(values, normal | {qemu_producer: result}, False, f'{label}: QEMU {result!r}')
+        if owner == 'coverage':
+            for name in ['native-kerberos-runtime', 'native-gssapi-independent-peer']:
+                for result in ['failure', 'cancelled', 'skipped', '']:
+                    assert_gate(values, normal | {name: result}, False, f'{label}: native Rust {result!r}')
 
         if owner:
             for result in ['failure', 'cancelled', 'skipped', '']:
@@ -172,6 +196,51 @@ cat "$CARGO_METADATA_FIXTURE"
         assert not selected('coverage', unrelated | {'needs.detect.result': result})
         assert not selected(standalone, contexts['fixture-only'] | {'needs.detect.result': result})
 
+    # Removing/moving a required recipe cannot evade producer validation.
+    for operation in ['delete', 'rename']:
+        run(['git', 'reset', '--hard', base], repo)
+        source = '.github/scripts/prepare-qemu-gssapi-fixture.py'
+        if operation == 'delete':
+            (repo / source).unlink()
+        else:
+            run(['git', 'mv', source, 'renamed-qemu-fixture.py'], repo)
+        run(['git', 'add', '-A'], repo)
+        run(['git', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', operation], repo)
+        output = directory / f'{operation}.output'
+        output.write_text('')
+        run(['bash', '-euo', 'pipefail', '-c', render(detect['run'], {'github.event_name': 'pull_request'})],
+            repo, env | {'GITHUB_OUTPUT': str(output)})
+        operation_outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
+        assert operation_outputs['qemu-producer-needed'] == 'true', operation
+        values = contexts['qemu-producer'] | {
+            f'needs.detect.outputs.{name}': value for name, value in operation_outputs.items()}
+        assert selected(qemu_producer, values), operation
+
+    # Main/merge queue retain the existing producer coverage for Rust changes.
+    for event in ['push', 'merge_group']:
+        output = directory / f'{event}.output'
+        output.write_text('')
+        # The last synthetic commit is unrelated; make a real Rust delta again.
+        run(['git', 'reset', '--hard', base], repo)
+        with (repo / 'crates/xtask/src/main.rs').open('a') as changed:
+            changed.write(f'{event} Rust change\n')
+        run(['git', 'add', '.'], repo)
+        run(['git', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', event], repo)
+        event_env = env | {
+            'EVENT_NAME': event, 'CHECKOUT_REF': 'refs/heads/main' if event == 'push' else 'refs/heads/gh-readonly-queue/main/fixture',
+            'MERGE_GROUP_BASE_SHA': base, 'GITHUB_OUTPUT': str(output),
+        }
+        run(['bash', '-euo', 'pipefail', '-c', render(detect['run'], {'github.event_name': event})], repo, event_env)
+        event_outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
+        assert event_outputs['any-changed'] == event_outputs['qemu-producer-needed'] == 'true', event
+        values = contexts['other-crate'] | {f'needs.detect.outputs.{name}': value for name, value in event_outputs.items()}
+        assert selected(qemu_producer, values), event
+        for result in ['failure', 'cancelled', 'skipped', '']:
+            assert_gate(values, {qemu_producer: result}, False, f'{event}: QEMU {result!r}')
+
+    for invalid in ['', 'unknown']:
+        assert_gate(unrelated | {'needs.detect.outputs.qemu-producer-needed': invalid}, skipped, False,
+                    f'invalid QEMU selection {invalid!r}')
     released = unrelated | {'needs.detect-release.outputs.skip': 'true'}
     assert_gate(released, {name: 'skipped' for name in gate['needs']}, True, 'release fast path')
 

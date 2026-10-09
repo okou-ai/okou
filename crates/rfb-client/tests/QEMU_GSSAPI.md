@@ -10,6 +10,34 @@ Independent private server/KDC libraries came from signed official Ubuntu Noble 
 
 TLS `localhost`, the loopback TCP destination and the explicit same-realm `vnc/<fixture-instance>` service are independent identities. The library does no TCP/DNS/KDC discovery. Two synthetic realms use independent exact caller routes, locally generated AES17/18 keytabs/passwords/service-only caches, and a private synthetic TLS CA. Password leading/trailing spaces are intentional. None is a real account credential.
 
+## Start with direct Rust tests
+
+Ordinary client changes do not need a rebuilt QEMU/server runtime:
+
+```bash
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p kerberos-credentials --test credentials
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p rfb-client --test qemu_gssapi_framing
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p kerberos-worker --lib
+```
+
+The latter two compile the genuine pinned MIT worker when Cargo needs it; this
+is not a system-GSS substitute. Cargo reuses unchanged build inputs normally.
+Real independent-peer/lifecycle tests still need their signed private MIT/KDC
+fixture, but not a QEMU source build. Full QEMU/PNG acceptance additionally needs
+the separately admitted full runtime below; Rust-only results do not satisfy it.
+
+PR CI rebuilds QEMU candidates only when their recipe, download helper, producer
+tests, runtime/pins, or Crates workflow change. Native Rust containment and
+independent mutual-GSS/RFC4752/TLS checks retain their existing selection. Main
+and merge queue retain candidate builds for Rust/CI changes. A selected producer
+must succeed; missing selection, failure, cancellation, or unexpected skipping
+fails the gate. This PR itself changes fixture inputs and therefore still runs
+the producers. No cache, budget increase, architecture waiver, or acceptance
+shortcut is introduced.
+
 ## Reproduce
 
 Use the pinned private QEMU/server-runtime build described above, not a system GSS client or an arbitrary executable override. From the repository root:
