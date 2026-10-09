@@ -38,6 +38,7 @@ pub mod claimed_resource_activation;
 mod duration;
 pub mod finalizing_admission;
 pub mod heartbeat;
+pub mod host_memory;
 pub mod idle_lifecycle;
 pub mod job_lifecycle;
 mod network_log_http_adapter;
