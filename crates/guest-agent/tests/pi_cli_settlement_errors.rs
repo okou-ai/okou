@@ -176,6 +176,16 @@ fi
             terminal_failure.diagnostic.failure_reason,
             expected_failure_reason
         );
+        if expected_failure_reason == Some(FailureReason::InvalidCredentials) {
+            assert_eq!(
+                terminal_failure.diagnostic.failure_class,
+                FailureClass::CliNonzero
+            );
+            assert_eq!(terminal_failure.diagnostic.cli_exit_code, Some(1));
+            let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+                terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
+            assert_eq!(serde_json::to_value(reason)?, "invalid_credentials");
+        }
         if expected_failure_reason == Some(FailureReason::SafetyPolicyRefusal) {
             assert_eq!(
                 terminal_failure.diagnostic.failure_class,
@@ -402,6 +412,36 @@ async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_result
             ExpectedTerminalResult::Completed(result),
             None,
             assistant_text,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    for (index, text, reason) in [
+        (
+            0,
+            "Your authentication token has expired. Please try refreshing it.",
+            Some(FailureReason::InvalidCredentials),
+        ),
+        (
+            1,
+            "Provided authentication token is expired.",
+            Some(FailureReason::InvalidCredentials),
+        ),
+        (2, "401 Unauthorized", None),
+    ] {
+        run_settlement_case(
+            &format!("00000000-0000-4000-8000-{:012}", 180 + index),
+            &[serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses",
+                "content": [], "errorMessage": text,
+                "diagnostics": [{"type": "okou_model_request", "details": {
+                    "httpStatus": 401, "transportAttempts": 1
+                }}]
+            })],
+            ExpectedTerminalResult::Exact(text),
+            reason,
+            None,
             &base_path,
             &original_directory,
         )

@@ -598,6 +598,60 @@ fn cli_failure_reason_classifies_claude_invalid_credentials() {
 }
 
 #[test]
+fn cli_failure_reason_classifies_expired_authentication_tokens_at_model_boundaries() {
+    for message in [
+        "Your authentication token has expired. Please try refreshing it.",
+        "Provided authentication token is expired.",
+        "Codex error: Your authentication token has expired. Please try refreshing it.",
+        r#"401 {"error":{"code":"token_expired","message":"Provided authentication token is expired."}}"#,
+        r#"unexpected status 401 Unauthorized: {"error":{"message":"Your authentication token has expired. Please try refreshing it."}}"#,
+    ] {
+        for (framework, source) in [
+            (AgentFramework::Pi, FailureDetailSource::PiResult),
+            (AgentFramework::Codex, FailureDetailSource::CodexJsonl),
+            (
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+            ),
+        ] {
+            assert_eq!(
+                super::classify_cli_failure_reason(framework, source, message),
+                Some(FailureReason::InvalidCredentials),
+                "{framework:?}: {message}",
+            );
+            assert_eq!(
+                super::classify_cli_failure_reason(framework, FailureDetailSource::Stderr, message),
+                None,
+                "stderr must not classify token expiry: {message}",
+            );
+        }
+    }
+}
+
+#[test]
+fn cli_failure_reason_requires_explicit_terminal_authentication_token_expiry() {
+    for message in [
+        "401 unauthorized",
+        "API Error: 401 Unauthorized",
+        r#"unexpected status 401 Unauthorized: {"error":{"message":"Unauthorized"}}"#,
+        "Your token has expired.",
+        "The tool printed: Provided authentication token is expired.",
+        "Provided authentication token is expired. This is quoted tool output.",
+        r#"{"debug":{"error":{"message":"Provided authentication token is expired."}}}"#,
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(
+                AgentFramework::Pi,
+                FailureDetailSource::PiResult,
+                message,
+            ),
+            None,
+            "message: {message}",
+        );
+    }
+}
+
+#[test]
 fn cli_failure_reason_ignores_generic_claude_401() {
     let reason = classify_cli_failure_reason(AgentFramework::ClaudeCode, "401 unauthorized");
 
