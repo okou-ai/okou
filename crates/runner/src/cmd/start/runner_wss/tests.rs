@@ -399,26 +399,13 @@ async fn api_consumer_rejects_outage_and_wrong_audience() {
 }
 
 #[tokio::test]
-async fn consume_uses_official_credential_and_rejects_mismatched_api_result() {
+async fn consume_uses_official_credential_and_checks_complete_api_result() {
     use httpmock::prelude::*;
     let server = MockServer::start_async().await;
     let run = RunId::new_v4();
     let runner = Uuid::new_v4();
     let ticket = "A".repeat(43);
-    let request = server
-        .mock_async(|when, then| {
-            when.method(POST)
-                .path("/api/runners/wss/tickets/consume")
-                .header("authorization", "Bearer official-test-token")
-                .body_includes(run.to_string())
-                .body_includes(runner.to_string())
-                .body_includes(ticket.clone());
-            then.status(200).json_body(serde_json::json!({
-                "runId": run, "runnerId": Uuid::new_v4(),
-                "origin": "wss://runner.okou.ai:443", "orgId": "org", "userId": "user"
-            }));
-        })
-        .await;
+    let origin = "wss://runner.okou.ai:443";
     let http = HttpClient::new(runner_provider::http::HttpClientConfig {
         api_url: server.base_url(),
         vercel_bypass: None,
@@ -427,12 +414,52 @@ async fn consume_uses_official_credential_and_rejects_mismatched_api_result() {
     })
     .unwrap();
     let consumer = ApiTicketConsumer::new(http, "official-test-token".to_owned());
-    assert!(
-        !consumer
-            .consume(run, runner, "wss://runner.okou.ai:443", &ticket)
-            .await
-    );
-    request.assert_async().await;
+    let matching = serde_json::json!({
+        "runId": run, "runnerId": runner, "origin": origin,
+        "orgId": "org", "userId": "user"
+    });
+    for (label, change) in [
+        ("matching", None),
+        (
+            "wrong run",
+            Some(("runId", serde_json::json!(RunId::new_v4()))),
+        ),
+        (
+            "wrong runner",
+            Some(("runnerId", serde_json::json!(Uuid::new_v4()))),
+        ),
+        (
+            "wrong origin",
+            Some(("origin", serde_json::json!("wss://another.okou.ai:443"))),
+        ),
+        ("empty org", Some(("orgId", serde_json::json!("")))),
+        ("empty user", Some(("userId", serde_json::json!("")))),
+        ("invalid user", Some(("userId", serde_json::Value::Null))),
+    ] {
+        let expected = change.is_none();
+        let mut response = matching.clone();
+        if let Some((field, value)) = change {
+            response[field] = value;
+        }
+        let request = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path("/api/runners/wss/tickets/consume")
+                    .header("authorization", "Bearer official-test-token")
+                    .json_body_obj(&serde_json::json!({
+                        "runId": run, "runnerId": runner, "origin": origin, "ticket": ticket
+                    }));
+                then.status(200).json_body(response);
+            })
+            .await;
+        assert_eq!(
+            consumer.consume(run, runner, origin, &ticket).await,
+            expected,
+            "API consumption result: {label}"
+        );
+        request.assert_async().await;
+        request.delete_async().await;
+    }
 }
 
 #[tokio::test]
