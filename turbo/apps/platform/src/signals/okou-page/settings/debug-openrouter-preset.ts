@@ -15,7 +15,7 @@ export const canManageOpenrouterPreset$ = computed(async (get) => {
     get(isOrgAdmin$),
     get(featureSwitch$),
   ]);
-  return admin && (features[FeatureSwitchKey.OkouDebug] ?? false);
+  return admin && features[FeatureSwitchKey.OkouDebug];
 });
 
 const reloadPreset$ = state(0);
