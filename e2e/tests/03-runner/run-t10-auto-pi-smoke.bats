@@ -55,7 +55,7 @@ teardown() {
     run _wait_for_runner_chat_output "$THREAD_ID" "$RUN_ID" "RESULT=3" 60
     assert_success
 
-    run runner_api_curl "/api/runs/${RUN_ID}/context"
+    run runner_e2e_wait_for_run_context "$RUN_ID"
     assert_success
     run jq -e '
         .cliAgentType == "pi" and

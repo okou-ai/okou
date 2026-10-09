@@ -90,22 +90,3 @@ through `ensureClerkUiLoaded$`. Every other `src/**` module may import the
 package for types only. `scripts/check-runtime-imports.node.mjs` asserts that
 boundary from the real ESLint configuration, so the entry cannot regain a lint
 suppression and other entries cannot acquire a runtime import.
-
-## Retired configuration
-
-These entries describe removed implementations; they are not live lint policy:
-
-- Direct-fetch exceptions for chat draft, STT, TTS, the agents page, settings
-  tab, workspace general tab, API client, fetch tests, and Web Push. TTS, the old
-  agents view, and `signals/__tests__/utils.test.ts` no longer exist. The fetch
-  test no longer needs import-order or untyped-mock exceptions.
-- The old claim that ts-rest cannot handle multipart uploads predates the
-  current contract transport.
-- The `custom-eslint/**/*.*` override referred to a removed local plugin tree.
-- `@solana/web3.js` belonged to a retired authentication bundle; `katex`,
-  `rehype-katex`, and `remark-math` belonged to retired Markdown math;
-  `@tabler/icons-react` belonged to the replaced icon stack. Their historical
-  removal is documented here instead of maintaining a dependency tombstone in
-  `no-restricted-imports`. Current architecture still requires the modular Ably
-  and Clerk runtime boundaries. `@clerk/ui` returned as a live dependency and is
-  no longer a retired entry; see the import boundary above.

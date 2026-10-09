@@ -49,7 +49,10 @@ const cleanupExpiredOAuthRows$ = command(
         .limit(batchSize);
       const { rowCount } = await db
         .delete(table)
-        .where(inArray(table.id, expiredStates));
+        // Recheck eligibility on the row actually deleted after any concurrent
+        // update wait. A consumed/approved grant must not cascade-revoke a
+        // binding merely because the candidate subquery saw its older state.
+        .where(and(inArray(table.id, expiredStates), expiredWhere));
       signal.throwIfAborted();
 
       const batchDeleted = rowCount ?? 0;

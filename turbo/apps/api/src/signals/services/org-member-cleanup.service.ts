@@ -23,7 +23,6 @@ import {
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
 import { deleteDiscordOrgMemberData$ } from "./discord-owner-cleanup.service";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
 import { command } from "ccstate";
@@ -257,7 +256,6 @@ async function revokeOrgMemberRunAuthority(
 
     // The departing member's legacy schedule occurrences lose the same
     // authority here, before the rows they hang from are torn down.
-    await tx.execute(purgeRetiredMorningBriefEmailSql());
     await revokeMorningBriefScheduleOwnership(tx, {
       kind: "membership",
       orgId: args.orgId,

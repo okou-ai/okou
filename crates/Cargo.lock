@@ -3572,7 +3572,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.221.4"
+version = "0.221.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3639,7 +3639,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3741,7 +3741,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3807,7 +3807,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.10.12"
+version = "0.10.13"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3923,23 +3923,29 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "api-contracts",
  "async-trait",
  "chrono",
+ "flate2",
  "futures-util",
  "guest-contracts",
  "hex",
+ "httpmock",
+ "libc",
+ "reqwest",
  "runner-executor",
  "runner-host",
  "runner-lifecycle",
  "runner-network",
  "runner-provider",
+ "runner-remote",
  "runner-storage",
  "runner-types",
  "sandbox",
  "sandbox-mock",
+ "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
@@ -3950,6 +3956,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test-support",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -4227,7 +4234,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.44.12"
+version = "0.44.13"
 dependencies = [
  "async-trait",
  "clap",

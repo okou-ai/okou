@@ -91,7 +91,6 @@ import {
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
 const L = logger("WebhookClerkCleanup");
@@ -168,7 +167,6 @@ async function cancelOrgRuns(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    await tx.execute(purgeRetiredMorningBriefEmailSql());
     const released = await releaseNeverStartedRunSlots(tx, rows);
     return { cancelled: rows, releasedSlots: released };
   });
@@ -242,7 +240,6 @@ async function cancelUserRuns(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    await tx.execute(purgeRetiredMorningBriefEmailSql());
     const released = await releaseNeverStartedRunSlots(tx, rows);
     return { cancelled: rows, releasedSlots: released };
   });

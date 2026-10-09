@@ -52,7 +52,7 @@ teardown_file() {
     [[ -n "$(runner_chat_field "$output" '.sessionId')" ]]
     local run_id
     run_id="$(runner_chat_field "$output" '.runId')"
-    run runner_api_curl "/api/runs/${run_id}/context"
+    run runner_e2e_wait_for_run_context "$run_id"
     assert_success
     run jq -e '
         .cliAgentType == "codex" and

@@ -26,6 +26,7 @@
 1 runner-image-manifest-test.sh
 1 runner-native-test-artifact-test.sh
 1 runner-release-build-workflow-test.sh
+1 runner-run-context-test.sh
 1 semgrep-results-test.sh
 1 wait-production-deploy-queue-test.sh
 1 web-api-env-action-test.sh

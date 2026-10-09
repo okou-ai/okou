@@ -26,7 +26,7 @@ organization backfill tied to its original schema; do not run or rewrite it.
 
 `vm0_source`, `vm0_experiment`, and `vm0_variant` are deliberately outside this
 campaign/ad-group rewrite. Their targets and strict-reader rollout conditions
-are recorded in [the attribution inventory](../../../../../../docs/google-ads-browser-routing.md#remaining-field-inventory).
+are recorded in [the attribution inventory](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/google-ads-browser-routing.md#remaining-field-inventory).
 No provider-side standard field (`gclid`, `gbraid`, `wbraid`, UTM, GA client ID)
 needs a branding rename.
 

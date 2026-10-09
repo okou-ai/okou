@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { debugMorningBriefEmailTemplateSchema } from "../../lib/debug-morning-brief-email";
 
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
@@ -97,6 +98,7 @@ function boundedUnicodeString(maxCharacters: number) {
 }
 
 const emailTemplateSchema = z.discriminatedUnion("template", [
+  debugMorningBriefEmailTemplateSchema,
   z
     .object({
       template: z.literal("agent-morning-brief"),
@@ -315,6 +317,7 @@ function renderTemplate(
   headers: Readonly<Record<string, string>> | undefined,
 ): RenderedEmailTemplate {
   switch (template.template) {
+    case "debug-morning-brief":
     case "agent-morning-brief": {
       return renderAgentMorningBriefEmail(
         template.props,
@@ -362,6 +365,7 @@ function fromAddressForTemplate(template: EmailTemplate): string {
       return buildTeamFromAddress();
     }
     case "data-export-ready":
+    case "debug-morning-brief":
     case "agent-morning-brief":
     case "agent-notification":
     case "official-automation-result": {
@@ -544,7 +548,8 @@ function notificationIsUnsubscribed(
 ): boolean {
   if (
     template.template !== "agent-notification" &&
-    template.template !== "agent-morning-brief"
+    template.template !== "agent-morning-brief" &&
+    template.template !== "debug-morning-brief"
   ) {
     return false;
   }
@@ -588,36 +593,6 @@ async function prepareNextOutboxItem(
       .for("update", { skipLocked: true });
     if (!selectedRow) {
       return { kind: "empty" };
-    }
-    // Retired Native intents never reach parsing, rendering or provider replay,
-    // including malformed payloads and requests committed by an older API.
-    if (
-      z
-        .object({ template: z.literal("morning-brief-result") })
-        .safeParse(selectedRow.template).success
-    ) {
-      await tx
-        .update(emailOutbox)
-        .set({
-          status: "failed",
-          lastError:
-            selectedRow.provider_request === null
-              ? "Native Morning Brief email retired"
-              : "Native Morning Brief email retired with unresolved provider outcome",
-          providerRequest: null,
-          template: {
-            template: "morning-brief-result",
-            props: {
-              title: "",
-              resultMarkdown: "",
-              threadUrl: "",
-              manageUrl: "",
-            },
-          },
-          nextRetryAt: null,
-        })
-        .where(eq(emailOutbox.id, selectedRow.id));
-      return { kind: "resolved" };
     }
     const row = outboxRowSchema.parse(selectedRow);
     const itemId = row.id;

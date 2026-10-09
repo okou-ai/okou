@@ -5,7 +5,6 @@ import { conversations } from "@okouai/db/schema/conversation";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, asc, count, eq, gt, sql } from "drizzle-orm";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 import { db$, writeDb$ } from "../external/db";
 import { storages } from "@okouai/db/schema/storage";
@@ -134,8 +133,6 @@ const deleteAgentRows$ = command(
         await tx.execute(statement);
         signal.throwIfAborted();
       }
-      await tx.execute(purgeRetiredMorningBriefEmailSql());
-      signal.throwIfAborted();
       await tx.delete(agents).where(agentDeletionIdentityCondition(args));
       signal.throwIfAborted();
       // The cascade drains already-owned Workflow rows. Sweep their late fence

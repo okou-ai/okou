@@ -1,196 +1,84 @@
 # Engineering Documentation Index
 
-Use this index to locate the repository's authoritative engineering guidance
-before implementation or review. Read the documents relevant to the changed
-surface; the index does not replace their detailed rules.
+`docs/` contains reusable engineering standards, framework guidance, and shared
+infrastructure contracts. Read the guidance relevant to the changed surface;
+this index does not replace its detailed rules.
 
-Keep `docs/` focused on engineering principles, framework architecture, and
-reusable development guidance. Feature-specific business logic belongs in
-self-explanatory source code rather than separate documents.
+## Documentation Boundary
 
-## Code Review
+- Keep code quality, React/ccstate, styles, testing, database, deployment, and
+  shared runtime rules here.
+- Do not add business-feature descriptions, issue implementation plans, batch
+  manifests, rollout diaries, acceptance receipts, or measurement snapshots.
+  Record task-specific decisions and evidence in the owning GitHub issue or PR.
+- Executable behavior belongs in code, contracts, schemas, and tests. Keep
+  component setup and operational instructions next to their owning component.
+- Update an existing standard when a reusable rule changes; do not create a new
+  document for each implementation increment.
+- Historical documents remain recoverable in Git history. Their removal from
+  this index does not authorize removing runtime compatibility, rollback floors,
+  security checks, data, tests, or migration history.
 
-- [Bad code smells](./bad-smell.md): production-code quality rules.
-- [Retiring PostgreSQL advisory locks](./advisory-locks.md): the 2026-09-26
-  retirement policy, constraint and SQL alternatives, testing boundaries, and
-  lint enforcement.
-- [Advisory lock terminal state](./advisory-lock-terminal-state.md): binding
-  no-new-fields design, local transaction ownership, and two release waves.
-- [Advisory lock Release 1](./advisory-lock-release-1.md): writer preparation,
-  transaction inventory, implementation status, and removal gates.
-- [Fallbacks to avoid](./fallback.md): fallback slop, negative tests against
-  removed code, feature-switched features that need no compatibility, and the
-  narrow cases where a time-boxed fallback is required.
-- [Event sourcing and optimistic events](./event-sourcing.md): authoritative
-  persistent events, optimistic projections, reconciliation, and failure
-  semantics.
-- [React effects and ccstate commands](./effect.md): choosing between computed
-  values, semantic commands, route setup, DOM lifecycles, and React effects.
-- [ResizeObserver anti-pattern](./resize-observer.md): CSS layout, deterministic
-  command triggers, stable card geometry, and measurement ownership.
-- [React and ccstate cache and lifecycle practices](./cache.md): render purity,
-  state ownership, cache retention, refs, and resource teardown.
-- [API ccstate design](./api-ccstate.md): factory inputs, derived computeds,
-  write-result-only state, entry-owned orchestration, and no production test
-  hooks for API signal graphs.
-- [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
-- [Deployment compatibility](./deployment-compatibility.md): compatibility
-  requirements for independently deployed components and persisted state.
-- [Home-cache protocol rollout](./home-cache-protocol-rollout.md): independent
-  capability stamps, recipient-safe preparation and later activation/SQL drain gates.
-- [Agent mail notifications](./agent-mail-notifications.md): CLI notification
-  receipts, idempotency, opt-out handling, and the staged Morning Brief rollout.
-- [Model identity PR2](./model-identity-pr2.md): canonical new writes,
-  captured-runtime billing, mixed-version support and activation prerequisites.
-- [Run models and subscription metadata](./model-catalog.md): fixed Auto,
-  personal subscription metadata, selection and billing.
-- [Run models API](./run-models-api.md): the `GET /api/run-models` response
-  for Auto and the caller's connected personal subscriptions.
-- [Retired model route cleanup](./retired-model-route-cleanup.md): the
-  data-only pruning of obsolete execution routes.
-- [Personal subscription CLI and Reset Cards](./subscription-controls.md):
-  exact-account usage reads, subsequent-run switching, user-confirmed reset
-  links and run capabilities.
-- [Personal subscription run identity](./personal-subscription-run-identity.md):
-  concrete account ownership, bounded disconnect retention and credential
-  storage/locking.
-- [Connector-account workflow automations](./connector-account-workflow-automation.md):
-  workflow-thread account authority, exact provider ingress, lifecycle
-  convergence, and persisted compatibility for account-backed triggers.
-- [Externally managed references](./externally-managed-references.md): how to
-  resolve identifiers whose entities are owned by another authority without
-  conflating missing entities, invalid input, dependency failures, and local
-  invariant violations.
+## Code Quality and Architecture
 
-## Specialized Guidance
-
-- [Discord integration](./discord-integration.md): default-off settings, shared
-  provider contracts, Slack parity, and fixture/real-guild acceptance evidence.
-
-- [Personal paid-tool controls](./paid-tool-controls.md): workspace-member
-  preferences, run snapshots, CLI enforcement and the disabled rollout boundary.
-- [External MCP server](./mcp-server.md): OAuth resource setup, organization
-  authority, Streamable HTTP behavior and hosted-client acceptance gates.
-
-- [Tailscale reader preparation](./tailscale-reader-preparation.md): response-only
-  SSH/VNC readers and the separate live-App release prerequisite before producers.
-- [VNC configuration and authority](./vnc-access.md): encrypted credentials, saved
-  hosts, TLS trust, membership fences, and the disabled rollout boundary.
-- [OpenSSH plus TigerVNC interoperability](../crates/runner/tests/VNC_SSH_INTEROPERABILITY.md):
-  disposable installed-version OpenSSH and pinned TigerVNC production-path
-  acceptance.
-- [X509Plain VNC acceptance](./vnc-x509plain-acceptance.md): head-specific owner,
-  Agent, current-Runner, real-server and cleanup evidence.
-- [Runner VNC authority](./runner-vnc-authority.md): chat host permissions,
-  private typed handoff, current authorization and native sharing modes.
-- [Runner VNC execution](./runner-vnc-execution.md): Run-owned sessions, guest
-  RPC, streamed captures, input outcomes and resource cleanup.
-- [Social download discovery](./social-download-discovery.md): bounded task
-  listing, scoped recovery hints, pagination, and CLI/API compatibility.
-- [Social errors and download recovery](./social-errors.md): stable error
-  reasons, retry advice, same-task recovery, and compatible persisted errors.
-- [Social discovery and service status](./social-discovery.md): offline
-  capabilities, live health normalization, freshness and rollout boundaries.
-- [Billing attribution foundation](./database/billing-attribution.md): immutable
-  billing identity, writer inventory, bounded backfill and activation boundaries.
-- [X resource observations](./x-resource-observations.md): atomic daily
-  deduplication, two-date cleanup, transient remainder and activation gates.
-- [Database transaction lint](./eslint/no-db-transaction.md): default prohibition,
+- [Bad code smells](bad-smell.md): production-code quality boundaries.
+- [Fallbacks](fallback.md): legitimate exceptions, declarations, and removal gates.
+- [Event sourcing](event-sourcing.md): persistent and optimistic event ownership.
+- [Externally managed references](externally-managed-references.md): reference
+  authority, dependency failures, and fail-closed resolution.
+- [Deployment compatibility](deployment-compatibility.md): independent releases,
+  persisted state, schema transitions, drain, and rollback requirements.
+- [API ccstate](api-ccstate.md): derived reads, explicit writes, graph construction,
+  database ownership, cancellation, and entry-owned orchestration.
+- [Database development](../.claude/skills/database-development/SKILL.md): migration
+  workflows, transaction boundaries, decoding, and SQL construction.
+- [Advisory-lock retirement](advisory-locks.md) and
+  [transaction and recovery constraints](advisory-lock-terminal-state.md).
+- [Signal-owner file limits](eslint/max-signal-owner-lines.md) and
+  [database trigger policy](eslint/no-database-trigger.md).
+- [Database transaction lint](eslint/no-db-transaction.md): default prohibition,
   deletion-only legacy call-site inventory, and necessary billing waivers.
-- [Database trigger retirement](./database-trigger-retirement.md): explicit API
-  entitlement writers, repair paths, and the serving/rollback removal gate.
-- [Hosted publication version retirement](./database/hosted-publication-retirement.md):
-  immutable content identity, historical inventory, preserved links/permissions,
-  and the consumer/data/rollback gates before schema contraction.
-- [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
-  scope, canonical chat history, checksum semantics, and download compatibility.
-- [Storage version publication](./storage-version-publication.md): R2-first
-  version registration, DB-only reuse, and durable reference-first Clerk cleanup.
-- [Artifact share publication](./artifact-share-publication.md): initial
-  revocation, conditional R2 authority and the transaction-removal deployment gate.
-- [Hosted-site transaction boundary](./database/hosted-site-transaction-boundary.md):
-  deletion/publication ownership preparation, concurrent effects, and unresolved
-  prerequisites for SQL-only transactions.
-- [Hosted-site status reader candidate](./database/hosted-site-status-reader-candidate.md):
-  inactive API/Worker ownership enforcement, preserved mutations, activation
-  prerequisites, delivery windows, query cost and the compatibility matrix.
-- [Connector catalog rejections](./connector-catalog-rejections.md): safe
-  validation reasons, rejection log records, retained serving generations and
-  recovered publication-order evidence.
-- [Slug-first projection-reader retirement](./connector-catalog-projection-reader-retirement.md):
-  eight-site reader closure, transaction ownership, physical retirement and test mapping.
-- [Dependency override audit](./dependency-overrides.md): retained dependency
-  constraints, their origins, and evidence for removing obsolete overrides.
-- [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
-  behavior, storage retirement, and rollout boundaries.
-- [Google Cloud LLM voice and Maps Grounding routing](./google-llm-voice.md):
-  shared Vercel workload identities, native provider contracts, billing,
-  compliance boundaries, and rollout gates.
-- [Gemini auxiliary generation on Vertex AI](./gemini-auxiliary-vertex.md): text
-  models, native output contracts, retained OpenRouter consumers and rollout boundaries.
-- [Retired App browser attribution](./google-ads-browser-routing.md): the
-  Marketing-owned boundary, App cleanup, rollout compatibility, and historical
-  field inventory.
-- [Connector inspection JSON](./connector-inspection-json.md): command output
-  contracts, current versus run evidence, account identity, and next actions.
-- [Social collection output](./social-collection-output.md): aggregate and
-  streaming terminal records, partial failures, accounting, and continuation hints.
-- [Platform lint boundaries](./platform-lint.md): current transport and lifecycle
-  exceptions, polling policy, and retired configuration history.
-- [Desktop minimum version policy](./desktop-version-policy.md): admission, required
-  upgrades, staged activation, and rollback.
-- [Native Desktop session authentication](./desktop-session-auth.md): single
-  Clerk credential, host binding, provider freshness and migration acceptance.
-- [Clerk customization](./clerk-customize.md): hosted Clerk styling ownership,
-  public appearance boundaries, lint enforcement, and upgrade verification.
-- [React commit analysis](./react-commit.md): measuring and attributing React
-  work without confusing executions, scheduler events, or DOM mutations with
-  commits.
-- [Chat cards](./chat-cards.md): recognizing links in chat messages, creating
-  thread-scoped card signals, and rendering rich interactive cards.
-- [Home task recommendations](./home-task-recommendations.md): the two-stage
-  ranking and writing pipeline, its first-party evidence, and the refresh claim.
-- [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
-  ordering, delayed events, visibility, and the newest-20 boundary.
-- [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):
-  explicit API ownership, guarded trigger retirement, parent cleanup, audit
-  receipts and the B rollback floor.
-- [Historical session blob audit](./database/historical-session-blob-audit.md):
-  complete owner census, read-only aggregate receipt, PostgreSQL validation and
-  representative synthetic costs.
-- [Conversation history deletion](./conversation-history-deletion.md): actual-row
-  reference releases, lifecycle locks, cascade inventory and bounded SQL costs.
-- [Pi runtime architecture](./pi-runtime-architecture.md): launch, SDK/session,
-  memory, accounting, retained compatibility, and patch ownership boundaries.
-- [Guest/Runner transport placement](./runner-rpc-transport.md#choosing-a-guestrunner-transport-for-new-work):
-  decide between the control vsock, Guest-to-Runner RPC, and no cross-VM
-  transport for a new operation.
-- [Runner host configuration](./runner-host-configuration.md): configure and
-  verify host-local concurrency and I/O capacity overrides.
-- [Runner WSS target resolution](./runner-wss-target-resolution.md): internal
-  hostname-derived origin, claimed Runner/liveness checks and separate fleet and ingress gates.
-- [Private run-scoped Guest duplex](./runner-guest-duplex.md): exact live executor assignment,
-  bounded opaque framing, cancellation and the #37027 attachment contract.
-- [Guest memory policy](./runner-memory-policy.md): shared workload capacity,
-  control/runtime reclaim protection, and tool OOM trade-offs.
-- [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
-  local source and restored payload sizes, representation and timing semantics.
-- [Admission-lock timing](./admission-lock-timing.md): attempt-scoped API launch
-  critical-section attribution, retry identity and production readout limits.
-- [Shared Connector context observations](./connector-context-observations.md):
-  preloaded shared query/pool/materialization attribution, bounded coverage and
-  same-Run critical-path decision limits.
-- [Host archive phase diagnostics](./host-archive-phase-diagnostics.md): bounded
-  early download, apply-gate and publication timing with cancellation semantics.
-- [Guest archive connection observation](./guest-archive-connection-observation.md):
-  resolver and combined setup timing, observed transport reuse and attribution limits.
-- [Guest file compression](./guest-file-compression.md): caller-owned history
-  selection, bounded streaming, failure semantics and bundled compatibility.
-- [Runner multi-architecture rollout](./runner-multi-architecture.md): build,
-  deploy, and validate runner artifacts for supported host architectures.
-- [Testing catalog](./testing/anti-patterns.md): detailed testing anti-patterns.
-- [Addon runtime contracts](./mitm-addon-contracts.md): private control, logging ownership,
-  WebSocket framing and handshake limits, and path normalization boundaries.
-- [Chat Event Snapshot timeout diagnostics](./chat-event-snapshot-timeout-logging.md):
-  expected per-head deadlines, stage diagnostics, convergence and retention
-  safety, and archive-lag alerting.
+
+## React and Platform
+
+- [ccstate](../.claude/skills/ccstate/SKILL.md): reactive, command, lifecycle, and
+  HTTP guidance.
+- [Effects](effect.md): derived values, semantic commands, DOM lifecycles, and
+  render purity.
+- [Cache and lifecycle](cache.md): ownership, retention, refs, and teardown.
+- [Styles](styles.md): shared tokens, semantic HTML, and component composition.
+- [ResizeObserver](resize-observer.md): CSS layout and measurement ownership.
+- [Chat-card UI contracts](chat-cards.md): stable frames, portable action links,
+  signal registration, and lifecycle ownership, not a feature catalog.
+- [React measurements](react-commit.md): reproducible commit attribution and
+  behavior verification, not historical benchmark results.
+- [Platform lint](platform-lint.md): transport, lifecycle, and import boundaries.
+- [Clerk customization](clerk-customize.md): public styling ownership and enforcement.
+
+## Testing
+
+Start with [Testing](testing.md), then select the affected surface:
+
+- [Patterns](testing/patterns.md) and [anti-patterns](testing/anti-patterns.md).
+- [External behavior](testing/testing-external-behavior.md).
+- [API](testing/api-testing.md) and [Platform](testing/app-testing.md).
+- [CLI](testing/cli-testing.md) and [CLI/Runner E2E](testing/cli-e2e-testing.md).
+- [Desktop](testing/desktop-testing.md).
+- [Rust](testing/rust-testing.md).
+- [MITM addon](testing/mitm-addon-testing.md).
+
+## Shared Runtime Infrastructure
+
+- [Guest process lifecycle](runner-guest-process-lifecycle.md): containment,
+  process ownership, reuse, and operation lifetime.
+- [Runner host configuration](runner-host-configuration.md): validated host-local
+  capacity and configuration ownership.
+- [Guest memory policy](runner-memory-policy.md): workload sharing and reclaim protection.
+- [Runner architectures](runner-multi-architecture.md): artifact pairing, build,
+  deployment, and architecture selection.
+- [Runner reactor progress](runner-reactor-progress.md): independently scheduled
+  work, shared-resource progress, cancellation, and shutdown.
+- [Guest/Runner transport](runner-rpc-transport.md): control versus RPC placement,
+  bounded framing, exact-assignment authority, and resource lifetime.
+- [MITM addon contracts](mitm-addon-contracts.md): credential boundaries, framing,
+  logging, and bounded protocol inspection.

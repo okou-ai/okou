@@ -31,7 +31,6 @@ import {
   type ClerkDeletionScope,
   type ConversationDeletionReceipt,
 } from "./clerk-lifecycle-plan";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 function idsOf(rows: readonly { readonly id: string }[]) {
   return rows.map((row) => {
@@ -257,7 +256,6 @@ const deleteClerkOrganizationLifecycleData$ = command(
           await tx.execute(statement);
         }
         if (agentIds.length > 0) {
-          await tx.execute(purgeRetiredMorningBriefEmailSql());
           // Only Agents with no Run left under their Sessions; a late Run
           // (and its conversation) is never removed by the Agent cascade.
           await tx.execute(runFreeAgentDeleteSql(orgId, agentIds));

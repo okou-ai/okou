@@ -64,19 +64,67 @@ fn collaboration_event(states: Value) -> Result<Value, &'static str> {
         .ok_or("child states must be an object")?
         .keys()
         .collect::<Vec<_>>();
+    let item = Value::Object(serde_json::Map::from_iter([
+        ("id".into(), "wait".into()),
+        ("type".into(), "collab_agent_tool_call".into()),
+        ("tool".into(), "wait".into()),
+        ("status".into(), "completed".into()),
+        ("sender_thread_id".into(), "parent".into()),
+        ("receiver_thread_ids".into(), json!(receiver_ids)),
+        ("prompt".into(), Value::Null),
+        ("model".into(), "test-model".into()),
+        ("reasoning_effort".into(), "high".into()),
+        ("agents_states".into(), states),
+    ]));
+    let event = Value::Object(serde_json::Map::from_iter([
+        ("type".into(), "item.completed".into()),
+        ("thread_id".into(), "parent".into()),
+        ("turn_id".into(), "turn".into()),
+        ("item".into(), item),
+    ]));
     Ok(events::prepare_event_for_delivery(
-        json!({
-            "type": "item.completed", "thread_id": "parent", "turn_id": "turn",
-            "item": {
-                "id": "wait", "type": "collab_agent_tool_call", "tool": "wait",
-                "status": "completed", "sender_thread_id": "parent",
-                "receiver_thread_ids": receiver_ids, "prompt": null,
-                "model": "test-model", "reasoning_effort": "high", "agents_states": states,
-            }
-        }),
+        event,
         19,
         &SecretMasker::from_raw(""),
     ))
+}
+
+#[test]
+fn owned_collaboration_fixture_preserves_canonical_bytes_and_receiver_order() {
+    for states in [
+        json!({}),
+        json!({"child":{"status":"errored", "message":"你好\"\\\n\0"}}),
+        json!({
+            "z-child":{"status":"running", "message":null},
+            "a-child":{"status":"completed", "message":""},
+            "child-11":{"status":"errored", "message":"text"}
+        }),
+    ] {
+        let receivers = states.as_object().unwrap().keys().collect::<Vec<_>>();
+        let expected = events::prepare_event_for_delivery(
+            json!({
+                "type":"item.completed", "thread_id":"parent", "turn_id":"turn",
+                "item":{
+                    "id":"wait", "type":"collab_agent_tool_call", "tool":"wait",
+                    "status":"completed", "sender_thread_id":"parent",
+                    "receiver_thread_ids":receivers, "prompt":null,
+                    "model":"test-model", "reasoning_effort":"high", "agents_states":states
+                }
+            }),
+            19,
+            &SecretMasker::from_raw(""),
+        );
+        assert_eq!(
+            collaboration_event(states).unwrap().to_string(),
+            expected.to_string()
+        );
+    }
+    for states in [Value::Null, json!(false), json!([])] {
+        assert_eq!(
+            collaboration_event(states).unwrap_err(),
+            "child states must be an object"
+        );
+    }
 }
 
 #[tokio::test]
@@ -120,7 +168,7 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
                                 return request.body_ref() == expected.as_bytes();
                             }
                             let expected_json = expected_json.as_ref().unwrap();
-                            let payload: Value =
+                            let mut payload: Value =
                                 serde_json::from_slice(request.body_ref()).unwrap();
                             request.body_ref().len() <= LIMIT
                                 && request
@@ -132,7 +180,7 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
                                     == expected_json["events"][0]["memoryCitation"]
                                 && payload["events"][0]["sequenceNumber"] == 19
                                 && (!collaboration || {
-                                    let mut restored = payload["events"][0].clone();
+                                    let mut restored = std::mem::take(&mut payload["events"][0]);
                                     restored["item"]["agents_states"]["status"]["message"] =
                                         expected_json["events"][0]["item"]["agents_states"]
                                             ["status"]["message"]
@@ -308,8 +356,8 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
             when.method(POST)
                 .path("/api/webhooks/agent/events")
                 .is_true(move |request| {
-                    let payload: Value = serde_json::from_slice(request.body_ref()).unwrap();
-                    let mut actual = payload["events"][0].clone();
+                    let mut payload: Value = serde_json::from_slice(request.body_ref()).unwrap();
+                    let mut actual = std::mem::take(&mut payload["events"][0]);
                     for (child_id, state) in expected["item"]["agents_states"].as_object().unwrap()
                     {
                         if state["message"] == "[event content truncated for delivery]" {

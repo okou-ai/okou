@@ -4905,6 +4905,27 @@
           "title": "IndexedDB儲存",
           "unavailable": "IndexedDB儲存不可用。"
         },
+        "morningBriefEmail": {
+          "checkStatus": "檢查投遞狀態",
+          "description": "使用 Morning Brief 範本向你的帳號信箱發送固定範例。不會執行 Agent，也不會變更早報排程。",
+          "reasons": {
+            "delivery-failed": "投遞失敗；先前的發送嘗試仍可能已被郵件服務接受。",
+            "expired": "投遞已過期；先前的發送嘗試仍可能已被郵件服務接受。",
+            "no-email": "已略過：你的帳號沒有信箱地址。",
+            "suppressed": "已略過：你的帳號信箱已列入投遞封鎖名單。",
+            "unsubscribed": "已略過：你的帳號已取消訂閱郵件更新。"
+          },
+          "requestFailed": "請求未完成。重試會重用原請求，避免重複發送。",
+          "retry": "重試測試郵件",
+          "send": "發送測試郵件",
+          "sendAnother": "再發送一封測試郵件",
+          "sending": "正在發送…",
+          "status": {
+            "queued": "已排隊。再次發送範例前，請檢查投遞狀態。",
+            "sent": "郵件服務已接受。請檢查收件匣和垃圾郵件；尚未確認實際送達。"
+          },
+          "title": "Morning Brief 測試郵件"
+        },
         "openrouterPreset": {
           "description": "對整個組織後續新建的 Auto 和 Okou 1.0 內建模型執行生效，不影響既有執行。",
           "loading": "載入中…",

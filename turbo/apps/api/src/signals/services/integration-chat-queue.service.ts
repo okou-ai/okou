@@ -173,7 +173,7 @@ export const enqueueIntegrationChatInput$ = command(
       if (event) {
         await applyThreadModelReplacement(tx, args.threadModelReplacement);
         // The queue row is locked last and only advances queuedAt; a live
-        // claim lease stays with its holder (docs/chat-run-pick.md).
+        // claim lease stays with its holder.
         const plan = queuedChatThreadEnqueuePlan({
           chatThreadId,
           orgId: args.orgId,

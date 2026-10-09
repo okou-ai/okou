@@ -4918,6 +4918,27 @@
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Check delivery status",
+          "description": "Send a fixed sample to your account email using the Morning Brief template. This does not run an Agent or change your schedule.",
+          "reasons": {
+            "delivery-failed": "Delivery failed. An earlier provider attempt may have been accepted.",
+            "expired": "Delivery expired. An earlier provider attempt may have been accepted.",
+            "no-email": "Skipped: your account has no email address.",
+            "suppressed": "Skipped: delivery to your account email is suppressed.",
+            "unsubscribed": "Skipped: your account is unsubscribed from email updates."
+          },
+          "requestFailed": "The request did not finish. Retry uses the same request to avoid a duplicate email.",
+          "retry": "Retry test email",
+          "send": "Send test email",
+          "sendAnother": "Send another test email",
+          "sending": "Sending…",
+          "status": {
+            "queued": "Queued for delivery. Check its status before sending another sample.",
+            "sent": "Accepted by the email provider. Check your inbox and spam folder; inbox delivery is not confirmed."
+          },
+          "title": "Morning Brief test email"
+        },
         "openrouterPreset": {
           "description": "Applies to new Auto and Okou 1.0 Built-in runs for the entire organization. Existing runs are unchanged.",
           "loading": "Loading…",

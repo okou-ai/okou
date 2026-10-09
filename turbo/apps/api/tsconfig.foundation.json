@@ -65,6 +65,7 @@
     "src/signals/services/pending-launch-sql.ts",
     "src/signals/services/pending-launch-tail-plan.ts",
     "src/signals/services/pi-memory-phase2-publication.service.ts",
+    "src/signals/services/pi-memory-phase2-input-revision.ts",
     "src/signals/services/pi-memory-phase2-job.service.ts",
     "src/signals/services/pi-memory-phase2-maintenance.service.ts",
     "src/signals/services/pi-memory-stage1-admission-plan.ts",
@@ -252,6 +253,7 @@
     "src/signals/services/notion-automation-account.service.ts",
     "src/signals/services/official-automation-result-email-renderer.ts",
     "src/lib/agent-notification-email-renderer.ts",
+    "src/lib/debug-morning-brief-email.ts",
     "src/lib/morning-brief-notification-source.ts",
     "src/signals/services/official-workflow-catalog-read.service.ts",
     "src/signals/services/official-workflow-context.signals.ts",
@@ -335,8 +337,7 @@
     "src/signals/services/ssh-client-invalidation.service.ts",
     "src/signals/services/ssh-creation.service.ts",
     "src/signals/services/ssh-runtime-wakeup.service.ts",
-    "src/signals/services/uploaded-artifact.service.ts",
-    "src/signals/services/retired-morning-brief-email.ts"
+    "src/signals/services/uploaded-artifact.service.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

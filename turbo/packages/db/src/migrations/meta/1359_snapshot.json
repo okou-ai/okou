@@ -1,6 +1,6 @@
 {
-  "id": "b141344e-89e3-43ea-995f-32309f5c3a71",
-  "prevId": "369f53f4-8ae8-4af3-9c06-6f6f17cd8351",
+  "id": "277c68cd-2207-4353-be19-ad4886d4be91",
+  "prevId": "1d02fb36-ce31-490d-9f3f-e9d3a9165b67",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12526,7 +12526,7 @@
           "name": "oauth_grant_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
@@ -12823,7 +12823,7 @@
           "name": "org_grant_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
@@ -17442,7 +17442,7 @@
           "name": "source_run_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "idempotency_key": {
           "name": "idempotency_key",

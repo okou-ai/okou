@@ -53,7 +53,7 @@ const publishSandboxSessionOutput$ = command(
     signal.throwIfAborted();
     if (body.chunkIndex === 0) {
       // One row per assistant text block; the earliest per run is the run's
-      // first chunk. See docs/chat-first-output-latency.md.
+      // first chunk.
       recordSandboxOperation({
         sandboxType: "runner",
         runId: body.runId,

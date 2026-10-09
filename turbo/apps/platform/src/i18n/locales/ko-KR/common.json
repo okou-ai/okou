@@ -4905,6 +4905,27 @@
           "title": "IndexedDB 저장소",
           "unavailable": "IndexedDB 저장소를 사용할 수 없습니다."
         },
+        "morningBriefEmail": {
+          "checkStatus": "전달 상태 확인",
+          "description": "Morning Brief 템플릿으로 계정 이메일에 고정된 샘플을 보냅니다. Agent를 실행하거나 일정을 변경하지 않습니다.",
+          "reasons": {
+            "delivery-failed": "전달에 실패했습니다. 이전 시도가 이메일 서비스에 접수되었을 수 있습니다.",
+            "expired": "전달 기한이 만료되었습니다. 이전 시도가 이메일 서비스에 접수되었을 수 있습니다.",
+            "no-email": "건너뜀: 계정에 이메일 주소가 없습니다.",
+            "suppressed": "건너뜀: 계정 이메일로의 전달이 차단되어 있습니다.",
+            "unsubscribed": "건너뜀: 계정에서 이메일 업데이트 구독을 취소했습니다."
+          },
+          "requestFailed": "요청이 완료되지 않았습니다. 재시도 시 같은 요청을 사용하여 중복 이메일을 방지합니다.",
+          "retry": "테스트 이메일 재시도",
+          "send": "테스트 이메일 보내기",
+          "sendAnother": "다른 테스트 이메일 보내기",
+          "sending": "보내는 중…",
+          "status": {
+            "queued": "전달 대기 중입니다. 다른 샘플을 보내기 전에 상태를 확인하세요.",
+            "sent": "이메일 서비스가 접수했습니다. 받은편지함과 스팸함을 확인하세요. 실제 도착은 확인되지 않았습니다."
+          },
+          "title": "Morning Brief 테스트 이메일"
+        },
         "openrouterPreset": {
           "description": "조직 전체의 새 Auto 및 기본 제공 Okou 1.0 실행에 적용됩니다. 기존 실행은 변경되지 않습니다.",
           "loading": "불러오는 중…",

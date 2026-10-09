@@ -4994,6 +4994,27 @@
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Controlla lo stato di consegna",
+          "description": "Invia un esempio fisso all’email del tuo account con il modello Morning Brief. Non esegue un Agent e non modifica la programmazione.",
+          "reasons": {
+            "delivery-failed": "Consegna non riuscita. Il provider potrebbe aver accettato un tentativo precedente.",
+            "expired": "Il termine di consegna è scaduto. Il provider potrebbe aver accettato un tentativo precedente.",
+            "no-email": "Saltata: il tuo account non ha un indirizzo email.",
+            "suppressed": "Saltata: la consegna all’email del tuo account è bloccata.",
+            "unsubscribed": "Saltata: il tuo account ha annullato l’iscrizione agli aggiornamenti email."
+          },
+          "requestFailed": "La richiesta non è stata completata. Il nuovo tentativo usa la stessa richiesta per evitare un’email duplicata.",
+          "retry": "Riprova l’email di prova",
+          "send": "Invia email di prova",
+          "sendAnother": "Invia un’altra email di prova",
+          "sending": "Invio in corso…",
+          "status": {
+            "queued": "In coda per la consegna. Controlla lo stato prima di inviare un altro esempio.",
+            "sent": "Accettata dal provider email. Controlla posta in arrivo e spam; l’arrivo nella casella non è confermato."
+          },
+          "title": "Email di prova di Morning Brief"
+        },
         "openrouterPreset": {
           "description": "Si applica alle nuove esecuzioni di Auto e Okou 1.0 integrato per tutta l’organizzazione. Le esecuzioni esistenti non cambiano.",
           "loading": "Caricamento…",

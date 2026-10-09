@@ -1965,22 +1965,15 @@
     {
       "idx": 1358,
       "version": "7",
-      "when": 1791533524858,
-      "tag": "1358_discord_oauth_onboarding",
+      "when": 1791532512730,
+      "tag": "1358_furry_wind_dancer",
       "breakpoints": true
     },
     {
       "idx": 1359,
       "version": "7",
-      "when": 1791533673062,
-      "tag": "1359_discord_native_grant_lifecycle",
-      "breakpoints": true
-    },
-    {
-      "idx": 1360,
-      "version": "7",
-      "when": 1791538493471,
-      "tag": "1360_discord_required_consent",
+      "when": 1791540819348,
+      "tag": "1359_discord_oauth_onboarding",
       "breakpoints": true
     }
   ]

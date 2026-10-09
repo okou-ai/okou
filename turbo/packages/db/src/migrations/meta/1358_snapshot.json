@@ -1,5 +1,5 @@
 {
-  "id": "369f53f4-8ae8-4af3-9c06-6f6f17cd8351",
+  "id": "1d02fb36-ce31-490d-9f3f-e9d3a9165b67",
   "prevId": "b86708d7-8863-49d7-814b-3def84c583d1",
   "version": "7",
   "dialect": "postgresql",
@@ -12304,185 +12304,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.discord_oauth_states": {
-      "name": "discord_oauth_states",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "state_hash": {
-          "name": "state_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "completion_token_hash": {
-          "name": "completion_token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "approval_token_hash": {
-          "name": "approval_token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phase": {
-          "name": "phase",
-          "type": "discord_oauth_phase",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "failure_code": {
-          "name": "failure_code",
-          "type": "discord_oauth_failure",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "flow": {
-          "name": "flow",
-          "type": "discord_oauth_flow",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "guild_id": {
-          "name": "guild_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "redirect_uri": {
-          "name": "redirect_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "verified_guild_id": {
-          "name": "verified_guild_id",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_guild_name": {
-          "name": "verified_guild_name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_discord_user_id": {
-          "name": "verified_discord_user_id",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_bot_user_id": {
-          "name": "verified_bot_user_id",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_discord_oauth_states_expiry": {
-          "name": "idx_discord_oauth_states_expiry",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_oauth_states_owner": {
-          "name": "idx_discord_oauth_states_owner",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "discord_oauth_states_state_hash_unique": {
-          "name": "discord_oauth_states_state_hash_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "state_hash"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "chk_discord_oauth_evidence_phase": {
-          "name": "chk_discord_oauth_evidence_phase",
-          "value": "(\n      \"discord_oauth_states\".\"phase\" IN ('verified', 'approved') AND\n      \"discord_oauth_states\".\"verified_guild_id\" IS NOT NULL AND \"discord_oauth_states\".\"verified_guild_name\" IS NOT NULL AND\n      \"discord_oauth_states\".\"verified_discord_user_id\" IS NOT NULL AND \"discord_oauth_states\".\"verified_bot_user_id\" IS NOT NULL\n    ) OR (\n      \"discord_oauth_states\".\"phase\" NOT IN ('verified', 'approved') AND\n      \"discord_oauth_states\".\"verified_guild_id\" IS NULL AND \"discord_oauth_states\".\"verified_guild_name\" IS NULL AND\n      \"discord_oauth_states\".\"verified_discord_user_id\" IS NULL AND \"discord_oauth_states\".\"verified_bot_user_id\" IS NULL\n    )"
-        },
-        "chk_discord_oauth_approval_phase": {
-          "name": "chk_discord_oauth_approval_phase",
-          "value": "(\"discord_oauth_states\".\"phase\" = 'verified') = (\"discord_oauth_states\".\"approval_token_hash\" IS NOT NULL)"
-        },
-        "chk_discord_oauth_failure_phase": {
-          "name": "chk_discord_oauth_failure_phase",
-          "value": "(\"discord_oauth_states\".\"phase\" = 'failed') = (\"discord_oauth_states\".\"failure_code\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.discord_org_connections": {
       "name": "discord_org_connections",
       "schema": "",
@@ -12564,21 +12385,6 @@
             "guild_id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "fk_discord_connection_identity_owner": {
-          "name": "fk_discord_connection_identity_owner",
-          "tableFrom": "discord_org_connections",
-          "tableTo": "discord_user_identities",
-          "columnsFrom": [
-            "discord_user_id",
-            "user_id"
-          ],
-          "columnsTo": [
-            "discord_user_id",
-            "user_id"
-          ],
-          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
@@ -12799,40 +12605,6 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.discord_user_identities": {
-      "name": "discord_user_identities",
-      "schema": "",
-      "columns": {
-        "discord_user_id": {
-          "name": "discord_user_id",
-          "type": "varchar(255)",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "uq_discord_user_identity_owner": {
-          "name": "uq_discord_user_identity_owner",
-          "nullsNotDistinct": false,
-          "columns": [
-            "discord_user_id",
-            "user_id"
-          ]
-        }
-      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -17270,7 +17042,7 @@
           "name": "source_run_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "idempotency_key": {
           "name": "idempotency_key",
@@ -35018,38 +34790,6 @@
         "consumed",
         "expired",
         "denied"
-      ]
-    },
-    "public.discord_oauth_failure": {
-      "name": "discord_oauth_failure",
-      "schema": "public",
-      "values": [
-        "cancelled",
-        "unavailable",
-        "forbidden",
-        "provider_error",
-        "invalid_authorization",
-        "guild_unverified",
-        "bot_missing"
-      ]
-    },
-    "public.discord_oauth_flow": {
-      "name": "discord_oauth_flow",
-      "schema": "public",
-      "values": [
-        "install",
-        "connect"
-      ]
-    },
-    "public.discord_oauth_phase": {
-      "name": "discord_oauth_phase",
-      "schema": "public",
-      "values": [
-        "pending",
-        "processing",
-        "verified",
-        "approved",
-        "failed"
       ]
     },
     "public.model_provider_auth_session_status": {
