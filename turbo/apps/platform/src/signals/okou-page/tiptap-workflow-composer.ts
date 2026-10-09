@@ -35,6 +35,8 @@ import {
   VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
   type VoiceIoEditorContext,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
@@ -2205,6 +2207,9 @@ function createMountEditorCommand({
         set(caretIndex$, updatedEditor.state.selection.head);
       };
       runtime.focus = (focusedEditor) => {
+        if (get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions]) {
+          set(selectedSuggestionIndexState$, 0);
+        }
         set(previewSuggestionIndexState$, null);
         set(editorInteractionActiveState$, true);
         set(caretIndex$, focusedEditor.state.selection.head);

@@ -269,6 +269,7 @@ export async function pinRunnerSsh(
   if (!initial) {
     return unavailable;
   }
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0238; new non-billing transactions are prohibited.
   const result = await db.transaction<RunnerSshPinResponse>(async (tx) => {
     // Same row as owner edit/reset, scoped only after non-locking authorization.
     const [locked] = await tx
@@ -353,6 +354,7 @@ export async function recordRunnerSshObservation(
   if (observedAt.getTime() > nowDate().getTime() + 60_000) {
     return { outcome: "ignored" };
   }
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0239; new non-billing transactions are prohibited.
   const result = await db.transaction<{
     readonly outcome: "recorded" | "ignored" | "unavailable";
     readonly notify: boolean;

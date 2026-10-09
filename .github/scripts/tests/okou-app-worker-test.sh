@@ -2,9 +2,6 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
-
 worker_config="${repo_root}/turbo/apps/app-worker/wrangler.jsonc"
 if ! grep -Fq '"global_fetch_strictly_public"' "$worker_config"; then
   echo "app Worker must allow public same-zone fetches" >&2
@@ -31,26 +28,6 @@ for module_path in \
   fi
 done
 
-clerk_stub_dir="${tmp_dir}/node_modules/@clerk/backend"
-mkdir -p "$clerk_stub_dir"
-printf '%s\n' \
-  '{"name":"@clerk/backend","type":"module","exports":"./index.js"}' \
-  > "${clerk_stub_dir}/package.json"
-printf '%s\n' \
-  'export function createClerkClient() {' \
-  '  throw new Error("Unexpected default Clerk client invocation");' \
-  '}' \
-  > "${clerk_stub_dir}/index.js"
-core_scope_dir="${tmp_dir}/node_modules/@okouai"
-mkdir -p "$core_scope_dir"
-ln -s "${repo_root}/turbo/packages/core" "${core_scope_dir}/core"
-mkdir -p "${tmp_dir}/src" "${tmp_dir}/assets"
-cp "${repo_root}/turbo/apps/app-worker/src/worker.js" "${tmp_dir}/src/worker.mjs"
-cp "${repo_root}/turbo/apps/app-worker/assets/posthog-metadata.json" \
-  "${tmp_dir}/assets/posthog-metadata.json"
-
-node "${repo_root}/.github/scripts/tests/okou-app-worker-test.mjs" \
-  "${tmp_dir}/src/worker.mjs" \
-  "${repo_root}/turbo/apps/platform/index.html" \
-  "${repo_root}/turbo/apps/platform/public/manifest.webmanifest" \
-  "${repo_root}/turbo/apps/app-worker/assets/favicon.ico.bin"
+# Runtime coverage imports workspace dependencies and runs in turbo.yml's
+# test-other job with `pnpm -F @okouai/app-worker test`.
+echo "okou-app-worker configuration: ok"

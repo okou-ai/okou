@@ -411,6 +411,7 @@ const insertPendingInvitationPurchase$ = command(
     signal: AbortSignal,
   ): Promise<string | null> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0274; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       signal.throwIfAborted();
       await tx
@@ -790,6 +791,7 @@ const persistSuccessfulPayment$ = command(
   ): Promise<UsagePackInvitationPurchaseRow> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0275; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [purchase] = await tx
         .select()
@@ -977,6 +979,7 @@ const claimInvitationCreation$ = command(
   ): Promise<UsagePackInvitationPurchaseRow | null> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0276; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const staleBefore = new Date(
         nowDate().getTime() - RECONCILIATION_DELAY_MS,
@@ -1020,6 +1023,7 @@ const persistInvitation$ = command(
   ): Promise<boolean> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0277; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // Allocation publication and the purchase transition commit together;
       // a lost status transition rolls back the allocation.
@@ -1290,6 +1294,7 @@ const finalizeRefund$ = command(
   ): Promise<void> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0278; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // Conditional transition first: only the claimed refund attempt that is
       // still refunding completes; a lost or stale attempt is a no-op.
@@ -1452,6 +1457,7 @@ const refundPurchase$ = command(
     signal?: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0279; new non-billing transactions are prohibited.
     const purchase = await db.transaction(async (tx) => {
       const [identity] = await tx
         .select({
@@ -2220,6 +2226,7 @@ const claimAcceptedPurchaseActivation$ = command(
   ): Promise<UsagePackInvitationPurchaseRow | null> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0280; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [identity] = await tx
         .select({
@@ -2291,6 +2298,7 @@ const activateAcceptedPurchase$ = command(
     }
     const claimedUserId = purchase.acceptedUserId;
     const claimedAllocationId = purchase.allocationId;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0281; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // A real business transition arbitrates this delivery, not an org key
       // or an empty write. Grants and allocation activation share its commit;
@@ -2418,6 +2426,7 @@ const markLateAcceptanceForRefund$ = command(
   ): Promise<boolean> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0282; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // Conditional transition: only a still-acceptable purchase moves to
       // refund_pending; anything else is a deterministic "not marked".
@@ -2453,6 +2462,7 @@ const recordInvitationAcceptance$ = command(
   ): Promise<void> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0283; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // Assignment and the status-conditional purchase publication share one
       // transaction. A lost publication rolls back the assignment.

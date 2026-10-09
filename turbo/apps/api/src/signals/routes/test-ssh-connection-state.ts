@@ -39,6 +39,7 @@ async function createRuntime(
   const sessionId = randomUUID();
   const runId = randomUUID();
   const threadId = body.chat ? randomUUID() : null;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0034; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     if (body.agentId) {
       const [agent] = await tx

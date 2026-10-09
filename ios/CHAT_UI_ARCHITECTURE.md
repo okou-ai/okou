@@ -130,7 +130,25 @@ the existing bounded Markdown cache. After preparation it expands the current
 projection, so concurrent refreshes and sends cannot be overwritten by a stale
 prepared array. Closing a conversation cancels the task.
 
-ChatDetailView renders the visible suffix. Scrolling near the top loads an
+ChatDetailView renders the visible suffix and forwards lifecycle, message changes,
+and user actions to its ConversationScrollCoordinator. Each detail-view identity
+owns one coordinator. An explicit latest/history intent owns bottom following and
+whether reaching the bottom resets the window. Initial positioning and native
+motion remain separate state: a history intent may coexist with a user drag or an
+ongoing native animation. Native user interaction establishes the viewport when
+initial positioning has not completed; a delayed initial request then yields to
+that interaction. Raw metrics and phases are not observed by the view;
+only intent and bottom-button visibility affect its rendering.
+
+The coordinator binds weak anchor callbacks while mounted and clears them on
+exit. It owns its history-expansion request task; newer user scrolling, a bottom
+request, or disappearance invalidate post-await corrections. ConversationStore
+still owns the expansion operation and its prepared render window, while the
+view's latest-message task retains SwiftUI cancellation ownership. Native sizing,
+reuse, motion completion, and actual offset correction remain with the existing
+collection and anchor.
+
+Scrolling near the top loads an
 earlier page after scrolling settles; the accessible Load earlier messages
 button also works when a short window cannot be scrolled. Initial positioning
 follows the latest message. Reading history pins the window boundary, and
@@ -252,6 +270,10 @@ frames. Position assertions remain independent of this setup and retain their
 three-second deadline. Repeated traversal of code and table messages also
 verifies stable content height and allocated cell heights after reuse, including
 width and Dynamic Type changes. Viewport resizing verifies bottom following.
+Coordinator tests with a native collection cover remote updates while reading, viewport changes, bottom requests
+during animated paging with and without Reduce Motion, resuming following, and
+user scrolling that interrupts a bottom request without shrinking history, and
+user interaction preceding deferred initial positioning.
 The collection supports
 native animated accessibility paging as well as touch scrolling.
 These are correctness and rendering-scope checks. A physical-device Release

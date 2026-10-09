@@ -327,6 +327,7 @@ export const claimPiMemoryPhase2Job$ = command(
     // This finite SQL claim preserves the worker's post-transaction cancellation.
     // Storage -> candidates -> job keeps the selected set/digest, base HEAD and
     // claimed revision consistent with Stage 1 success and external publication.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0223; new non-billing transactions are prohibited.
     const claimed = await set(writeDb$).transaction(async (tx) => {
       const [claimableStorage] = await tx
         .select(claimableStorageColumns)

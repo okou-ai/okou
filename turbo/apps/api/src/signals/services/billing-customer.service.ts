@@ -27,6 +27,7 @@ const publishStripeCustomer$ = command(
     const db = set(writeDb$);
     // New metadata and its default Plan entitlement must publish together.
     const publication = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0062; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         signal.throwIfAborted();
 

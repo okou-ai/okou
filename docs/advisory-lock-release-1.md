@@ -71,7 +71,7 @@ behavior and no longer change a member default or recreate a retired session.
 Browser and custom account preparation from #37097 was verified against live
 production aliases, public API build-info, the configured invocation bound, and
 the mandatory rollback floor. See the exact evidence in
-[deployment compatibility](./deployment-compatibility.md#browser-advisory-retirement-2026-09-29).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#browser-advisory-retirement-2026-09-29).
 Recheck those deployment facts before promotion if supported versions change.
 No new App floor or Runner drain is justified by these API-only changes.
 

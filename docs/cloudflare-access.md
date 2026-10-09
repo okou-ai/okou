@@ -58,7 +58,7 @@ records. The scope guard migration for Personal-to-Organization promotion must
 run before the new API operation is enabled. The temporary
 SSH-prefixed API and Access-only `ssh:changed` bridge were retired after the
 canonical consumer was verified in production App `0.944.0`; see [deployment
-compatibility](deployment-compatibility.md#cloudflare-access-for-ssh) for the
+compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#cloudflare-access-for-ssh) for the
 completed rollout boundary.
 
 A protected SSH host whose shared configuration is no longer permitted can be

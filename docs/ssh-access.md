@@ -261,7 +261,7 @@ rollback after an ambiguous network loss. Do not automatically replay saves;
 confirmation and duplicate prevention separately.
 
 See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)
-and the [activation gate](deployment-compatibility.md#cloudflare-access-for-ssh).
+and the [activation gate](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#cloudflare-access-for-ssh).
 The accepted missed-notification window still lasts until Run end; this feature
 does not promise immediate revocation.
 

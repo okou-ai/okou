@@ -625,37 +625,6 @@ test("An update arriving during processing is not lost", async () => {
   expect(runs).toBe(2);
 });
 
-test("A transient live-update error is retried", async () => {
-  mockSignedInUser();
-  const topic = "connectorPermissionUpdated";
-  let runs = 0;
-  const loop$ = command((_ctx, _signal: AbortSignal) => {
-    runs += 1;
-    if (runs === 1) {
-      throw new Error("temporary loop failure");
-    }
-    return true;
-  });
-
-  await context.store.set(setupRealtime$, context.signal);
-  const loopPromise = context.store.set(
-    waitAblyLoopUntil$,
-    {
-      topic,
-      loopCommand$: loop$,
-    },
-    context.signal,
-  );
-
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
-  });
-  context.mocks.ably.trigger(topic);
-
-  await expect(loopPromise).resolves.toBeUndefined();
-  expect(runs).toBe(2);
-});
-
 test("Payload updates received during subscription initialization are applied", async () => {
   mockSignedInUser();
   const topic = "connectorPermissionUpdated";
@@ -732,18 +701,18 @@ test("A permanently bad live update does not block later updates", async () => {
   context.mocks.ably.trigger(topic, { messageId: "message-1" });
 
   await expect(loopPromise).resolves.toBeUndefined();
-  expect(poisonAttempts).toBe(8);
+  expect(poisonAttempts).toBe(2);
   expect(handled).toStrictEqual([{ messageId: "message-1" }]);
 });
 
-test("A persistent refresh error pauses until a new update", async () => {
+test("A failed live update waits for the next update", async () => {
   mockSignedInUser();
   const topic = "connectorPermissionUpdated";
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
-    if (runs <= 4) {
-      throw new Error("permanent notification failure");
+    if (runs === 1) {
+      throw new Error("notification failure");
     }
     return true;
   });
@@ -764,12 +733,12 @@ test("A persistent refresh error pauses until a new update", async () => {
   context.mocks.ably.trigger(topic);
 
   await waitFor(() => {
-    expect(runs).toBe(4);
+    expect(runs).toBe(1);
   });
 
   context.mocks.ably.trigger(topic);
   await expect(loopPromise).resolves.toBeUndefined();
-  expect(runs).toBe(5);
+  expect(runs).toBe(2);
 });
 
 test("Chat thread notifications invalidate their matching resources", async () => {

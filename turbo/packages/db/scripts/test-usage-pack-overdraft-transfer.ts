@@ -11,6 +11,7 @@ const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 const schema = `pack_transfer_${randomUUID().replaceAll("-", "")}`;
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0432; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET LOCAL search_path TO "${schema}"`);
@@ -127,6 +128,7 @@ try {
     ).rows[0]?.remaining,
     "0",
   );
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0433; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT missing_wallet");
   await client.query(
     `INSERT INTO usage_pack_credit_grants VALUES ('00000000-0000-4000-a000-000000000006', 'missing_wallet', 'eve', 'bonus', 10, -3, '2099-01-01', 'missing-source')`,

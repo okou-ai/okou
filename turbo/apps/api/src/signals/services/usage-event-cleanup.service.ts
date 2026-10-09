@@ -41,6 +41,7 @@ export const deleteUsageData$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0265; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [jobs, ...targets] = usageCleanupTargets(args);
       await tx.delete(jobs.table).where(jobs.condition);

@@ -397,6 +397,7 @@ function customDcrClientStore(args: {
 const retireCustomDcrRegistration$ = command(
   async ({ set }, registrationId: string, signal: AbortSignal) => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0136; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await retireCustomConnectorDcrRegistration(tx, registrationId);
     });

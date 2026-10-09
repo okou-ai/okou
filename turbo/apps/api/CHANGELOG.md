@@ -9,6 +9,54 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.720.1](https://github.com/okou-ai/okou/compare/api-v1.720.0...api-v1.720.1) (2026-10-09)
+
+
+### Refactoring
+
+* **discord:** derive message content from application grants ([#38377](https://github.com/okou-ai/okou/issues/38377)) ([a69a248](https://github.com/okou-ai/okou/commit/a69a2485e449109886f80bf37d49ece61f750230))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.545.1
+    * @okouai/core bumped to 8.738.1
+    * @okouai/db bumped to 1.327.1
+    * @okouai/pi-agent-runtime bumped to 1.48.3
+
+## [1.720.0](https://github.com/okou-ai/okou/compare/api-v1.719.0...api-v1.720.0) (2026-10-09)
+
+
+### Features
+
+* add sandbox covers for hosted artifacts ([#38149](https://github.com/okou-ai/okou/issues/38149)) ([f4a3140](https://github.com/okou-ai/okou/commit/f4a3140275a8c3334135080ed2427e837bc9fc89))
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
+
+### Refactoring
+
+* **api:** build pi cleanup predicates without db handles ([#38333](https://github.com/okou-ai/okou/issues/38333)) ([9f09dc5](https://github.com/okou-ai/okou/commit/9f09dc556b34a95eaae3668436274da8ec0cc40f))
+* **api:** inline clerk lifecycle transaction ownership ([#38171](https://github.com/okou-ai/okou/issues/38171)) ([50f91be](https://github.com/okou-ai/okou/commit/50f91befb0bacd4d7c166ace839251a648bd4bf9)), closes [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** move desktop version policy into source control ([#38372](https://github.com/okou-ai/okou/issues/38372)) ([0d20c41](https://github.com/okou-ai/okou/commit/0d20c414e1cefa1642d8eed98f2eb15fc5a97499))
+* **api:** own discord cleanup and gateway lifecycle writes ([#38087](https://github.com/okou-ai/okou/issues/38087)) ([b73d44a](https://github.com/okou-ai/okou/commit/b73d44a9a9e52185c50f968ced4f5cfb12584093))
+* **api:** own oauth completion receipt writes ([#38349](https://github.com/okou-ai/okou/issues/38349)) ([d73778c](https://github.com/okou-ai/okou/commit/d73778c30b09c35fcd6ae4d7bef943e19872bdac))
+* **api:** prebuild billing restore auth wrapper ([#38173](https://github.com/okou-ai/okou/issues/38173)) ([7f53c7a](https://github.com/okou-ai/okou/commit/7f53c7a44fbec83ba15cf7fa4356376258ffca92)), closes [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** retire official workflow queue markers ([#38365](https://github.com/okou-ai/okou/issues/38365)) ([1b0d4ec](https://github.com/okou-ai/okou/commit/1b0d4ec16fa782e6a5b0e01d899ce339acb6aa6a))
+* **api:** unify run prompts and skill volumes ([#38332](https://github.com/okou-ai/okou/issues/38332)) ([8d665ee](https://github.com/okou-ai/okou/commit/8d665ee2524394819205c6f3d69888f6436addb8))
+* remove monday connector feature switch ([#38334](https://github.com/okou-ai/okou/issues/38334)) ([fb8f2d3](https://github.com/okou-ai/okou/commit/fb8f2d3b1474385d7fb0d44594b883919c33c62e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.545.0
+    * @okouai/core bumped to 8.738.0
+    * @okouai/db bumped to 1.327.0
+    * @okouai/pi-agent-runtime bumped to 1.48.2
+
 ## [1.719.0](https://github.com/okou-ai/okou/compare/api-v1.718.0...api-v1.719.0) (2026-10-09)
 
 

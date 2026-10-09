@@ -119,6 +119,7 @@ const commitOfficialFormsReconfiguration$ = command(
     const db = set(writeDb$);
     const enabled =
       args.expected.officialIntendedEnabled === true || args.expected.enabled;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0194; new non-billing transactions are prohibited.
     const committed = await db.transaction(async (tx) => {
       const currentTime = nowDate();
       const [updated] = await tx

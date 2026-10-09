@@ -160,7 +160,7 @@ admission rule reaches production.
 Runner and Guest ship in the same artifact, so their internal control payload
 does not require cross-version negotiation. Release 6 and later Runners call
 only the two steer endpoints, so the API rollback floor for this release is
-recorded in [deployment compatibility](./deployment-compatibility.md).
+preserved in the [historical Release 7 rollout record](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#unified-chat-queue-release-7-current-launch-compatibility).
 
 The browser remains event-oriented: optimistic input is reconciled by its chat
 event ID, and steered replacements use the existing realtime chat event

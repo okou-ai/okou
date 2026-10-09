@@ -57,7 +57,7 @@ are outside that removal boundary.
 The browser-funnel rollout replaces `/api/marketing/finish-onboarding` without
 an alias. Deploy Marketing and the new App first, verify the replacement App
 version is live, then raise the App API compatibility floor to that version in
-a separate release. See [Marketing browser funnel events](deployment-compatibility.md#marketing-browser-funnel-events)
+a separate release. See [Marketing browser funnel events](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#marketing-browser-funnel-events)
 for the explicit prelaunch support boundary and force-upgrade ordering.
 
 The earlier iframe cutover retired `/finish-onboarding`, the config endpoint,

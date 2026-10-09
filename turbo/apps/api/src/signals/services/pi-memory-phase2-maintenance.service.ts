@@ -470,6 +470,7 @@ const observeTerminalMaintenance$ = command(
     const binding = { ...payload, runId: envelope.runId };
     // The job fence, publication evidence, selected watermarks and terminal receipt
     // commit together. Publication itself remains owned by Storage.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0224; new non-billing transactions are prohibited.
     const result = await set(writeDb$).transaction(async (tx) => {
       const [job] = await tx
         .select(maintenanceJobColumns)

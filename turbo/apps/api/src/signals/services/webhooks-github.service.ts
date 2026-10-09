@@ -80,9 +80,13 @@ export const gitHubIssueCommentEventSchema = z.object({
   sender: gitHubUserSchema,
 });
 
+export const gitHubWorkflowJobActionSchema = z.object({
+  action: z.string(),
+});
+
 export const gitHubWorkflowJobEventSchema: z.ZodType<GithubWorkflowJobEventPayload> =
   z.object({
-    action: z.string(),
+    action: z.literal("completed"),
     workflow_job: z.object({
       id: z.number(),
       run_id: z.number(),

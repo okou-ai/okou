@@ -115,7 +115,7 @@ accepted by the provider.
 Apply the additive migration, deploy API and every outbox drain worker with the
 new template readers (`agent-notification` and `agent-morning-brief`), then release
 the CLI. Keep `notifyMail` disabled until all old drain instances are gone; old workers cannot read the new template. See
-[deployment compatibility](deployment-compatibility.md#agent-mail-notifications-stage-one).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#agent-mail-notifications-stage-one).
 
 Before stage two, enable only the acceptance cohort, start a real authorized
 run, invoke the command, query its receipt, and confirm the resulting email in

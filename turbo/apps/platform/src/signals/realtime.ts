@@ -10,10 +10,8 @@ import type {
   InboundMessage,
   RealtimeChannel,
 } from "ably";
-import { delay } from "signal-timers";
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import type { SharedDatabaseRealtimeScope } from "../shared-database/protocol.ts";
-import { IN_VITEST } from "../env.ts";
 import { createAblyRealtime, type AblyRealtime } from "../lib/ably-realtime.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
@@ -32,10 +30,6 @@ import {
 import { logger } from "./log.ts";
 
 const L = logger("Realtime");
-const REALTIME_TRANSIENT_RETRY_DELAYS_MS = [
-  1000, 2000, 5000, 10_000, 30_000,
-] as const;
-const MAX_TRANSIENT_RETRIES = 3;
 
 /**
  * Register listeners without Ably's default implicit attach.
@@ -242,7 +236,6 @@ interface RealtimePayloadLoopState {
    * stays as stale as the events it missed.
    */
   resyncPending: boolean;
-  transientRetryCount: number;
   readonly pendingPayloads: unknown[];
 }
 
@@ -257,19 +250,6 @@ interface RealtimePayloadLoopIterationArgs {
     [AbortSignal]
   >;
   readonly pokeLoop: () => void;
-}
-
-async function waitForTransientRetry(
-  signal: AbortSignal,
-  retryCount: number,
-): Promise<void> {
-  const delayMs = IN_VITEST
-    ? 0
-    : (REALTIME_TRANSIENT_RETRY_DELAYS_MS[
-        Math.min(retryCount, REALTIME_TRANSIENT_RETRY_DELAYS_MS.length - 1)
-      ] ?? 30_000);
-  await delay(delayMs, { signal });
-  signal.throwIfAborted();
 }
 
 interface SubscribeChannelArgs {
@@ -342,7 +322,6 @@ const runWithChannel$ = command(
     signal.throwIfAborted();
     let deferred = createDeferredPromise(signal);
     let poked = false;
-    let transientRetryCount = 0;
 
     const pokeLoop = () => {
       if (signal.aborted || poked || deferred.settled()) {
@@ -386,7 +365,7 @@ const runWithChannel$ = command(
               loopSignal.throwIfAborted();
               deferred = createDeferredPromise(loopSignal);
               poked = false;
-              // eslint-disable-next-line no-restricted-syntax -- polling loop requires try/catch for transient error retry with backoff
+              // eslint-disable-next-line no-restricted-syntax -- a failed notification is dropped; the loop waits for the next one
               try {
                 let done = false;
                 if (action.kind === "command") {
@@ -397,26 +376,12 @@ const runWithChannel$ = command(
                   }
                 }
                 loopSignal.throwIfAborted();
-                transientRetryCount = 0;
                 if (done) {
                   return true;
                 }
               } catch (error) {
                 throwIfAbort(error);
-                loopSignal.throwIfAborted();
-                if (transientRetryCount >= MAX_TRANSIENT_RETRIES) {
-                  L.warn(
-                    `giving up on ably notification after repeated handler failures`,
-                    error,
-                  );
-                  transientRetryCount = 0;
-                  return false;
-                }
-                L.warn(`transient error in ably notification`, error);
-                await waitForTransientRetry(loopSignal, transientRetryCount);
-                loopSignal.throwIfAborted();
-                transientRetryCount++;
-                pokeLoop();
+                return false;
               }
               return false;
             },
@@ -489,31 +454,22 @@ const runPayloadLoopIteration$ = command(
 
     const payload = state.pendingPayloads[0];
     let done = false;
-    // eslint-disable-next-line no-restricted-syntax -- payload notifications retry transient handler failures before dropping a poisoned queue item
+    // eslint-disable-next-line no-restricted-syntax -- a failed payload must be dequeued so one poisoned item cannot block the queue
     try {
       done = await set(loopCommand$, payload, signal);
       signal.throwIfAborted();
     } catch (error) {
       throwIfAbort(error);
       signal.throwIfAborted();
-      if (state.transientRetryCount >= MAX_TRANSIENT_RETRIES) {
-        L.warn(`dropping ably payload after repeated handler failures`, error);
-        state.pendingPayloads.shift();
-        state.transientRetryCount = 0;
-        if (state.pendingPayloads.length > 0) {
-          pokeLoop();
-        }
-        return false;
+      // Without this dequeue, the same payload would stay at the head and block
+      // every later payload until the next poke.
+      state.pendingPayloads.shift();
+      if (state.pendingPayloads.length > 0) {
+        pokeLoop();
       }
-      L.warn(`transient error in ably payload notification`, error);
-      await waitForTransientRetry(signal, state.transientRetryCount);
-      signal.throwIfAborted();
-      state.transientRetryCount++;
-      pokeLoop();
       return false;
     }
     state.pendingPayloads.shift();
-    state.transientRetryCount = 0;
     if (done) {
       return true;
     }
@@ -544,7 +500,6 @@ const runWithChannelPayload$ = command(
       deferred: createDeferredPromise(signal),
       poked: false,
       resyncPending: false,
-      transientRetryCount: 0,
       pendingPayloads: [],
     };
 
@@ -885,8 +840,6 @@ const connectRealtimeClient$ = command(
       // token.
       authCallback: createAblyAuthCallback(client, signal),
       autoConnect: true,
-      disconnectedRetryTimeout: 5000,
-      suspendedRetryTimeout: 15_000,
     });
 
     let closed = false;
