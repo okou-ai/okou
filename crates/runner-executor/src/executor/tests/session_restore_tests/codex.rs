@@ -25,7 +25,7 @@ fn restore_session_writes_codex_session() {
 }
 
 #[test]
-fn restore_session_skips_codex_cleanup_in_fresh_sandbox() {
+fn restore_session_prepares_codex_target_in_fresh_sandbox() {
     let sandbox = MockSandbox::new("test");
     let ctx = codex_context();
     let history = codex_session_meta_history(CODEX_SESSION_ID);
@@ -34,13 +34,46 @@ fn restore_session_skips_codex_cleanup_in_fresh_sandbox() {
     let diagnostics =
         run_restore_session(restore_session_in_fresh_sandbox(&sandbox, &ctx, &session)).unwrap();
 
-    assert!(sandbox.exec_calls().is_empty());
-    assert!(sandbox.codex_session_cleanup_calls().is_empty());
+    assert_codex_cleanup_call(&sandbox);
     let writes = sandbox.write_file_calls();
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].path, CODEX_CANONICAL_ROLLOUT_PATH);
     assert_eq!(writes[0].content, history.as_bytes());
     assert_eq!(diagnostics.bytes_in, history.len());
+}
+
+#[test]
+fn fresh_codex_restore_uses_existing_target_and_blocks_failed_cleanup() {
+    let ctx = codex_context();
+    let history = codex_session_meta_history(CODEX_SESSION_ID);
+    let session = materialized_text_session(CODEX_SESSION_ID, history);
+    let sandbox = MockSandbox::new("fresh-existing");
+    sandbox.push_exec_result(Ok(ExecResult::new(
+        0,
+        format!("{CODEX_EXISTING_ROLLOUT_PATH}\n").into_bytes(),
+        Vec::new(),
+    )));
+    run_restore_session(restore_session_in_fresh_sandbox(&sandbox, &ctx, &session)).unwrap();
+    assert_codex_cleanup_call(&sandbox);
+    assert_eq!(
+        sandbox.write_file_calls()[0].path,
+        CODEX_EXISTING_ROLLOUT_PATH
+    );
+    assert_eq!(
+        sandbox.write_file_calls()[0].content,
+        session.history_bytes()
+    );
+
+    let sandbox = MockSandbox::new("fresh-failed-cleanup");
+    sandbox.push_exec_result(Ok(ExecResult::new(
+        1,
+        Vec::new(),
+        b"ambiguous session".to_vec(),
+    )));
+    let error = run_restore_session(restore_session_in_fresh_sandbox(&sandbox, &ctx, &session))
+        .unwrap_err();
+    assert!(error.to_string().contains("codex session cleanup"));
+    assert!(sandbox.write_file_calls().is_empty());
 }
 
 #[test]

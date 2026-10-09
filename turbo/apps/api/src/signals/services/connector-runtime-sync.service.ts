@@ -28,7 +28,7 @@ import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service
 import {
   connectorCatalog,
   connectorCatalogEntries,
-} from "@okouai/db/schema/connector-catalog";
+} from "@okouai/db/runtime/connector-catalog";
 import {
   connectorCatalogCurrentWhere,
   connectorCatalogSlugJoin,

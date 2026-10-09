@@ -32,7 +32,7 @@ import {
   repairMissingStripeInvoicePaidAutomationProjection,
   validateStripeInvoicePaidAutomationBinding,
 } from "./stripe-invoice-paid-workflow-automation.service";
-import { workflowAutomationCanFire } from "./workflow-automation-access.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { storedWorkflowAutomationContext } from "./workflow-automation-context.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
@@ -501,32 +501,6 @@ function eventMode(event: unknown): "live" | "test" | "unknown" {
   return parsed.data.livemode ? "live" : "test";
 }
 
-async function markStripeConnectorsDeauthorized(
-  args: {
-    readonly tx: StripeWorkflowTransaction;
-    readonly accountId: string;
-  },
-  signal: AbortSignal,
-): Promise<number> {
-  const updated = await args.tx
-    .update(connectors)
-    .set({
-      needsReconnect: true,
-      reconnectReason: "authorization_expired_or_revoked",
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(connectors.connectorSlug, "stripe"),
-        eq(connectors.authMethod, "oauth"),
-        eq(connectors.externalId, args.accountId),
-      ),
-    )
-    .returning({ id: connectors.id });
-  signal.throwIfAborted();
-  return updated.length;
-}
-
 async function insertStripeWorkflowDelivery(
   args: {
     readonly tx: StripeWorkflowTransaction;
@@ -804,60 +778,74 @@ async function recordInvoiceFanout(
   };
 }
 
-async function dispatchStripeDeauthorization(
-  db: Db,
-  event: unknown,
-  signal: AbortSignal,
-): Promise<DispatchStripeAutomationEventResult> {
-  const supported = stripeDeauthorizedEventBaseSchema.safeParse(event);
-  if (!supported.success) {
-    log.debug("Processed Stripe workflow ingress", {
-      eventType: "account.application.deauthorized",
-      mode: eventMode(event),
-      outcome: "malformed",
+const dispatchStripeDeauthorization$ = command(
+  async (
+    { set },
+    event: unknown,
+    signal: AbortSignal,
+  ): Promise<DispatchStripeAutomationEventResult> => {
+    const db = set(writeDb$);
+    const supported = stripeDeauthorizedEventBaseSchema.safeParse(event);
+    if (!supported.success) {
+      log.debug("Processed Stripe workflow ingress", {
+        eventType: "account.application.deauthorized",
+        mode: eventMode(event),
+        outcome: "malformed",
+      });
+      return { kind: "bad_request" };
+    }
+    if (!supported.data.livemode) {
+      log.debug("Processed Stripe workflow ingress", {
+        eventType: "account.application.deauthorized",
+        mode: "test",
+        outcome: "dropped",
+      });
+      return { kind: "ok", eventKind: "test", queued: 0, duplicates: 0 };
+    }
+    const parsed = stripeDeauthorizedEventSchema.safeParse(event);
+    if (!parsed.success) {
+      log.debug("Processed Stripe workflow ingress", {
+        eventType: "account.application.deauthorized",
+        mode: "live",
+        outcome: "malformed",
+      });
+      return { kind: "bad_request" };
+    }
+    // Keep rollback when cancellation arrives during the UPDATE, before commit.
+    const updated = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(connectors)
+        .set({
+          needsReconnect: true,
+          reconnectReason: "authorization_expired_or_revoked",
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(connectors.connectorSlug, "stripe"),
+            eq(connectors.authMethod, "oauth"),
+            eq(connectors.externalId, parsed.data.account),
+          ),
+        )
+        .returning({ id: connectors.id });
+      signal.throwIfAborted();
+      return rows.length;
     });
-    return { kind: "bad_request" };
-  }
-  if (!supported.data.livemode) {
-    log.debug("Processed Stripe workflow ingress", {
-      eventType: "account.application.deauthorized",
-      mode: "test",
-      outcome: "dropped",
-    });
-    return { kind: "ok", eventKind: "test", queued: 0, duplicates: 0 };
-  }
-  const parsed = stripeDeauthorizedEventSchema.safeParse(event);
-  if (!parsed.success) {
+    signal.throwIfAborted();
     log.debug("Processed Stripe workflow ingress", {
       eventType: "account.application.deauthorized",
       mode: "live",
-      outcome: "malformed",
+      outcome: "deauthorized",
+      deauthorizedConnectors: updated,
     });
-    return { kind: "bad_request" };
-  }
-  const updated = await db.transaction(async (tx) => {
-    return await markStripeConnectorsDeauthorized(
-      {
-        tx,
-        accountId: parsed.data.account,
-      },
-      signal,
-    );
-  });
-  signal.throwIfAborted();
-  log.debug("Processed Stripe workflow ingress", {
-    eventType: "account.application.deauthorized",
-    mode: "live",
-    outcome: "deauthorized",
-    deauthorizedConnectors: updated,
-  });
-  return {
-    kind: "ok",
-    eventKind: "deauthorized",
-    queued: 0,
-    duplicates: 0,
-  };
-}
+    return {
+      kind: "ok",
+      eventKind: "deauthorized",
+      queued: 0,
+      duplicates: 0,
+    };
+  },
+);
 
 async function dispatchStripeInvoice(
   db: Db,
@@ -943,10 +931,10 @@ export const dispatchStripeAutomationEvent$ = command(
       };
     }
 
-    const db = set(writeDb$);
     if (eventType.data.type === "account.application.deauthorized") {
-      return await dispatchStripeDeauthorization(db, event, signal);
+      return await set(dispatchStripeDeauthorization$, event, signal);
     }
+    const db = set(writeDb$);
     return await dispatchStripeInvoice(db, event, signal);
   },
 );
@@ -1108,17 +1096,6 @@ async function loadDeliveryTarget(
   );
   if (binding.kind !== "ok") {
     return { kind: "skip", reason: "connector_unavailable" };
-  }
-  const canFire = await workflowAutomationCanFire(
-    db,
-    {
-      automation: row.automation,
-      agentId: row.agentId,
-    },
-    signal,
-  );
-  if (!canFire) {
-    return { kind: "skip", reason: "automation_access_revoked" };
   }
   return {
     kind: "ok",
@@ -1327,7 +1304,19 @@ const processClaimedDelivery$ = command(
   ): Promise<"executed" | "skipped" | "failed" | "retried" | "lost"> => {
     const db = set(writeDb$);
     await repairMissingStripeDeliveryProjection(db, args.delivery, signal);
-    const validation = await loadDeliveryTarget(db, args.delivery, signal);
+    const prepared = await loadDeliveryTarget(db, args.delivery, signal);
+    const validation: StripeDeliveryValidation =
+      prepared.kind === "ok" &&
+      !(await set(
+        workflowAutomationCanFire$,
+        {
+          automation: prepared.target.automation,
+          agentId: prepared.target.agentId,
+        },
+        signal,
+      ))
+        ? { kind: "skip", reason: "automation_access_revoked" }
+        : prepared;
     if (validation.kind === "skip") {
       const skipped = await set(
         finishDelivery$,

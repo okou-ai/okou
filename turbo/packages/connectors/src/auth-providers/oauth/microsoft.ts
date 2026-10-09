@@ -13,9 +13,7 @@ const MICROSOFT_AUTHORIZATION_URL =
 const MICROSOFT_USERINFO_URL = "https://graph.microsoft.com/v1.0/me";
 
 type MicrosoftOAuthConnectorSlug =
-  | "microsoft-365"
-  | "outlook-calendar"
-  | "outlook-mail";
+  "microsoft-365" | "outlook-calendar" | "outlook-mail";
 
 interface MicrosoftUserInfo {
   id: string;

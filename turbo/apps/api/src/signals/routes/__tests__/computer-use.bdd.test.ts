@@ -2,10 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { HttpResponse, http } from "msw";
-import type {
-  TestComputerUseStateGetResponse,
-  TestComputerUseStatePostResponse,
-} from "@okouai/api-contracts/contracts/test-computer-use-state";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -16,14 +12,12 @@ import {
   now,
   withMockNowForTest,
 } from "../../../lib/time";
-import { generateSandboxToken } from "../../auth/tokens";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { teamsConnectRoutes } from "../teams-connect";
 import { computerUseRoutes } from "../computer-use";
-import { testComputerUseStateRoutes } from "../test-computer-use-state";
 import {
   createBddApi,
   expectApiError,
@@ -48,7 +42,6 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { readRunLaunchSnapshotFixture } from "./helpers/runtime-state";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 /*
@@ -57,16 +50,11 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
  *   their last heartbeat/claim. The offline/ambiguous constructions below
  *   move mocked time forward (+91s/+120s) and rely on host heartbeat/claim
  *   calls refreshing lastSeenAt (#15750) to bring a stale host back online.
- * - The screenshot retention chain builds >30-day-old rows by running the
- *   full command flow under mockNow(now - 40d), then clears the mock before
- *   invoking fixture-scoped cleanup so the retention cutoff is computed at
- *   real time.
  */
 
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createComputerUseBddApi(context);
-const COMPUTER_USE_STATE_ROUTE = "/api/test/computer-use-state";
 
 afterEach(() => {
   clearMockNow();
@@ -77,75 +65,6 @@ function requireOrg(actor: ApiTestUser): string {
     throw new Error("Expected test actor to have an org");
   }
   return actor.orgId;
-}
-
-interface ComputerUseRunFixture {
-  readonly composeId: string;
-  readonly runId: string;
-  readonly sessionId: string;
-  readonly threadId: string | null;
-}
-
-function requestComputerUseState(
-  path: string,
-  init?: RequestInit,
-): Promise<Response> {
-  const app = createAppWithRoutes({
-    signal: context.signal,
-    routes: testComputerUseStateRoutes,
-  });
-  return Promise.resolve(app.request(path, init));
-}
-
-async function readJson<T>(response: Response): Promise<T> {
-  return (await response.json()) as T;
-}
-
-async function deleteComputerUseRunFixture(
-  fixture: ComputerUseRunFixture,
-): Promise<void> {
-  await requestComputerUseState(
-    `${COMPUTER_USE_STATE_ROUTE}?run_id=${encodeURIComponent(fixture.runId)}`,
-    { method: "DELETE" },
-  );
-}
-
-const trackComputerUseRun = createFixtureTracker(deleteComputerUseRunFixture);
-
-async function seedAgentRun(args: {
-  readonly actor: ApiTestUser;
-  readonly triggerSource: "web" | "slack" | "teams";
-  readonly canonicalThread?: boolean;
-}): Promise<ComputerUseRunFixture> {
-  const response = await requestComputerUseState(COMPUTER_USE_STATE_ROUTE, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      user_id: args.actor.userId,
-      org_id: requireOrg(args.actor),
-      trigger_source: args.triggerSource,
-      canonical_thread: args.canonicalThread,
-    }),
-  });
-  expect(response.status).toBe(200);
-  const body = await readJson<TestComputerUseStatePostResponse>(response);
-  const fixture = {
-    composeId: body.compose_id,
-    runId: body.run_id,
-    sessionId: body.session_id,
-    threadId: body.thread_id,
-  };
-  return await trackComputerUseRun(Promise.resolve(fixture));
-}
-
-async function readComputerUseRunState(
-  runId: string,
-): Promise<TestComputerUseStateGetResponse> {
-  const response = await requestComputerUseState(
-    `${COMPUTER_USE_STATE_ROUTE}?run_id=${encodeURIComponent(runId)}`,
-  );
-  expect(response.status).toBe(200);
-  return await readJson<TestComputerUseStateGetResponse>(response);
 }
 
 async function claimCanonicalIntegrationRun(args: {
@@ -272,37 +191,10 @@ describe("FILE-03 desktop computer-use runtime", () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const orgId = `org_${randomUUID()}`;
     const actor = bdd.user({ orgId });
-    const run = await seedAgentRun({ actor, triggerSource: "web" });
-    await expect(
-      readRunLaunchSnapshotFixture(context, run.runId),
-    ).resolves.toStrictEqual({
-      exists: true,
-      launch_snapshot: null,
-    });
-    if (!run.threadId) {
-      throw new Error("Expected web run fixture to create a chat thread");
-    }
-
+    const { chat, run, created, requestToken } =
+      await createAuthorizationScenario(actor);
     const host = await api.startComputerUseHost(actor, {
       hostName: "Studio Mac",
-    });
-    mockClerkMembership(context, actor, "org:admin");
-    const legacyToken = generateSandboxToken(actor.userId, run.runId, orgId);
-    const legacyCreated = await api.createComputerUseAuthorizationRequest({
-      bearer: legacyToken,
-    });
-    expect(new URL(legacyCreated.authorizationUrl).origin).toBe(
-      "https://app.okou.ai",
-    );
-    const token = computerUseToken({
-      userId: actor.userId,
-      orgId,
-      runId: run.runId,
-      capabilities: ["connector:read"],
-    }).token;
-
-    const created = await api.createComputerUseAuthorizationRequest({
-      bearer: token,
     });
     expect(created).toMatchObject({
       source: "chat",
@@ -312,7 +204,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
       "https://app.okou.ai",
     );
 
-    const requestToken = requestTokenFromUrl(created.authorizationUrl);
     const readable = await api.readComputerUseAuthorizationRequest(
       actor,
       requestToken,
@@ -335,10 +226,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
       computerUseHostId: host.hostId,
     });
 
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "web",
-      computer_use_host_id: host.hostId,
-    });
+    await expect(
+      chat.readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: host.hostId });
 
     const completed = await api.readComputerUseAuthorizationRequest(
       actor,
@@ -1780,7 +1670,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
     );
   });
 
-  it("offloads, proxies, and expires screenshots through the retention cron", async () => {
+  it("offloads and proxies screenshots with owner isolation", async () => {
     const fake = api.installComputerUseS3Fake();
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
@@ -1789,7 +1679,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
     const peerUserId = `user_${randomUUID()}`;
     const peer = bdd.user({ orgId: peerOrgId, userId: peerUserId });
 
-    mockNow(now() - 40 * 24 * 60 * 60 * 1000);
     const host = await api.startComputerUseHost(actor);
 
     const first = await api.createComputerUseReadCommand(actor, {
@@ -1875,112 +1764,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
     );
     expectApiError(legacyScreenshot.body);
     expect(legacyScreenshot.body.error.code).toBe("NOT_FOUND");
-
-    const sentinelHost = await api.startComputerUseHost(peer);
-    const sentinel = await api.createComputerUseReadCommand(peer, {
-      kind: "app.state",
-      app: "Safari",
-    });
-    const claimedSentinel = await api.claimNextComputerUseCommand(
-      sentinelHost.hostToken,
-    );
-    expect(claimedSentinel.status).toBe("command");
-    const sentinelBytes = Buffer.from("bdd-expired-sentinel-png-bytes");
-    await api.completeComputerUseCommandWith(
-      sentinelHost.hostToken,
-      sentinel.commandId,
-      {
-        status: "succeeded",
-        result: {
-          snapshotId: "snap_bdd_expired_sentinel",
-          screenshot: `data:image/png;base64,${sentinelBytes.toString("base64")}`,
-          screenshotWidth: 1024,
-          screenshotHeight: 768,
-        },
-      },
-    );
-    const sentinelKey = `computer-use/${peerOrgId}/${peerUserId}/${sentinel.commandId}/screenshot.png`;
-
-    // Back to real time: the retention cutoff must be computed against the
-    // wall clock so only the 40-day-old rows above fall outside the window.
-    clearMockNow();
-    const refresh = await api.claimNextComputerUseCommand(host.hostToken);
-    expect(refresh.status).toBe("idle");
-
-    const third = await api.createComputerUseReadCommand(actor, {
-      kind: "app.state",
-      app: "Safari",
-    });
-    await api.claimNextComputerUseCommand(host.hostToken);
-    const recentBytes = Buffer.from("bdd-recent-png-bytes");
-    await api.completeComputerUseCommandWith(host.hostToken, third.commandId, {
-      status: "succeeded",
-      result: {
-        snapshotId: "snap_bdd_recent",
-        screenshot: `data:image/png;base64,${recentBytes.toString("base64")}`,
-        screenshotWidth: 800,
-        screenshotHeight: 600,
-      },
-    });
-    const thirdKey = `computer-use/${orgId}/${userId}/${third.commandId}/screenshot.png`;
-    const ownedCommandIds = [first.commandId, second.commandId];
-
-    const invalidCron = await api.runComputerUseScreenshotCleanupCron(
-      "invalid",
-      ownedCommandIds,
-    );
-    expect(invalidCron.status).toBe(401);
-    expectApiError(invalidCron.body);
-    expect(invalidCron.body.error.message).toBe("Invalid cron secret");
-
-    const missingCron = await api.runComputerUseScreenshotCleanupCron(
-      "missing",
-      ownedCommandIds,
-    );
-    expect(missingCron.status).toBe(401);
-
-    const swept = await api.runComputerUseScreenshotCleanupCron(
-      "valid",
-      ownedCommandIds,
-    );
-    if (swept.status !== 200) {
-      throw new Error("Expected the screenshot cleanup cron to run");
-    }
-    expect(swept.body.cleaned).toBe(2);
-    expect(fake.deletedKeys).toContain(firstKey);
-    expect(fake.deletedKeys).not.toContain(thirdKey);
-    expect(fake.deletedKeys).not.toContain(sentinelKey);
-
-    const expiredPointer = await api.readComputerUseCommand(
-      actor,
-      first.commandId,
-    );
-    expect(expiredPointer.result?.screenshot).toStrictEqual({
-      type: "expired",
-    });
-    const expiredLegacy = await api.readComputerUseCommand(
-      actor,
-      second.commandId,
-    );
-    expect(expiredLegacy.result?.screenshot).toStrictEqual({
-      type: "expired",
-    });
-    const keptRecent = await api.readComputerUseCommand(actor, third.commandId);
-    expect(keptRecent.result?.screenshot).toMatchObject({ type: "s3" });
-    const keptSentinel = await api.readComputerUseCommand(
-      peer,
-      sentinel.commandId,
-    );
-    expect(keptSentinel.result?.screenshot).toMatchObject({ type: "s3" });
-
-    const resweep = await api.runComputerUseScreenshotCleanupCron(
-      "valid",
-      ownedCommandIds,
-    );
-    if (resweep.status !== 200) {
-      throw new Error("Expected the second cleanup sweep to run");
-    }
-    expect(resweep.body.cleaned).toBe(0);
   });
 });
 

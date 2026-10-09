@@ -3,7 +3,11 @@ import {
   isPiRouteClass,
   type PiRouteClass,
 } from "@okouai/api-contracts/contracts/model-catalog";
-import { AUTO_RUN_MODEL, AUTO_RUN_PROVIDER } from "./auto-run-model";
+import {
+  AUTO_RUN_MODEL,
+  AUTO_RUN_PROVIDER,
+  isAutoSelectedModel,
+} from "./auto-run-model";
 import {
   isPiRuntimeIdentityResolvable,
   type PiRuntimeIdentity,
@@ -45,7 +49,7 @@ export function piCatalogModel(
   catalog: PiCatalogSource | null,
   model: string | null | undefined,
 ): PiCatalogModel | null {
-  if (model === AUTO_RUN_MODEL) {
+  if (isAutoSelectedModel(model)) {
     return {
       model: AUTO_RUN_MODEL,
       piRouteClass: "gpt-codex",
@@ -102,7 +106,7 @@ export interface PiExecutionRouteArgs extends PiRouteArgs {
 
 function isAutoRoute(args: PiRouteArgs): boolean {
   return (
-    args.catalogModel?.model === AUTO_RUN_MODEL &&
+    isAutoSelectedModel(args.catalogModel?.model) &&
     isBuiltInModelProviderType(args.modelProviderType) &&
     (args.runtimeProviderType == null ||
       isBuiltInModelProviderType(args.runtimeProviderType) ||

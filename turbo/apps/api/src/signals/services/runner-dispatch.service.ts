@@ -2,12 +2,12 @@ import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { publishRunnerJobNotification } from "../external/realtime";
 import { now } from "../../lib/time";
 import { logger } from "../../lib/log";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
 import {
   runnerPreferenceTelemetryDimensions,
   runnerReuseKeyTelemetryKind,
   runnerReusePreferenceLookupError,
-  resolveRunnerReusePreference,
+  resolveRunnerReusePreference$,
 } from "./runner-reuse-preference";
 import { tapError } from "../utils";
 
@@ -124,31 +124,24 @@ function runnerNotificationAttributionEvents(
   });
 }
 
-export async function notifyRunnerJob(
-  db: Pick<Db, "select">,
-  args: RunnerJobNotification,
-  timing: RunnerJobNotificationTiming,
-): Promise<boolean> {
-  const notificationEnteredAt = now();
-  const currentDate = new Date(notificationEnteredAt);
-  let preferenceLookupSucceeded = true;
-  let finalizingPreferenceSource:
-    | "active_producer"
-    | "completion_bridge"
-    | undefined;
-  const runnerPreference =
-    (await tapError(
-      resolveRunnerReusePreference({
-        db,
+/** The activation caller checks cancellation after publication and attribution. */
+export const notifyRunnerJob$ = command(
+  async (
+    { set },
+    args: RunnerJobNotification,
+    timing: RunnerJobNotificationTiming,
+  ): Promise<boolean> => {
+    const notificationEnteredAt = now();
+    const currentDate = new Date(notificationEnteredAt);
+    let preferenceLookupSucceeded = true;
+    const resolution = await tapError(
+      set(resolveRunnerReusePreference$, {
         runnerGroup: args.runnerGroup,
         profile: args.profile,
         reuseKey: args.reuseKey,
         historyGenerationRunId: args.historyGenerationRunId,
         createdAt: args.createdAt,
         currentDate,
-        onFinalizingSource(source) {
-          finalizingPreferenceSource = source;
-        },
       }),
       (error) => {
         preferenceLookupSucceeded = false;
@@ -162,76 +155,87 @@ export async function notifyRunnerJob(
           },
         );
       },
-    )) ?? runnerReusePreferenceLookupError();
-  const preferenceFinishedAt = now();
-  const publishStartedAt = now();
-  const published = await publishRunnerJobNotification({
-    group: args.runnerGroup,
-    runId: args.runId,
-    profile: args.profile,
-    runnerPreference,
-    metadata: {
-      reuseKey: args.reuseKey,
-      cliAgentSessionId: args.cliAgentSessionId,
-      historyGenerationRunId: args.historyGenerationRunId,
-    },
-  });
-  const publishFinishedAt = now();
+    );
+    const runnerPreference =
+      resolution?.preference ?? runnerReusePreferenceLookupError();
+    const finalizingPreferenceSource = resolution?.finalizingSource;
+    const preferenceFinishedAt = now();
+    const publishStartedAt = now();
+    const published = await publishRunnerJobNotification({
+      group: args.runnerGroup,
+      runId: args.runId,
+      profile: args.profile,
+      runnerPreference,
+      metadata: {
+        reuseKey: args.reuseKey,
+        cliAgentSessionId: args.cliAgentSessionId,
+        historyGenerationRunId: args.historyGenerationRunId,
+      },
+    });
+    const publishFinishedAt = now();
 
-  const attributionDimensions: Record<string, string> = {
-    runner_group: args.runnerGroup,
-    profile: args.profile,
-    notification_target: "broadcast",
-    activation_origin: timing.preActivation.activationOrigin,
-  };
-  const dimensions: Record<string, string> = {
-    ...attributionDimensions,
-    reuse_key_kind: runnerReuseKeyTelemetryKind(args.reuseKey),
-    ...runnerPreferenceTelemetryDimensions(runnerPreference),
-    ...(finalizingPreferenceSource
-      ? { runner_preference_finalizing_source: finalizingPreferenceSource }
-      : {}),
-  };
-  if (args.historyGenerationRunId) {
-    dimensions.history_generation_run_id = args.historyGenerationRunId;
-  }
-  // Queue-relative actions are cumulative boundaries. Preference lookup and
-  // publish durations are nested children and must not be added to them.
-  recordSandboxOperations([
-    ...runnerNotificationAttributionEvents(args, timing, attributionDimensions),
-    {
-      sandboxType: "runner",
-      actionType: "runner_notification_queue_to_entry",
-      durationMs: Math.max(0, notificationEnteredAt - args.createdAt.getTime()),
-      success: true,
-      runId: args.runId,
-      dimensions,
-    },
-    {
-      sandboxType: "runner",
-      actionType: "runner_notification_affinity_lookup",
-      durationMs: Math.max(0, preferenceFinishedAt - notificationEnteredAt),
-      success: preferenceLookupSucceeded,
-      runId: args.runId,
-      dimensions,
-    },
-    {
-      sandboxType: "runner",
-      actionType: "runner_notification_queue_to_publish_start",
-      durationMs: Math.max(0, publishStartedAt - args.createdAt.getTime()),
-      success: true,
-      runId: args.runId,
-      dimensions,
-    },
-    {
-      sandboxType: "runner",
-      actionType: "runner_notification_realtime_publish",
-      durationMs: Math.max(0, publishFinishedAt - publishStartedAt),
-      success: published,
-      runId: args.runId,
-      dimensions,
-    },
-  ]);
+    const attributionDimensions: Record<string, string> = {
+      runner_group: args.runnerGroup,
+      profile: args.profile,
+      notification_target: "broadcast",
+      activation_origin: timing.preActivation.activationOrigin,
+    };
+    const dimensions: Record<string, string> = {
+      ...attributionDimensions,
+      reuse_key_kind: runnerReuseKeyTelemetryKind(args.reuseKey),
+      ...runnerPreferenceTelemetryDimensions(runnerPreference),
+      ...(finalizingPreferenceSource
+        ? { runner_preference_finalizing_source: finalizingPreferenceSource }
+        : {}),
+    };
+    if (args.historyGenerationRunId) {
+      dimensions.history_generation_run_id = args.historyGenerationRunId;
+    }
+    // Queue-relative actions are cumulative boundaries. Preference lookup and
+    // publish durations are nested children and must not be added to them.
+    recordSandboxOperations([
+      ...runnerNotificationAttributionEvents(
+        args,
+        timing,
+        attributionDimensions,
+      ),
+      {
+        sandboxType: "runner",
+        actionType: "runner_notification_queue_to_entry",
+        durationMs: Math.max(
+          0,
+          notificationEnteredAt - args.createdAt.getTime(),
+        ),
+        success: true,
+        runId: args.runId,
+        dimensions,
+      },
+      {
+        sandboxType: "runner",
+        actionType: "runner_notification_affinity_lookup",
+        durationMs: Math.max(0, preferenceFinishedAt - notificationEnteredAt),
+        success: preferenceLookupSucceeded,
+        runId: args.runId,
+        dimensions,
+      },
+      {
+        sandboxType: "runner",
+        actionType: "runner_notification_queue_to_publish_start",
+        durationMs: Math.max(0, publishStartedAt - args.createdAt.getTime()),
+        success: true,
+        runId: args.runId,
+        dimensions,
+      },
+      {
+        sandboxType: "runner",
+        actionType: "runner_notification_realtime_publish",
+        durationMs: Math.max(0, publishFinishedAt - publishStartedAt),
+        success: published,
+        runId: args.runId,
+        dimensions,
+      },
+    ]);
 
-  return published;
-}
+    return published;
+  },
+);

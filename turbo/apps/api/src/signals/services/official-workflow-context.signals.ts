@@ -6,7 +6,11 @@ import {
   storageVersionCacheKeySql,
   cacheRowsFromProjection,
 } from "./execution-storage-cache-read.service";
-import { officialWorkflowDefinitionRevisions } from "@okouai/db/schema/official-workflow-catalog";
+import {
+  officialWorkflowCatalogState,
+  officialWorkflowCatalogReleases,
+  officialWorkflowDefinitionRevisions,
+} from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { db$ } from "../external/db";
@@ -14,7 +18,8 @@ import { storageIndexKey, type StorageIndex } from "./storage-index.service";
 import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
 import {
   acceptedRevisionFromRow,
-  readAcceptedOfficialWorkflowCatalog,
+  acceptedOfficialWorkflowCatalogReadPlan,
+  acceptedCatalogFromRow,
   type AcceptedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-read.service";
 import {
@@ -23,8 +28,15 @@ import {
 } from "./official-workflow-run.service";
 
 export function createOfficialWorkflowCatalog() {
-  return computed((get) => {
-    return readAcceptedOfficialWorkflowCatalog(get(db$));
+  return computed(async (get) => {
+    const plan = acceptedOfficialWorkflowCatalogReadPlan();
+    const [row] = await get(db$)
+      .select(plan.columns)
+      .from(officialWorkflowCatalogState)
+      .innerJoin(officialWorkflowCatalogReleases, plan.join)
+      .where(plan.condition)
+      .limit(1);
+    return acceptedCatalogFromRow(row);
   });
 }
 

@@ -1,19 +1,30 @@
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { command, computed } from "ccstate";
+import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
+import { and, asc, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import {
-  readDisabledPaidTools,
-  updateDisabledPaidTool,
-} from "../services/paid-tools.service";
+import { updateDisabledPaidTool } from "../services/paid-tools.service";
 
 const getPaidTools$ = computed(async (get) => {
   const { orgId, userId } = get(organizationAuthContext$);
-  const disabledTools = await readDisabledPaidTools(get(db$), orgId, userId);
+  const rows = await get(db$)
+    .select({ toolId: userDisabledPaidTools.toolId })
+    .from(userDisabledPaidTools)
+    .where(
+      and(
+        eq(userDisabledPaidTools.orgId, orgId),
+        eq(userDisabledPaidTools.userId, userId),
+      ),
+    )
+    .orderBy(asc(userDisabledPaidTools.toolId));
+  const disabledTools = rows.map((row) => {
+    return row.toolId;
+  });
   return { status: 200 as const, body: { disabledTools } };
 });
 

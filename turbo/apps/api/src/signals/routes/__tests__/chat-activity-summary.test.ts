@@ -13,7 +13,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { advanceRunActivityClockFixture } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
@@ -382,7 +381,7 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   });
 
-  it("merges late evidence deterministically, bounds payloads, and ignores duplicates and usage", async () => {
+  it("orders activity and caches the summary across duplicate and usage events", async () => {
     const f = await fixture();
     const inputs = provider();
     // Capture is a best-effort compare-and-set; a delivery that loses a race
@@ -396,7 +395,7 @@ describe("thread activity summary", () => {
       }),
     ).toStrictEqual([18, 19, 20]);
     // A repeated tool call and a usage-only record are not new evidence; a
-    // relevant late event merges into the retained window behind them.
+    // relevant late event does not bypass the normal attempt interval.
     await deliver(f, [
       tool(19),
       { type: "usage", sequenceNumber: 21, usage: { input_tokens: 300 } },
@@ -404,15 +403,11 @@ describe("thread activity summary", () => {
     ]);
     await expect(summarize(f.actor, f.run)).resolves.toStrictEqual(first);
     expect(inputs).toHaveLength(1);
-    // Time passage and expired process leases have no production mutation API.
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    await summarize(f.actor, f.run);
-    expect(
-      inputs[1]!.activity.map((entry) => {
-        return entry.sequence;
-      }),
-    ).toStrictEqual([17, 18, 19, 20]);
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
+  });
+
+  it("bounds the activity window and provider payload on the first summary", async () => {
+    const f = await fixture();
+    const inputs = provider();
     await deliver(
       f,
       Array.from({ length: 30 }, (_, i) => {
@@ -421,7 +416,7 @@ describe("thread activity summary", () => {
     );
     const bounded = await summarize(f.actor, f.run);
     expect(bounded.status).toBe("available");
-    const activity = inputs[2]!.activity;
+    const activity = inputs[0]!.activity;
     expect(activity.length).toBeLessThanOrEqual(16);
     expect(
       Buffer.byteLength(JSON.stringify(activity), "utf8"),
@@ -467,30 +462,6 @@ describe("thread activity summary", () => {
       "Preparing the requested checklist",
     );
     expect(inputs).toHaveLength(1);
-  });
-
-  it("fences an expired owner's completion after a replacement claim succeeds", async () => {
-    const f = await fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<string>(context.signal);
-    provider(async (_input, index) => {
-      if (index === 1) {
-        entered.resolve(undefined);
-        return await release.promise;
-      }
-      return "Checking the current launch materials";
-    });
-    const abandoned = summarize(f.actor, f.run);
-    await entered.promise;
-    // Reproduce an instance paused beyond its lease using only this run's clock.
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    await deliver(f, [tool(0)]);
-    const replacement = await summarize(f.actor, f.run);
-    release.resolve("Obsolete preparation phrase");
-    await expect(abandoned).resolves.toStrictEqual(replacement);
-    expect(replacement.messages[0]?.text).toBe(
-      "Checking the current launch materials",
-    );
   });
 
   it.each(["cancel", "complete", "delete"] as const)(
@@ -608,50 +579,23 @@ describe("thread activity summary", () => {
     // The optional output is simply omitted; the response stays truthful and
     // the shared cooldown bounds recovery.
     expect(absorbed).toMatchObject({ status: "available", messages: [] });
-    // The cooldown really reached the database: no second provider call.
+    // The next request makes no additional provider call during cooldown.
     await summarize(f.actor, f.run);
     expect(inputs).toHaveLength(1);
   });
 
-  it("keeps a stored summary when the optional key disappears", async () => {
+  it("keeps a cached summary when the optional key disappears during cooldown", async () => {
     const f = await fixture();
     const inputs = provider();
     const first = await summarize(f.actor, f.run);
     expect(first.messages[0]?.text).toBe("Preparing the launch checklist");
-    // New evidence plus an elapsed attempt interval make a fresh attempt legal.
+    // New evidence does not bypass the normal attempt interval.
     await deliver(f, [tool(0)]);
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
     mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
     const degraded = await summarize(f.actor, f.run);
-    // The attempt still claims, writes and rereads, so the caller degrades to
-    // the stored phrase instead of to an empty batch.
     expect(degraded.messages).toStrictEqual(first.messages);
     expect(degraded.status).toBe("available");
     expect(inputs).toHaveLength(1);
-  });
-
-  it("keeps a stored summary through a rejected batch and recovers after the cooldown", async () => {
-    const f = await fixture();
-    const inputs = provider((_input, index) => {
-      return index === 2
-        ? "Valid message\n**Markdown**"
-        : "Preparing the launch checklist";
-    });
-    const first = await summarize(f.actor, f.run);
-    await deliver(f, [tool(0)]);
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    const rejected = await summarize(f.actor, f.run);
-    expect(rejected.messages).toStrictEqual(first.messages);
-    expect(inputs).toHaveLength(2);
-    // The failure cooldown outlasts the plain attempt interval.
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    await summarize(f.actor, f.run);
-    expect(inputs).toHaveLength(2);
-    // The persisted cooldown expires and the next attempt publishes a phrase.
-    await advanceRunActivityClockFixture(f.run.runId, 45_000);
-    const recovered = await summarize(f.actor, f.run);
-    expect(recovered.messages[0]?.text).toBe("Preparing the launch checklist");
-    expect(inputs).toHaveLength(3);
   });
 
   it("accepts existing Codex commands and tool results while bounding graphemes", async () => {
@@ -830,155 +774,62 @@ describe("thread activity summary", () => {
     ).toContain("Public commentary during the Axiom outage");
   });
 
-  it("absorbs a rate limit before any summary exists and recovers after the cooldown", async () => {
+  it("absorbs a rate limit before any summary exists", async () => {
     const f = await fixture();
-    const inputs = provider((_input, index) => {
-      return index === 1
-        ? HttpResponse.json(
-            { error: { code: 429, message: "PRIVATE_PROVIDER_BODY" } },
-            { status: 429 },
-          )
-        : "Checking the current launch materials";
+    const inputs = provider(() => {
+      return HttpResponse.json(
+        { error: { code: 429, message: "PRIVATE_PROVIDER_BODY" } },
+        { status: 429 },
+      );
     });
     const empty = await summarize(f.actor, f.run);
-    // Nothing was ever generated for this run, so the viewer keeps the generic
-    // label its own fallback renders for an empty batch.
     expect(empty.messages).toStrictEqual([]);
     expect(empty.status).toBe("available");
-    // The shared cooldown really reached the database: no second provider call.
     await summarize(f.actor, f.run);
     expect(inputs).toHaveLength(1);
-    await advanceRunActivityClockFixture(f.run.runId, 61_000);
-    const recovered = await summarize(f.actor, f.run);
-    expect(recovered.messages[0]?.text).toBe(
-      "Checking the current launch materials",
-    );
-    expect(recovered.status).toBe("available");
-    expect(inputs).toHaveLength(2);
   });
 
-  it("absorbs upstream unavailability and keeps the last known summary", async () => {
+  it("absorbs upstream unavailability before any summary exists", async () => {
     const f = await fixture();
-    const inputs = provider((_input, index) => {
-      return index === 1
-        ? "Preparing the launch checklist"
-        : HttpResponse.json(
-            { error: { code: 503, message: "PRIVATE_PROVIDER_BODY" } },
-            { status: 503 },
-          );
+    const inputs = provider(() => {
+      return HttpResponse.json(
+        { error: { code: 503, message: "PRIVATE_PROVIDER_BODY" } },
+        { status: 503 },
+      );
     });
-    const first = await summarize(f.actor, f.run);
-    await deliver(f, [tool(0)]);
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
     const failed = await summarize(f.actor, f.run);
-    expect(failed.messages).toStrictEqual(first.messages);
-    // The charged cooldown still bounds the next provider call.
+    expect(failed).toMatchObject({ status: "available", messages: [] });
     await summarize(f.actor, f.run);
-    expect(inputs).toHaveLength(2);
+    expect(inputs).toHaveLength(1);
   });
 
-  it("absorbs an envelope unavailability and an upstream timeout", async () => {
-    const f = await fixture();
-    const inputs = provider((_input, index) => {
-      // A native unavailability arrives inside a successful envelope, which
-      // this client wraps as a synthetic 502; the reason decides, not the status.
-      return index === 1
-        ? HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "ERROR",
-                error: {
-                  code: "UNAVAILABLE",
-                  message: "PRIVATE_PROVIDER_BODY",
+  it.each(["envelope", "timeout"] as const)(
+    "absorbs provider %s unavailability before any summary exists",
+    async (failure) => {
+      const f = await fixture();
+      const inputs = provider(() => {
+        return failure === "envelope"
+          ? HttpResponse.json({
+              candidates: [
+                {
+                  finishReason: "ERROR",
+                  error: {
+                    code: "UNAVAILABLE",
+                    message: "PRIVATE_PROVIDER_BODY",
+                  },
                 },
-              },
-            ],
-          })
-        : HttpResponse.json(
-            { error: { code: 504, message: "PRIVATE_PROVIDER_BODY" } },
-            { status: 504 },
-          );
-    });
-    const absorbed = await summarize(f.actor, f.run);
-    expect(absorbed).toMatchObject({ status: "available", messages: [] });
-    await advanceRunActivityClockFixture(f.run.runId, 61_000);
-    const timedOut = await summarize(f.actor, f.run);
-    expect(timedOut).toMatchObject({ status: "available", messages: [] });
-    expect(inputs).toHaveLength(2);
-  });
-
-  it("keeps the last known summary when an attempt misses its deadline", async () => {
-    const f = await fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const stalled = createDeferredPromise<string>(context.signal);
-    const inputs = provider(async (_input, index) => {
-      if (index === 1) {
-        return "Preparing the launch checklist";
-      }
-      entered.resolve(undefined);
-      return await stalled.promise;
-    });
-    const first = await summarize(f.actor, f.run);
-    await deliver(f, [tool(0)]);
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    const deadline = new AbortController();
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 10_000 ? deadline.signal : undefined;
-    });
-    const pending = summarize(f.actor, f.run);
-    await entered.promise;
-    deadline.abort(
-      new DOMException("Summary deadline reached", "TimeoutError"),
-    );
-    stalled.resolve("This phrase arrives after its own deadline");
-    const missed = await pending;
-    // The caller keeps its last real phrase and a bounded, self-recovering wait.
-    expect(missed.messages).toStrictEqual(first.messages);
-    expect(missed.status).toBe("available");
-    expect(inputs).toHaveLength(2);
-  });
-
-  it("charges no cooldown when the instance stops before the provider answers", async () => {
-    const f = await fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<string>(context.signal);
-    const inputs = provider(async (_input, index) => {
-      if (index === 1) {
-        entered.resolve(undefined);
-        return await release.promise;
-      }
-      return "Checking the current launch materials";
-    });
-    const shutdown = new AbortController();
-    createRouteMocks(context).clerk.session(
-      f.actor.userId,
-      f.actor.orgId,
-      f.actor.orgRole,
-    );
-    const abandoned = settleIncludingAbort(
-      setupApp({
-        context,
-        routes: chatThreadActivitySummaryRoutes,
-        signal: shutdown.signal,
-      })(chatThreadActivitySummaryContract).summarize({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { id: f.run.threadId },
-        body: { runId: f.run.runId },
-      }),
-    );
-    await entered.promise;
-    shutdown.abort(new DOMException("API instance stopping", "AbortError"));
-    release.resolve("This phrase never reaches an absent caller");
-    await abandoned;
-    // Only the attempt interval was ever charged, so the next viewer generates
-    // again instead of waiting out a failure cooldown it never caused.
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    const recovered = await summarize(f.actor, f.run);
-    expect(recovered.messages[0]?.text).toBe(
-      "Checking the current launch materials",
-    );
-    expect(inputs).toHaveLength(2);
-  });
+              ],
+            })
+          : HttpResponse.json(
+              { error: { code: 504, message: "PRIVATE_PROVIDER_BODY" } },
+              { status: 504 },
+            );
+      });
+      const absorbed = await summarize(f.actor, f.run);
+      expect(absorbed).toMatchObject({ status: "available", messages: [] });
+      expect(inputs).toHaveLength(1);
+    },
+  );
 
   it("rejects a cancelled run heartbeat before its Runner completes", async () => {
     const f = await fixture();

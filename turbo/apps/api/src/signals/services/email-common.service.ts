@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { mailNotifications } from "@okouai/db/schema/mail-notification";
+import { notifyMailBodySchema } from "@okouai/api-contracts/contracts/notifications";
+import { renderAgentNotificationEmail } from "../../lib/agent-notification-email-renderer";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
@@ -17,9 +20,9 @@ import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
-import type { ClerkClient } from "../external/clerk";
+import { clerk$, type ClerkClient } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
@@ -91,6 +94,18 @@ function boundedUnicodeString(maxCharacters: number) {
 }
 
 const emailTemplateSchema = z.discriminatedUnion("template", [
+  z
+    .object({
+      template: z.literal("agent-notification"),
+      props: z
+        .object({
+          subject: notifyMailBodySchema.shape.subject,
+          text: notifyMailBodySchema.shape.text,
+          runUrl: z.url().max(1024),
+        })
+        .strict(),
+    })
+    .strict(),
   z.object({
     template: z.literal("data-export-ready"),
     props: z.object({
@@ -284,6 +299,12 @@ function renderTemplate(
   headers: Readonly<Record<string, string>> | undefined,
 ): RenderedEmailTemplate {
   switch (template.template) {
+    case "agent-notification": {
+      return renderAgentNotificationEmail(
+        template.props,
+        officialAutomationResultUnsubscribeUrl(headers),
+      );
+    }
     case "data-export-ready": {
       return renderDataExportReadyEmail(template.props);
     }
@@ -319,6 +340,7 @@ function fromAddressForTemplate(template: EmailTemplate): string {
       return buildTeamFromAddress();
     }
     case "data-export-ready":
+    case "agent-notification":
     case "official-automation-result": {
       return buildFromAddress();
     }
@@ -447,12 +469,65 @@ async function resolveWithoutSending(
   tx: Transaction,
   itemId: string,
   lastError: string,
+  reason:
+    | "expired"
+    | "delivery-failed"
+    | "suppressed"
+    | "unsubscribed" = "delivery-failed",
 ): Promise<PrepareOutcome> {
   await tx
     .update(emailOutbox)
     .set({ status: "failed", lastError })
     .where(eq(emailOutbox.id, itemId));
+  await tx
+    .update(mailNotifications)
+    .set({
+      status:
+        reason === "suppressed" || reason === "unsubscribed"
+          ? "skipped"
+          : "failed",
+      reason,
+    })
+    .where(eq(mailNotifications.outboxId, itemId));
   return { kind: "resolved" };
+}
+
+function outboxAdmissionError(
+  expiresAtMs: number,
+  currentTimeMs: number,
+  attempts: number,
+  hasCommittedRequest: boolean,
+) {
+  if (expiresAtMs <= currentTimeMs) {
+    return {
+      message: OUTBOX_EXPIRED_BEFORE_DELIVERY_ERROR,
+      reason: "expired" as const,
+    };
+  }
+  if (attempts > MAX_ATTEMPTS) {
+    return {
+      message: hasCommittedRequest
+        ? "Email outbox item exhausted its delivery attempts with an unresolved provider send"
+        : "Email outbox item exhausted its delivery attempts",
+      reason: "delivery-failed" as const,
+    };
+  }
+  return null;
+}
+
+function notificationIsUnsubscribed(
+  template: EmailTemplate,
+  notification: { readonly unsubscribed: boolean | null } | undefined,
+): boolean {
+  if (template.template !== "agent-notification") {
+    return false;
+  }
+  if (!notification || notification.unsubscribed === null) {
+    throw new Error(
+      "Agent notification outbox is missing its receipt or user preference row",
+    );
+  }
+  return notification.unsubscribed;
 }
 
 /**
@@ -531,20 +606,18 @@ async function prepareNextOutboxItem(
     // later retry may extend it.
     const expiresAtMs = row.created_at.getTime() + OUTBOX_TTL_MS;
 
-    if (expiresAtMs <= preparedAtMs) {
+    const admissionError = outboxAdmissionError(
+      expiresAtMs,
+      preparedAtMs,
+      attempts,
+      hasCommittedRequest,
+    );
+    if (admissionError) {
       return await resolveWithoutSending(
         tx,
         itemId,
-        OUTBOX_EXPIRED_BEFORE_DELIVERY_ERROR,
-      );
-    }
-    if (attempts > MAX_ATTEMPTS) {
-      return await resolveWithoutSending(
-        tx,
-        itemId,
-        hasCommittedRequest
-          ? "Email outbox item exhausted its delivery attempts with an unresolved provider send"
-          : "Email outbox item exhausted its delivery attempts",
+        admissionError.message,
+        admissionError.reason,
       );
     }
 
@@ -552,24 +625,36 @@ async function prepareNextOutboxItem(
       typeof row.to_addresses === "string"
         ? [row.to_addresses]
         : row.to_addresses;
+    const [notification] = await tx
+      .select({ unsubscribed: users.emailUnsubscribed })
+      .from(mailNotifications)
+      .leftJoin(users, eq(users.id, mailNotifications.userId))
+      .where(eq(mailNotifications.outboxId, itemId))
+      .limit(1);
+    if (notificationIsUnsubscribed(row.template, notification)) {
+      return await resolveWithoutSending(
+        tx,
+        itemId,
+        "Recipient unsubscribed",
+        "unsubscribed",
+      );
+    }
     const suppressedAddress = await findSuppressedAddress(tx, toAddresses);
     if (suppressedAddress) {
       return await resolveWithoutSending(
         tx,
         itemId,
         `Recipient address suppressed (${suppressedAddress})`,
+        "suppressed",
       );
     }
 
     // Render only for a row whose request is not committed yet. Once it is,
     // the provider may already hold this key, so the committed request is the
     // only payload that can be sent under it.
-    let request: ProviderRequest;
-    if (hasCommittedRequest) {
-      request = providerRequestSchema.parse(committedRequest);
-    } else {
-      request = buildProviderRequest(row);
-    }
+    const request = hasCommittedRequest
+      ? providerRequestSchema.parse(committedRequest)
+      : buildProviderRequest(row);
     // The committed key stays authoritative for the row it was written for,
     // even if the derivation below ever changes.
     const idempotencyKey =
@@ -640,19 +725,36 @@ async function completeOutboxItem(
               nextRetryAt: null,
             };
 
-  const [completed] = await db
-    .update(emailOutbox)
-    .set(completion)
-    .where(
-      and(
-        eq(emailOutbox.id, item.id),
-        // A lost completion is recovered by a later attempt. Never overwrite
-        // whatever that attempt has already decided.
-        eq(emailOutbox.status, "sending"),
-        eq(emailOutbox.attempts, item.attempts),
-      ),
-    )
-    .returning({ id: emailOutbox.id });
+  const completed = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(emailOutbox)
+      .set(completion)
+      .where(
+        and(
+          eq(emailOutbox.id, item.id),
+          // A lost completion is recovered by a later attempt. Never overwrite
+          // whatever that attempt has already decided.
+          eq(emailOutbox.status, "sending"),
+          eq(emailOutbox.attempts, item.attempts),
+        ),
+      )
+      .returning({ id: emailOutbox.id });
+    if (updated && completion.status !== "pending") {
+      await tx
+        .update(mailNotifications)
+        .set({
+          status: completion.status,
+          reason:
+            completion.status === "sent"
+              ? null
+              : outcome.kind === "expired"
+                ? "expired"
+                : "delivery-failed",
+        })
+        .where(eq(mailNotifications.outboxId, item.id));
+    }
+    return updated;
+  });
 
   if (!completed) {
     log.warn("Email outbox completion lost its claim", {
@@ -747,15 +849,37 @@ async function cleanupExpiredEmailOutbox(
   signal: AbortSignal,
 ): Promise<number> {
   const cutoff = new Date(context.currentTimeMs - OUTBOX_TTL_MS);
-  const deleted = await db
-    .delete(emailOutbox)
-    .where(
-      and(
-        lt(emailOutbox.createdAt, cutoff),
-        or(eq(emailOutbox.status, "pending"), eq(emailOutbox.status, "failed")),
-      ),
-    )
-    .returning({ id: emailOutbox.id });
+  const deleted = await db.transaction(async (tx) => {
+    const removed = await tx
+      .delete(emailOutbox)
+      .where(
+        and(
+          lt(emailOutbox.createdAt, cutoff),
+          or(
+            eq(emailOutbox.status, "pending"),
+            eq(emailOutbox.status, "failed"),
+          ),
+        ),
+      )
+      .returning({ id: emailOutbox.id });
+    if (removed.length > 0) {
+      await tx
+        .update(mailNotifications)
+        .set({ status: "failed", reason: "expired" })
+        .where(
+          and(
+            eq(mailNotifications.status, "queued"),
+            inArray(
+              mailNotifications.outboxId,
+              removed.map((row) => {
+                return row.id;
+              }),
+            ),
+          ),
+        );
+    }
+    return removed;
+  });
   signal.throwIfAborted();
 
   if (deleted.length > 0) {
@@ -809,52 +933,59 @@ export function verifyResendWebhook(
   return JSON.parse(payload);
 }
 
-export async function getUserEmail(
-  db: Db,
-  clerk: ClerkClient,
-  userId: string,
-): Promise<string | null> {
-  const [cached] = await db
-    .select()
-    .from(userCache)
-    .where(eq(userCache.userId, userId))
-    .limit(1);
-  if (cached && now() - cached.cachedAt.getTime() < USER_CACHE_TTL_MS) {
-    return cached.email;
-  }
+export const getUserEmail$ = command(
+  async (
+    { get, set },
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = get(db$);
+    const [cached] = await db
+      .select()
+      .from(userCache)
+      .where(eq(userCache.userId, userId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (cached && now() - cached.cachedAt.getTime() < USER_CACHE_TTL_MS) {
+      return cached.email;
+    }
 
-  const user = await findClerkUser(clerk, userId);
-  if (!user) {
-    return null;
-  }
-  const email =
-    user?.emailAddresses.find((entry) => {
-      return entry.id === user.primaryEmailAddressId;
-    })?.emailAddress ?? user?.emailAddresses[0]?.emailAddress;
-  if (!email) {
-    return null;
-  }
+    const user = await findClerkUser(get(clerk$), userId, signal);
+    signal.throwIfAborted();
+    if (!user) {
+      return null;
+    }
+    const email =
+      user?.emailAddresses.find((entry) => {
+        return entry.id === user.primaryEmailAddressId;
+      })?.emailAddress ?? user?.emailAddresses[0]?.emailAddress;
+    if (!email) {
+      return null;
+    }
 
-  await db
-    .insert(userCache)
-    .values({
-      userId,
-      email,
-      name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
-      imageUrl: user.imageUrl ?? null,
-      cachedAt: nowDate(),
-    })
-    .onConflictDoUpdate({
-      target: userCache.userId,
-      set: {
+    await set(writeDb$)
+      .insert(userCache)
+      .values({
+        userId,
         email,
         name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
         imageUrl: user.imageUrl ?? null,
         cachedAt: nowDate(),
-      },
-    });
-  return email;
-}
+      })
+      .onConflictDoUpdate({
+        target: userCache.userId,
+        set: {
+          email,
+          name:
+            [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+          imageUrl: user.imageUrl ?? null,
+          cachedAt: nowDate(),
+        },
+      });
+    signal.throwIfAborted();
+    return email;
+  },
+);
 
 export async function getUserIdByEmail(
   db: Db,

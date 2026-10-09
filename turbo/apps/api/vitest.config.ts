@@ -15,9 +15,5 @@ export default defineConfig({
     ],
     sequence: { setupFiles: "list" },
     exclude: ["node_modules/**", "dist/**", "**/__benches__/**"],
-    benchmark: {
-      include: ["src/**/__benches__/**/*.bench.ts"],
-      retainSamples: true,
-    },
   },
 });

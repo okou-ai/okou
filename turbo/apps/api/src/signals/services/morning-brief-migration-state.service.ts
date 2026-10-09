@@ -5,15 +5,20 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import {
+  workflowAutomations,
+  workflows,
+  workflowUserAutomationThreads,
+} from "@okouai/db/schema/workflow";
 import { and, asc, eq } from "drizzle-orm";
 
-import type { ReadonlyDb } from "../external/db";
+import { command } from "ccstate";
+import { db$ } from "../external/db";
 import {
   morningBriefEnrollmentWhere,
   type MorningBriefMemberIdentity,
 } from "./morning-brief-enrollment-data.service";
-import { loadWorkflowUserAutomationThreadId } from "./workflow-user-automation-thread.service";
+import { workflowUserAutomationThreadOwnerCondition } from "./workflow-user-automation-thread.service";
 
 /**
  * The canonical read of the Morning Brief state a member actually owns.
@@ -23,14 +28,6 @@ import { loadWorkflowUserAutomationThreadId } from "./workflow-user-automation-t
  * so both read it here. The rules this module encodes are described in
  * [the migration contract](../../../../../../docs/morning-brief-migration-state.md).
  */
-
-/**
- * Any reader of the canonical state, including a transaction.
- *
- * Callers that act on the result read it inside the transaction or lock that
- * guards their mutation, so this deliberately admits more than a pooled `Db`.
- */
-export type MorningBriefStateReader = Pick<ReadonlyDb, "select">;
 
 interface MorningBriefInstallation {
   readonly id: string;
@@ -111,61 +108,73 @@ export type MorningBriefMigrationState =
  * It backs both the adoption tie-break and the Settings availability check, so
  * a private Agent nobody else may use resolves to no default at all.
  */
-export async function loadMorningBriefDefaultAgentId(
-  db: MorningBriefStateReader,
-  owner: MorningBriefMemberIdentity,
-): Promise<string | null> {
-  const [defaultAgent] = await db
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(orgMetadata)
-    .leftJoin(
-      agents,
-      and(
-        eq(agents.id, orgMetadata.defaultAgentId),
-        eq(agents.orgId, orgMetadata.orgId),
-      ),
-    )
-    .where(eq(orgMetadata.orgId, owner.orgId))
-    .limit(1);
-  if (
-    !defaultAgent?.id ||
-    (defaultAgent.visibility === "private" &&
-      defaultAgent.owner !== owner.userId)
-  ) {
-    return null;
-  }
-  return defaultAgent.id;
-}
+export const loadMorningBriefDefaultAgentId$ = command(
+  async (
+    { get },
+    owner: MorningBriefMemberIdentity,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = get(db$);
+    const [defaultAgent] = await db
+      .select({
+        id: agents.id,
+        owner: agents.owner,
+        visibility: agents.visibility,
+      })
+      .from(orgMetadata)
+      .leftJoin(
+        agents,
+        and(
+          eq(agents.id, orgMetadata.defaultAgentId),
+          eq(agents.orgId, orgMetadata.orgId),
+        ),
+      )
+      .where(eq(orgMetadata.orgId, owner.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !defaultAgent?.id ||
+      (defaultAgent.visibility === "private" &&
+        defaultAgent.owner !== owner.userId)
+    ) {
+      return null;
+    }
+    return defaultAgent.id;
+  },
+);
 
 /** Oldest first, so the adoption tie-break reads the head of this list. */
-async function loadMorningBriefInstallations(
-  db: MorningBriefStateReader,
-  owner: MorningBriefMemberIdentity,
-): Promise<readonly MorningBriefInstallation[]> {
-  return await db
-    .select({
-      id: workflows.id,
-      installationState: workflows.officialInstallationState,
-      agentId: workflows.agentId,
-    })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.orgId, owner.orgId),
-        eq(workflows.ownerUserId, owner.userId),
-        eq(workflows.visibility, "private"),
-        eq(
-          workflows.officialDefinitionName,
-          MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+const loadMorningBriefInstallations$ = command(
+  async (
+    { get },
+    owner: MorningBriefMemberIdentity,
+    signal: AbortSignal,
+  ): Promise<readonly MorningBriefInstallation[]> => {
+    const db = get(db$);
+    const rows = await db
+      .select({
+        id: workflows.id,
+        installationState: workflows.officialInstallationState,
+        agentId: workflows.agentId,
+      })
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.orgId, owner.orgId),
+          eq(workflows.ownerUserId, owner.userId),
+          eq(workflows.visibility, "private"),
+          eq(
+            workflows.officialDefinitionName,
+            MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+          ),
         ),
-      ),
-    )
-    .orderBy(asc(workflows.createdAt), asc(workflows.id));
-}
+      )
+      .orderBy(asc(workflows.createdAt), asc(workflows.id));
+
+    signal.throwIfAborted();
+    return rows;
+  },
+);
 
 /**
  * Resolve the one installation the enrollment owns.
@@ -178,128 +187,178 @@ async function loadMorningBriefInstallations(
  * installation on the org's current default Agent, otherwise the oldest.
  * Installations that are not adopted keep running untouched.
  */
-export async function loadMorningBriefOwnership(
-  db: MorningBriefStateReader,
-  owner: MorningBriefMemberIdentity,
-): Promise<MorningBriefOwnership> {
-  const [enrollment] = await db
-    .select()
-    .from(morningBriefEnrollments)
-    .where(morningBriefEnrollmentWhere(owner))
-    .limit(1);
-  const installations = await loadMorningBriefInstallations(db, owner);
-  if (installations.length <= 1) {
-    return { owner, enrollment, installations, installation: installations[0] };
-  }
-  const owned = installations.find(({ id }) => {
-    return id === enrollment?.workflowId;
-  });
-  if (owned) {
-    return { owner, enrollment, installations, installation: owned };
-  }
-  const defaultAgentId = await loadMorningBriefDefaultAgentId(db, owner);
-  const adopted =
-    installations.find(({ agentId }) => {
-      return agentId === defaultAgentId;
-    }) ?? installations[0];
-  return { owner, enrollment, installations, installation: adopted };
-}
-
-async function loadMorningBriefAutomationState(
-  db: MorningBriefStateReader,
-  owner: MorningBriefMemberIdentity,
-  workflowId: string,
-): Promise<MorningBriefAutomationState | MorningBriefInconsistency> {
-  const automations = await db
-    .select({
-      id: workflowAutomations.id,
-      enabled: workflowAutomations.enabled,
-      nextRunAt: workflowAutomations.nextRunAt,
-      timezone: workflowAutomations.timezone,
-      cronExpression: workflowAutomations.cronExpression,
-      kind: workflowAutomations.kind,
-      scheduleType: workflowAutomations.scheduleType,
-      blueprintKey: workflowAutomations.officialBlueprintKey,
-      reconciliationStatus: workflowAutomations.officialReconciliationStatus,
-      resultEmailEnabled: workflowAutomations.officialResultEmailEnabled,
-    })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, owner.orgId),
-        eq(workflowAutomations.ownerUserId, owner.userId),
-        eq(workflowAutomations.workflowId, workflowId),
-      ),
+export const loadMorningBriefOwnership$ = command(
+  async (
+    { get, set },
+    owner: MorningBriefMemberIdentity,
+    signal: AbortSignal,
+  ): Promise<MorningBriefOwnership> => {
+    const db = get(db$);
+    const [enrollment] = await db
+      .select()
+      .from(morningBriefEnrollments)
+      .where(morningBriefEnrollmentWhere(owner))
+      .limit(1);
+    signal.throwIfAborted();
+    const installations = await set(
+      loadMorningBriefInstallations$,
+      owner,
+      signal,
     );
-  const automation = automations[0];
-  if (!automation) {
-    return "missing-automation";
-  }
-  if (automations.length !== 1) {
-    return "multiple-automations";
-  }
-  if (
-    automation.kind !== "schedule" ||
-    automation.scheduleType !== "cron" ||
-    automation.blueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
-  ) {
-    return "unexpected-schedule";
-  }
-  if (automation.reconciliationStatus !== "current") {
-    return "unreconciled-installation";
-  }
-  if (automation.resultEmailEnabled !== true) {
-    return "result-email-disabled";
-  }
-  return {
-    id: automation.id,
-    enabled: automation.enabled,
-    cronExpression: automation.cronExpression,
-    timezone: automation.timezone,
-    nextRunAt: automation.nextRunAt,
-  };
-}
+    if (installations.length <= 1) {
+      return {
+        owner,
+        enrollment,
+        installations,
+        installation: installations[0],
+      };
+    }
+    const owned = installations.find(({ id }) => {
+      return id === enrollment?.workflowId;
+    });
+    if (owned) {
+      return { owner, enrollment, installations, installation: owned };
+    }
+    const defaultAgentId = await set(
+      loadMorningBriefDefaultAgentId$,
+      owner,
+      signal,
+    );
+    const adopted =
+      installations.find(({ agentId }) => {
+        return agentId === defaultAgentId;
+      }) ?? installations[0];
+    return { owner, enrollment, installations, installation: adopted };
+  },
+);
+
+const loadMorningBriefAutomationState$ = command(
+  async (
+    { get },
+    owner: MorningBriefMemberIdentity,
+    workflowId: string,
+    signal: AbortSignal,
+  ): Promise<MorningBriefAutomationState | MorningBriefInconsistency> => {
+    const db = get(db$);
+    const automations = await db
+      .select({
+        id: workflowAutomations.id,
+        enabled: workflowAutomations.enabled,
+        nextRunAt: workflowAutomations.nextRunAt,
+        timezone: workflowAutomations.timezone,
+        cronExpression: workflowAutomations.cronExpression,
+        kind: workflowAutomations.kind,
+        scheduleType: workflowAutomations.scheduleType,
+        blueprintKey: workflowAutomations.officialBlueprintKey,
+        reconciliationStatus: workflowAutomations.officialReconciliationStatus,
+        resultEmailEnabled: workflowAutomations.officialResultEmailEnabled,
+      })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, owner.orgId),
+          eq(workflowAutomations.ownerUserId, owner.userId),
+          eq(workflowAutomations.workflowId, workflowId),
+        ),
+      );
+    signal.throwIfAborted();
+    const automation = automations[0];
+    if (!automation) {
+      return "missing-automation";
+    }
+    if (automations.length !== 1) {
+      return "multiple-automations";
+    }
+    if (
+      automation.kind !== "schedule" ||
+      automation.scheduleType !== "cron" ||
+      automation.blueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
+    ) {
+      return "unexpected-schedule";
+    }
+    if (automation.reconciliationStatus !== "current") {
+      return "unreconciled-installation";
+    }
+    if (automation.resultEmailEnabled !== true) {
+      return "result-email-disabled";
+    }
+    return {
+      id: automation.id,
+      enabled: automation.enabled,
+      cronExpression: automation.cronExpression,
+      timezone: automation.timezone,
+      nextRunAt: automation.nextRunAt,
+    };
+  },
+);
 
 /**
  * Compose the member's authoritative Morning Brief state.
  *
- * This is a read, not a snapshot: call it inside the caller's transaction, or
- * re-read after a conditional write, when the result has to stay true while
- * acting on it.
+ * This composes current reads, not a transaction snapshot. Re-read after a
+ * conditional write when acting on these facts.
  */
-export async function loadMorningBriefMigrationState(
-  db: MorningBriefStateReader,
-  owner: MorningBriefMemberIdentity,
-): Promise<MorningBriefMigrationState> {
-  const ownership = await loadMorningBriefOwnership(db, owner);
-  const selected = ownership.installation;
-  const additionalInstallations = ownership.installations.filter(({ id }) => {
-    return id !== selected?.id;
-  });
-  const base = {
-    owner,
-    enrollment: ownership.enrollment,
-    additionalInstallations,
-  };
-  if (!selected) {
-    return { ...base, kind: "absent" };
-  }
+export const loadMorningBriefMigrationState$ = command(
+  async (
+    { set },
+    owner: MorningBriefMemberIdentity,
+    signal: AbortSignal,
+  ): Promise<MorningBriefMigrationState> => {
+    const ownership = await set(loadMorningBriefOwnership$, owner, signal);
+    const selected = ownership.installation;
+    const additionalInstallations = ownership.installations.filter(({ id }) => {
+      return id !== selected?.id;
+    });
+    const base = {
+      owner,
+      enrollment: ownership.enrollment,
+      additionalInstallations,
+    };
+    if (!selected) {
+      return { ...base, kind: "absent" };
+    }
 
-  const [automation, chatThreadId] = await Promise.all([
-    selected.installationState === "installed"
-      ? loadMorningBriefAutomationState(db, owner, selected.id)
-      : null,
-    loadWorkflowUserAutomationThreadId(db, {
-      orgId: owner.orgId,
-      userId: owner.userId,
-      workflowId: selected.id,
-    }),
-  ]);
-  const scope = { ...base, installation: selected, chatThreadId };
-  if (automation === null) {
-    return { ...scope, kind: "pending" };
-  }
-  return typeof automation === "string"
-    ? { ...scope, kind: "inconsistent", reason: automation }
-    : { ...scope, kind: "installed", automation };
-}
+    const [automation, chatThreadId] = await Promise.all([
+      selected.installationState === "installed"
+        ? set(loadMorningBriefAutomationState$, owner, selected.id, signal)
+        : null,
+      set(
+        loadWorkflowUserAutomationThreadId$,
+        {
+          orgId: owner.orgId,
+          userId: owner.userId,
+          workflowId: selected.id,
+        },
+        signal,
+      ),
+    ]);
+    signal.throwIfAborted();
+    const scope = { ...base, installation: selected, chatThreadId };
+    if (automation === null) {
+      return { ...scope, kind: "pending" };
+    }
+    return typeof automation === "string"
+      ? { ...scope, kind: "inconsistent", reason: automation }
+      : { ...scope, kind: "installed", automation };
+  },
+);
+
+const loadWorkflowUserAutomationThreadId$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly workflowId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const [binding] = await get(db$)
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(workflowUserAutomationThreadOwnerCondition(args))
+      .limit(1);
+    signal.throwIfAborted();
+    return binding?.chatThreadId ?? null;
+  },
+);

@@ -15,8 +15,7 @@ export const buttonBaseClassName =
   "rounded-lg text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
 export type ButtonTooltipOptions =
-  | { showTooltip: true; "aria-label": string }
-  | { showTooltip?: false };
+  { showTooltip: true; "aria-label": string } | { showTooltip?: false };
 
 export interface ButtonBaseProps extends Omit<
   ButtonPrimitive.Props,

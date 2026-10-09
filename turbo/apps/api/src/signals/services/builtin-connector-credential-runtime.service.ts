@@ -141,7 +141,23 @@ function builtinConnectorStoredValueRef(
   throw new Error("Invalid connector stored value reference");
 }
 
-function builtinConnectorCredentialConnectionReadPlan(args: {
+export function builtinConnectorCredentialConnectionColumns() {
+  return {
+    authMethod: connectors.authMethod,
+    automaticAuthType: connectors.automaticAuthType,
+    connectorId: connectors.id,
+    externalEmail: connectors.externalEmail,
+    externalId: connectors.externalId,
+    needsReconnect: connectors.needsReconnect,
+    oauthScopes: connectors.oauthScopes,
+    oauthGrantedScopes: connectors.oauthGrantedScopes,
+    stateRevision: sql`${connectors.updatedAt}::text`.mapWith(pgTextDecoder),
+    storageVersion: connectors.storageVersion,
+    tokenExpiresAt: connectors.tokenExpiresAt,
+  };
+}
+
+export function builtinConnectorCredentialConnectionReadPlan(args: {
   readonly connectorId: string;
   readonly connectorSlug: string;
   readonly orgId: string;
@@ -149,19 +165,7 @@ function builtinConnectorCredentialConnectionReadPlan(args: {
   readonly userId: string;
 }) {
   return {
-    columns: {
-      authMethod: connectors.authMethod,
-      automaticAuthType: connectors.automaticAuthType,
-      connectorId: connectors.id,
-      externalEmail: connectors.externalEmail,
-      externalId: connectors.externalId,
-      needsReconnect: connectors.needsReconnect,
-      oauthScopes: connectors.oauthScopes,
-      oauthGrantedScopes: connectors.oauthGrantedScopes,
-      stateRevision: sql`${connectors.updatedAt}::text`.mapWith(pgTextDecoder),
-      storageVersion: connectors.storageVersion,
-      tokenExpiresAt: connectors.tokenExpiresAt,
-    },
+    columns: builtinConnectorCredentialConnectionColumns(),
     condition: and(
       eq(connectors.id, args.connectorId),
       eq(connectors.orgId, args.orgId),
@@ -171,7 +175,7 @@ function builtinConnectorCredentialConnectionReadPlan(args: {
   };
 }
 
-function builtinConnectorCredentialConnectionFromRow(
+export function builtinConnectorCredentialConnectionFromRow(
   args: {
     readonly connectorId: string;
     readonly connectorSlug: string;

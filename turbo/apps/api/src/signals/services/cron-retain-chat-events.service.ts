@@ -57,10 +57,7 @@ export interface ChatEventRetentionStats {
 }
 
 type SkipReason =
-  | "snapshot"
-  | "search_watermark"
-  | "pending_runless"
-  | "nonterminal_run";
+  "snapshot" | "search_watermark" | "pending_runless" | "nonterminal_run";
 
 interface ScannedEvent {
   readonly id: string;

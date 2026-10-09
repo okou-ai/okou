@@ -12,9 +12,7 @@ import type {
 } from "./api-dispatch-timing.service";
 
 export type WorkflowAdmissionSchedulePath =
-  | "non_schedule"
-  | "unjournaled_schedule"
-  | "journaled_schedule";
+  "non_schedule" | "unjournaled_schedule" | "journaled_schedule";
 
 export type WorkflowAdmissionOutcome = "inserted" | "superseded" | "failed";
 

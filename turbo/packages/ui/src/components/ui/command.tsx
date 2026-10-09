@@ -48,8 +48,7 @@ interface CommandDialogProps extends Omit<
   readonly showCloseButton?: boolean;
   readonly commandClassName?: string | undefined;
   readonly commandProps?:
-    | React.ComponentPropsWithoutRef<typeof Command>
-    | undefined;
+    React.ComponentPropsWithoutRef<typeof Command> | undefined;
 }
 
 function CommandDialog({

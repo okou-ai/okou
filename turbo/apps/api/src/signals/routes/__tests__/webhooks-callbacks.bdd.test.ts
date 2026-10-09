@@ -793,7 +793,8 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
 
     const billing = await runs.readBillingStatus(admin);
     expect(billing).toMatchObject({
-      credits: 1000,
+      credits: 0,
+      creditGrants: [],
       tier: "limited-free-1",
       onboardingPaymentPending: false,
     });
@@ -808,14 +809,22 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     ).resolves.toMatchObject({
       body: { allowed: true, count: 0, limit: 10 },
     });
-    const onboardingCreditGrant = billing.creditGrants.find((grant) => {
-      return grant.source === "onboarding";
+    const personalCredits = await runs.readUsagePackCredits(admin);
+    expect(personalCredits).toMatchObject({
+      totalCredits: 1000,
+      purchasedCredits: 0,
+      bonusCredits: 1000,
     });
-    expect(onboardingCreditGrant).toMatchObject({
-      amount: 1000,
-      remaining: 1000,
-    });
-    expectExpiresAboutThirtyDaysFromNow(onboardingCreditGrant?.expiresAt);
+    expect(personalCredits.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 1000,
+        remaining: 1000,
+      }),
+    ]);
+    expectExpiresAboutThirtyDaysFromNow(
+      personalCredits.creditGrants[0]?.expiresAt,
+    );
     // A new organization starts in Auto, the null selection.
     const available = await createMiscRoutesApi(context).listRunModels(admin);
     expect(
@@ -829,6 +838,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const admin = await createLimitedFreeOrgFromClerk();
+    const personalBefore = await runs.readUsagePackCredits(admin);
 
     api.verifyNextClerkWebhook({
       type: "organizationMembership.created",
@@ -845,10 +855,16 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
 
     const repeatedBilling = await runs.readBillingStatus(admin);
     expect(repeatedBilling).toMatchObject({
-      credits: 1000,
+      credits: 0,
+      creditGrants: [],
       tier: "limited-free-1",
       onboardingPaymentPending: false,
     });
+    expect(personalBefore.totalCredits).toBe(1000);
+    expect(personalBefore.creditGrants).toHaveLength(1);
+    await expect(runs.readUsagePackCredits(admin)).resolves.toStrictEqual(
+      personalBefore,
+    );
 
     const status = await bdd.readOnboardingStatus(admin);
     expect(status).toMatchObject({
@@ -2369,7 +2385,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(missingCompleteRun.body);
     expect(missingCompleteRun.body.error.code).toBe("NOT_FOUND");
 
-    const malformedCheckpoint = await api.requestAgentCheckpointUnchecked(
+    const malformedCheckpoint = await api.requestAgentRunOutputsUnchecked(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2382,7 +2398,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(malformedCheckpoint.body);
     expect(malformedCheckpoint.body.error.code).toBe("BAD_REQUEST");
 
-    const uppercaseCheckpointHash = await api.requestAgentCheckpointUnchecked(
+    const uppercaseCheckpointHash = await api.requestAgentRunOutputsUnchecked(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2395,7 +2411,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(uppercaseCheckpointHash.body);
     expect(uppercaseCheckpointHash.body.error.code).toBe("BAD_REQUEST");
 
-    const missingCheckpointRun = await api.requestAgentCheckpoint(
+    const missingCheckpointRun = await api.requestAgentRunOutputs(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2408,7 +2424,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(missingCheckpointRun.body);
     expect(missingCheckpointRun.body.error.code).toBe("NOT_FOUND");
 
-    const mismatchedCheckpoint = await api.requestAgentCheckpoint(
+    const mismatchedCheckpoint = await api.requestAgentRunOutputs(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2735,6 +2751,43 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
 });
 
 describe("WHCB-10: timeout closes sandbox storage write authority", () => {
+  it("rejects prepare when its owner cancels the run during upload URL signing", async () => {
+    const fixture = await sandboxStorageWriteFixture("cancel during prepare");
+    const runs = createRunsApi(context);
+    const signingStarted = createDeferredPromise<void>(context.signal);
+    const releaseSigning = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!releaseSigning.settled()) {
+        releaseSigning.resolve(undefined);
+      }
+    });
+    context.mocks.s3.getSignedUrl.mockImplementationOnce(async () => {
+      signingStarted.resolve(undefined);
+      await releaseSigning.promise;
+      return "https://r2.example.test/cancelled-storage-upload";
+    });
+    const preparation = api.requestAgentStoragePrepare(
+      {
+        runId: fixture.runId,
+        storageId: fixture.mount.storageId,
+        files: [{ path: "cancelled.txt", hash: "a".repeat(64), size: 1 }],
+      },
+      fixture.headers,
+      [404],
+    );
+    await signingStarted.promise;
+    await runs.requestCancelRun(fixture.actor, fixture.runId, [200]);
+    releaseSigning.resolve(undefined);
+    const prepared = await preparation;
+    expectApiError(prepared.body);
+    expect(prepared.body.error.message).toBe("Active agent run not found");
+    await expect(
+      runs.readRun(fixture.actor, fixture.runId),
+    ).resolves.toMatchObject({
+      status: "cancelled",
+    });
+  });
+
   it.each(TERMINAL_RUN_STATUSES)(
     "rejects prepare before issuing upload URLs after %s",
     async (status) => {

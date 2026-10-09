@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/ios-v0.6.8...ios-v0.7.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+## [0.6.8](https://github.com/okou-ai/okou/compare/ios-v0.6.7...ios-v0.6.8) (2026-10-08)
+
+
+### CI
+
+* skip native builds on release-please pull requests ([#38180](https://github.com/okou-ai/okou/issues/38180)) ([c48c06d](https://github.com/okou-ai/okou/commit/c48c06d5d74c6122dfa094b946f6c8516ad843c7))
+
+## [0.6.7](https://github.com/okou-ai/okou/compare/ios-v0.6.6...ios-v0.6.7) (2026-10-08)
+
+
+### Bug Fixes
+
+* **ios:** stabilize conversation row heights while scrolling ([#38077](https://github.com/okou-ai/okou/issues/38077)) ([ca6ff65](https://github.com/okou-ai/okou/commit/ca6ff65fb0f20601c1495c3f88a1da3c05410374))
+
 ## [0.6.6](https://github.com/okou-ai/okou/compare/ios-v0.6.5...ios-v0.6.6) (2026-10-08)
 
 

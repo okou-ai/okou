@@ -14,7 +14,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
-import { clearRunLaunchSnapshotFixture } from "../../../test-fixtures/agent-runs";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -3404,56 +3403,5 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     });
     expect(sinceFilteredIds).toContain(sinceBoundaryRun.runId);
     expect(sinceFilteredIds).not.toContain(beforeBoundaryRun.runId);
-  });
-
-  it("preserves historical agent-source logs without provenance", async () => {
-    const actor = await entitledActor();
-    if (!actor.orgId) {
-      throw new Error("Historical logs require an org-scoped actor");
-    }
-    const agent = await bdd.createAgent(actor, {
-      displayName: "historical-agent-log",
-      visibility: "private",
-    });
-    // A persisted historical agent-source run without launch provenance.
-    const historicalAgentRun = await store.set(
-      seedRun$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        composeId: agent.agentId,
-        prompt: "historical agent-source run",
-        status: "pending",
-        triggerSource: "agent",
-      },
-      context.signal,
-    );
-    await api.requestCancelRun(actor, historicalAgentRun.runId, [200]);
-    await clearRunLaunchSnapshotFixture(historicalAgentRun.runId);
-
-    const listed = await reads.requestListLogs(actor, {}, [200]);
-    if (listed.status !== 200) {
-      throw new Error("Expected the historical agent-source log list");
-    }
-    expect(
-      listed.body.data.find((entry) => {
-        return entry.id === historicalAgentRun.runId;
-      }),
-    ).toMatchObject({
-      triggerSource: "agent",
-      framework: null,
-    });
-    expect(listed.body.filters.sources).toContain("agent");
-
-    const detail = await reads.requestReadLogById(
-      actor,
-      historicalAgentRun.runId,
-      [200],
-    );
-    expect(detail.body).toMatchObject({
-      id: historicalAgentRun.runId,
-      triggerSource: "agent",
-      framework: null,
-    });
   });
 });

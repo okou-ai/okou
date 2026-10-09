@@ -100,25 +100,28 @@ import {
   userFeatureSwitchContext,
   userFeatureSwitchOverrides,
 } from "./feature-switches.service";
-import { reconcileGmailWatchesForUser$ } from "./gmail-automation-event.service";
+import { reconcileGmailWatchesForUser$ } from "./gmail-automation-watch.service";
 import {
   prepareGoogleCalendarWatchStopForConnector$,
-  reconcileGoogleCalendarWatchesForUser$,
   stopPreparedGoogleCalendarWatches,
   type PendingGoogleCalendarWatchStop,
-} from "./google-calendar-automation-event.service";
+  reconcileGoogleCalendarWatchesForUser$,
+} from "./google-calendar-automation-watch.service";
+
 import {
   prepareGoogleFormsWatchStopForConnector$,
-  reconcileGoogleFormsWatchesForUser$,
   stopPreparedGoogleFormsWatches,
   type PendingGoogleFormsWatchStop,
-} from "./google-forms-automation-event.service";
+  reconcileGoogleFormsWatchesForUser$,
+} from "./google-forms-automation-watch.service";
+
 import {
   deletePreparedGoogleMeetSubscriptionIfUnadopted$,
   prepareGoogleMeetSubscriptionDeleteForConnector$,
   reconcileGoogleMeetSubscriptionsForUser$,
   type PendingGoogleMeetSubscriptionDelete,
-} from "./google-meet-automation-event.service";
+} from "./google-meet-automation-watch.service";
+
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 
 const log = logger("api:connector-data");
@@ -190,8 +193,7 @@ type ConnectorConnectionMutationFailure =
     };
 
 type ConnectorConnectionWriteFailureStatus =
-  | ConnectorConnectionMutationFailure["status"]
-  | "identityMismatch";
+  ConnectorConnectionMutationFailure["status"] | "identityMismatch";
 
 export function connectorConnectionWriteFailureMessage(
   status: ConnectorConnectionWriteFailureStatus,

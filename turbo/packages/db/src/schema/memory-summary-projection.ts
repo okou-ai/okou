@@ -14,12 +14,7 @@ import {
 import { storages, storageVersions } from "./storage";
 
 export type MemorySummaryProjectionStatus =
-  | "pending"
-  | "running"
-  | "ready"
-  | "missing"
-  | "invalid"
-  | "over_limit";
+  "pending" | "running" | "ready" | "missing" | "invalid" | "over_limit";
 
 /**
  * Durable projection of one canonical user memory Storage version's root

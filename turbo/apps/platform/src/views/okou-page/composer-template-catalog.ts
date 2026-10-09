@@ -82,9 +82,7 @@ export type SlashTemplateCategory = (typeof SLASH_TEMPLATE_CATEGORIES)[number];
 
 /** The catalogs that carry cover art, so they can fill a pane or a shelf. */
 export type SlashTemplatePreviewCategory =
-  | "slides"
-  | "illustration"
-  | "website";
+  "slides" | "illustration" | "website";
 
 /** Covers render two across a 320px pane, so they are requested at 2x that. */
 const SLASH_TEMPLATE_COVER_SIZE = { width: 280, height: 158 } as const;

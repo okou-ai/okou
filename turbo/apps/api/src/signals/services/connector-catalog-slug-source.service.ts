@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   connectorCatalog,
   connectorCatalogEntries,
-} from "@okouai/db/schema/connector-catalog";
+} from "@okouai/db/runtime/connector-catalog";
 import type { ImmutableConnectorCatalogEntry } from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -34,7 +34,7 @@ import {
 } from "./connector-catalog-columns";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$, type ReadonlyDb } from "../external/db";
-import { computed } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   catalogIdentityFromCapture,
   type ExternalCatalogIdentity,
@@ -186,7 +186,7 @@ export interface ConnectorRuntimeAuthSelection extends ConnectorRuntimeAuthLooku
  * read only for `firewallConnectorSlugs`. Missing entries are omitted, as they
  * are absent from a whole-catalog snapshot.
  */
-function connectorRuntimeAuthSelectionReadPlan(args: {
+export function connectorRuntimeAuthSelectionReadPlan(args: {
   readonly connectorSlugs: readonly string[];
   readonly firewallConnectorSlugs?: readonly ConnectorSlug[];
 }) {
@@ -226,7 +226,7 @@ function connectorRuntimeAuthSelectionReadPlan(args: {
   };
 }
 
-function connectorRuntimeAuthSelectionFromRows(
+export function connectorRuntimeAuthSelectionFromRows(
   rows: readonly {
     readonly current: { readonly schemaVersion: number; readonly hash: string };
     readonly entry: {
@@ -238,7 +238,8 @@ function connectorRuntimeAuthSelectionFromRows(
         typeof materializeConnectorCatalogCompatibilityRow
       >[0]["mcp"];
       readonly label: string | null;
-      readonly firewall: typeof connectorCatalogEntries.$inferSelect.firewall;
+      readonly firewall:
+        typeof connectorCatalogEntries.$inferSelect.firewall | null;
     } | null;
   }[],
   requestedConnectorSlugs: readonly string[],
@@ -314,6 +315,30 @@ export async function loadConnectorRuntimeAuthSelection(
     plan.firewallConnectorSlugs,
   );
 }
+
+export const readConnectorRuntimeAuthSelection$ = command(
+  async (
+    { get },
+    args: {
+      readonly connectorSlugs: readonly string[];
+      readonly firewallConnectorSlugs?: readonly ConnectorSlug[];
+    },
+    signal: AbortSignal,
+  ): Promise<ConnectorRuntimeAuthSelection> => {
+    const plan = connectorRuntimeAuthSelectionReadPlan(args);
+    const rows = await get(db$)
+      .select(plan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, plan.join)
+      .where(connectorCatalogCurrentWhere());
+    signal.throwIfAborted();
+    return connectorRuntimeAuthSelectionFromRows(
+      rows,
+      plan.requestedConnectorSlugs,
+      plan.firewallConnectorSlugs,
+    );
+  },
+);
 
 export function createConnectorRuntimeAuthSelection(args: {
   readonly connectorSlugs: readonly string[];

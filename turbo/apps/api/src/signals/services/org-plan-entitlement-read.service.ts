@@ -2,7 +2,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import { writeDb$, type Db } from "../external/db";
+import { db$, type Db } from "../external/db";
 
 type ReadDb = Pick<Db, "select">;
 
@@ -114,11 +114,11 @@ export function orgPlanCapabilitiesFromRow(
 
 export const loadOrgPlanCapabilities$ = command(
   async (
-    { set },
+    { get },
     orgId: string,
     abortSignal?: AbortSignal,
   ): Promise<OrgPlanCapabilities | null> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [row] = await db
       .select(ORG_PLAN_CAPABILITY_SELECTION)
       .from(orgPlanEntitlements)

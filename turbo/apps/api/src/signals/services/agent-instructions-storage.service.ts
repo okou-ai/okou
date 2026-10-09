@@ -3,7 +3,12 @@ import {
   getInstructionsFilename,
   SUPPORTED_FRAMEWORKS,
 } from "@okouai/core/frameworks";
-import { getInstructionsStorageName } from "@okouai/core/storage-names";
+import {
+  getInstructionsStorageName,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
+import { storages } from "@okouai/db/schema/storage";
+import { and, eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
@@ -14,7 +19,6 @@ import {
   type ServerSideVolumeStorage,
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
-import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 
 interface WriteAgentInstructionsStorageArgs {
   readonly orgId: string;
@@ -85,8 +89,6 @@ export const prepareAgentInstructionsStorage$ = command(
   },
 );
 
-/** DB-only publication; the caller revalidates source authority and Storage. */
-
 export const deleteAgentInstructionsStorage$ = command(
   async (
     { get, set },
@@ -94,10 +96,19 @@ export const deleteAgentInstructionsStorage$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const writeDb = set(writeDb$);
-    const s3Prefix = await writeDb.transaction(async (tx) => {
-      return await removeAgentInstructionsStorageInTransaction(tx, args);
-    });
+    // A single DELETE owns its exact Storage row and cascades atomically.
+    const [removed] = await writeDb
+      .delete(storages)
+      .where(
+        and(
+          eq(storages.orgId, args.orgId),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
+          eq(storages.name, getInstructionsStorageName(args.agentName)),
+        ),
+      )
+      .returning({ s3Prefix: storages.s3Prefix });
     signal.throwIfAborted();
+    const s3Prefix = removed?.s3Prefix;
 
     if (s3Prefix) {
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");

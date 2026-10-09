@@ -145,9 +145,7 @@ function threadCondition(args: ChatThreadMetadataUpdateArgs) {
 }
 
 type PreparedPin =
-  | ModelFirstPin
-  | { readonly status: number; readonly body: unknown }
-  | null;
+  ModelFirstPin | { readonly status: number; readonly body: unknown } | null;
 
 function metadataResult(
   state: Omit<ChatThreadMetadataState, "serviceTier">,

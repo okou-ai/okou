@@ -12,6 +12,75 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1004.1](https://github.com/okou-ai/okou/compare/app-v0.1004.0...app-v0.1004.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **platform:** keep completed followups opaque on thread entry ([#38231](https://github.com/okou-ai/okou/issues/38231)) ([d1cf638](https://github.com/okou-ai/okou/commit/d1cf638f579bc85348057ceadd8701b08b80c12c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.1
+    * @okouai/core bumped to 8.737.1
+
+## [0.1004.0](https://github.com/okou-ai/okou/compare/app-v0.1003.3...app-v0.1004.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.0
+    * @okouai/core bumped to 8.737.0
+
+## [0.1003.3](https://github.com/okou-ai/okou/compare/app-v0.1003.2...app-v0.1003.3) (2026-10-08)
+
+
+### Bug Fixes
+
+* **app:** keep the three-column chat list expanded ([#38182](https://github.com/okou-ai/okou/issues/38182)) ([f90c17d](https://github.com/okou-ai/okou/commit/f90c17d71c094490f5ac2992db542aec68e4e350))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.541.0
+    * @okouai/core bumped to 8.736.0
+
+## [0.1003.2](https://github.com/okou-ai/okou/compare/app-v0.1003.1...app-v0.1003.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **app:** preserve artifact reading state when expanding diagrams ([#38118](https://github.com/okou-ai/okou/issues/38118)) ([d2ce547](https://github.com/okou-ai/okou/commit/d2ce5471a31c238e2f45b4fc9f08246543114b0e))
+* **billing:** keep member usage packs nonnegative ([#38071](https://github.com/okou-ai/okou/issues/38071)) ([532c7f8](https://github.com/okou-ai/okou/commit/532c7f813cc2e824ff4fa487f251786848b8d752))
+* suppress pwa push while the user is foreground in the same org ([#38091](https://github.com/okou-ai/okou/issues/38091)) ([22f89a5](https://github.com/okou-ai/okou/commit/22f89a5c8b69990bb3834c7678acb25f00d1c823))
+* **voice:** separate segment transcription from final polish ([#38082](https://github.com/okou-ai/okou/issues/38082)) ([1c7cb86](https://github.com/okou-ai/okou/commit/1c7cb86855d50504a57a6fcb86b9357a5965e3de))
+
+
+### Refactoring
+
+* **api:** use client-only platform realtime token exchange ([#38105](https://github.com/okou-ai/okou/issues/38105)) ([0fdfb57](https://github.com/okou-ai/okou/commit/0fdfb57b88d655219e84f18050a88362071cdd41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.540.0
+    * @okouai/core bumped to 8.735.2
+    * @okouai/ui bumped to 1.12.5
+
 ## [0.1003.1](https://github.com/okou-ai/okou/compare/app-v0.1003.0...app-v0.1003.1) (2026-10-08)
 
 

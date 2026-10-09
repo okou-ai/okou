@@ -32,10 +32,7 @@ import { chatThreadSnapshots } from "@okouai/db/schema/chat-thread-snapshot";
 
 import { computed } from "ccstate";
 import { db$ } from "../external/db";
-import type { Tx } from "../../lib/db-types";
 
-// Control operations still own transactions; ordinary appends own one statement.
-export type ChatThreadEventTransaction = Tx;
 const CHAT_THREAD_EVENTS_PAGE_SIZE = 1000;
 const cursorChatThreadEvent = alias(
   chatThreadEvents,

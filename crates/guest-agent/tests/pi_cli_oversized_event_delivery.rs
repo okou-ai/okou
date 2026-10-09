@@ -9,6 +9,7 @@ use guest_agent::masker::SecretMasker;
 use guest_agent::paths::GuestPaths;
 use guest_agent::run_context::GuestRuntime;
 use serde_json::{Value, json};
+use std::fmt::Write as _;
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
@@ -132,13 +133,13 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         let terminal = delivered.last().ok_or("missing terminal")?;
         assert_eq!(terminal["type"], "result");
         assert_eq!(terminal["is_error"], failed);
-        let public = serde_json::to_string(&delivered)?;
-        assert!(!public.contains(SECRET));
-        assert!(
-            !public.contains("private-memory")
-                && !public.contains("private-note")
-                && !public.contains("memoryCitation")
-        );
+        for sentinel in [SECRET, "private-memory", "private-note", "memoryCitation"] {
+            assert!(
+                !delivered
+                    .iter()
+                    .any(|event| common::contains_json_text(event, sentinel))
+            );
+        }
         let reductions = log
             .lines()
             .filter(|line| line.contains("Pi event reduced for delivery"))
@@ -147,7 +148,7 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
             reductions.len(),
             delivered
                 .iter()
-                .filter(|e| e.to_string().contains("for delivery"))
+                .filter(|event| common::contains_json_text(event, "for delivery"))
                 .count()
         );
         assert!(reductions.iter().all(|line| line.contains("[INFO]")
@@ -400,7 +401,6 @@ async fn pi_rpc_rejects_oversized_masked_parent_without_publishing_private_citat
 
 fn assert_public_citation_isolation(events: &[Value]) {
     for event in events {
-        let public = event.to_string();
         for private_value in [
             "private-memory",
             "private-note",
@@ -410,7 +410,7 @@ fn assert_public_citation_isolation(events: &[Value]) {
             SECRET,
         ] {
             assert!(
-                !public.contains(private_value),
+                !common::contains_json_text(event, private_value),
                 "private data in public event"
             );
         }
@@ -423,6 +423,57 @@ struct PiDelivery {
     delivered: Vec<Value>,
     citations: Vec<Value>,
     log: String,
+}
+
+// Follow serde_json's map order, including workspace preserve_order builds,
+// while borrowing the large message instead of cloning it into a fixture Value.
+struct SessionRecord<'a> {
+    fields: &'a serde_json::Map<String, Value>,
+    message: &'a Value,
+}
+
+impl serde::Serialize for SessionRecord<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap as _;
+        let mut map = serializer.serialize_map(Some(self.fields.len()))?;
+        for (name, value) in self.fields {
+            map.serialize_entry(
+                name,
+                if name == "message" {
+                    self.message
+                } else {
+                    value
+                },
+            )?;
+        }
+        map.end()
+    }
+}
+
+fn session_record_json(index: usize, message: &Value) -> serde_json::Result<String> {
+    let mut fields = serde_json::Map::new();
+    fields.insert("type".into(), json!("message"));
+    fields.insert("id".into(), json!(format!("message-{index}")));
+    fields.insert(
+        "parentId".into(),
+        json!((index > 0).then(|| format!("message-{}", index - 1))),
+    );
+    fields.insert("timestamp".into(), json!("2026-09-11T00:00:00Z"));
+    fields.insert("message".into(), Value::Null);
+    serde_json::to_string(&SessionRecord {
+        fields: &fields,
+        message,
+    })
+}
+
+#[test]
+fn borrowed_session_record_preserves_canonical_bytes() -> Result<(), serde_json::Error> {
+    let message = json!({"role":"assistant", "content":[{"text":"你好\"\\\n"}]});
+    for index in [0, 1] {
+        let original = json!({"type":"message","id":format!("message-{index}"),"parentId":if index == 0 {None} else {Some(format!("message-{}",index-1))},"timestamp":"2026-09-11T00:00:00Z","message":message});
+        assert_eq!(session_record_json(index, &message)?, original.to_string());
+    }
+    Ok(())
 }
 
 // The guest system-log override is process-global Rust state.
@@ -448,10 +499,10 @@ async fn deliver_pi_rpc(
         .suffix(&format!("_{session_id}.jsonl"))
         .tempfile_in(session_dir)?;
     let session_path = session_file.path();
-    let original = messages
-        .iter()
-        .map(|event| format!("{event}\n"))
-        .collect::<String>();
+    let mut original = String::new();
+    for event in messages {
+        writeln!(original, "{event}")?;
+    }
     assert!(original.lines().all(
         |line| line.len() < guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES
     ));
@@ -461,7 +512,8 @@ async fn deliver_pi_rpc(
         json!({"type":"session","version":3,"id":session_id,"timestamp":"2026-09-11T00:00:00Z","cwd":"/home/user/workspace"})
     );
     for (index, event) in messages.iter().enumerate() {
-        session.push_str(&format!("{}\n",json!({"type":"message","id":format!("message-{index}"),"parentId":if index == 0 {None} else {Some(format!("message-{}",index-1))},"timestamp":"2026-09-11T00:00:00Z","message":event["message"]})));
+        session.push_str(&session_record_json(index, &event["message"])?);
+        session.push('\n');
     }
     std::fs::write(session_path, &session)?;
     let commands_path = tmp.path().join("commands.jsonl");
@@ -588,22 +640,18 @@ async fn deliver_pi_rpc(
     let mut citations = Vec::new();
     for request in &requests {
         assert!(request.body.len() <= LIMIT);
-        let payload: Value = serde_json::from_str(&request.body)?;
-        delivered.extend(
+        let mut payload: Value = serde_json::from_str(&request.body)?;
+        delivered.append(
             payload
-                .get("events")
-                .and_then(Value::as_array)
-                .ok_or("missing events")?
-                .iter()
-                .cloned(),
+                .get_mut("events")
+                .and_then(Value::as_array_mut)
+                .ok_or("missing events")?,
         );
-        citations.extend(
+        citations.append(
             payload
-                .pointer("/piMemoryCitationTransport/citations")
-                .and_then(Value::as_array)
-                .ok_or("missing private transport")?
-                .iter()
-                .cloned(),
+                .pointer_mut("/piMemoryCitationTransport/citations")
+                .and_then(Value::as_array_mut)
+                .ok_or("missing private transport")?,
         );
     }
     assert_eq!(
@@ -625,8 +673,7 @@ async fn deliver_pi_rpc(
     assert_eq!(std::fs::read_to_string(&events_path)?, original);
     assert_eq!(std::fs::read_to_string(session_path)?, session);
     let local = std::fs::read_to_string(runtime.paths.agent_log_file())?;
-    for event in messages {
-        let expected = event.to_string();
+    for expected in original.lines() {
         assert!(local.lines().any(|line| line == expected));
     }
     assert!(!local.contains("for delivery"));

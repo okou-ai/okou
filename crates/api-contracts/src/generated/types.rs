@@ -658,70 +658,6 @@ pub mod runners {
             }
         }
 
-        /// DTOs for reporting bounded built-in model provider failures.
-        pub mod model_provider_failures {
-            /// Request body for reporting a built-in model provider failure.
-            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-            #[serde(tag = "failureKind", rename_all_fields = "camelCase")]
-            pub enum Request {
-                /// Provider authentication failed.
-                #[serde(rename = "authentication")]
-                Authentication {
-                    /// Optional bounded provider retry delay in seconds.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    retry_after_seconds: Option<i64>,
-                },
-                /// Provider billing rejected the request.
-                #[serde(rename = "billing")]
-                Billing {
-                    /// Optional bounded provider retry delay in seconds.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    retry_after_seconds: Option<i64>,
-                },
-                /// Provider rate limiting rejected the request.
-                #[serde(rename = "rate_limit")]
-                RateLimit {
-                    /// Optional bounded provider retry delay in seconds.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    retry_after_seconds: Option<i64>,
-                },
-                /// The provider route was unavailable or overloaded.
-                #[serde(rename = "provider_unavailable")]
-                ProviderUnavailable {
-                    /// Optional bounded provider retry delay in seconds.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    retry_after_seconds: Option<i64>,
-                },
-                /// The provider inference request timed out.
-                #[serde(rename = "timeout")]
-                Timeout {
-                    /// Optional bounded provider retry delay in seconds.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    retry_after_seconds: Option<i64>,
-                },
-                /// The provider connection failed.
-                #[serde(rename = "connection")]
-                Connection {
-                    /// Required source of the connection failure.
-                    connection_source: RequestConnectionSource,
-                    /// Optional bounded provider retry delay in seconds.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    retry_after_seconds: Option<i64>,
-                },
-            }
-
-            /// Source of an eligible connection failure.
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-            pub enum RequestConnectionSource {
-                /// The provider returned a connection failure.
-                #[serde(rename = "provider_response")]
-                ProviderResponse,
-                /// The runner observed an upstream transport failure.
-                #[serde(rename = "upstream_transport")]
-                UpstreamTransport,
-            }
-        }
-
         /// DTOs for steering prompts and run-targeted budgets into a running run.
         pub mod steerable_inputs {
             /// DTOs for reading the next steerable prompt or run-targeted budget.
@@ -2769,6 +2705,74 @@ pub mod webhooks {
                 SandboxPrepareFallback,
             }
 
+            /// Reason a final Run output intentionally omits resumable CLI agent session history.
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+            pub enum RequestCompletionCliAgentSessionHistoryDisposition {
+                /// The native history exceeded the bounded Run output limit.
+                #[serde(rename = "discarded_oversized")]
+                DiscardedOversized,
+                /// The native history was unavailable or unusable.
+                #[serde(rename = "unavailable")]
+                Unavailable,
+            }
+
+            /// Policy used when a final Run output artifact root is missing.
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+            pub enum RequestCompletionArtifactSnapshotMissingRootPolicy {
+                /// Treat a missing artifact root as an error.
+                #[serde(rename = "fail")]
+                Fail,
+                /// Preserve the parent artifact version when the root is missing.
+                #[serde(rename = "preserveParentVersion")]
+                PreserveParentVersion,
+            }
+
+            /// Artifact version captured by a final Run output.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            pub struct RequestCompletionArtifactSnapshot {
+                /// User-facing artifact name referenced by the run.
+                pub name: String,
+                /// Artifact version selected for the Run output.
+                pub version: String,
+                /// Guest filesystem path where the artifact is mounted.
+                pub mount_path: String,
+                /// Optional policy retained when the artifact mount root is missing.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub missing_root_policy: Option<RequestCompletionArtifactSnapshotMissingRootPolicy>,
+            }
+
+            /// Volume versions captured by a final Run output.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            pub struct RequestCompletionVolumeVersionsSnapshot {
+                /// Volume names mapped to their captured versions.
+                pub versions: std::collections::BTreeMap<String, String>,
+            }
+
+            /// Final Run output metadata included with completion.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            pub struct RequestCompletion {
+                /// CLI agent implementation that produced the session.
+                pub cli_agent_type: String,
+                /// Native CLI session identifier retained for continuation.
+                pub cli_agent_session_id: String,
+                /// Optional SHA-256 hash of uploaded CLI agent session history.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub cli_agent_session_history_hash: Option<String>,
+                /// Optional reason resumable session history was omitted.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub cli_agent_session_history_disposition:
+                    Option<RequestCompletionCliAgentSessionHistoryDisposition>,
+                /// Optional artifact versions captured by the Run output.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub artifact_snapshots: Option<Vec<RequestCompletionArtifactSnapshot>>,
+                /// Optional volume versions captured by the Run output.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub volume_versions_snapshot: Option<RequestCompletionVolumeVersionsSnapshot>,
+            }
+
             /// Reason a final checkpoint intentionally omits resumable CLI agent session history.
             #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
             pub enum RequestCheckpointCliAgentSessionHistoryDisposition {
@@ -2863,7 +2867,10 @@ pub mod webhooks {
                 /// Optional outcome of the workspace reuse decision.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub workspace_reuse_result: Option<RequestWorkspaceReuseResult>,
-                /// Optional final checkpoint persisted atomically with completion.
+                /// Native history and published file outputs saved with completion.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub completion: Option<RequestCompletion>,
+                /// Legacy Guest metadata adapter; remove after deployed Guests drain.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub checkpoint: Option<RequestCheckpoint>,
             }
@@ -2937,6 +2944,59 @@ pub mod webhooks {
                 /// The provider reported a usage limit.
                 #[serde(rename = "usage_limit")]
                 UsageLimit,
+            }
+        }
+
+        /// Native CLI history upload DTOs.
+        pub mod session_history {
+            /// Prepare a native CLI history upload.
+            pub mod prepare {
+                /// Request body for preparing a session-history upload.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct Request {
+                    /// Agent run identifier bound to the sandbox token.
+                    pub run_id: String,
+                    /// SHA-256 hash of the uncompressed session history.
+                    pub hash: String,
+                    /// Uncompressed session-history size in bytes.
+                    pub raw_size: u64,
+                    /// Encoded session-history size in bytes.
+                    pub encoded_size: u64,
+                    /// Optional encoding used for the uploaded bytes.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub encoding: Option<SessionHistoryEncoding>,
+                }
+
+                /// Response body returned when preparing session history.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct Response {
+                    /// Optional presigned URL for uploading new content.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub presigned_url: Option<String>,
+                    /// Whether the requested session history already exists.
+                    pub existing: bool,
+                    /// Optional encoding of the persisted session history.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub encoding: Option<SessionHistoryEncoding>,
+                }
+
+                /// Encoding used for persisted CLI agent session history.
+                #[derive(
+                    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+                )]
+                pub enum SessionHistoryEncoding {
+                    /// Uncompressed session history bytes.
+                    #[serde(rename = "identity")]
+                    Identity,
+                    /// Gzip-compressed session history bytes.
+                    #[serde(rename = "gzip")]
+                    Gzip,
+                    /// Zstandard-compressed session history bytes.
+                    #[serde(rename = "zstd")]
+                    Zstd,
+                }
             }
         }
 

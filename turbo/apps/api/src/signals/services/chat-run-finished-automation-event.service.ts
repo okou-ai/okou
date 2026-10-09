@@ -17,11 +17,11 @@ import { z } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { settle, settleIncludingAbort } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadRunAutonomyBudget } from "./autonomy-budget.service";
+import { loadRunAutonomyBudget$ } from "./autonomy-budget.service";
 import { touchChatThreadLastMessageAtIndependently$ } from "./chat-event-shared.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { chatEventInsertSql } from "./chat-event.service";
@@ -180,31 +180,40 @@ function chatRunFinishedTriggerContext(args: {
 // Chat callback writers do not seed this receipt key; the first admission
 // creates it. An absent key therefore means no automation has been admitted
 // for this source callback yet.
-async function loadAdmittedChatRunFinishedAutomations(
-  db: Db,
-  event: ChatRunFinishedEvent,
-): Promise<ReadonlySet<string>> {
-  const [source] = await db
-    .select({
-      automationIds:
-        sql`coalesce(${agentRunCallbacks.payload}->'chatRunFinishedAutomationIds', '[]'::jsonb)`.mapWith(
-          zodDriverValueDecoder(z.array(z.uuid())),
+const loadAdmittedChatRunFinishedAutomations$ = command(
+  async (
+    { get },
+    event: ChatRunFinishedEvent,
+    signal: AbortSignal,
+  ): Promise<ReadonlySet<string>> => {
+    const [source] = await get(db$)
+      .select({
+        automationIds:
+          sql`coalesce(${agentRunCallbacks.payload}->'chatRunFinishedAutomationIds', '[]'::jsonb)`.mapWith(
+            zodDriverValueDecoder(z.array(z.uuid())),
+          ),
+      })
+      .from(agentRunCallbacks)
+      .where(
+        and(
+          eq(agentRunCallbacks.id, event.sourceCallbackId),
+          eq(agentRunCallbacks.runId, event.runId),
+          eq(agentRunCallbacks.internalKind, "chat"),
         ),
-    })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.id, event.sourceCallbackId),
-        eq(agentRunCallbacks.runId, event.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      ),
-    )
-    .limit(1);
-  if (!source) {
-    throw new Error("Chat run finished event is missing its source callback");
-  }
-  return new Set(source.automationIds);
-}
+      )
+      .limit(1);
+    if (signal.aborted) {
+      // Keep a missing source callback's invariant error ahead of cancellation.
+      if (source) {
+        signal.throwIfAborted();
+      }
+    }
+    if (!source) {
+      throw new Error("Chat run finished event is missing its source callback");
+    }
+    return new Set(source.automationIds);
+  },
+);
 
 const admitChatRunFinishedAutomation$ = command(
   async (
@@ -288,9 +297,9 @@ const admitChatRunFinishedAutomation$ = command(
 export const dispatchChatRunFinishedAutomationEvents$ = command(
   async ({ set }, event: ChatRunFinishedEvent, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const sourceAutonomyBudget = await loadRunAutonomyBudget(db, event.runId);
+    const sourceBudget = await set(loadRunAutonomyBudget$, event.runId, signal);
     signal.throwIfAborted();
-    if (sourceAutonomyBudget === null) {
+    if (sourceBudget === null) {
       return;
     }
     const automationRows = await db
@@ -330,9 +339,10 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
       );
     signal.throwIfAborted();
 
-    const admittedAutomationIds = await loadAdmittedChatRunFinishedAutomations(
-      db,
+    const admittedAutomationIds = await set(
+      loadAdmittedChatRunFinishedAutomations$,
       event,
+      signal,
     );
     signal.throwIfAborted();
     const currentTime = nowDate();
@@ -379,7 +389,7 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         ));
       signal.throwIfAborted();
 
-      if (sourceAutonomyBudget === 0) {
+      if (sourceBudget === 0) {
         if (exhaustedThreadIds.has(chatThreadId)) {
           continue;
         }

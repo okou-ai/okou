@@ -166,39 +166,6 @@ pub mod runners {
                 }
             }
 
-            /// Generated route bindings under `runners::runs::by_run_id::model_provider_failures`.
-            pub mod model_provider_failures {
-                /// Report a built-in model provider failure for a run.
-                /// Route contract: `POST /api/runners/runs/:runId/model-provider-failures`.
-                pub const REPORT: crate::RouteTemplate = crate::RouteTemplate {
-                    method: crate::Method::Post,
-                    path: "/api/runners/runs/:runId/model-provider-failures",
-                };
-
-                /// Path parameters for `POST /api/runners/runs/:runId/model-provider-failures`.
-                #[derive(Debug, Clone, Copy)]
-                pub struct Params<'a> {
-                    /// Value for the `:runId` path parameter.
-                    pub run_id: &'a str,
-                }
-
-                /// Build the concrete path for `POST /api/runners/runs/:runId/model-provider-failures`.
-                /// Percent-encodes each path parameter as a URL path segment.
-                #[must_use]
-                pub fn path(params: Params<'_>) -> String {
-                    format!(
-                        "/api/runners/runs/{}/model-provider-failures",
-                        crate::route::encode_path_segment(params.run_id),
-                    )
-                }
-
-                /// Build a resolved route for `POST /api/runners/runs/:runId/model-provider-failures`.
-                #[must_use]
-                pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
-                    crate::ResolvedRoute::new(REPORT.method, path(params))
-                }
-            }
-
             /// Generated route bindings under `runners::runs::by_run_id::ssh`.
             pub mod ssh {
                 /// Generated route bindings under `runners::runs::by_run_id::ssh::observations`.
@@ -500,6 +467,19 @@ pub mod webhooks {
                 method: crate::Method::Post,
                 path: "/api/webhooks/agent/heartbeat",
             };
+        }
+
+        /// Generated route bindings under `webhooks::agent::session_history`.
+        pub mod session_history {
+            /// Generated route bindings under `webhooks::agent::session_history::prepare`.
+            pub mod prepare {
+                /// Get presigned URL for uploading session history to S3.
+                /// Route contract: `POST /api/webhooks/agent/session-history/prepare`.
+                pub const PREPARE: crate::Route = crate::Route {
+                    method: crate::Method::Post,
+                    path: "/api/webhooks/agent/session-history/prepare",
+                };
+            }
         }
 
         /// Generated route bindings under `webhooks::agent::session_output`.

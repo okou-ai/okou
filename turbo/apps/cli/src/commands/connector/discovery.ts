@@ -37,12 +37,10 @@ interface CustomConnectorDiscoveryItem {
 }
 
 export type ConnectorDiscoveryItem =
-  | CatalogConnectorDiscoveryItem
-  | CustomConnectorDiscoveryItem;
+  CatalogConnectorDiscoveryItem | CustomConnectorDiscoveryItem;
 
 export type ConnectorDiscoveryDefinition =
-  | CatalogConnectorDiscoveryDefinition
-  | CustomConnectorDiscoveryItem;
+  CatalogConnectorDiscoveryDefinition | CustomConnectorDiscoveryItem;
 
 function catalogDiscoveryDefinition(
   connector: ConnectorCatalogItem,

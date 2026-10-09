@@ -16,11 +16,7 @@ import { discordChatThreadRoutes } from "./discord-chat-thread-route";
 import { discordOrgConnections } from "./discord-org-connection";
 
 export type DiscordChatIngressStatus =
-  | "pending"
-  | "processing"
-  | "retryable"
-  | "processed"
-  | "terminal";
+  "pending" | "processing" | "retryable" | "processed" | "terminal";
 
 /** Durable, deletion-owned message admission before any thread-creation side effect. */
 export const discordChatIngress = pgTable(

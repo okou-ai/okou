@@ -51,7 +51,7 @@ unless permissions == {
   raise "cleanup runner must have only the permissions needed for ownership handoff"
 end
 
-checkout = cleanup.fetch("steps").find { |step| step["uses"] == "actions/checkout@v7.0.1" }
+checkout = cleanup.fetch("steps").find { |step| step.fetch("uses", "").start_with?("actions/checkout@") }
 unless checkout&.dig("with", "ref") == "${{ github.event.repository.default_branch }}" &&
     checkout&.dig("with", "persist-credentials") == false
   raise "cleanup runner must execute the trusted default-branch ownership script"
@@ -99,7 +99,7 @@ unless stale.fetch("permissions") == {
 }
   raise "stale runner cleanup must use the same ownership permissions"
 end
-stale_checkout = stale.fetch("steps").find { |step| step["uses"] == "actions/checkout@v7.0.1" }
+stale_checkout = stale.fetch("steps").find { |step| step.fetch("uses", "").start_with?("actions/checkout@") }
 unless stale_checkout&.dig("with", "ref") == "${{ github.sha }}" &&
     stale_checkout&.dig("with", "persist-credentials") == false
   raise "stale runner cleanup must execute the scheduled or manually selected workflow commit"

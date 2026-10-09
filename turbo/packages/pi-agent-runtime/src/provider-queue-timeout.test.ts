@@ -24,7 +24,7 @@ const queueTimeout =
 const route = {
   provider: "openrouter",
   baseUrl: "https://openrouter.ai/api/v1",
-  model: "deepseek/deepseek-v4.1-flash",
+  model: "openai/gpt-6-luna",
   apiKey: "synthetic-token",
   dialect: "openai-responses",
   transport: "sse",
@@ -108,7 +108,7 @@ function completedResponse(text = "Recovered") {
 
 function stream(signal?: AbortSignal) {
   const model = resolvePiAgentModel(route);
-  if (!model) throw new Error("Expected the pinned OpenRouter DeepSeek model");
+  if (!model) throw new Error("Expected the OpenRouter Luna model");
   return piAgentStreamForConfig(route)(
     model,
     normalizeContext({

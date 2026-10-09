@@ -97,42 +97,44 @@ final class ChatClientTests: XCTestCase {
   }
 
   func testCreateWithoutSavedModelSendsAutoAsExplicitNull() async throws {
-    let explicitNullModels = Mutex<[Bool]>([])
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/agents":
-        return ChatHTTPResponse(
-          body:
-            "[{\"agentId\":\"\(fixtureAgent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
-        )
-      case "/api/user-model-preference":
-        return ChatHTTPResponse(
-          body:
-            "{\"selectedModel\":null,\"serviceTier\":null,\"modelSettings\":{},\"selectedImageModel\":null,\"updatedAt\":null}"
-        )
-      case "/api/run-models":
-        return runModelsResponse([
-          SubscriptionRunModel(model: "gpt-5.6-sol", providerType: "codex-oauth-token")
-        ])
-      case "/api/model-catalog": return modelCatalogResponse()
-      case "/api/chat-threads":
-        let body = try XCTUnwrap(
-          JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
-        let isExplicitNull = body["model"] is NSNull
-        explicitNullModels.withLock { $0.append(isExplicitNull) }
-        return ChatHTTPResponse(
-          status: 201,
-          body:
-            "{\"id\":\"\(newThread)\",\"title\":null,\"createdAt\":\"\(fixtureDate)\",\"selectedModel\":null,\"serviceTier\":null}"
-        )
-      default: throw URLError(.unsupportedURL)
+    for selectedModelJSON in ["null", #""auto""#, #""okou-1.0""#] {
+      let explicitNullModels = Mutex<[Bool]>([])
+      let fixture = ChatHTTPFixture { request in
+        switch request.url?.path {
+        case "/api/agents":
+          return ChatHTTPResponse(
+            body:
+              "[{\"agentId\":\"\(fixtureAgent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
+          )
+        case "/api/user-model-preference":
+          return ChatHTTPResponse(
+            body:
+              "{\"selectedModel\":\(selectedModelJSON),\"serviceTier\":null,\"modelSettings\":{},\"selectedImageModel\":null,\"updatedAt\":null}"
+          )
+        case "/api/run-models":
+          return runModelsResponse([
+            SubscriptionRunModel(model: "gpt-5.6-sol", providerType: "codex-oauth-token")
+          ])
+        case "/api/model-catalog": return modelCatalogResponse()
+        case "/api/chat-threads":
+          let body = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
+          let isExplicitNull = body["model"] is NSNull
+          explicitNullModels.withLock { $0.append(isExplicitNull) }
+          return ChatHTTPResponse(
+            status: 201,
+            body:
+              "{\"id\":\"\(newThread)\",\"title\":null,\"createdAt\":\"\(fixtureDate)\",\"selectedModel\":null,\"serviceTier\":null}"
+          )
+        default: throw URLError(.unsupportedURL)
+        }
       }
+      let created = try await ChatCommands(
+        client: fixture.client, sync: ChatSync(client: fixture.client)
+      ).createThread()
+      XCTAssertNil(created.selectedModel)
+      XCTAssertEqual(explicitNullModels.withLock { $0 }, [true])
     }
-    let created = try await ChatCommands(
-      client: fixture.client, sync: ChatSync(client: fixture.client)
-    ).createThread()
-    XCTAssertNil(created.selectedModel)
-    XCTAssertEqual(explicitNullModels.withLock { $0 }, [true])
   }
 
   func testCreateResolvesRetiredSavedModelThroughCatalog() async throws {

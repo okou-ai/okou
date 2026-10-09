@@ -1,3 +1,7 @@
+import {
+  isAutoSelectedModel,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import type {
@@ -162,7 +166,7 @@ function getModelFirstIconType(
   model: string | null,
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderType | undefined {
-  if (model === null) {
+  if (model === null || isAutoSelectedModel(model)) {
     return "built-in";
   }
   return catalog?.has(model)
@@ -175,7 +179,7 @@ export function selectedModelDisplayName(
   catalog: ModelCatalog | null | undefined,
   model: string | null,
 ): string {
-  if (model === null) {
+  if (model === null || isAutoSelectedModel(model)) {
     return i18n.t(($) => {
       return $.settings.models.picker.auto;
     });
@@ -195,7 +199,7 @@ function selectionAllowedValue(
     return null;
   }
   const runModel = models.find((candidate) => {
-    return candidate.model === value.selectedModel;
+    return sameSelectedModel(candidate.model, value.selectedModel);
   });
   return runModel === undefined || memberRunModelAllowedForPlan(runModel)
     ? value
@@ -318,7 +322,7 @@ function modelFirstSelectionFromRaw(
   if (raw === NO_SELECTION_VALUE) {
     return null;
   }
-  if (raw === AUTO_VALUE) {
+  if (raw === AUTO_VALUE || isAutoSelectedModel(raw)) {
     return { selectedModel: null };
   }
   if (raw.startsWith(CODEX_FAST_OPTION_PREFIX)) {
@@ -345,7 +349,10 @@ function modelFirstSelectValue(
   if (!selection) {
     return NO_SELECTION_VALUE;
   }
-  if (selection.selectedModel === null) {
+  if (
+    selection.selectedModel === null ||
+    isAutoSelectedModel(selection.selectedModel)
+  ) {
     return AUTO_VALUE;
   }
   return selection.codexServiceTier === "fast"
@@ -359,12 +366,12 @@ function codexFastOptionValue(model: string): string {
 
 /** The control value of a selected model; Auto has a reserved value. */
 export function selectedModelControlValue(model: string | null): string {
-  return model ?? AUTO_VALUE;
+  return model === null || isAutoSelectedModel(model) ? AUTO_VALUE : model;
 }
 
 /** The selected model a control value names; the reserved value is Auto. */
 export function selectedModelFromControlValue(value: string): string | null {
-  return value === AUTO_VALUE ? null : value;
+  return value === AUTO_VALUE || isAutoSelectedModel(value) ? null : value;
 }
 
 function runModelSelectValue(runModel: AvailableRunModel): string {
@@ -442,7 +449,7 @@ function ModelFirstRunModelRow({
   const model = runModel.model;
   if (model !== null && isRunModelFastModeAvailable(runModel)) {
     const modelLabel = selectedModelDisplayName(catalog, model);
-    const selected = selection?.selectedModel === model;
+    const selected = sameSelectedModel(selection?.selectedModel, model);
     const fastSelected = selected && selection?.codexServiceTier === "fast";
     const fastLabel = t(($) => {
       return $.settings.models.picker.fast;
@@ -531,7 +538,7 @@ function ModelFirstRunModelItems({
   const hasExplicitSelectedRunModel =
     explicitSelectedModel === null ||
     models.some((runModel) => {
-      return runModel.model === explicitSelectedModel;
+      return sameSelectedModel(runModel.model, explicitSelectedModel);
     });
   return (
     <>

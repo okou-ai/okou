@@ -1,3 +1,4 @@
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { Command, Option } from "commander";
 import chalk from "chalk";
 import type {
@@ -207,7 +208,10 @@ async function loadWorkflowAutomationThreadModel(
     getChatThread({ threadId: automation.chatThreadId }),
     getModelCatalog(),
   ]);
-  if (thread.selectedModel === null) {
+  if (
+    thread.selectedModel === null ||
+    isAutoSelectedModel(thread.selectedModel)
+  ) {
     return {
       id: null,
       label: AUTO_MODEL_LABEL,

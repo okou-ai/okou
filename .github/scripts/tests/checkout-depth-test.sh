@@ -36,6 +36,7 @@ expected=$(
     $'security\tdetect-native-only\t2' \
     $'security\tgitleaks\t${{ github.event_name != '\''pull_request'\'' && 2 || 0 }}' \
     $'security\tsemgrep\t${{ github.event_name == '\''push'\'' && 1 || 2 }}' \
+    $'turbo\tci-admission\t1' \
     $'turbo\tdetect-turbo-ts-checks\t2' \
     $'turbo\tfile-size-check\t2' \
     $'turbo\tlint-eslint\t1' \

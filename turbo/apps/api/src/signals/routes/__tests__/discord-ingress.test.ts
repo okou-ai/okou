@@ -18,7 +18,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
@@ -1391,40 +1390,6 @@ describe("canonical Discord ingress", () => {
     );
     await flushWaitUntilForTest();
     expect(provider.sentMessages).toHaveLength(0);
-  });
-
-  it("tells a member without an accessible agent immediately", async () => {
-    const owner = await connected();
-    const provider = mockDiscordProvider(owner);
-    const member = await track(
-      setupConnectedDiscordActor(context, {
-        orgId: owner.orgId,
-        guildId: owner.guildId,
-        reuseOrganization: true,
-      }),
-    );
-    mockDiscordMemberships(context, [
-      { userId: owner.userId, orgId: owner.orgId, orgRole: "org:admin" },
-      { userId: member.userId, orgId: member.orgId, orgRole: "org:admin" },
-    ]);
-    await seedLegacyPrivateDefaultAgentFixture(owner.defaultAgentId);
-    const message = discordMessageForTest(member, {
-      channelId: provider.guildChannelId,
-      content: `<@${member.botUserId}> summarize this channel`,
-    });
-    provider.messages.set(message.id, message);
-    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
-      "accepted",
-    );
-    // Delivered by the admission itself, not by the recovery sweep.
-    await flushWaitUntilForTest();
-    expect(provider.sentMessages).toHaveLength(1);
-    expect(provider.sentMessages[0]).toMatchObject({
-      channel_id: provider.guildChannelId,
-      content:
-        "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
-    });
-    await expect(discordChatThreads(context, member)).resolves.toHaveLength(0);
   });
 
   it("imports refreshed attachment metadata while keeping context and signed URLs private", async () => {

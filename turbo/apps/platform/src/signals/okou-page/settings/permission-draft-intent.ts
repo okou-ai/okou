@@ -70,8 +70,7 @@ type PermissionDraftGroupUniformAllowExpiration =
   | { readonly kind: "persisted"; readonly expiresAt: string };
 
 type PermissionDraftGroupAllowExpiration =
-  | PermissionDraftGroupUniformAllowExpiration
-  | { readonly kind: "mixed" };
+  PermissionDraftGroupUniformAllowExpiration | { readonly kind: "mixed" };
 
 type PermissionDraftGroupConfiguration =
   | { readonly policy: "mixed" }

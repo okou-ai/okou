@@ -136,15 +136,28 @@ describe("okou model command", () => {
     return log.mock.calls.flat().join("\n");
   }
 
-  it("selects Auto with auto by saving a null selection", async () => {
-    const request = serveSelection({
-      selectedModel: "gpt-6-sol",
-      serviceTier: null,
-    });
-    const output = await select("auto");
-    expect(request.saved).toEqual({ selectedModel: null, serviceTier: null });
-    expect(output).toContain("Default model selected: Auto");
-  });
+  it.each([null, "auto"])(
+    "selects Auto from API choice %s with predecessor-compatible intent",
+    async (model) => {
+      server.use(
+        http.get("http://localhost:3000/api/run-models", () => {
+          return HttpResponse.json({
+            ...available,
+            models: available.models.map((row) => {
+              return row.model === null ? { ...row, model } : row;
+            }),
+          });
+        }),
+      );
+      const request = serveSelection({
+        selectedModel: "gpt-6-sol",
+        serviceTier: null,
+      });
+      const output = await select("auto");
+      expect(request.saved).toEqual({ selectedModel: null, serviceTier: null });
+      expect(output).toContain("Default model selected: Auto");
+    },
+  );
 
   it("selects a subscription model as the default for new chats", async () => {
     const request = serveSelection({ selectedModel: null, serviceTier: null });

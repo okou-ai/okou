@@ -621,8 +621,7 @@ describe("serializeError via logging", () => {
     log.error(err);
 
     const fields = axiomLogging.error.mock.calls[0]?.[1] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const serialized = JSON.stringify(fields?.error);
     expect(serialized).toContain("depth-32");
     expect(serialized).toContain("[Truncated]");
@@ -642,8 +641,7 @@ describe("serializeError via logging", () => {
     log.error(err);
 
     const fields = axiomLogging.error.mock.calls[0]?.[1] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const serializedError = fields?.error as Record<string, unknown>;
     expect(serializedError).toMatchObject({
       message: "request failed",
@@ -678,8 +676,7 @@ describe("serializeError via logging", () => {
     }).not.toThrow();
 
     const fields = axiomLogging.error.mock.calls[0]?.[1] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(fields?.error).toMatchObject({
       message: "request failed",
       cause: "[Unreadable]",
@@ -709,8 +706,7 @@ describe("serializeError via logging", () => {
     }).not.toThrow();
 
     const fields = axiomLogging.error.mock.calls[0]?.[1] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const serializedError = fields?.error as Record<string, unknown>;
     const serializedRequest = serializedError.request as Record<
       string,
@@ -739,8 +735,7 @@ describe("serializeError via logging", () => {
     }).not.toThrow();
 
     const fields = axiomLogging.error.mock.calls[0]?.[1] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const serializedError = fields?.error as Record<string, unknown>;
     expect(serializedError.stack).toBe("1");
     expect(() => {
@@ -758,8 +753,7 @@ describe("serializeError via logging", () => {
     log.error("msg", err);
 
     const fields = axiomLogging.error.mock.calls[0]?.[1] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const serializedError = fields?.error as Record<string, unknown>;
     expect(serializedError.message).toBe(`${"x".repeat(4093)}...`);
     expect(serializedError.stack).toBe(`${"s".repeat(4093)}...`);
@@ -782,8 +776,7 @@ describe("serializeError via logging", () => {
     log.error(err);
 
     const fields = axiomLogging.error.mock.calls[0]?.[1] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const serializedError = fields?.error as Record<string, unknown>;
     const serializedPayload = serializedError.payload as Record<
       string,
@@ -821,8 +814,7 @@ describe("serializeError via logging", () => {
     log.error(err);
 
     const fields = axiomLogging.error.mock.calls[0]?.[1] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const serializedError = fields?.error as Record<string, unknown>;
     const serialized = JSON.stringify(serializedError);
     expect(serialized).toContain("[Truncated]");
@@ -837,8 +829,7 @@ describe("serializeError via logging", () => {
     log.error(err);
 
     const fields = axiomLogging.error.mock.calls[0]?.[1] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(fields?.error).toMatchObject({
       name: "Error",
       message: "custom",

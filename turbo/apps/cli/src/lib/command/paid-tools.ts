@@ -56,7 +56,7 @@ export function getGenerationPaidTool(type: string): PaidToolId | undefined {
 
 function commandPath(program: Command, command: Command): Command[] {
   const path: Command[] = [];
-  for (let current: Command | null = command; current !== program; ) {
+  for (let current: Command | null = command; current !== program;) {
     if (!current?.parent) return [];
     path.unshift(current);
     current = current.parent;

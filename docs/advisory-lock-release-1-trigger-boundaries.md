@@ -246,3 +246,8 @@ The six remaining billing application triggers are explicit acceptance
 obligations. Their replacement writer/retention audit remains unfinished.
 Cloudflare retirement follows main's documented gate; Forms introduces no trigger.
 No trigger is a permanent exemption.
+
+The chat-thread benchmark reference above records the original implementation.
+[#37440 batch016](implementation/issue-37440-batches/batch-016.md) retires that
+privately seeded benchmark; the separate development seed and production capture
+writer are unchanged.

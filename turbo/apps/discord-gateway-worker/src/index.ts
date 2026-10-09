@@ -795,13 +795,11 @@ export default {
     if (!(await authorized(request, env)))
       return new Response("Unauthorized", { status: 401 });
     const path = new URL(request.url).pathname;
-    if (
-      !(
-        (["/health", "/dead-letters"].includes(path) &&
-          request.method === "GET") ||
-        (["/start", "/stop"].includes(path) && request.method === "POST")
-      )
-    )
+    if (!(
+      (["/health", "/dead-letters"].includes(path) &&
+        request.method === "GET") ||
+      (["/start", "/stop"].includes(path) && request.method === "POST")
+    ))
       return new Response("Not found", { status: 404 });
     if (
       !env.DISCORD_APPLICATION_ID ||

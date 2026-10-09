@@ -492,6 +492,65 @@ test("Preserve which model a message was sent with", async () => {
   ).toBeTruthy();
 });
 
+test.each([
+  ["okou-1.0", "auto"],
+  ["auto", "okou-1.0"],
+])("Keep mixed Auto history continuous (%s to %s)", async (first, second) => {
+  configureConnectedRunModels(["gpt-5.6-luna"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-luna",
+    chatEvents: [
+      promptEvent({
+        id: "auto-a-user",
+        runId: RUN_A,
+        seqId: 1,
+        text: "First Auto task",
+        model: first,
+      }),
+      assistantEvent({
+        id: "auto-a-answer",
+        runId: RUN_A,
+        seqId: 2,
+        text: "First Auto answer",
+      }),
+      completedEvent({ id: "auto-a-complete", runId: RUN_A, seqId: 3 }),
+      promptEvent({
+        id: "auto-b-user",
+        runId: RUN_B,
+        seqId: 4,
+        text: "Second Auto task",
+        model: second,
+      }),
+      assistantEvent({
+        id: "auto-b-answer",
+        runId: RUN_B,
+        seqId: 5,
+        text: "Second Auto answer",
+      }),
+      completedEvent({ id: "auto-b-complete", runId: RUN_B, seqId: 6 }),
+      promptEvent({
+        id: "auto-c-user",
+        runId: RUN_C,
+        seqId: 7,
+        text: "Explicit model task",
+        model: "gpt-5.6-luna",
+      }),
+      assistantEvent({
+        id: "auto-c-answer",
+        runId: RUN_C,
+        seqId: 8,
+        text: "Explicit model answer",
+      }),
+      completedEvent({ id: "auto-c-complete", runId: RUN_C, seqId: 9 }),
+    ],
+  });
+  await setupPage({ context, path: RUN_PATH });
+  await readyChat();
+  expect(screen.getByText("Model changed to GPT 5.6 Luna")).toBeInTheDocument();
+  expect(screen.queryByText("Model changed to Auto")).not.toBeInTheDocument();
+  expect(screen.getAllByText(/Model changed to/u)).toHaveLength(1);
+});
+
 test("Mark model and speed transitions between runs", async () => {
   configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
   installRunChat({

@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  NotifyMail = "notifyMail",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
@@ -58,5 +59,4 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
-  PiOpenRouterChatCompletions = "piOpenRouterChatCompletions",
 }

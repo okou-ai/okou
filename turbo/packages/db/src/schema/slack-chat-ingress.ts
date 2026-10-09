@@ -14,11 +14,7 @@ import {
 import { slackChatThreadRoutes } from "./slack-chat-thread-route";
 
 export type SlackChatIngressStatus =
-  | "pending"
-  | "processing"
-  | "retryable"
-  | "processed"
-  | "terminal";
+  "pending" | "processing" | "retryable" | "processed" | "terminal";
 
 /**
  * Durable admission record for canonical Slack events. Slack retries reuse the

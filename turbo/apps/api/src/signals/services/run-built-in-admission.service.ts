@@ -27,9 +27,7 @@ type RunBuiltInAdmissionError = {
 };
 
 type RunBuiltInAdmissionResult =
-  | RunBuiltInAdmission
-  | RunBuiltInAdmissionError
-  | null;
+  RunBuiltInAdmission | RunBuiltInAdmissionError | null;
 
 export function isRunBuiltInAdmissionError(
   result: RunBuiltInAdmissionResult,

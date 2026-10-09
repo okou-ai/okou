@@ -44,7 +44,7 @@ import {
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
 import { readSharedThreadChatEventHistory$ } from "./chat-event-history.service";
-import { privateArtifactCreationEnabled } from "./private-artifact-storage.service";
+import { privateArtifactCreationEnabled$ } from "./private-artifact-storage.service";
 import {
   type SharedThreadArtifactPlan,
   prepareSharedThreadArtifacts$,
@@ -576,7 +576,7 @@ const persistSharedThread$ = command(
 
 const prepareAndPersistSharedThread$ = command(
   async (
-    { get, set },
+    { set },
     args: CreateSharedThreadArgs,
     snapshot: {
       readonly id: string;
@@ -591,8 +591,11 @@ const prepareAndPersistSharedThread$ = command(
   ) => {
     const { id, messages, attachmentCopies, title } = snapshot;
     const preparationStartedAt = performance.now();
-    const enabled = await get(
-      privateArtifactCreationEnabled(args.orgId, args.userId),
+    const enabled = await set(
+      privateArtifactCreationEnabled$,
+      args.orgId,
+      args.userId,
+      signal,
     );
     signal.throwIfAborted();
     const preparation =

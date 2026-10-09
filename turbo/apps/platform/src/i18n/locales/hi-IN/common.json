@@ -5194,6 +5194,8 @@
     "mermaid": {
       "diagramLabel": "आरेख",
       "expand": "आरेख बड़ा करें",
+      "fillView": "दृश्य भरें",
+      "restoreView": "दृश्य बहाल करें",
       "viewSource": "आरेख स्रोत"
     },
     "notFound": {

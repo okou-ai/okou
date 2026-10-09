@@ -18,6 +18,9 @@ async fn prune_idle_publishes_workspace_cache_before_acknowledging() {
     let identity = config.runner.identity;
     let overrides = Arc::new(MockSandboxOverrides::new());
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
+    runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+        &overrides,
+    );
     let factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(
         sandbox_mock::MockSandboxFactory::with_overrides(overrides),
     ));

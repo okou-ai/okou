@@ -39,8 +39,7 @@ function button(
 
 function account(
   type:
-    | "claude-code-oauth-token"
-    | "codex-oauth-token" = "claude-code-oauth-token",
+    "claude-code-oauth-token" | "codex-oauth-token" = "claude-code-oauth-token",
   needsReconnect = false,
 ): ModelProviderResponse {
   return {

@@ -1,0 +1,54 @@
+def canonical_constant(flow):
+    flow.metadata.update(list(dict(dict({(metadata_keys.SANDBOX_RUN_ID, "run-1"): None}))))
+
+
+def tuple_mapping(flow):
+    flow.metadata.update(dict(dict({("sandbox_run_id", "run-1"): None})))
+
+
+def value_only(flow):
+    flow.metadata.update(list(dict(dict({("external", "sandbox_run_id"): None}))))
+
+
+def iterated_mapping_value_only(flow):
+    flow.metadata.update(list(dict(list({("xy", "sandbox_run_id"): None}))))
+
+
+def entry_string_key(flow):
+    flow.metadata.update(list(dict(tuple([("xy", "sandbox_run_id")]))))
+
+
+def fromkeys_value_only(flow):
+    flow.metadata.update(list(dict(dict.fromkeys([("external", "sandbox_run_id")]))))
+
+
+def copy_value_only(flow):
+    flow.metadata.update(list(dict({("external", "sandbox_run_id"): None}.copy())))
+
+
+def keyword_key(flow):
+    flow.metadata.update(list(dict(dict(xy="sandbox_run_id"))))
+
+
+def unpacked_keyword_key(flow):
+    flow.metadata.update(list(dict(dict(**{"xy": "sandbox_run_id"}))))
+
+
+def wrong_length_key(flow):
+    flow.metadata.update(list(dict(dict({("sandbox_run_id", "run-1", "extra"): None}))))
+
+
+def wrong_length_entry(flow):
+    flow.metadata.update(list(dict(list([(("sandbox_run_id", "run-1"), None, None)]))))
+
+
+def opaque_call(flow):
+    flow.metadata.update(list(dict(unknown({("sandbox_run_id", "run-1"): None}))))
+
+
+def opaque_constructor_input(flow):
+    flow.metadata.update(list(dict(dict(unknown([(("sandbox_run_id", "run-1"), None)])))))
+
+
+def fixed_first_argument(flow):
+    flow.metadata.update(list(dict(dict(*[unknown_mapping], {("sandbox_run_id", "run-1"): None}))))

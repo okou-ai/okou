@@ -16,7 +16,7 @@ import { chatThreadRoutes } from "../chat-threads";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import type { ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -38,6 +38,7 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
+const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
@@ -498,6 +499,7 @@ describe("workflow queue", () => {
 
   it("keeps user-friendly automation prompts across queue drain", async () => {
     const scenario = await setup();
+    await bdd.readMe(scenario.actor);
     const automation = await createWebhookAutomation(scenario);
 
     const firstRunId = await expectAcceptedRunId(
@@ -534,6 +536,12 @@ describe("workflow queue", () => {
     expect(firstClaim.appendSystemPrompt).toContain("# Agent Identity");
     expect(firstClaim.appendSystemPrompt).not.toContain("# Current context");
     expect(firstClaim.appendSystemPrompt).not.toContain("# This run's event");
+    expect(
+      firstClaim.appendSystemPrompt?.match(/^# Current User Info$/gmu),
+    ).toHaveLength(1);
+    expect(firstClaim.appendSystemPrompt).toContain(
+      `Email: ${scenario.actor.email}`,
+    );
 
     const runIds = await workflowRunIds(automation.threadId);
     expect(runIds).toHaveLength(2);
@@ -546,6 +554,12 @@ describe("workflow queue", () => {
     expect(secondClaim.appendSystemPrompt).toContain("# Agent Identity");
     expect(secondClaim.appendSystemPrompt).not.toContain("# Current context");
     expect(secondClaim.appendSystemPrompt).not.toContain("# This run's event");
+    expect(
+      secondClaim.appendSystemPrompt?.match(/^# Current User Info$/gmu),
+    ).toHaveLength(1);
+    expect(secondClaim.appendSystemPrompt).toContain(
+      `Email: ${scenario.actor.email}`,
+    );
 
     await runsApi.requestCancelRun(scenario.actor, runIds[1]!, [200]);
   });

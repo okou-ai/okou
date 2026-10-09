@@ -64,9 +64,9 @@ import {
 } from "./browser-use.service";
 import { allocateUploadedArtifact$ } from "./uploaded-artifact.service";
 import {
-  resolveArtifactFileReference,
+  resolveArtifactFileReference$,
   completePrivateArtifact$,
-  privateArtifactRecord,
+  privateArtifactRecord$,
 } from "./private-artifact-storage.service";
 import {
   decryptPersistentSecretValue,
@@ -362,11 +362,11 @@ async function loadBrowserScreen(
 
 const loadBrowserScreenshotUrl$ = command(
   async (
-    { get, set },
-    db: Db,
+    { set },
     chatThreadId: string,
     signal: AbortSignal,
   ): Promise<string | null> => {
+    const db = set(writeDb$);
     const [screenshot] = await db
       .select({
         url: browserSessionScreenshots.url,
@@ -388,14 +388,16 @@ const loadBrowserScreenshotUrl$ = command(
     if (!screenshot) {
       return null;
     }
-    const reference = await get(
-      resolveArtifactFileReference(screenshot.url, signal),
+    const reference = await set(
+      resolveArtifactFileReference$,
+      screenshot.url,
+      signal,
     );
     signal.throwIfAborted();
     if (!reference) {
       return screenshot.url;
     }
-    const file = await get(privateArtifactRecord(reference.id));
+    const file = await set(privateArtifactRecord$, reference.id, signal);
     signal.throwIfAborted();
     if (
       !file ||
@@ -1809,7 +1811,6 @@ const startProviderInstance$ = command(
     );
     const screenshotUrl = await set(
       loadBrowserScreenshotUrl$,
-      db,
       claimed.browser.chatThreadId,
       signal,
     );
@@ -2054,7 +2055,6 @@ const inspectActiveConnection$ = command(
       );
       const screenshotUrl = await set(
         loadBrowserScreenshotUrl$,
-        db,
         browser.chatThreadId,
         signal,
       );
@@ -2470,7 +2470,7 @@ const leaseInstanceForBrowser$ = command(
     }
     const [screen, screenshotUrl] = await Promise.all([
       loadBrowserScreen(db, leased.providerSessionId, signal),
-      set(loadBrowserScreenshotUrl$, db, browser.chatThreadId, signal),
+      set(loadBrowserScreenshotUrl$, browser.chatThreadId, signal),
     ]);
     signal.throwIfAborted();
     return {
@@ -2621,7 +2621,6 @@ export const resizeBrowserByThread$ = command(
     signal.throwIfAborted();
     const screenshotUrl = await set(
       loadBrowserScreenshotUrl$,
-      db,
       browser.chatThreadId,
       signal,
     );
@@ -2656,7 +2655,6 @@ export const getBrowser$ = command(
     }
     const screenshotUrl = await set(
       loadBrowserScreenshotUrl$,
-      db,
       row.chatThreadId,
       signal,
     );

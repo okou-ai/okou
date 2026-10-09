@@ -13,9 +13,7 @@ export type PiAgentThinkingLevel = (typeof PI_AGENT_THINKING_LEVELS)[number];
 export type PiAgentServiceTier = "priority" | "fast";
 
 export type PiAgentDialect =
-  | "openai-responses"
-  | "openai-completions"
-  | "openai-codex-responses";
+  "openai-responses" | "openai-completions" | "openai-codex-responses";
 
 export type PiAgentTransport = "sse";
 

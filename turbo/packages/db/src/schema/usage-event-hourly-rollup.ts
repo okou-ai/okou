@@ -40,7 +40,7 @@ export const usageEventHourlyRollup = pgTable(
     billingAnchorAt: timestamp("billing_anchor_at"),
     billingContext: text("billing_context").notNull().default("legacy_unknown"),
     kind: varchar("kind", { length: 30 }).notNull(),
-    provider: varchar("provider", { length: 100 }).notNull(),
+    provider: text("provider").notNull(),
     category: varchar("category", { length: 100 }).notNull(),
     shortWindowId: uuid("short_window_id"),
     weeklyWindowId: uuid("weekly_window_id"),

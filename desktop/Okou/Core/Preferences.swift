@@ -30,9 +30,13 @@ public final class Preferences {
     }
   }
   public func bool(_ key: String) -> Bool { values[key]?.bool == true }
+  public func string(_ key: String) -> String? { values[key]?.string }
   public func set(_ key: String, _ value: JSONValue) throws {
+    try set([key: value])
+  }
+  public func set(_ entries: [String: JSONValue]) throws {
     var updated = values
-    updated[key] = value
+    updated.merge(entries) { _, new in new }
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try JSONEncoder().encode(JSONValue.object(updated)).write(to: url, options: .atomic)

@@ -76,8 +76,7 @@ function stubConnectors(connectors: Array<Record<string, unknown>>) {
           connectionStatus: scopeMismatch
             ? "scope-mismatch"
             : ((connector.connectionStatus as
-                | "connected"
-                | "reconnect-required") ?? "connected"),
+                "connected" | "reconnect-required") ?? "connected"),
           scopeMismatch,
         }),
       ] as const;

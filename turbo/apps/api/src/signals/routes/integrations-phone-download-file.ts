@@ -12,9 +12,9 @@ import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { agentPhoneFilenameFromMediaUrl } from "../services/agentphone.service";
-import { resolveArtifactFileReference } from "../services/private-artifact-storage.service";
+import { resolveArtifactFileReference$ } from "../services/private-artifact-storage.service";
 import {
-  uploadedArtifactObject,
+  uploadedArtifactObject$,
   uploadedArtifactFetchUrl$,
 } from "../services/uploaded-artifact.service";
 import type { RouteEntry } from "../route-entry";
@@ -80,18 +80,20 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
     return jsonResponse(404, "Phone file not found", "NOT_FOUND");
   }
   const mediaUrl = message.mediaUrl;
-  const reference = await get(resolveArtifactFileReference(mediaUrl, signal));
+  const reference = await set(resolveArtifactFileReference$, mediaUrl, signal);
   signal.throwIfAborted();
   if (reference && !reference.id) {
     return jsonResponse(404, "Phone file not found", "NOT_FOUND");
   }
   const artifact = reference
-    ? await get(
-        uploadedArtifactObject({
+    ? await set(
+        uploadedArtifactObject$,
+        {
           userId: auth.userId,
           orgId: auth.orgId,
           id: reference.id,
-        }),
+        },
+        signal,
       )
     : null;
   signal.throwIfAborted();

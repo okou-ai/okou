@@ -23,6 +23,43 @@ function useSession(fixture: ReturnType<typeof seedFixture>) {
   mocks.clerk.session(fixture.userId, fixture.orgId);
 }
 describe("member image preference", () => {
+  it.each([null, "auto"])(
+    "keeps member Auto intent %s predecessor-compatible",
+    async (selectedModel) => {
+      useSession(seedFixture());
+      const client = setupApp({ context, routes: userModelPreferenceRoutes })(
+        userModelPreferenceContract,
+      );
+      const stored = await accept(
+        client.update({
+          headers: authHeaders(),
+          body: { selectedModel, serviceTier: null },
+        }),
+        [200],
+      );
+      expect(stored.body).toMatchObject({
+        selectedModel: null,
+        serviceTier: null,
+        modelSettings: {},
+      });
+      const read = await accept(client.get({ headers: authHeaders() }), [200]);
+      expect(read.body).toMatchObject({
+        selectedModel: null,
+        serviceTier: null,
+      });
+      await accept(
+        client.update({
+          headers: authHeaders(),
+          body: {
+            selectedModel: "auto",
+            serviceTier: null,
+            modelSettingsPatch: { model: "auto", effort: "high" },
+          },
+        }),
+        [400],
+      );
+    },
+  );
   it("stores, preserves, and clears a member image default", async () => {
     const fixture = await seedFixture();
     useSession(fixture);

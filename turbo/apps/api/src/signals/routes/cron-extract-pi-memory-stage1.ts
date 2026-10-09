@@ -36,7 +36,7 @@ function extractPiMemoryStage1Routes(): readonly RouteEntry[] {
       }
       const result = await set(
         executePiMemoryStage1Work$,
-        { scope: undefined, currentTime: nowDate() },
+        { currentTime: nowDate() },
         signal,
       );
       return {

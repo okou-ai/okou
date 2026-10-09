@@ -18,8 +18,8 @@ import { allocateArtifactObject$ } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
   completePrivateArtifact$,
-  privateArtifactCreationEnabled,
-  privateArtifactRecord,
+  privateArtifactCreationEnabled$,
+  privateArtifactRecord$,
 } from "./private-artifact-storage.service";
 import {
   queueArtifactCatalogFileSql,
@@ -214,8 +214,7 @@ function isActionTimeoutResponse(
 }
 
 type SnapshotNavigationOptions =
-  | typeof PRIMARY_NAVIGATION_OPTIONS
-  | typeof NAVIGATION_TIMEOUT_RETRY_OPTIONS;
+  typeof PRIMARY_NAVIGATION_OPTIONS | typeof NAVIGATION_TIMEOUT_RETRY_OPTIONS;
 
 interface FetchArtifactSnapshotArgs {
   readonly token: string;
@@ -627,11 +626,16 @@ const renderAndStoreArtifactPreview$ = command(
     signal.throwIfAborted();
 
     const privateId = uuidv5(`${args.id}:${filename}`, uuidv5.URL);
-    const existing = await get(privateArtifactRecord(privateId));
+    const existing = await set(privateArtifactRecord$, privateId, signal);
     signal.throwIfAborted();
     const privatePreview =
       existing !== null ||
-      (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
+      (await set(
+        privateArtifactCreationEnabled$,
+        args.orgId,
+        args.userId,
+        signal,
+      ));
     signal.throwIfAborted();
     const artifact = privatePreview
       ? await set(

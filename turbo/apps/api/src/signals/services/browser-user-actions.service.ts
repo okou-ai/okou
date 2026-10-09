@@ -85,8 +85,7 @@ export interface BrowserUserActionServiceError {
 }
 
 type ServiceResult<T> =
-  | { readonly kind: "ok"; readonly value: T }
-  | BrowserUserActionServiceError;
+  { readonly kind: "ok"; readonly value: T } | BrowserUserActionServiceError;
 
 function failure(
   status: BrowserUserActionServiceError["status"],

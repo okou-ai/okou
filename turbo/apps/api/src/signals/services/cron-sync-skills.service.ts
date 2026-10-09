@@ -374,6 +374,7 @@ const hasCurrentSkillVersion$ = command(
       const values = piResourceProjectionValues(
         preparePiResourceIndex(archiveBuffer),
         version.archiveSize,
+        nowDate(),
       );
       await set(writeDb$)
         .insert(piResourceVersionIndexes)
@@ -595,7 +596,11 @@ const commitSkillPublication$ = command(
           set: { ...record, updatedAt: args.timestamp },
         });
       signal.throwIfAborted();
-      const values = piResourceProjectionValues(projection, archiveSize);
+      const values = piResourceProjectionValues(
+        projection,
+        archiveSize,
+        nowDate(),
+      );
       await tx
         .insert(piResourceVersionIndexes)
         .values({

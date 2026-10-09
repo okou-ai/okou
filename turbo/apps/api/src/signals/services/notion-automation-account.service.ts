@@ -24,9 +24,6 @@ const NOTION_ACCOUNT_CHANGED_SKIP_REASON =
   "Notion account selection changed before the event was processed";
 const NOTION_ACCOUNT_RECONNECTED_SKIP_REASON =
   "Notion account identity changed before the event was processed";
-const NOTION_AUTOMATION_DISABLED_SKIP_REASON =
-  "Notion automation was disabled before the event was processed";
-
 export async function resolveNotionAutomationConnectorId(
   db: ReadonlyDb,
   args: {
@@ -116,17 +113,6 @@ export async function invalidateNotionPendingEventsForConnector(
     db,
     eq(notionWorkflowPendingEvents.connectorId, connectorId),
     NOTION_ACCOUNT_RECONNECTED_SKIP_REASON,
-  );
-}
-
-export async function invalidateNotionPendingEventsForAutomation(
-  db: Db,
-  automationId: string,
-): Promise<void> {
-  await skipActivePendingEvents(
-    db,
-    eq(notionWorkflowPendingEvents.automationId, automationId),
-    NOTION_AUTOMATION_DISABLED_SKIP_REASON,
   );
 }
 

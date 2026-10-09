@@ -1,16 +1,16 @@
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import { safeUrlParse } from "../utils";
-import { randomUUID } from "node:crypto";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
-import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
-import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
+import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import type { GetStartedClaimRow } from "./get-started-rewards.service";
+import { safeUrlParse } from "../utils";
 import { grantGetStartedClaim$ } from "./get-started-member-reward.service";
+import type { GetStartedClaimRow } from "./get-started-rewards.service";
 import { readGetStartedRewardPost } from "./social.service";
 
 export function normalizeGetStartedPostUrl(
@@ -195,15 +195,10 @@ const reviewClaim$ = command(
   },
 );
 
-/** IDs are supplied only by the isolated test harness; production scans globally. */
+/** Process eligible pending claims through the production worker. */
 export const processGetStartedClaims$ = command(
-  async (
-    { set },
-    options: { readonly claimIds?: readonly string[] },
-    signal: AbortSignal,
-  ): Promise<number> => {
+  async ({ set }, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
-    const { claimIds } = options;
     let processed = 0;
     for (let i = 0; i < 10; i++) {
       signal.throwIfAborted();
@@ -216,7 +211,6 @@ export const processGetStartedClaims$ = command(
           isNull(getStartedClaims.leaseExpiresAt),
           lte(getStartedClaims.leaseExpiresAt, at),
         ),
-        claimIds ? inArray(getStartedClaims.id, [...claimIds]) : undefined,
       );
       // The candidate is advisory; eligibility is rechecked by UPDATE after a
       // concurrent owner commits. A lost candidate is left to the next scan.

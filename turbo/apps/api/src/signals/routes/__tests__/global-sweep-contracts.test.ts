@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
+import { cronComputerUseScreenshotCleanupRoutes } from "../cron-computer-use-screenshot-cleanup";
 import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
 import { cronCleanupXResourceReadsRoutes } from "../cron-cleanup-x-resource-reads";
 import { cronCompactChatThreadSnapshotsRoutes } from "../cron-compact-chat-thread-snapshots";
@@ -24,6 +25,20 @@ const CRON_SECRET = "test-cron-secret";
 describe("production-global sweep route contracts", () => {
   beforeEach(() => {
     mockEnv("CRON_SECRET", CRON_SECRET);
+  });
+
+  it("rejects screenshot cleanup without a valid cron secret", async () => {
+    expect.hasAssertions();
+    await expectGlobalSweepMissingAuth(
+      context,
+      cronComputerUseScreenshotCleanupRoutes,
+      "/api/cron/computer-use-screenshot-cleanup",
+    );
+    await expectGlobalSweepWrongAuth(
+      context,
+      cronComputerUseScreenshotCleanupRoutes,
+      "/api/cron/computer-use-screenshot-cleanup",
+    );
   });
 
   it("rejects X resource cleanup requests without authorization", async () => {
