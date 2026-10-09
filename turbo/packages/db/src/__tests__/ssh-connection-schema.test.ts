@@ -30,9 +30,9 @@ describe("SSH connection schema", () => {
       "port",
       "credential_id",
       "cloudflare_access_id",
-      "tailscale_config_id",
+      "tailscale_id",
+      "transport",
       "needs_rebind",
-      "rebind_transport",
       "learned_host_key_algorithm",
       "learned_host_key_fingerprint",
       "generation",
@@ -61,23 +61,27 @@ describe("SSH connection schema", () => {
       }),
     );
     expect(Object.keys(checks)).toStrictEqual([
-      "chk_ssh_connections_tailscale_exclusive",
+      "chk_ssh_connections_transport",
+      "chk_ssh_connections_transport_binding",
       "chk_ssh_connections_cloudflare_access_destination",
-      "chk_ssh_connections_needs_rebind_unbound",
-      "chk_ssh_connections_rebind_transport",
+      "chk_ssh_connections_legacy_needs_rebind",
       "chk_ssh_connections_display_name",
       "chk_ssh_connections_host",
       "chk_ssh_connections_port",
       "chk_ssh_connections_generation",
       "chk_ssh_connections_learned_host_key_pair",
     ]);
-    expect(sshConnections.rebindTransport.notNull).toBe(true);
-    expect(sshConnections.rebindTransport.default).toBe("cloudflare_access");
-    expect(checks.chk_ssh_connections_rebind_transport).toContain(
-      "IN ('cloudflare_access', 'tailscale')",
+    expect(sshConnections.transport.notNull).toBe(true);
+    expect(sshConnections.transport.hasDefault).toBe(false);
+    expect(sshConnections.transport.default).toBeUndefined();
+    expect(checks.chk_ssh_connections_transport).toContain(
+      "IN ('direct', 'cloudflare_access', 'tailscale')",
     );
-    expect(checks.chk_ssh_connections_needs_rebind_unbound).toContain(
-      '"tailscale_config_id" IS NULL',
+    expect(checks.chk_ssh_connections_transport_binding).toContain(
+      '"tailscale_id" IS NULL',
+    );
+    expect(checks.chk_ssh_connections_legacy_needs_rebind).toContain(
+      '"needs_rebind" =',
     );
     expect(checks.chk_ssh_connections_port).toContain("BETWEEN 1 AND 65535");
     expect(checks.chk_ssh_connections_generation).toContain("> 0");
@@ -102,7 +106,7 @@ describe("SSH connection schema", () => {
         return column.name;
       }),
     ).toStrictEqual(["id", "org_id"]);
-    expect(sshConnections.needsRebind.notNull).toBe(true);
+    expect(sshConnections.legacyNeedsRebind.notNull).toBe(true);
     expect(cloudflareAccessConfigs.scope.default).toBe("personal");
     expect(cloudflareAccessConfigs.userId.notNull).toBe(false);
     expect(
@@ -125,13 +129,13 @@ describe("SSH connection schema", () => {
       tailscaleForeignKey?.reference().columns.map((column) => {
         return column.name;
       }),
-    ).toStrictEqual(["tailscale_config_id", "org_id"]);
+    ).toStrictEqual(["tailscale_id", "org_id"]);
     expect(
       tailscaleForeignKey?.reference().foreignColumns.map((column) => {
         return column.name;
       }),
     ).toStrictEqual(["id", "org_id"]);
-    expect(sshConnections.tailscaleConfigId.notNull).toBe(false);
+    expect(sshConnections.tailscaleId.notNull).toBe(false);
   });
 
   it("requires a same-owner credential and restricts deletion while referenced", () => {

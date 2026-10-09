@@ -279,8 +279,7 @@ const commitSshCredentialUpdate$ = command(
     { set },
     args: Pick<UpdateSshCredentialArgs, "owner" | "credentialId" | "body"> & {
       readonly encrypted:
-        | Awaited<ReturnType<typeof encryptAuthentication>>
-        | undefined;
+        Awaited<ReturnType<typeof encryptAuthentication>> | undefined;
     },
   ) => {
     return await set(writeDb$).transaction(async (tx) => {

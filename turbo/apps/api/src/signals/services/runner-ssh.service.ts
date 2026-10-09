@@ -14,7 +14,10 @@ import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import {
+  sshConnectionNeedsRebind,
+  sshConnections,
+} from "@okouai/db/schema/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { and, eq, lt, ne, or, sql } from "drizzle-orm";
@@ -52,8 +55,9 @@ function currentConnectionQuery(
       fingerprint: sshConnections.learnedHostKeyFingerprint,
       encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
       encryptedPassphrase: sshCredentials.encryptedPassphrase,
+      transport: sshConnections.transport,
       accessId: sshConnections.cloudflareAccessId,
-      tailscaleId: sshConnections.tailscaleConfigId,
+      tailscaleId: sshConnections.tailscaleId,
       tailscale: {
         id: tailscaleConfigs.id,
         generation: tailscaleConfigs.generation,
@@ -61,7 +65,7 @@ function currentConnectionQuery(
         encryptedClientId: tailscaleConfigs.encryptedClientId,
         encryptedClientSecret: tailscaleConfigs.encryptedClientSecret,
       },
-      needsRebind: sshConnections.needsRebind,
+      needsRebind: sshConnectionNeedsRebind,
       access: {
         id: cloudflareAccessConfigs.id,
         generation: cloudflareAccessConfigs.generation,
@@ -119,7 +123,7 @@ function currentConnectionQuery(
     .leftJoin(
       tailscaleConfigs,
       and(
-        eq(tailscaleConfigs.id, sshConnections.tailscaleConfigId),
+        eq(tailscaleConfigs.id, sshConnections.tailscaleId),
         eq(tailscaleConfigs.orgId, agentRuns.orgId),
         or(
           eq(tailscaleConfigs.scope, "organization"),
@@ -163,8 +167,8 @@ async function currentConnection(
   if (row.needsRebind) {
     return null;
   }
-  if (row.tailscaleId !== null) {
-    if (row.tailscale === null) {
+  if (row.transport === "tailscale") {
+    if (row.tailscale === null || row.tailscaleId === null) {
       throw new Error("SSH Tailscale configuration is missing");
     }
     if (lockAuthority) {
@@ -193,11 +197,11 @@ async function currentConnection(
     }
     return row;
   }
-  if (row.accessId === null) {
+  if (row.transport === "direct") {
     return row;
   }
   // The FK makes a missing local config a broken invariant, not an external miss.
-  if (row.access === null) {
+  if (row.access === null || row.accessId === null) {
     throw new Error("SSH Cloudflare Access is missing");
   }
   if (lockAuthority) {
@@ -260,7 +264,7 @@ export async function resolveRunnerSsh(
     generation: row.generation,
     learnedHostKey: hostKey,
   };
-  const network = row.tailscaleId === null ? null : row.tailscale;
+  const network = row.transport === "tailscale" ? row.tailscale : null;
   const tailscaleCredentials =
     network === null
       ? null
@@ -274,7 +278,7 @@ export async function resolveRunnerSsh(
           ),
         };
   signal.throwIfAborted();
-  const access = row.accessId === null ? null : row.access;
+  const access = row.transport === "cloudflare_access" ? row.access : null;
   const accessCredentials =
     access === null
       ? null
