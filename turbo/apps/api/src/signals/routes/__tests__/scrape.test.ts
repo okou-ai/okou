@@ -308,7 +308,7 @@ async function fundActorWithSubscription(
   };
 }
 
-async function createAdmittedScrapeRun(actor: ApiTestUser) {
+async function createClaimedScrapeRun(actor: ApiTestUser) {
   createBddApi(context).acceptAgentStorageWrites();
   const cleanups: (() => Promise<void>)[] = [];
   const fixture = createPublicUnfundedProFixture(context, actor, {
@@ -721,15 +721,17 @@ describe("okou scrape route", () => {
     });
   });
 
-  it("charges an admitted personal run with zero cash balance", async () => {
+  it("charges the same claimed run after a normal credit purchase", async () => {
     const actor = createBddApi(context).user();
     allowExampleDotCom();
     configureProvider();
 
-    const admitted = await createAdmittedScrapeRun(actor);
-    await admitted.fixture.run(async () => {
+    const claimed = await createClaimedScrapeRun(actor);
+    await claimed.fixture.run(async () => {
+      let firecrawlRequests = 0;
       server.use(
         http.post(FIRECRAWL_SCRAPE_URL, () => {
+          firecrawlRequests += 1;
           return HttpResponse.json({
             success: true,
             data: {
@@ -739,7 +741,31 @@ describe("okou scrape route", () => {
           });
         }),
       );
-      const token = admitted.token;
+      const token = claimed.token;
+
+      await expect(credits(actor)).resolves.toBe(0);
+      const unfunded = await accept(
+        client()(scrapeContract).scrape({
+          headers: { authorization: `Bearer ${token}` },
+          body: {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
+          },
+        }),
+        [402],
+      );
+      expectApiError(unfunded.body);
+      expect(unfunded.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      expect(firecrawlRequests).toBe(0);
+      await expect(credits(actor)).resolves.toBe(0);
+
+      await purchaseToolCredits(context, actor, {
+        credits: 1000,
+        customerId: claimed.fixture.customerId,
+        invoiceId: `in_scrape_claim_${randomUUID()}`,
+      });
+      await expect(credits(actor)).resolves.toBe(1000);
 
       const response = await accept(
         client()(scrapeContract).scrape({
@@ -757,21 +783,22 @@ describe("okou scrape route", () => {
         creditsCharged: 4,
         result: { markdown: "# Admitted run" },
       });
-      await expect(credits(actor)).resolves.toBe(-4);
+      expect(firecrawlRequests).toBe(1);
+      await expect(credits(actor)).resolves.toBe(996);
     });
   });
 
-  it("does not let admitted runs bypass plan suspension", async () => {
+  it("does not let claimed runs bypass plan suspension", async () => {
     const actor = createBddApi(context).user();
     allowExampleDotCom();
     configureProvider();
 
-    const admitted = await createAdmittedScrapeRun(actor);
-    await admitted.fixture.run(async () => {
+    const claimed = await createClaimedScrapeRun(actor);
+    await claimed.fixture.run(async () => {
       if (!actor.orgId) {
         throw new Error("Scrape test actor must belong to an organization");
       }
-      await admitted.fixture.suspend();
+      await claimed.fixture.suspend();
       let firecrawlRequests = 0;
       server.use(
         http.post(FIRECRAWL_SCRAPE_URL, () => {
@@ -779,7 +806,7 @@ describe("okou scrape route", () => {
           return HttpResponse.json({ success: true, data: {} });
         }),
       );
-      const token = admitted.token;
+      const token = claimed.token;
 
       const response = await accept(
         client()(scrapeContract).scrape({
