@@ -1961,6 +1961,13 @@
       "when": 1791517702020,
       "tag": "1357_prepare_home_affinity",
       "breakpoints": true
+    },
+    {
+      "idx": 1358,
+      "version": "7",
+      "when": 1791531701280,
+      "tag": "1358_canonical_selected_model_history",
+      "breakpoints": true
     }
   ]
 }

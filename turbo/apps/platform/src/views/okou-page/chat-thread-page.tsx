@@ -268,7 +268,10 @@ import type {
   ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
 import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
-import { AUTO_RUN_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
+import {
+  AUTO_SELECTED_MODEL,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
@@ -3329,9 +3332,9 @@ function ChatThreadNextRunModelNotice({
     return withChatScrollLayout(null);
   }
 
-  // Runs record Auto under its internal run model.
+  // Selected identity is separate from a Run's immutable captured runtime.
   const selectedRunSelection: ChatRunModelSelection = {
-    selectedModel: selectedSelection.selectedModel ?? AUTO_RUN_MODEL,
+    selectedModel: selectedSelection.selectedModel ?? AUTO_SELECTED_MODEL,
     ...(selectedSelection.codexServiceTier === "fast"
       ? { serviceTier: "priority" as const }
       : {}),

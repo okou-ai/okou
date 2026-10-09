@@ -1,8 +1,8 @@
 # Run models API
 
-`GET /api/run-models` lists the fixed platform Auto model and the requesting member's connected personal subscriptions. The response is `{ models }`; the Auto entry has `model: null` and is the default.
+`GET /api/run-models` lists the fixed platform Auto model and the requesting member's connected personal subscriptions. The response is `{ models }`; the Auto entry has `model: "auto"` and is the default.
 
-Auto is the `null` selection everywhere a model is selected or stored; `okou-1.0` is only its internal run model, which is not an accepted selection value. Auto runs are executed exclusively by `openrouter-codex` using `@preset/okou-1-0`. Its route and billing identity are code-owned constants. Platform routing does not select among catalog candidates; the only override is the operator-only `org_metadata.openrouter_preset` (NULL uses the default preset). The ordinary usage-pricing preflight, credit admission, immutable billing attribution and historical usage readers remain in place.
+Auto selections persist as the nonempty `auto` identity. Public null intent selects Auto; omission on PATCH/send preserves the existing selection, while creation resolves member defaults. Admission captures the exact OpenRouter preset, managed key, dialect, transport and capabilities independently of selected metadata. The operator-only `org_metadata.openrouter_preset` controls new admissions, never a previously captured execution. `okou-1.0` remains retained execution history, not a current selectable model. See [release-three migration and readiness](model-identity-pr3.md) for historical data and snapshot boundaries.
 
 Personal ChatGPT/Codex and Claude subscriptions retain their account ownership, reconnect state, model catalog, efforts and service tiers. A reconnect-required subscription remains visible and is not silently converted into platform billing. Launch admission captures and validates the owner's concrete connected account. Claude subscriptions use the vendor harness; Codex subscriptions may use Pi where its supported dialect and tier allow it.
 

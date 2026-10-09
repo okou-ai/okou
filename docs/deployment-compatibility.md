@@ -379,6 +379,18 @@ recovery remain on their existing paths. Refresh serving/rollback and pending
 marker evidence before promotion if that state changes. #29908 remains open
 until decoder retirement is released and final production acceptance is recorded.
 
+## Model identity release three: selected-history contraction (draft)
+
+[The release-three contract](model-identity-pr3.md) owns canonical current
+catalog output, historical selected-data migration, separate owner-scoped R2
+work and lifecycle-appropriate constraints. It is not ready for production
+until the writer/rollback, installed-consumer, queue, snapshot and native-history
+gates close. DB-before-API defaults cover omitted preference INSERTs; null
+PATCH/send intent remains normalized by PR2, while omitted updates preserve
+personal selections. Old in-flight settings/decision copies still require a
+drain; the migration is not a fleet fence. Retained captured configurations and
+native-history readers remain in place, and #38114 is not closed by this draft.
+
 ## Model identity PR2: new writer cutover (2026-10-09)
 
 [PR2's writer, billing, mixed-version and deployment contract](model-identity-pr2.md)

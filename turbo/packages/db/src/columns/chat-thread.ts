@@ -54,7 +54,9 @@ export function chatThreadColumns() {
      */
     lastReadAt: timestamp("last_read_at"),
     /** Per-thread selected model pin. Provider routing is resolved per run. */
-    selectedModel: varchar("selected_model", { length: 255 }),
+    selectedModel: varchar("selected_model", { length: 255 })
+      .default("auto")
+      .notNull(),
     /** Sparse per-model preferences copied from the member when created. */
     modelSettings: jsonb("model_settings")
       .$type<ModelSettings>()

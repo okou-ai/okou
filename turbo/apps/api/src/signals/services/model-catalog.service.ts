@@ -4,9 +4,6 @@ import {
   autoRunBillingProvider,
   autoRunPricingLongContextMinTotalInputTokens,
   isAutoSelectedModel,
-  AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  AUTO_RUN_MODEL,
-  AUTO_RUN_PRICING_PROVIDER,
   AUTO_RUN_PROVIDER,
   AUTO_RUN_UPSTREAM_MODEL,
 } from "@okouai/core/auto-run-model";
@@ -58,7 +55,7 @@ export type CatalogRoute = Readonly<{
 
 function autoCatalogRoute(): CatalogRoute {
   return {
-    model: AUTO_RUN_MODEL,
+    model: AUTO_SELECTED_MODEL,
     providerType: "built-in",
     concreteProviderType: AUTO_RUN_PROVIDER,
     subscriptionType: null,
@@ -70,15 +67,15 @@ function autoCatalogRoute(): CatalogRoute {
     efforts: [],
     defaultEffort: null,
     pricingKind: MODEL_USAGE_PRICING_KIND,
-    pricingProvider: AUTO_RUN_PRICING_PROVIDER,
+    pricingProvider: AUTO_RUN_UPSTREAM_MODEL,
     longContextMinTotalInputTokens:
-      AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
+      autoRunPricingLongContextMinTotalInputTokens(AUTO_SELECTED_MODEL),
   };
 }
 
 function autoCatalogModel(): CatalogModel {
   return {
-    model: AUTO_RUN_MODEL,
+    model: AUTO_SELECTED_MODEL,
     displayName: "Auto",
     sortOrder: 0,
     replacedBy: null,
@@ -107,12 +104,13 @@ export function modelCatalogForOrg(
     ...catalog,
     autoUpstreamModel: openrouterPreset ?? catalog.autoUpstreamModel,
     routes: catalog.routes.map((route) => {
-      return route.model === "okou-1.0" &&
+      return route.model === AUTO_SELECTED_MODEL &&
         route.providerType === "built-in" &&
         route.concreteProviderType === "openrouter-codex"
         ? {
             ...route,
             upstreamModel: openrouterPreset ?? route.upstreamModel,
+            pricingProvider: openrouterPreset ?? route.upstreamModel,
           }
         : route;
     }),
@@ -176,30 +174,39 @@ export function validateModelCatalog(
   models: readonly CatalogModel[],
   routes: readonly CatalogRoute[],
 ): ModelCatalog {
+  const systemDefault = autoCatalogModel();
+  const currentModels = [
+    systemDefault,
+    ...models
+      .filter((model) => {
+        return !isAutoSelectedModel(model.model);
+      })
+      .map((model) => {
+        return {
+          ...model,
+          replacedBy: isAutoSelectedModel(model.replacedBy)
+            ? AUTO_SELECTED_MODEL
+            : model.replacedBy,
+        };
+      }),
+  ];
   const byModel = new Map(
-    models.map((row) => {
+    currentModels.map((row) => {
       return [row.model, row];
     }),
   );
-  for (const row of models) {
+  for (const row of currentModels) {
     followReplacementChain(byModel, row);
   }
-  const systemDefault = autoCatalogModel();
-  byModel.set(AUTO_RUN_MODEL, systemDefault);
   for (const route of routes) {
     validateRoutePricingLink(route);
   }
   return {
-    models: [
-      systemDefault,
-      ...models.filter((model) => {
-        return model.model !== AUTO_RUN_MODEL;
-      }),
-    ],
+    models: currentModels,
     routes: [
       autoCatalogRoute(),
       ...routes.filter((route) => {
-        return route.model !== AUTO_RUN_MODEL;
+        return !isAutoSelectedModel(route.model);
       }),
     ],
     systemDefault,
@@ -305,7 +312,7 @@ export function resolveCatalogModel(
   catalog: ModelCatalog,
   model: string,
 ): CatalogModelResolution {
-  if (model === AUTO_SELECTED_MODEL) {
+  if (isAutoSelectedModel(model)) {
     return { kind: "active", model, resolvedModel: model, chain: [model] };
   }
   const row = catalog.byModel.get(model);

@@ -42,6 +42,9 @@ self-explanatory source code rather than separate documents.
   receipts, idempotency, opt-out handling, and the staged Morning Brief rollout.
 - [Model identity PR2](./model-identity-pr2.md): canonical new writes,
   captured-runtime billing, mixed-version support and activation prerequisites.
+- [Model identity release three](./model-identity-pr3.md): historical selected
+  data, owner-scoped snapshot migration, conditional constraints and remaining
+  retained-execution removal gates.
 - [Run models and subscription metadata](./model-catalog.md): fixed Auto,
   personal subscription metadata, selection and billing.
 - [Run models API](./run-models-api.md): the `GET /api/run-models` response
