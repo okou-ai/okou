@@ -54,9 +54,14 @@ async fn retained_backing_exit_precedes_later_guest_cleanup_without_signalling()
 
 #[tokio::test]
 async fn retained_backing_generation_survives_same_sandbox_label() {
+    let sandbox_id = sandbox::SandboxId::new_v4();
+    let label = sandbox_id.to_string();
     let mut identities = Vec::new();
     for _ in 0..2 {
         let mut sandbox = test_sandbox_with_state(SandboxState::Created);
+        sandbox.config.id = sandbox_id;
+        sandbox.id = label.clone();
+        assert_eq!(sandbox.id(), label);
         let child = tokio::process::Command::new("sh")
             .args(["-c", "exit 7"])
             .process_group(0)
