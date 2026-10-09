@@ -857,11 +857,6 @@
       "owner": "mcpChatSearchCandidates$"
     },
     {
-      "id": "TX-0182",
-      "file": "turbo/apps/api/src/signals/services/mcp-chat-threads.service.ts",
-      "owner": "threadQuery$"
-    },
-    {
       "id": "TX-0183",
       "file": "turbo/apps/api/src/signals/services/member-memory-initialization.service.ts",
       "owner": "initializeMemberMemory$"

@@ -770,6 +770,294 @@ describe("MCP Web parity", () => {
     expect(listed.threads).toStrictEqual([]);
   });
 
+  it("pages thread metadata by message time with literal filters", async () => {
+    const f = await conversationFixture();
+    const title = String.raw`Literal 100%_\ match`;
+    const threads: Awaited<ReturnType<typeof f.chat.createThread>>[] = [];
+    for (let index = 0; index < 3; index++) {
+      threads.push(
+        await f.chat.createThread(f.actor, {
+          agentId: f.agentId,
+          title,
+          model: null,
+        }),
+      );
+    }
+    const decoy = await f.chat.createThread(f.actor, {
+      agentId: f.agentId,
+      title: "Literal 100XX match",
+      model: null,
+    });
+    const messageTime = new Date(now() + 60_000);
+    await withMockNowForTest(messageTime, async () => {
+      for (const thread of [...threads, decoy]) {
+        await f.chat.requestSendEvent(
+          f.actor,
+          {
+            agentId: f.agentId,
+            threadId: thread.id,
+            prompt: "Message clock",
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+        await flushWaitUntilForTest();
+      }
+    });
+    const expected = mcpListChatThreadsOutputSchema.parse(
+      (
+        await callTool(f.token, "list_chat_threads", {
+          agentId: f.agentId,
+          title,
+        })
+      ).structuredContent,
+    ).threads;
+    expect(expected).toHaveLength(threads.length);
+    expect(
+      expected.map((thread) => {
+        return thread.lastMessageAt;
+      }),
+    ).toStrictEqual(
+      expected
+        .map((thread) => {
+          return thread.lastMessageAt;
+        })
+        .sort()
+        .reverse(),
+    );
+    const lastMessageAt = messageTime.toISOString().replace("Z", "000Z");
+    const filters = {
+      agentId: f.agentId,
+      title: String.raw`  100%_\  `,
+      since: lastMessageAt,
+      limit: 1,
+    };
+    const listed = [];
+    let cursor: string | null = null;
+    for (let index = 0; index < threads.length; index++) {
+      const page = mcpListChatThreadsOutputSchema.parse(
+        (
+          await callTool(f.token, "list_chat_threads", {
+            ...filters,
+            ...(cursor === null ? {} : { cursor }),
+          })
+        ).structuredContent,
+      );
+      expect(page.threads).toHaveLength(1);
+      const thread = page.threads[0];
+      expect(thread).toMatchObject({
+        title,
+        titleTruncated: false,
+        lastMessageAt: expected[index]?.lastMessageAt,
+      });
+      const detail = mcpGetChatThreadOutputSchema.parse(
+        (
+          await callTool(f.token, "get_chat_thread", {
+            threadId: thread?.threadId,
+          })
+        ).structuredContent,
+      );
+      expect(detail.thread).toStrictEqual(thread);
+      listed.push(thread?.threadId);
+      cursor = page.nextCursor;
+      expect(cursor === null).toBe(index === threads.length - 1);
+    }
+    expect(listed).toStrictEqual(
+      expected.map((thread) => {
+        return thread.threadId;
+      }),
+    );
+    expect(
+      mcpListChatThreadsOutputSchema.parse(
+        (
+          await callTool(f.token, "list_chat_threads", {
+            agentId: f.agentId,
+            before: lastMessageAt,
+          })
+        ).structuredContent,
+      ).threads,
+    ).toStrictEqual([]);
+    expect(
+      mcpListChatThreadsOutputSchema.parse(
+        (
+          await callTool(f.token, "list_chat_threads", {
+            agentId: randomUUID(),
+          })
+        ).structuredContent,
+      ).threads,
+    ).toStrictEqual([]);
+  });
+
+  it("preserves null and truncated titles, database cursor precision and cursor authorization", async () => {
+    const f = await conversationFixture();
+    const untitled = await f.chat.createThread(f.actor, {
+      agentId: f.agentId,
+      model: null,
+    });
+    const named = await f.chat.createThread(f.actor, {
+      agentId: f.agentId,
+      title: "😀".repeat(501),
+      model: null,
+    });
+    const page = mcpListChatThreadsOutputSchema.parse(
+      (await callTool(f.token, "list_chat_threads", { limit: 1 }))
+        .structuredContent,
+    );
+    expect(page.threads[0]).toMatchObject({
+      threadId: named.id,
+      title: "😀".repeat(500),
+      titleTruncated: true,
+      agent: { agentId: f.agentId, name: "MCP parity Agent" },
+    });
+    const cursor = z
+      .object({
+        lastMessageAt: z.iso.datetime({ precision: 6 }),
+        issuedAt: z.number(),
+        expiresAt: z.number(),
+      })
+      .parse(
+        JSON.parse(
+          Buffer.from(
+            page.nextCursor?.split(".")[0] ?? "",
+            "base64url",
+          ).toString("utf8"),
+        ),
+      );
+    expect(cursor.expiresAt - cursor.issuedAt).toBe(24 * 60 * 60 * 1000);
+    expect(page.threads[0]?.lastMessageAt).toBe(
+      `${cursor.lastMessageAt.slice(0, 23)}000Z`,
+    );
+    const lifecycle = await f.chat.requestThreadEvents(f.actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected public thread lifecycle events");
+    }
+    const created = lifecycle.body.events.find((event) => {
+      return event.kind === "created" && event.chatThreadId === named.id;
+    });
+    expect(created).toBeDefined();
+    expect(page.threads[0]?.createdAt).toBe(
+      created?.createdAt.replace("Z", "000Z"),
+    );
+    expect(page.threads[0]?.metadataUpdatedAt).toBe(page.threads[0]?.createdAt);
+    const inclusive = mcpListChatThreadsOutputSchema.parse(
+      (
+        await callTool(f.token, "list_chat_threads", {
+          since: cursor.lastMessageAt,
+        })
+      ).structuredContent,
+    );
+    expect(
+      inclusive.threads.map((thread) => {
+        return thread.threadId;
+      }),
+    ).toStrictEqual([named.id]);
+    expect(
+      mcpListChatThreadsOutputSchema
+        .parse(
+          (
+            await callTool(f.token, "list_chat_threads", {
+              before: cursor.lastMessageAt,
+            })
+          ).structuredContent,
+        )
+        .threads.map((thread) => {
+          return thread.threadId;
+        }),
+    ).toStrictEqual([untitled.id]);
+    const earlier = mcpListChatThreadsOutputSchema.parse(
+      (
+        await callTool(f.token, "list_chat_threads", {
+          limit: 1,
+          cursor: page.nextCursor,
+        })
+      ).structuredContent,
+    );
+    expect(earlier.threads[0]).toMatchObject({
+      threadId: untitled.id,
+      title: null,
+      titleTruncated: false,
+    });
+    expect(earlier.nextCursor).toBeNull();
+    for (const args of [
+      { cursor: `${page.nextCursor}x` },
+      { cursor: page.nextCursor, title: "changed" },
+      { cursor: page.nextCursor, agentId: randomUUID() },
+    ]) {
+      expect(
+        structuredToolError(await callTool(f.token, "list_chat_threads", args))
+          .code,
+      ).toBe("invalid_cursor");
+    }
+    const peer = f.auth.token({
+      sub: `user_${randomUUID()}`,
+      scope: defaultScopes,
+    });
+    expect(
+      structuredToolError(
+        await callTool(peer, "list_chat_threads", { cursor: page.nextCursor }),
+      ).code,
+    ).toBe("invalid_cursor");
+    expect(
+      mcpListChatThreadsOutputSchema.parse(
+        (await callTool(peer, "list_chat_threads")).structuredContent,
+      ).threads,
+    ).toStrictEqual([]);
+    expect(
+      structuredToolError(
+        await callTool(peer, "get_chat_thread", { threadId: named.id }),
+      ).code,
+    ).toBe("not_found");
+    const foreignOrg = `org_${randomUUID()}`;
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          id: randomUUID(),
+          role: "org:member",
+          organization: { id: foreignOrg },
+        },
+      ],
+      totalCount: 1,
+    });
+    const foreign = f.auth.token({ org_id: foreignOrg });
+    expect(
+      structuredToolError(
+        await callTool(foreign, "list_chat_threads", {
+          cursor: page.nextCursor,
+        }),
+      ).code,
+    ).toBe("invalid_cursor");
+    expect(
+      mcpListChatThreadsOutputSchema.parse(
+        (await callTool(foreign, "list_chat_threads")).structuredContent,
+      ).threads,
+    ).toStrictEqual([]);
+    expect(
+      structuredToolError(
+        await callTool(foreign, "get_chat_thread", { threadId: named.id }),
+      ).code,
+    ).toBe("not_found");
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          id: randomUUID(),
+          role: "org:member",
+          organization: { id: f.auth.orgId },
+        },
+      ],
+      totalCount: 1,
+    });
+    const expiryToken = f.auth.token();
+    await withMockNowForTest(cursor.expiresAt, async () => {
+      expect(
+        structuredToolError(
+          await callTool(expiryToken, "list_chat_threads", {
+            cursor: page.nextCursor,
+          }),
+        ).code,
+      ).toBe("invalid_cursor");
+    });
+  });
+
   it("applies sparse metadata using the Web update and does not revert a newer update", async () => {
     const f = await conversationFixture();
     const sent = mcpSendChatMessageOutputSchema.parse(
