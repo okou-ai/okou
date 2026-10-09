@@ -413,15 +413,19 @@ def collect(
                     signal_owned(owned, signal.SIGKILL)
                     reap_adopted(driver.pid, waits)
                     time.sleep(0.02)
-                # Drain pipes after positive waits, retaining the same byte bounds.
+                # Cleanup can remain uncertain with a live pipe producer. Read
+                # only the remaining log budget plus one truncation byte, never
+                # chase that producer until it exits or stops refilling the pipe.
                 for key in list(selector.get_map().values()):
-                    while True:
+                    drain_budget = log_bytes - log_sizes[key.data] + 1
+                    while drain_budget:
                         try:
-                            chunk = os.read(key.fd, MAX_PROC_BYTES)
+                            chunk = os.read(key.fd, min(MAX_PROC_BYTES, drain_budget))
                         except BlockingIOError:
                             break
                         if not chunk:
                             break
+                        drain_budget -= len(chunk)
                         remaining = log_bytes - log_sizes[key.data]
                         logs[key.data].write(chunk[:remaining])
                         log_sizes[key.data] += min(len(chunk), remaining)

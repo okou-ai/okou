@@ -348,6 +348,75 @@ sys.exit(3)
         self.assertFalse(report["calibrated"])
         self.assertFalse(report["native_vm_exit_confirmed"])
 
+    def test_uncertain_cleanup_cannot_drain_a_live_producer_until_it_exits(self):
+        output = self.root / "uncertain-pipe-drain"
+        # Fail only external driver identity reads; a real pipe producer remains
+        # unconfirmed. Slow real nonblocking reads so it can refill each chunk.
+        wrapper = """
+import os, runpy, signal, sys, time
+namespace = runpy.run_path(sys.argv[1], run_name='pipe_drain_fixture')
+original_read = namespace['bounded_read']
+original_pipe_read = os.read
+def kernel_read(path, *args, **kwargs):
+    parts = str(path).split('/')
+    if (len(parts) == 4 and parts[1] == 'proc' and parts[2].isdigit()
+            and parts[3] == 'stat' and int(parts[2]) != os.getpid()):
+        raise OSError(5, 'injected driver identity read failure')
+    return original_read(path, *args, **kwargs)
+def pipe_read(fd, count):
+    if not os.get_blocking(fd):
+        time.sleep(0.005)
+    return original_pipe_read(fd, count)
+namespace['main'].__globals__['bounded_read'] = kernel_read
+os.read = pipe_read
+sys.argv = sys.argv[1:]
+try:
+    sys.exit(namespace['main']())
+finally:
+    # Independent post-report cleanup, using real identity/PPID/pidfd/wait.
+    # It cannot repair the collector's serialized uncertainty or liveness result.
+    namespace['main'].__globals__['bounded_read'] = original_read
+    os.read = original_pipe_read
+    for pid in namespace['child_pids'](os.getpid()):
+        identity = namespace['process_identity'](pid)
+        if identity is not None and identity[2] == os.getpid():
+            namespace['signal_owned']({pid: identity[0]}, signal.SIGTERM)
+            os.waitpid(pid, 0)
+"""
+        program = """
+import os, signal
+from pathlib import Path
+def emergency(_signal, _frame):
+    Path('driver-emergency-exit').touch()
+    os._exit(3)
+signal.signal(signal.SIGALRM, emergency)
+signal.setitimer(signal.ITIMER_REAL, 3)
+try:
+    while True:
+        os.write(1, b'x' * 65536)
+except BrokenPipeError:
+    pass
+"""
+        command = self.command(output, program, "--max-log-bytes", "1024")
+        result = subprocess.run(
+            [sys.executable, "-c", wrapper, *command[1:]],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        report = json.loads((output / "report.json").read_text())
+        self.assertEqual(result.returncode, 1, (result.stdout, result.stderr))
+        self.assertFalse((output / "driver-emergency-exit").exists(), report)
+        self.assertFalse(report["driver_wait_confirmed"])
+        self.assertFalse(report["cleanup_confirmed"])
+        self.assertFalse(report["success"])
+        self.assertTrue(report["logs_truncated"])
+        self.assertTrue(report["errors"])
+        self.assertLessEqual((output / "stdout.log").stat().st_size, 1024)
+        self.assertFalse(report["calibrated"])
+        self.assertFalse(report["native_vm_exit_confirmed"])
+
     def test_parent_exit_does_not_hide_surviving_owned_child(self):
         program = "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); print(p.pid,flush=True); time.sleep(0.1)"
         result, report, output = self.run_case(program)
