@@ -399,7 +399,7 @@ describe("public selections of replaced models", () => {
     ).toStrictEqual(before.events);
     await expect(
       chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: null });
+    ).resolves.toMatchObject({ selectedModel: "auto" });
   }, 90_000);
 
   it("accepts a pinned model whose retained subscription was disconnected and reports the reconnect error", async () => {

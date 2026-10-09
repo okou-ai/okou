@@ -4267,7 +4267,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: null,
+      selectedModel: "auto",
     });
 
     const replaceModel = await integrations.postSlackInteractive(
@@ -4282,7 +4282,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: null,
+      selectedModel: "auto",
     });
 
     const rejectedModel = await integrations.postSlackInteractive(
@@ -4297,7 +4297,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: null,
+      selectedModel: "auto",
     });
   });
 

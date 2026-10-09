@@ -128,7 +128,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
       pinnedAt: null,
       archived: false,
       muted: false,
-      selectedModel: null,
+      selectedModel: "auto",
       modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,
