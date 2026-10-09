@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.739.1](https://github.com/okou-ai/okou/compare/core-v8.739.0...core-v8.739.1) (2026-10-09)
+
+
+### Refactoring
+
+* canonicalize historical model selections and constrain runtime captures ([#38389](https://github.com/okou-ai/okou/issues/38389)) ([1ab1fc2](https://github.com/okou-ai/okou/commit/1ab1fc21a3aabe940ee044cc6f4226faee2a668f))
+
 ## [8.739.0](https://github.com/okou-ai/okou/compare/core-v8.738.1...core-v8.739.0) (2026-10-09)
 
 

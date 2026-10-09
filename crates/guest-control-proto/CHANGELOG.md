@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.21.57](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.56...guest-control-proto-v0.21.57) (2026-10-09)
+
 ## [0.21.56](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.55...guest-control-proto-v0.21.56) (2026-10-09)
 
 
