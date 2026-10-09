@@ -9,6 +9,8 @@ import { integrationsDiscordMessageRoutes } from "../integrations-discord-messag
 import { createBddApi } from "./helpers/api-bdd";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { claimPublicToolRun } from "./helpers/public-tool-actor";
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { configureDiscordApp, uniqueDiscordSnowflake } from "./helpers/discord";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 const context = testContext();
@@ -19,10 +21,28 @@ describe("Discord native access before OAuth is available", () => {
       throw new Error("Expected a Discord workspace");
     }
     const actor = { ...user, orgId: user.orgId };
+    onTestFinished(() => {
+      return deletePublicWorkspace(context, actor);
+    });
     configureDiscordApp();
-    createBddApi(context).acceptAgentStorageWrites();
+    installDurableUserExportStorage(context, {
+      prefixes: [`${actor.orgId}/`],
+    });
+    const storageSend = context.mocks.s3.send.getMockImplementation();
+    const storageSignedUrl =
+      context.mocks.s3.getSignedUrl.getMockImplementation();
+    if (!storageSend || !storageSignedUrl) {
+      throw new Error("Expected the case-owned S3 transport");
+    }
     await publicPlanLifecycle(context, actor).update("active");
-    const claimed = await claimPublicToolRun(context, actor, onTestFinished);
+    await createBddApi(context).completeOnboarding(actor);
+    const claimed = await claimPublicToolRun(context, actor, (cleanup) => {
+      onTestFinished(async () => {
+        context.mocks.s3.send.mockImplementation(storageSend);
+        context.mocks.s3.getSignedUrl.mockImplementation(storageSignedUrl);
+        await cleanup();
+      });
+    });
     const channelId = uniqueDiscordSnowflake();
     const read = setupApp({ context, routes: integrationsDiscordReadRoutes })(
       integrationsDiscordReadContract,

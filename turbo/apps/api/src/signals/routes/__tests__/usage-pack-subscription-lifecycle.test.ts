@@ -510,7 +510,7 @@ function mockUsagePackPriceCatalog(
     for (const customPriceId of env("OKOU_PRICE_CUSTOM") ?? []) {
       fixedAmounts.set(customPriceId, 0);
     }
-    const concurrencyPriceId = optionalEnv("OKOU_PRICE_CONCURRENCY");
+    const concurrencyPriceId = env("OKOU_PRICE_CONCURRENCY")?.[0];
     if (concurrencyPriceId) {
       fixedAmounts.set(concurrencyPriceId, 2000);
     }

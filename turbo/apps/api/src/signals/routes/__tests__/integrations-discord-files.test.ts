@@ -14,6 +14,8 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createBddApi } from "./helpers/api-bdd";
 import { claimPublicToolRun } from "./helpers/public-tool-actor";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { configureDiscordApp, mockDiscordMemberships } from "./helpers/discord";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
@@ -51,6 +53,9 @@ async function actorSession(options: Parameters<typeof bdd.user>[0] = {}) {
   if (!actor.orgId) {
     throw new Error("Discord file test actor must have an organization");
   }
+  onTestFinished(() => {
+    return deletePublicWorkspace(context, actor);
+  });
   await bdd.readMe(actor);
   return { ...actor, orgId: actor.orgId };
 }
@@ -78,9 +83,24 @@ describe("Discord file authorization and input validation", () => {
   });
   it("requires native read or write capability for sandbox requests", async () => {
     const actor = await actorSession();
-    bdd.acceptAgentStorageWrites();
+    installDurableUserExportStorage(context, {
+      prefixes: [`${actor.orgId}/`],
+    });
+    const storageSend = context.mocks.s3.send.getMockImplementation();
+    const storageSignedUrl =
+      context.mocks.s3.getSignedUrl.getMockImplementation();
+    if (!storageSend || !storageSignedUrl) {
+      throw new Error("Expected the case-owned S3 transport");
+    }
     await publicPlanLifecycle(context, actor).update("active");
-    const claimed = await claimPublicToolRun(context, actor, onTestFinished);
+    await bdd.completeOnboarding(actor);
+    const claimed = await claimPublicToolRun(context, actor, (cleanup) => {
+      onTestFinished(async () => {
+        context.mocks.s3.send.mockImplementation(storageSend);
+        context.mocks.s3.getSignedUrl.mockImplementation(storageSignedUrl);
+        await cleanup();
+      });
+    });
     const headers = { authorization: `Bearer ${claimed.claim.sandboxToken}` };
     const client = fileClients();
     const upload = await accept(
