@@ -68,8 +68,8 @@ use runner_provider::{
     JobProvider, LocalProvider, RunCancellationRegistry,
 };
 use runner_supervisor::reactor::{
-    self, CapacityPolicy, EarlySignals, OrphanReapState, ProviderState, ProxyState, RunConfig, RunPaths,
-    RunnerInfo, RunnerSharedState, RuntimeProfile, SandboxRuntimeConfig, ShutdownHandles,
+    self, CapacityPolicy, EarlySignals, OrphanReapState, ProviderState, ProxyState, RunConfig,
+    RunPaths, RunnerInfo, RunnerSharedState, RuntimeProfile, SandboxRuntimeConfig, ShutdownHandles,
     SignalSource, SignalState,
 };
 
