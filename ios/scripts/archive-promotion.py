@@ -463,8 +463,24 @@ def consume(work, wait_seconds):
         raise ValueError("Release version mismatch")
     manifest, ready = download_archive(work, Store(), target, wait_seconds, version)
     archive_file = work / "archive.tar.gz"
+    archive_root = (work / "Original.xcarchive").resolve()
+
+    def archive_member(member, destination):
+        safe = tarfile.data_filter(member, destination)
+        if safe is None:
+            return None
+        member_path = Path(destination) / safe.name
+        if not member_path.resolve().is_relative_to(archive_root):
+            raise ValueError("Archive member escapes the application archive")
+        if safe.issym() or safe.islnk():
+            link_base = member_path.parent if safe.issym() else Path(destination)
+            if not (link_base / safe.linkname).resolve().is_relative_to(archive_root):
+                raise ValueError("Archive link escapes the application archive")
+        return safe
+
     with tarfile.open(archive_file) as archive:
-        for member in archive.getmembers():
+        members = archive.getmembers()
+        for member in members:
             path = PurePosixPath(member.name)
             if (
                 path.is_absolute()
@@ -472,7 +488,7 @@ def consume(work, wait_seconds):
                 or path.parts[0] != "Original.xcarchive"
             ):
                 raise ValueError("Unexpected archive member path")
-        archive.extractall(work, filter="data")
+        archive.extractall(work, members=members, filter=archive_member)
     mapping = {
         "version": 1,
         "releaseTarget": command("git", "rev-parse", "HEAD"),

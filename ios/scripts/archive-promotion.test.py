@@ -468,6 +468,38 @@ class PromotionTest(unittest.TestCase):
             error="Readiness identity mismatch",
         )
 
+    def test_archive_links_cannot_overwrite_promotion_metadata(self):
+        self.cli("publish", self.work)
+        ready = json.loads(self.ready().read_bytes())
+        manifest_path = Path(self.env["STORE"]) / ready["manifestKey"]
+        archive_path = manifest_path.with_name("archive.tar.gz")
+        with tarfile.open(archive_path, "w:gz") as archive:
+            archive.add(self.work / "Original.xcarchive", arcname="Original.xcarchive")
+            link = tarfile.TarInfo(
+                "Original.xcarchive/Products/Applications/Okou.app/escape"
+            )
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../../../../inputs.json"
+            archive.addfile(link)
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest["archiveSha256"] = hashlib.sha256(
+            archive_path.read_bytes()
+        ).hexdigest()
+        manifest_path.write_text(json.dumps(manifest))
+        ready["manifestSha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        self.ready().write_text(json.dumps(ready))
+        target = self.consume_work()
+        original_inputs = (target / "inputs.json").read_bytes()
+        self.cli(
+            "consume",
+            target,
+            "--wait-seconds",
+            0,
+            error="Archive link escapes the application archive",
+        )
+        self.assertEqual((target / "inputs.json").read_bytes(), original_inputs)
+        self.assertFalse((target / "release-mapping.json").exists())
+
     def test_ready_is_immutable_when_another_builder_publishes_same_inputs(self):
         self.cli("publish", self.work)
         first_ready = self.ready().read_bytes()
