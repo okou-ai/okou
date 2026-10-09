@@ -33,6 +33,11 @@ import {
   type PiMemoryStage1Evidence,
 } from "./stage1-input";
 import type { PiAgentModelConfig } from "./types";
+import { resolvePiAgentModel } from "./model";
+import {
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_STAGE1_PERSONAL_MODEL,
+} from "./memory-background-config";
 import {
   PI_MEMORY_STAGE1_SYSTEM_PROMPT,
   renderPiMemoryStage1Input,
@@ -49,7 +54,7 @@ afterAll(() => {
   return server.close();
 });
 const SESSION = "00000000-0000-4000-8000-000000000123";
-const MODEL = "gpt-5.6-luna";
+const MODEL = PI_MEMORY_STAGE1_BUILT_IN_MODEL;
 
 function canonical(messages: readonly Message[]): PiMemoryStage1Evidence[] {
   const session = MemoryPiSession.create({ cwd: "/private/path", id: SESSION });
@@ -147,10 +152,7 @@ function captureBodies(url = "https://stage1.test/v1/responses"): string[] {
   return bodies;
 }
 
-function config(): Extract<
-  PiAgentModelConfig,
-  { dialect: "openai-responses" }
-> {
+function config() {
   return {
     provider: "openrouter",
     model: `openai/${MODEL}`,
@@ -158,7 +160,7 @@ function config(): Extract<
     apiKey: "test-key",
     dialect: "openai-responses",
     transport: "sse",
-  };
+  } satisfies Extract<PiAgentModelConfig, { dialect: "openai-responses" }>;
 }
 
 function overrideCatalog(
@@ -167,7 +169,9 @@ function overrideCatalog(
   native = false,
 ): void {
   // External SDK metadata fault injection; serialization and HTTP remain real.
-  const catalogId = native ? MODEL : `openai/${MODEL}`;
+  const catalogId = native
+    ? PI_MEMORY_STAGE1_PERSONAL_MODEL
+    : `openai/${MODEL}`;
   const model = (native ? openaiCodexProvider() : openrouterProvider())
     .getModels()
     .find((item) => {
@@ -220,6 +224,38 @@ function historyFromBody(body: string): string {
     text.split("filtered response items):\n")[1]?.split("\n\nIMPORTANT:")[0] ??
     ""
   );
+}
+
+function bodyWithHistory(body: string, history: string): string {
+  const payload: unknown = JSON.parse(body);
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("input" in payload) ||
+    !Array.isArray(payload.input)
+  ) {
+    throw new Error("Missing input");
+  }
+  const user: unknown = payload.input[1];
+  if (
+    typeof user !== "object" ||
+    user === null ||
+    !("content" in user) ||
+    !Array.isArray(user.content)
+  ) {
+    throw new Error("Missing user");
+  }
+  const part: unknown = user.content[0];
+  if (
+    typeof part !== "object" ||
+    part === null ||
+    !("text" in part) ||
+    typeof part.text !== "string"
+  ) {
+    throw new Error("Missing text");
+  }
+  part.text = renderPiMemoryStage1Input(history);
+  return JSON.stringify(payload);
 }
 
 describe("Stage 1 evidence and complete request admission", () => {
@@ -570,45 +606,82 @@ describe("Stage 1 evidence and complete request admission", () => {
     },
   );
 
-  it("counts heavy SDK fields and reselects Human instead of truncating selected history", async () => {
+  it("counts the complete SDK payload and reselects Human with the current model", async () => {
     const bodies = captureBodies();
+    const model = config();
+    const catalog = resolvePiAgentModel(model);
+    if (!catalog) throw new Error("Missing current memory model");
     const evidence = canonical(
       Array.from({ length: 100 }, (_, index) => {
         return {
           role: "user",
           timestamp: index,
-          content: `human-${index} ${"value ".repeat(2_000)}`,
+          content: `human-${index} ${'"\\汉😀 '.repeat(600)} human-end-${index}`,
         };
       }),
     );
     await runPiMemoryStage1Extraction({
-      model: {
-        ...config(),
-        catalogModel: MODEL,
-        model: 'overhead"\\ '.repeat(25_000),
-      },
+      model,
       evidence,
       requestId: "overhead",
     });
     expect(bodies).toHaveLength(1);
-    expect(count(bodies[0] ?? "")).toBeLessThanOrEqual(231_040);
-    expect(historyFromBody(bodies[0] ?? "")).toContain("human-99");
-    expect(historyFromBody(bodies[0] ?? "")).not.toContain("human-0 ");
+    const body = bodies[0] ?? "";
+    const budget = stage1InputBudgets(catalog.contextWindow);
+    const historyOnly = selectStage1Evidence(
+      evidence,
+      budget.history,
+      budget.request,
+    );
+    expect(count(bodyWithHistory(body, historyOnly))).toBeGreaterThan(250_000);
+    expect(JSON.parse(body)).toMatchObject({ model: `openai/${MODEL}` });
+    expect(count(body)).toBeLessThanOrEqual(250_000);
+    expect(count(body) + 32_768 + 8_192).toBeLessThanOrEqual(
+      catalog.contextWindow,
+    );
+    expect(historyFromBody(body)).toContain("human-99");
+    expect(historyFromBody(body)).not.toContain("human-0 ");
+    expect(count(historyFromBody(body))).toBeLessThan(count(historyOnly));
+    for (const row of historyFromBody(body).trimEnd().split("\n")) {
+      const item: unknown = JSON.parse(row);
+      if (
+        typeof item === "object" &&
+        item !== null &&
+        "role" in item &&
+        item.role === "human" &&
+        "content" in item &&
+        typeof item.content === "string"
+      ) {
+        const index = item.content.match(/^human-(\d+) /)?.[1];
+        expect(index).toBeDefined();
+        expect(item.content).toContain(`human-end-${index}`);
+      }
+    }
   });
 
-  it.each(["unmeasurable", "over_budget"])(
-    "retains terminal %s classification through the SDK callback error with zero HTTP",
-    async (failure) => {
-      const bodies = captureBodies();
+  it.each([
+    ["unmeasurable", "openai-responses"],
+    ["over_budget", "openai-responses"],
+    ["over_budget", "openai-completions"],
+  ] as const)(
+    "retains terminal %s through the %s SDK callback with zero HTTP",
+    async (failure, dialect) => {
+      const bodies = captureBodies(
+        dialect === "openai-completions"
+          ? "https://stage1.test/v1/chat/completions"
+          : undefined,
+      );
       if (failure === "unmeasurable")
         overrideCatalog("thinkingLevelMap", { low: 1n });
-      const model =
-        failure === "over_budget"
-          ? {
-              ...config(),
-              catalogModel: MODEL,
-              model: 'overhead"\\ '.repeat(100_000),
-            }
+      else {
+        // Valid positive request budget, too small for the real SDK envelope.
+        const window = 32_768 + 8_192 + 1;
+        overrideCatalog("contextWindow", window);
+        expect(stage1InputBudgets(window).request).toBe(1);
+      }
+      const model: PiAgentModelConfig =
+        dialect === "openai-completions"
+          ? { ...config(), provider: "openrouter", dialect }
           : config();
       await expect(
         runPiMemoryStage1Extraction({
@@ -630,7 +703,7 @@ describe("Stage 1 evidence and complete request admission", () => {
 
 const nativeConfig: PiAgentModelConfig = {
   provider: "openai-codex",
-  model: MODEL,
+  model: PI_MEMORY_STAGE1_PERSONAL_MODEL,
   baseUrl: "https://chatgpt.com/backend-api",
   apiKey: "native-test-token",
   accountId: "source-account",
@@ -640,6 +713,8 @@ const nativeConfig: PiAgentModelConfig = {
 
 describe("Stage 1 native Codex complete request", () => {
   it("serializes strict native instructions/schema and reserves the full catalog output", async () => {
+    const catalog = resolvePiAgentModel(nativeConfig);
+    if (!catalog) throw new Error("Missing current personal memory model");
     const bodies = captureBodies(
       "https://chatgpt.com/backend-api/codex/responses",
     );
@@ -660,7 +735,7 @@ describe("Stage 1 native Codex complete request", () => {
     const body = bodies[0] ?? "";
     const parsed: unknown = JSON.parse(body);
     expect(parsed).toMatchObject({
-      model: MODEL,
+      model: PI_MEMORY_STAGE1_PERSONAL_MODEL,
       instructions: PI_MEMORY_STAGE1_SYSTEM_PROMPT,
       reasoning: { effort: "low" },
       text: {
@@ -678,8 +753,10 @@ describe("Stage 1 native Codex complete request", () => {
     expect(parsed).not.toHaveProperty("service_tier");
     expect(parsed).not.toHaveProperty("tools");
     expect(count(body)).toBeGreaterThan(100_000);
-    expect(count(body)).toBeLessThanOrEqual(135_808);
-    expect(count(body) + 128_000 + 8_192).toBeLessThanOrEqual(272_000);
+    expect(count(body)).toBeLessThanOrEqual(250_000);
+    expect(count(body) + catalog.maxTokens + 8_192).toBeLessThanOrEqual(
+      catalog.contextWindow,
+    );
     expect(body).toContain("human-79");
     expect(body).not.toContain("human-0 ");
   });
@@ -711,6 +788,8 @@ describe("Stage 1 native Codex complete request", () => {
 
   it("measures a mapped public Responses alias against the logical Luna catalog", async () => {
     const bodies = captureBodies();
+    const catalog = resolvePiAgentModel(config());
+    if (!catalog) throw new Error("Missing current memory model");
     await runPiMemoryStage1Extraction({
       model: {
         ...config(),
@@ -733,6 +812,9 @@ describe("Stage 1 native Codex complete request", () => {
       max_output_tokens: 32_768,
     });
     expect(count(body)).toBeGreaterThan(100_000);
-    expect(count(body)).toBeLessThanOrEqual(231_040);
+    expect(count(body)).toBeLessThanOrEqual(250_000);
+    expect(count(body) + 32_768 + 8_192).toBeLessThanOrEqual(
+      catalog.contextWindow,
+    );
   });
 });
