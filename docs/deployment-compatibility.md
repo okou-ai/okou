@@ -130,29 +130,6 @@ server-side signing-key ownership are unchanged.
 No database migration, client version floor, feature switch or deployment-order
 fallback is required. This change does not deploy or verify production recovery.
 
-## Video poster extraction retired (2026-10-08)
-
-Video uploads stop scheduling server-side poster extraction. The API removes
-both the public Cloudflare Media Transformations call and the private-video
-capability producer. The host Worker removes the private poster endpoint and
-its `MEDIA` binding. Hosted-page screenshots and image thumbnails keep their
-existing renderers.
-
-- **Old App or CLI → new API:** upload, playback, download and artifact response
-  contracts are unchanged. Videos without a stored poster use the existing
-  playable-video preview; previously stored poster references remain readable.
-- **New API → old Worker:** the API makes no poster requests; the unused Worker
-  endpoint does not affect file delivery.
-- **Old API → new Worker:** a remaining private poster POST receives `405` from
-  the Worker's existing method guard. The old API handles this in its optional
-  background-preview failure path and cleans up its temporary grant. The video
-  and catalog entry are already committed, so upload success and source access
-  are unaffected. In-flight renders may finish during API drain.
-
-No database migration, stored-preview deletion or client-version floor is
-needed. Rolling the API back can resume public poster generation; restoring
-private poster generation also requires the old Worker and `MEDIA` binding.
-
 ## Pi memory Luna routing (2026-10-08)
 
 New Stage 1 extractions and Phase 2 maintenance runs use `gpt-6-luna`.
@@ -5314,21 +5291,6 @@ skipped, so the old client simply stops purging. Its saved
 are not migrated. A new App against an older API makes no such calls. Rollback
 is safe; an older API resumes serving the routes with the same signing key.
 
-## Sandbox-hosted artifact covers (#36205)
-
-Hosted deployment requests may include a separately uploaded private preview
-when the default-off `artifactPreviews` switch is enabled. The same switch gates
-CLI capture, generation guidance and server prepare/complete admission.
-When disabled, capture is a silent no-op and supplied previews are ignored;
-hosting continues normally. Prepare/complete use `previewSkipped: true` to
-acknowledge an ignored cover, including disabling between those requests.
-Published covers remain readable after disabling the switch.
-Deploy and drain API readers before the new CLI/generation instructions; a
-mixed completion fleet must not ignore the preview requirement. Old requests
-retain backend screenshots until the separately planned retirement. The
-manifest's optional preview metadata and existing file/catalog image reference
-need no database migration. See [the publishing, storage and rollout contract](sandbox-artifact-previews.md).
-
 ## Artifact and hosted-site link layouts (2026-09-25)
 
 The retired VM0 brand survives only as the read-only _legacy link layout_
@@ -5371,9 +5333,7 @@ deployments, integration input files or conversation attachment copies.
 Legacy-layout hosted sites keep serving and keep their names reserved; a new
 publication never redeploys a legacy site and, as before, receives a fallback
 name in the current layout when a legacy site holds the requested name. Artifact
-preview images are new objects and use `current`. Video poster extraction is
-[retired](#video-poster-extraction-retired-2026-10-08); existing poster objects
-retain their original layout.
+preview images are new objects and use `current`.
 
 Migration `1235_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
 on the four `public_brand` columns, so any writer that omits the column
@@ -7100,12 +7060,6 @@ When removing a backend response or request variant consumed by the CLI:
 3. Confirm that no queued or active pre-deployment context, and no explicitly
    supported external caller, can still use the old variant.
 4. Remove compatibility in a later backend release.
-
-Presentation runbook content is independent of the CLI release after the
-current-template download route is deployed. Current CLIs send only the
-resource id and receive the canonical storage HEAD; older CLIs keep using the
-existing digest-pinned route and its immutable archive. Publish new template
-HEADs only after the current-template route and CLI are in production.
 
 This drain is separate from runner binary drain: a current runner can execute an
 older CLI package retained by an older execution context. If the same cleanup
