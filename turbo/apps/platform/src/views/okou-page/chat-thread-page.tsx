@@ -4503,7 +4503,9 @@ function FinishedStatusRow({ thread }: { thread: ChatPanelSignals }) {
       equalityFn: equalRecommendedFollowupSources,
     }) ?? null;
   return (
-    <div data-role="assistant-thinking" className="animate-thinking-in min-w-0">
+    // Completed content also mounts when reopening a historical thread. Keep it
+    // opaque so the PWA page-transition snapshot and the live page agree.
+    <div data-role="assistant-thinking" className="min-w-0">
       <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
     </div>
   );
