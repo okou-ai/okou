@@ -472,11 +472,6 @@
       "owner": "deleteClerkOrganizationLifecycleData$"
     },
     {
-      "id": "TX-0100",
-      "file": "turbo/apps/api/src/signals/services/clerk-agent-lifecycle.service.ts",
-      "owner": "deletePublicationFencesAfterAuthorityRemoval$"
-    },
-    {
       "id": "TX-0104",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "updateCloudflareAccessConfig$"
