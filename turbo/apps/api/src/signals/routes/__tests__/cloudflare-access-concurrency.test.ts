@@ -637,6 +637,8 @@ test("promotes a configuration with a concurrent first binding or an explicit ne
   ).toContainEqual({
     ...bound.body,
     generation: bound.body.generation + (included ? 1 : 0),
+    // Promotion updates included hosts; only an unincluded host is unchanged.
+    updatedAt: included ? expect.any(String) : bound.body.updatedAt,
   });
   expect(
     (await accept(configs().list({ headers: owner.headers, query }), [200]))
