@@ -1,4 +1,4 @@
-# Engineering Documentation Index
+# Engineering Documentation Guide and Index
 
 `docs/` contains reusable engineering standards, framework guidance, and shared
 infrastructure contracts. Read the guidance relevant to the changed surface;
@@ -6,18 +6,47 @@ this index does not replace its detailed rules.
 
 ## Documentation Boundary
 
-- Keep code quality, React/ccstate, styles, testing, database, deployment, and
-  shared runtime rules here.
-- Do not add business-feature descriptions, issue implementation plans, batch
-  manifests, rollout diaries, acceptance receipts, or measurement snapshots.
-  Record task-specific decisions and evidence in the owning GitHub issue or PR.
-- Executable behavior belongs in code, contracts, schemas, and tests. Keep
-  component setup and operational instructions next to their owning component.
-- Update an existing standard when a reusable rule changes; do not create a new
-  document for each implementation increment.
-- Historical documents remain recoverable in Git history. Their removal from
-  this index does not authorize removing runtime compatibility, rollback floors,
-  security checks, data, tests, or migration history.
+Keep reusable engineering principles, current framework architecture, shared
+infrastructure contracts, and development practices here. Code quality,
+React/ccstate, styling, testing, database policy, and deployment compatibility
+belong in this directory when they guide future changes beyond one feature or
+implementation task.
+
+### Content That Belongs Elsewhere
+
+| Do not store in `docs/`                                      | Examples                                                                                                                                                               | Authoritative home                                                                                                        |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Business-feature implementation descriptions                 | Product-option mappings, feature-specific state machines, field/endpoint inventories, UI feature catalogs, and prose that repeats code branches                        | Self-explanatory source, types, contracts, schemas, and behavior tests; task-specific decisions in the owning issue or PR |
+| Implementation plans and progress records                    | Issue plans, migration steps for a particular change, batch manifests, worker handoffs, completed/remaining work, and future lint implementation plans                 | The owning GitHub issue or PR; executable migrations and scripts in their owning locations                                |
+| Rollout, acceptance, and incident records                    | Per-feature release/version matrices, enablement progress, environment-specific CI or production receipts, task-specific acceptance checklists, and incident timelines | The owning issue or PR, with links to the supporting evidence                                                             |
+| One-off investigations and measurement snapshots             | A single profiling trace, benchmark result, audit inventory, or diagnostic snapshot, including its CSV, JSON, image, or other attachments                              | Evidence attached or linked to the owning issue or PR                                                                     |
+| Completed implementation retrospectives and retired behavior | How an old stylesheet was replaced, a finished migration narrative, retired producer details, and historical feature inventories                                       | Git history; use a clearly labeled link to a fixed revision when a remaining reference needs historical evidence          |
+| Component-local setup and operations manuals                 | Installation, local configuration, and component-specific operating instructions                                                                                       | A README or operations guide next to the owning component                                                                 |
+
+This boundary applies to every file and subdirectory under `docs/`. Moving a
+task record into `docs/implementation/`, `docs/archive/`, or an attachments
+directory does not make it an engineering standard. An existing task record is
+not precedent for adding another one.
+
+### Preserve Reusable Guidance
+
+- Keep current architectural boundaries, protocol invariants, security and
+  permission constraints, lifecycle ownership, and compatibility obligations.
+  A shared contract can be concrete without becoming a business-feature record.
+- Keep explanatory code examples, reusable verification procedures, and
+  repeatable profiling or troubleshooting methods. Separate those methods from
+  the measurements and acceptance results of a particular run.
+- When a document mixes a reusable rule with implementation history, retain the
+  rule in its owning guide and remove the task narrative. Update the existing
+  topic instead of creating a document for each issue, batch, or increment.
+- Historical documents remain recoverable in Git history. Removing their prose
+  does not authorize removing runtime compatibility, executable rollback floors,
+  security or permission checks, data, tests, or published migration history.
+  Historical receipts are not proof of current deployment or acceptance state.
+- When consolidating or moving guidance, preserve the rules and reusable examples
+  that still apply, and update the index and actual consumers. Check relative
+  links and anchors, skill/review routes, source comments, generated
+  lint-documentation URLs, and test expectations that contain the old paths.
 
 ## Directory Ownership
 
