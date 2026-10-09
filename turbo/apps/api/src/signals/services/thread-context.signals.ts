@@ -284,26 +284,31 @@ function createThreadExecutionBootstrap(
 ) {
   return computed(async (get) => {
     const event = await get(pickedEvent$);
-    if (event?.contextType === "automation") {
+    if (!event) {
+      throw new Error("Thread execution requires a picked event");
+    }
+    if (event.contextType === "automation") {
       const target = await get(automationTarget$);
-      return target
-        ? matchAgentRunContextSignals(
-            bootstrap,
-            target.automation.ownerUserId,
-            target.automation.orgId,
-            target.agentId,
-          )
-        : bootstrap;
+      if (!target) {
+        throw new Error("Automation execution requires its captured target");
+      }
+      return matchAgentRunContextSignals(
+        bootstrap,
+        target.automation.ownerUserId,
+        target.automation.orgId,
+        target.agentId,
+      );
     }
     const agent = await get(agentSelection$);
-    return event && agent
-      ? matchAgentRunContextSignals(
-          bootstrap,
-          event.userId,
-          orgId,
-          agent.agentId,
-        )
-      : bootstrap;
+    if (!agent) {
+      throw new Error("Prompt preparation lost its selected Agent");
+    }
+    return matchAgentRunContextSignals(
+      bootstrap,
+      event.userId,
+      orgId,
+      agent.agentId,
+    );
   });
 }
 
