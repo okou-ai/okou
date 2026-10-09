@@ -22,8 +22,9 @@ HTTPS              Connect to the origin, negotiate  Connect to the proxy, issue
 =================  ===============================  ================================================
 
 Proxy selection uses the standard environment settings for the origin scheme and ``no_proxy``
-bypass rules. Only HTTP proxy endpoints are supported; an HTTPS or other proxy endpoint is rejected.
-CONNECT targets always include the effective origin port, even when the platform URL omits it.
+bypass rules. HTTP proxy endpoints accept ``http://host:port``, ``host:port``, and ``//host:port``
+forms; an HTTPS or other proxy endpoint is rejected. CONNECT targets always include the effective
+origin port, even when the platform URL omits it.
 For an HTTP origin, proxy authorization is sent in ``Proxy-Authorization`` on the absolute-form
 request. For an HTTPS origin, it is sent only on ``CONNECT`` and is never forwarded through the
 tunnel to the origin. After ``CONNECT`` succeeds, any bytes already buffered from the proxy are
@@ -336,7 +337,11 @@ def _proxy_plan(
     normalized_proxy = platform_api.normalize_proxy_url(configured_proxy)
     if urllib.request.proxy_bypass(origin_authority):
         return None
-    proxy_url = normalized_proxy if "://" in normalized_proxy else f"http://{normalized_proxy}"
+    proxy_url = normalized_proxy
+    if normalized_proxy.startswith("//"):
+        proxy_url = f"http:{normalized_proxy}"
+    elif "://" not in normalized_proxy:
+        proxy_url = f"http://{normalized_proxy}"
     parsed = urllib.parse.urlsplit(proxy_url)
     if parsed.scheme.lower() != "http":
         raise ValueError("Firewall auth supports only HTTP environment proxies")
