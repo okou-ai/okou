@@ -121,81 +121,84 @@ fn file_budget_is_checked_before_bodies_but_does_not_hide_invalid_metadata() {
 }
 
 #[test]
-fn legacy_positive_and_rejection_entries_are_not_reinterpreted_or_removed() {
-    let (_root, home, positive, positive_lock) = setup();
-    let legacy_key = format!("decoded-v1-{}", short_digest("v1"));
-    let legacy = home
-        .storages_dir()
-        .join(short_digest("name"))
-        .join(&legacy_key);
-    let old_index = fs::read(positive.join("index.json")).unwrap();
-    fs::rename(positive, &legacy).unwrap();
-    fs::rename(
-        positive_lock,
-        home.storage_lock_for_cache_key(&short_digest("name"), &legacy_key),
-    )
+fn existing_v1_positive_entry_is_reused_without_republication() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    let (entry, _) = persisted_paths(&home, "name", "v1", false);
+    fs::create_dir_all(entry.join("files/nested")).unwrap();
+    fs::write(entry.join("files/nested/file"), b"hello").unwrap();
+    // Seed the existing v1 schema independently from the current publisher.
+    let index = serde_json::to_vec(&serde_json::json!({
+        "name": "name", "version": "v1", "compressed_bytes": 100,
+        "files": [{
+            "path": "nested/file", "mode": 0o751, "mtime": 1234,
+            "size": 5, "sha256": hex::encode(Sha256::digest(b"hello"))
+        }]
+    }))
     .unwrap();
-    assert!(
-        read(&home, "name", "v1", &CancellationToken::new())
-            .unwrap()
-            .is_none()
-    );
-    publish(
-        &home,
-        "name",
-        "v1",
-        100,
-        Some(&files()),
-        &CancellationToken::new(),
-    )
-    .unwrap();
+    fs::write(entry.join("index.json"), &index).unwrap();
+    let cancel = CancellationToken::new();
     assert_eq!(
-        read(&home, "name", "v1", &CancellationToken::new())
+        read(&home, "name", "v1", &cancel)
             .unwrap()
-            .unwrap()
+            .flatten()
             .unwrap(),
         files()
     );
-    assert_eq!(fs::read(legacy.join("index.json")).unwrap(), old_index);
+    let replacement = vec![StorageFile {
+        path: "nested/file".into(),
+        mode: 0o640,
+        mtime: 4321,
+        content: b"replacement".to_vec(),
+    }];
+    publish(&home, "name", "v1", 100, Some(&replacement), &cancel).unwrap();
+    assert_eq!(fs::read(entry.join("index.json")).unwrap(), index);
+    assert_eq!(fs::read(entry.join("files/nested/file")).unwrap(), b"hello");
+    assert_eq!(
+        read(&home, "name", "v1", &cancel)
+            .unwrap()
+            .flatten()
+            .unwrap(),
+        files()
+    );
+}
 
-    publish(
-        &home,
-        "rejected",
-        "v1",
-        100,
-        None,
-        &CancellationToken::new(),
-    )
+#[tokio::test]
+async fn existing_v1_rejection_retains_optional_skip_without_rewriting_source() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+    for number in 0..48 {
+        let mut header = tar::Header::new_ustar();
+        header.set_size(1);
+        header.set_mode(0o640);
+        header.set_cksum();
+        archive
+            .append_data(&mut header, format!("file-{number}"), &b"x"[..])
+            .unwrap();
+    }
+    let bytes = archive.into_inner().unwrap().finish().unwrap();
+    assert!(bytes.len() <= MAX_COMPRESSED_BYTES);
+    let source = home.storage_cache_dir("name", "v1");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("archive.tar.gz"), &bytes).unwrap();
+    drop(lock::try_acquire_or_busy_blocking(&home.storage_lock("name", "v1")).unwrap());
+    let (entry, _) = persisted_paths(&home, "name", "v1", true);
+    fs::create_dir_all(&entry).unwrap();
+    // This shape exceeded the former 32-file limit. The existing record has no
+    // admission-policy field, so keeping v1 also keeps its optional skip.
+    let index = serde_json::to_vec(&serde_json::json!({
+        "name": "name", "version": "v1", "compressed_bytes": bytes.len(),
+        "files": null
+    }))
     .unwrap();
-    let (rejected, rejected_lock) = entry_paths(&home, "rejected", "v1", true);
-    let legacy_key = format!("decoded-v1-rejected-{}", short_digest("v1"));
-    let legacy = home
-        .storages_dir()
-        .join(short_digest("rejected"))
-        .join(&legacy_key);
-    let old_index = fs::read(rejected.join("index.json")).unwrap();
-    fs::rename(rejected, &legacy).unwrap();
-    fs::rename(
-        rejected_lock,
-        home.storage_lock_for_cache_key(&short_digest("rejected"), &legacy_key),
-    )
-    .unwrap();
-    assert!(!is_rejected(&home, "rejected", "v1", &CancellationToken::new()).unwrap());
-    publish(
-        &home,
-        "rejected",
-        "v1",
-        100,
-        Some(&files()),
-        &CancellationToken::new(),
-    )
-    .unwrap();
-    assert_eq!(
-        read(&home, "rejected", "v1", &CancellationToken::new())
-            .unwrap()
-            .unwrap()
-            .unwrap(),
-        files()
-    );
-    assert_eq!(fs::read(legacy.join("index.json")).unwrap(), old_index);
+    fs::write(entry.join("index.json"), &index).unwrap();
+    assert!(is_rejected(&home, "name", "v1", &CancellationToken::new()).unwrap());
+    let cache = DecodedCache::new(home.clone());
+    cache.warm_from_archive("name", "v1").await.unwrap();
+    assert!(cache.get_ready("name", "v1").await.unwrap().is_none());
+    cache.shutdown().await;
+    assert_eq!(fs::read(entry.join("index.json")).unwrap(), index);
+    assert_eq!(fs::read(source.join("archive.tar.gz")).unwrap(), bytes);
 }

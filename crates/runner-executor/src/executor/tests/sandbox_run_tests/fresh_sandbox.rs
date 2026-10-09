@@ -497,7 +497,7 @@ async fn fresh_decoded_delivery_pins_before_prefetch_and_retires_only_after_spaw
             .storages_dir()
             .join(runner_host::paths::short_digest("decoded"))
             .join(format!(
-                "decoded-v2-{}",
+                "decoded-v1-{}",
                 runner_host::paths::short_digest("v1")
             ));
         let mut ctx = minimal_context();

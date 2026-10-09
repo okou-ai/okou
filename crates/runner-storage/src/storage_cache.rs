@@ -4875,7 +4875,7 @@ mod tests {
                     .storages_dir()
                     .join(runner_host::paths::short_digest("name"))
                     .join(format!(
-                        "decoded-v2-{}",
+                        "decoded-v1-{}",
                         runner_host::paths::short_digest("v1")
                     ));
                 std::fs::write(entry.join("index.json"), b"{").unwrap();
@@ -4926,7 +4926,7 @@ mod tests {
                 let entry = home
                     .storages_dir()
                     .join(short_digest("name"))
-                    .join(format!("decoded-v2-{}", short_digest("v1")));
+                    .join(format!("decoded-v1-{}", short_digest("v1")));
                 std::fs::write(entry.join("index.json"), b"{").unwrap();
             }
             let cache = decoded::DecodedCache::new(home.clone());

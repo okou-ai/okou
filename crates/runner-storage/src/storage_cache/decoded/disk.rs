@@ -108,9 +108,7 @@ pub(super) fn paths(home: &HomePaths, name: &str, version: &str) -> (PathBuf, Pa
 
 fn version_key(version: &str, rejected: bool) -> String {
     let kind = if rejected { "rejected-" } else { "" };
-    // Admission is format-qualified: neither old positive entries nor old
-    // rejection decisions are reinterpreted under the wider bounded policy.
-    format!("decoded-v2-{kind}{}", short_digest(version))
+    format!("decoded-v1-{kind}{}", short_digest(version))
 }
 
 fn entry_paths(home: &HomePaths, name: &str, version: &str, rejected: bool) -> (PathBuf, PathBuf) {

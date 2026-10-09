@@ -99,13 +99,21 @@ this optional cache. The locked flate2 decoder retains its existing 65,535-byte
 per-field bounds for gzip extra/name/comment metadata; no overlapping header
 admission limit is added. Accepted inputs still complete trailer validation.
 
-Positive and admission-rejection entries now use `decoded-v2-` and
-`decoded-v2-rejected-` version keys. New readers do not reinterpret `decoded-v1`
-entries or their rejection decisions. Old readers likewise cannot select new
-entries. Both keep the existing storage name/version-key locks and best-effort
-GC accounting. No migration, legacy deletion or bulk prewarming is added. A rollback can require ordinary archive/HTTP refill when only
-the other policy's entry remains, including after optional compressed retirement.
-This is a cache miss, not permission to reinterpret a different policy's files.
+Positive and admission-rejection entries retain `decoded-v1-` and
+`decoded-v1-rejected-` version keys, the existing index schema, storage
+name/version-key locks and best-effort GC accounting. Existing valid positive
+entries remain directly reusable. Existing rejection records keep their original
+optional skip behavior: a version rejected under the earlier narrower policy may
+still use ordinary archive delivery until normal GC or a new storage version
+permits fresh admission. No policy marker, migration, legacy deletion or bulk
+prewarming is added.
+
+The unchanged namespace does not make enlarged entries readable by old Runners:
+old readers reject entries exceeding their admission limits rather than treating
+them as cache misses. Before enabling this candidate on a shared cache, drain or
+exclude older Runner readers. A rollback to those readers requires separately
+verified cache handling before serving; this PR does not perform or authorize
+cache cleanup. Old-compatible entries retain their existing behavior.
 
 Runner and Guest binaries remain one deployment artifact. A new Runner with an
 old Guest helper is not a supported combination: the old helper rejects enlarged
