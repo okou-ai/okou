@@ -353,28 +353,6 @@ function isCompletingSessionStale(
   );
 }
 
-async function claimSession(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorExternalCodeSessionRow;
-    readonly claimStartedAt: Date;
-  },
-  signal: AbortSignal,
-): Promise<BuiltinConnectorExternalCodeSessionRow | null> {
-  const [claimedSession] = await args.writeDb
-    .update(builtinConnectorExternalCodeSessions)
-    .set({ status: "completing", updatedAt: args.claimStartedAt })
-    .where(
-      and(
-        eq(builtinConnectorExternalCodeSessions.id, args.session.id),
-        eq(builtinConnectorExternalCodeSessions.status, "pending"),
-      ),
-    )
-    .returning(externalCodeSessionSelection);
-  signal.throwIfAborted();
-  return claimedSession ?? null;
-}
-
 async function claimStillCurrent(
   args: {
     readonly writeDb: Db;
@@ -1090,14 +1068,17 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
     }
 
     const claimStartedAt = now;
-    const claimedSession = await claimSession(
-      {
-        writeDb,
-        session,
-        claimStartedAt,
-      },
-      signal,
-    );
+    const [claimedSession] = await writeDb
+      .update(builtinConnectorExternalCodeSessions)
+      .set({ status: "completing", updatedAt: claimStartedAt })
+      .where(
+        and(
+          eq(builtinConnectorExternalCodeSessions.id, session.id),
+          eq(builtinConnectorExternalCodeSessions.status, "pending"),
+        ),
+      )
+      .returning(externalCodeSessionSelection);
+    signal.throwIfAborted();
     if (!claimedSession) {
       return badRequestMessage(
         "External-code authorization session is no longer active",
