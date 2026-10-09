@@ -146,5 +146,5 @@ file outcome instead of advancing a clock.
 - Pure internal unit tests are reserved for security-critical logic,
   algorithmically complex parsers, or state-transition matrices.
 
-See [CLI and Runner E2E Testing](./cli-e2e-testing.md) for the deployed-test
+See [CLI and Runner E2E Testing](cli-e2e-testing.md) for the deployed-test
 boundary.

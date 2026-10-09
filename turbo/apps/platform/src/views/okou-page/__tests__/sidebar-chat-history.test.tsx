@@ -238,7 +238,7 @@ test("Delete a chat after reviewing the impact", async () => {
 });
 
 /**
- * Deliberate exception to `docs/testing/testing-external-behavior.md`. The fade
+ * Deliberate exception to `docs/testing.md#external-behavior`. The fade
  * and the hover travel are a mask and a transform derived from measured text
  * width, and happy-dom has no layout engine: it reports every box as
  * zero-width and paints nothing, so neither the state nor the result exists on

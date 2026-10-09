@@ -5,7 +5,7 @@
   fill="none"
   xmlns="http://www.w3.org/2000/svg"
 >
-  <!-- Reuses the exact flower geometry and placement from turbo/apps/desktop/assets/icon.svg. -->
+  <!-- Reuses the Desktop flower geometry from desktop/Resources/symbol.svg. -->
   <!-- iOS supplies the icon mask; the source canvas has an opaque background without a frame. -->
   <rect width="1024" height="1024" fill="#FAF5F3" />
   <g transform="translate(512 512) scale(24.2) translate(-24 -24)">

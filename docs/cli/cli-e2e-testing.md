@@ -25,11 +25,11 @@ database directly, or use an internal fixture endpoint to construct or inspect
 state. Create state through the same product UI or supported public API that a
 user would use.
 
-If a behavior needs precise database state or an external-service mock, cover it
-in an API integration test instead. API tests may mount the narrow fixture routes
-they need by passing them explicitly to `setupApp({ routes })` or
-`setupAppWithRoutes`. Test routes must never be added to the deployed `ROUTES`
-registry.
+Cover deterministic error cases and external-service mocks in API integration
+tests. Those tests must still construct and observe scenarios through production
+APIs, genuine provider webhooks, or authenticated Runner protocols. Do not add
+private fixture routes or fixture-only setup to create otherwise unreachable
+state. Follow the [API testing boundary](../api/api-testing.md#external-behavior-boundary).
 
 ## Test boundaries
 
@@ -40,8 +40,8 @@ Keep each layer focused:
 - Browser E2E verifies third-party Clerk form integration.
 - Playwright verifies the deployed product journey, including the real preview
   API and runner fleet.
-- API integration tests own deterministic error cases, state matrices, provider
-  mocks, and fixture-only setup.
+- API integration tests own deterministic error cases, publicly reachable state
+  matrices, and external-provider mocks.
 - Crates tests own runner and sandbox behavior that does not require the product
   journey.
 

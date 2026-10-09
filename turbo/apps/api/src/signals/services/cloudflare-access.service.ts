@@ -16,7 +16,7 @@ import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { and, asc, count, eq, lt, ne, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -192,7 +192,7 @@ interface CreateCloudflareAccessConfigArgs {
   readonly featureContext: FeatureSwitchContext;
 }
 export const createCloudflareAccessConfig$ = command(
-  async ({ set }, args: CreateCloudflareAccessConfigArgs) => {
+  async ({ get, set }, args: CreateCloudflareAccessConfigArgs) => {
     const db = set(writeDb$);
 
     const scope = args.body.scope ?? "personal";
@@ -207,57 +207,51 @@ export const createCloudflareAccessConfig$ = command(
       orgId: args.owner.orgId,
       userId: scope === "organization" ? null : args.owner.userId,
     };
-    const transaction = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0103; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const [existing] = await tx
-          .select({
-            orgId: cloudflareAccessConfigs.orgId,
-            userId: cloudflareAccessConfigs.userId,
-          })
-          .from(cloudflareAccessConfigs)
-          .where(eq(cloudflareAccessConfigs.id, args.id));
-        const creation = sshCreationResult(owner, existing);
-        if (!creation.ok) {
-          return cloudflareAccessFailure("resourceIdConflict");
-        }
-        if (!creation.value) {
-          return { ok: true as const, value: undefined };
-        }
-        const [created] = await tx
-          .insert(cloudflareAccessConfigs)
-          .values({ id: args.id, ...owner, scope, ...prepared })
-          .returning(metadata);
-        if (!created) {
-          throw new Error("Cloudflare Access insert returned no row");
-        }
-        return { ok: true as const, value: response(created, []) };
-      }),
+    const [existing] = await get(db$)
+      .select({
+        orgId: cloudflareAccessConfigs.orgId,
+        userId: cloudflareAccessConfigs.userId,
+      })
+      .from(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.id, args.id));
+    const creation = sshCreationResult(owner, existing);
+    if (!creation.ok) {
+      return cloudflareAccessFailure("resourceIdConflict");
+    }
+    if (!creation.value) {
+      return { ok: true as const, value: undefined };
+    }
+    // The primary key, not the unlocked preflight, arbitrates concurrent creates.
+    const inserted = await settle(
+      db
+        .insert(cloudflareAccessConfigs)
+        .values({ id: args.id, ...owner, scope, ...prepared })
+        .returning(metadata),
     );
-    if (!transaction.ok) {
+    if (!inserted.ok) {
       if (
-        !isUniqueViolation(transaction.error, "cloudflare_access_configs_pkey")
+        !isUniqueViolation(inserted.error, "cloudflare_access_configs_pkey")
       ) {
-        throw transaction.error;
+        throw inserted.error;
       }
-      const [existing] = await db
+      const [existing] = await get(db$)
         .select({
           orgId: cloudflareAccessConfigs.orgId,
           userId: cloudflareAccessConfigs.userId,
         })
         .from(cloudflareAccessConfigs)
         .where(eq(cloudflareAccessConfigs.id, args.id));
-      return existing &&
-        existing.orgId === owner.orgId &&
-        existing.userId === owner.userId
+      const creation = sshCreationResult(owner, existing);
+      return creation.ok && existing
         ? { ok: true as const, value: undefined }
         : cloudflareAccessFailure("resourceIdConflict");
     }
-    const config = transaction.value;
-    if (config.ok && config.value) {
-      await publishCloudflareAccessClientInvalidation(args.owner, scope);
+    const [created] = inserted.value;
+    if (!created) {
+      throw new Error("Cloudflare Access insert returned no row");
     }
-    return config;
+    await publishCloudflareAccessClientInvalidation(args.owner, scope);
+    return { ok: true as const, value: response(created, []) };
   },
 );
 function referencingHosts(owner: Owner, configId: string) {

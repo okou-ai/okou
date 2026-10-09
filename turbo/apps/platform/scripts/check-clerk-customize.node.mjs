@@ -110,6 +110,6 @@ await test("failure output directs contributors to the Clerk guide", () => {
     },
   ]);
 
-  assert.match(output, /Read docs\/clerk-customize\.md/u);
+  assert.match(output, /Read docs\/app\/styles\.md#clerk-customization/u);
   assert.match(output, /clerk-auth-appearance\.ts:10:5 uses !important/u);
 });

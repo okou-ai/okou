@@ -151,7 +151,7 @@ function VisualizationChartButton({
           // to its edge the way a screenshot does.
           "flex aspect-video items-center justify-center overflow-hidden rounded-xl p-3 transition-colors",
           // Those covers are not selectable and take the hairline; this one is,
-          // and `docs/styles.md` gives selection on a picture tile the emphasis
+          // and `docs/app/styles.md` gives selection on a picture tile the emphasis
           // width -- at the hairline the selected rim reads as an antialiasing
           // artifact rather than as a state. Both branches carry that width so
           // selecting a tile never moves its siblings.

@@ -138,7 +138,7 @@ floor requires the separately planned API middleware change. Old API-version
 compatibility and the future OpenAPI v1 migration are outside this MVP.
 
 The iOS icon retains the Desktop flower geometry from
-`turbo/apps/desktop/assets/icon.svg`. Its source is `Assets/AppIcon.svg`, with a
+`desktop/Resources/symbol.svg`. Its source is `Assets/AppIcon.svg`, with a
 full opaque background because iOS supplies the outer icon mask. The 1024-pixel
 PNG is RGB without alpha; it removes the transparent Desktop padding that
 appeared as a black border on the simulator. The SVG was exported using

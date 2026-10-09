@@ -871,8 +871,6 @@ describe("okou scrape route", () => {
         parsers: [],
         proxy: "basic",
         skipTlsVerification: false,
-        maxAge: 0,
-        storeInCache: false,
         timeout: 25_000,
       });
       expect(response.body).toMatchObject({
@@ -1254,8 +1252,6 @@ describe("okou scrape route", () => {
         parsers: [],
         proxy: "enhanced",
         skipTlsVerification: false,
-        maxAge: 0,
-        storeInCache: false,
         timeout: 25_000,
       });
       expect(authorization).toBe("Bearer test-firecrawl-token");
