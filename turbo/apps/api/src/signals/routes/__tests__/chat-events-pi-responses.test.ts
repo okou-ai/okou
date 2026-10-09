@@ -1,7 +1,9 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createHash, randomUUID } from "node:crypto";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
@@ -21,7 +23,6 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
-  createGptUsagePricingResolution,
   userMessages,
   eventBackedContents,
   occurrences,
@@ -116,7 +117,7 @@ async function configureResponsesWithOwnedRuns(args: {
 
   // These selected callbacks own every main Run before its first claim. This
   // hook and the producer hook both finish Runs before releasing model state.
-  onTestFinished(cleanupOwnedRuns);
+  const operations = createFixtureOperationOwner(cleanupOwnedRuns);
 
   async function sendOwnedRun(...parameters: Parameters<typeof sendChatRun>) {
     const run = await sendChatRun(...parameters);
@@ -176,9 +177,21 @@ async function configureResponsesWithOwnedRuns(args: {
   return {
     model: model === "okou-1.0" ? null : model,
     runModel: model,
-    sendChatRun: sendOwnedRun,
-    claimChatRun: claimOwnedRun,
-    cancelChatRun: cancelOwnedRun,
+    sendChatRun: (...parameters) => {
+      return operations.run(() => {
+        return sendOwnedRun(...parameters);
+      });
+    },
+    claimChatRun: (...parameters) => {
+      return operations.run(() => {
+        return claimOwnedRun(...parameters);
+      });
+    },
+    cancelChatRun: (...parameters) => {
+      return operations.run(() => {
+        return cancelOwnedRun(...parameters);
+      });
+    },
   };
 }
 
@@ -217,29 +230,23 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
-    await seedBuiltInModelKey(context, "okou-1.0");
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const usagePricingResolution = await createGptUsagePricingResolution();
+    const { actor, agentId, runnerGroup } = await publicChatActor(context);
     const { model, sendChatRun, claimChatRun, cancelChatRun } =
       await configureResponsesWithOwnedRuns({
         actor,
         agentId,
         runnerGroup,
-        selectedModel: "okou-1.0",
+        selectedModel: "gpt-6-luna",
       });
 
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiCheckpointObjectStore();
     const seedPrompt = "seed the canonical Pi binding";
-    const first = await sendChatRun(
-      actor,
-      {
-        agentId,
-        prompt: seedPrompt,
-        model,
-      },
-      usagePricingResolution,
-    );
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: seedPrompt,
+      model,
+    });
     await flushWaitUntilForTest();
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     const legacy = MemoryPiSession.create({
@@ -347,22 +354,17 @@ describe("CHAT-02: model-first routing", () => {
       firstClaim.sandboxHeaders,
       [200],
       undefined,
-      usagePricingResolution,
     );
     await waitForRunStatus(actor, first.runId, "completed");
     await flushWaitUntilForTest();
 
     const prompt = "continue the migrated OpenRouter session";
-    const second = await sendChatRun(
-      actor,
-      {
-        agentId,
-        threadId: first.threadId,
-        prompt,
-        model,
-      },
-      usagePricingResolution,
-    );
+    const second = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt,
+      model,
+    });
     await flushWaitUntilForTest();
     const claim = await claimChatRun(runnerGroup, second.runId);
     const resumeSession = claim.claim.resumeSession;
@@ -397,8 +399,7 @@ describe("CHAT-02: model-first routing", () => {
 
   it("reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for gpt-6-luna", async () => {
     const selectedModel = "gpt-6-luna";
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const usagePricingResolution = await createGptUsagePricingResolution();
+    const { actor, agentId, runnerGroup } = await publicChatActor(context);
     const { model, sendChatRun, claimChatRun } =
       await configureResponsesWithOwnedRuns({
         actor,
@@ -420,15 +421,11 @@ describe("CHAT-02: model-first routing", () => {
       "returned standard Luna answer",
     ] as const;
 
-    const first = await sendChatRun(
-      actor,
-      {
-        agentId,
-        prompt: prompts[0],
-        model,
-      },
-      usagePricingResolution,
-    );
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: prompts[0],
+      model,
+    });
     await flushWaitUntilForTest();
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     expect(firstClaim.claim.piModelConfig).toMatchObject({
@@ -443,7 +440,6 @@ describe("CHAT-02: model-first routing", () => {
       prompt: prompts[0],
       run: first,
       responsesModel: { provider: "openai-codex", model: selectedModel },
-      usagePricingResolution,
     });
     const firstSessionId = await readCompletedRunSessionId(
       context,
@@ -451,17 +447,13 @@ describe("CHAT-02: model-first routing", () => {
       first.runId,
     );
 
-    const fast = await sendChatRun(
-      actor,
-      {
-        agentId,
-        threadId: first.threadId,
-        prompt: prompts[1],
-        model,
-        runOptions: { codexServiceTier: "fast" },
-      },
-      usagePricingResolution,
-    );
+    const fast = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: prompts[1],
+      model,
+      runOptions: { codexServiceTier: "fast" },
+    });
     await flushWaitUntilForTest();
     const fastClaim = await claimChatRun(runnerGroup, fast.runId);
     expect(fastClaim.claim.piModelConfig).toMatchObject({
@@ -476,7 +468,6 @@ describe("CHAT-02: model-first routing", () => {
       prompt: prompts[1],
       run: fast,
       responsesModel: { provider: "openai-codex", model: selectedModel },
-      usagePricingResolution,
     });
     await expect(
       readCompletedRunSessionId(context, actor, fast.runId),
@@ -485,16 +476,12 @@ describe("CHAT-02: model-first routing", () => {
     await chat.updateThreadModelSelection(actor, first.threadId, model, {
       codexServiceTier: null,
     });
-    const returned = await sendChatRun(
-      actor,
-      {
-        agentId,
-        threadId: first.threadId,
-        prompt: prompts[2],
-        model,
-      },
-      usagePricingResolution,
-    );
+    const returned = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: prompts[2],
+      model,
+    });
     await flushWaitUntilForTest();
     const returnedClaim = await claimChatRun(runnerGroup, returned.runId);
     expect(returnedClaim.claim.piModelConfig).toMatchObject({
@@ -509,7 +496,6 @@ describe("CHAT-02: model-first routing", () => {
       prompt: prompts[2],
       run: returned,
       responsesModel: { provider: "openai-codex", model: selectedModel },
-      usagePricingResolution,
     });
     await expect(
       readCompletedRunSessionId(context, actor, returned.runId),
@@ -596,8 +582,14 @@ describe("CHAT-02: model-first routing", () => {
 
   it("promotes queued fast gpt-6-luna to a priority Pi Sandbox run", async () => {
     const selectedModel = "gpt-6-luna";
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const usagePricingResolution = await createGptUsagePricingResolution();
+    const {
+      actor,
+      agentId,
+      runnerGroup,
+      claimChatRun,
+      sendChatRun,
+      requestSendEvent,
+    } = await publicChatActor(context);
     // The anchor must stay on the native Runner while the queued target
     // proves Pi promotion; Sonnet 5 would itself run through Pi.
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -616,7 +608,7 @@ describe("CHAT-02: model-first routing", () => {
     const answer = "queued fast Luna Sandbox answer";
 
     const queuedId = randomUUID();
-    const queued = await chat.requestSendEvent(
+    const queued = await requestSendEvent(
       actor,
       {
         agentId,
@@ -627,7 +619,6 @@ describe("CHAT-02: model-first routing", () => {
         runOptions: { codexServiceTier: "fast" },
       },
       [201],
-      { usagePricingResolution },
     );
     if (queued.status !== 201) {
       throw new Error("Expected queued fast Luna to enter the chat queue");
@@ -635,9 +626,7 @@ describe("CHAT-02: model-first routing", () => {
     expect(queued.body.runId).toBeNull();
 
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-      usagePricingResolution,
-    });
+    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {});
     await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
@@ -673,7 +662,6 @@ describe("CHAT-02: model-first routing", () => {
       prompt,
       run: { runId: promotedRunId, threadId: anchor.threadId },
       responsesModel: { provider: "openai-codex", model: selectedModel },
-      usagePricingResolution,
     });
     const finalEvents = await waitForThreadMessages(
       actor,

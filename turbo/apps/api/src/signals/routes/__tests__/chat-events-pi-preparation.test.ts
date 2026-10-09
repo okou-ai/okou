@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { PI_SANDBOX_INSTALLED_CLI_MIN_VERSION } from "@okouai/api-contracts/contracts/runners";
 import {
   PI_AGENT_RUNTIME_VERSION,
@@ -6,26 +7,26 @@ import {
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
-import {
-  createChatEventsFixture,
-  createGptUsagePricingResolution,
-} from "./helpers/chat-events-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const {
   api,
-  entitledChatActor,
   configureSubscriptionPiModel,
-  sendChatRun,
-  sendWaitingChatInput,
-  claimChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: model-first routing", () => {
   it("launches an at-capacity Pi send on a fresh session once a slot frees", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const {
+      actor,
+      agentId,
+      runnerGroup,
+      claimChatRun,
+      sendChatRun,
+      sendWaitingChatInput,
+    } = await publicChatActor(context);
     await api.heartbeatRunner(runnerGroup);
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -35,14 +36,13 @@ describe("CHAT-02: model-first routing", () => {
       model: "claude-fable-5-1",
     });
     await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
-    const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiCheckpointObjectStore();
     const prompt = "keep the complete admission independent";
-    const waiting = await sendWaitingChatInput(
-      actor,
-      { agentId, prompt, model: "gpt-6-luna" },
-      usagePricingResolution,
-    );
+    const waiting = await sendWaitingChatInput(actor, {
+      agentId,
+      prompt,
+      model: "gpt-6-luna",
+    });
     await cancelChatRun(actor, anchor.runId);
     const run = await waiting.launchedRun();
     const claimed = await claimChatRun(runnerGroup, run.runId);

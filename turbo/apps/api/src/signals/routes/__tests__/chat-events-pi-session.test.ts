@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -7,7 +8,6 @@ import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
   GPT_PI_BDD_MODELS,
-  createGptUsagePricingResolution,
   claimEnvironment,
   eventBackedContents,
   assistantEvent,
@@ -19,10 +19,7 @@ const {
   api,
   chat,
   chatCallbacks,
-  entitledChatActor,
   configureSubscriptionPiModel,
-  sendChatRun,
-  claimChatRun,
   waitForThreadMessages,
   completeChatRunOk,
   cancelChatRun,
@@ -34,21 +31,22 @@ const {
 
 describe("CHAT-02: personal subscription model selection", () => {
   it("preserves one Pi session while selecting Luna, Sol, Luna, and Luna again", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup, claimChatRun, sendChatRun } =
+      await publicChatActor(context);
     await configureSubscriptionPiModel(actor);
 
-    const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiCheckpointObjectStore();
     let threadId: string | undefined;
     let sessionId: string | null | undefined;
     const models = [...GPT_PI_BDD_MODELS, "gpt-6-luna"] as const;
     for (const [index, model] of models.entries()) {
-      const run = await sendChatRun(
-        actor,
-        { agentId, threadId, model, prompt: `continue with ${model}` },
-        usagePricingResolution,
-      );
+      const run = await sendChatRun(actor, {
+        agentId,
+        threadId,
+        model,
+        prompt: `continue with ${model}`,
+      });
       threadId = run.threadId;
       await flushWaitUntilForTest();
       const claim = await claimChatRun(runnerGroup, run.runId);
@@ -70,7 +68,6 @@ describe("CHAT-02: personal subscription model selection", () => {
         prompt: `continue with ${model}`,
         answer: `answer ${index + 1}`,
         responsesModel: { provider: "openai", model },
-        usagePricingResolution,
       });
       const session = await readCompletedRunSessionId(
         context,
@@ -86,7 +83,8 @@ describe("CHAT-02: personal subscription model selection", () => {
   }, 90_000);
 
   it("preserves generations across Luna Pi and fast Astra Codex boundaries", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup, claimChatRun, sendChatRun } =
+      await publicChatActor(context);
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected entitled chat actor to have an org");
@@ -99,15 +97,14 @@ describe("CHAT-02: personal subscription model selection", () => {
     const firstPiAnswer = "first Pi generation answer";
     const returnedPiAnswer = "returned Pi generation answer";
     const repeatedPiAnswer = "repeated Pi generation answer";
-    const usagePricingResolution = await createGptUsagePricingResolution();
     const responsesModel = { provider: "openai", model: piModel } as const;
 
     const firstPiPrompt = "start the first Pi generation";
-    const firstPi = await sendChatRun(
-      actor,
-      { agentId, prompt: firstPiPrompt, model: piModel },
-      usagePricingResolution,
-    );
+    const firstPi = await sendChatRun(actor, {
+      agentId,
+      prompt: firstPiPrompt,
+      model: piModel,
+    });
     await flushWaitUntilForTest();
     await completeSandboxFirstPiRun({
       actor,
@@ -117,7 +114,6 @@ describe("CHAT-02: personal subscription model selection", () => {
       prompt: firstPiPrompt,
       answer: firstPiAnswer,
       responsesModel,
-      usagePricingResolution,
     });
     const firstSessionId = await readCompletedRunSessionId(
       context,
@@ -158,16 +154,12 @@ describe("CHAT-02: personal subscription model selection", () => {
     await chat.updateThreadModelSelection(actor, firstPi.threadId, piModel, {
       codexServiceTier: null,
     });
-    const returnedPi = await sendChatRun(
-      actor,
-      {
-        agentId,
-        threadId: firstPi.threadId,
-        prompt: returnedPiPrompt,
-        model: piModel,
-      },
-      usagePricingResolution,
-    );
+    const returnedPi = await sendChatRun(actor, {
+      agentId,
+      threadId: firstPi.threadId,
+      prompt: returnedPiPrompt,
+      model: piModel,
+    });
     // A new Pi generation starts from a fresh Sandbox session; prior visible
     // turns travel only through the run context instructions.
     await flushWaitUntilForTest();
@@ -203,7 +195,6 @@ describe("CHAT-02: personal subscription model selection", () => {
       prompt: returnedPiPrompt,
       answer: returnedPiAnswer,
       responsesModel,
-      usagePricingResolution,
     });
 
     const piFollowUpPrompt = "resume the returned Pi generation once";
@@ -284,16 +275,12 @@ describe("CHAT-02: personal subscription model selection", () => {
     await chat.updateThreadModelSelection(actor, firstPi.threadId, piModel, {
       codexServiceTier: null,
     });
-    const repeatedPi = await sendChatRun(
-      actor,
-      {
-        agentId,
-        threadId: firstPi.threadId,
-        prompt: repeatedPiPrompt,
-        model: piModel,
-      },
-      usagePricingResolution,
-    );
+    const repeatedPi = await sendChatRun(actor, {
+      agentId,
+      threadId: firstPi.threadId,
+      prompt: repeatedPiPrompt,
+      model: piModel,
+    });
     await flushWaitUntilForTest();
     const repeatedPiClaim = await claimChatRun(runnerGroup, repeatedPi.runId);
     expect(repeatedPiClaim.claim.resumeSession).toBeNull();
@@ -339,7 +326,6 @@ describe("CHAT-02: personal subscription model selection", () => {
       prompt: repeatedPiPrompt,
       answer: repeatedPiAnswer,
       responsesModel,
-      usagePricingResolution,
     });
 
     for (const completed of [

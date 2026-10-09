@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { randomUUID } from "node:crypto";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
@@ -13,7 +14,6 @@ import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
-  createGptUsagePricingResolution,
   userMessages,
 } from "./helpers/chat-events-fixture";
 
@@ -237,9 +237,9 @@ describe("CHAT-02: run-level model overrides", () => {
   )(
     "reuses one $name Pi session across standard, Fast, and standard requests",
     async (route) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup, claimChatRun, sendChatRun } =
+        await publicChatActor(context);
       const { secret } = await configureUserOwnedGptPiModel(actor, route);
-      const pricing = await createGptUsagePricingResolution();
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
 
@@ -263,7 +263,6 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "Luna standard start",
         run: first,
         responsesModel: { provider: "openai", model: route.selectedModel },
-        usagePricingResolution: pricing,
       });
       const firstSession = await readCompletedRunSessionId(
         context,
@@ -298,7 +297,6 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "Luna Fast continuation",
         run: fast,
         responsesModel: { provider: "openai", model: route.selectedModel },
-        usagePricingResolution: pricing,
       });
       await expect(
         readCompletedRunSessionId(context, actor, fast.runId),
@@ -331,7 +329,6 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "Luna standard return",
         run: standard,
         responsesModel: { provider: "openai", model: route.selectedModel },
-        usagePricingResolution: pricing,
       });
       await expect(
         readCompletedRunSessionId(context, actor, standard.runId),

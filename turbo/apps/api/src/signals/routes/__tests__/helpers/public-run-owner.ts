@@ -20,6 +20,7 @@ export function publicRunOwner(
   context: TestContext,
   actor: ApiTestUser,
   options: {
+    readonly restoreEnvironment?: () => void;
     readonly beforeRuns?: () => Promise<void>;
     readonly afterRuns?: () => Promise<void>;
   } = {},
@@ -35,6 +36,7 @@ export function publicRunOwner(
     if (runnerGroup) {
       mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
     }
+    options.restoreEnvironment?.();
   }
   async function cleanup() {
     if (cleaned) {
@@ -81,9 +83,7 @@ export function publicRunOwner(
   let previousCleanupRunnerGroup: string | undefined;
   const operations = createFixtureOperationOwner(async () => {
     const result = await settleIncludingAbort(cleanup);
-    if (runnerGroup) {
-      mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousCleanupRunnerGroup);
-    }
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousCleanupRunnerGroup);
     if (!result.ok) {
       throw result.error;
     }
