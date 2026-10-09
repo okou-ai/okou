@@ -8,6 +8,7 @@ import {
   AUTO_RUN_MODEL,
   AUTO_RUN_PRICING_PROVIDER,
   autoRunBillingProvider,
+  autoRunPricingLongContextMinTotalInputTokens,
   explicitModelSettings,
   isAutoSelectedModel,
   sameSelectedModel,
@@ -100,6 +101,22 @@ describe("selected and runtime Auto identities", () => {
     });
     expect(settings.auto).toEqual({ effort: "high" });
   });
+  it.each([
+    [100000, false, false],
+    [100001, true, false],
+    [272000, true, false],
+    [272001, true, true],
+  ])(
+    "classifies %i input tokens under new Haiku and retained legacy tariffs",
+    (inputTokens, canonicalLong, legacyLong) => {
+      expect(
+        inputTokens >= autoRunPricingLongContextMinTotalInputTokens("auto"),
+      ).toBe(canonicalLong);
+      expect(
+        inputTokens >= autoRunPricingLongContextMinTotalInputTokens("okou-1.0"),
+      ).toBe(legacyLong);
+    },
+  );
   it("bounds executable runtime identity to the captured SQL column", () => {
     expect(isAutoRunPreset(`@preset/${"x".repeat(247)}`)).toBe(true);
     expect(isAutoRunPreset(`@preset/${"x".repeat(248)}`)).toBe(false);

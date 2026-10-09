@@ -2,6 +2,7 @@ import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/mode
 import {
   AUTO_SELECTED_MODEL,
   autoRunBillingProvider,
+  autoRunPricingLongContextMinTotalInputTokens,
   isAutoSelectedModel,
   AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   AUTO_RUN_MODEL,
@@ -369,6 +370,8 @@ export function catalogAutoRoute(
         ...autoCatalogRoute(),
         model,
         upstreamModel: catalog.autoUpstreamModel,
+        longContextMinTotalInputTokens:
+          autoRunPricingLongContextMinTotalInputTokens(model),
         // Canonical decisions use runtime pricing; retained PR1 captures keep the legacy key.
         pricingProvider: autoRunBillingProvider(
           model,

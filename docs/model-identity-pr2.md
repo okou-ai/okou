@@ -50,8 +50,12 @@ an intent, not the new persisted identity.
   `gpt-6-luna` maintenance binding is explicitly independent of foreground Auto;
   its pricing/reporting domain is unchanged.
 - Preflight still requires all four token categories and their long-context
-  variants on the existing Auto capability class (threshold 272001 total input
-  tokens). Auto has no Fast categories. The existing same-provider
+  variants. Newly selected canonical Auto captures the approved Haiku tariff's
+  inclusive billing boundary of **100001 total input tokens**, including Luna
+  fallback. Retained legacy captures keep **272001** and their original prices;
+  already serialized execution configurations are not rewritten. This is a
+  billing-policy boundary, not a change to runtime model capabilities. The DSF
+  tariff is identical on both sides of that boundary. Auto has no Fast categories. The existing same-provider
   `__fallback__` lookup is not a license to borrow another preset's economics;
   it requires its own approved category coverage.
 - If a captured preset observation loses its authoritative price before
@@ -63,7 +67,7 @@ an intent, not the new persisted identity.
 - Runtime-key reporting and SQL grouping remain as prepared in PR1. The repeated
   literal `'auto'` SQL expressions and their driver decoders are unchanged.
 
-## Pricing provenance and blocker
+## Pricing provenance and owner-approved tariff
 
 A read-only MaskDB inventory on **2026-10-09 UTC** queried the complete
 `usage_pricing` model projection (247 rows, limit 1000, returned 247) and all
@@ -78,13 +82,33 @@ authority to copy rates or evidence that either preset has approved economics.
 The OpenRouter provider preset definitions and approved per-preset rates were
 not established by this inventory.
 
-**Blocked:** an authorized pricing owner must establish the identity-to-preset
-mapping and approve input, output, cache-read and cache-creation rates, including
-each long-context variant, for every enabled default/override preset. Refresh
-this complete inventory immediately before promotion. This PR intentionally
-contains no price migration, production SQL/config writes or fabricated rates.
-Missing price rows reject new platform executions; that rejection is not a safe
-user-facing activation substitute.
+After that inventory, Ethan explicitly approved **Haiku 5.5 pricing for the
+whole default preset, including Luna fallback**, rather than response-model
+pricing. Sources verified on 2026-10-09 UTC:
+[Anthropic](https://www.anthropic.com/claude-haiku-5-5),
+[OpenRouter's DeepSeek endpoint](https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash/endpoints)
+and [DeepSeek](https://api-docs.deepseek.com/quick_start/pricing/).
+
+| Preset / tier               | Input | Output | Cache read | Cache creation |
+| --------------------------- | ----: | -----: | ---------: | -------------: |
+| Default, at most 100K input |   100 |    500 |         10 |            125 |
+| Default, over 100K input    |   500 |   2500 |         50 |            625 |
+| DSF, either tier            |   300 |   1200 |          6 |            300 |
+
+Values are credits per million tokens ($1 = 1000 credits). Haiku uses the
+5-minute cache-write tariff, not the 1-hour tariff. DSF uses the official
+DeepSeek endpoint's standard/peak list price, not dynamic off-peak/provider
+discounts. Cache creation is priced as uncached input, not a separate premium.
+This is the approved platform tariff, not pass-through actual upstream cost.
+
+Migration `1356_price_canonical_auto_presets` adds all 16 rows. It accepts an
+operator's identical pre-seed and refuses a conflicting live tariff; all legacy
+prices and settled amounts remain unchanged. It adds no switch or constraint.
+There were **no production SQL/config writes**. Before promotion, verify the
+migration actually ran and refresh all enabled presets: any other preset still
+needs explicit approved coverage. Installed-client/runtime, serving/rollback
+and native-history acceptance gates below remain unresolved. Missing prices
+still reject execution; that is not an activation substitute.
 
 ## Mixed-version matrix and response window
 
@@ -174,7 +198,14 @@ missing-price pending/retry cycle, installed supported consumers and both
 mixed native-history/R2 restore directions are **not** proven by these checks.
 Authoritative prices and authorized nonproduction execution are required;
 private table seeds, copied rates and fabricated approved business state are
-not substitutes. No full local Vitest suite or local dev server was run.
+not substitutes. The owner-approved pricing follow-up passed 14 Core tariff
+boundary/compatibility cases, 11 public writer/preference cases, 29 Pi protocol
+cases and 25 CLI cases. The complete DB migration-consistency suite passed
+against a fresh disposable PostgreSQL 18 database. Local replay preserved all
+pricing rows byte-for-byte; a conflicting-tariff replay raised and rolled back
+without persisting its test change. The existing routing suite still failed
+10 of 13 scenarios; it is not green after adding prices either. No full local
+Vitest suite or local dev server was run.
 
 ## Release 3 remains separate
 

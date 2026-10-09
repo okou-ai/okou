@@ -60,5 +60,14 @@ export function isAutoRunPreset(
     value.length <= 255
   );
 }
-/** Preserve Auto's existing long-context classification without a catalog lookup. */
+/** Retained legacy Auto captures keep the original Luna billing boundary. */
 export const AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS = 272001;
+
+/** New canonical Auto uses the approved Haiku tariff, including Luna fallback. */
+export function autoRunPricingLongContextMinTotalInputTokens(
+  selectedModel: string,
+): number {
+  return selectedModel === AUTO_SELECTED_MODEL
+    ? 100001
+    : AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS;
+}
