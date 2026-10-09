@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.127](https://github.com/okou-ai/okou/compare/host-worker-v1.5.126...host-worker-v1.5.127) (2026-10-09)
+
+
+### Refactoring
+
+* **artifacts:** remove video poster extraction ([#38146](https://github.com/okou-ai/okou/issues/38146)) ([641cf0d](https://github.com/okou-ai/okou/commit/641cf0ddff6c631cf94386e6c3d26c78395c63aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.543.0
+
 ## [1.5.126](https://github.com/okou-ai/okou/compare/host-worker-v1.5.125...host-worker-v1.5.126) (2026-10-09)
 
 

@@ -1,6 +1,6 @@
 [package]
 name = "rfb-client"
-version = "0.21.2"
+version = "0.21.3"
 edition.workspace = true
 publish = false
 description = "Bounded RFB authentication, captures and serialized input"
