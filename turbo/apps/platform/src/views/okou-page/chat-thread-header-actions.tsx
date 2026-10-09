@@ -89,6 +89,29 @@ export function ChatThreadPinButton({
   );
 }
 
+function MobileChatThreadMoreMenuTrigger() {
+  const { t } = useTranslation();
+  return (
+    <DropdownMenuTrigger
+      render={
+        <Button
+          showTooltip
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          iconSize="md"
+          className="size-11 shrink-0"
+          aria-label={t(($) => {
+            return $.chat.actions.more;
+          })}
+        />
+      }
+    >
+      <Ellipsis size={18} />
+    </DropdownMenuTrigger>
+  );
+}
+
 export function MobileChatThreadMoreMenu({
   thread,
 }: {
@@ -100,6 +123,9 @@ export function MobileChatThreadMoreMenu({
   const pinned = useGet(thread.pin.pinned$);
   const setPinned = useSet(thread.pin.setPinned$);
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
+  const menuOpen = useGet(thread.renameMenu.open$);
+  const menuFinalFocus = useGet(thread.renameMenu.finalFocus$);
+  const setMenuOpen = useSet(thread.renameMenu.setOpen$);
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archived = useGet(thread.threadMeta$)?.archived === true;
@@ -114,25 +140,14 @@ export function MobileChatThreadMoreMenu({
   const openArtifacts = useOpenThreadArtifacts(thread);
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            showTooltip
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="size-11 shrink-0"
-            aria-label={t(($) => {
-              return $.chat.actions.more;
-            })}
-          />
-        }
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <MobileChatThreadMoreMenuTrigger />
+      <DropdownMenuContent
+        align="end"
+        className="min-w-48"
+        // The rename dialog owns focus after this menu hands off to it.
+        finalFocus={menuFinalFocus}
       >
-        <Ellipsis size={18} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-48">
         <DropdownMenuItem
           className="min-h-11"
           onClick={() => {

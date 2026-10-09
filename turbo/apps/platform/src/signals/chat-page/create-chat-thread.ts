@@ -61,6 +61,7 @@ import {
   type ThreadScrollPosition,
 } from "./chat-thread-scroll.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
+import { createChatThreadRenameMenuSignals } from "./chat-thread-rename-menu.ts";
 import {
   collectSuccessfulAttachmentInfos,
   prepareUserMessageFromDraft$,
@@ -637,6 +638,7 @@ function createComputerUseHostSelection(
 function createThreadOwnedSignals(threadId: string) {
   return {
     headerAutomations: createHeaderAutomationSignals(threadId),
+    renameMenu: createChatThreadRenameMenuSignals(),
     copyEvent$,
   };
 }

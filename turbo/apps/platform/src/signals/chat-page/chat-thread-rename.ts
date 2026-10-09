@@ -14,12 +14,16 @@ export interface RenameChatThreadDialogRequest {
 }
 
 export const openRenameChatThreadDialogFromThreadMeta$ = command(
-  ({ set }, request: RenameChatThreadDialogRequest, _signal: AbortSignal) => {
-    set(openRenameChatThreadDialog$, {
-      threadId: request.threadId,
-      title: request.title,
-      agentId: request.agentId,
-    });
+  ({ set }, request: RenameChatThreadDialogRequest, signal: AbortSignal) => {
+    set(
+      openRenameChatThreadDialog$,
+      {
+        threadId: request.threadId,
+        title: request.title,
+        agentId: request.agentId,
+      },
+      signal,
+    );
   },
 );
 
