@@ -7,13 +7,10 @@ import { Link } from "../router/link.tsx";
 
 export const STRUCTURED_INLINE_REFERENCE_CLASS =
   "relative -top-px mx-0.5 inline-flex h-7 max-w-[240px] items-center " +
-  "gap-1.5 rounded-md bg-orange-500/10 px-2 align-middle text-[13px] " +
-  "font-medium text-orange-600 dark:bg-orange-400/15 dark:text-orange-300";
+  "gap-1.5 rounded-md px-2 align-middle text-[13px] font-medium text-foreground";
 const STRUCTURED_INLINE_INTERACTIVE_CLASS =
-  "transition-colors hover:bg-orange-500/15 focus-visible:outline-none " +
-  "focus-visible:ring-2 focus-visible:ring-orange-500/30 " +
-  "active:bg-orange-500/20 dark:hover:bg-orange-400/20 " +
-  "dark:active:bg-orange-400/25";
+  "transition-colors hover:bg-state-hover focus-visible:outline-none " +
+  "focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-state-pressed";
 export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFERENCE_CLASS} ${STRUCTURED_INLINE_INTERACTIVE_CLASS}`;
 
 /**
@@ -23,10 +20,8 @@ export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFER
  * a chip inside Markdown looking like one in a user message.
  */
 const MARKDOWN_CHIP_RESET_CLASS =
-  "bg-orange-500/10! text-orange-600! no-underline! " +
-  "hover:bg-orange-500/15! active:bg-orange-500/20! " +
-  "dark:bg-orange-400/15! dark:text-orange-300! " +
-  "dark:hover:bg-orange-400/20! dark:active:bg-orange-400/25!";
+  "bg-transparent! text-foreground! no-underline! " +
+  "hover:bg-state-hover! active:bg-state-pressed!";
 
 /**
  * An in-App link to a chat thread, shown as an inline chip with its title.
