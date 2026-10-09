@@ -193,6 +193,15 @@ describe("workflow skill storage presigned URL cache", () => {
       if (!mount?.archiveUrl) {
         throw new Error("Missing ordinary readonly Storage archive URL");
       }
+      expect(mount.mountPath).toBe(
+        `/home/user/.claude/skills/custom-${custom.slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
+      );
+      expect(claim.connectorRuntimeTargets).not.toContainEqual(
+        expect.objectContaining({
+          kind: "custom",
+          customConnectorId: custom.id,
+        }),
+      );
       return { runId: run.runId, archiveUrl: mount.archiveUrl };
     };
 

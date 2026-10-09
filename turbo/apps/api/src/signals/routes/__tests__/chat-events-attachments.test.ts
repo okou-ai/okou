@@ -903,6 +903,12 @@ describe("CHAT-02: generation templates and attachments", () => {
       "make a launch deck\n\n[Template #1: Presentation template (presentation)]",
     );
     const presentationPrompt = presentationRun.appendSystemPrompt ?? "";
+    expect(presentationPrompt).toMatch(
+      /# Current User Info[\s\S]+# Current Integration[\s\S]+# Inline Templates[\s\S]+# Built-in image model[\s\S]+# Restricted Explicit Content/,
+    );
+    expect(presentationPrompt.match(/^# .+$/gm)?.at(-1)).toBe(
+      "# Restricted Explicit Content",
+    );
     expect(presentationPrompt).toContain("# Inline Templates");
     expect(presentationPrompt).toContain(
       "Selected presentation template: Playful Launch Presentation (template:html-ppt-playful-launch)",

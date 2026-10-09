@@ -6,12 +6,13 @@ import {
   workflowAutomationAgentPrompt,
   workflowAutomationEventTypeSchema,
 } from "../workflow-automation-context.service";
-import type { IntegrationPromptVariables, ThreadPromptSource } from "./types";
+import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { ThreadPromptSource } from "./types";
 
 export function createAutomationThreadPrompt(
   source$: Computed<Promise<ThreadPromptSource | null>>,
   context$: ReturnType<typeof createThreadAutomationContext>,
-): Computed<Promise<IntegrationPromptVariables | null>> {
+): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
     const source = await get(source$);
     if (source?.event.contextType !== "automation") {
@@ -45,10 +46,8 @@ export function createAutomationThreadPrompt(
           }),
         ),
       },
-      systemPromptVariables: {
-        integrationContext: "",
-        channelUserIdentity: "",
-      },
+      systemPromptVariables: {},
+      skillVolumes: [],
     };
   });
 }

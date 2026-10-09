@@ -55,6 +55,7 @@ import {
   canReuseSession,
   type SessionExecutionIdentity,
 } from "../session-compatibility";
+import type { RunPromptAndSkills } from "../run-prompt-and-skills";
 import { createIncompletePrompt } from "./incomplete";
 import type { PickedThreadInputEvent } from "./types";
 
@@ -261,7 +262,7 @@ export function createRotatedPrompt(
   session$: Computed<Promise<SessionExecutionIdentity | null>>,
   memberRoutes$: Computed<Promise<MemberModelRouteContext>>,
   claimCatalog$: Computed<Promise<ModelCatalog>>,
-): Computed<Promise<string>> {
+): Computed<Promise<RunPromptAndSkills>> {
   const prior$ = createPriorRunsPrompt(
     pickedEvent$,
     session$,
@@ -274,6 +275,10 @@ export function createRotatedPrompt(
       get(prior$),
       get(incomplete$),
     ]);
-    return prior || incomplete;
+    return {
+      systemPromptVariables: { continuationContext: prior || incomplete },
+      userPromptVariables: {},
+      skillVolumes: [],
+    };
   });
 }

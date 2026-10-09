@@ -2,12 +2,13 @@ import { computed, type Computed } from "ccstate";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import { appendTeamsFilesToPrompt, buildTeamsPrompt } from "../teams-prompt";
 import type { TeamsThreadContext } from "../thread-run-context.service";
-import type { IntegrationPromptVariables, ThreadPromptSource } from "./types";
+import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { ThreadPromptSource } from "./types";
 
 export function createTeamsThreadPrompt(
   source$: Computed<Promise<ThreadPromptSource | null>>,
   context$: Computed<Promise<TeamsThreadContext>>,
-): Computed<Promise<IntegrationPromptVariables | null>> {
+): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
     const source = await get(source$);
     if (source?.event.contextType !== "teams") {
@@ -66,6 +67,7 @@ export function createTeamsThreadPrompt(
         }),
         channelUserIdentity: identity.join("\n"),
       },
+      skillVolumes: [],
     };
   });
 }
