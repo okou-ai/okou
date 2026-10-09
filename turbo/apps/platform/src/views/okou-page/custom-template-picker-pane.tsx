@@ -34,8 +34,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
-  Toggle,
-  ToggleGroup,
+  SegmentControl,
+  SegmentControlItem,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -509,35 +509,31 @@ function CustomTemplateKindFilters({
     },
   ] as const;
   return (
-    <ToggleGroup<UserTemplateKind>
-      value={[kind]}
-      onValueChange={(value) => {
-        // Reapplying the projected kind also pins the initial catalog default.
-        setKind(value[0] ?? kind);
+    // Three fixed, mutually exclusive kinds are a segment control: one bounded
+    // control at the band's h-9, whose raised segment says which kind is shown.
+    // A phone gives it the full row, so its segments split the width evenly.
+    <SegmentControl<UserTemplateKind>
+      value={kind}
+      onValueChange={(value: UserTemplateKind) => {
+        setKind(value);
       }}
       aria-label={t(($) => {
         return $.artifacts.templates.categories;
       })}
-      // Below lg the filters wrap onto their own row under the search and the
-      // import; at lg they sit between them, in reading order.
-      className="order-last w-full gap-1 lg:order-none lg:w-auto"
+      className="max-sm:w-full"
     >
       {options.map(({ value, label }) => {
         return (
-          <Toggle
+          <SegmentControlItem
             key={value}
             value={value}
-            variant="quiet"
-            // The search and the import beside them are h-9 too, so the band
-            // reads as one row of equal controls.
-            size="default"
-            className="flex-1 max-sm:px-2 max-[374px]:text-xs lg:flex-none"
+            className="max-sm:flex-1 max-sm:px-2 max-[374px]:text-xs"
           >
             {label}
-          </Toggle>
+          </SegmentControlItem>
         );
       })}
-    </ToggleGroup>
+    </SegmentControl>
   );
 }
 
@@ -737,14 +733,17 @@ export function CustomTemplatePickerPane({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {/* The 68px band the workflow search uses, so the search sits on the
-          same axis in both categories and the import clears the dialog's
-          close button. It renders before the catalog resolves, so the band
-          never collapses while a request is pending. Below lg the filters
-          take a second row instead of overflowing the dialog. */}
+      {/* The 68px band the workflow search uses, so the band keeps the same
+          height and axis in both categories and the import clears the
+          dialog's close button. The kind comes first because it scopes what
+          the search looks through; the search and the import are the tools
+          on the right. The band renders before the catalog resolves, so it
+          never collapses while a request is pending. Below lg the tools take
+          a second row instead of overflowing the dialog. */}
       <div className="flex shrink-0 flex-wrap items-center gap-3 px-6 py-4 sm:pr-14 lg:h-[68px] lg:flex-nowrap lg:py-0">
-        {showFilters ? (
-          <>
+        {showFilters ? <CustomTemplateKindFilters kind={view.kind} /> : null}
+        <div className="flex w-full min-w-0 items-center gap-3 lg:ml-auto lg:w-auto">
+          {showFilters ? (
             <div className="relative min-w-0 flex-1 lg:w-56 lg:flex-none">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -764,14 +763,13 @@ export function CustomTemplatePickerPane({
                 }}
               />
             </div>
-            <CustomTemplateKindFilters kind={view.kind} />
-          </>
-        ) : null}
-        <div className="ml-auto shrink-0">
-          <CustomTemplateImportButton
-            signals={signals}
-            onImported={onImported}
-          />
+          ) : null}
+          <div className="ml-auto shrink-0">
+            <CustomTemplateImportButton
+              signals={signals}
+              onImported={onImported}
+            />
+          </div>
         </div>
       </div>
       <div

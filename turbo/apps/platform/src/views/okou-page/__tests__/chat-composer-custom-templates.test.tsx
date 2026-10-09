@@ -186,6 +186,10 @@ function buttonByName(name: string, container: ParentNode = document.body) {
   });
 }
 
+function kindByName(name: string, filters: HTMLElement): HTMLElement {
+  return within(filters).getByRole("radio", { name });
+}
+
 function menuItemByName(name: string): HTMLElement {
   const item = queryAllByRoleFast("menuitem").find((candidate) => {
     return candidate.textContent?.trim() === name;
@@ -389,24 +393,24 @@ test("Kind filters combine with search without an All option", async () => {
   ]);
 
   const { dialog } = await openCustomPanel();
-  const filters = await within(dialog).findByRole("group", {
+  const filters = await within(dialog).findByRole("radiogroup", {
     name: "Template categories",
   });
 
-  click(buttonByName("Document", filters)!);
+  click(kindByName("Document", filters));
   await expect(
     within(dialog).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
   expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
 
-  click(buttonByName("Presentation", filters)!);
+  click(kindByName("Presentation", filters));
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Brand report")).not.toBeInTheDocument();
 
-  click(buttonByName("Image", filters)!);
+  click(kindByName("Image", filters));
   await expect(
     within(dialog).findByText("Market day"),
   ).resolves.toBeInTheDocument();
@@ -417,12 +421,9 @@ test("Kind filters combine with search without an All option", async () => {
   await expect(
     within(dialog).findByText("No matches"),
   ).resolves.toBeInTheDocument();
-  expect(buttonByName("Image", filters)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  expect(kindByName("Image", filters)).toBeChecked();
 
-  click(buttonByName("Document", filters)!);
+  click(kindByName("Document", filters));
   await expect(
     within(dialog).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
@@ -435,39 +436,35 @@ test("Kind filters combine with search without an All option", async () => {
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
-  expect(buttonByName("All", filters)).toBeUndefined();
+  expect(
+    within(filters).queryByRole("radio", { name: "All" }),
+  ).not.toBeInTheDocument();
 });
 
 test("An empty kind keeps the search and kind filters in place", async () => {
   mockCustomTemplates([customTemplate()]);
   const { dialog } = await openCustomPanel();
-  const filters = await within(dialog).findByRole("group", {
+  const filters = await within(dialog).findByRole("radiogroup", {
     name: "Template categories",
   });
   const search = within(dialog).getByLabelText("Search templates");
-  click(buttonByName("Image", filters)!);
+  click(kindByName("Image", filters));
   await expect(
     within(dialog).findByText("No images yet"),
   ).resolves.toBeInTheDocument();
   // The toolbar does not change shape between kinds: the same search stays,
   // and the kind filters remain so the member can leave the empty kind.
   expect(within(dialog).getByLabelText("Search templates")).toBe(search);
-  const emptyKindFilters = within(dialog).getByRole("group", {
+  const emptyKindFilters = within(dialog).getByRole("radiogroup", {
     name: "Template categories",
   });
-  expect(buttonByName("Image", emptyKindFilters)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  expect(kindByName("Image", emptyKindFilters)).toBeChecked();
   expect(within(dialog).getAllByLabelText("Import template")).toHaveLength(1);
-  click(buttonByName("Presentation", emptyKindFilters)!);
+  click(kindByName("Presentation", emptyKindFilters));
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
-  expect(buttonByName("Presentation", emptyKindFilters)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  expect(kindByName("Presentation", emptyKindFilters)).toBeChecked();
 });
 
 test("Returning to Custom shows the loaded catalog without asking again", async () => {
