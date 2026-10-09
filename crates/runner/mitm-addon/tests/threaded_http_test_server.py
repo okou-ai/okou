@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+import selectors
+import socket
 import threading
 from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from tests.thread_helpers import ThreadUnderTest
 
 
 @dataclass(frozen=True)
@@ -98,27 +102,43 @@ class ThreadedHttpTestServer[Request]:
         with ThreadingHTTPServer(("127.0.0.1", 0), _Handler) as server:
             self._server = server
             try:
+                with contextlib.ExitStack() as stack:
+                    shutdown_reader, shutdown_writer = socket.socketpair()
+                    stack.callback(shutdown_reader.close)
+                    stack.callback(shutdown_writer.close)
+                    selector = stack.enter_context(selectors.DefaultSelector())
+                    selector.register(server, selectors.EVENT_READ)
+                    selector.register(shutdown_reader, selectors.EVENT_READ)
+                    stopping = threading.Event()
 
-                def serve_forever() -> None:
-                    server.serve_forever(poll_interval=0.01)
+                    def serve_requests() -> None:
+                        while not stopping.is_set():
+                            ready = selector.select()
+                            if stopping.is_set():
+                                return
+                            if any(key.fileobj is server for key, _ in ready):
+                                server.handle_request()
 
-                thread = threading.Thread(
-                    target=serve_forever,
-                    name=self._thread_name,
-                    daemon=True,
-                )
-                thread.start()
-                # Only a started serving loop can be shut down and joined.
-                try:
-                    yield
-                finally:
-                    with self._condition:
-                        release_events = tuple(self._release_events)
-                        self._release_events.clear()
-                    for release_event in release_events:
-                        release_event.set()
-                    server.shutdown()
-                    thread.join(timeout=2.0)
+                    thread = ThreadUnderTest(
+                        target=serve_requests,
+                        name=self._thread_name,
+                        daemon=True,
+                    )
+                    thread.start()
+                    # Only a started serving loop can be signalled and joined.
+                    try:
+                        yield
+                    finally:
+                        with self._condition:
+                            release_events = tuple(self._release_events)
+                            self._release_events.clear()
+                        for release_event in release_events:
+                            release_event.set()
+                        stopping.set()
+                        # Wake the blocked selector without a polling interval
+                        # or a synthetic HTTP request in the captured stream.
+                        shutdown_writer.sendall(b"\0")
+                        thread.join_and_raise(timeout=2.0)
             finally:
                 self._server = None
 
