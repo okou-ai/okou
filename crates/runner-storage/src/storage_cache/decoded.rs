@@ -426,6 +426,11 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
         }
         let mut entry = entry?;
         if entry.header().entry_type().is_gnu_longname() {
+            // Match Guest's locked tar parser before interpreting extension data.
+            let header = entry.header();
+            if header.as_gnu().is_none() && header.as_ustar().is_none() {
+                return Ok(None);
+            }
             let size = entry.size();
             if long_name.is_some() || size == 0 || size > (storage_files::MAX_PATH_BYTES + 1) as u64
             {

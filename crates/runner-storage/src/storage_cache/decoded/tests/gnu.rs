@@ -118,6 +118,91 @@ fn gnu_longnames_are_bounded_and_do_not_admit_other_extensions() {
 }
 
 #[tokio::test]
+async fn longname_admission_matches_guest_header_recognition() {
+    use std::fs;
+    use std::os::unix::fs::MetadataExt;
+
+    for (kind, mut longname, admitted, expected_path) in [
+        ("old", tar::Header::new_old(), false, "short"),
+        ("gnu", tar::Header::new_gnu(), true, "renamed"),
+        ("ustar", tar::Header::new_ustar(), true, "renamed"),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let home = HomePaths::with_root(root.path().join("host"));
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        longname.set_path("././@LongLink").unwrap();
+        longname.set_entry_type(tar::EntryType::GNULongName);
+        longname.set_size(8);
+        longname.set_mode(0o640);
+        longname.set_cksum();
+        builder.append(&longname, &b"renamed\0"[..]).unwrap();
+        let mut regular = tar::Header::new_gnu();
+        regular.set_entry_type(tar::EntryType::Regular);
+        regular.set_size(1);
+        regular.set_mode(0o640);
+        regular.set_mtime(7);
+        regular.set_cksum();
+        builder
+            .append_data(&mut regular, "short", &b"x"[..])
+            .unwrap();
+        let gzip = builder.into_inner().unwrap().finish().unwrap();
+        let source = home.storage_cache_dir(kind, "v1");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("archive.tar.gz"), &gzip).unwrap();
+        drop(
+            runner_host::lock::try_acquire_or_busy_blocking(&home.storage_lock(kind, "v1"))
+                .unwrap(),
+        );
+
+        // Guest's real archive entry point only applies extension names from
+        // recognized GNU/USTAR headers, not a V7 header with the same typeflag.
+        let ordinary_target = root.path().join("ordinary");
+        let ordinary_manifest = serde_json::to_vec(&serde_json::json!({
+            "storageMounts": [{
+                "mountPath": ordinary_target,
+                "archiveUrl": format!("file://{}", source.join("archive.tar.gz").display())
+            }]
+        }))
+        .unwrap();
+        assert!(guest_storage_apply::run_manifest_bytes(&ordinary_manifest));
+        assert_eq!(fs::read(ordinary_target.join(expected_path)).unwrap(), b"x");
+        assert!(
+            !ordinary_target
+                .join(if admitted { "short" } else { "renamed" })
+                .exists()
+        );
+
+        let cache = DecodedCache::new(home);
+        cache.warm_from_archive(kind, "v1").await.unwrap();
+        let ready = cache.get_ready(kind, "v1").await.unwrap();
+        assert_eq!(ready.is_some(), admitted, "{kind}");
+        if let Some(ready) = ready {
+            let decoded_target = root.path().join("decoded");
+            let manifest = serde_json::to_vec(&serde_json::json!({
+                "storageMounts": [{"mountPath": decoded_target, "archiveUrl": "file:///must-not-be-opened"}]
+            }))
+            .unwrap();
+            let input = storage_files::encode_input(
+                &manifest,
+                &[(decoded_target.to_str().unwrap(), &ready.files)],
+            )
+            .unwrap();
+            assert!(guest_storage_apply::run_storage_files_bytes(&input));
+            assert_eq!(fs::read(decoded_target.join(expected_path)).unwrap(), b"x");
+            assert!(!decoded_target.join("short").exists());
+            for target in [ordinary_target, decoded_target] {
+                let metadata = fs::metadata(target.join(expected_path)).unwrap();
+                assert_eq!(metadata.mode() & 0o777, 0o640);
+                assert_eq!(metadata.mtime(), 7);
+            }
+        }
+        cache.shutdown().await;
+        assert_eq!(cache.0.memory.available_permits(), CAPACITY);
+    }
+}
+
+#[tokio::test]
 async fn activated_memory_shaped_archive_survives_restart_and_full_guest_delivery() {
     use std::fs;
     use std::os::unix::fs::MetadataExt;
