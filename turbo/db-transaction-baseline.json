@@ -847,11 +847,6 @@
       "owner": "recordManagedUsage$"
     },
     {
-      "id": "TX-0179",
-      "file": "turbo/apps/api/src/signals/services/mcp-chat-discovery.service.ts",
-      "owner": "listMcpAgents$"
-    },
-    {
       "id": "TX-0180",
       "file": "turbo/apps/api/src/signals/services/mcp-chat-message-history.service.ts",
       "owner": "readHistorySnapshot$"
