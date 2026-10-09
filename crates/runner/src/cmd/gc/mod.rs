@@ -159,7 +159,7 @@ impl GcOperations for RealGcOperations {
         home: &HomePaths,
         dry_run: bool,
     ) -> RunnerResult<GcReport> {
-        Ok(GcReport::from(gc_workspace_orphans(home, dry_run).await?))
+        gc_workspace_orphans(home, dry_run).await
     }
 
     async fn gc_orphaned_locks(
