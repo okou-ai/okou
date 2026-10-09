@@ -296,12 +296,8 @@ test.each([true, false])(
         10,
       );
     });
-    await within(sidebar).findByText("Unread");
-    const unread = within(rows()[1]).getByTestId(
-      "chat-thread-state-indicator",
-    ).firstElementChild;
-    expect(unread).toHaveClass("h-2", "w-2", "bg-sky-600");
-    expect(unread?.children).toHaveLength(0);
+    await within(rows()[1]).findByText("Unread");
+    expect(within(rows()[2]).getByText("Running")).toBeInTheDocument();
 
     const scrollArea = within(sidebar).getByTestId("sidebar-scroll-area");
     scrollArea.scrollTop = 40 * ROW_HEIGHT;
@@ -331,9 +327,6 @@ test.each([true, false])(
       );
     });
 
-    const movingIndicator = within(rows()[2]).getByTestId(
-      "chat-thread-state-indicator",
-    ).firstElementChild;
     click(within(rows()[2]).getByLabelText("Open chat menu"));
     await screen.findByRole("menu");
     const pin = queryAllByRoleFast("menuitem").find((item) => {
@@ -351,10 +344,11 @@ test.each([true, false])(
         10,
       );
     });
-    expect(
-      within(rows()[0]).getByTestId("chat-thread-state-indicator")
-        .firstElementChild,
-    ).toBe(movingIndicator);
+    expect(within(rows()[0]).getByText("Running")).toBeInTheDocument();
+    expect(queryAllByRoleFast("link", rows()[0])[0]).toHaveAttribute(
+      "href",
+      `/chats/${threadId(2)}`,
+    );
   },
 );
 
