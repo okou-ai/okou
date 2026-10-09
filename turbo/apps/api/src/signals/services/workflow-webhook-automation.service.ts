@@ -11,8 +11,8 @@ import { Buffer } from "node:buffer";
 import { createHash, randomUUID } from "node:crypto";
 import { verifyCallbackRequest } from "../../lib/event-consumer/verify-signature";
 import { isUniqueViolation } from "../../lib/pg-errors";
-import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { now, nowDate } from "../../lib/time";
+import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import {
   AutomationEventSourceTiming,
@@ -265,26 +265,48 @@ const loadWebhookAutomationForToken$ = command(
   },
 );
 
-async function rateLimitExceeded(args: {
-  readonly db: Db;
-  readonly automationId: string;
-  readonly currentTime: Date;
-}): Promise<boolean> {
-  const recent = await args.db
-    .select({ id: workflowWebhookDeliveries.id })
-    .from(workflowWebhookDeliveries)
-    .where(
-      and(
-        eq(workflowWebhookDeliveries.automationId, args.automationId),
-        gte(
-          workflowWebhookDeliveries.receivedAt,
-          new Date(args.currentTime.getTime() - 60_000),
+const rateLimitExceeded$ = command(
+  async (
+    { get },
+    args: {
+      readonly automationId: string;
+      readonly currentTime: Date;
+      readonly sourceTiming: AutomationEventSourceTiming;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const startedAt = now();
+    const recent = await get(db$)
+      .select({ id: workflowWebhookDeliveries.id })
+      .from(workflowWebhookDeliveries)
+      .where(
+        and(
+          eq(workflowWebhookDeliveries.automationId, args.automationId),
+          gte(
+            workflowWebhookDeliveries.receivedAt,
+            new Date(args.currentTime.getTime() - 60_000),
+          ),
         ),
-      ),
-    )
-    .limit(WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE);
-  return recent.length >= WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE;
-}
+      )
+      .limit(WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE);
+    if (signal.aborted) {
+      args.sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_match_automations",
+        startedAt,
+      );
+      // A limited result retains its classification before cancellation.
+      if (recent.length < WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE) {
+        signal.throwIfAborted();
+      }
+    } else {
+      args.sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_match_automations",
+        startedAt,
+      );
+    }
+    return recent.length >= WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE;
+  },
+);
 
 type DispatchWorkflowWebhookResult =
   | {
@@ -307,8 +329,7 @@ type PreparedWorkflowWebhookDispatch =
       readonly currentTime: Date;
     }
   | { readonly kind: "not_found" }
-  | { readonly kind: "unauthorized" }
-  | { readonly kind: "rate_limited" };
+  | { readonly kind: "unauthorized" };
 
 function webhookSignatureValid(args: {
   readonly rawBody: string;
@@ -326,7 +347,6 @@ function webhookSignatureValid(args: {
 
 async function prepareWorkflowWebhookDispatch(
   args: {
-    readonly db: Db;
     readonly row: WorkflowWebhookAutomationDispatchRow | null;
     readonly rawBody: string;
     readonly signature: string;
@@ -367,21 +387,6 @@ async function prepareWorkflowWebhookDispatch(
   }
 
   const currentTime = nowDate();
-  const limited = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_match_automations",
-    async () => {
-      return await rateLimitExceeded({
-        db: args.db,
-        automationId: row.automation.id,
-        currentTime,
-      });
-    },
-  );
-  if (limited) {
-    return { kind: "rate_limited" };
-  }
-  signal.throwIfAborted();
-
   return {
     kind: "ok",
     row,
@@ -391,33 +396,53 @@ async function prepareWorkflowWebhookDispatch(
   };
 }
 
-async function prepareWebhookDelivery(
-  db: Db,
-  args: {
-    readonly automationId: string;
-    readonly rawBody: string;
-    readonly signature: string;
-    readonly timestamp: string;
-    readonly headers: Readonly<Record<string, string>>;
+const prepareWebhookDelivery$ = command(
+  async (
+    { get },
+    args: {
+      readonly automationId: string;
+      readonly rawBody: string;
+      readonly signature: string;
+      readonly timestamp: string;
+      readonly headers: Readonly<Record<string, string>>;
+      readonly timing: AutomationEventRunTiming;
+    },
+    signal: AbortSignal,
+  ): Promise<PreparedWebhookDelivery | null> => {
+    const startedAt = performance.now();
+    return await (async () => {
+      const deliveryKey = deliveryKeyForRequest(args);
+      const [existing] = await get(db$)
+        .select({ id: workflowWebhookDeliveries.id })
+        .from(workflowWebhookDeliveries)
+        .where(
+          and(
+            eq(workflowWebhookDeliveries.automationId, args.automationId),
+            eq(workflowWebhookDeliveries.deliveryKey, deliveryKey),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      // A recorded delivery stays a duplicate regardless of later automation
+      // changes. The unique index still arbitrates concurrent first deliveries.
+      return existing
+        ? null
+        : {
+            id: randomUUID(),
+            deliveryKey,
+            bodySha256: sha256Hex(args.rawBody),
+          };
+    })().finally(() => {
+      const durationMs = performance.now() - startedAt;
+      const finishedAt = now();
+      args.timing.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_source_state",
+        finishedAt - durationMs,
+        finishedAt,
+      );
+    });
   },
-): Promise<PreparedWebhookDelivery | null> {
-  const deliveryKey = deliveryKeyForRequest(args);
-  const [existing] = await db
-    .select({ id: workflowWebhookDeliveries.id })
-    .from(workflowWebhookDeliveries)
-    .where(
-      and(
-        eq(workflowWebhookDeliveries.automationId, args.automationId),
-        eq(workflowWebhookDeliveries.deliveryKey, deliveryKey),
-      ),
-    )
-    .limit(1);
-  // A recorded delivery stays a duplicate regardless of later automation
-  // changes. The unique index still arbitrates concurrent first deliveries.
-  return existing
-    ? null
-    : { id: randomUUID(), deliveryKey, bodySha256: sha256Hex(args.rawBody) };
-}
+);
 
 const startWorkflowWebhookRun$ = command(
   async (
@@ -502,7 +527,6 @@ export const dispatchWorkflowWebhook$ = command(
       "webhook",
       args.apiStartTime,
     );
-    const db = set(writeDb$);
     const row = await set(
       loadWebhookAutomationForToken$,
       { token: args.token },
@@ -510,7 +534,6 @@ export const dispatchWorkflowWebhook$ = command(
     );
     const prepared = await prepareWorkflowWebhookDispatch(
       {
-        db,
         row,
         rawBody: args.rawBody,
         signature,
@@ -522,19 +545,32 @@ export const dispatchWorkflowWebhook$ = command(
     if (prepared.kind !== "ok") {
       return prepared;
     }
+    const limited = await set(
+      rateLimitExceeded$,
+      {
+        automationId: prepared.row.automation.id,
+        currentTime: prepared.currentTime,
+        sourceTiming,
+      },
+      signal,
+    );
+    if (limited) {
+      return { kind: "rate_limited" };
+    }
+    signal.throwIfAborted();
 
     const runTiming = sourceTiming.createRunTiming();
-    const delivery = await runTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_source_state",
-      async () => {
-        return await prepareWebhookDelivery(db, {
-          automationId: prepared.row.automation.id,
-          rawBody: args.rawBody,
-          signature: prepared.signature,
-          timestamp: prepared.timestamp,
-          headers: args.headers,
-        });
+    const delivery = await set(
+      prepareWebhookDelivery$,
+      {
+        automationId: prepared.row.automation.id,
+        rawBody: args.rawBody,
+        signature: prepared.signature,
+        timestamp: prepared.timestamp,
+        headers: args.headers,
+        timing: runTiming,
       },
+      signal,
     );
     signal.throwIfAborted();
     if (!delivery) {
