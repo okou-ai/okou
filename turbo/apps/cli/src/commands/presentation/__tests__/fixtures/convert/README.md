@@ -2,14 +2,16 @@
 
 These are manual browser/renderer regression inputs, not mocked visual tests.
 The command unit tests separately cover permission enforcement, parsing,
-byte-preserving artifact transfer, selector waiting, file URLs, and text checks.
+artifact transfer, fixed-frame geometry, table metadata, script fonts,
+selector waiting, file URLs, and page/occurrence-scoped native-text checks.
 
 ## Purpose
 
-Compare the pinned `dom-to-pptx@2.1.2` renderer's original artifact with the
-previous CLI wrapper, without silently repairing the comparison inputs or
-outputs. This is an experimental baseline, **not a production-ready fidelity
-improvement**. Do not treat a successful `--verify` result as visual acceptance.
+The first commit established a pinned `dom-to-pptx@2.1.2` native baseline;
+the following commit adds independently measured geometry contracts. Keep the
+previous artifacts as controls, without silently repairing either side. This
+is still experimental, **not a production-ready fidelity replacement**.
+Do not treat a successful `--verify` result as visual acceptance.
 
 | Input                                     | Cases     | Observation target                                                                                                                                                                     |
 | ----------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -44,7 +46,46 @@ Compare each page manually; pixel deltas are evidence locators, not quality
 scores. Never disable the capability guard or substitute credentials to run
 these cases.
 
-## Executed comparison
+## Measured geometry follow-up
+
+`geometry-contract-cases.html` adds four independent checks: wrapped inline
+origins, nested visibility overrides and a single-character label, identical
+Han glyphs with three regional font stacks, and text-bearing fixed paint boxes.
+It also includes repeated text and UI outside the selected pages.
+
+The implementation now separates three contracts:
+
+1. Browser preparation activates explicitly selected inactive pages, waits for
+   fonts and eager image loading, and retains inherited solid backgrounds.
+2. Wrapped or painted text containers become measured, styled native line
+   fragments plus independent paint. A multi-line inline bounding rectangle is
+   a union, not the origin/width of one text frame. Transformed containers are
+   excluded until affine composition can be implemented correctly.
+3. PPTX boxes do not autofit. Table row heights and cell fills come from browser
+   measurements; replacing a cell fill must preserve nested border paint.
+   Per-frame script font slots come from the source stack, not an OS-wide guess.
+
+Text verification is restricted to selected pages and native text. It tracks
+repeated occurrences and single-character labels and rejects transparent
+native glyph fills. Image fallback text is not native text. The JSON report
+explicitly states that no rendered-page comparison was performed by `--verify`.
+A source-built CLI retains the normal capability guard and cleans up its DOM
+preparation even on failure.
+
+The follow-up executed 27 authorized conversions, yielding 27 original CLI
+PPTX files and 97 LibreOffice-rendered pages. This comprises the existing
+64-case corpus, four new geometry cases, and 29 supplemental/control pages.
+All conversion commands completed and every PPTX XML part parsed. Image
+comparisons, not those exit codes, establish each visual repair. The offscreen
+lazy-image HTML screenshot also rendered all eight pages using the shared
+resource wait. No production merge or deployment was performed.
+
+Known remaining limitations include clipping/ellipsis, several CSS gradients
+and filters, generated counters/list markers, group compositing, transformed
+geometry, and MathML. Do not restore the old blanket normalization/font policy,
+or claim native PowerPoint/Keynote acceptance from LibreOffice results.
+
+## Historical native-baseline comparison
 
 The control was built from `2ef5d4ec8c2aedc9217e669f110f8c68fb9b65f3`.
 Both CLI builds reported 9.382.1 and used the same 2.1.2 renderer. Screenshot

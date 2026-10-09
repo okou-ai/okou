@@ -1,9 +1,9 @@
 /**
  * Convert the browser's current slide DOM with the pinned renderer.
  *
- * The browser owns layout; the renderer owns its PPTX representation. This
- * command loads the page, transfers the renderer's original artifact, and can
- * inspect text coverage without rewriting either CSS or presentation XML.
+ * The browser owns layout. Export measured text lines and paint independently,
+ * and hold those boxes fixed in PPTX rather than asking the viewer to lay them
+ * out a second time. Verify content separately from rendered-page acceptance.
  */
 import { execFileSync } from "child_process";
 import {
@@ -18,13 +18,14 @@ import {
 import { homedir, tmpdir } from "os";
 import { basename, extname, join } from "path";
 import { pathToFileURL } from "url";
-import { inflateRawSync } from "zlib";
 
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
 
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { applyGeometry, pptxEntries } from "./geometry";
+import { layoutSchema, PREPARE_LAYOUT, type Layout } from "./layout";
 import { browser, childPath, operatorPath, SETTLE, TIMEOUT_MS } from "./shared";
 
 const RENDERER_PACKAGE = "dom-to-pptx@2.1.2";
@@ -75,6 +76,8 @@ interface VerifyReport {
   readonly matchedStrings: number;
   readonly coverage: number;
   readonly missing: readonly string[];
+  readonly scope: "native-text";
+  readonly visualComparison: "not-performed";
 }
 
 interface Rendered {
@@ -82,6 +85,8 @@ interface Rendered {
   readonly selector: string;
   readonly slides: number;
   readonly texts: readonly string[];
+  readonly pageTexts: readonly (readonly string[])[];
+  readonly layout: Layout;
 }
 
 function positiveNumber(value: string): number {
@@ -244,29 +249,9 @@ function render(options: Options): Rendered {
     const selector =
       options.selector ?? detectSelector(page, options.width / options.height);
 
-    // Keep the existing text-only diagnostic independent of renderer output.
-    const texts = page.evaluate(`(() => {
-      const seen = [];
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      let node = walker.nextNode();
-      while (node) {
-        const text = (node.nodeValue || "").trim();
-        const parent = node.parentElement;
-        if (text.length > 1 && parent) {
-          const style = getComputedStyle(parent);
-          if (
-            style.display !== "none" &&
-            style.visibility !== "hidden" &&
-            parent.tagName !== "SCRIPT" &&
-            parent.tagName !== "STYLE"
-          ) {
-            seen.push(text);
-          }
-        }
-        node = walker.nextNode();
-      }
-      return JSON.stringify(seen);
-    })()`);
+    const layout = layoutSchema.parse(
+      page.evaluate(`${PREPARE_LAYOUT}(${JSON.stringify(selector)})`),
+    );
 
     // Network pages and remote borrowed browsers cannot load local scripts.
     const local = !borrowed && deckUrl.startsWith("file://");
@@ -314,58 +299,36 @@ function render(options: Options): Rendered {
     }
     const { slides, length } = meta as { slides: number; length: number };
     return {
-      deck: transfer(page, length),
+      deck: applyGeometry(
+        transfer(page, length),
+        layout,
+        options.width,
+        options.height,
+      ),
       selector,
       slides,
-      texts: Array.isArray(texts) ? (texts as string[]) : [],
+      texts: layout.pages.flatMap((page) => {
+        return page.texts;
+      }),
+      pageTexts: layout.pages.map((page) => {
+        return page.texts;
+      }),
+      layout,
     };
   } finally {
+    page.quiet(["eval", "window.__okouRestoreLayout?.()"]);
     if (!borrowed) {
       page.quiet(["close"]);
     }
   }
 }
 
-/** ZIP reading is needed only for the optional text coverage diagnostic. */
-function zipEntries(archive: Buffer): Map<string, Buffer> {
-  const entries = new Map<string, Buffer>();
-  const end = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
-  if (end < 0) {
-    throw new Error("Not a ZIP container");
-  }
-  const count = archive.readUInt16LE(end + 10);
-  let offset = archive.readUInt32LE(end + 16);
-  for (let index = 0; index < count; index += 1) {
-    if (archive.readUInt32LE(offset) !== 0x02014b50) {
-      break;
-    }
-    const method = archive.readUInt16LE(offset + 10);
-    const compressedSize = archive.readUInt32LE(offset + 20);
-    const nameLength = archive.readUInt16LE(offset + 28);
-    const extraLength = archive.readUInt16LE(offset + 30);
-    const commentLength = archive.readUInt16LE(offset + 32);
-    const localOffset = archive.readUInt32LE(offset + 42);
-    const name = archive
-      .subarray(offset + 46, offset + 46 + nameLength)
-      .toString("utf8");
-    const start =
-      localOffset +
-      30 +
-      archive.readUInt16LE(localOffset + 26) +
-      archive.readUInt16LE(localOffset + 28);
-    const raw = archive.subarray(start, start + compressedSize);
-    entries.set(name, method === 8 ? inflateRawSync(raw) : Buffer.from(raw));
-    offset += 46 + nameLength + extraLength + commentLength;
-  }
-  return entries;
-}
-
 function normalizeForCompare(value: string): string {
   return value.replace(/\s+/gu, "").toLowerCase();
 }
 
-function deckText(deck: Buffer): { slides: number; text: string } {
-  const entries = zipEntries(deck);
+function deckText(deck: Buffer): { slides: number; pages: readonly string[] } {
+  const entries = pptxEntries(deck);
   const slideNames = [...entries.keys()]
     .filter((name) => {
       return /^ppt\/slides\/slide\d+\.xml$/u.test(name);
@@ -373,12 +336,22 @@ function deckText(deck: Buffer): { slides: number; text: string } {
     .sort((left, right) => {
       return Number(/\d+/u.exec(left)?.[0]) - Number(/\d+/u.exec(right)?.[0]);
     });
-  const parts: string[] = [];
+  const pages: string[] = [];
   for (const name of slideNames) {
+    const parts: string[] = [];
     const xml = entries.get(name)?.toString("utf8") ?? "";
-    for (const match of xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/gu)) {
+    for (const run of xml.matchAll(/<a:r>[\s\S]*?<\/a:r>/gu)) {
+      const properties = /<a:rPr\b[\s\S]*?<\/a:rPr>/u.exec(run[0])?.[0] ?? "";
+      const fill =
+        /<a:solidFill\b[\s\S]*?<\/a:solidFill>/u.exec(properties)?.[0] ?? "";
+      if (
+        /<a:alpha\b[^>]*\bval="0"/u.test(fill) &&
+        !/<a:ln\b/u.test(properties)
+      )
+        continue;
+      const text = /<a:t>([\s\S]*?)<\/a:t>/u.exec(run[0])?.[1] ?? "";
       parts.push(
-        (match[1] ?? "")
+        text
           .replace(/&lt;/gu, "<")
           .replace(/&gt;/gu, ">")
           .replace(/&quot;/gu, '"')
@@ -386,23 +359,28 @@ function deckText(deck: Buffer): { slides: number; text: string } {
           .replace(/&amp;/gu, "&"),
       );
     }
+    pages.push(normalizeForCompare(parts.join("")));
   }
-  return {
-    slides: slideNames.length,
-    text: normalizeForCompare(parts.join("")),
-  };
+  return { slides: slideNames.length, pages };
 }
 
 /** This existing editable-text check does not establish visual fidelity. */
 function verifyDeck(rendered: Rendered): VerifyReport {
-  const { slides, text } = deckText(rendered.deck);
+  const { slides, pages } = deckText(rendered.deck);
   const missing: string[] = [];
   let matched = 0;
-  for (const entry of rendered.texts) {
-    if (text.includes(normalizeForCompare(entry))) {
-      matched += 1;
-    } else {
-      missing.push(entry);
+  for (let index = 0; index < rendered.pageTexts.length; index += 1) {
+    const text = pages[index] ?? "";
+    const cursors = new Map<string, number>();
+    for (const entry of rendered.pageTexts[index] ?? []) {
+      const normalized = normalizeForCompare(entry);
+      const position = text.indexOf(normalized, cursors.get(normalized) ?? 0);
+      if (position >= 0) {
+        matched += 1;
+        cursors.set(normalized, position + normalized.length);
+      } else {
+        missing.push(`Page ${(index + 1).toString()}: ${entry}`);
+      }
     }
   }
   return {
@@ -411,6 +389,8 @@ function verifyDeck(rendered: Rendered): VerifyReport {
     matchedStrings: matched,
     coverage: rendered.texts.length === 0 ? 1 : matched / rendered.texts.length,
     missing: missing.slice(0, 20),
+    scope: "native-text",
+    visualComparison: "not-performed",
   };
 }
 
@@ -447,6 +427,10 @@ async function convert(options: Options): Promise<void> {
         slides: rendered.slides,
         bytes: rendered.deck.length,
         verify: report,
+        layout: {
+          activatedSlides: rendered.layout.activated,
+          fragmentedOwners: rendered.layout.fragmented,
+        },
       }),
     );
     if (failed) {
@@ -472,7 +456,7 @@ async function convert(options: Options): Promise<void> {
     const percent = (report.coverage * 100).toFixed(1);
     console.log(
       chalk.dim(
-        `  Coverage: ${percent}% (${report.matchedStrings.toString()}/${report.sourceStrings.toString()} strings)`,
+        `  Native text coverage: ${percent}% (${report.matchedStrings.toString()}/${report.sourceStrings.toString()} strings)`,
       ),
     );
   }
@@ -540,10 +524,11 @@ Examples:
                          --session okou-browser --input https://example.com/deck
 
 Notes:
-  - Exports the selected DOM as currently rendered; prepare inactive slides in
-    the source rather than relying on automatic CSS rewrites
-  - Text, fonts, wrapping, tables, and complex effects follow the pinned renderer
-  - The original renderer artifact is written without PPTX XML post-processing
+  - Activates selected inactive slides using the visible page's layout
+  - Wrapped inline text is exported as measured native line fragments
+  - Fixed geometry preserves font size; the viewer does not resize measured boxes
+  - Table row heights and solid cell backgrounds come from browser measurements
+  - Complex effects still require rendered-page comparison
   - --verify checks editable strings only; image fallback is not text coverage
   - Use okou presentation screenshot and compare each page before delivery`,
   )

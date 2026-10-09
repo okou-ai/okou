@@ -38,7 +38,7 @@ function slideXml(texts: readonly string[]): string {
     .join("");
   return (
     `<?xml version="1.0" encoding="UTF-8"?><p:sld xmlns:a="a" xmlns:p="p"><p:cSld><p:spTree>` +
-    `<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>` +
+    `<p:sp><p:spPr><a:xfrm><a:off x="0" y="86"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>` +
     `<p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0"><a:spAutoFit/></a:bodyPr>` +
     `${runs}</p:txBody></p:sp>` +
     `</p:spTree></p:cSld></p:sld>`
@@ -47,8 +47,8 @@ function slideXml(texts: readonly string[]): string {
 
 /**
  * A renderer artifact constructed independently of the command. Include a
- * directory entry and stored contents so byte-preservation covers ZIP metadata,
- * not just the slide strings that optional verification reads.
+ * directory entry and stored contents to verify unrelated package parts survive
+ * geometry corrections, not just the slide strings the verifier reads.
  */
 function storedZip(entries: readonly (readonly [string, string])[]): Buffer {
   const locals: Buffer[] = [];
@@ -121,6 +121,28 @@ const state = {
   pageTexts: ["Hello deck", "Second line"] as string[],
   /** Text the fake renderer writes into the deck; differs to force a shortfall. */
   deckTexts: undefined as string[] | undefined,
+  sourcePages: undefined as string[][] | undefined,
+  deckPages: undefined as string[][] | undefined,
+  slideXml: undefined as string[] | undefined,
+  textBoxes: [] as {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    eastAsianFont: string;
+    complexFont: string;
+    strike: boolean;
+    underlineColor: string;
+    underlineWidth: number;
+  }[],
+  tables: [] as {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    rows: number[];
+    fills: string[][];
+  }[],
   /** Every expression the command evaluated in the page, in order. */
   evaluated: [] as string[],
   openedUrls: [] as string[],
@@ -138,8 +160,15 @@ function deckBase64(): string {
       "ppt/presentation.xml",
       '<p:presentation><p:sldSz cx="12192000" cy="6858000"/></p:presentation>',
     ],
-    ["ppt/slides/slide1.xml", slideXml(texts.slice(0, 1))],
-    ["ppt/slides/slide2.xml", slideXml(texts.slice(1))],
+    [
+      "ppt/slides/slide1.xml",
+      state.slideXml?.[0] ??
+        slideXml(state.deckPages?.[0] ?? texts.slice(0, 1)),
+    ],
+    [
+      "ppt/slides/slide2.xml",
+      state.slideXml?.[1] ?? slideXml(state.deckPages?.[1] ?? texts.slice(1)),
+    ],
   ];
   return storedZip(entries).toString("base64");
 }
@@ -156,7 +185,26 @@ function fakeEval(expression: string): string {
   // Ordered most specific first: the selector probe also queries and reads
   // `.length`, so a looser branch above it would answer for both.
   if (expression.includes("scored.sort")) return encoded(".stage");
-  if (expression.includes("seen.push")) return encoded(state.pageTexts);
+  if (expression.includes("window.__okouRestoreLayout =")) {
+    return encoded({
+      pages: (
+        state.sourcePages ?? [
+          state.pageTexts.slice(0, 1),
+          state.pageTexts.slice(1),
+        ]
+      ).map((texts) => {
+        return {
+          width: 1600,
+          height: 900,
+          texts,
+          tables: state.tables,
+          textBoxes: state.textBoxes,
+        };
+      }),
+      activated: 0,
+      fragmented: 0,
+    });
+  }
   if (expression.includes("exportToPptx")) {
     state.transferable = deckBase64();
     return encoded({
@@ -264,6 +312,11 @@ describe("okou presentation convert", () => {
     errorSpy.mockClear();
     state.pageTexts = ["Hello deck", "Second line"];
     state.deckTexts = undefined;
+    state.sourcePages = undefined;
+    state.deckPages = undefined;
+    state.slideXml = undefined;
+    state.textBoxes = [];
+    state.tables = [];
     state.evaluated = [];
     state.openedUrls = [];
     state.slideCount = 2;
@@ -289,15 +342,17 @@ describe("okou presentation convert", () => {
     );
   });
 
-  it("writes the renderer's original artifact byte for byte", async () => {
+  it("holds measured geometry fixed without shrinking text or changing unrelated parts", async () => {
     await convert([]);
-
-    const written = readFileSync(outPath);
-    expect(written).toEqual(Buffer.from(state.transferable, "base64"));
-    const parts = readZip(written);
+    const parts = readZip(readFileSync(outPath));
     expect(parts.get("[Content_Types].xml")).toBe("<Types/>");
-    expect(parts.get("ppt/slides/slide1.xml")).toBe(slideXml(["Hello deck"]));
-    expect(parts.get("ppt/slides/slide2.xml")).toBe(slideXml(["Second line"]));
+    expect(parts.get("ppt/media/")).toBe("");
+    expect(parts.get("ppt/slides/slide1.xml")).toBe(
+      slideXml(["Hello deck"]).replace("<a:spAutoFit/>", "<a:noAutofit/>"),
+    );
+    expect(parts.get("ppt/slides/slide2.xml")).toBe(
+      slideXml(["Second line"]).replace("<a:spAutoFit/>", "<a:noAutofit/>"),
+    );
   });
 
   it("reads the cached renderer into a local deck", async () => {
@@ -333,7 +388,7 @@ describe("okou presentation convert", () => {
 
   it("passes verification when a string is split across runs", async () => {
     state.pageTexts = ["一个完整的句子"];
-    state.deckTexts = ["一个完整的", "句子"];
+    state.deckPages = [["一个完整的", "句子"], []];
     state.slideCount = 2;
     await expect(convert(["--verify"])).resolves.toBeUndefined();
   });
@@ -343,9 +398,111 @@ describe("okou presentation convert", () => {
     state.deckTexts = ["Kept heading", ""];
     await expect(convert(["--verify"])).rejects.toThrow(/process\.exit/u);
     expect(stderr()).toContain("coverage");
-    expect(readFileSync(outPath)).toEqual(
-      Buffer.from(state.transferable, "base64"),
+    expect(
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml"),
+    ).toContain("Kept heading");
+  });
+
+  it("does not let a matching title on another page conceal a blank page", async () => {
+    state.sourcePages = [["Repeated title"], ["Repeated title"]];
+    state.deckPages = [["Repeated title"], []];
+    await expect(convert(["--verify", "--json"])).rejects.toThrow(
+      /process\.exit/u,
     );
+    expect(String(vi.mocked(console.log).mock.calls.at(-1)?.[0])).toContain(
+      "Page 2: Repeated title",
+    );
+  });
+
+  it("requires repeated occurrences on the same page", async () => {
+    state.sourcePages = [["Repeated", "Repeated"], []];
+    state.deckPages = [["Repeated"], []];
+    await expect(convert(["--verify", "--json"])).rejects.toThrow(
+      /process\.exit/u,
+    );
+    expect(String(vi.mocked(console.log).mock.calls.at(-1)?.[0])).toContain(
+      "Page 1: Repeated",
+    );
+  });
+
+  it("verifies visible single-character labels", async () => {
+    state.sourcePages = [["Q"], []];
+    state.deckPages = [[], []];
+    await expect(convert(["--verify", "--json"])).rejects.toThrow(
+      /process\.exit/u,
+    );
+    expect(String(vi.mocked(console.log).mock.calls.at(-1)?.[0])).toContain(
+      "Page 1: Q",
+    );
+  });
+
+  it("does not count fully transparent glyph fills as preserved native text", async () => {
+    state.sourcePages = [["INVISIBLE"], []];
+    state.slideXml = [
+      slideXml(["INVISIBLE"]).replace(
+        "<a:latin",
+        '<a:solidFill><a:srgbClr val="000000"><a:alpha val="0"/></a:srgbClr></a:solidFill><a:latin',
+      ),
+      slideXml([]),
+    ];
+    await expect(convert(["--verify", "--json"])).rejects.toThrow(
+      /process\.exit/u,
+    );
+    const output = String(vi.mocked(console.log).mock.calls.at(-1)?.[0]);
+    expect(output).toContain("Page 1: INVISIBLE");
+    expect(output).toContain('"scope":"native-text"');
+    expect(output).toContain('"visualComparison":"not-performed"');
+  });
+
+  it("keeps per-frame script fonts and decorations without changing Latin typefaces", async () => {
+    state.textBoxes = [
+      {
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 100,
+        eastAsianFont: "Noto Sans CJK JP",
+        complexFont: "",
+        strike: true,
+        underlineColor: "FF0000",
+        underlineWidth: 2,
+      },
+    ];
+    await convert([]);
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+    expect(slide).toContain('<a:latin typeface="Lexend"/>');
+    expect(slide).toContain('<a:ea typeface="Noto Sans CJK JP"/>');
+    expect(slide).toContain('strike="sngStrike"');
+    expect(slide).toContain('wrap="none"');
+    expect(slide).toContain('<a:uFill><a:solidFill><a:srgbClr val="FF0000"/>');
+    expect(slide.indexOf("<a:uFill>")).toBeLessThan(slide.indexOf("<a:latin"));
+    expect(slide).toContain('sz="7680"');
+  });
+
+  it("uses measured table row heights and fills without deleting border paint", async () => {
+    const cell =
+      '<a:tc><a:tcPr><a:lnL><a:solidFill><a:srgbClr val="123456"/></a:solidFill></a:lnL><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr></a:tc>';
+    const table = `<p:graphicFrame><p:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="1"/></p:xfrm><a:tbl><a:tr h="0">${cell}</a:tr><a:tr h="0">${cell}</a:tr></a:tbl></p:graphicFrame>`;
+    state.slideXml = [table, table];
+    state.tables = [
+      { x: 0, y: 0, w: 100, h: 60, rows: [20, 40], fills: [["ABCDEF"], [""]] },
+    ];
+    await convert([]);
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+    expect(slide).toContain('<a:tr h="182880">');
+    expect(slide).toContain('<a:tr h="365760">');
+    expect(slide).toContain('cy="548640"');
+    expect(slide).toContain('<a:lnL><a:solidFill><a:srgbClr val="123456"/>');
+    expect(slide).toContain('<a:solidFill><a:srgbClr val="ABCDEF"/>');
+  });
+
+  it("restores the borrowed page even when measured geometry disagrees", async () => {
+    state.tables = [{ x: 0, y: 0, w: 100, h: 60, rows: [20, 40], fills: [] }];
+    await expect(convert([])).rejects.toThrow(/process\.exit/u);
+    expect(stderr()).toContain("Measured table was omitted");
+    expect(state.evaluated.at(-1)).toBe("window.__okouRestoreLayout?.()");
   });
 
   it("waits for an explicit selector instead of the built-in candidates", async () => {
