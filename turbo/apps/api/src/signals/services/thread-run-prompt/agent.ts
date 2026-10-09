@@ -1,4 +1,3 @@
-import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { AGENT_EXECUTION_TIMEOUT_SECONDS } from "@okouai/api-contracts/contracts/runners";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { computed, type Computed } from "ccstate";
@@ -9,12 +8,6 @@ import {
   buildAgentToolsPromptInputs,
 } from "../agent-tools-prompt.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
-
-export interface AgentPromptContext {
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly triggerSource: TriggerSource;
-  readonly cloudBrowserEnabled: boolean | undefined;
-}
 
 function buildExecutionTimeLimitPrompt(): string {
   const executionHours = AGENT_EXECUTION_TIMEOUT_SECONDS / (60 * 60);
@@ -34,15 +27,26 @@ export function createAgentPrompt(
       "id" | "defaultAgentId" | "displayName" | "description" | "sound"
     > | null>
   >,
-  context$: Computed<Promise<AgentPromptContext>>,
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
+  cloudBrowserEnabled$: Computed<Promise<boolean>>,
 ): Computed<Promise<RunPromptAndSkills>> {
   return computed(async (get): Promise<RunPromptAndSkills> => {
-    const [agent, context] = await Promise.all([get(agent$), get(context$)]);
+    const [agent, featureSwitchContext, cloudBrowserEnabled] =
+      await Promise.all([
+        get(agent$),
+        get(featureSwitches$),
+        get(cloudBrowserEnabled$),
+      ]);
     return {
       systemPromptVariables: {
         agentIdentity: agent ? (buildAgentIdentityPrompt(agent) ?? "") : "",
         executionLimit: buildExecutionTimeLimitPrompt(),
-        tools: buildAgentToolsPrompt(buildAgentToolsPromptInputs(context)),
+        tools: buildAgentToolsPrompt(
+          buildAgentToolsPromptInputs({
+            featureSwitchContext,
+            cloudBrowserEnabled,
+          }),
+        ),
       },
       userPromptVariables: {},
       skillVolumes: [],

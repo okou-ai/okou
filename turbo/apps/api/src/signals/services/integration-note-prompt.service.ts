@@ -152,21 +152,6 @@ function integrationNoteLines(
   }
 }
 
-/**
- * A run whose trigger source has no conversational surface — webhooks,
- * automations — never renders `# Current Integration`, so it keeps its
- * fallback delivery guidance in `# Agent Tools` instead.
- */
-export function hasIntegrationNote(triggerSource: TriggerSource): boolean {
-  return (
-    integrationNoteLines({
-      triggerSource,
-      privateArtifactsEnabled: false,
-      larkEnabled: false,
-    }).length > 0
-  );
-}
-
 function buildIntegrationNotePrompt(args: IntegrationNotePromptInputs): string {
   const lines = integrationNoteLines(args);
   if (lines.length === 0) {

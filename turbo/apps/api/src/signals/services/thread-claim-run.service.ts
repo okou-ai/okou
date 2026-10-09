@@ -1,8 +1,5 @@
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
-import {
-  createAgentPrompt,
-  type AgentPromptContext,
-} from "./thread-run-prompt/agent";
+import { createAgentPrompt } from "./thread-run-prompt/agent";
 import { createUserPrompt } from "./thread-run-prompt/user";
 import { createAgentPhoneThreadPrompt } from "./thread-run-prompt/agentphone";
 import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
@@ -4329,7 +4326,6 @@ export function createThreadClaimRunObjects(
         ...account,
         agent,
         timing,
-        cloudBrowserEnabled: undefined,
         connectorCatalogSelection: catalog,
         runPermissionPolicies: policies,
         authorizedRequestObservation: observation ?? {
@@ -4340,6 +4336,21 @@ export function createThreadClaimRunObjects(
         },
       };
     },
+  );
+  const agentFeatureSwitches$ = computed(async (get) => {
+    return get((await get(executionContext$)).featureSwitches$);
+  });
+  const cloudBrowserEnabled$ = computed(async (get) => {
+    const thread = await get(threadRow$);
+    if (!thread) {
+      throw new Error("Agent prompt requires a chat thread");
+    }
+    return thread.cloudBrowserEnabled;
+  });
+  const agentPrompt$ = createAgentPrompt(
+    preCreateAgentAgent$,
+    agentFeatureSwitches$,
+    cloudBrowserEnabled$,
   );
   const preCreatePreparedInput$ = computed(async (get) => {
     const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
@@ -4373,26 +4384,9 @@ export function createThreadClaimRunObjects(
         appendSystemPrompt,
       },
       threadSessionResolution: resolution,
-      cloudBrowserEnabled: resolution?.cloudBrowserEnabled,
+      cloudBrowserEnabled: await get(cloudBrowserEnabled$),
     };
   });
-  const agentPromptContext$ = computed(
-    async (get): Promise<AgentPromptContext> => {
-      const input = await get(preCreatePreparedInput$);
-      if (!input || "status" in input) {
-        throw new Error("Agent prompt requires an admitted run");
-      }
-      return {
-        featureSwitchContext: input.featureSwitchContext,
-        triggerSource: input.command.triggerSource ?? "web",
-        cloudBrowserEnabled: input.cloudBrowserEnabled,
-      };
-    },
-  );
-  const agentPrompt$ = createAgentPrompt(
-    preCreateAgentAgent$,
-    agentPromptContext$,
-  );
   const preCreateRunArgsRunArgs$ = computed(async (get) => {
     const input = await get(preCreatePreparedInput$);
     if (!input || "status" in input) {
@@ -13036,7 +13030,6 @@ interface AgentRunAfterBootstrap extends RunBootstrapContext {
   readonly agent: AgentRunRecord;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly timing: ApiDispatchTimingCollector;
-  readonly cloudBrowserEnabled: boolean | undefined;
   readonly command: ThreadRunIdentity;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
 }
@@ -13060,7 +13053,7 @@ interface ProductRunArgsInput {
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly timing: ApiDispatchTimingCollector;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly cloudBrowserEnabled: boolean | undefined;
+  readonly cloudBrowserEnabled: boolean;
   readonly featureSwitchContext: FeatureSwitchContext;
 }
 
