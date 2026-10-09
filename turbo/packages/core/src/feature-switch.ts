@@ -44,6 +44,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.StablePreviewFullscreen]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Stable preview fullscreen",
+    description:
+      "Keep thread sidebars in a shell-owned host and expand artifact previews without moving DOM nodes.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ArtifactPreviews]: {
     maintainer: "bingjie@okou.ai",
     description: "Capture and publish sandbox covers for HTML artifacts.",

@@ -33,7 +33,7 @@ export interface ChatLayoutSignals {
 }
 
 /** Each mounted surface owns its overlapping sidebar transitions. */
-export function createChatLayoutSignals(): ChatLayoutSignals {
+function createChatLayoutSignals(): ChatLayoutSignals {
   const resetFrames$ = resetSignal();
   const transitionOnRef$ = onRef(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
@@ -91,6 +91,10 @@ export function createChatLayoutSignals(): ChatLayoutSignals {
   );
   return { transitionOnRef$ };
 }
+
+// The legacy page and shell-owned sidebar mount this same layout owner
+// exclusively, so thread navigation does not replace its transition lifetime.
+export const chatLayout = createChatLayoutSignals();
 
 /** Transactions acknowledge the editor DOM even when draft sync suppresses onUpdate. */
 export function createChatComposerLayoutOnRef(

@@ -2955,37 +2955,43 @@ function ThreadAutomationsSidebarSlot({
   return <HeaderAutomationSidebar thread={thread} onClose={close} />;
 }
 
+export function ChatThreadSidebarPane() {
+  const active = useGet(activeThreadSidebar$);
+  if (!active) {
+    return null;
+  }
+  return active.target.type === "automations" ? (
+    <ThreadAutomationsSidebarSlot thread={active.thread} />
+  ) : (
+    <ThreadSidebarSlot thread={active.thread} target={active.target} />
+  );
+}
+
 export function ChatThreadPage({
   layout,
 }: {
   readonly layout: ChatLayoutSignals;
 }) {
   const activeThreadSidebar = useGet(activeThreadSidebar$);
+  const stableHost =
+    useGet(featureSwitch$)[FeatureSwitchKey.StablePreviewFullscreen];
   const leftPane = useGet(currentLeftPane$);
   const rightPane = useGet(currentRightPane$);
+  const threads = <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />;
   return withChatScrollLayout(
     <>
-      <ChatThreadSidebarShell
-        layout={layout}
-        animateEntry={activeThreadSidebar?.animateEntry ?? true}
-        open={activeThreadSidebar !== null}
-        sidebar={
-          activeThreadSidebar ? (
-            activeThreadSidebar.target.type === "automations" ? (
-              <ThreadAutomationsSidebarSlot
-                thread={activeThreadSidebar.thread}
-              />
-            ) : (
-              <ThreadSidebarSlot
-                thread={activeThreadSidebar.thread}
-                target={activeThreadSidebar.target}
-              />
-            )
-          ) : null
-        }
-      >
-        <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />
-      </ChatThreadSidebarShell>
+      {stableHost ? (
+        threads
+      ) : (
+        <ChatThreadSidebarShell
+          layout={layout}
+          animateEntry={activeThreadSidebar?.animateEntry ?? true}
+          open={activeThreadSidebar !== null}
+          sidebar={<ChatThreadSidebarPane />}
+        >
+          {threads}
+        </ChatThreadSidebarShell>
+      )}
       <ChatConnectorActionConnectModal />
     </>,
   );

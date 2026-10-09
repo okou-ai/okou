@@ -41,6 +41,7 @@ export enum FeatureSwitchKey {
   ZapierConnector = "zapierConnector",
   PrivateArtifacts = "privateArtifacts",
   ArtifactPreviews = "artifactPreviews",
+  StablePreviewFullscreen = "stablePreviewFullscreen",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
