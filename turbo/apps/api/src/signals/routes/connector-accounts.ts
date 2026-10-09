@@ -22,7 +22,7 @@ import {
   listConnectorAccountsForTarget,
   listConnectorAccountSummaries,
   renameConnectorAccount$,
-  setDefaultConnectorAccount,
+  setDefaultConnectorAccount$,
   setDefaultGoogleFormsAccount$,
 } from "../services/connector-account-lifecycle.service";
 import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
@@ -256,7 +256,7 @@ const setDefaultInner$ = command(
             },
             signal,
           )
-        : setDefaultConnectorAccount(writeDb, request, signal),
+        : set(setDefaultConnectorAccount$, request, signal),
       (changed) => {
         return changed instanceof Date
           ? {

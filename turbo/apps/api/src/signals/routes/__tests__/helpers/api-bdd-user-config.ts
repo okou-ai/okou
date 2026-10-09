@@ -30,7 +30,6 @@ import { pushSubscriptionsRoutes } from "../../push-subscriptions";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { userPreferencesRoutes } from "../../user-preferences";
 import type { ApiTestUser } from "./api-bdd";
-import { testAuthProbeContract, testAuthProbeRoutes } from "./auth-probe";
 import { createRouteMocks } from "./route-test";
 
 type ClerkOrgRole = "org:admin" | "org:member";
@@ -57,10 +56,6 @@ interface MintedBearer {
 interface ProbeHeaders {
   readonly authorization?: string;
   readonly cookie?: string;
-}
-
-interface ProbeQuery {
-  readonly acceptAnySandboxCapability?: string;
 }
 
 interface RegisterPushBody {
@@ -101,7 +96,6 @@ const rawModelPreferenceContract = c.router({
 });
 
 const userConfigRoutes = [
-  ...testAuthProbeRoutes,
   ...authMeRoutes,
   ...agentsRoutes,
   ...userModelPreferenceRoutes,
@@ -223,16 +217,15 @@ export function createUserConfigBddApi(context: TestContext) {
       });
     },
 
-    async probeAuth(
+    async requestMe(
       headers: ProbeHeaders,
-      query: ProbeQuery,
       statuses: readonly (200 | 401 | 403)[],
     ) {
       const client = setupAppWithRoutes({
         context,
         routes: userConfigRoutes,
-      })(testAuthProbeContract);
-      return await accept(client.check({ headers, query }), statuses);
+      })(authContract);
+      return await accept(client.me({ headers }), statuses);
     },
 
     async readMe(credential: Credential): Promise<{

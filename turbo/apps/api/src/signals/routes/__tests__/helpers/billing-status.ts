@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 
-import { nowDate } from "../../../../lib/time";
 import {
   createBillingWebhookFixture,
   generatedStripeCustomerId,
@@ -11,7 +10,6 @@ import {
   postCreditPurchaseInvoicePaid,
   postOneTimePurchaseCompleted,
   postSubscriptionInvoicePaid,
-  postUsageAllowanceInvoicePaid,
   subscriptionCredits,
   TEST_PRICE_CONCURRENCY,
   type BillingWebhookFixture,
@@ -55,23 +53,12 @@ interface ConcurrencyEntitlementSeed {
   readonly stripePriceId?: string;
 }
 
-interface UsageAllowanceSeed {
-  readonly status?: string;
-  readonly shortWindowSeconds: number;
-  readonly shortWindowUnits: number;
-  readonly weeklyWindowSeconds?: number;
-  readonly weeklyWindowUnits: number;
-  readonly effectiveAt?: Date;
-  readonly expiresAt?: Date | null;
-}
-
 interface BillingStatusSeedValues {
   readonly credits?: number;
   readonly onboardingPaymentPending?: boolean;
   readonly subscription?: SubscriptionSeed;
   readonly expiresRecords?: readonly ExpiresRecordSeed[];
   readonly concurrencyEntitlements?: readonly ConcurrencyEntitlementSeed[];
-  readonly usageAllowance?: UsageAllowanceSeed;
   readonly extraGrantedCredits?: number;
 }
 
@@ -246,30 +233,6 @@ async function applyConcurrencySeeds(
   }
 }
 
-async function applyUsageAllowanceSeed(
-  signal: AbortSignal,
-  fixture: BillingWebhookFixture,
-  customerId: string,
-  seed: UsageAllowanceSeed | undefined,
-): Promise<void> {
-  if (!seed) {
-    return;
-  }
-
-  await postUsageAllowanceInvoicePaid(signal, {
-    ...fixture,
-    customerId,
-    subscriptionId: generatedStripeSubscriptionId(),
-    status: seed.status,
-    shortWindowSeconds: seed.shortWindowSeconds,
-    shortWindowUnits: seed.shortWindowUnits,
-    weeklyWindowSeconds: seed.weeklyWindowSeconds ?? 604_800,
-    weeklyWindowUnits: seed.weeklyWindowUnits,
-    effectiveAt: seed.effectiveAt ?? nowDate(),
-    expiresAt: seed.expiresAt ?? new Date("2099-01-01T00:00:00.000Z"),
-  });
-}
-
 export const seedBillingStatusOrg$ = command(
   async (
     _,
@@ -302,12 +265,6 @@ export const seedBillingStatusOrg$ = command(
       fixture,
       customerId,
       values.concurrencyEntitlements,
-    );
-    await applyUsageAllowanceSeed(
-      signal,
-      fixture,
-      customerId,
-      values.usageAllowance,
     );
 
     if (values.extraGrantedCredits && values.extraGrantedCredits > 0) {

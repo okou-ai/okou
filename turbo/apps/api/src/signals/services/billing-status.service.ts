@@ -1,27 +1,11 @@
 import { computed, type Computed } from "ccstate";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import {
-  orgUsageAllowanceEntitlements,
-  orgUsageAllowanceWindows,
-} from "@okouai/db/schema/org-usage-allowance";
-import {
-  and,
-  desc,
-  eq,
-  gte,
-  gt,
-  inArray,
-  isNull,
-  lte,
-  or,
-  sql,
-  sum,
-} from "drizzle-orm";
+import { and, desc, eq, gt, lte, sql, sum } from "drizzle-orm";
 
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import {
   activeConcurrencySubscriptions,
   cappedBaseConcurrencyLimit,
@@ -42,16 +26,8 @@ const TIER_MONTHLY_CREDITS = Object.freeze<Record<PlanCreditTier, number>>({
 type CreditBreakdownCategory = "plan" | "free" | "promotional" | "payAsYouGo";
 type PlanCreditTier = "pro" | "team";
 type ScheduledBillingTargetTier = "limited-free-1" | "pro" | "team";
-type UsageAllowanceWindowKind = "short" | "weekly";
 
 const CANCELED_SUBSCRIPTION_TARGET_TIER = "limited-free-1";
-const ACTIVE_USAGE_ALLOWANCE_STATUSES = [
-  "active",
-  "manual_active",
-  "trialing",
-  "past_due",
-] as const;
-const USAGE_ALLOWANCE_WINDOW_KINDS = ["short", "weekly"] as const;
 
 interface ScheduledBillingChange {
   type: "cancel" | "downgrade";
@@ -73,40 +49,6 @@ interface ActiveCreditRecord {
   remaining: number;
   expiresAt: Date;
   createdAt: Date;
-}
-
-interface ActiveUsageAllowanceEntitlement {
-  shortWindowSeconds: number;
-  shortWindowUnits: number;
-  weeklyWindowSeconds: number;
-  weeklyWindowUnits: number;
-}
-
-interface ActiveUsageAllowanceWindow {
-  kind: UsageAllowanceWindowKind;
-  startsAt: Date;
-  expiresAt: Date;
-  unitLimit: number;
-  consumedUnits: number;
-}
-
-interface UsageAllowanceWindowStatus {
-  kind: UsageAllowanceWindowKind;
-  windowSeconds: number;
-  unitLimit: number;
-  consumedUnits: number;
-  remainingUnits: number;
-  startsAt: string | null;
-  expiresAt: string | null;
-}
-
-interface UsageAllowanceStatus {
-  windows: UsageAllowanceWindowStatus[];
-}
-
-interface ActiveUsageAllowanceStatus {
-  status: UsageAllowanceStatus;
-  stripeSubscriptionId: string | null;
 }
 
 interface BillingOrgRow {
@@ -172,7 +114,6 @@ interface BillingStatusResponse {
     scheduledQuantity?: number | null;
     scheduledChangeAt?: string | null;
   }[];
-  usageAllowance: UsageAllowanceStatus | null;
   concurrencyLimit: number;
 }
 
@@ -374,146 +315,6 @@ function creditExpiry(records: readonly ActiveCreditRecord[]): {
   };
 }
 
-function usageAllowanceWindowSeconds(
-  entitlement: ActiveUsageAllowanceEntitlement,
-  kind: UsageAllowanceWindowKind,
-): number {
-  return kind === "short"
-    ? entitlement.shortWindowSeconds
-    : entitlement.weeklyWindowSeconds;
-}
-
-function usageAllowanceWindowUnitLimit(
-  entitlement: ActiveUsageAllowanceEntitlement,
-  kind: UsageAllowanceWindowKind,
-): number {
-  return kind === "short"
-    ? entitlement.shortWindowUnits
-    : entitlement.weeklyWindowUnits;
-}
-
-function isUsageAllowanceWindowKind(
-  value: string,
-): value is UsageAllowanceWindowKind {
-  return value === "short" || value === "weekly";
-}
-
-function remainingAllowanceUnits(args: {
-  unitLimit: number;
-  consumedUnits: number;
-}): number {
-  return Math.max(args.unitLimit - args.consumedUnits, 0);
-}
-
-function usageAllowanceWindowStatus(args: {
-  entitlement: ActiveUsageAllowanceEntitlement;
-  kind: UsageAllowanceWindowKind;
-  activeWindow: ActiveUsageAllowanceWindow | undefined;
-}): UsageAllowanceWindowStatus {
-  const unitLimit =
-    args.activeWindow?.unitLimit ??
-    usageAllowanceWindowUnitLimit(args.entitlement, args.kind);
-  const consumedUnits = args.activeWindow?.consumedUnits ?? 0;
-
-  return {
-    kind: args.kind,
-    windowSeconds: usageAllowanceWindowSeconds(args.entitlement, args.kind),
-    unitLimit,
-    consumedUnits,
-    remainingUnits: remainingAllowanceUnits({ unitLimit, consumedUnits }),
-    startsAt: args.activeWindow?.startsAt.toISOString() ?? null,
-    expiresAt: args.activeWindow?.expiresAt.toISOString() ?? null,
-  };
-}
-
-async function activeUsageAllowanceStatus(
-  db: ReadonlyDb,
-  orgId: string,
-  currentTime: Date,
-): Promise<ActiveUsageAllowanceStatus | null> {
-  const [entitlement] = await db
-    .select({
-      effectiveAt: orgUsageAllowanceEntitlements.effectiveAt,
-      shortWindowSeconds: orgUsageAllowanceEntitlements.shortWindowSeconds,
-      shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
-      weeklyWindowSeconds: orgUsageAllowanceEntitlements.weeklyWindowSeconds,
-      weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
-      stripeSubscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
-    })
-    .from(orgUsageAllowanceEntitlements)
-    .where(
-      and(
-        eq(orgUsageAllowanceEntitlements.orgId, orgId),
-        inArray(orgUsageAllowanceEntitlements.status, [
-          ...ACTIVE_USAGE_ALLOWANCE_STATUSES,
-        ]),
-        lte(orgUsageAllowanceEntitlements.effectiveAt, currentTime),
-        or(
-          isNull(orgUsageAllowanceEntitlements.expiresAt),
-          gt(orgUsageAllowanceEntitlements.expiresAt, currentTime),
-        ),
-      ),
-    )
-    .limit(1);
-  if (!entitlement) {
-    return null;
-  }
-
-  const activeWindows = await db
-    .select({
-      kind: orgUsageAllowanceWindows.kind,
-      startsAt: orgUsageAllowanceWindows.startsAt,
-      expiresAt: orgUsageAllowanceWindows.expiresAt,
-      unitLimit: orgUsageAllowanceWindows.unitLimit,
-      consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-    })
-    .from(orgUsageAllowanceWindows)
-    .where(
-      and(
-        eq(orgUsageAllowanceWindows.orgId, orgId),
-        inArray(orgUsageAllowanceWindows.kind, [
-          ...USAGE_ALLOWANCE_WINDOW_KINDS,
-        ]),
-        gte(orgUsageAllowanceWindows.startsAt, entitlement.effectiveAt),
-        lte(orgUsageAllowanceWindows.startsAt, currentTime),
-        gt(orgUsageAllowanceWindows.expiresAt, currentTime),
-      ),
-    )
-    .orderBy(desc(orgUsageAllowanceWindows.startsAt));
-
-  const windowByKind = new Map<
-    UsageAllowanceWindowKind,
-    ActiveUsageAllowanceWindow
-  >();
-  for (const window of activeWindows) {
-    if (
-      isUsageAllowanceWindowKind(window.kind) &&
-      !windowByKind.has(window.kind)
-    ) {
-      windowByKind.set(window.kind, {
-        kind: window.kind,
-        startsAt: window.startsAt,
-        expiresAt: window.expiresAt,
-        unitLimit: window.unitLimit,
-        consumedUnits: window.consumedUnits,
-      });
-    }
-  }
-
-  return {
-    status: {
-      windows: USAGE_ALLOWANCE_WINDOW_KINDS.map((kind) => {
-        return usageAllowanceWindowStatus({
-          entitlement,
-          kind,
-          activeWindow: windowByKind.get(kind),
-        });
-      }),
-    },
-    stripeSubscriptionId: entitlement.stripeSubscriptionId,
-  };
-}
-
 function scheduledTargetTier(
   value: string | null,
 ): ScheduledBillingTargetTier | null {
@@ -577,7 +378,6 @@ function billingStatusResponse(args: {
   unsettledExpired: number;
   activeRecords: readonly ActiveCreditRecord[];
   concurrencySubscriptions: readonly ActiveConcurrencySubscription[];
-  usageAllowance: ActiveUsageAllowanceStatus | null;
   baseConcurrencyLimit: number;
 }): BillingStatusResponse {
   const org = args.org ?? DEFAULT_BILLING_ORG;
@@ -612,9 +412,7 @@ function billingStatusResponse(args: {
     canRestorePlan: canRestorePlanSubscription(org),
     hasSubscription:
       hasManageablePlanSubscription(org) ||
-      args.concurrencySubscriptions.length > 0 ||
-      (args.usageAllowance !== null &&
-        args.usageAllowance.stripeSubscriptionId !== null),
+      args.concurrencySubscriptions.length > 0,
     autoRecharge: {
       enabled: org.autoRechargeEnabled,
       threshold: org.autoRechargeThreshold,
@@ -656,7 +454,6 @@ function billingStatusResponse(args: {
         };
       },
     ),
-    usageAllowance: args.usageAllowance?.status ?? null,
   };
 }
 
@@ -677,7 +474,6 @@ export function orgBillingStatus(
       unsettledExpiredRow,
       activeRecords,
       concurrencySubscriptions,
-      usageAllowance,
       capabilities,
     ] = await Promise.all([
       db
@@ -735,7 +531,6 @@ export function orgBillingStatus(
         )
         .orderBy(desc(creditExpiresRecord.createdAt)),
       activeConcurrencySubscriptions(db, orgId, currentTime),
-      activeUsageAllowanceStatus(db, orgId, currentTime),
       loadOrgPlanCapabilities(db, orgId),
     ]);
 
@@ -753,7 +548,6 @@ export function orgBillingStatus(
       unsettledExpired: unsettledExpiredRow[0]?.total ?? 0,
       activeRecords,
       concurrencySubscriptions,
-      usageAllowance,
       baseConcurrencyLimit: capabilities?.baseConcurrencyLimit ?? 0,
     });
   });

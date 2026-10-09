@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.client
+import selectors
 import socket
 import threading
 import urllib.parse
@@ -175,6 +176,13 @@ def test_threaded_http_server_closes_listener_after_startup_failure(
     )
     failure = failure_type("injected thread startup failure")
     listener: socket.socket | None = None
+    shutdown_sockets: list[socket.socket] = []
+    socketpair = socket.socketpair
+
+    def observe_socketpair() -> tuple[socket.socket, socket.socket]:
+        pair = socketpair()
+        shutdown_sockets.extend(pair)
+        return pair
 
     def fail_startup(*args: object, **kwargs: object) -> None:
         nonlocal listener
@@ -184,12 +192,12 @@ def test_threaded_http_server_closes_listener_after_startup_failure(
 
     try:
         with (
+            patch.object(socket, "socketpair", side_effect=observe_socketpair),
             patch.object(threading.Thread, failure_point, side_effect=fail_startup),
-            # An incorrect rollback must fail rather than block in shutdown().
             patch.object(
-                ThreadingHTTPServer,
-                "shutdown",
-                side_effect=AssertionError("cannot shut down an unstarted server"),
+                threading.Thread,
+                "join",
+                side_effect=AssertionError("cannot join an unstarted server"),
             ),
             pytest.raises(failure_type, match="injected thread startup failure") as caught,
             server.run(),
@@ -199,6 +207,8 @@ def test_threaded_http_server_closes_listener_after_startup_failure(
         assert caught.value is failure
         assert listener is not None
         assert listener.fileno() == -1
+        assert len(shutdown_sockets) == 2
+        assert all(sock.fileno() == -1 for sock in shutdown_sockets)
         with pytest.raises(AssertionError):
             _ = server.api_url
     finally:
@@ -208,6 +218,109 @@ def test_threaded_http_server_closes_listener_after_startup_failure(
     with server.run():
         assert _post(f"{server.api_url}/recovered") == (204, b"")
 
+    with pytest.raises(AssertionError):
+        _ = server.api_url
+
+
+def test_threaded_http_server_shutdown_wakes_an_idle_selector() -> None:
+    server = ThreadedHttpTestServer(
+        request_factory=_CapturedRequest,
+        default_status=204,
+        thread_name="idle-http-test-server",
+    )
+    selecting = threading.Event()
+    select_timeouts: list[float | None] = []
+    serving_threads: list[threading.Thread] = []
+    select = selectors.DefaultSelector.select
+
+    def observe_select(
+        selector: selectors.DefaultSelector,
+        timeout: float | None = None,
+    ) -> list[tuple[selectors.SelectorKey, int]]:
+        select_timeouts.append(timeout)
+        serving_threads.append(threading.current_thread())
+        selecting.set()
+        return select(selector, timeout)
+
+    with patch.object(selectors.DefaultSelector, "select", observe_select), server.run():
+        wait_for_event(selecting, timeout=_THREAD_TIMEOUT_SECONDS)
+        assert server._server is not None
+        listener = server._server.socket
+
+    assert select_timeouts
+    assert all(timeout is None for timeout in select_timeouts)
+    assert all(not thread.is_alive() for thread in serving_threads)
+    assert listener.fileno() == -1
+    assert server.request_count == 0
+    with pytest.raises(AssertionError):
+        _ = server.api_url
+
+
+def test_threaded_http_server_shutdown_releases_a_blocked_response() -> None:
+    server = ThreadedHttpTestServer(
+        request_factory=_CapturedRequest,
+        default_status=503,
+        thread_name="blocked-http-test-server",
+    )
+    release_response = threading.Event()
+    server.queue_response(201, body=b"released", release_event=release_response)
+    responses: dict[str, _Response] = {}
+    responses_lock = threading.Lock()
+    thread: ThreadUnderTest | None = None
+
+    try:
+        with server.run():
+            thread = _start_post(
+                f"{server.api_url}/blocked",
+                key="blocked",
+                responses=responses,
+                responses_lock=responses_lock,
+            )
+            assert server.wait_for_request_count(1)
+            assert not release_response.is_set()
+            assert thread.is_alive()
+
+        assert release_response.is_set()
+        thread.join_and_raise(timeout=_THREAD_TIMEOUT_SECONDS)
+        assert responses == {"blocked": (201, b"released")}
+        assert [request.path for request in server.requests] == ["/blocked"]
+    finally:
+        release_response.set()
+        if thread is not None:
+            thread.join(timeout=_THREAD_TIMEOUT_SECONDS)
+
+
+def test_threaded_http_server_propagates_serving_failure() -> None:
+    server = ThreadedHttpTestServer(
+        request_factory=_CapturedRequest,
+        default_status=204,
+        thread_name="failed-http-test-server",
+    )
+    failed = threading.Event()
+    failure = RuntimeError("injected serving failure")
+    listener: socket.socket | None = None
+
+    def fail_request() -> None:
+        failed.set()
+        raise failure
+
+    def exercise_server() -> None:
+        nonlocal listener
+        with server.run():
+            assert server._server is not None
+            listener = server._server.socket
+            with socket.create_connection(listener.getsockname(), timeout=_THREAD_TIMEOUT_SECONDS):
+                wait_for_event(failed, timeout=_THREAD_TIMEOUT_SECONDS)
+
+    with (
+        patch.object(ThreadingHTTPServer, "handle_request", side_effect=fail_request),
+        pytest.raises(RuntimeError, match="injected serving failure") as caught,
+    ):
+        exercise_server()
+
+    assert caught.value is failure
+    assert listener is not None
+    assert listener.fileno() == -1
     with pytest.raises(AssertionError):
         _ = server.api_url
 

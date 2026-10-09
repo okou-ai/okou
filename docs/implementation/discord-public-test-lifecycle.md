@@ -100,8 +100,12 @@ The earlier revision-specific receipts below remain historical, not evidence for
 the consolidated migration. On 2026-10-09, main's migration frontier advanced to
 1355, so the same unreleased schema was regenerated again as
 `1356_discord_oauth_onboarding`, retaining all main history through 1355 and the
-same fail-closed data-only backfill. This is the current migration; the earlier
-1346 Discord receipt is historical.
+same fail-closed data-only backfill. A later demonstrated collision with main's
+`1356_drop_organization_usage_allowance` required retaining that main migration
+and regenerating the still-unreleased Discord schema as
+`1357_discord_oauth_onboarding`, again with Drizzle metadata and the identical
+fail-closed backfill. This is the current migration; earlier 1346/1356 Discord
+receipts are historical.
 
 ## Final export-boundary correction
 

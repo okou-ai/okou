@@ -619,7 +619,7 @@ jobs:
 
       - name: Run mitm-addon tests
         working-directory: crates/runner/mitm-addon
-        run: uv run --no-sync python -m pytest tests/ -v
+        run: uv run --no-sync python -m pytest tests/ -q --durations=30 --durations-min=0.1
 
   mitm-addon-packaged-control:
     runs-on: ${{ matrix.os }}

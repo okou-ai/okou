@@ -1288,17 +1288,6 @@
       "subscriptionChangeConfirmed": "구독 변경이 확인되었습니다."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}일",
-        "hour": "{{value}}시간",
-        "left": "{{value}} 남음",
-        "minute": "{{value}}분",
-        "remainingAria": "사용 한도 {{label}} 남음",
-        "resets": "{{date}}에 초기화됨",
-        "resetsRaw": "{{value}}에 초기화됨",
-        "title": "사용 한도",
-        "week": "{{value}}주"
-      },
       "autoRechargeOn": "자동 충전 켜짐",
       "breakdown": {
         "currentPlanDescription": "월간 플랜 크레딧, 청구 주기마다 초기화",

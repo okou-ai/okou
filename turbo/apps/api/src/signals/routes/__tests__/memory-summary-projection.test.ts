@@ -1,20 +1,12 @@
 import { createHash } from "node:crypto";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import type {
-  TestMemorySummaryProjectionStateActionBody,
-  TestMemorySummaryProjectionStateActionResponse,
-} from "@okouai/api-contracts/contracts/test-memory-summary-projection-state";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
-import { testMemorySummaryProjectionStateRoutes } from "../test-memory-summary-projection-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import type { BddStorageFileEntry } from "./helpers/api-bdd-storage-files";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
@@ -31,25 +23,15 @@ const TAR_BLOCK_SIZE = 512;
 
 interface TarEntry {
   readonly path: string;
-  readonly content?: Buffer;
-  readonly type?: "file" | "directory" | "symlink";
-  readonly linkName?: string;
+  readonly content: Buffer;
 }
 
 interface PublishedVersion {
-  readonly actor: ApiTestUser;
+  readonly runId: string;
+  readonly sandboxHeaders: { readonly authorization: string };
   readonly memoryStorageId: string;
   readonly storageVersionId: string;
-  readonly manifestKey: string;
-  readonly archiveKey: string;
   readonly files: readonly BddStorageFileEntry[];
-}
-
-function requiredOrgId(actor: ApiTestUser): string {
-  if (!actor.orgId) {
-    throw new Error("Memory summary projection tests require an org actor");
-  }
-  return actor.orgId;
 }
 
 function requiredObjectKey(key: string | undefined): string {
@@ -100,32 +82,6 @@ function installS3Objects(): void {
   });
 }
 
-function failNextObjectRead(key: string): void {
-  const fallback = context.mocks.s3.send.getMockImplementation();
-  let pending = true;
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (
-      pending &&
-      command instanceof GetObjectCommand &&
-      command.input.Key === key
-    ) {
-      pending = false;
-      const error = new Error("Injected transient object read failure");
-      error.name = "TimeoutError";
-      return Promise.reject(error);
-    }
-    return fallback ? fallback(command) : Promise.resolve({});
-  });
-}
-
-function downloadedObjectKeys(): readonly string[] {
-  return context.mocks.s3.send.mock.calls.flatMap(([command]) => {
-    return command instanceof GetObjectCommand
-      ? [requiredObjectKey(command.input.Key)]
-      : [];
-  });
-}
-
 function writeTarNumber(
   header: Buffer,
   offset: number,
@@ -141,25 +97,16 @@ function writeTarNumber(
 }
 
 function tarHeader(entry: TarEntry): Buffer {
-  const content = entry.content ?? Buffer.alloc(0);
-  const type = entry.type ?? "file";
+  const content = entry.content;
   const header = Buffer.alloc(TAR_BLOCK_SIZE);
   header.write(entry.path, 0, 100, "utf8");
-  writeTarNumber(header, 100, 8, type === "directory" ? 0o755 : 0o644);
+  writeTarNumber(header, 100, 8, 0o644);
   writeTarNumber(header, 108, 8, 0);
   writeTarNumber(header, 116, 8, 0);
-  writeTarNumber(header, 124, 12, type === "file" ? content.length : 0);
+  writeTarNumber(header, 124, 12, content.length);
   writeTarNumber(header, 136, 12, 0);
   header.fill(0x20, 148, 156);
-  header.write(
-    type === "file" ? "0" : type === "directory" ? "5" : "2",
-    156,
-    1,
-    "ascii",
-  );
-  if (entry.linkName) {
-    header.write(entry.linkName, 157, 100, "utf8");
-  }
+  header.write("0", 156, 1, "ascii");
   header.write("ustar\0", 257, 6, "ascii");
   header.write("00", 263, 2, "ascii");
   header.write("root", 265, 32, "ascii");
@@ -176,15 +123,13 @@ function tarHeader(entry: TarEntry): Buffer {
 function tarGz(entries: readonly TarEntry[]): Buffer {
   const blocks: Buffer[] = [];
   for (const entry of entries) {
-    const content = entry.content ?? Buffer.alloc(0);
+    const content = entry.content;
     blocks.push(tarHeader(entry));
-    if ((entry.type ?? "file") === "file") {
-      blocks.push(content);
-      const padding =
-        (TAR_BLOCK_SIZE - (content.length % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE;
-      if (padding > 0) {
-        blocks.push(Buffer.alloc(padding));
-      }
+    blocks.push(content);
+    const padding =
+      (TAR_BLOCK_SIZE - (content.length % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE;
+    if (padding > 0) {
+      blocks.push(Buffer.alloc(padding));
     }
   }
   blocks.push(Buffer.alloc(TAR_BLOCK_SIZE * 2));
@@ -210,12 +155,10 @@ function canonicalManifest(files: readonly BddStorageFileEntry[]): Buffer {
   );
 }
 
-// #37440 key10 keeps only the exact-version projection worker/read harness.
-// Ordinary memory ownership and writes come from a real claimed native Run.
+// Memory ownership and writes come from a real claimed native Run.
 async function publishVersion(args: {
   readonly files: readonly BddStorageFileEntry[];
   readonly archive: Buffer;
-  readonly manifest?: Buffer;
 }): Promise<PublishedVersion> {
   const fixture = createChatEventsFixture(context);
   const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
@@ -312,10 +255,7 @@ async function publishVersion(args: {
   const archiveKey = prepared.uploads.archive.key;
   const manifestKey = prepared.uploads.manifest.key;
   context.sessionHistoryBlobs.set(archiveKey, args.archive);
-  context.sessionHistoryBlobs.set(
-    manifestKey,
-    args.manifest ?? canonicalManifest(args.files),
-  );
+  context.sessionHistoryBlobs.set(manifestKey, canonicalManifest(args.files));
   const committed = await fixture.webhooks.requestAgentStorageCommit(
     {
       runId: run.runId,
@@ -331,69 +271,12 @@ async function publishVersion(args: {
   }
   expect(committed.body.versionId).toBe(prepared.versionId);
   return {
-    actor,
+    runId: run.runId,
+    sandboxHeaders: claimed.sandboxHeaders,
     memoryStorageId: memory.storageId,
     storageVersionId: committed.body.versionId,
-    manifestKey,
-    archiveKey,
     files: [...args.files],
   };
-}
-
-function projectionScope(
-  version: PublishedVersion,
-): Omit<TestMemorySummaryProjectionStateActionBody, "action" | "content"> {
-  return {
-    org_id: requiredOrgId(version.actor),
-    user_id: version.actor.userId,
-    memory_storage_id: version.memoryStorageId,
-    storage_version_id: version.storageVersionId,
-  };
-}
-
-async function stateAction(
-  body: TestMemorySummaryProjectionStateActionBody,
-): Promise<TestMemorySummaryProjectionStateActionResponse> {
-  const app = createAppWithRoutes({
-    signal: context.signal,
-    routes: testMemorySummaryProjectionStateRoutes,
-  });
-  const response = await app.request(
-    "/api/test/memory-summary-projection-state/action",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Projection state action ${body.action} failed with ${response.status}`,
-    );
-  }
-  return (await response.json()) as TestMemorySummaryProjectionStateActionResponse;
-}
-
-async function inspect(version: PublishedVersion) {
-  return (await stateAction({ action: "inspect", ...projectionScope(version) }))
-    .state;
-}
-
-async function run(version: PublishedVersion, currentTime?: Date) {
-  const result = await stateAction({
-    action: "run",
-    ...projectionScope(version),
-    ...(currentTime ? { current_time: currentTime.toISOString() } : {}),
-  });
-  if (!result.worker) {
-    throw new Error("Projection worker returned no result");
-  }
-  return result.worker;
-}
-
-async function read(version: PublishedVersion) {
-  return (await stateAction({ action: "read", ...projectionScope(version) }))
-    .projection;
 }
 
 beforeEach(() => {
@@ -402,331 +285,27 @@ beforeEach(() => {
   installS3Objects();
 });
 
-describe("memory summary projection", () => {
-  it("accepts a different gzip size for the same logical Storage version", async () => {
+describe("Runner memory publication", () => {
+  it("deduplicates memory publication through the claimed Run's upload authorization", async () => {
     const summary = Buffer.from("summary with stable logical contents", "utf8");
-    const original = tarGz([{ path: "memory_summary.md", content: summary }]);
     const version = await publishVersion({
       files: [declaredFile("memory_summary.md", summary)],
-      archive: original,
-    });
-    const differentlyCompressed = gzipSync(gunzipSync(original), { level: 0 });
-    expect(differentlyCompressed).not.toHaveLength(original.length);
-    context.sessionHistoryBlobs.set(version.archiveKey, differentlyCompressed);
-    context.mocks.s3.send.mockClear();
-
-    await expect(run(version)).resolves.toMatchObject({ claimed: 1, ready: 1 });
-    expect(
-      context.mocks.s3.send.mock.calls.filter(([command]) => {
-        return command instanceof HeadObjectCommand;
-      }),
-    ).toHaveLength(0);
-    await expect(read(version)).resolves.toMatchObject({
-      content: summary.toString("utf8"),
-      source_size: summary.length,
-    });
-  });
-
-  const invalidCases: readonly {
-    readonly name: string;
-    readonly files: () => readonly BddStorageFileEntry[];
-    readonly archive: () => Buffer;
-    readonly manifest?: (files: readonly BddStorageFileEntry[]) => Buffer;
-    readonly status: "invalid" | "missing" | "over_limit";
-  }[] = [
-    {
-      name: "missing root summary",
-      files: () => {
-        return [declaredFile("other.md", Buffer.from("other", "utf8"))];
-      },
-      archive: () => {
-        return tarGz([
-          { path: "other.md", content: Buffer.from("other", "utf8") },
-        ]);
-      },
-      status: "missing",
-    },
-    {
-      name: "empty root summary",
-      files: () => {
-        return [declaredFile("memory_summary.md", Buffer.alloc(0))];
-      },
-      archive: () => {
-        return tarGz([{ path: "memory_summary.md", content: Buffer.alloc(0) }]);
-      },
-      status: "missing",
-    },
-    {
-      name: "invalid UTF-8",
-      files: () => {
-        return [declaredFile("memory_summary.md", Buffer.from([0xff]))];
-      },
-      archive: () => {
-        return tarGz([
-          { path: "memory_summary.md", content: Buffer.from([0xff]) },
-        ]);
-      },
-      status: "invalid",
-    },
-    {
-      name: "duplicate archive path",
-      files: () => {
-        return [declaredFile("memory_summary.md", Buffer.from("one", "utf8"))];
-      },
-      archive: () => {
-        return tarGz([
-          { path: "memory_summary.md", content: Buffer.from("one", "utf8") },
-          { path: "memory_summary.md", content: Buffer.from("one", "utf8") },
-        ]);
-      },
-      status: "invalid",
-    },
-    {
-      name: "symlink summary",
-      files: () => {
-        return [declaredFile("memory_summary.md", Buffer.from("link", "utf8"))];
-      },
-      archive: () => {
-        return tarGz([
-          {
-            path: "memory_summary.md",
-            type: "symlink",
-            linkName: "other.md",
-          },
-        ]);
-      },
-      status: "invalid",
-    },
-    {
-      name: "archive traversal",
-      files: () => {
-        return [declaredFile("memory_summary.md", Buffer.from("safe", "utf8"))];
-      },
-      archive: () => {
-        return tarGz([
-          {
-            path: "memory_summary.md",
-            content: Buffer.from("safe", "utf8"),
-          },
-          { path: "../escape", content: Buffer.from("escape", "utf8") },
-        ]);
-      },
-      status: "invalid",
-    },
-    {
-      name: "summary hash mismatch",
-      files: () => {
-        return [
-          declaredFile("memory_summary.md", Buffer.from("expected", "utf8")),
-        ];
-      },
-      archive: () => {
-        return tarGz([
-          {
-            path: "memory_summary.md",
-            content: Buffer.from("tampered", "utf8"),
-          },
-        ]);
-      },
-      status: "invalid",
-    },
-    {
-      name: "duplicate manifest path",
-      files: () => {
-        const file = declaredFile(
-          "memory_summary.md",
-          Buffer.from("duplicate", "utf8"),
-        );
-        return [file, file];
-      },
-      archive: () => {
-        return tarGz([
-          {
-            path: "memory_summary.md",
-            content: Buffer.from("duplicate", "utf8"),
-          },
-        ]);
-      },
-      status: "invalid",
-    },
-    {
-      name: "nested alternate summary",
-      files: () => {
-        return [
-          declaredFile(
-            "nested/memory_summary.md",
-            Buffer.from("nested", "utf8"),
-          ),
-        ];
-      },
-      archive: () => {
-        return tarGz([
-          {
-            path: "nested/memory_summary.md",
-            content: Buffer.from("nested", "utf8"),
-          },
-        ]);
-      },
-      status: "invalid",
-    },
-    {
-      name: "oversized summary bytes",
-      files: () => {
-        return [declaredFile("memory_summary.md", Buffer.alloc(64 * 1024 + 1))];
-      },
-      archive: () => {
-        return tarGz([
-          { path: "memory_summary.md", content: Buffer.alloc(64 * 1024 + 1) },
-        ]);
-      },
-      status: "over_limit",
-    },
-    {
-      name: "malformed manifest",
-      files: () => {
-        return [
-          declaredFile("memory_summary.md", Buffer.from("summary", "utf8")),
-        ];
-      },
-      archive: () => {
-        return tarGz([
-          {
-            path: "memory_summary.md",
-            content: Buffer.from("summary", "utf8"),
-          },
-        ]);
-      },
-      manifest: () => {
-        return Buffer.from("{malformed", "utf8");
-      },
-      status: "invalid",
-    },
-  ];
-
-  it.each(invalidCases)(
-    "fails closed for $name",
-    async ({ files: filesFactory, archive, manifest, status }) => {
-      const files = filesFactory();
-      const version = await publishVersion({
-        files,
-        archive: archive(),
-        manifest: manifest?.(files),
-      });
-      await expect(run(version)).resolves.toMatchObject({
-        claimed: 1,
-        ready: 0,
-        no_content: 1,
-        retried: 0,
-      });
-      await expect(inspect(version)).resolves.toMatchObject({
-        status,
-        has_content: false,
-      });
-      await expect(read(version)).resolves.toBeNull();
-    },
-  );
-
-  it.each(["manifest", "archive"] as const)(
-    "retries transient %s reads with backoff and then materializes",
-    async (objectKind) => {
-      const content = Buffer.from("retryable summary", "utf8");
-      const version = await publishVersion({
-        files: [declaredFile("memory_summary.md", content)],
-        archive: tarGz([{ path: "memory_summary.md", content }]),
-      });
-      failNextObjectRead(
-        objectKind === "manifest" ? version.manifestKey : version.archiveKey,
-      );
-
-      await expect(run(version)).resolves.toMatchObject({
-        claimed: 1,
-        retried: 1,
-        ready: 0,
-      });
-      const pending = await inspect(version);
-      expect(pending).toMatchObject({
-        status: "pending",
-        attempt_count: 1,
-        last_error_class: "TimeoutError",
-        has_content: false,
-      });
-      expect(new Date(pending?.available_at ?? 0).getTime()).toBeGreaterThan(
-        now() - 100,
-      );
-
-      await stateAction({ action: "make-due", ...projectionScope(version) });
-      await expect(run(version)).resolves.toMatchObject({
-        claimed: 1,
-        ready: 1,
-      });
-      await expect(inspect(version)).resolves.toMatchObject({
-        status: "ready",
-        attempt_count: 2,
-        last_error_class: null,
-      });
-    },
-  );
-
-  it("leaves missing projections unchanged until the background worker backfills them", async () => {
-    const content = Buffer.from("lazy projection", "utf8");
-    const version = await publishVersion({
-      files: [declaredFile("memory_summary.md", content)],
-      archive: tarGz([{ path: "memory_summary.md", content }]),
-    });
-    await stateAction({ action: "delete", ...projectionScope(version) });
-    await expect(
-      run(version, new Date("2000-01-01T00:00:00.000Z")),
-    ).resolves.toMatchObject({
-      backfilled: 1,
-      claimed: 1,
-      ready: 1,
-    });
-
-    await stateAction({ action: "delete", ...projectionScope(version) });
-    context.mocks.s3.send.mockClear();
-    await expect(read(version)).resolves.toBeNull();
-    expect(downloadedObjectKeys()).toStrictEqual([]);
-    await expect(inspect(version)).resolves.toBeNull();
-    await expect(run(version)).resolves.toMatchObject({
-      backfilled: 1,
-      claimed: 1,
-      ready: 1,
-    });
-    await expect(read(version)).resolves.toMatchObject({
-      content: content.toString("utf8"),
-    });
-  });
-
-  it("materializes a full source above the prompt injection budget", async () => {
-    const summary = Buffer.from(
-      `v1\n## User Profile\n${" token".repeat(2936)}`,
-      "utf8",
-    );
-    const tokenCount = encode(summary.toString("utf8")).length;
-    expect(tokenCount).toBe(2943);
-    expect(summary.length).toBeLessThanOrEqual(64 * 1024);
-    const declared = declaredFile("memory_summary.md", summary);
-    const version = await publishVersion({
-      files: [declared],
       archive: tarGz([{ path: "memory_summary.md", content: summary }]),
     });
-
-    await expect(run(version)).resolves.toMatchObject({ ready: 1 });
-
-    // The stored projection describes the complete source; the runtime renderer
-    // is the only place that applies the 2500-token injection budget.
-    await expect(inspect(version)).resolves.toMatchObject({
-      status: "ready",
-      last_error_class: null,
-      source_hash: declared.hash,
-      source_size: summary.length,
-      token_count: tokenCount,
-    });
-    await expect(read(version)).resolves.toMatchObject({
-      content: summary.toString("utf8"),
-      source_hash: declared.hash,
-      source_size: summary.length,
-      token_count: tokenCount,
+    const repeated = await createWebhookCallbackApi(
+      context,
+    ).requestAgentStoragePrepare(
+      {
+        runId: version.runId,
+        storageId: version.memoryStorageId,
+        files: [...version.files],
+      },
+      version.sandboxHeaders,
+      [200],
+    );
+    expect(repeated.body).toStrictEqual({
+      versionId: version.storageVersionId,
+      existing: true,
     });
   });
 });

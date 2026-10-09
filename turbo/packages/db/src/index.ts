@@ -90,7 +90,6 @@ import * as orgSchema from "./schema/org-metadata";
 import * as orgPlanEntitlementSchema from "./runtime/org-plan-entitlement";
 import * as orgConcurrencyEntitlementSchema from "./schema/org-concurrency-entitlement";
 import * as orgConcurrencySubscriptionSchema from "./schema/org-concurrency-subscription";
-import * as orgUsageAllowanceSchema from "./schema/org-usage-allowance";
 import * as orgCacheSchema from "./schema/org-cache";
 import * as orgMembersSchema from "./schema/org-members-metadata";
 import * as orgMembersCacheSchema from "./schema/org-members-cache";
@@ -255,7 +254,6 @@ export const schema = {
   ...orgPlanEntitlementSchema,
   ...orgConcurrencyEntitlementSchema,
   ...orgConcurrencySubscriptionSchema,
-  ...orgUsageAllowanceSchema,
   ...orgCacheSchema,
   ...orgMembersSchema,
   ...orgMembersCacheSchema,

@@ -11,12 +11,6 @@ import {
   seedInvoicesOrg$,
   type InvoicesOrgFixture,
 } from "./helpers/billing-invoices";
-import {
-  createBillingWebhookFixture,
-  generatedStripeCustomerId,
-  generatedStripeSubscriptionId,
-  postUsageAllowanceInvoicePaid,
-} from "./helpers/stripe-billing-webhook";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { billingPortalRoutes } from "../billing-portal";
 
@@ -430,50 +424,6 @@ describe("POST /api/billing/portal", () => {
       },
       login_page: { enabled: false },
       metadata: { purpose: "payment_method_management" },
-    });
-    expect(
-      context.mocks.stripe.billingPortal.sessions.create,
-    ).toHaveBeenCalledWith({
-      customer: customerId,
-      configuration: PORTAL_CONFIGURATION_ID,
-      return_url: `${APP_ORIGIN}/settings/billing`,
-    });
-  });
-
-  it("returns a portal URL for an allowance-only org", async () => {
-    const fixture = createBillingWebhookFixture();
-    const customerId = generatedStripeCustomerId();
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      ...fixture,
-      customerId,
-      subscriptionId: generatedStripeSubscriptionId(),
-      shortWindowSeconds: 18_000,
-      shortWindowUnits: 5000,
-      weeklyWindowSeconds: 604_800,
-      weeklyWindowUnits: 50_000,
-      effectiveAt: new Date("2026-01-01T00:00:00Z"),
-      expiresAt: new Date("2099-01-01T00:00:00Z"),
-    });
-    mockEnv("APP_URL", APP_ORIGIN);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    context.mocks.stripe.billingPortal.sessions.create.mockResolvedValue({
-      url: "https://billing.stripe.com/session/allowance",
-    });
-
-    const response = await accept(
-      setupApp({ context, routes: billingPortalRoutes })(
-        billingPortalContract,
-      ).create({
-        body: {
-          returnUrl: `${APP_ORIGIN}/settings/billing`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      url: "https://billing.stripe.com/session/allowance",
     });
     expect(
       context.mocks.stripe.billingPortal.sessions.create,

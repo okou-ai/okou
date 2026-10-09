@@ -1312,17 +1312,6 @@
       "subscriptionChangeConfirmed": "Se confirmó el cambio de suscripción."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}d",
-        "hour": "{{value}}h",
-        "left": "{{value}} restantes",
-        "minute": "{{value}}m",
-        "remainingAria": "Límite de uso {{label}} restante",
-        "resets": "Se restablece el {{date}}",
-        "resetsRaw": "Se restablece {{value}}",
-        "title": "Asignación de uso",
-        "week": "{{value}} sem"
-      },
       "autoRechargeOn": "Recarga automática activada",
       "breakdown": {
         "currentPlanDescription": "Los créditos mensuales del plan se restablecen en cada ciclo de facturación",
