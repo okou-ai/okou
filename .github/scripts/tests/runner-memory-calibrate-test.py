@@ -70,9 +70,28 @@ class CollectorTests(unittest.TestCase):
         return result, report, output
 
     def test_real_residency_host_samples_and_positive_wait(self):
-        result, report, output = self.run_case(
-            "import time; data=bytearray(16*1024*1024); print('active-owned-smoke',flush=True); time.sleep(0.2)"
-        )
+        # Retain the working set until real samples arrive, not a guessed delay.
+        program = """
+import json, os, sys, time
+from pathlib import Path
+data = bytearray(16*1024*1024)
+print('active-owned-smoke', flush=True)
+pid = os.getpid()
+deadline = time.monotonic() + 2
+while time.monotonic() < deadline:
+    observed = 0
+    for line in Path('samples.jsonl').read_text().splitlines(keepends=True):
+        if not line.endswith('\\n'):
+            continue
+        sample = json.loads(line)
+        if any(p['pid'] == pid and p['rss_bytes'] is not None and p['rss_bytes'] > 0 and p['pss_bytes'] > 0 for p in sample['processes']):
+            observed += 1
+    if observed >= 2:
+        sys.exit(0)
+    time.sleep(0.01)
+sys.exit(3)
+"""
+        result, report, output = self.run_case(program)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(report["success"])
         samples = [
