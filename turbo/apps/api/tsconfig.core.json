@@ -25,6 +25,7 @@
     "src/**/*.json"
   ],
   "exclude": [
+    "src/lib/desktop-compatibility.json",
     "src/lib/desktop-version.ts",
     "src/lib/desktop-compatibility.ts",
     "node_modules",

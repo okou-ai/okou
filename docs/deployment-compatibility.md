@@ -679,6 +679,24 @@ such as `message_end` remain fatal above the 16 MiB line limit. Rolling back
 both components restores the previous oversized-turn failure. No stored data
 migration or API change is required.
 
+## Desktop compatibility policy is source controlled
+
+The API's `src/lib/desktop-compatibility.json` owns the global minimum Desktop
+version. `null` keeps enforcement disabled; a stable version at least `0.51.0`
+requires a reviewed PR and API release to activate. Public policy responses,
+host registration/claim admission, and Sparkle metadata use that same value.
+Desktop clients and HTTP contracts are unchanged by the configuration-source
+change. Old environment-based APIs and new code-configured APIs both remain
+disabled during this release; the previously unset environment variable is
+removed without a second configuration reader.
+
+Activation is separate. Verify the policy embedded in every serving and intended
+rollback API before enabling it; an API rollback restores that release's floor
+as well as its code. Preserve authenticated completion/stop for draining hosts,
+and retain the Electron update feed and ShipIt relaunch bridge. See
+[Desktop version policy](desktop-version-policy.md) and activation issue
+[#38098](https://github.com/okou-ai/okou/issues/38098).
+
 ## Native Desktop session authentication (expand release)
 
 Native Desktop uses additive session-authenticated host routes. Migration
