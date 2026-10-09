@@ -180,10 +180,7 @@ try {
     return statement.includes('ALTER TABLE "chat_threads"');
   });
   assert.ok(ddlStart > 0);
-  await sql.begin(async (tx) => {
-    for (const statement of migration.sql.slice(0, ddlStart))
-      await tx.unsafe(statement);
-  });
+  await sql.unsafe(migration.sql.slice(0, ddlStart).join("\n")).simple();
   assert.deepEqual(
     await sql`SELECT payload, model_selection FROM chat_events WHERE chat_thread_id = ${thread} ORDER BY seq_id`,
     inputs,
