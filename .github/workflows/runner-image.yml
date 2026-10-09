@@ -719,6 +719,7 @@ jobs:
           name: runner-cli-${{ github.run_id }}
           path: runner-cli-intermediate
       - name: Setup R2 sccache
+        id: sccache
         uses: ./.github/actions/setup-r2-sccache
         with:
           architecture: ${{ matrix.id }}
@@ -746,6 +747,9 @@ jobs:
           esac
           [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 1
           printf 'attempt-%s=%s\n' "$TARGET_TRIPLE" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
       - name: Transfer checked ci supervisor inputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
