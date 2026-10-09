@@ -12,7 +12,9 @@
     "tsBuildInfoFile": "./.typecheck/foundation.tsbuildinfo"
   },
   "include": [
+    "src/lib/desktop-compatibility.json",
     "src/lib/desktop-compatibility.ts",
+    "src/lib/desktop-version.ts",
     "src/lib/db-instrumentation.ts",
     "src/lib/db-raw-rows.ts",
     "src/lib/db-structured-result.ts",
@@ -251,6 +253,7 @@
     "src/signals/services/notion-automation-account.service.ts",
     "src/signals/services/official-automation-result-email-renderer.ts",
     "src/lib/agent-notification-email-renderer.ts",
+    "src/lib/debug-morning-brief-email.ts",
     "src/lib/morning-brief-notification-source.ts",
     "src/signals/services/official-workflow-catalog-read.service.ts",
     "src/signals/services/official-workflow-context.signals.ts",
@@ -334,8 +337,7 @@
     "src/signals/services/ssh-client-invalidation.service.ts",
     "src/signals/services/ssh-creation.service.ts",
     "src/signals/services/ssh-runtime-wakeup.service.ts",
-    "src/signals/services/uploaded-artifact.service.ts",
-    "src/signals/services/retired-morning-brief-email.ts"
+    "src/signals/services/uploaded-artifact.service.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

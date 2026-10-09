@@ -31,7 +31,6 @@ import {
   type ClerkDeletionScope,
   type ConversationDeletionReceipt,
 } from "./clerk-lifecycle-plan";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 function idsOf(rows: readonly { readonly id: string }[]) {
   return rows.map((row) => {
@@ -44,6 +43,7 @@ const deleteClerkUserLifecycleData$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0098; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [jobs, ...usage] = usageCleanupTargets({
           scope: "user",
@@ -160,6 +160,7 @@ const deleteClerkOrganizationLifecycleData$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0099; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         // Match Social settlement's job-before-parent mutations.
         const [jobs, ...usage] = usageCleanupTargets({
@@ -255,7 +256,6 @@ const deleteClerkOrganizationLifecycleData$ = command(
           await tx.execute(statement);
         }
         if (agentIds.length > 0) {
-          await tx.execute(purgeRetiredMorningBriefEmailSql());
           // Only Agents with no Run left under their Sessions; a late Run
           // (and its conversation) is never removed by the Agent cascade.
           await tx.execute(runFreeAgentDeleteSql(orgId, agentIds));
@@ -317,6 +317,7 @@ export const deletePublicationFencesAfterAuthorityRemoval$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0100; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       for (const statement of clerkPublicationFenceCleanupSql(scope, [])) {
         await tx.execute(statement);

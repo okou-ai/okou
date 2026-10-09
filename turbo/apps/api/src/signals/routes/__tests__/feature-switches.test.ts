@@ -234,42 +234,6 @@ describe("/api/feature-switches", () => {
     });
   });
 
-  it("rejects the retired native override without applying other changes", async () => {
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    const userId = `user_${randomUUID()}`;
-    clerk.session(userId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
-
-    const initial = await accept(client().get({ headers }), [200]);
-    expect(initial.body.switches).toStrictEqual({});
-
-    const refused = await accept(
-      client().update({
-        headers,
-        body: {
-          switches: {
-            simpleMorningBrief: true,
-            [FeatureSwitchKey.Dummy]: true,
-          },
-        },
-      }),
-      [400],
-    );
-    expect(refused.body.error.code).toBe("BAD_REQUEST");
-    const afterRefusal = await accept(client().get({ headers }), [200]);
-    expect(afterRefusal.body.switches).toStrictEqual({});
-
-    const optedOut = await accept(
-      client().update({
-        headers,
-        body: { switches: { simpleMorningBrief: false } },
-      }),
-      [200],
-    );
-    // Retired values are not exposed through the registered-key response.
-    expect(optedOut.body.switches).toStrictEqual({});
-  });
-
   it.each([true, false])(
     "echoes and persists a stored org-scoped override as %s",
     async (enabled) => {

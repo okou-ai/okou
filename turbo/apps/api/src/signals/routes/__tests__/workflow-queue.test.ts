@@ -626,6 +626,48 @@ describe("workflow queue", () => {
     });
   });
 
+  it("executes an admitted automation event after the automation is paused", async () => {
+    const scenario = await setup();
+    const automation = await createWebhookAutomation(scenario);
+    const firstRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(automation, "running before pause"),
+      automation.threadId,
+    );
+    expectAccepted(
+      await postWorkflowWebhook(automation, "admitted before pause"),
+    );
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toHaveLength(1);
+
+    const paused = await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: automation.automationId },
+      }),
+      [200],
+    );
+    expect(paused.body.enabled).toBeFalsy();
+    await completeRunThroughSandbox(scenario, firstRunId);
+    await flushWaitUntilForTest();
+
+    const runIds = await workflowRunIds(automation.threadId);
+    expect(runIds).toHaveLength(2);
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toStrictEqual([]);
+    const events = await readProjectedChatEvents(context, {
+      threadId: automation.threadId,
+      headers: authHeaders(),
+    });
+    expect(
+      events.some((event) => {
+        return event.eventType === "output.error";
+      }),
+    ).toBeFalsy();
+    await runsApi.requestCancelRun(scenario.actor, runIds[1]!, [200]);
+  });
+
   it("keeps automation events queued until cancellation recovery completes", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);

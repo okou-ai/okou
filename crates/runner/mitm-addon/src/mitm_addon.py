@@ -1735,7 +1735,14 @@ def _should_retain_model_websocket_tracking(flow: http.HTTPFlow) -> bool:
     ) and model_websocket_usage.is_enabled(flow)
 
 
+async def responseinspection(flow: http.HTTPFlow) -> None:
+    """Join the bounded inspector at the version-locked transport checkpoint."""
+    await response_streaming.drain_connector_inspection(flow)
+
+
 def response(flow: http.HTTPFlow) -> Awaitable[None] | None:
+    if response_streaming.has_pending_connector_inspection(flow):
+        return _complete_response(flow, _handle_response_after_inspection(flow))
     try:
         continuation = _handle_response(flow)
     except BaseException:
@@ -1758,6 +1765,13 @@ def response(flow: http.HTTPFlow) -> Awaitable[None] | None:
             release_aws_sigv4_body_admission=flow.websocket is None,
         )
     return None
+
+
+async def _handle_response_after_inspection(flow: http.HTTPFlow) -> None:
+    await responseinspection(flow)
+    continuation = _handle_response(flow)
+    if continuation is not None:
+        await continuation
 
 
 async def _complete_response(
@@ -1911,8 +1925,19 @@ def _finish_response_handling(
         )
 
 
-def error(flow: http.HTTPFlow) -> None:
+def error(flow: http.HTTPFlow) -> Awaitable[None] | None:
+    if response_streaming.has_pending_connector_inspection(flow):
+        return _complete_error_after_inspection(flow)
     try:
+        _handle_error(flow)
+    finally:
+        _release_terminal_flow_state(flow, release_tracking=True)
+    return None
+
+
+async def _complete_error_after_inspection(flow: http.HTTPFlow) -> None:
+    try:
+        await responseinspection(flow)
         _handle_error(flow)
     finally:
         _release_terminal_flow_state(flow, release_tracking=True)
@@ -2082,6 +2107,7 @@ addons = [
     client_disconnected,
     request,
     responseheaders,
+    responseinspection,
     websocket_message,
     websocket_end,
     response,

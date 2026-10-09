@@ -310,7 +310,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     outputs:
       job-ref: ${{ steps.set-job-ref.outputs.job-ref }}
       runner-image-job-ref: ${{ steps.set-job-ref.outputs.runner-image-job-ref }}
@@ -547,14 +547,25 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 1
       - uses: ./.github/actions/toolchain-init
       - name: Check DB ownership boundary
         run: .github/scripts/check-db-boundary.sh
+      - name: Check deletion-only database transaction inventory
+        working-directory: turbo
+        shell: bash
+        env:
+          TRANSACTION_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TRANSACTION_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Missing base/main SHA' >&2; exit 1; }
+          git fetch --no-tags --depth=1 origin "$TRANSACTION_BASE_SHA"
+          pnpm lint:transactions "$TRANSACTION_BASE_SHA"
       - name: Validate oxlintrc.json react allowImportNames
         working-directory: turbo
         run: |
@@ -574,7 +585,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -590,7 +601,7 @@ jobs:
     timeout-minutes: 15
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -611,7 +622,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -670,7 +681,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -727,7 +738,7 @@ jobs:
     timeout-minutes: 8
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -741,7 +752,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -757,7 +768,7 @@ jobs:
     # Only run when migration, schema, persistent JSONB contract, or database script files changed
     if: github.event_name != 'push' && needs.prepare.outputs.migration-changed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     services:
       postgres:
         image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
@@ -863,7 +874,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -899,7 +910,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -938,7 +949,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     services:
       postgres:
         image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
@@ -990,7 +1001,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -1028,7 +1039,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -1038,9 +1049,15 @@ jobs:
       - name: Test Connectors
         working-directory: turbo
         run: pnpm -F @okouai/connectors exec vitest run --reporter=default
+      - name: Test App Worker
+        working-directory: turbo
+        run: pnpm -F @okouai/app-worker test
       - name: Test ESLint Config
         working-directory: turbo
         run: pnpm -F @okouai/eslint-config test
+      - name: Test database transaction policy
+        working-directory: turbo
+        run: pnpm -F @okouai/eslint-rules exec vitest run src/api/__tests__/no-db-transaction.test.ts src/api/__tests__/db-transaction-policy.test.ts --maxWorkers=1
       - name: Upload coverage to Codecov
         if: success() || failure()
         continue-on-error: true
@@ -1069,7 +1086,7 @@ jobs:
       group: deploy-api-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     needs: [prepare]
     # Deploy if job-ref is set (PR or main), not a release-please commit, and anything
     # that needs a live API preview or E2E API token changed.
@@ -1280,51 +1297,6 @@ jobs:
           API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      # Preview cron does not run automatically. Seed the same bounded official
-      # catalog projection against the deployed API's capability configuration;
-      # do not call the production full-catalog synchronizer here.
-      - name: Seed preview onboarding connector catalog
-        env:
-          API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: |
-          set -euo pipefail
-
-          response=""
-          for attempt in 1 2 3; do
-            if ! response=$(curl \
-              --fail-with-body \
-              --show-error \
-              --silent \
-              --max-time 120 \
-              -H "Authorization: Bearer ${CRON_SECRET}" \
-              -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-              "${API_DEPLOYMENT_URL}/api/cron/seed-preview-onboarding-catalog"); then
-              echo "::warning::Preview catalog seed request failed (attempt ${attempt}/3)"
-            elif summary=$(jq -c '{catalogVersion, catalogDigest, connectorSlugs}' <<< "$response"); then
-              echo "Preview onboarding catalog: ${summary}"
-
-              if jq -e '
-                (.catalogVersion | type == "string" and length > 0)
-                and (.catalogDigest | test("^sha256:[a-f0-9]{64}$"))
-                and (.connectorSlugs | type == "array" and length > 0)
-              ' <<< "$response" >/dev/null; then
-                exit 0
-              fi
-              echo "::warning::Preview onboarding catalog is not ready (attempt ${attempt}/3)"
-            else
-              echo "::warning::Preview catalog seed returned invalid JSON (attempt ${attempt}/3)"
-            fi
-
-            if [ "$attempt" -lt 3 ]; then
-              sleep 2
-            fi
-          done
-
-          echo "::error::Preview catalog seed did not produce an onboarding projection"
-          exit 1
-
       - name: Create API Vercel Alias
         id: api-alias
         if: vars.PREVIEW_DOMAIN != ''
@@ -1360,7 +1332,7 @@ jobs:
       group: deploy-app-${{ github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     if: >-
       ${{
         !cancelled() &&
@@ -1996,7 +1968,7 @@ jobs:
       group: deploy-cli-${{ github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     if: >-
       ${{
         !cancelled() &&
@@ -2834,7 +2806,7 @@ jobs:
     # Report-only: this surfaces schema generation/compat issues without blocking CI.
     continue-on-error: true
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     permissions:
       contents: read
     steps:

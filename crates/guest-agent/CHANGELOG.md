@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.104.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.10...guest-agent-v0.104.11) (2026-10-09)
+
+
+### Documentation
+
+* keep reusable engineering standards and remove feature records ([#38387](https://github.com/okou-ai/okou/issues/38387)) ([6507d86](https://github.com/okou-ai/okou/commit/6507d86c83ca37e7a8790e4efd66eb6a84267295))
+
+
+### Performance Improvements
+
+* **test:** move owned json into large delivery fixtures ([#38379](https://github.com/okou-ai/okou/issues/38379)) ([f036aad](https://github.com/okou-ai/okou/commit/f036aad60540ea2c2e114a74dac57836b85ab52c))
+
+## [0.104.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.9...guest-agent-v0.104.10) (2026-10-09)
+
+
+### Bug Fixes
+
+* **guest-agent:** describe terminal event delivery failures accurately ([#38356](https://github.com/okou-ai/okou/issues/38356)) ([9a32460](https://github.com/okou-ai/okou/commit/9a3246062f207542dcc8d7af66dad9f97210b498))
+* **guest-agent:** mask pi live assistant text before publication ([#38354](https://github.com/okou-ai/okou/issues/38354)) ([6ecb76b](https://github.com/okou-ai/okou/commit/6ecb76be71ca5c32f978fdde334df7458764c663))
+
+
+### Performance Improvements
+
+* **test:** remove redundant http fixture body work ([#38320](https://github.com/okou-ai/okou/issues/38320)) ([b3e8b7c](https://github.com/okou-ai/okou/commit/b3e8b7c95fe75585247a972177e22d04d7f7639c))
+
 ## [0.104.9](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.8...guest-agent-v0.104.9) (2026-10-09)
 
 

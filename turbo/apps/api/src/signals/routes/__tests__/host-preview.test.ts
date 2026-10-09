@@ -7,6 +7,7 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { HostedSitePrepareResponse } from "@okouai/api-contracts/contracts/host";
@@ -21,6 +22,7 @@ import { server } from "../../../mocks/server";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { artifactReferenceRoutes } from "../artifact-references";
+import { artifactOgRoutes } from "../artifact-og";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
@@ -157,6 +159,157 @@ async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
 }
 
 describe("sandbox hosted previews", () => {
+  it("serves the exact published cover anonymously, retains older versions, and revokes OG on disable or deletion", async () => {
+    const owner = createBddApi(context).user();
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...owner, orgId: owner.orgId };
+    await updateFeatureSwitchesForUser(context, actor, {
+      artifactPreviews: true,
+    });
+    const previewObjects = previewStorage();
+    const html =
+      '<html><head><title>Quarterly &amp; Annual</title><meta name="description" content="Public summary"></head><body>Report</body></html>';
+    const provider = context.mocks.s3.send.getMockImplementation()!;
+    context.mocks.s3.send.mockImplementation((cmd, ...args) => {
+      if (
+        cmd instanceof GetObjectCommand &&
+        cmd.input.Key?.endsWith("/index.html")
+      ) {
+        return Promise.resolve({
+          Body: Readable.from([Buffer.from(html)]),
+          ContentLength: Buffer.byteLength(html),
+          ETag: '"html"',
+        });
+      }
+      return provider(cmd, ...args);
+    });
+    const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
+      artifactOgContract,
+    );
+    const bytes = await image("#ee2211");
+    const site = `og-${randomUUID().slice(0, 8)}`;
+    const first = await host.prepareHostedSite(actor, {
+      site,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", html)],
+      preview: preview(bytes),
+    });
+    const target = { kind: "host" as const, id: first.deploymentId };
+    expect(
+      (await accept(og.metadata({ query: target }), [200])).body,
+    ).toStrictEqual({
+      available: false,
+    });
+    await upload(first, bytes);
+    await host.completeHostedSite(actor, first.deploymentId);
+    const metadata = await accept(og.metadata({ query: target }), [200]);
+    expect(metadata.body).toMatchObject({
+      available: true,
+      title: "Quarterly & Annual",
+      description: "Public summary",
+    });
+    if (!metadata.body.available) {
+      throw new Error("Expected public OG metadata");
+    }
+    expect(JSON.stringify(metadata.body)).not.toContain("private-artifacts/");
+    const version = new URL(metadata.body.imageUrl).searchParams.get(
+      "version",
+    )!;
+    const imageQuery = { ...target, version };
+    const original = await accept(og.image({ query: imageQuery }), [200]);
+    const originalBytes = Buffer.from(await original.body.arrayBuffer());
+    await expect(sharp(originalBytes).metadata()).resolves.toMatchObject({
+      width: 1200,
+      height: 630,
+    });
+    expect(original.headers.get("cache-control")).toBe("private, no-store");
+    expect(original.headers.get("cloudflare-cdn-cache-control")).toBe(
+      "no-store",
+    );
+    const generic = Buffer.from(
+      await (await accept(og.defaultImage(), [200])).body.arrayBuffer(),
+    );
+    await expect(sharp(generic).metadata()).resolves.toMatchObject({
+      width: 1280,
+      height: 800,
+    });
+    expect(
+      Buffer.from(
+        await (
+          await accept(
+            og.image({ query: { ...imageQuery, version: "wrong" } }),
+            [200],
+          )
+        ).body.arrayBuffer(),
+      ),
+    ).toStrictEqual(generic);
+
+    const nextBytes = await image("#1122ee");
+    const second = await host.prepareHostedSite(actor, {
+      site,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", html)],
+      preview: preview(nextBytes),
+    });
+    await upload(second, nextBytes);
+    await host.completeHostedSite(actor, second.deploymentId);
+    expect(
+      Buffer.from(
+        await (
+          await accept(og.image({ query: imageQuery }), [200])
+        ).body.arrayBuffer(),
+      ),
+    ).toStrictEqual(originalBytes);
+    await updateFeatureSwitchesForUser(context, actor, {
+      artifactPreviews: false,
+    });
+    expect(
+      (await accept(og.metadata({ query: target }), [200])).body,
+    ).toStrictEqual({
+      available: false,
+    });
+    expect(
+      Buffer.from(
+        await (
+          await accept(og.image({ query: imageQuery }), [200])
+        ).body.arrayBuffer(),
+      ),
+    ).toStrictEqual(generic);
+    await updateFeatureSwitchesForUser(context, actor, {
+      artifactPreviews: true,
+    });
+    previewObjects.clear();
+    const missing = await accept(og.image({ query: imageQuery }), [200]);
+    expect(Buffer.from(await missing.body.arrayBuffer())).toStrictEqual(
+      generic,
+    );
+    await host.deleteHostedSite(actor, first.publicSlug);
+    expect(
+      (await accept(og.metadata({ query: target }), [200])).body,
+    ).toStrictEqual({
+      available: false,
+    });
+    expect(
+      Buffer.from(
+        await (
+          await accept(og.image({ query: imageQuery }), [200])
+        ).body.arrayBuffer(),
+      ),
+    ).toStrictEqual(generic);
+    expect(
+      (
+        await accept(
+          og.metadata({ query: { kind: "host", id: randomUUID() } }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ available: false });
+  });
+
   it.each(["missing", "corrupt"])(
     "publishes normally with a %s cover when previews are disabled",
     async (coverState) => {

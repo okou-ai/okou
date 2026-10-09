@@ -92,6 +92,7 @@ export const recordRunnerUsageBatch$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0234; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [run] = await tx
           .select({
@@ -204,6 +205,7 @@ export const recordProviderUsageBatch$ = command(
     const actor = { orgId: args.orgId, userId: args.userId, runId };
     const db = set(writeDb$);
     signal.throwIfAborted();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0235; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [run] = runId
         ? await tx.select().from(managedBillingRunQuery(runId))

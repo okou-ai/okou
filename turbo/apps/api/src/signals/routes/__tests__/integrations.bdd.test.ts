@@ -1,3 +1,6 @@
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
@@ -16,8 +19,7 @@ import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
+
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -4488,68 +4490,66 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("replies with canonical run-creation errors for Slack messages", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    integrations.configureSlackAppMocks();
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "BDD Slack Failing Default",
+    const owner = publicRunOwner(context, actor, {
+      afterRuns: async () => {
+        await deletePublicWorkspace(context, actor);
+      },
     });
-    if (!actor.orgId) {
-      throw new Error("Expected Slack failing default actor to have an org");
-    }
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "pro",
-      credits: 20_000,
-    });
-    await integrations.configureNativeSubscriptionModels(actor);
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "suspended",
-      canBuyCredits: false,
-    });
-    const slackUserId = uniqueSlackUserId();
-    const { teamId } = await integrations.installSlackWorkspace(actor, {
-      installerSlackUserId: slackUserId,
-    });
-    integrations.clearSlackCallHistory();
+    await owner.run(async () => {
+      bdd.acceptAgentStorageWrites();
+      integrations.configureSlackAppMocks();
+      await bdd.completeOnboarding(actor);
+      const plan = publicPlanLifecycle(context, actor);
+      await plan.update("active");
+      if (!actor.orgId) {
+        throw new Error("Expected Slack failing default actor to have an org");
+      }
+      await integrations.configureNativeSubscriptionModels(actor);
+      const onboarding = await bdd.readOnboardingStatus(actor);
+      expect(onboarding).toMatchObject({
+        hasDefaultAgent: true,
+        defaultAgentId: expect.any(String),
+      });
+      await plan.update("canceled");
+      const slackUserId = uniqueSlackUserId();
+      const { teamId } = await integrations.installSlackWorkspace(actor, {
+        installerSlackUserId: slackUserId,
+      });
+      integrations.clearSlackCallHistory();
 
-    await integrations.postSlackEvent(teamId, {
-      type: "message",
-      channel_type: "im",
-      user: slackUserId,
-      text: "please run something",
-      ts: "5000.000100",
-      channel: "D_BDD_FAIL",
-    });
-    await flushWaitUntilAndAssert(() => {
-      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: "D_BDD_FAIL",
-          thread_ts: "5000.000100",
-          text: expect.stringContaining("Compare plans"),
-        }),
-      );
-    });
-    expect(slackPostMessageCallsJson()).not.toContain("Sent via");
-    await flushWaitUntilAndAssert(() => {
-      expect(
-        context.mocks.slack.assistant.threads.setStatus,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel_id: "D_BDD_FAIL",
-          status: "is thinking...",
-        }),
-      );
-      expect(
-        context.mocks.slack.assistant.threads.setStatus,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({ channel_id: "D_BDD_FAIL", status: "" }),
-      );
+      await integrations.postSlackEvent(teamId, {
+        type: "message",
+        channel_type: "im",
+        user: slackUserId,
+        text: "please run something",
+        ts: "5000.000100",
+        channel: "D_BDD_FAIL",
+      });
+      await flushWaitUntilAndAssert(() => {
+        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            channel: "D_BDD_FAIL",
+            thread_ts: "5000.000100",
+            text: expect.stringContaining("Add credits"),
+          }),
+        );
+      });
+      expect(slackPostMessageCallsJson()).not.toContain("Sent via");
+      await flushWaitUntilAndAssert(() => {
+        expect(
+          context.mocks.slack.assistant.threads.setStatus,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            channel_id: "D_BDD_FAIL",
+            status: "is thinking...",
+          }),
+        );
+        expect(
+          context.mocks.slack.assistant.threads.setStatus,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({ channel_id: "D_BDD_FAIL", status: "" }),
+        );
+      });
     });
   });
 

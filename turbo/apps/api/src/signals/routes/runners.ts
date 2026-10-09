@@ -1335,6 +1335,7 @@ async function failPoisonQueuedJob(
   errorMessage: string,
   signal: AbortSignal,
 ): Promise<PoisonJobResult> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0022; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const run = await lockClaimRun(tx, runId);
     signal.throwIfAborted();

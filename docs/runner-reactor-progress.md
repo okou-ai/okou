@@ -1,9 +1,16 @@
 # Runner reactor progress
 
-The runner reactor (`crates/runner/src/cmd/start/mod.rs`) selects between
+The runner reactor (`crates/runner-supervisor/src/reactor/mod.rs`) selects between
 discovery, lifecycle changes, job completion, and maintenance. Some selected
 branches await shared resources inline. Work that uses those same resources must
 be able to progress independently of the reactor.
+
+Runner's `cmd/start` remains the boot/configuration/lock composition root. It
+subscribes lifecycle signals before slow work and passes owned streams and
+concrete factory plans to Supervisor. Runtime entry preserves initial status,
+prune binding, provider readiness, factory startup/rollback and ready publication
+order. The root's image/base-dir locks and live registry span the full call.
+Moving source ownership does not change the progress or cleanup rules below.
 
 ## A retained future is not an independent task
 
@@ -164,7 +171,7 @@ was repaired.
 
 ## Coverage and remaining incident work
 
-`cmd/start/tests/main_loop/shared_resource_progress.rs` drives the real `run()`
+`runner-supervisor/src/reactor/tests/main_loop/shared_resource_progress.rs` drives the real `run()`
 entry point under forced pool, status-state, and persistence-ordering contention.
 It also checks heartbeat-owner failure and GC progress/completion ownership.
 Existing heartbeat tests cover coalescing, monotonic sequences, live-mode

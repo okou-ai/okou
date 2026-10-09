@@ -17,26 +17,111 @@ const SECRET: &str = "delivery-secret-value";
 const NOTICE: &str = "[event content truncated for delivery]";
 const CITATION: &str = "<oai-mem-citation>\n<citation_entries>\nprivate-memory.md:1-2|note=[private-note]\n</citation_entries>\n<rollout_ids>\n11111111-1111-4111-8111-111111111111\n</rollout_ids>\n</oai-mem-citation>";
 
+fn message_end(message: serde_json::Map<String, Value>) -> Value {
+    Value::Object(serde_json::Map::from_iter([
+        ("type".into(), "message_end".into()),
+        ("message".into(), Value::Object(message)),
+    ]))
+}
+
 fn assistant(id: &str, content: Value, failed: bool) -> Value {
-    let mut message = json!({
-        "role":"assistant", "responseId":id, "content":content,
-        "model":"test-model", "usage":{"input":11,"output":7,"cacheRead":3,"cacheWrite":2},
-        "stopReason":if failed {"error"} else {"stop"}, "timestamp":1
-    });
-    if failed && let Some(message) = message.as_object_mut() {
-        message.insert("errorMessage".into(), json!("API Error: Overloaded"));
+    let mut message = serde_json::Map::from_iter([
+        ("role".into(), "assistant".into()),
+        ("responseId".into(), id.into()),
+        ("content".into(), content),
+        ("model".into(), "test-model".into()),
+        (
+            "usage".into(),
+            json!({"input":11,"output":7,"cacheRead":3,"cacheWrite":2}),
+        ),
+        (
+            "stopReason".into(),
+            if failed { "error" } else { "stop" }.into(),
+        ),
+        ("timestamp".into(), 1.into()),
+    ]);
+    if failed {
+        message.insert("errorMessage".into(), "API Error: Overloaded".into());
     }
-    json!({"type":"message_end", "message":message})
+    message_end(message)
 }
 
 fn tool_result(id: &str, content: Value, failed: bool) -> Value {
-    json!({"type":"message_end", "message":{
-        "role":"toolResult", "toolCallId":id, "toolName":"read", "isError":failed,
-        "content":content, "timestamp":2
-    }})
+    message_end(serde_json::Map::from_iter([
+        ("role".into(), "toolResult".into()),
+        ("toolCallId".into(), id.into()),
+        ("toolName".into(), "read".into()),
+        ("isError".into(), failed.into()),
+        ("content".into(), content),
+        ("timestamp".into(), 2.into()),
+    ]))
 }
-fn image(data: &str) -> Value {
-    json!({"type":"image", "mimeType":"image/png", "data":data})
+
+#[test]
+fn owned_pi_message_fixtures_preserve_canonical_bytes() {
+    for content in [
+        json!([]),
+        json!([{"type":"text","text":"你好\"\\\n\0"}]),
+        json!([
+            {"type":"toolCall","id":"nested","arguments":{"values":[null,true,19]}},
+            {"type":"image","mimeType":"image/png","data":"synthetic"}
+        ]),
+    ] {
+        for failed in [false, true] {
+            let mut original_message = json!({
+                "role":"assistant", "responseId":"message", "content":content,
+                "model":"test-model", "usage":{"input":11,"output":7,"cacheRead":3,"cacheWrite":2},
+                "stopReason":if failed {"error"} else {"stop"}, "timestamp":1
+            });
+            if failed {
+                original_message["errorMessage"] = json!("API Error: Overloaded");
+            }
+            let expected = json!({"type":"message_end", "message":original_message});
+            assert_eq!(
+                assistant("message", content.clone(), failed).to_string(),
+                expected.to_string()
+            );
+            let expected = json!({"type":"message_end", "message":{
+                "role":"toolResult", "toolCallId":"tool", "toolName":"read", "isError":failed,
+                "content":content, "timestamp":2
+            }});
+            assert_eq!(
+                tool_result("tool", content.clone(), failed).to_string(),
+                expected.to_string()
+            );
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct PiImage<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    #[serde(rename = "mimeType")]
+    mime_type: &'static str,
+    data: &'a str,
+}
+
+fn image(data: &str) -> PiImage<'_> {
+    PiImage {
+        kind: "image",
+        mime_type: "image/png",
+        data,
+    }
+}
+
+#[test]
+fn borrowed_pi_image_fixture_preserves_canonical_bytes() {
+    for data in ["", "AA==", "你好\"\\\n\0"] {
+        assert_eq!(
+            json!([image(data), image(data)]).to_string(),
+            json!([
+                {"type":"image", "mimeType":"image/png", "data":data},
+                {"type":"image", "mimeType":"image/png", "data":data}
+            ])
+            .to_string()
+        );
+    }
 }
 
 #[tokio::test]

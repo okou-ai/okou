@@ -212,7 +212,7 @@ done
 
 for host in arm-1 x86-1; do
   plan=$(run_clean AWS_METAL_RUNNER_HOSTS="$host" "$HOST_GROUPS" validation-plan pr-1)
-  jq -e '.validationMatrix == [] and (.matrix | length) == 1 and .selectedTarget == .matrix[0].target' <<<"$plan" >/dev/null || fail "one target must be fully covered by runner-build"
+  jq -e '.validationMatrix == [] and (.matrix | length) == 1 and .selectedTarget == .matrix[0].target' <<<"$plan" >/dev/null || fail "one target must be fully covered by runner-test-prepare"
 done
 
 selected=$(run_clean AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GROUPS" select-context pr-2)

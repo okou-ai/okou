@@ -320,6 +320,7 @@ export const updateSshCredential$ = command(
             args.featureContext,
           );
     const invalidate = effectiveChange && hosts.length > 0;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0252; new non-billing transactions are prohibited.
     const updated = await db.transaction(async (tx) => {
       if (invalidate) {
         await tx

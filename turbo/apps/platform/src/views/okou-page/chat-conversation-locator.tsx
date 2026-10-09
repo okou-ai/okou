@@ -132,7 +132,7 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
         // layout does not have, and those threads are short enough to scroll.
         // Rest inside the gutter, then include the magnified ticks and a
         // little breathing room while the reader interacts with the scale.
-        "absolute inset-y-0 left-0 z-10 hidden cursor-pointer md:block",
+        "absolute inset-y-0 left-0 hidden cursor-pointer md:block",
         engaged ? "w-14" : "w-6",
         !layout.visible && "pointer-events-none opacity-0",
         layout.visible && (engaged ? "opacity-100" : "opacity-[0.68]"),

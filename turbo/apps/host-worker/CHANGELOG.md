@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.6.0](https://github.com/okou-ai/okou/compare/host-worker-v1.5.130...host-worker-v1.6.0) (2026-10-09)
+
+
+### Features
+
+* add permission-aware artifact og previews ([#38361](https://github.com/okou-ai/okou/issues/38361)) ([2ef5d4e](https://github.com/okou-ai/okou/commit/2ef5d4ec8c2aedc9217e669f110f8c68fb9b65f3))
+
+
+### Bug Fixes
+
+* **host:** prepare canonical deployment delivery authority ([#38212](https://github.com/okou-ai/okou/issues/38212)) ([bd8b130](https://github.com/okou-ai/okou/commit/bd8b13065d6b8ce406c3c7659f6634528f794913))
+
+
+### Refactoring
+
+* **artifacts:** remove video poster extraction ([#38146](https://github.com/okou-ai/okou/issues/38146)) ([641cf0d](https://github.com/okou-ai/okou/commit/641cf0ddff6c631cf94386e6c3d26c78395c63aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.546.0
+    * @okouai/core bumped to 8.739.0
+
+## [1.5.130](https://github.com/okou-ai/okou/compare/host-worker-v1.5.129...host-worker-v1.5.130) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.545.1
+
+## [1.5.129](https://github.com/okou-ai/okou/compare/host-worker-v1.5.128...host-worker-v1.5.129) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.545.0
+
 ## [1.5.128](https://github.com/okou-ai/okou/compare/host-worker-v1.5.127...host-worker-v1.5.128) (2026-10-09)
 
 

@@ -869,6 +869,7 @@ const publishGoogleFormsActivation$ = command(
       return GOOGLE_FORMS_WATCH_CHANGED;
     }
     const currentTime = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0168; new non-billing transactions are prohibited.
     const enabledAutomation = await db.transaction(async (tx) => {
       const [enabled] = await tx
         .update(workflowAutomations)

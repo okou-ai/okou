@@ -50,7 +50,7 @@ import {
   clearConnectorOAuthCookies,
 } from "../../lib/connector-oauth-state";
 import { env } from "../../lib/env";
-import { recordConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
+import { recordConnectorOAuthCompletion$ } from "../services/connector-oauth-completion.service";
 import { connectorConnectionWriteFailureMessage } from "../services/connector-data.service";
 import {
   okouMcpOAuthClientMetadata,
@@ -252,32 +252,6 @@ async function authorizeCustomConnectorAgent(
       return `OAuth connected, but agent authorization failed: ${authorization.message}`;
     }
   }
-}
-
-async function recordAuthorizedCustomOAuthCompletion(
-  args: {
-    readonly db: Db;
-    readonly state: StoredCustomConnectorOAuthState;
-    readonly connectorId: string;
-    readonly connectionId: string;
-  },
-  signal: AbortSignal,
-): Promise<string | null> {
-  const error = await authorizeCustomConnectorAgent(args, signal);
-  if (error) {
-    return error;
-  }
-  await recordConnectorOAuthCompletion(
-    args.db,
-    {
-      attemptId: args.state.id,
-      connectionId: args.connectionId,
-      orgId: args.state.orgId,
-      userId: args.state.userId,
-    },
-    signal,
-  );
-  return null;
 }
 
 type CustomOAuthPersistenceResult =
@@ -660,15 +634,26 @@ const completeOAuth2Callback$ = command(
     if (!persistence.ok) {
       return callbackError(origin, persistence.message);
     }
-    const completionError = await recordAuthorizedCustomOAuthCompletion(
+    const completionError = await authorizeCustomConnectorAgent(
       {
         db: set(writeDb$),
         state: claimed.state,
         connectorId: connector.id,
-        connectionId: persistence.connectionId,
       },
       signal,
     );
+    if (!completionError) {
+      await set(
+        recordConnectorOAuthCompletion$,
+        {
+          attemptId: claimed.state.id,
+          connectionId: persistence.connectionId,
+          orgId: claimed.state.orgId,
+          userId: claimed.state.userId,
+        },
+        signal,
+      );
+    }
     signal.throwIfAborted();
     if (completionError) {
       return callbackError(origin, completionError);

@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.9.0](https://github.com/okou-ai/okou/compare/app-worker-v1.8.209...app-worker-v1.9.0) (2026-10-09)
+
+
+### Features
+
+* add permission-aware artifact og previews ([#38361](https://github.com/okou-ai/okou/issues/38361)) ([2ef5d4e](https://github.com/okou-ai/okou/commit/2ef5d4ec8c2aedc9217e669f110f8c68fb9b65f3))
+
+
+### Refactoring
+
+* retire organization custom model configuration ([#37746](https://github.com/okou-ai/okou/issues/37746)) ([014fe18](https://github.com/okou-ai/okou/commit/014fe1867c6d1830fd35b03c3d77491da5aaa36a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.546.0
+    * @okouai/core bumped to 8.739.0
+
+## [1.8.209](https://github.com/okou-ai/okou/compare/app-worker-v1.8.208...app-worker-v1.8.209) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.738.1
+
+## [1.8.208](https://github.com/okou-ai/okou/compare/app-worker-v1.8.207...app-worker-v1.8.208) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.738.0
+
 ## [1.8.207](https://github.com/okou-ai/okou/compare/app-worker-v1.8.206...app-worker-v1.8.207) (2026-10-09)
 
 

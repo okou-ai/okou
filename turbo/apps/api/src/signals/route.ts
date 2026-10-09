@@ -6,6 +6,7 @@ import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
 import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
+import { artifactOgRoutes } from "./routes/artifact-og";
 import { artifactShareRoutes } from "./routes/artifact-shares";
 import { authMeRoutes } from "./routes/auth-me";
 import { bankingRoutes } from "./routes/banking";
@@ -87,6 +88,7 @@ import { discordInteractionsRoutes } from "./routes/discord-interactions";
 import { discordStatePreviewRoutes } from "./routes/discord-state-preview";
 import { emailInboundRoutes } from "./routes/email-inbound";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
+import { debugMorningBriefEmailRoutes } from "./routes/debug-morning-brief-email";
 import { notificationsRoutes } from "./routes/notifications";
 import { emailUnsubscribeRoutes } from "./routes/email-unsubscribe";
 import { featureSwitchesRoutes } from "./routes/feature-switches";
@@ -338,6 +340,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,
+  ...artifactOgRoutes,
   ...artifactDownloadRoutes,
   ...builtInGenerationRoutes,
   ...imageIoGenerateRoutes,
@@ -402,6 +405,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...morningBriefPreferenceRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,
+  ...debugMorningBriefEmailRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,
   ...workflowAutomationsRoutes,

@@ -596,6 +596,7 @@ async function publishSnapshotVersion(
 ): Promise<boolean> {
   const { lastSeqId, lastEventId, terminalSeqId, terminalEventId, objectKey } =
     pointer;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0132; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     if (source !== null) {
       const updated = await tx
@@ -1428,7 +1429,7 @@ async function processSnapshotCandidate(
     // Events until a Snapshot covers them. `awaitWithSignal` settles this race
     // with the deadline's own reason, so no unrelated failure is absorbed
     // here. `skippedTimedOutHeads` on the terminal event remains the alerting
-    // signal; see docs/chat-event-snapshot-timeout-logging.md.
+    // signal.
     log.info("Timed out Chat Event Snapshot candidate", {
       type: "chat_event_snapshot_candidate_timed_out",
       expected: true,

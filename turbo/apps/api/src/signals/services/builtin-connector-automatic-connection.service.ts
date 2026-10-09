@@ -93,6 +93,7 @@ export const publishAutomaticConnection$ = command(
     | { readonly kind: "error"; readonly reason: "invalid-account" }
   > => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0077; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const metadata = automaticConnectionMetadata(input);
       let connection: { readonly id: string } | undefined;

@@ -13,6 +13,7 @@ const schema = `pro_suspend_retirement_${randomUUID().replaceAll("-", "")}`;
 const before = "2026-01-01 00:00:00";
 
 async function expectCheckViolation(statement: string): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0423; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT expected_check_violation");
   try {
     await assert.rejects(client.query(statement), (error: unknown) => {
@@ -30,6 +31,7 @@ async function expectCheckViolation(statement: string): Promise<void> {
 }
 
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0424; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET LOCAL search_path TO "${schema}"`);

@@ -1,10 +1,10 @@
+import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import {
   mockGoogleText,
   VERTEX_TEXT_URL,
   vertexTextRequest,
 } from "./helpers/google-text";
-import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
@@ -16,8 +16,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { teamsConnectRoutes } from "../teams-connect";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -89,6 +88,10 @@ interface TeamsReactionRequest {
 }
 
 interface ConnectedTeamsActor {
+  readonly subscription: {
+    readonly customerId: string;
+    readonly subscriptionId: string;
+  };
   readonly fixture: TeamsConnectFixture;
   readonly actor: ReturnType<typeof authOrgApi.user>;
   readonly runnerGroup: string;
@@ -405,7 +408,7 @@ async function setupConnectedTeamsActor(
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   // The paid entitlement helper already bootstraps and completes onboarding.
-  await runsApi.grantProEntitlement(actor);
+  const subscription = await runsApi.grantProEntitlement(actor);
   const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
   if (!defaultAgentId) {
     throw new Error(
@@ -447,6 +450,7 @@ async function setupConnectedTeamsActor(
     fixture,
     actor,
     runnerGroup,
+    subscription,
     defaultAgentId,
   };
 }
@@ -559,23 +563,11 @@ async function completeSandboxRun(args: {
   if (args.exitCode === 0) {
     const cliAgentSessionId = `bdd-teams-cli-${args.runId}`;
     const cliAgentSessionHistory = `bdd teams history ${args.runId}`;
-    const cliAgentSessionHistoryHash = createHash("sha256")
-      .update(cliAgentSessionHistory)
-      .digest("hex");
-    const cliAgentSessionHistorySize = Buffer.byteLength(
-      cliAgentSessionHistory,
-      "utf8",
-    );
-    await webhooksApi.requestAgentSessionHistoryPrepare(
-      {
-        runId: args.runId,
-        hash: cliAgentSessionHistoryHash,
-        rawSize: cliAgentSessionHistorySize,
-        encodedSize: cliAgentSessionHistorySize,
-        encoding: "identity",
-      },
+    const cliAgentSessionHistoryHash = await prepareRunnerSessionHistory(
+      context,
+      args.runId,
       sandboxHeaders,
-      [200],
+      cliAgentSessionHistory,
     );
     await webhooksApi.requestAgentComplete(
       {
@@ -766,17 +758,12 @@ describe("Teams chat callbacks", () => {
         text: queuedPrompt,
       }),
     ).resolves.toMatchObject({ eventType: "input.prompt" });
-
-    await seedOrgMetadata({
-      orgId: teams.fixture.orgId,
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: teams.fixture.orgId,
-      status: "suspended",
-      canBuyCredits: true,
-    });
+    await publicPlanLifecycle(
+      context,
+      teams.actor,
+      "pro",
+      teams.subscription,
+    ).update("canceled");
     clearTeamsApiCalls(teamsApi);
     await completeSandboxRun({
       runId: firstRunId,

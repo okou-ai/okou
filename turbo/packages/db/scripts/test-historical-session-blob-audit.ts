@@ -447,6 +447,7 @@ try {
 
   await auditor.query(preamble);
   const pinned = await readReceipt();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0389; new non-billing transactions are prohibited.
   await writer.query("BEGIN; SET LOCAL statement_timeout = '2s'");
   await conversation(1);
   await writer.query(
@@ -461,6 +462,7 @@ try {
     "PASS concurrent writer commits without an audit write lock; repeated report reads retain one snapshot",
   );
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0390; new non-billing transactions are prohibited.
   await writer.query("BEGIN; LOCK TABLE blobs IN ACCESS EXCLUSIVE MODE");
   try {
     await auditor.query(preamble);
@@ -473,6 +475,7 @@ try {
     "PASS real DDL contention is bounded by the shipped 3-second lock timeout",
   );
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0391; new non-billing transactions are prohibited.
   await writer.query(`BEGIN;
     ALTER TABLE pi_memory_stage1_candidates DROP CONSTRAINT pi_memory_stage1_candidates_source_history_hash_blobs_hash_fk;`);
   await candidate(12);

@@ -21,11 +21,16 @@ guidance only for the surface being changed.
 - Implement the requested behavior with the smallest necessary abstraction.
   Preserve meaningful error recovery, cleanup, permission checks, and active
   compatibility contracts when removing unused code.
-- Keep TypeScript type safe: no `any` or lint/type suppression comments. Use
-  static production imports and fix violations at their source. See
+- Keep TypeScript type safe: no `any` or lint/type suppression comments, except
+  the CI-validated next-line transaction waivers documented in
+  [database transaction lint](docs/eslint/no-db-transaction.md). Use static
+  production imports and fix violations at their source. See
   [code quality](docs/bad-smell.md) for the project's specific boundaries.
 - Write repository artifacts, comments, commits, issues, and PRs in English.
   Use the user's preferred language in direct conversation.
+- Keep `docs/` focused on engineering principles, framework architecture, and
+  reusable development guidance. Feature-specific business logic belongs in
+  self-explanatory source code rather than separate documents.
 
 ## Task Routing
 

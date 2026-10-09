@@ -428,12 +428,6 @@ expect(onRender).not.toHaveBeenCalled();
 Test a later semantic change as well. A test that only verifies suppression can
 pass with an equality function that incorrectly returns `true` for everything.
 
-## Historical Measurements
-
-[Chat send and sidebar history](react-commit/chat-send-history.md) preserves the
-recorded traces, experimental results, and follow-up proposals. Recheck current
-source before using those historical symbols or treating a proposal as pending.
-
 ## Memory Leaks Are a Separate Investigation
 
 Low commit counts do not prove that thread switching is leak-free. A leaked

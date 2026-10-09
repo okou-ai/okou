@@ -1,4 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { randomUUID } from "node:crypto";
 
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { describe, expect, it } from "vitest";
@@ -16,12 +19,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import {
-  readLatestWorkflowAutomationRunFixture,
-  readWorkflowAutomationAutonomyFixture,
-  setRunAutonomyBudgetFixture,
-  setWorkflowAutomationAutonomyBudgetFixture,
-} from "./helpers/runtime-state";
 
 /**
  * chat-run-finished workflow automations: creation validation and dispatch
@@ -223,9 +220,12 @@ async function completeChatRunOk(
       [200],
     );
   }
-  const historyHash = createHash("sha256")
-    .update(`bdd chat session history ${runId}`)
-    .digest("hex");
+  const historyHash = await prepareRunnerSessionHistory(
+    context,
+    runId,
+    sandboxHeaders,
+    `bdd chat session history ${runId}`,
+  );
   await webhooks.requestAgentComplete(
     {
       runId,
@@ -410,30 +410,45 @@ describe("chat-run-finished workflow automations", () => {
     { timeout: 30_000 },
     async () => {
       const fixture = await setupChatAutomationFixture();
+      const automationIds: string[] = [];
+      const ownedRuns = publicRunOwner(context, fixture.actor, {
+        beforeRuns: async () => {
+          for (const id of automationIds) {
+            await accept(
+              automationsClient().delete({
+                headers: authHeaders(),
+                params: { id },
+              }),
+              [204],
+            );
+          }
+        },
+        afterRuns: async () => {
+          await bdd.deleteAgent(fixture.actor, fixture.agentId);
+        },
+      });
       const run = await startWatchedChatRun(fixture, "watched completed run");
-      await setRunAutonomyBudgetFixture(context, run.runId, 2);
 
       const fireAlways = await createChatRunFinishedAutomation(fixture, {
         chatThreadId: run.threadId,
       });
+      automationIds.push(fireAlways);
       const failedOnly = await createChatRunFinishedAutomation(fixture, {
         chatThreadId: run.threadId,
         runStatuses: ["failed"],
       });
+      automationIds.push(failedOnly);
       const patternMatch = await createChatRunFinishedAutomation(fixture, {
         chatThreadId: run.threadId,
         runStatuses: ["completed"],
         outputPattern: "*deploy failed*",
       });
+      automationIds.push(patternMatch);
       const patternMiss = await createChatRunFinishedAutomation(fixture, {
         chatThreadId: run.threadId,
         outputPattern: "*all systems nominal*",
       });
-      await setWorkflowAutomationAutonomyBudgetFixture(
-        context,
-        patternMatch,
-        0,
-      );
+      automationIds.push(patternMiss);
 
       chatCallbacks.mockChatOutputEvents([
         {
@@ -447,6 +462,10 @@ describe("chat-run-finished workflow automations", () => {
         },
       ]);
       const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
+      ownedRuns.rememberClaim(
+        run.runId,
+        sandboxHeaders.authorization.slice("Bearer ".length),
+      );
       await completeChatRunOk(run.runId, sandboxHeaders, {
         lastEventSequence: 0,
       });
@@ -455,23 +474,6 @@ describe("chat-run-finished workflow automations", () => {
       await expectAutomationFired(patternMatch);
       await expect(automationLastRunAt(failedOnly)).resolves.toBeNull();
       await expect(automationLastRunAt(patternMiss)).resolves.toBeNull();
-      const fireAlwaysState = await readWorkflowAutomationAutonomyFixture(
-        context,
-        fireAlways,
-      );
-      const patternMatchState = await readWorkflowAutomationAutonomyFixture(
-        context,
-        patternMatch,
-      );
-      expect(fireAlwaysState).toMatchObject({ autonomyBudget: 32 });
-      expect(patternMatchState).toMatchObject({ autonomyBudget: 0 });
-      await expect(
-        readLatestWorkflowAutomationRunFixture(context, fireAlways),
-      ).resolves.toMatchObject({ autonomyBudget: 1 });
-      await expect(
-        readLatestWorkflowAutomationRunFixture(context, patternMatch),
-      ).resolves.toMatchObject({ autonomyBudget: 1 });
-
       const displayMessage = await expectAutomationSourceAnnotation(
         fixture,
         fireAlways,
@@ -481,16 +483,24 @@ describe("chat-run-finished workflow automations", () => {
         "A run in the watched chat thread completed.",
       );
 
-      const automationRuns = await api.listAgentRuns(fixture.actor, {
-        status: "pending",
-        limit: 20,
-      });
-      expect(automationRuns.runs).toHaveLength(2);
-      const automationRunId = automationRuns.runs[0]?.id;
+      const automationRuns = await createRunReadsApi(context).requestListLogs(
+        fixture.actor,
+        {
+          status: "pending",
+          limit: 20,
+        },
+        [200],
+      );
+      expect(automationRuns.body.data).toHaveLength(2);
+      const automationRunId = automationRuns.body.data[0]?.id;
       if (!automationRunId) {
         throw new Error("Expected a triggered automation run");
       }
-      await claimChatRun(fixture.runnerGroup, automationRunId);
+      const claimed = await claimChatRun(fixture.runnerGroup, automationRunId);
+      ownedRuns.rememberClaim(
+        automationRunId,
+        claimed.authorization.slice("Bearer ".length),
+      );
     },
   );
 

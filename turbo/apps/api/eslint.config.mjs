@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { config, oxlint } from "@okouai/eslint-config/base";
-import { apiLintPlugin } from "@okouai/eslint-rules/api";
+import { apiLintPlugin, transactionSqlParser } from "@okouai/eslint-rules/api";
 import ccstatePlugin from "@okouai/eslint-rules/ccstate";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -275,6 +275,25 @@ export default [
     files: ["scripts/**/*.ts"],
     plugins: { api: apiLintPlugin },
     rules: { "api/no-new-advisory-lock": "error" },
+  },
+  {
+    files: ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"],
+    plugins: { api: apiLintPlugin },
+    linterOptions: { reportUnusedDisableDirectives: "error" },
+    rules: {
+      "api/no-db-transaction": "error",
+      "api/db-transaction-exemptions": "error",
+    },
+  },
+  {
+    files: ["**/*.sql"],
+    languageOptions: { parser: transactionSqlParser },
+    plugins: { api: apiLintPlugin },
+    linterOptions: { reportUnusedDisableDirectives: "error" },
+    rules: {
+      "api/no-db-transaction": "error",
+      "api/db-transaction-exemptions": "error",
+    },
   },
   {
     files: ["src/**/*.ts", "scripts/**/*.ts"],
@@ -754,7 +773,6 @@ export default [
     ignores: [
       "src/**/__tests__/**/*.ts",
       "src/signals/routes/test-*.ts",
-      "src/signals/routes/cli-auth-test.ts",
       "src/signals/route.ts",
     ],
     rules: {
@@ -764,10 +782,6 @@ export default [
           patterns: [
             {
               group: ["**/routes/test-*", "**/routes/test-*/**"],
-              message: productionRouteTestImportMessage,
-            },
-            {
-              group: ["**/routes/cli-auth-test"],
               message: productionRouteTestImportMessage,
             },
           ],
@@ -784,10 +798,6 @@ export default [
           patterns: [
             {
               group: ["**/routes/test-*", "**/routes/test-*/**"],
-              message: productionRouteTestImportMessage,
-            },
-            {
-              group: ["**/routes/cli-auth-test"],
               message: productionRouteTestImportMessage,
             },
           ],

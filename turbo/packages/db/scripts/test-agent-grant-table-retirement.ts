@@ -19,6 +19,7 @@ async function migration(name: string) {
 }
 
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0368; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${testSchema}"`);
   await client.query(`SET LOCAL search_path TO "${testSchema}"`);

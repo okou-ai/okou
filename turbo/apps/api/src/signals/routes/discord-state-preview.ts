@@ -1,6 +1,5 @@
 import { command, type Command } from "ccstate";
 import type { z } from "zod";
-import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { notFound } from "../../lib/error";
 import { and, eq } from "drizzle-orm";
@@ -33,43 +32,25 @@ type DiscordHistoryFixture = NonNullable<
   z.infer<typeof testDiscordStateContract.post.body>["history"]
 >;
 
-async function seedDiscordHistory(
-  tx: Tx,
-  args: {
-    readonly connectionId: string;
-    readonly userId: string;
-    readonly orgId: string;
-    readonly guildId: string;
-    readonly botUserId: string;
-    readonly discordUserId: string;
-    readonly history: DiscordHistoryFixture;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const createdAt = nowDate();
-  // The ingress endpoints are implemented in the following slice. Until
-  // then this guarded preview fixture constructs retained delivery state
-  // for schema, export and deletion verification using an owned public chat.
-  const [route] = await tx
-    .insert(discordChatThreadRoutes)
-    .values({
-      connectionId: args.connectionId,
-      channelId: args.history.channelId,
-      sessionKey: args.history.messageId,
-      userId: args.userId,
-      chatThreadId: args.history.chatThreadId,
-      destinationChannelId: args.history.channelId,
-      createdAt,
-    })
-    .returning({ id: discordChatThreadRoutes.id });
-  signal.throwIfAborted();
-  if (!route) {
-    throw new Error("Discord preview route creation failed");
-  }
-  await tx.insert(discordChatIngress).values([
+type DiscordHistoryInput = {
+  readonly connectionId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly guildId: string;
+  readonly botUserId: string;
+  readonly discordUserId: string;
+  readonly history: DiscordHistoryFixture;
+};
+
+function discordHistoryIngressValues(
+  args: DiscordHistoryInput,
+  routeId: string,
+  createdAt: Date,
+): (typeof discordChatIngress.$inferInsert)[] {
+  return [
     {
       connectionId: args.connectionId,
-      routeId: route.id,
+      routeId,
       eventId: args.history.messageId,
       messageId: args.history.messageId,
       payload: args.history.messageText,
@@ -84,11 +65,17 @@ async function seedDiscordHistory(
       createdAt,
       updatedAt: createdAt,
     },
-  ]);
-  signal.throwIfAborted();
-  await tx.insert(chatDiscordContext).values({
+  ];
+}
+
+function discordHistoryContextValues(
+  args: DiscordHistoryInput,
+  routeId: string,
+  createdAt: Date,
+): typeof chatDiscordContext.$inferInsert {
+  return {
     connectionId: args.connectionId,
-    routeId: route.id,
+    routeId,
     chatThreadId: args.history.chatThreadId,
     guildId: args.guildId,
     channelId: args.history.channelId,
@@ -99,8 +86,7 @@ async function seedDiscordHistory(
     channelType: "channel",
     destinationChannelId: args.history.channelId,
     createdAt,
-  });
-  signal.throwIfAborted();
+  };
 }
 
 const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -111,6 +97,7 @@ const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
   const body = bodyResult.data;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0016; new non-billing transactions are prohibited.
   const response = await set(writeDb$).transaction(async (tx) => {
     const createdAt = nowDate();
     if (body.history) {
@@ -185,19 +172,43 @@ const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
       return conflict();
     }
     if (body.history) {
-      await seedDiscordHistory(
-        tx,
-        {
-          connectionId: connection.id,
-          userId: auth.userId,
-          orgId: auth.orgId,
-          guildId: body.guildId,
-          botUserId: body.botUserId,
-          discordUserId: body.discordUserId,
-          history: body.history,
-        },
-        signal,
-      );
+      const args = {
+        connectionId: connection.id,
+        userId: auth.userId,
+        orgId: auth.orgId,
+        guildId: body.guildId,
+        botUserId: body.botUserId,
+        discordUserId: body.discordUserId,
+        history: body.history,
+      };
+      const createdAt = nowDate();
+      // The ingress endpoints are implemented in the following slice. Until
+      // then this guarded preview fixture constructs retained delivery state
+      // for schema, export and deletion verification using an owned public chat.
+      const [route] = await tx
+        .insert(discordChatThreadRoutes)
+        .values({
+          connectionId: args.connectionId,
+          channelId: args.history.channelId,
+          sessionKey: args.history.messageId,
+          userId: args.userId,
+          chatThreadId: args.history.chatThreadId,
+          destinationChannelId: args.history.channelId,
+          createdAt,
+        })
+        .returning({ id: discordChatThreadRoutes.id });
+      signal.throwIfAborted();
+      if (!route) {
+        throw new Error("Discord preview route creation failed");
+      }
+      await tx
+        .insert(discordChatIngress)
+        .values(discordHistoryIngressValues(args, route.id, createdAt));
+      signal.throwIfAborted();
+      await tx
+        .insert(chatDiscordContext)
+        .values(discordHistoryContextValues(args, route.id, createdAt));
+      signal.throwIfAborted();
     }
     return { status: 200 as const, body: { connectionId: connection.id } };
   });
@@ -209,6 +220,7 @@ const deleteDiscordState$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(queryOf(testDiscordStateContract.delete));
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0017; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       signal.throwIfAborted();
       await tx

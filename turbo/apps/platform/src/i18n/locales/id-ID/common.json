@@ -4905,6 +4905,27 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Periksa status pengiriman",
+          "description": "Kirim contoh tetap ke email akun Anda dengan templat Morning Brief. Ini tidak menjalankan Agent atau mengubah jadwal Anda.",
+          "reasons": {
+            "delivery-failed": "Pengiriman gagal. Percobaan sebelumnya mungkin telah diterima penyedia.",
+            "expired": "Pengiriman kedaluwarsa. Percobaan sebelumnya mungkin telah diterima penyedia.",
+            "no-email": "Dilewati: akun Anda tidak memiliki alamat email.",
+            "suppressed": "Dilewati: pengiriman ke email akun Anda diblokir.",
+            "unsubscribed": "Dilewati: akun Anda berhenti berlangganan pembaruan email."
+          },
+          "requestFailed": "Permintaan belum selesai. Percobaan ulang memakai permintaan yang sama untuk mencegah email duplikat.",
+          "retry": "Coba lagi email uji",
+          "send": "Kirim email uji",
+          "sendAnother": "Kirim email uji lain",
+          "sending": "Mengirim…",
+          "status": {
+            "queued": "Dalam antrean pengiriman. Periksa status sebelum mengirim contoh lain.",
+            "sent": "Diterima penyedia email. Periksa kotak masuk dan spam; kedatangan di kotak masuk belum dikonfirmasi."
+          },
+          "title": "Email uji Morning Brief"
+        },
         "openrouterPreset": {
           "description": "Berlaku untuk eksekusi Auto dan Okou 1.0 bawaan yang baru di seluruh organisasi. Eksekusi yang sudah ada tidak berubah.",
           "loading": "Memuat…",

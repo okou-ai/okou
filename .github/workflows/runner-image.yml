@@ -355,7 +355,7 @@ jobs:
     name: Compile runner binary (${{ matrix.label }})
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:
       actions: read
       contents: read
@@ -374,7 +374,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-compile-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
-      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
       GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
@@ -394,6 +394,7 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Setup R2 sccache
+        id: sccache
         uses: ./.github/actions/setup-r2-sccache
         with:
           architecture: ${{ matrix.id }}
@@ -449,6 +450,10 @@ jobs:
           PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: .github/scripts/runner-binary-transport.sh publish
 
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+
       - name: Report peak memory
         if: always()
         continue-on-error: true
@@ -461,7 +466,7 @@ jobs:
     name: Prewarm runner dependency cache (${{ matrix.label }})
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:
       actions: read
       contents: read
@@ -484,7 +489,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-hit-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
-      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
       GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
@@ -499,6 +504,7 @@ jobs:
 
       # Set the same compiler environment before deriving either cache key.
       - name: Setup R2 sccache
+        id: sccache
         uses: ./.github/actions/setup-r2-sccache
         with:
           architecture: ${{ matrix.id }}
@@ -559,6 +565,10 @@ jobs:
             echo "- Prewarm build: \`${PREWARM_OUTCOME}\`"
             echo "- Runner outputs are not published or deployed."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
 
       - name: Report peak memory
         if: always()

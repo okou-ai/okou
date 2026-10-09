@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.2.15](https://github.com/okou-ai/okou/compare/runner-network-v0.2.14...runner-network-v0.2.15) (2026-10-09)
+
+
+### Refactoring
+
+* assemble current run inputs without agent configuration ([#38004](https://github.com/okou-ai/okou/issues/38004)) ([22efd4b](https://github.com/okou-ai/okou/commit/22efd4b6b34872c0585a0d4c3778cb3b59d9d100))
+* remove custom provider and gateway traces ([#37890](https://github.com/okou-ai/okou/issues/37890)) ([f59490d](https://github.com/okou-ai/okou/commit/f59490d298d2c0b3c3b903d005846e13524bc59e))
+* retire cooldown, ultrafast, us routing and model provider leftovers ([#37884](https://github.com/okou-ai/okou/issues/37884)) ([a9c3270](https://github.com/okou-ai/okou/commit/a9c3270099034c0f7ee73f6c730b07efa7d1d733))
+
+
+### Performance Improvements
+
+* **test:** reduce remaining crates fixture overhead ([#38283](https://github.com/okou-ai/okou/issues/38283)) ([80ea1e5](https://github.com/okou-ai/okou/commit/80ea1e5381b35f4ca152d4ffbf387915d8f3d1cc))
+* **test:** remove redundant http fixture body work ([#38320](https://github.com/okou-ai/okou/issues/38320)) ([b3e8b7c](https://github.com/okou-ai/okou/commit/b3e8b7c95fe75585247a972177e22d04d7f7639c))
+
+## [0.2.14](https://github.com/okou-ai/okou/compare/runner-network-v0.2.13...runner-network-v0.2.14) (2026-10-09)
+
+## [0.2.13](https://github.com/okou-ai/okou/compare/runner-network-v0.2.12...runner-network-v0.2.13) (2026-10-09)
+
+
+### Performance Improvements
+
+* **test:** remove redundant http fixture body work ([#38320](https://github.com/okou-ai/okou/issues/38320)) ([b3e8b7c](https://github.com/okou-ai/okou/commit/b3e8b7c95fe75585247a972177e22d04d7f7639c))
+
 ## [0.2.12](https://github.com/okou-ai/okou/compare/runner-network-v0.2.11...runner-network-v0.2.12) (2026-10-09)
 
 

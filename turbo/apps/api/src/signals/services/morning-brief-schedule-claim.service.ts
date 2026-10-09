@@ -402,6 +402,7 @@ const commitMorningBriefScheduleSettlement$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const result = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0189; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const attempted = await attemptMorningBriefScheduleSettlement(tx, args);
         signal?.throwIfAborted();

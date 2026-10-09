@@ -43,6 +43,7 @@ async function uninstallDiscordOrganization(
   auth: { readonly orgId: string; readonly userId: string },
   signal: AbortSignal,
 ): Promise<boolean> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0020; new non-billing transactions are prohibited.
   const recipients = await db.transaction(async (tx) => {
     const [installation] = await tx
       .select({ guildId: discordOrgInstallations.guildId })

@@ -25,6 +25,7 @@
     "src/**/*.json"
   ],
   "exclude": [
+    "src/lib/desktop-compatibility.json",
     "src/lib/desktop-version.ts",
     "src/lib/desktop-compatibility.ts",
     "node_modules",
@@ -291,6 +292,7 @@
     "src/signals/services/notion-automation-account.service.ts",
     "src/signals/services/official-automation-result-email-renderer.ts",
     "src/lib/agent-notification-email-renderer.ts",
+    "src/lib/debug-morning-brief-email.ts",
     "src/lib/morning-brief-notification-source.ts",
     "src/signals/services/official-workflow-catalog-read.service.ts",
     "src/signals/services/official-workflow-context.signals.ts",
@@ -439,6 +441,7 @@
     "src/signals/services/connector-runtime-preparation.service.ts",
     "src/signals/services/discord-access.service.ts",
     "src/signals/services/discord-api-response.ts",
+    "src/signals/services/discord-application-capability.service.ts",
     "src/signals/services/discord-chat-callback-payload.ts",
     "src/signals/services/discord-chat-route-access.service.ts",
     "src/signals/services/discord-config.ts",
@@ -521,7 +524,6 @@
     "src/signals/services/workflow-schedule-failure.service.ts",
     "src/signals/services/workflow-stripe-queue.service.ts",
     "src/types/auth.ts",
-    "src/signals/services/retired-morning-brief-email.ts",
     "src/signals/services/automation-event-watch-lifecycle.service.ts",
     "src/signals/services/github-webhook-automation-config.ts",
     "src/signals/services/gmail-automation-watch.service.ts",

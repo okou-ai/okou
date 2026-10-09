@@ -48,7 +48,7 @@ jq -e '
   ) and
   ($warm.steps | map(select(.uses == "./.github/actions/setup-r2-sccache")) | .[0].with) ==
     ($compile.steps | map(select(.uses == "./.github/actions/setup-r2-sccache")) | .[0].with) and
-  (($warm.steps | map(.id // .name) | index("Setup R2 sccache")) <
+  (($warm.steps | map(.id // .name) | index("sccache")) <
     ($warm.steps | map(.id // .name) | index("cache-lookup"))) and
   any($warm.steps[];
     .id == "prewarm" and

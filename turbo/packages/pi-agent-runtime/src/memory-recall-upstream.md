@@ -53,4 +53,4 @@ reads apply the same text-only defense without rewriting source rows or blobs.
 Issue #32569 adds bounded escaping for isolated, closed code examples of the
 delimiter constants. Real envelopes inside code remain private. The native
 Codex 0.153.4 source/order evidence, literal grammar and public caller audit are
-documented in [the delimiter boundary](../../../../docs/citation-delimiter-literals.md).
+documented in [the delimiter boundary](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/citation-delimiter-literals.md).

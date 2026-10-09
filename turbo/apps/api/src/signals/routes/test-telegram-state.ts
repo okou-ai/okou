@@ -146,6 +146,7 @@ async function seedOrgDefaultAgentForAction(
   });
   signal.throwIfAborted();
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0035; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await writeOrgMetadataWithDefaultPlanEntitlement(
       tx,

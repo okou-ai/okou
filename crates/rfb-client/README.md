@@ -4,7 +4,7 @@ This internal, unpublished crate establishes an authenticated connection for the
 VNC engine tracked by [#34778](https://github.com/vm0-ai/okou/issues/34778).
 It provides verified authentication, framebuffer decoding and caller-driven
 capture/input sessions for the documented reference-server profile. Runner
-integrates this engine through [Run-owned guest RPC](../../docs/runner-vnc-execution.md)
+integrates this engine through [Run-owned guest RPC](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/runner-vnc-execution.md)
 and the private authority API. The CLI, owner configuration and Agent inventory
 compose those contracts without changing this engine; VNC remains disabled by
 default and product acceptance is recorded separately.

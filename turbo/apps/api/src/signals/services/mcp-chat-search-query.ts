@@ -75,6 +75,7 @@ export const mcpChatSearchCandidates$ = command(
     const { principal } = facts;
     const condition = candidateCondition(facts);
     // SET LOCAL bounds the single candidate query. No helper receives this handle.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0181; new non-billing transactions are prohibited.
     const rows = await set(writeDb$).transaction(
       async (db) => {
         await db.execute(sql`SET LOCAL statement_timeout = '3s'`);

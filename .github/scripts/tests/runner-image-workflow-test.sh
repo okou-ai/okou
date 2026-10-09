@@ -13,7 +13,6 @@ fail() {
 
 command -v yq >/dev/null || fail "yq is required"
 workflow_json=$(yq -o=json '.' "$WORKFLOW")
-action_json=$(yq -o=json '.' "$ACTION")
 
 jq -e '
   .jobs.prepare.steps as $steps |
@@ -193,7 +192,7 @@ jq -e '
 
 jq -e '
   .jobs.compile["runs-on"] == "ubuntu-latest-8-cores" and
-  .jobs.compile.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008" and
+  .jobs.compile.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009" and
   (.jobs.compile.if | contains("!cancelled()")) and
   (.jobs.compile.if | contains("needs.prepare.result == '\''success'\''")) and
   (.jobs.compile.if | contains("runner-binary-miss-count != '\''0'\''")) and
@@ -224,118 +223,10 @@ jq -e '
   )
 ' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
 
-# The shared action owns the sccache version and complete startup interface.
-jq -e '
-  .runs.using == "composite" and
-  (.inputs | keys | sort) ==
-    ["architecture", "r2-access-key-id", "r2-account-id", "r2-bucket-name", "r2-secret-access-key"] and
-  all(.inputs[]; .required == true) and
-  any(.runs.steps[];
-    .name == "Install sccache" and
-    ((.uses // "") | startswith("mozilla-actions/sccache-action@")) and
-    .with.version == "v0.15.0"
-  ) and
-  any(.runs.steps[];
-    .name == "Configure R2 sccache" and
-    .shell == "bash" and
-    .env.AWS_ACCESS_KEY_ID == "${{ inputs.r2-access-key-id }}" and
-    .env.AWS_SECRET_ACCESS_KEY == "${{ inputs.r2-secret-access-key }}" and
-    .env.R2_ACCOUNT_ID == "${{ inputs.r2-account-id }}" and
-    .env.SCCACHE_ARCHITECTURE == "${{ inputs.architecture }}" and
-    .env.SCCACHE_BUCKET == "${{ inputs.r2-bucket-name }}" and
-    .env.SCCACHE_GHA_ENABLED == "false" and
-    .env.SCCACHE_IDLE_TIMEOUT == "0" and
-    .env.SCCACHE_REGION == "auto"
-  )
-' <<<"$action_json" >/dev/null || fail "shared cache action must retain its sccache version and explicit startup inputs"
-
-# Execute the action's configured startup boundary without contacting storage. The
-# server must receive R2 configuration, while later build steps receive only
-# compiler settings through GITHUB_ENV.
-cache_step=$(jq -c '.runs.steps[] | select(.name == "Configure R2 sccache")' <<<"$action_json")
-cache_script=$(jq -r '.run' <<<"$cache_step")
-cache_env_entries=$(jq -r '.env | to_entries[] | "\(.key)=\(.value)"' <<<"$cache_step")
-mapfile -t cache_env_templates <<<"$cache_env_entries"
-render_cache_env() {
-  local architecture=$1 index value
-  cache_env=()
-  for index in "${!cache_env_templates[@]}"; do
-    value=${cache_env_templates[$index]}
-    value=${value//"\${{ inputs.r2-access-key-id }}"/fixture-access}
-    value=${value//"\${{ inputs.r2-secret-access-key }}"/fixture-secret}
-    value=${value//"\${{ inputs.r2-account-id }}"/fixture-account}
-    value=${value//"\${{ inputs.r2-bucket-name }}"/fixture-bucket}
-    value=${value//"\${{ inputs.architecture }}"/$architecture}
-    cache_env+=("$value")
-  done
-}
-cache_dir="${test_root}/cache-startup"
-mkdir -p "$cache_dir"
-cat > "${cache_dir}/sccache" <<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
-[ "$#" = 1 ] && [ "$1" = --start-server ]
-[ "$AWS_ACCESS_KEY_ID" = fixture-access ]
-[ "$AWS_SECRET_ACCESS_KEY" = fixture-secret ]
-[ "$SCCACHE_BUCKET" = fixture-bucket ]
-[ "$SCCACHE_ENDPOINT" = https://fixture-account.r2.cloudflarestorage.com ]
-[ "$SCCACHE_REGION" = auto ]
-[ "$SCCACHE_S3_KEY_PREFIX" = "$EXPECTED_PREFIX" ]
-[ "$SCCACHE_GHA_ENABLED" = false ]
-[ "$SCCACHE_IDLE_TIMEOUT" = 0 ]
-[ -f "$SCCACHE_CONF" ]
-touch "$SERVER_STARTED"
-BASH
-chmod +x "${cache_dir}/sccache"
-for architecture in arm64 x86_64; do
-  render_cache_env "$architecture"
-  rm -f "${cache_dir}/github-env" "${cache_dir}/started"
-  cache_start_env=(env -i "PATH=$PATH" "RUNNER_TEMP=$cache_dir"
-    "GITHUB_ENV=${cache_dir}/github-env" "SCCACHE_PATH=${cache_dir}/sccache"
-    "SERVER_STARTED=${cache_dir}/started" "EXPECTED_PREFIX=runner-sccache/${architecture}/"
-    "${cache_env[@]}")
-  "${cache_start_env[@]}" bash -eo pipefail -c "$cache_script"
-  [ -f "${cache_dir}/started" ] || fail "R2 cache server did not start for $architecture"
-  grep -qx 'server_startup_timeout_ms = 60000' "${cache_dir}/sccache.toml" || \
-    fail "cache startup must retain its 60-second timeout"
-  if grep -Eq 'AWS_|R2_|SCCACHE_(BUCKET|ENDPOINT|S3_KEY_PREFIX)|fixture-(access|secret)' \
-    "${cache_dir}/github-env"; then
-    fail "cache startup must not export storage configuration or credentials to build steps"
-  fi
-  [ "$(wc -l < "${cache_dir}/github-env" | tr -d ' ')" = 3 ] || \
-    fail "cache startup must export only three compiler settings"
-  grep -qx 'CARGO_INCREMENTAL=0' "${cache_dir}/github-env" || fail "sccache builds must disable incremental compilation"
-  grep -qx "SCCACHE_CONF=${cache_dir}/sccache.toml" "${cache_dir}/github-env" || fail "builds must retain the cache config"
-  grep -qx 'RUSTC_WRAPPER=sccache' "${cache_dir}/github-env" || fail "builds must use the configured cache server"
-done
-
-render_cache_env arm64
-cache_start_env=(env -i "PATH=$PATH" "RUNNER_TEMP=$cache_dir"
-  "GITHUB_ENV=${cache_dir}/github-env" "SCCACHE_PATH=${cache_dir}/sccache"
-  "SERVER_STARTED=${cache_dir}/started" "EXPECTED_PREFIX=runner-sccache/arm64/"
-  "${cache_env[@]}")
-for missing in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID SCCACHE_BUCKET SCCACHE_ARCHITECTURE; do
-  rm -f "${cache_dir}/started"
-  if "${cache_start_env[@]}" "$missing=" bash -eo pipefail -c "$cache_script" \
-    >"${cache_dir}/out" 2>"${cache_dir}/err"; then
-    fail "cache startup must reject missing $missing"
-  fi
-  [ ! -e "${cache_dir}/started" ] || fail "missing R2 configuration must not start a local cache"
-done
-rm -f "${cache_dir}/started"
-if "${cache_start_env[@]}" SCCACHE_ARCHITECTURE=ppc64 bash -eo pipefail -c "$cache_script" \
-  >"${cache_dir}/out" 2>"${cache_dir}/err"; then
-  fail "cache startup must reject an unsupported architecture"
-fi
-[ ! -e "${cache_dir}/started" ] || fail "unsupported architecture must not start a local cache"
-
 jq -e '
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
     .key] == ["compile", "prewarm-rust-cache"]) and
-  ([.jobs | to_entries[] |
-    select(any(.value.steps[]?; (.uses // "") | startswith("mozilla-actions/sccache-action@"))) |
-    .key] == []) and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |
     .key] == ["compile", "prewarm-rust-cache"])

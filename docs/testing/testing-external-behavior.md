@@ -153,11 +153,10 @@ support code removed. If the real caller's boundary is ambiguous, identify the
 specific production entry point and authorization chain for review; do not
 grant a blanket fixture exception.
 
-The [#37440 helper/API ledger](../implementation/issue-37440-batches/README.md)
-records this decision separately for each inventoried definition or operation.
-Inventory-item progress and test-declaration/parameter-branch changes are
-different measures; neither endpoint removal nor helper renaming establishes
-compliance by itself.
+Record implementation decisions and evidence in the owning issue or PR, not a
+new document under `docs/`. Inventory-item progress and test-declaration or
+parameter-branch changes are different measures; neither endpoint removal nor
+helper renaming establishes compliance by itself.
 
 A genuine shared-library protocol can have its own boundary. For example,
 `piMemoryPhase2SelectionDigest` is exported by `@okouai/pi-agent-runtime/api`

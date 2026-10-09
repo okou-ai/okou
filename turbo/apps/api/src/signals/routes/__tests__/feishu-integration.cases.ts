@@ -1,3 +1,7 @@
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import {
   FEISHU_PLATFORMS,
@@ -51,8 +55,7 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { extractFileFromTarGz } from "../../../lib/tar";
 import { server } from "../../../mocks/server";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { now } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
@@ -277,6 +280,10 @@ interface FeishuInstallationFixture {
 }
 
 interface FeishuRunFixture extends FeishuInstallationFixture {
+  readonly subscription: {
+    readonly customerId: string;
+    readonly subscriptionId: string;
+  };
   readonly runnerGroup: string;
   readonly alternateAgentId: string;
 }
@@ -1193,7 +1200,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         visibility: "public",
       }),
     ]);
-    await runsApi.grantProEntitlement(actor);
+    const subscription = await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -1204,6 +1211,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     return {
       actor,
       runnerGroup,
+      subscription,
       appId,
       callbackUrl,
       installationId,
@@ -5970,7 +5978,9 @@ export function registerFeishuIntegrationTests(
       });
 
       it("resumes queued Feishu group tasks through the canonical session", async () => {
-        const fixture = await setupFeishuRunFixture();
+        const fixture = await setupFeishuRunFixture({
+          useSystemDefaultIdentity: true,
+        });
         const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
           fixture;
         const secondOpenId = "ou_feishu_canonical_group_user";
@@ -5980,6 +5990,12 @@ export function registerFeishuIntegrationTests(
           orgRole: "org:member",
         });
         await authOrgApi.completeOnboarding(secondActor);
+        const ownedRuns = publicRunOwner(context, secondActor, {
+          afterRuns: async () => {
+            await removeFeishuInstallation(fixture);
+            await deletePublicWorkspace(context, actor);
+          },
+        });
         await enableFeishuIntegration(platform, secondActor, {
           [FeatureSwitchKey.OkouDebug]: true,
         });
@@ -6018,11 +6034,15 @@ export function registerFeishuIntegrationTests(
         );
         await flushWaitUntilForTest();
         expect(
-          (await runsApi.listAgentRuns(secondActor, { limit: 20 })).runs.some(
-            (run) => {
-              return run.prompt === `@Nova ${secondPrompt}`;
-            },
-          ),
+          (
+            await createRunReadsApi(context).requestListLogs(
+              secondActor,
+              { limit: 20 },
+              [200],
+            )
+          ).body.data.some((run) => {
+            return run.prompt === `@Nova ${secondPrompt}`;
+          }),
         ).toBeFalsy();
         const queuedFeishuInput = await findPendingInputEventByText(context, {
           actor: secondActor,
@@ -6032,7 +6052,7 @@ export function registerFeishuIntegrationTests(
           throw new Error("Expected queued canonical Feishu event");
         }
         await runsApi.heartbeatRunner(runnerGroup);
-        const firstClaim = await runsApi.claimRunnerJob(firstRun.id);
+        const firstClaim = await ownedRuns.claim(firstRun.id);
         const firstCliSessionId = `bdd-feishu-canonical-group-${firstRun.id}`;
         await completeRunSession({
           runId: firstRun.id,
@@ -6044,25 +6064,13 @@ export function registerFeishuIntegrationTests(
         const secondRun = await findRun(secondActor, `@Nova ${secondPrompt}`);
         await expectRunSource(secondActor, secondRun.id);
         await runsApi.heartbeatRunner(runnerGroup);
-        const secondClaim = await runsApi.claimRunnerJob(secondRun.id);
+        const secondClaim = await ownedRuns.claim(secondRun.id);
         expect(secondClaim.prompt).toBe(`@Nova ${secondPrompt}`);
         expect(secondClaim.appendSystemPrompt).toContain(
           "Scope: Group mention",
         );
         expect(secondClaim.resumeSession?.sessionId).toBe(firstCliSessionId);
-        await runsApi.requestCancelRun(secondActor, secondRun.id, [200]);
-        await flushWaitUntilForTest();
-        mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-        const client = setupApp({ context, routes: feishuConnectRoutes })(
-          connectContract,
-        );
-        await accept(
-          client.removeInstallation({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { installationId: fixture.installationId },
-          }),
-          [200],
-        );
+        await ownedRuns.cleanup();
       });
 
       it("ignores unmentioned group messages, app messages and system notifications", async () => {
@@ -6929,12 +6937,20 @@ export function registerSharedFeishuConversationTests(): void {
     });
 
     it("terminalizes and delivers a queued Feishu admission failure exactly once", async () => {
-      const fixture = await setupFeishuRunFixture();
+      const fixture = await setupFeishuRunFixture({
+        useSystemDefaultIdentity: true,
+      });
       const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
         fixture;
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped Feishu actor");
       }
+      const ownedRuns = publicRunOwner(context, actor, {
+        afterRuns: async () => {
+          await removeFeishuInstallation(fixture);
+          await deletePublicWorkspace(context, actor);
+        },
+      });
       await connectFixtureUser(fixture);
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
@@ -6959,7 +6975,7 @@ export function registerSharedFeishuConversationTests(): void {
       await flushWaitUntilForTest();
       const firstRun = await findRun(actor, firstPrompt);
       await runsApi.heartbeatRunner(runnerGroup);
-      const firstClaim = await runsApi.claimRunnerJob(firstRun.id);
+      const firstClaim = await ownedRuns.claim(firstRun.id);
 
       const queuedPrompt = `reject this queued Feishu message after credit loss ${randomUUID()}`;
       const queuedMessageId = `om_${randomUUID()}`;
@@ -6981,23 +6997,22 @@ export function registerSharedFeishuConversationTests(): void {
         throw new Error("Expected the queued Feishu input event");
       }
       expect(
-        (await runsApi.listAgentRuns(actor, { limit: 20 })).runs.filter(
-          (run) => {
-            return run.prompt === queuedPrompt;
-          },
-        ),
+        (
+          await createRunReadsApi(context).requestListLogs(
+            actor,
+            { limit: 20 },
+            [200],
+          )
+        ).body.data.filter((run) => {
+          return run.prompt === queuedPrompt;
+        }),
       ).toHaveLength(0);
-
-      await seedOrgMetadata({
-        orgId: actor.orgId,
-        tier: "pro",
-        credits: 0,
-      });
-      await upsertOrgPlanEntitlementFixture({
-        orgId: actor.orgId,
-        status: "suspended",
-        canBuyCredits: true,
-      });
+      await publicPlanLifecycle(
+        context,
+        actor,
+        "pro",
+        fixture.subscription,
+      ).update("canceled");
       fixtureState.outboundMessages = [];
       context.mocks.ably.publish.mockClear();
       context.mocks.ably.publish.mockRejectedValue(
@@ -7083,11 +7098,15 @@ export function registerSharedFeishuConversationTests(): void {
         }),
       ).toHaveLength(1);
       expect(
-        (await runsApi.listAgentRuns(actor, { limit: 20 })).runs.filter(
-          (run) => {
-            return run.prompt === queuedPrompt;
-          },
-        ),
+        (
+          await createRunReadsApi(context).requestListLogs(
+            actor,
+            { limit: 20 },
+            [200],
+          )
+        ).body.data.filter((run) => {
+          return run.prompt === queuedPrompt;
+        }),
       ).toHaveLength(0);
       expect(context.mocks.ably.publish).toHaveBeenCalledWith(
         `chatThreadMessageCreated:${thread.chatThreadId}`,
@@ -7120,12 +7139,20 @@ export function registerSharedFeishuConversationTests(): void {
     });
 
     it("persists a queued Feishu admission failure when delivery fails", async () => {
-      const fixture = await setupFeishuRunFixture();
+      const fixture = await setupFeishuRunFixture({
+        useSystemDefaultIdentity: true,
+      });
       const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
         fixture;
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped Feishu actor");
       }
+      const ownedRuns = publicRunOwner(context, actor, {
+        afterRuns: async () => {
+          await removeFeishuInstallation(fixture);
+          await deletePublicWorkspace(context, actor);
+        },
+      });
       await connectFixtureUser(fixture);
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
@@ -7152,7 +7179,7 @@ export function registerSharedFeishuConversationTests(): void {
         failedDeliveryAnchorPrompt,
       );
       await runsApi.heartbeatRunner(runnerGroup);
-      const failedDeliveryAnchorClaim = await runsApi.claimRunnerJob(
+      const failedDeliveryAnchorClaim = await ownedRuns.claim(
         failedDeliveryAnchor.id,
       );
 
@@ -7173,16 +7200,12 @@ export function registerSharedFeishuConversationTests(): void {
       if (!failedDeliveryEvent) {
         throw new Error("Expected the failed-delivery Feishu input event");
       }
-      await seedOrgMetadata({
-        orgId: actor.orgId,
-        tier: "pro",
-        credits: 0,
-      });
-      await upsertOrgPlanEntitlementFixture({
-        orgId: actor.orgId,
-        status: "suspended",
-        canBuyCredits: true,
-      });
+      await publicPlanLifecycle(
+        context,
+        actor,
+        "pro",
+        fixture.subscription,
+      ).update("canceled");
       fixtureState.outboundMessages = [];
       fixtureState.failedSendContentFragments.push("Add credits");
       await completeRunSession({
@@ -7231,11 +7254,15 @@ export function registerSharedFeishuConversationTests(): void {
         }),
       ).toHaveLength(1);
       expect(
-        (await runsApi.listAgentRuns(actor, { limit: 20 })).runs.filter(
-          (run) => {
-            return run.prompt === failedDeliveryPrompt;
-          },
-        ),
+        (
+          await createRunReadsApi(context).requestListLogs(
+            actor,
+            { limit: 20 },
+            [200],
+          )
+        ).body.data.filter((run) => {
+          return run.prompt === failedDeliveryPrompt;
+        }),
       ).toHaveLength(0);
       expect(
         fixtureState.removedReactions.filter((messageId) => {

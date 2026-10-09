@@ -1954,50 +1954,6 @@ describe("connector catalog valid lifecycle", () => {
     );
   });
 
-  it("seeds an external token credential through the CLI test endpoint", async () => {
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.external-cli-seed",
-      connectorSlug: "test-oauth-device",
-      label: "Catalog Device OAuth",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          publicAuthMethod({ id: "oauth", grantKind: "device-auth" }),
-        ]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          devicePrivateAuthMethod({
-            accessTokenName: "CATALOG_CLI_DEVICE_ACCESS_TOKEN",
-          }),
-        ]);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-
-    const actor = bdd.user();
-    const firewall = createFirewallApi(context);
-    onTestFinished(createConnectorCleanup(actor, "test-oauth-device"));
-    await firewall.provisionRunReadyOrg(actor);
-    const callsBeforeSeed = context.mocks.s3.send.mock.calls.length;
-    await firewall.seedTestConnector(actor, {
-      connectorSlug: "test-oauth-device",
-      authMethod: "oauth",
-      accessToken: "catalog-cli-access-token",
-    });
-
-    await expect(
-      connectorsApi.readConnectorBySlug(actor, "test-oauth-device"),
-    ).resolves.toMatchObject({
-      slug: "test-oauth-device",
-      authMethod: "oauth",
-      connectionStatus: "connected",
-    });
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeSeed);
-  });
-
   it("replaces and deletes connections with compatibility-filtered auth methods", async () => {
     configureSource();
     const legacyMethod = publicAuthMethod({

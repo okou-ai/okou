@@ -1,5 +1,5 @@
 {
-  "id": "3861bab5-a92b-42f9-be73-c46de79834f5",
+  "id": "1d02fb36-ce31-490d-9f3f-e9d3a9165b67",
   "prevId": "b86708d7-8863-49d7-814b-3def84c583d1",
   "version": "7",
   "dialect": "postgresql",
@@ -8670,6 +8670,102 @@
       },
       "isRLSEnabled": false
     },
+    "public.checkpoints": {
+      "name": "checkpoints",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_mounts": {
+          "name": "storage_mounts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_checkpoints_conversation": {
+          "name": "idx_checkpoints_conversation",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "checkpoints_run_id_agent_runs_id_fk": {
+          "name": "checkpoints_run_id_agent_runs_id_fk",
+          "tableFrom": "checkpoints",
+          "tableTo": "agent_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "checkpoints_conversation_id_conversations_id_fk": {
+          "name": "checkpoints_conversation_id_conversations_id_fk",
+          "tableFrom": "checkpoints",
+          "tableTo": "conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "checkpoints_run_id_unique": {
+          "name": "checkpoints_run_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "run_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.cli_tokens": {
       "name": "cli_tokens",
       "schema": "",
@@ -16946,7 +17042,7 @@
           "name": "source_run_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "idempotency_key": {
           "name": "idempotency_key",
@@ -21512,6 +21608,12 @@
         "last_maintenance_selection_digest": {
           "name": "last_maintenance_selection_digest",
           "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_maintenance_checkpoint_id": {
+          "name": "last_maintenance_checkpoint_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },

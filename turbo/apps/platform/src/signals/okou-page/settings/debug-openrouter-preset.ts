@@ -33,7 +33,7 @@ export const orgOpenrouterPreset$ = computed(async (get) => {
 export const updateOrgOpenrouterPreset$ = command(
   async (
     { get, set },
-    openrouterPreset: OrgOpenrouterPreset,
+    openrouterPreset: OrgOpenrouterPreset | null,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();

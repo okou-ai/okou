@@ -1115,6 +1115,14 @@ the top and horizontal insets for every route, but a fixed descendant is laid
 out past them. That page therefore takes all four insets with `p-safe` and pins
 its own height with `h-viewport max-h-viewport min-h-viewport`.
 
+Viewport-covering authorization and action pages keep their card gutter with
+the directional `*-safe-offset-*` padding utilities, rather than combining
+`p-safe` with ordinary padding that overrides it. Center a `my-auto shrink-0`
+card in a `flex-col` vertical scrollport: the auto margins center short content
+and resolve to zero when content is tall, keeping its top at the padding instead
+of above the scroll origin. Card width limits
+resolve against that padded container (`max-w-full`), not the raw viewport.
+
 Both are registered names rather than respelled variables, for the reason the
 `--animate-*` entries give: a consumer should reach a decision through its
 utility, not restate the declaration. `--height-viewport` is an `@theme inline`

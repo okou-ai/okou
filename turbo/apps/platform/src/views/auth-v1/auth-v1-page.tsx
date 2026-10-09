@@ -77,7 +77,7 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
         )}
         <AuthV1Layout authBrand={authBrand}>
           <div
-            className="relative z-10 flex w-[var(--okou-auth-card-page-width)] max-w-[var(--okou-auth-card-max-width)] shrink-0 flex-col gap-3"
+            className="relative flex w-[var(--okou-auth-card-page-width)] max-w-[var(--okou-auth-card-max-width)] shrink-0 flex-col gap-3"
             data-testid="app-sign-in"
             ref={authPageMountRef}
           >
@@ -112,7 +112,7 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
   return (
     <AuthV1Layout authBrand={authBrand}>
       <div
-        className="relative z-10 flex w-[var(--okou-auth-card-page-width)] max-w-[var(--okou-auth-card-max-width)] shrink-0 flex-col gap-3"
+        className="relative flex w-[var(--okou-auth-card-page-width)] max-w-[var(--okou-auth-card-max-width)] shrink-0 flex-col gap-3"
         data-testid="app-sign-up"
         ref={authPageMountRef}
       >

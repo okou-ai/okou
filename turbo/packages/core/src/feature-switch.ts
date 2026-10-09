@@ -115,12 +115,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
   },
-  [FeatureSwitchKey.PlaudConnector]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable the Plaud MCP connector",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.BillConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the BILL Spend & Expense connector",
@@ -370,6 +364,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Collapse the composer toolbar's attach, template and create workflow buttons into a single plus menu.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ComposerAnchoredSuggestions]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Anchor slash and mention suggestions above the full composer, with the highest-priority candidate at the bottom and no template preview flyout on mobile.",
+    enabled: false,
   },
   [FeatureSwitchKey.DeliveryFormatGuidance]: {
     maintainer: "bingjie@okou.ai",
