@@ -18,7 +18,8 @@ import {
   DISCORD_INSTALL_SCOPES,
 } from "../external/discord-oauth-client";
 import { discordSnowflakeSchema } from "../external/discord-client";
-import { discordMemberRole } from "../services/discord-data.service";
+import { clerk$, isClerkResourceNotFound } from "../external/clerk";
+import { settle } from "../utils";
 import {
   discordIntegrationEnabledForOwner$,
   getDiscordAppConfig,
@@ -106,9 +107,31 @@ const ownerAuthorized$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const role = await get(discordMemberRole(args));
     signal.throwIfAborted();
-    if (!role || (args.flow === "install" && role !== "admin")) {
+    // This semantic recheck is request-cancellable and deliberately fresh after
+    // provider work. Do not construct a computed graph during command execution
+    // or reuse an earlier request's memoized membership result.
+    const result = await settle(
+      get(clerk$).organizations.getOrganizationMembershipList({
+        organizationId: args.orgId,
+        userId: [args.userId],
+        limit: 1,
+      }),
+    );
+    signal.throwIfAborted();
+    if (!result.ok) {
+      if (isClerkResourceNotFound(result.error)) {
+        return false;
+      }
+      throw result.error;
+    }
+    const membership = result.value.data.find((member) => {
+      return member.publicUserData?.userId === args.userId;
+    });
+    if (
+      !membership ||
+      (args.flow === "install" && membership.role !== "org:admin")
+    ) {
       return false;
     }
     return await set(
