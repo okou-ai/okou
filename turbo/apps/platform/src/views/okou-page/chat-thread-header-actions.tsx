@@ -30,6 +30,10 @@ import { setChatThreadArchivedFromHeader$ } from "../../signals/chat-page/chat-t
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import {
+  handleRenameMenuOpenChange$,
+  renameMenuFinalFocus$,
+} from "../../signals/okou-page/sidebar-state.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
@@ -123,9 +127,8 @@ export function MobileChatThreadMoreMenu({
   const pinned = useGet(thread.pin.pinned$);
   const setPinned = useSet(thread.pin.setPinned$);
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
-  const menuOpen = useGet(thread.renameMenu.open$);
-  const menuFinalFocus = useGet(thread.renameMenu.finalFocus$);
-  const setMenuOpen = useSet(thread.renameMenu.setOpen$);
+  const menuFinalFocus = useGet(renameMenuFinalFocus$);
+  const onMenuOpenChange = useSet(handleRenameMenuOpenChange$);
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archived = useGet(thread.threadMeta$)?.archived === true;
@@ -140,12 +143,11 @@ export function MobileChatThreadMoreMenu({
   const openArtifacts = useOpenThreadArtifacts(thread);
 
   return (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+    <DropdownMenu onOpenChange={onMenuOpenChange}>
       <MobileChatThreadMoreMenuTrigger />
       <DropdownMenuContent
         align="end"
         className="min-w-48"
-        // The rename dialog owns focus after this menu hands off to it.
         finalFocus={menuFinalFocus}
       >
         <DropdownMenuItem

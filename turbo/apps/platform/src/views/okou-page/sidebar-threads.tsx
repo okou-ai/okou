@@ -59,7 +59,6 @@ import {
   deleteChatThread$,
   renameChatThread$,
 } from "../../signals/chat-page/chat-event.ts";
-import { restoreChatThreadRenameFocus$ } from "../../signals/chat-page/chat-thread-rename-focus.ts";
 import {
   createNewChatThread$,
   newChatThreadDisabled$,
@@ -93,7 +92,9 @@ import {
   pendingDeleteThreadId$,
   renameDialogAgentId$,
   renameDialogOpen$,
-  renameDialogSession$,
+  renameDialogFinalFocus$,
+  renameMenuFinalFocus$,
+  handleRenameMenuOpenChange$,
   setPendingDeleteThreadId$,
   renameDialogThreadId$,
   renameDialogInput$,
@@ -350,34 +351,6 @@ function ChatThreadPinMenuItems({
   );
 }
 
-function ChatThreadRenameMenuItem({
-  signals,
-}: {
-  signals: SidebarChatThreadItemSignals;
-}) {
-  const { t } = useTranslation();
-  const openRename = useSet(signals.openRename$);
-  const pageSignal = useGet(pageSignal$);
-  const renameLabel = t(($) => {
-    return $.chat.sidebar.rename;
-  });
-  return (
-    <DropdownMenuItem
-      aria-label={renameLabel}
-      aria-keyshortcuts={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.ariaKeyShortcuts}
-      onClick={() => {
-        detach(openRename(pageSignal), Reason.DomCallback);
-      }}
-    >
-      <Pencil size={16} className="mr-2" />
-      {renameLabel}
-      <ChatThreadMenuShortcut
-        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.binding}
-      />
-    </DropdownMenuItem>
-  );
-}
-
 function ChatThreadMenu({
   signals,
   touch = false,
@@ -388,10 +361,17 @@ function ChatThreadMenu({
   const { t } = useTranslation();
   const isPinned = useGet(signals.pinned$);
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
+  const openRename = useSet(signals.openRename$);
   const requestDelete = useSet(signals.requestDelete$);
-  const menuOpen = useGet(signals.renameMenu.open$);
-  const menuFinalFocus = useGet(signals.renameMenu.finalFocus$);
-  const setMenuOpen = useSet(signals.renameMenu.setOpen$);
+  const onMenuOpenChange = useSet(handleRenameMenuOpenChange$);
+  const pageSignal = useGet(pageSignal$);
+  const renameLabel = t(($) => {
+    return $.chat.sidebar.rename;
+  });
+
+  function openRenameDialog() {
+    detach(openRename(pageSignal), Reason.DomCallback);
+  }
 
   const showStateIndicator = indicatorState !== null;
   const showPinIndicator = isPinned && indicatorState === null;
@@ -399,7 +379,7 @@ function ChatThreadMenu({
 
   return (
     <TooltipProvider delay={200}>
-      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <DropdownMenu onOpenChange={onMenuOpenChange}>
         <DropdownMenuTrigger
           render={
             <Button
@@ -467,15 +447,25 @@ function ChatThreadMenu({
           align="end"
           className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
           data-chat-thread-menu-thread-id={signals.threadId}
-          // Keep the rename handoff through both close animations, even when
-          // Rename has already closed before this menu's focus manager detaches.
-          finalFocus={menuFinalFocus}
+          finalFocus={useGet(renameMenuFinalFocus$)}
         >
           <ChatThreadPinMenuItems signals={signals} />
           <ChatThreadMarkUnreadMenuItem signals={signals} />
           <ChatThreadMuteMenuItem signals={signals} />
           <ChatThreadArchiveMenuSection signals={signals} />
-          <ChatThreadRenameMenuItem signals={signals} />
+          <DropdownMenuItem
+            aria-label={renameLabel}
+            aria-keyshortcuts={
+              GLOBAL_KEYBOARD_SHORTCUTS.renameChat.ariaKeyShortcuts
+            }
+            onClick={openRenameDialog}
+          >
+            <Pencil size={16} className="mr-2" />
+            {renameLabel}
+            <ChatThreadMenuShortcut
+              shortcut={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.binding}
+            />
+          </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => {
               requestDelete();
@@ -642,11 +632,10 @@ function ChatThreadRenameDialog() {
   const renameDialogThreadId = useGet(renameDialogThreadId$);
   const renameDialogAgentId = useGet(renameDialogAgentId$);
   const renameDialogInput = useGet(renameDialogInput$);
-  const renameDialogSession = useGet(renameDialogSession$);
   const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
   const setRenameDialogInput = useSet(setRenameDialogInput$);
   const renameChatThread = useSet(renameChatThread$);
-  const restoreChatThreadRenameFocus = useSet(restoreChatThreadRenameFocus$);
+  const finalFocus = useGet(renameDialogFinalFocus$);
   const pageSignal = useGet(pageSignal$);
 
   function closeRenameDialog() {
@@ -678,17 +667,7 @@ function ChatThreadRenameDialog() {
         }
       }}
     >
-      <DialogContent
-        finalFocus={() => {
-          return restoreChatThreadRenameFocus(
-            {
-              threadId: renameDialogThreadId,
-              session: renameDialogSession?.id ?? 0,
-            },
-            pageSignal,
-          );
-        }}
-      >
+      <DialogContent finalFocus={finalFocus}>
         <DialogHeader>
           <DialogTitle>
             {t(($) => {

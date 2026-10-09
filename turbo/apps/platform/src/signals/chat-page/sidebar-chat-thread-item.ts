@@ -19,10 +19,6 @@ import {
   unloadRightThread$,
 } from "./chat-thread-panes.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "./chat-thread-rename.ts";
-import {
-  createChatThreadRenameMenuSignals,
-  type ChatThreadRenameMenuSignals,
-} from "./chat-thread-rename-menu.ts";
 import { markChatThreadUnread$ } from "./chat-thread-mark-unread.ts";
 import { sidebarDraftThreadIds$ } from "./sidebar-draft-threads.ts";
 import { sidebarUnreadThreadIds$ } from "./sidebar-unread-threads.ts";
@@ -52,7 +48,6 @@ export interface SidebarChatThreadItemSignals {
   readonly toggleMuted$: Command<Promise<void>, [AbortSignal]>;
   readonly markUnread$: Command<Promise<void>, [AbortSignal]>;
   readonly openRename$: Command<void, [AbortSignal]>;
-  readonly renameMenu: ChatThreadRenameMenuSignals;
   readonly requestDelete$: Command<void, []>;
 }
 
@@ -96,7 +91,6 @@ function createSidebarChatThreadItemSignals(
 
   return {
     threadId,
-    renameMenu: createChatThreadRenameMenuSignals(),
     title$,
     archived$,
     muted$,
