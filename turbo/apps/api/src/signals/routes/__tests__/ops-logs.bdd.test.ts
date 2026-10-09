@@ -7,7 +7,10 @@ import {
 } from "./helpers/api-bdd-runs";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { agentInstructionsRoutes } from "../agent-instructions";
 
 import { clearMockNow, mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -16,6 +19,8 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createRouteMocks } from "./helpers/route-test";
 
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 
@@ -88,6 +93,7 @@ describe("OPS-01: user data export", () => {
     const runs = createRunsApi(context);
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
+    installDurableUserExportStorage(context, { prefixes: [""] });
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected an organization for the export actor");
@@ -145,16 +151,32 @@ describe("OPS-01: user data export", () => {
         title: "Another user's private thread",
       });
 
-      const ownThread = await chat.requestReadThread(actor, thread.id, [200]);
-      expect(ownThread.body).toMatchObject({
+      const ownThread = await createChatEventsFixture(
+        context,
+      ).readThreadProjection(actor, thread.id);
+      expect(ownThread).toMatchObject({
         id: thread.id,
         title: thread.title,
         agentId: agent.agentId,
         pinOrder: "a0",
       });
       await chat.requestReadThread(actor, peerThread.id, [404]);
-      await expect(bdd.readAgent(actor, agent.agentId)).resolves.toMatchObject({
-        instructions: "Use the exported agent instructions.",
+      createRouteMocks(context).clerk.session(
+        actor.userId,
+        actor.orgId,
+        actor.orgRole,
+      );
+      const instructions = await accept(
+        setupApp({ context, routes: agentInstructionsRoutes })(
+          agentInstructionsContract,
+        ).get({
+          params: { id: agent.agentId },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(instructions.body).toMatchObject({
+        content: "Use the exported agent instructions.",
       });
       const currentWorkflow = await misc.readWorkflow(
         actor,
