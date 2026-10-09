@@ -171,11 +171,6 @@ helpers, services, argument objects, injected contexts, callbacks, state, or
 escaping closures. Exchange ordinary inputs and committed results between
 commands; pure calculations and SQL builders accept ordinary values.
 
-The September 30, 2026 Release 1 acceptance scope excluded remaining handle
-propagation and command-ownership migration. That historical scope does not
-exempt new work from the current ownership rules or permit transaction-held
-external I/O; track remaining handle cleanup separately.
-
 ## External Effects and Recovery
 
 A database transaction cannot roll back a remote effect. A lost response or
@@ -192,74 +187,6 @@ Do not introduce duplicate financial effects, stale credential publication,
 permission resurrection, or a generic compensation framework as a prerequisite
 for retirement. A final database CAS cannot undo a remote request that already
 took effect.
-
-### Accepted Recovery Contracts
-
-These retained product contracts come from the September 29–30, 2026
-decisions. They are not new behavior introduced by this guide, nor permission
-to weaken financial correctness, authorization, or resource identity.
-
-- **Nonfinancial operations:** transient concurrent-operation failures can be
-  recovered by another save, reconnect, or scheduled task. Do not retain
-  old-version acquisitions, new revision/generation CAS, savepoint arbitration,
-  or ordering solely to serialize settings, connector selection, watches,
-  queues, or preference scheduling. Preserve authorization and natural
-  primary/foreign-key/unique constraints. This does not relax payments, refunds,
-  amounts, or credits. Direct nonfinancial lock removal has no additional
-  serving/in-flight/rollback gate solely for that lock; independent schema and
-  trigger transitions retain their actual compatibility requirements.
-- **Google Forms:** recovery may skip the outage interval and establish a fresh
-  latest-response baseline. Normal delivery and recovery to a working watch
-  remain required; gap-free continuity and exhaustive replay do not.
-- **Gmail:** disabling stops local consumption immediately; unused remote
-  watches may expire without a mailbox-wide stop. Other enabled consumers must
-  remain functional. The September 30 decision accepts a finite rolling gap
-  from an outgoing `users.stop`; do not add forced renewal or compensation
-  solely for that overlap, or reintroduce mailbox-wide stop in new code.
-- **Google Calendar and Meet:** preparation and renewal happen outside SQL.
-  Publication preserves authorized source identity; remote cleanup is best
-  effort, and replacement/repair may miss notifications. Do not preserve
-  pending/previous resources solely for gap-free handover or perfect teardown.
-- **Rotating refresh tokens:** a rare cross-instance duplicate refresh may
-  require reconnection. This does not authorize publishing another account's
-  credentials or treating revoked authority as current.
-- **Watch integrations:** retain current account/source authority, explicit
-  enabled state, basic deduplication, and rejection of delayed preparation
-  that would revive revoked authority or a disabled automation.
-- **Usage display:** settlement is the amount authority. Display and realtime
-  refresh hints may lag or repeat; lost or duplicate charges, missing settled
-  amounts, and weaker access checks are not accepted. Entitlement projections
-  are not merely display caches.
-- **Shared custom connector prefixes:** exclusivity is not required. Preserve
-  connector identity and organization/slug uniqueness. Require explicit valid
-  selection when several connectors match; reject unresolved ambiguity rather
-  than choosing the first account or injecting arbitrary credentials.
-
-### Declarative Stripe Subscriptions and Daily Reconciliation
-
-Derive desired subscription configuration from existing local business data,
-not a new table or a second stored subscription snapshot. Map desired plan,
-quantities, cancellation, and current/next-period configuration to their actual
-sources and writers. Keep user intent, observed provider facts, and confirmed
-paid entitlements distinct. An incomplete mapping is unresolved work.
-
-Commit necessary local financial writes before provider I/O. Synchronization
-reloads latest committed data, derives the complete projection, reads Stripe,
-and applies configuration differences outside the transaction. Immediate sync
-and daily reconciliation use that same projection, not a replayed imperative
-quantity change.
-
-Process daily reconciliation in bounded batches, without one transaction across
-organizations or remote calls. Temporary drift and out-of-order intermediate
-configuration writes are accepted. After changes stop, outstanding stale work
-finishes, and reconciliation succeeds, configuration must converge to latest
-intent. Daily attempts are not a hard 24-hour recovery promise during outages.
-
-Webhooks record payment, invoice, and observed provider facts; they must not
-replace current desired intent with an old provider snapshot. Configuration
-repair cannot undo an issued invoice, refund, credit, duplicate charge, or extra
-payable subscription. Preserve their independent deduplication, authorization,
-and financial recovery contracts.
 
 ## Verification and Cleanup
 
@@ -283,9 +210,8 @@ Tests use [production caller boundaries](testing/testing-external-behavior.md)
 and follow [Testing](testing.md). Do not hold production advisory locks, install
 blocking triggers, inspect waiters, add internal gates, or assert lock acquisition.
 Remove tests that only pin retired implementations with their unused fixtures.
-Apply accepted watch gaps, display delays, and configuration drift while retaining
-normal delivery, repair, disable, explicit connector selection, authorization,
-accurate settlement, financial idempotency, and exact-resource cleanup.
+Preserve authorization, financial correctness, idempotency, and exact-resource
+cleanup through the caller's observable contract.
 
 ## Advisory Lock Lint
 
