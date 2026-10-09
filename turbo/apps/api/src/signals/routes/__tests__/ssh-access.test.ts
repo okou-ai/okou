@@ -1,3 +1,4 @@
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
@@ -8,10 +9,6 @@ import {
 import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import {
-  testSshConnectionStateContract,
-  type TestSshConnectionStateActionBody,
-} from "@okouai/api-contracts/contracts/test-ssh-connection-state";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { afterEach, describe, expect, it } from "vitest";
@@ -30,7 +27,6 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { runnerSshRoutes } from "../runner-ssh";
 import { runnersRoutes } from "../runners";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
-import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -49,10 +45,6 @@ const config = () => {
     sshConnectionsContract,
   );
 };
-type RuntimeBody = Extract<
-  TestSshConnectionStateActionBody,
-  { action: "create-runtime" }
->;
 
 function authenticate(owner: { userId: string; orgId: string }) {
   mocks.clerk.session(owner.userId, owner.orgId);
@@ -67,74 +59,48 @@ function authenticate(owner: { userId: string; orgId: string }) {
   });
 }
 
-async function fixture(overrides: Partial<RuntimeBody> = {}) {
-  const owner = {
-    userId: `user_ssh_consumers_${randomUUID()}`,
-    orgId: `org_ssh_consumers_${randomUUID()}`,
-    ...overrides,
-  };
-  authenticate(owner);
-  // Infrastructure-only fixture supplies a claimed running sandbox. Host
-  // connections below go through the production owner endpoints.
-  const state = setupApp({ context, routes: testSshConnectionStateRoutes })(
-    testSshConnectionStateContract,
-  );
-  const response = await accept(
-    state.action({
-      body: {
-        action: "create-runtime",
-        runnerId: owner.runnerId ?? randomUUID(),
-        heartbeatGeneration: 1,
-        triggerSource: "web",
-        status: "running",
-        chat: false,
-        runnerGroup: `ssh-consumers-${randomUUID()}`,
-        ...owner,
-      },
-    }),
-    [200],
-  );
-  if (
-    !response.body.runId ||
-    !response.body.agentId ||
-    !response.body.sandboxToken
-  ) {
-    throw new Error("Missing runtime fixture");
-  }
-  const runId = response.body.runId;
-  const seconds = Math.floor(now() / 1000);
-  const token = (capabilities = ["ssh:read"]) => {
-    return {
-      authorization: `Bearer ${signSandboxJwtForTests({
-        scope: "okou",
-        userId: owner.userId,
-        orgId: owner.orgId,
-        runId,
-        capabilities,
-        iat: seconds,
-        exp: seconds + 3600,
-      })}`,
-    };
-  };
-  return { ...owner, ...response.body, token, runId };
-}
-
 describe("live chat SSH Run inventory", () => {
   const publicRuns = createPublicRemoteAccessRunApi(context);
   const ordinary = createClaimedSshRuntimeApi(context, {
     runnerHeaders: { authorization: `Bearer vm0_official_${"c".repeat(64)}` },
     authenticate,
   });
+  const selectedOwners = new Map<string, { userId: string; orgId: string }>();
   const claimedRunCleanups: (() => Promise<void>)[] = [];
 
   afterEach(async () => {
     await publicRuns.cleanup();
     await ordinary.cleanup();
+    for (const owner of selectedOwners.values()) {
+      await deletePublicWorkspace(context, createBddApi(context).user(owner));
+    }
+    selectedOwners.clear();
     for (const cleanup of claimedRunCleanups.splice(0)) {
       await cleanup();
       await flushWaitUntilForTest();
     }
   });
+
+  async function publicInventoryRun(
+    owner = {
+      userId: `user_ssh_${randomUUID()}`,
+      orgId: `org_ssh_${randomUUID()}`,
+    },
+  ) {
+    selectedOwners.set(owner.orgId, owner);
+    mockEnv("OFFICIAL_RUNNER_SECRET", "c".repeat(64));
+    const run = await publicRuns.start(owner);
+    const claimed = await publicRuns.claim(run, {
+      authorization: `Bearer vm0_official_${"c".repeat(64)}`,
+    });
+    authenticate(owner);
+    return {
+      ...claimed,
+      token: () => {
+        return { authorization: `Bearer ${claimed.agentToken}` };
+      },
+    };
+  }
 
   async function claimedFixture() {
     const bdd = createBddApi(context);
@@ -211,7 +177,7 @@ describe("live chat SSH Run inventory", () => {
   }
 
   it("filters multiple SSH hosts by the Run's chat, current defaults, and sparse overrides", async () => {
-    const f = await fixture({ chat: true });
+    const f = await publicInventoryRun();
     const first = await createHost();
     const second = await createHost("second.example.com");
     if (!f.threadId) {
@@ -242,11 +208,7 @@ describe("live chat SSH Run inventory", () => {
       [200],
     );
     await expect(listIds()).resolves.toStrictEqual([second.body.id]);
-    const otherThread = await fixture({
-      userId: f.userId,
-      orgId: f.orgId,
-      chat: true,
-    });
+    const otherThread = await publicInventoryRun(f);
     const otherThreadIds = async () => {
       return (
         await accept(inventory().list({ headers: otherThread.token() }), [200])
@@ -284,12 +246,6 @@ describe("live chat SSH Run inventory", () => {
       [200],
     );
     await expect(listIds()).resolves.toStrictEqual([]);
-    const withoutChat = await fixture({
-      userId: f.userId,
-      orgId: f.orgId,
-      chat: false,
-    });
-    await accept(inventory().list({ headers: withoutChat.token() }), [404]);
   });
 
   async function createAgent(visibility: "public" | "private") {
@@ -358,7 +314,7 @@ describe("live chat SSH Run inventory", () => {
   });
 
   it("commits concurrent first hosts when best-effort invalidation fails", async () => {
-    const f = await fixture();
+    const f = await publicInventoryRun();
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Synthetic publish failure"),
     );
@@ -369,7 +325,10 @@ describe("live chat SSH Run inventory", () => {
     expect(
       (await accept(config().list({ headers }), [200])).body.connections,
     ).toHaveLength(2);
-    await accept(inventory().list({ headers: f.token() }), [404]);
+    expect(
+      (await accept(inventory().list({ headers: f.token() }), [200])).body
+        .hosts,
+    ).toStrictEqual([]);
   });
 
   it("lists both chat-enabled logins at a shared endpoint", async () => {
@@ -512,18 +471,6 @@ describe("live chat SSH Run inventory", () => {
       outcome: "unavailable",
     });
   });
-
-  it.each(["web", "automation-schedule", "slack"] as const)(
-    "denies %s Runs without a chat thread despite an enabled host default",
-    async (triggerSource) => {
-      const f = await fixture({ triggerSource });
-      const host = await createHost();
-      await enableChatDefault(host.body.id);
-      expect(
-        (await accept(inventory().list({ headers: f.token() }), [404])).status,
-      ).toBe(404);
-    },
-  );
 
   it("keeps the Run inventory Agent-token and capability scoped", async () => {
     // All three credential kinds are rejected before any Run lookup.

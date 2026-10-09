@@ -168,7 +168,7 @@ export function createClaimedSshRuntimeApi(
         runId: value.runId,
         exitCode: 0,
         lastEventSequence: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `bdd-cli-${value.runId}`,
           cliAgentSessionHistoryHash: historyHash,

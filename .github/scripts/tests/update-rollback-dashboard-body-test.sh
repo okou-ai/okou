@@ -150,15 +150,14 @@ grep -Fqx -- "### [runner-rs](https://github.com/okou-ai/okou/releases/tag/runne
 grep -Fqx -- "### [okou-desktop](https://github.com/okou-ai/okou/releases/tag/okou-desktop-v0.618.0): \`0.618.0\`" "$output_file"
 grep -Fqx -- "### [core](https://github.com/okou-ai/okou/releases/tag/core-v8.452.0): \`8.452.0\`" "$output_file"
 grep -Fqx -- "### [zeta](https://github.com/okou-ai/okou/releases/tag/zeta-v2.0.0): \`2.0.0\`" "$output_file"
-grep -Fqx -- "#### Features" "$output_file"
-grep -Fqx -- "* app feature" "$output_file"
-grep -Fqx -- "* api feature" "$output_file"
-grep -Fqx -- "* runner improvement" "$output_file"
-grep -Fqx -- "* zeta feature" "$output_file"
 grep -Fqx -- "<summary>07-22-2026 07:39:39 SGT</summary>" "$output_file"
 grep -Fqx -- "* RevertId: \`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\`" "$output_file"
 grep -Fqx -- "* PDT 07-21-2026 16:39:39" "$output_file"
-grep -Fqx -- "* retained fix" "$output_file"
+grep -Fqx -- "### [legacy-app](https://example.test/legacy-app): \`1.0.0\`" "$output_file"
+grep -Fqx -- "### [legacy-core](https://example.test/legacy-core): \`2.0.0\`" "$output_file"
+if grep -Eq 'Change Log|app feature|api feature|runner improvement|zeta feature|retained fix|Signed and notarized' "$output_file"; then
+  fail "dashboard should link to releases without copying release notes"
+fi
 
 revert_id_line=$(grep -n -F "* RevertId: \`${target_commit}\`" "$output_file" | cut -d: -f1)
 pdt_line=$(grep -n -F "* PDT 07-22-2026 16:39:40" "$output_file" | cut -d: -f1)
@@ -276,7 +275,7 @@ printf '%s\n' \
   '<!-- ROLLBACK_ENTRIES_END -->' >"$body_file"
 for digit in 1 2 3 4 5 6 7; do
   commit=$(printf '%040d' "$digit")
-  write_single_release "$commit" "2026-07-22T23:40:0${digit}Z" 15000
+  write_single_release "$commit" "2026-07-22T23:40:0${digit}Z" 130000
   PATH="${fake_bin}:$PATH" \
     GITHUB_REPOSITORY=okou-ai/okou \
     MOCK_RELEASES_FILE="$releases_file" \
@@ -290,13 +289,68 @@ if [ "$body_bytes" -gt 65000 ]; then
   fail "dashboard body exceeded the safe GitHub issue size"
 fi
 entry_count=$(grep -c '^<!-- ROLLBACK_ENTRY_START ' "$body_file")
-if [ "$entry_count" -ge 7 ]; then
-  fail "old entries were not removed to satisfy the body size limit"
+if [ "$entry_count" -ne 7 ]; then
+  fail "large release notes should not displace compact rollback history"
+fi
+if grep -Fq '**Change Log**' "$body_file"; then
+  fail "large release notes were copied into the dashboard"
 fi
 start_count=$entry_count
 end_count=$(grep -c '^<!-- ROLLBACK_ENTRY_END -->$' "$body_file")
 if [ "$start_count" -ne "$end_count" ]; then
   fail "dashboard size trimming removed a partial entry"
+fi
+grep -Fq 'ROLLBACK_ENTRY_START 0000000000000000000000000000000000000007' "$body_file"
+
+# Migrate an already-published verbose entry while keeping its rollback metadata.
+verbose_history_commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+{
+  printf '<!-- ROLLBACK_ENTRY_START %s -->\n' "$verbose_history_commit"
+  printf '<details>\n<summary>07-23-2026 07:40:00 SGT</summary>\n\n'
+  printf '* RevertId: `%s`\n* PDT 07-22-2026 16:40:00\n\n' "$verbose_history_commit"
+  printf '### [api](https://example.test/api-v1.0.0): `1.0.0`\n\n**Change Log**\n\n'
+  printf '```\n### [not-an-artifact](https://example.test/fake): `9.9.9`\n```\n'
+  jq -nr '"history " * 20000'
+  printf '</details>\n<!-- ROLLBACK_ENTRY_END -->\n'
+} >"$body_file"
+write_single_release "$latest_commit" "2026-07-22T23:39:48Z" 130000
+PATH="${fake_bin}:$PATH" \
+  GITHUB_REPOSITORY=okou-ai/okou \
+  MOCK_RELEASES_FILE="$releases_file" \
+  "$TARGET" "$body_file" "$latest_commit" "$rollback_url" \
+  "$(release_tags_for_target "$latest_commit")" >"$output_file"
+grep -Fqx -- '* RevertId: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`' "$output_file"
+grep -Fqx -- '<summary>07-23-2026 07:40:00 SGT</summary>' "$output_file"
+grep -Fqx -- '* PDT 07-22-2026 16:40:00' "$output_file"
+grep -Fqx -- '### [api](https://example.test/api-v1.0.0): `1.0.0`' "$output_file"
+if grep -Eq 'history|Change Log|not-an-artifact' "$output_file"; then
+  fail "retained history was not compacted to real rollback metadata"
+fi
+if [ "$(wc -c <"$output_file")" -ge 2000 ]; then
+  fail "compact entries should not grow with current or historical release notes"
+fi
+
+# The byte limit still trims complete old entries if metadata itself is large.
+long_url=$(jq -nr '"https://example.test/" + ("x" * 12000)')
+for digit in 1 2 3 4 5 6 7; do
+  commit=$(printf '%040d' "$digit")
+  write_single_release "$commit" "2026-07-22T23:40:0${digit}Z"
+  jq --arg url "$long_url" '.[0].html_url = $url' "$releases_file" >"${releases_file}.next"
+  mv "${releases_file}.next" "$releases_file"
+  PATH="${fake_bin}:$PATH" \
+    GITHUB_REPOSITORY=okou-ai/okou \
+    MOCK_RELEASES_FILE="$releases_file" \
+    "$TARGET" "$body_file" "$commit" "$rollback_url" \
+    "$(release_tags_for_target "$commit")" >"${body_file}.next"
+  mv "${body_file}.next" "$body_file"
+done
+if [ "$(wc -c <"$body_file")" -gt 65000 ]; then
+  fail "metadata trimming exceeded the issue byte limit"
+fi
+entry_count=$(grep -c '^<!-- ROLLBACK_ENTRY_START ' "$body_file")
+if [ "$entry_count" -ge 7 ] || \
+  [ "$entry_count" -ne "$(grep -c '^<!-- ROLLBACK_ENTRY_END -->$' "$body_file")" ]; then
+  fail "metadata trimming should remove complete old entries"
 fi
 grep -Fq 'ROLLBACK_ENTRY_START 0000000000000000000000000000000000000007' "$body_file"
 

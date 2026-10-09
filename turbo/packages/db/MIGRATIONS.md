@@ -112,8 +112,26 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-run-checkpoint-retirement.ts` replays the generic checkpoint
+  contraction against populated historical data and preserves Runs/results,
+  native continuation, blob references, Storage versions/lineage and memory
+  publication receipts. Keep it through production acceptance of the contraction.
+
+- `scripts/test-canonical-selected-model-history.ts` protects migration
+  `1359_canonical_selected_model_history`: keyset pages, preserved personal
+  selection/effort, optional uncaptured decisions, unconsumed legacy-input
+  rejection, transactional recovery and idempotent transform replay. Runs and
+  inline/hash-backed native references remain unchanged. Keep it until #38114's
+  serving, installed-consumer and retained-history gates close and the migration
+  ships. `test-canonical-model-selections-permanent.ts` covers current defaults,
+  nonempty present selections/annotations, explicit effort keys and conditional
+  executable Built-in capture against both replayed and freshly generated
+  schemas. `scripts/migrations/020-canonical-model-selections/test.ts` covers the
+  independent owner-scoped immutable-object/pointer publication contract. The
+  numbered maintenance tool remains a permanent historical record.
+
 - `scripts/test-pi-memory-phase2-input-revision.ts` executes the production Phase 2
-  input-revision SQL before and after a simulated generic-ID column drop. It
+  input-revision SQL before and after the real generic checkpoint contraction. It
   retains the outgoing ORM mapping to prove the preparation boundary and covers
   first insert, conflict revision advancement, active lease preservation and
   unleased retry reset. Keep it until the checkpoint contraction is deployed and
@@ -673,7 +691,7 @@ ON "table" ("created_at");
 ## Permanent triggers and functions
 
 New database triggers are rejected by
-[`api/no-database-trigger`](../../../docs/eslint/no-database-trigger.md) in SQL
+[`api/no-database-trigger`](../../../docs/api/database.md#database-triggers) in SQL
 migrations and production TypeScript. Existing shipped trigger migrations have
 explicit ESLint exceptions; do not extend those exceptions for new behavior.
 Keep write orchestration in application transactions and invariants in database

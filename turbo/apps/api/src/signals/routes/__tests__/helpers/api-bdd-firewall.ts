@@ -1,12 +1,6 @@
-import {
-  cliAuthTestCodexOauthContract,
-  cliAuthTestConnectorContract,
-  cliAuthTestTokenContract,
-} from "@okouai/api-contracts/contracts/cli-auth-test";
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
 import { HttpResponse, http } from "msw";
 import type { z } from "zod";
-import { onTestFinished } from "vitest";
 import { mockClerkUsers } from "./clerk-users";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
@@ -14,29 +8,19 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { server } from "../../../../mocks/server";
 import { generateSandboxToken } from "../../../auth/tokens";
-import { cliAuthTestRoutes } from "../../cli-auth-test";
 import { webhooksAgentFirewallAuthRoutes } from "../../webhooks-agent-firewall-auth";
-import { createBddApi, type ApiTestUser } from "./api-bdd";
+import type { ApiTestUser } from "./api-bdd";
 import { encryptSecretForTests } from "./encrypt-secret";
 
 type FirewallAuthBody = z.infer<
   (typeof webhookFirewallAuthContract.resolve)["body"]
->;
-type SeedConnectorBody = z.infer<
-  (typeof cliAuthTestConnectorContract.create)["body"]
->;
-type SeedCodexOauthBody = z.infer<
-  (typeof cliAuthTestCodexOauthContract.create)["body"]
 >;
 
 interface SandboxHeaders {
   readonly authorization: string;
 }
 
-const firewallRoutes = [
-  ...cliAuthTestRoutes,
-  ...webhooksAgentFirewallAuthRoutes,
-] as const;
+const firewallRoutes = [...webhooksAgentFirewallAuthRoutes] as const;
 
 function firewallApp(context: TestContext) {
   return setupAppWithRoutes({ context, routes: firewallRoutes });
@@ -95,21 +79,8 @@ export function basicTemplate(first: string, second: string): string {
   return `\${{ basic(${first}, ${second}) }}`;
 }
 
-function ownedAccountKey(actor: ApiTestUser): string {
-  return JSON.stringify([actor.orgId, actor.userId]);
-}
-
 export function createFirewallApi(context: TestContext) {
-  const receipts = new Map<string, string>();
   return {
-    /** Read a real writer receipt without triggering credential refresh during setup. */
-    seededPersonalCodexAccountId(actor: ApiTestUser): Promise<string> {
-      const id = receipts.get(ownedAccountKey(actor));
-      if (!id) {
-        throw new Error("Expected a Codex account receipt for this owner");
-      }
-      return Promise.resolve(id);
-    },
     sandboxHeaders(
       actor: ApiTestUser,
       runId: string,
@@ -137,51 +108,6 @@ export function createFirewallApi(context: TestContext) {
       context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
         { data: memberships },
       );
-    },
-
-    async provisionRunReadyOrg(actor: ApiTestUser): Promise<void> {
-      this.seedClerkDirectory(actor);
-      await accept(
-        firewallApp(context)(cliAuthTestTokenContract).create({
-          query: { email: actor.email },
-          body: {},
-        }),
-        [200],
-      );
-      await createBddApi(context).completeOnboarding(actor);
-    },
-
-    async seedTestConnector(
-      actor: ApiTestUser,
-      body: SeedConnectorBody,
-    ): Promise<void> {
-      this.seedClerkDirectory(actor);
-      await accept(
-        firewallApp(context)(cliAuthTestConnectorContract).create({
-          query: { email: actor.email },
-          body,
-        }),
-        [200],
-      );
-    },
-
-    async seedPersonalCodexProvider(
-      actor: ApiTestUser,
-      body: SeedCodexOauthBody,
-    ): Promise<void> {
-      this.seedClerkDirectory(actor);
-      const response = await accept(
-        firewallApp(context)(cliAuthTestCodexOauthContract).create({
-          query: { email: actor.email },
-          body,
-        }),
-        [200],
-      );
-      const key = ownedAccountKey(actor);
-      receipts.set(key, response.body.modelProviderAccountId);
-      onTestFinished(() => {
-        receipts.delete(key);
-      });
     },
 
     async requestFirewallAuth(

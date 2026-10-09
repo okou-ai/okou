@@ -5418,6 +5418,14 @@
     },
     "clearSearch": "Effacer la recherche",
     "custom": "Personnalisés",
+    "delete": {
+      "cancel": "Annuler",
+      "confirm": "Supprimer le modèle",
+      "deleting": "Suppression...",
+      "description": "« {{title}} » sera supprimé pour tous ceux qui peuvent le voir. Cette action est irréversible.",
+      "failed": "Impossible de supprimer le modèle. Réessayez.",
+      "title": "Supprimer le modèle ?"
+    },
     "detail": {
       "back": "Modèles personnalisés",
       "page": "Page {{number}}"

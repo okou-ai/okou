@@ -1,5 +1,4 @@
-import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
+import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -130,24 +129,17 @@ async function completeRun(args: {
     );
   }
   const history = `Discord conversation history ${args.runId}`;
-  const hash = createHash("sha256").update(history).digest("hex");
-  const size = Buffer.byteLength(history);
-  await webhooks.requestAgentCheckpointPrepareHistory(
-    {
-      runId: args.runId,
-      hash,
-      rawSize: size,
-      encodedSize: size,
-      encoding: "identity",
-    },
+  const hash = await prepareRunnerSessionHistory(
+    context,
+    args.runId,
     headers,
-    [200],
+    history,
   );
   await webhooks.requestAgentComplete(
     {
       runId: args.runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `discord-session-${args.runId}`,
         cliAgentSessionHistoryHash: hash,

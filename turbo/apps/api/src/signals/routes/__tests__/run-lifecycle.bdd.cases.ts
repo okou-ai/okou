@@ -1,3 +1,6 @@
+import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -6,6 +9,16 @@ import {
   memoryArchive,
 } from "./helpers/public-runner-memory";
 
+import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
+import { weatherContract } from "@okouai/api-contracts/contracts/weather";
+import { usageMembersRoutes } from "../usage-members";
+import { weatherRoutes } from "../weather";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import {
+  VERTEX_MAPS_URL,
+  vertexMapsResponse,
+} from "./helpers/google-maps-grounding";
+import { VERTEX_VOICE_URL, vertexVoiceResponse } from "./helpers/google-voice";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
@@ -66,18 +79,12 @@ import {
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
-import {
-  deleteOrgPlanEntitlementFixture,
-  upsertOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+
 import { verifyOkouToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import {
   createBddApi,
   expectApiError,
@@ -85,6 +92,7 @@ import {
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -110,11 +118,6 @@ import {
   deleteCustomConnectorCredentialValues,
   setCustomConnectorCredentialStorageState,
 } from "./helpers/connector-credential-storage-state";
-import {
-  deleteSlackIntegrationFixture$,
-  seedSlackEnvironmentAgent$,
-  seedSlackOrgInstallation$,
-} from "./helpers/integrations-slack";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import {
   clearRunApiStart,
@@ -142,7 +145,6 @@ import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const callbackStore = createStore();
-const fixtureStore = createStore();
 // `sandbox-op-log.ts` composes this name from AXIOM_DATASET_SUFFIX, which the
 // test environment stubs as "dev".
 const SANDBOX_OP_LOG_DATASET = "vm0-sandbox-op-log-dev";
@@ -730,6 +732,7 @@ async function entitledRunActor(
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
+  readonly personalProviderId: string;
   readonly granted: {
     readonly customerId: string;
     readonly subscriptionId: string;
@@ -743,13 +746,19 @@ async function entitledRunActor(
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   const granted = await api.grantProEntitlement(actor);
-  await api.ensurePersonalSubscriptionModel(actor, route);
+  const personal = await api.ensurePersonalSubscriptionModel(actor, route);
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD lifecycle agent",
     description: "Exercises the full run lifecycle.",
     visibility: "private",
   });
-  return { actor, agentId: agent.agentId, runnerGroup, granted };
+  return {
+    actor,
+    agentId: agent.agentId,
+    runnerGroup,
+    personalProviderId: personal.providerId,
+    granted,
+  };
 }
 
 type OrdinaryRunOAuthSlug =
@@ -876,6 +885,7 @@ function useOrdinaryOAuthRuns() {
   return function createOrdinaryOAuthRunApi() {
     const runs = createRunsApi(context);
     const agents = new Map<string, ApiTestUser>();
+    const personalAccounts = new Map<string, ApiTestUser>();
     const ownedRuns = new Map<
       string,
       { actor: ApiTestUser; sandboxToken?: string; acknowledged: boolean }
@@ -921,6 +931,11 @@ function useOrdinaryOAuthRuns() {
         await cleanupAgents.deleteAgent(actor, agentId);
         await flushWaitUntilForTest();
       }
+      for (const [id, actor] of personalAccounts) {
+        await createAuthDeviceSupportApi(
+          context,
+        ).deletePersonalModelProviderAccount(actor, id);
+      }
     });
 
     return {
@@ -948,6 +963,7 @@ function useOrdinaryOAuthRuns() {
       async entitledRunActor(...args: Parameters<typeof entitledRunActor>) {
         const entitled = await entitledRunActor(...args);
         agents.set(entitled.agentId, entitled.actor);
+        personalAccounts.set(entitled.personalProviderId, entitled.actor);
         return entitled;
       },
       async createAgent(
@@ -1134,7 +1150,7 @@ async function setupSameThreadReuseScenario(
       runId: first.runId,
       exitCode: 0,
       lastEventSequence: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId,
         cliAgentSessionHistoryHash: historyHash,
@@ -1481,13 +1497,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("reuses current validator package authority", async () => {
-        const api = createRunsApi(context);
-        const fw = createFirewallApi(context);
+        const oauth = createOrdinaryOAuthRunApi();
+        const api = oauth.api;
         mockEnv("GIT_COMMIT_SHA", "a".repeat(40));
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
-        await fw.seedTestConnector(actor, {
+        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        await oauth.connect(actor, {
           connectorSlug: "x",
-          authMethod: "oauth",
           accessToken: "x-reusable-authority-access",
           refreshToken: "x-reusable-authority-refresh",
         });
@@ -1650,7 +1665,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {
             runId: initialRun.runId,
             exitCode: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-storage-overlap-${initialRun.runId}`,
               cliAgentSessionHistoryDisposition: "discarded_oversized",
@@ -2172,7 +2187,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {
             runId: initialRun.runId,
             exitCode: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-storage-cli-${initialRun.runId}`,
               cliAgentSessionHistoryDisposition: "discarded_oversized",
@@ -2194,7 +2209,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const completedInitialRun = await api.readRun(actor, initialRun.runId);
         const conversationId = completedInitialRun.result?.conversationId;
         if (!conversationId) {
-          throw new Error("Expected the canonical checkpoint to persist");
+          throw new Error("Expected the canonical native history to persist");
         }
 
         const sessionRun = await api.createThreadRun(actor, {
@@ -2421,7 +2436,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const first = await api.createThreadRun(actor, {
           agentId,
-          prompt: "start a checkpointed timing session",
+          prompt: "start a finalized timing session",
         });
         const claim = await api.claimRunnerJob(first.runId);
         const history = `bdd timing session history ${first.runId}`;
@@ -2433,7 +2448,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-timing-cli-${first.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -2443,11 +2458,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
         // Continuing the thread resumes its Agent session: the claim carries the
-        // first run's checkpointed CLI session.
+        // first run's finalized CLI session.
         const resumed = await api.createThreadRun(actor, {
           agentId,
           threadId: first.threadId,
-          prompt: "continue checkpointed timing session",
+          prompt: "continue finalized timing session",
         });
         const resumedClaim = await api.claimRunnerJob(resumed.runId);
         expect(resumedClaim.resumeSession).toMatchObject({
@@ -2550,7 +2565,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: created.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-cli-${created.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -2978,7 +2993,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "start a session",
         });
-        const checkpointed = async (
+        const finalized = async (
           runId: string,
           sandboxToken: string,
         ): Promise<{
@@ -2994,7 +3009,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               runId,
               exitCode: 0,
               lastEventSequence: 0,
-              checkpoint: {
+              completion: {
                 cliAgentType: "claude-code",
                 cliAgentSessionId: cliSessionId,
                 cliAgentSessionHistoryHash: hash,
@@ -3006,7 +3021,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           return { cliSessionId, hash };
         };
         const firstClaim = await api.claimRunnerJob(first.runId);
-        const firstCheckpoint = await checkpointed(
+        const firstCheckpoint = await finalized(
           first.runId,
           firstClaim.sandboxToken,
         );
@@ -3021,7 +3036,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           sessionId: firstCheckpoint.cliSessionId,
           historyRef: { kind: "blob", hash: firstCheckpoint.hash },
         });
-        await checkpointed(resumed.runId, resumedClaim.sandboxToken);
+        await finalized(resumed.runId, resumedClaim.sandboxToken);
         await flushWaitUntilForTest();
         // Both runs complete in the thread's single Agent session.
         const firstSession = (await api.readRun(actor, first.runId)).result
@@ -3131,7 +3146,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: firstClaim.cliAgentType,
               cliAgentSessionId,
               cliAgentSessionHistoryHash: firstHistoryHash,
@@ -4083,7 +4098,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -4293,7 +4308,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -4461,7 +4476,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -4556,11 +4571,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!actor.orgId) {
           throw new Error("Expected suspended run actor to have an org");
         }
-        await seedOrgMetadata({
-          orgId: actor.orgId,
-          tier: "pro",
-          credits: 20_000,
-        });
+        const plan = publicPlanLifecycle(context, actor);
+        await plan.update("active");
         await api.ensurePersonalSubscriptionModel(actor);
         // A personal subscription default route and a selectable built-in route.
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -4571,15 +4583,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const subscriptionPrompt = `suspended subscription ${randomUUID()}`;
         const builtInPrompt = `suspended built-in ${randomUUID()}`;
-        await seedOrgMetadata({
-          orgId: actor.orgId,
-          tier: "pro",
-          credits: 0,
-        });
-        await upsertOrgPlanEntitlementFixture({
-          orgId: actor.orgId,
-          status: "suspended",
-        });
+        await plan.update("canceled");
 
         await expect(
           api.readThreadRunRejection(actor, {
@@ -4597,12 +4601,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         ).resolves.toBe("insufficient_credits");
 
-        const runs = await api.listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          limit: 100,
-        });
+        const runs = await createRunReadsApi(context).requestListLogs(
+          actor,
+          {
+            limit: 100,
+          },
+          [200],
+        );
         expect(
-          runs.runs.filter((run) => {
+          runs.body.data.filter((run) => {
             return (
               run.prompt === subscriptionPrompt || run.prompt === builtInPrompt
             );
@@ -4863,71 +4870,47 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ).resolves.toBe("insufficient_credits");
       });
 
-      it("enforces staff entitlement status at final run admission", async () => {
+      it("enforces Stripe subscription status at final run admission", async () => {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
-        const orgId = createUniqueStaffOrgIdFixture();
+        const orgId = `org_${randomUUID()}`;
         const actor = bdd.user({ orgId });
-        onTestFinished(async () => {
-          await deleteOrgPlanEntitlementFixture(orgId);
-        });
         bdd.acceptAgentStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
         const runnerGroup = api.configureRunnerGroup();
-
-        await upsertOrgPlanEntitlementFixture({
-          orgId,
-          status: "active",
-          restrictedBuiltInModels: false,
-        });
         const completed = await bdd.completeOnboarding(actor);
+        const plan = publicPlanLifecycle(context, actor);
+        await plan.update("active");
         expect(completed.status).toBe(200);
-        await upsertOrgPlanEntitlementFixture({
-          orgId,
-          status: "active",
-          restrictedBuiltInModels: false,
-        });
         await api.ensurePersonalSubscriptionModel(actor);
         // A personal subscription default route and a selectable built-in route.
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
         const agent = await bdd.createAgent(actor, {
-          displayName: "BDD staff entitlement admission agent",
+          displayName: "BDD subscription admission agent",
           visibility: "private",
         });
-        await seedOrgMetadata({
-          orgId,
-          tier: "limited-free-1",
-          credits: 20_000,
-        });
-        // The metadata fixture keeps the production tier/entitlement invariant.
-        // Restore the deliberate staff-only divergence exercised by this test.
-        await upsertOrgPlanEntitlementFixture({
-          orgId,
-          status: "active",
-          restrictedBuiltInModels: false,
-        });
 
+        const ownedRuns = publicRunOwner(context, actor, {
+          afterRuns: async () => {
+            await bdd.deleteAgent(actor, agent.agentId);
+          },
+        });
         const run = await api.createThreadRun(actor, {
           agentId: agent.agentId,
-          prompt: "staff entitlement subscription run",
+          prompt: "subscription subscription run",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await ownedRuns.claim(run.runId);
         const appendSystemPrompt = claim.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain("okou chat send");
         expect(appendSystemPrompt).toContain("okou chat cancel");
         await api.requestCancelRun(actor, run.runId, [200]);
         await finishCancelledRun(run.runId, claim.sandboxToken);
 
-        await upsertOrgPlanEntitlementFixture({
-          orgId,
-          status: "suspended",
-          restrictedBuiltInModels: false,
-        });
-
-        const subscriptionPrompt = `staff suspended subscription ${randomUUID()}`;
-        const builtInPrompt = `staff suspended built-in ${randomUUID()}`;
+        await plan.update("canceled");
+        const subscriptionPrompt = `suspended subscription ${randomUUID()}`;
+        const builtInPrompt = `suspended built-in ${randomUUID()}`;
         await expect(
           api.readThreadRunRejection(actor, {
             agentId: agent.agentId,
@@ -4942,12 +4925,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         ).resolves.toBe("insufficient_credits");
 
-        const runs = await api.listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          limit: 100,
-        });
+        const runs = await createRunReadsApi(context).requestListLogs(
+          actor,
+          {
+            limit: 100,
+          },
+          [200],
+        );
         expect(
-          runs.runs.filter((candidate) => {
+          runs.body.data.filter((candidate) => {
             return (
               candidate.prompt === subscriptionPrompt ||
               candidate.prompt === builtInPrompt
@@ -4986,13 +4972,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           purchasedCredits: 0,
           bonusCredits: 1000,
         });
-        // A new organization starts in Auto, the null selection.
+        // A new organization discovers Auto as the sole canonical route.
         const runModels = await misc.listRunModels(actor);
         expect(
           runModels.models.map((runModel) => {
             return runModel.model;
           }),
-        ).toStrictEqual([null]);
+        ).toStrictEqual(["auto"]);
 
         await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
         // The fixed default is Pi-eligible, so the limited-free default chat run
@@ -5120,56 +5106,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.billableFirewalls).toStrictEqual([]);
         expect(claim.modelUsageProvider).toBe(selectedModel);
 
-        await api.requestCancelRun(actor, sent.runId, [200]);
-      });
-
-      it("keeps built-in Auto admission after a Slack fixture releases its shared key", async () => {
-        const api = createRunsApi(context);
-        const chat = createChatFilesBddApi(context);
-        const selectedModel = "okou-1.0";
-        const slackOrgId = `org_${randomUUID()}`;
-        const slackUserId = `user_${randomUUID()}`;
-        const slackFixture = await fixtureStore.set(
-          seedSlackOrgInstallation$,
-          { orgId: slackOrgId },
-          context.signal,
-        );
-        let slackReleased = false;
-        const releaseSlackFixture = async (): Promise<void> => {
-          if (slackReleased) {
-            return;
-          }
-          await fixtureStore.set(
-            deleteSlackIntegrationFixture$,
-            slackFixture,
-            context.signal,
-          );
-          slackReleased = true;
-        };
-        onTestFinished(releaseSlackFixture);
-        await fixtureStore.set(
-          seedSlackEnvironmentAgent$,
-          { orgId: slackOrgId, userId: slackUserId },
-          context.signal,
-        );
-        await seedBuiltInModelKey(selectedModel);
-        await releaseSlackFixture();
-
-        const { actor, agentId } = await entitledRunActor();
-        await api.updateUserModelPreference(actor, null);
-
-        // Admission, not provider execution, is under test.
-        preparePiSandboxClaim();
-
-        const sent = await chat.sendAndLaunch(actor, {
-          agentId,
-          prompt: "built-in Auto admission after shared fixture release",
-          model: null,
-        });
-        // The pick admitted the built-in route and created the run.
-        await expect(api.readRun(actor, sent.runId)).resolves.toMatchObject({
-          status: "pending",
-        });
         await api.requestCancelRun(actor, sent.runId, [200]);
       });
 
@@ -5324,19 +5260,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("injects oauth connector tokens with billable firewalls and resolvable secrets", async () => {
-        const api = createRunsApi(context);
+        const oauth = createOrdinaryOAuthRunApi();
+        const api = oauth.api;
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
 
-        await fw.seedTestConnector(actor, {
+        await oauth.connect(actor, {
           connectorSlug: "x",
-          authMethod: "oauth",
           accessToken: "x-bdd-access",
           refreshToken: "x-bdd-refresh",
         });
-        await fw.seedTestConnector(actor, {
+        await oauth.connect(actor, {
           connectorSlug: "slack",
-          authMethod: "oauth",
           accessToken: "xoxb-bdd-unenabled-access",
         });
         const enabled = await api.enableAgentConnectors(actor, agentId, ["x"]);
@@ -7604,7 +7539,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-mcp-awareness-${first.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -8254,30 +8189,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         mockNow(firstRefreshAt);
         onTestFinished(() => {
           clearMockNow();
-        });
-        await seedOrgMetadata({
-          orgId: actor.orgId,
-          tier: "pro",
-          credits: 20_000,
-        });
-        await upsertOrgPlanEntitlementFixture({
-          orgId: actor.orgId,
-          status: "suspended",
-        });
-        const deniedRefresh = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
-          { ...currentAuthBody, firewallBillable: true },
-          [402],
-        );
-        if (deniedRefresh.status !== 402) {
-          throw new Error("Expected billable custom OAuth auth to be denied");
-        }
-        expect(deniedRefresh.body.error.code).toBe("INSUFFICIENT_CREDITS");
-        expect(provider.tokenBodies).toHaveLength(1);
-        await seedOrgMetadata({
-          orgId: actor.orgId,
-          tier: "pro",
-          credits: 20_000,
         });
         const [firstResolved, secondResolved] = await Promise.all([
           fw.requestFirewallAuth(
@@ -10550,7 +10461,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: run.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `terminal-refresh-${run.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -10683,7 +10594,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-combined-cli-${first.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -11837,7 +11748,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: source.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-failed-claim-${source.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -12462,7 +12373,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: created.runId,
             exitCode: 0,
             lastEventSequence: 3,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -12513,7 +12424,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
     });
 
-    describe("RUN-03: sandbox completion reports against missing checkpoints and settled runs", () => {
+    describe("RUN-03: sandbox completion reports against missing completion outputs and settled runs", () => {
       describe("completion failure reasons", () => {
         const terminalFailureReasons = [
           "insufficient_credits",
@@ -12715,7 +12626,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       );
 
       it.each(["claude-code", "codex"] as const)(
-        "completes and resumes a run with a %s checkpoint",
+        "completes and resumes a run with %s native history",
         async (cliAgentType) => {
           const api = createRunsApi(context);
           const webhooks = createWebhookCallbackApi(context);
@@ -12749,7 +12660,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const sandboxHeaders = {
             authorization: `Bearer ${claim.sandboxToken}`,
           };
-          await webhooks.requestAgentCheckpointPrepareHistory(
+          await webhooks.requestAgentSessionHistoryPrepare(
             {
               runId: run.runId,
               hash: historyHash,
@@ -12766,7 +12677,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             exitCode: 0,
             failureReason: "provider_overloaded",
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType,
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -12808,8 +12719,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const conflictingCheckpoint = await webhooks.requestAgentComplete(
             {
               ...body,
-              checkpoint: {
-                ...body.checkpoint,
+              completion: {
+                ...body.completion,
                 cliAgentSessionId: `${cliAgentSessionId}-conflict`,
               },
             },
@@ -12851,7 +12762,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             .update(successorHistory)
             .digest("hex");
           const successorCliAgentSessionId = `bdd-successor-${cliAgentType}-${continued.runId}`;
-          await webhooks.requestAgentCheckpointPrepareHistory(
+          await webhooks.requestAgentSessionHistoryPrepare(
             {
               runId: continued.runId,
               hash: successorHistoryHash,
@@ -12867,7 +12778,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             {
               runId: continued.runId,
               exitCode: 0,
-              checkpoint: {
+              completion: {
                 cliAgentType,
                 cliAgentSessionId: successorCliAgentSessionId,
                 cliAgentSessionHistoryHash: successorHistoryHash,
@@ -12929,7 +12840,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {
             runId: run.runId,
             exitCode: 1,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -13095,7 +13006,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, continued.runId, [200]);
       });
 
-      it("acknowledges a clean exit whose missing checkpoint fails the run", async () => {
+      it("acknowledges a clean exit whose missing outputs fails the run", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor();
@@ -13121,7 +13032,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         if (missing.status !== 200) {
           throw new Error(
-            "Expected the missing checkpoint failure to be acknowledged",
+            "Expected the missing outputs failure to be acknowledged",
           );
         }
         expect(missing.body).toStrictEqual({ success: true, status: "failed" });
@@ -13139,7 +13050,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
       });
 
-      it("reports the settled status when a checkpoint-less completion races a cancellation", async () => {
+      it("reports the settled status when a metadata-free completion races a cancellation", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor();
@@ -13200,7 +13111,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(retainedRunner.body).toStrictEqual(runner.body);
       });
 
-      it("keeps a cancelled run settled when its checkpointed completion arrives late", async () => {
+      it("keeps a cancelled run settled when its finalized completion arrives late", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor(
@@ -13225,7 +13136,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: run.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-cancelled-cli-${run.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -13236,7 +13147,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         if (late.status !== 200) {
           throw new Error(
-            "Expected the checkpointed completion to be acknowledged",
+            "Expected the finalized completion to be acknowledged",
           );
         }
         expect(late.body).toStrictEqual({ success: true, status: "failed" });
@@ -13294,6 +13205,283 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
   // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
   if (group === "billing") {
     describe("BILL: public usage member access", () => {
+      it("keeps member totals independent of display groups and retains zero-charge members", async () => {
+        const bdd = createBddApi(context);
+        const runs = createRunsApi(context);
+        const billing = createBillingMediaApi(context);
+        const webhooks = createWebhookCallbackApi(context);
+        const periodStart = Date.UTC(2026, 8, 1, 9, 15);
+        mockNow(periodStart);
+        const {
+          actor: admin,
+          agentId,
+          runnerGroup,
+        } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+        await webhooks.postStripeEvent(
+          {
+            id: `evt_member_usage_${randomUUID()}`,
+            type: "checkout.session.completed",
+            data: {
+              object: {
+                id: `cs_member_usage_${randomUUID()}`,
+                invoice: null,
+                subscription: null,
+                customer: null,
+                metadata: {
+                  purpose: "credit_purchase",
+                  orgId: admin.orgId,
+                  creditsAmount: "10000",
+                },
+                payment_status: "paid",
+              },
+            },
+          },
+          [200],
+        );
+        const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+        const freeMember = bdd.user({
+          orgId: admin.orgId,
+          orgRole: "org:member",
+        });
+        await bdd.completeOnboarding(member);
+        await runs.ensurePersonalSubscriptionModel(member, NATIVE_RUNNER_ROUTE);
+        const memberAgent = await bdd.createAgent(member, {
+          displayName: "Member usage agent",
+          visibility: "private",
+        });
+        // Keep the existing ceil-to-hour billing-period boundary observable.
+        mockNow(periodStart + 3_600_000);
+        billing.configureMapsProvider();
+        server.use(
+          http.post(VERTEX_MAPS_URL, () => {
+            return vertexMapsResponse();
+          }),
+          http.post(VERTEX_VOICE_URL, () => {
+            return vertexVoiceResponse("Image usage");
+          }),
+        );
+        const expectedCredits = new Map<string, number>();
+        for (const owner of [
+          { actor: admin, agentId },
+          { actor: member, agentId: memberAgent.agentId },
+        ]) {
+          const run = await runs.createThreadRun(owner.actor, {
+            agentId: owner.agentId,
+            prompt: "generate images and find a cafe",
+          });
+          await runs.heartbeatRunner(runnerGroup);
+          const claim = await runs.claimRunnerJob(run.runId);
+          await webhooks.requestAgentUsageEvent(
+            {
+              runId: run.runId,
+              events: [
+                {
+                  idempotencyKey: randomUUID(),
+                  kind: "image",
+                  provider: "gpt-image-1",
+                  category: "output_image.low.standard",
+                  quantity: 2,
+                },
+                {
+                  idempotencyKey: randomUUID(),
+                  kind: "image",
+                  provider: "gpt-image-1",
+                  category: "tokens.input.text",
+                  quantity: 1000,
+                },
+                {
+                  idempotencyKey: randomUUID(),
+                  kind: "image",
+                  provider: "fal-ai/nano-banana-2",
+                  category: "output_image",
+                  quantity: 1,
+                },
+              ],
+            },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+          await webhooks.requestAgentComplete(
+            { runId: run.runId, exitCode: 1 },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+          // The terminal route owns settlement in waitUntil; drain its normal work.
+          await flushWaitUntilForTest();
+          expect((await runs.readRun(owner.actor, run.runId)).status).toBe(
+            "failed",
+          );
+          const maps = await billing.requestMapsSearch(
+            owner.actor,
+            { query: "a nearby cafe" },
+            [200],
+          );
+          if (maps.status !== 200 || maps.body.creditsCharged === null) {
+            throw new Error("Expected the maps response to report its charge");
+          }
+          expectedCredits.set(
+            owner.actor.userId,
+            128 + maps.body.creditsCharged,
+          );
+        }
+
+        mockEnv("OKOU_WEATHER_GOOGLE_WEATHER_TOKEN", "test-google-weather-key");
+        server.use(
+          http.get(
+            "https://weather.googleapis.com/v1/currentConditions:lookup",
+            () => {
+              return HttpResponse.json({
+                temperature: { degrees: 28, unit: "CELSIUS" },
+              });
+            },
+          ),
+        );
+        createRouteMocks(context).clerk.session(
+          freeMember.userId,
+          freeMember.orgId,
+          freeMember.orgRole,
+        );
+        const weather = await accept(
+          setupApp({ context, routes: weatherRoutes })(weatherContract).current(
+            {
+              headers: { authorization: "Bearer clerk-session" },
+              body: { lat: 39.9042, lng: 116.4074 },
+            },
+          ),
+          [200],
+        );
+        expect(weather.body.creditsCharged).toBe(0);
+
+        // Clerk remains outside the usage snapshot; supply the real directory boundary.
+        createRouteMocks(context).clerk.session(
+          admin.userId,
+          admin.orgId,
+          "org:admin",
+        );
+        mockClerkUsers(
+          context,
+          [admin, member, freeMember].map((actor) => {
+            return {
+              id: actor.userId,
+              primaryEmailAddressId: `email_${actor.userId}`,
+              emailAddresses: [
+                { id: `email_${actor.userId}`, emailAddress: actor.email },
+              ],
+            };
+          }),
+        );
+        const usage = setupApp({ context, routes: usageMembersRoutes })(
+          usageMembersContract,
+        );
+        const report = await accept(
+          usage.get({
+            headers: { authorization: "Bearer clerk-session" },
+            query: { range: "24h", tz: "Asia/Shanghai" },
+          }),
+          [200],
+        );
+        const paidMembers = report.body.members.slice(0, 2);
+        expect(
+          paidMembers.map((row) => {
+            return row.userId;
+          }),
+          JSON.stringify(report.body.members),
+        ).toStrictEqual(
+          [admin.userId, member.userId].sort((a, b) => {
+            return a.localeCompare(b);
+          }),
+        );
+        for (const row of paidMembers) {
+          const credits = expectedCredits.get(row.userId);
+          if (credits === undefined) {
+            throw new Error("Expected a member with publicly recorded charges");
+          }
+          expect(row).toMatchObject({
+            email: row.userId === admin.userId ? admin.email : member.email,
+            creditsCharged: credits,
+            // Image and Maps tokens are not model-token usage quantities.
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+          });
+          expect(row.breakdown).toStrictEqual([
+            {
+              kind: "image",
+              credits: 128,
+              providers: [
+                {
+                  provider: "fal-ai/nano-banana-2",
+                  credits: 96,
+                  usageKinds: [{ kind: "image", credits: 96 }],
+                },
+                {
+                  provider: "gpt-image-1",
+                  credits: 32,
+                  usageKinds: [{ kind: "image", credits: 32 }],
+                },
+              ],
+            },
+            {
+              kind: "other",
+              credits: credits - 128,
+              providers: [
+                {
+                  provider: "google-maps-grounding",
+                  credits: credits - 128,
+                  usageKinds: [
+                    {
+                      kind: "maps",
+                      credits: credits - 128,
+                    },
+                  ],
+                },
+              ],
+            },
+          ]);
+        }
+        expect(report.body.members[2]).toStrictEqual({
+          userId: freeMember.userId,
+          email: freeMember.email,
+          creditsCharged: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          breakdown: [],
+        });
+        expect(report.body.members).toHaveLength(3);
+        const billingPeriod = await accept(
+          usage.get({
+            headers: { authorization: "Bearer clerk-session" },
+            query: { range: "billingPeriod" },
+          }),
+          [200],
+        );
+        expect(billingPeriod.body.period?.start).toBe(
+          new Date(periodStart).toISOString(),
+        );
+        expect(billingPeriod.body.members).toStrictEqual(report.body.members);
+        const record = await billing.readUsageRecord(admin);
+        expect(record.body.totalCredits).toBe(
+          expectedCredits.get(admin.userId),
+        );
+        expect(
+          record.body.rows.flatMap((row) => {
+            return row.breakdown;
+          }),
+        ).toContainEqual(
+          paidMembers.find((row) => {
+            return row.userId === admin.userId;
+          })?.breakdown[0],
+        );
+        await bdd.deleteAgent(admin, agentId);
+        const afterDeletion = await billing.readUsageMembers(admin, {
+          range: "24h",
+        });
+        expect(afterDeletion.body.members).toStrictEqual(report.body.members);
+      });
+
       it("validates member usage access and returns an empty public report", async () => {
         const bdd = createBddApi(context);
         const billing = createBillingMediaApi(context);
@@ -13497,7 +13685,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-cleanup-first-${runId}`,
               cliAgentSessionHistoryHash: historyHash,

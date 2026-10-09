@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.4.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.4.0...runner-supervisor-v0.4.1) (2026-10-09)
+
+
+### Documentation
+
+* reorganize engineering guides and align testing policies ([#38421](https://github.com/okou-ai/okou/issues/38421)) ([60f5783](https://github.com/okou-ai/okou/commit/60f57836b2877b5e065bf27b7adf75c2f633b95d))
+
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.3.1...runner-supervisor-v0.4.0) (2026-10-09)
+
+
+### Features
+
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
+
+### Bug Fixes
+
+* **runner:** reconcile retained state and scrub terminal private files ([#38153](https://github.com/okou-ai/okou/issues/38153)) ([9824493](https://github.com/okou-ai/okou/commit/9824493f88b89ad219b243438d635e6cd085514b))
+
+
+### CI
+
+* use 20261008 toolchain images ([#37988](https://github.com/okou-ai/okou/issues/37988)) ([367fd6b](https://github.com/okou-ai/okou/commit/367fd6b83334f5b8f0f833e255854e1a3927c6bb))
+
+
+### Refactoring
+
+* assemble current run inputs without agent configuration ([#38004](https://github.com/okou-ai/okou/issues/38004)) ([22efd4b](https://github.com/okou-ai/okou/commit/22efd4b6b34872c0585a0d4c3778cb3b59d9d100))
+* **runner:** move runtime reactor into runner-supervisor ([#38393](https://github.com/okou-ai/okou/issues/38393)) ([a5a1dd3](https://github.com/okou-ai/okou/commit/a5a1dd3ae25f19d65baed071cb15fa2a456cfb0a))
+
 ## [0.3.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.3.0...runner-supervisor-v0.3.1) (2026-10-09)
 
 ## [0.3.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.30...runner-supervisor-v0.3.0) (2026-10-09)

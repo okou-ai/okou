@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.15](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.14...runner-remote-v0.10.15) (2026-10-09)
+
+## [0.10.14](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.13...runner-remote-v0.10.14) (2026-10-09)
+
+
+### Documentation
+
+* keep reusable engineering standards and remove feature records ([#38387](https://github.com/okou-ai/okou/issues/38387)) ([6507d86](https://github.com/okou-ai/okou/commit/6507d86c83ca37e7a8790e4efd66eb6a84267295))
+
 ## [0.10.13](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.12...runner-remote-v0.10.13) (2026-10-09)
 
 ## [0.10.12](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.11...runner-remote-v0.10.12) (2026-10-09)

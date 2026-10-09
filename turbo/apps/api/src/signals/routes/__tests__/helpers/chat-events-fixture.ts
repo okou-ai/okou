@@ -840,7 +840,7 @@ export function createChatEventsFixture(context: TestContext) {
     if (options.sessionHistory !== undefined) {
       const historyBytes = Buffer.from(history, "utf8");
       context.sessionHistoryBlobs.set(historyHash, historyBytes);
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId,
           hash: historyHash,
@@ -856,7 +856,7 @@ export function createChatEventsFixture(context: TestContext) {
       {
         runId,
         exitCode: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: options.cliAgentType ?? "claude-code",
           cliAgentSessionId: options.cliAgentSessionId ?? `bdd-cli-${runId}`,
           cliAgentSessionHistoryHash: historyHash,
@@ -1345,13 +1345,13 @@ export function createChatEventsFixture(context: TestContext) {
       readonly provider: "openai" | "openai-codex" | "deepseek" | "openrouter";
       readonly model: string;
     };
-    readonly checkpointObjects: Map<string, Buffer>;
+    readonly historyObjects: Map<string, Buffer>;
     readonly claim: Awaited<ReturnType<typeof claimChatRun>>;
     readonly prompt: string;
     readonly run: { readonly runId: string; readonly threadId: string };
     readonly usagePricingResolution?: UsagePricingFixture["resolution"];
   }): Promise<void> {
-    const h0 = piSandboxBaseSession(args.claim.claim, args.checkpointObjects);
+    const h0 = piSandboxBaseSession(args.claim.claim, args.historyObjects);
     const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
     session.appendMessage({
       role: "user",
@@ -1377,7 +1377,7 @@ export function createChatEventsFixture(context: TestContext) {
     });
     const h2 = session.toJsonl();
     const h2Hash = createHash("sha256").update(h2).digest("hex");
-    await webhooks.requestAgentCheckpointPrepareHistory(
+    await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: args.run.runId,
         hash: h2Hash,
@@ -1388,7 +1388,7 @@ export function createChatEventsFixture(context: TestContext) {
       args.claim.sandboxHeaders,
       [200],
     );
-    args.checkpointObjects.set(
+    args.historyObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
       Buffer.from(h2, "utf8"),
     );
@@ -1412,7 +1412,7 @@ export function createChatEventsFixture(context: TestContext) {
         runId: args.run.runId,
         exitCode: 0,
         lastEventSequence: 2,
-        checkpoint: {
+        completion: {
           cliAgentType: "pi",
           cliAgentSessionId: args.run.threadId,
           cliAgentSessionHistoryHash: h2Hash,

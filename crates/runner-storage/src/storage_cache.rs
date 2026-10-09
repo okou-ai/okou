@@ -1791,6 +1791,11 @@ fn reuse_decoded(
     let Some(files) = files else {
         return Ok(false);
     };
+    // Reader capability can exceed the active producer policy during rollout.
+    // The positive entry was validated; do not select a wider outbound shape yet.
+    if !decoded::admitted_for_delivery(&files) {
+        return Ok(false);
+    }
     // An archive may still be required by another target sharing this key,
     // such as an instruction storage. Admit its ordinary targets without
     // changing archive delivery for that other consumer.
@@ -1828,6 +1833,8 @@ fn reuse_decoded(
         .sum::<usize>();
     if plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES
         || plan.decoded_mount_count() + mounts.len() > guest_contracts::storage_files::MAX_MOUNTS
+        || plan.decoded_file_count() + files.files.len() * mounts.len()
+            > guest_contracts::storage_files::MAX_TOTAL_FILES
     {
         return Ok(false);
     }
@@ -4364,6 +4371,7 @@ mod tests {
     mod archive_retries;
     mod decoded_observation;
     mod http_reuse;
+    mod large_selection;
     mod phase_diagnostics;
     mod rejected_observation;
 

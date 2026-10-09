@@ -5286,9 +5286,9 @@ function TemplatePickerDialog({
   };
 
   const handleCategoryChange = (nextCategory: string) => {
-    if (nextCategory === "custom") {
-      resetCustomTemplatePicker();
-    }
+    // Returning to Custom keeps the catalog it already has. Publishes and
+    // mutations refresh it on their own, and a forced reload here blanked the
+    // whole pane until the request came back.
     setCategory(nextCategory);
     if (!isPreviewing) {
       prewarmTemplatePreviewsForCategory(nextCategory);
@@ -5508,7 +5508,7 @@ function TemplatePickerCategoryContent({
 }) {
   if (selectedCategory === "custom") {
     return (
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col px-5 pb-6 sm:px-7">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <CustomTemplatePickerPane
           signals={signals}
           onSelect={onSelectCustom}

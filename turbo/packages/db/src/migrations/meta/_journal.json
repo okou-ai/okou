@@ -1972,8 +1972,22 @@
     {
       "idx": 1359,
       "version": "7",
-      "when": 1791540819348,
-      "tag": "1359_discord_oauth_onboarding",
+      "when": 1791541894946,
+      "tag": "1359_canonical_selected_model_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 1360,
+      "version": "7",
+      "when": 1791550108308,
+      "tag": "1360_retire_generic_run_checkpoints",
+      "breakpoints": true
+    },
+    {
+      "idx": 1361,
+      "version": "7",
+      "when": 1791559246221,
+      "tag": "1361_discord_oauth_onboarding",
       "breakpoints": true
     }
   ]

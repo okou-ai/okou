@@ -196,30 +196,32 @@ async fn gc_extracted_storage_uses_existing_lock_accounting_and_preserves_pinned
 
 #[tokio::test]
 async fn gc_extracted_staging_uses_the_final_version_lock() {
-    let dir = tempfile::tempdir().unwrap();
-    let home = test_home(dir.path());
-    let name = runner_host::paths::short_digest("name");
-    let version = format!("decoded-v1-{}", runner_host::paths::short_digest("v1"));
-    let staging = home
-        .storages_dir()
-        .join(&name)
-        .join(format!("{version}.tmp"));
-    make_storage_entry_at(staging.clone(), b"partial", old_gc_time());
-    let writer = lock::acquire(home.storage_lock_for_cache_key(&name, &version))
-        .await
-        .unwrap();
-    gc_storage_cache_with_limits(&home, 0, 0, false)
-        .await
-        .unwrap();
-    assert!(staging.exists());
-    drop(writer);
-    assert!(
+    for prefix in ["decoded-v1-", "decoded-v1-rejected-"] {
+        let dir = tempfile::tempdir().unwrap();
+        let home = test_home(dir.path());
+        let name = runner_host::paths::short_digest("name");
+        let version = format!("{prefix}{}", runner_host::paths::short_digest("v1"));
+        let staging = home
+            .storages_dir()
+            .join(&name)
+            .join(format!("{version}.tmp"));
+        make_storage_entry_at(staging.clone(), b"partial", old_gc_time());
+        let writer = lock::acquire(home.storage_lock_for_cache_key(&name, &version))
+            .await
+            .unwrap();
         gc_storage_cache_with_limits(&home, 0, 0, false)
             .await
-            .unwrap()
-            > 0
-    );
-    assert!(!staging.exists());
+            .unwrap();
+        assert!(staging.exists(), "{prefix}");
+        drop(writer);
+        assert!(
+            gc_storage_cache_with_limits(&home, 0, 0, false)
+                .await
+                .unwrap()
+                > 0
+        );
+        assert!(!staging.exists(), "{prefix}");
+    }
 }
 
 async fn storage_candidate_for(path: PathBuf) -> StorageCandidate {

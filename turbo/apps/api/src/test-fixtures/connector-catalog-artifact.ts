@@ -2475,12 +2475,16 @@ function automaticMcpConnector(
   };
 }
 
-function mondayMcpConnector(): ConnectorCatalogArtifactConnector {
-  const connector = automaticMcpConnector("oauth", "MONDAY_MCP");
+function builtinAutomaticMcpConnector(
+  slug: string,
+  label: string,
+  tokenPrefix: string,
+): ConnectorCatalogArtifactConnector {
+  const connector = automaticMcpConnector("oauth", tokenPrefix);
   return {
     ...connector,
-    slug: "monday-mcp",
-    label: "Monday.com",
+    slug,
+    label,
     authMethods: connector.authMethods.map((method) => {
       return { ...method, id: "automatic" };
     }),
@@ -2505,6 +2509,7 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
     ...connectors,
     automaticMcpConnector("none"),
     automaticMcpConnector("oauth"),
-    mondayMcpConnector(),
+    builtinAutomaticMcpConnector("monday-mcp", "Monday.com", "MONDAY_MCP"),
+    builtinAutomaticMcpConnector("plaud-mcp", "Plaud", "PLAUD_MCP"),
   ],
 } satisfies ConnectorCatalogArtifact;

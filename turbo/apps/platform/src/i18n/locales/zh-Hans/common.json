@@ -5322,6 +5322,14 @@
     },
     "clearSearch": "清除搜索",
     "custom": "自定义",
+    "delete": {
+      "cancel": "取消",
+      "confirm": "删除模板",
+      "deleting": "正在删除...",
+      "description": "「{{title}}」将对所有可以看到它的人移除。此操作无法撤销。",
+      "failed": "无法删除模板，请重试。",
+      "title": "删除模板？"
+    },
     "detail": {
       "back": "自定义模板",
       "page": "第{{number}}页"

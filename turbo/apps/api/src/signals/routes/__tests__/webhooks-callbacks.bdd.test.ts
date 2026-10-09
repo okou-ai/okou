@@ -13,7 +13,6 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { deleteOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
 import {
@@ -753,13 +752,13 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     expectExpiresAboutThirtyDaysFromNow(
       personalCredits.creditGrants[0]?.expiresAt,
     );
-    // A new organization starts in Auto, the null selection.
+    // A new organization discovers Auto as the sole canonical route.
     const available = await createMiscRoutesApi(context).listRunModels(admin);
     expect(
       available.models.map((model) => {
         return model.model;
       }),
-    ).toStrictEqual([null]);
+    ).toStrictEqual(["auto"]);
   });
 
   it("keeps Clerk membership creation from duplicating bootstrap state", async () => {
@@ -2366,7 +2365,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expect(mismatchedCheckpoint.body.error.code).toBe("UNAUTHORIZED");
 
     const mismatchedHistoryPrepare =
-      await api.requestAgentCheckpointPrepareHistory(
+      await api.requestAgentSessionHistoryPrepare(
         { runId, hash, rawSize: 128, encodedSize: 128 },
         mismatchedHeaders,
         [401],
@@ -2375,7 +2374,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expect(mismatchedHistoryPrepare.body.error.code).toBe("UNAUTHORIZED");
 
     const malformedHistoryPrepare =
-      await api.requestAgentCheckpointPrepareHistoryUnchecked(
+      await api.requestAgentSessionHistoryPrepareUnchecked(
         { runId, hash, rawSize: 0, encodedSize: 0 },
         headers,
         [400],
@@ -2384,7 +2383,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expect(malformedHistoryPrepare.body.error.code).toBe("BAD_REQUEST");
 
     const uppercaseHistoryPrepare =
-      await api.requestAgentCheckpointPrepareHistoryUnchecked(
+      await api.requestAgentSessionHistoryPrepareUnchecked(
         { runId, hash: "A".repeat(64), rawSize: 128, encodedSize: 128 },
         headers,
         [400],
@@ -2393,7 +2392,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expect(uppercaseHistoryPrepare.body.error.code).toBe("BAD_REQUEST");
 
     const oversizedHistoryPrepare =
-      await api.requestAgentCheckpointPrepareHistoryUnchecked(
+      await api.requestAgentSessionHistoryPrepareUnchecked(
         {
           runId,
           hash,
@@ -2497,7 +2496,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
     const historyHash = createHash("sha256")
       .update(`bdd history blob ${run.runId}`)
       .digest("hex");
-    const firstHistory = await api.requestAgentCheckpointPrepareHistory(
+    const firstHistory = await api.requestAgentSessionHistoryPrepare(
       { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
       headers,
       [200],
@@ -2508,7 +2507,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
     expect(firstHistory.body.existing).toBeFalsy();
     expect(firstHistory.body.presignedUrl).toMatch(/^https/);
 
-    const repeatedHistory = await api.requestAgentCheckpointPrepareHistory(
+    const repeatedHistory = await api.requestAgentSessionHistoryPrepare(
       { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
       headers,
       [200],
@@ -2522,7 +2521,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
     });
 
     const ghostRunId = randomUUID();
-    const missingHistoryRun = await api.requestAgentCheckpointPrepareHistory(
+    const missingHistoryRun = await api.requestAgentSessionHistoryPrepare(
       { runId: ghostRunId, hash: historyHash, rawSize: 456, encodedSize: 456 },
       {
         authorization: `Bearer ${runs.sandboxTokenForRun(actor, ghostRunId)}`,
@@ -4040,7 +4039,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     // Redelivering the processed team invoice re-runs lingering-pro cleanup.
     const cancelCallsBefore =
       context.mocks.stripe.subscriptions.cancel.mock.calls.length;
-    await deleteOrgPlanEntitlementFixture(orgId);
     await api.postStripeEvent(
       stripeEvent({ type: "invoice.paid", object: teamInvoice }),
       [200],
@@ -4048,9 +4046,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(
       context.mocks.stripe.subscriptions.cancel.mock.calls.length,
     ).toBeGreaterThan(cancelCallsBefore);
-    const repaired = await billing.readBillingStatus(actor);
-    expect(repaired).toMatchObject(TEAM_BILLING_CAPABILITIES);
-    expect(repaired.credits).toBe(140_000);
+    const replayed = await billing.readBillingStatus(actor);
+    expect(replayed).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    expect(replayed.credits).toBe(140_000);
 
     // A lower-tier subscription invoice cannot replace the team subscription.
     await api.postStripeEvent(

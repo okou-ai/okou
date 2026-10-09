@@ -12,7 +12,6 @@ import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as conversationSchema from "./schema/conversation";
-import * as checkpointSchema from "./schema/checkpoint";
 import * as agentSessionSchema from "./schema/agent-session";
 import * as storageSchema from "./schema/storage";
 import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
@@ -112,7 +111,7 @@ import * as computerUseHostSchema from "./schema/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
 import * as userDisabledPaidToolsSchema from "./schema/user-disabled-paid-tools";
 import * as userBehaviorCountSchema from "./schema/user-behavior-count";
-import * as chatThreadSchema from "./schema/chat-thread";
+import * as chatThreadSchema from "./runtime/chat-thread";
 import * as chatEventSequenceSchema from "./schema/chat-event-sequence";
 import * as chatEventSchema from "./schema/chat-event";
 import * as chatEventSearchSchema from "./schema/chat-event-search";
@@ -175,7 +174,6 @@ export const schema = {
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...conversationSchema,
-  ...checkpointSchema,
   ...agentSessionSchema,
   ...storageSchema,
   ...storagePublicationFenceSchema,

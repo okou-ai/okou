@@ -37,7 +37,7 @@ Do not remove:
 
 Apply [fallback rules](../../../docs/fallback.md),
 [deployment compatibility](../../../docs/deployment-compatibility.md), and
-[reference authority](../../../docs/externally-managed-references.md) when those
+[reference authority](../../../docs/bad-smell.md#externally-managed-references) when those
 boundaries are involved. A catch containing only a log is not automatically
 redundant: verify whether it owns necessary diagnostics or rejection handling.
 

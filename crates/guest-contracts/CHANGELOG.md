@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.11...guest-contracts-v0.19.0) (2026-10-09)
+
+
+### Features
+
+* **storage:** prepare large decoded storage readers (1/2) ([#38396](https://github.com/okou-ai/okou/issues/38396)) ([fe12503](https://github.com/okou-ai/okou/commit/fe12503564388499b06ba2b42f45b33fe641a032))
+
 ## [0.18.11](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.10...guest-contracts-v0.18.11) (2026-10-09)
 
 

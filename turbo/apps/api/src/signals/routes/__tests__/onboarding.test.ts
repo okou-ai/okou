@@ -197,7 +197,7 @@ describe("member source-first onboarding", () => {
       policies.body.models.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([null]);
+    ).toStrictEqual(["auto"]);
   });
 
   it("does not pull a member with an existing thread in the workspace into onboarding", async () => {
@@ -336,7 +336,7 @@ describe("POST /api/onboarding/complete", () => {
       policies.body.models.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([null]);
+    ).toStrictEqual(["auto"]);
   });
 
   it("completes an admin's onboarding with the field the source-first flow answered", async () => {

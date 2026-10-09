@@ -9,7 +9,7 @@ use crate::http::HttpClient;
 use crate::run_context::GuestRuntime;
 use crate::session_metadata::CapturedSessionMetadata;
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
-use api_contracts::generated::types::webhooks::agent::{checkpoints, complete};
+use api_contracts::generated::types::webhooks::agent::complete;
 use guest_telemetry::log_info;
 use guest_telemetry::telemetry::record_sandbox_op;
 use std::borrow::Cow;
@@ -74,7 +74,7 @@ impl<'a> FinalizationInputs<'a> {
     }
 }
 
-/// Checkpoint metadata and local state awaiting atomic completion acknowledgement.
+/// Native history and output metadata and local state awaiting atomic completion acknowledgement.
 pub struct PreparedFinalization {
     request: complete::RequestCompletion,
     mode: FinalizationMode,
@@ -126,7 +126,7 @@ impl PreparedFinalization {
     }
 }
 
-/// Prepare a checkpoint after a successful run using the explicit runtime snapshot.
+/// Prepare finalization after a successful run using the explicit runtime snapshot.
 pub async fn prepare_finalization_for_runtime(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
@@ -135,7 +135,7 @@ pub async fn prepare_finalization_for_runtime(
     prepare_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
-/// Prepare a checkpoint with bounded session-history limits for integration tests.
+/// Prepare finalization with bounded session-history limits for integration tests.
 #[doc(hidden)]
 pub async fn prepare_finalization_for_runtime_with_history_limits_for_test(
     runtime: &GuestRuntime,
@@ -152,7 +152,7 @@ pub async fn prepare_finalization_for_runtime_with_history_limits_for_test(
     prepare_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
-/// Prepare a best-effort recovery checkpoint using the explicit runtime snapshot.
+/// Prepare best-effort recovery finalization using the explicit runtime snapshot.
 pub async fn prepare_recovery_finalization_for_runtime(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
@@ -161,7 +161,7 @@ pub async fn prepare_recovery_finalization_for_runtime(
     prepare_recovery_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
-/// Prepare a recovery checkpoint with bounded session-history limits for integration tests.
+/// Prepare recovery finalization with bounded session-history limits for integration tests.
 #[doc(hidden)]
 pub async fn prepare_recovery_finalization_for_runtime_with_history_limits_for_test(
     runtime: &GuestRuntime,
@@ -217,19 +217,6 @@ struct PreparedFinalizationParts {
     uploaded_history: Option<session_history::UploadedCheckpointSessionHistory>,
 }
 
-fn completion_history_disposition(
-    disposition: checkpoints::RequestCliAgentSessionHistoryDisposition,
-) -> complete::RequestCompletionCliAgentSessionHistoryDisposition {
-    match disposition {
-        checkpoints::RequestCliAgentSessionHistoryDisposition::DiscardedOversized => {
-            complete::RequestCompletionCliAgentSessionHistoryDisposition::DiscardedOversized
-        }
-        checkpoints::RequestCliAgentSessionHistoryDisposition::Unavailable => {
-            complete::RequestCompletionCliAgentSessionHistoryDisposition::Unavailable
-        }
-    }
-}
-
 fn completion_missing_root_policy(
     policy: ArtifactEntryMissingRootPolicy,
 ) -> complete::RequestCompletionArtifactSnapshotMissingRootPolicy {
@@ -240,19 +227,6 @@ fn completion_missing_root_policy(
         ArtifactEntryMissingRootPolicy::PreserveParentVersion => {
             complete::RequestCompletionArtifactSnapshotMissingRootPolicy::PreserveParentVersion
         }
-    }
-}
-
-fn completion_artifact_snapshot(
-    snapshot: checkpoints::ArtifactSnapshot,
-) -> complete::RequestCompletionArtifactSnapshot {
-    complete::RequestCompletionArtifactSnapshot {
-        name: snapshot.name,
-        version: snapshot.version,
-        mount_path: snapshot.mount_path,
-        missing_root_policy: snapshot
-            .missing_root_policy
-            .map(completion_missing_root_policy),
     }
 }
 
@@ -268,7 +242,7 @@ async fn prepare_finalization_impl(
     // path performs blocking local preparation before web API work; the
     // artifact path performs blocking file preparation before VAS work. Wait
     // for both results even after one fails so a started blocking operation is
-    // not detached from the checkpoint future.
+    // not detached from the finalization future.
     let history_inputs =
         session_history::CheckpointSessionHistoryInputs::from_checkpoint(mode, inputs);
     let (artifact_snapshots, checkpoint_history) = tokio::join!(
@@ -302,9 +276,7 @@ async fn prepare_finalization_impl(
         } => (
             cli_agent_session_id,
             None,
-            Some(completion_history_disposition(
-                checkpoints::RequestCliAgentSessionHistoryDisposition::DiscardedOversized,
-            )),
+            Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::DiscardedOversized),
             None,
         ),
         session_history::CheckpointSessionHistory::Unavailable {
@@ -312,9 +284,7 @@ async fn prepare_finalization_impl(
         } => (
             cli_agent_session_id,
             None,
-            Some(completion_history_disposition(
-                checkpoints::RequestCliAgentSessionHistoryDisposition::Unavailable,
-            )),
+            Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::Unavailable),
             None,
         ),
     };
@@ -323,12 +293,7 @@ async fn prepare_finalization_impl(
         cli_agent_session_id,
         cli_agent_session_history_hash,
         cli_agent_session_history_disposition,
-        artifact_snapshots: artifact_snapshots.map(|snapshots| {
-            snapshots
-                .into_iter()
-                .map(completion_artifact_snapshot)
-                .collect()
-        }),
+        artifact_snapshots,
         volume_versions_snapshot: None,
     };
     Ok(PreparedFinalizationParts {

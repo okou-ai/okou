@@ -5418,6 +5418,14 @@
     },
     "clearSearch": "Borrar búsqueda",
     "custom": "Personalizadas",
+    "delete": {
+      "cancel": "Cancelar",
+      "confirm": "Eliminar plantilla",
+      "deleting": "Eliminando...",
+      "description": "\"{{title}}\" se eliminará para todos los que puedan verla. Esta acción no se puede deshacer.",
+      "failed": "No se pudo eliminar la plantilla. Inténtalo de nuevo.",
+      "title": "¿Eliminar plantilla?"
+    },
     "detail": {
       "back": "Plantillas personalizadas",
       "page": "Página {{number}}"

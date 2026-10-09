@@ -384,14 +384,6 @@ export const runCompletionMetadataSchema = z
   .strict()
   .superRefine(requireCompletionHistory);
 
-const webhookCheckpointCreateBodySchema = z
-  .object({
-    runId: z.string().min(1, "runId is required"),
-    ...runCompletionMetadataShape,
-  })
-  .strict()
-  .superRefine(requireCompletionHistory);
-
 const webhookCompleteBodySchema = z
   .object({
     runId: z.string().min(1, "runId is required"),
@@ -406,17 +398,8 @@ const webhookCompleteBodySchema = z
     sandboxReuseResult: sandboxReuseResultSchema.optional(),
     workspaceReuseResult: workspaceReuseResultSchema.optional(),
     completion: runCompletionMetadataSchema.optional(),
-    // Adapter for Guest binaries deployed before checkpoint retirement.
-    checkpoint: runCompletionMetadataSchema.optional(),
   })
   .superRefine((body, context) => {
-    if (body.completion !== undefined && body.checkpoint !== undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["completion"],
-        message: "Only one completion metadata payload is allowed",
-      });
-    }
     const workspaceResult = body.workspaceReuseResult;
     if (workspaceResult === undefined) {
       return;
@@ -703,45 +686,14 @@ export const webhookCompleteContract = c.router({
 });
 
 /**
- * Legacy declaration for the retired standalone checkpoint endpoint.
- * @deprecated No current Guest producer calls this endpoint; remove in release 2 of #38124.
- */
-export const webhookCheckpointsContract = c.router({
-  /**
-   * POST /api/webhooks/agent/checkpoints
-   * Create a recoverable checkpoint for an agent run.
-   */
-  create: {
-    method: "POST",
-    path: "/api/webhooks/agent/checkpoints",
-    headers: authHeadersSchema,
-    body: webhookCheckpointCreateBodySchema,
-    responses: {
-      200: z.object({
-        checkpointId: z.string(),
-        agentSessionId: z.string(),
-        conversationId: z.string(),
-        artifacts: artifactSnapshotsSchema.optional(),
-        volumes: z.record(z.string(), z.string()).optional(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Create checkpoint for agent run",
-  },
-});
-
-/**
- * Webhook checkpoint prepare-history contract for /api/webhooks/agent/checkpoints/prepare-history
+ * Native CLI history upload preparation, independent of file publication.
  * Returns a presigned URL for uploading session history directly to S3,
  * bypassing Vercel's 4.5MB body size limit.
  */
-export const webhookCheckpointsPrepareHistoryContract = c.router({
+export const webhookSessionHistoryPrepareContract = c.router({
   prepare: {
     method: "POST",
-    path: "/api/webhooks/agent/checkpoints/prepare-history",
+    path: "/api/webhooks/agent/session-history/prepare",
     headers: authHeadersSchema,
     body: z.object({
       runId: z.string().min(1, "runId is required"),
@@ -770,14 +722,6 @@ export const webhookCheckpointsPrepareHistoryContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Get presigned URL for uploading session history to S3",
-  },
-});
-
-/** Native CLI history upload preparation, independent of file publication. */
-export const webhookSessionHistoryPrepareContract = c.router({
-  prepare: {
-    ...webhookCheckpointsPrepareHistoryContract.prepare,
-    path: "/api/webhooks/agent/session-history/prepare",
   },
 });
 
@@ -965,7 +909,7 @@ export type ArchiveConnectionAttempt = z.infer<
 >;
 
 /**
- * Sandbox operation schema for internal sandbox operations (init, storage, cli, checkpoint, cleanup)
+ * Sandbox operation schema for internal sandbox operations (init, storage, cli, finalization, cleanup)
  */
 const sandboxOperationSchema = z.object({
   ts: z.string(),
@@ -1223,9 +1167,6 @@ export type WebhookBuiltInGenerationFalContract =
   typeof webhookBuiltInGenerationFalContract;
 export type WebhookFirewallAuthContract = typeof webhookFirewallAuthContract;
 export type WebhookCompleteContract = typeof webhookCompleteContract;
-export type WebhookCheckpointsContract = typeof webhookCheckpointsContract;
-export type WebhookCheckpointsPrepareHistoryContract =
-  typeof webhookCheckpointsPrepareHistoryContract;
 export type WebhookHeartbeatContract = typeof webhookHeartbeatContract;
 export type WebhookTelemetryContract = typeof webhookTelemetryContract;
 export type WebhookStoragesPrepareContract =

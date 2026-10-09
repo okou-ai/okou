@@ -25,6 +25,7 @@ import flow_metadata_keys as metadata_keys
 import http_header_syntax
 import http_response_classification
 import model_websocket_usage
+import response_inspection
 import run_usage
 import runtime_url_parsing
 import stream_capture
@@ -45,6 +46,7 @@ _MODEL_SSE_USAGE_FINISH = "model_sse_usage_finish"
 _CONNECTOR_RESPONSE_FINISH = "connector_response_finish"
 _CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION = "connector_response_report_on_interruption"
 _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
+_CONNECTOR_RESPONSE_INSPECTION = "_connector_response_inspection"
 
 _ANTHROPIC_MESSAGES_SSE_PROTOCOL = "anthropic_messages_sse"
 _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL = "openai_chat_completions_sse"
@@ -381,11 +383,44 @@ def _configure_response_inspection_stream(
         )
         if decode_session is None:
             raise RuntimeError("stream-decodable connector response did not create a decoder")
+        connector_inspection: response_inspection.CooperativeResponseInspection | None = None
+        inspection_failed = False
+        if connector_parser.feed_steps is not None:
+            feed_steps = connector_parser.feed_steps
+            finish_decode_error = connector_parser.finish_decode_error
+            if finish_decode_error is None:
+                raise RuntimeError(
+                    "cooperative response parser requires an inspection failure hook"
+                )
+
+            def fail_inspection(error: str) -> None:
+                nonlocal inspection_failed
+                inspection_failed = True
+                finish_decode_error(error)
+                log_usage_underbilling(
+                    flow_metadata.proxy_log_path(flow.metadata),
+                    "Deferred connector response inspection was interrupted",
+                    "response_inspection_interrupted",
+                    "risk",
+                    run_id=flow_metadata.run_id(flow.metadata),
+                    firewall_name=flow_metadata.firewall_name(flow.metadata),
+                    parse_error=error,
+                )
+
+            connector_inspection = response_inspection.CooperativeResponseInspection(
+                lambda chunk: response_inspection.decoded_steps(
+                    decode_session.iter_chunks, feed_steps, chunk
+                ),
+                fail_inspection,
+            )
+            flow.metadata[_CONNECTOR_RESPONSE_INSPECTION] = connector_inspection
         if connector_parser.report_on_interruption:
             flow.metadata[_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION] = True
         if connector_parser.finish is not None or connector_parser.finish_decode_error is not None:
 
             def finish_connector_response() -> None:
+                if inspection_failed:
+                    return
                 decode_error = decode_session.finish_error()
                 if decode_error is not None:
                     if connector_parser.finish_decode_error is not None:
@@ -395,7 +430,10 @@ def _configure_response_inspection_stream(
                     connector_parser.finish()
 
             flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finish_connector_response
-        return _ResponseStreamSetup(decode_session.feed, False)
+        return _ResponseStreamSetup(
+            connector_inspection.feed if connector_inspection is not None else decode_session.feed,
+            False,
+        )
 
     return _ResponseStreamSetup(None, False)
 
@@ -533,6 +571,25 @@ def configure_response_stream(
     flow.metadata[_RESPONSE_STREAM_CALLBACK] = stream_and_observe
 
 
+def has_pending_connector_inspection(flow: http.HTTPFlow) -> bool:
+    inspection = flow.metadata.get(_CONNECTOR_RESPONSE_INSPECTION)
+    return isinstance(inspection, response_inspection.CooperativeResponseInspection) and (
+        inspection.has_pending()
+    )
+
+
+async def drain_connector_inspection(flow: http.HTTPFlow) -> None:
+    inspection = flow.metadata.get(_CONNECTOR_RESPONSE_INSPECTION)
+    if isinstance(inspection, response_inspection.CooperativeResponseInspection):
+        await inspection.drain()
+
+
+def abandon_connector_inspection(flow: http.HTTPFlow) -> None:
+    inspection = flow.metadata.get(_CONNECTOR_RESPONSE_INSPECTION)
+    if isinstance(inspection, response_inspection.CooperativeResponseInspection):
+        inspection.close()
+
+
 def streamed_response_size(flow: http.HTTPFlow) -> int | None:
     """Return total bytes observed by the response streaming callback.
 
@@ -593,6 +650,8 @@ def observe_interrupted_model_json(flow: http.HTTPFlow) -> None:
 
 
 def _finish_connector_response_state(flow: http.HTTPFlow) -> None:
+    if has_pending_connector_inspection(flow):
+        raise RuntimeError("pending response inspection must be joined before finalization")
     finish = flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)
     if finish is not None:
         finish()
@@ -636,6 +695,9 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     replaced ``flow.response.stream`` callbacks and only disables the callback
     installed by this module.
     """
+    inspection = flow.metadata.pop(_CONNECTOR_RESPONSE_INSPECTION, None)
+    if isinstance(inspection, response_inspection.CooperativeResponseInspection):
+        inspection.close()
     stream_callback = flow.metadata.pop(_RESPONSE_STREAM_CALLBACK, None)
     flow.metadata.pop(metadata_keys.RESPONSE_STREAM_STATE, None)
     flow.metadata.pop(metadata_keys.STREAM_BUFFER, None)

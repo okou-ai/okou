@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.1...runner-provider-v0.6.2) (2026-10-09)
+
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.0...runner-provider-v0.6.1) (2026-10-09)
+
+
+### Refactoring
+
+* **runner:** move runtime reactor into runner-supervisor ([#38393](https://github.com/okou-ai/okou/issues/38393)) ([a5a1dd3](https://github.com/okou-ai/okou/commit/a5a1dd3ae25f19d65baed071cb15fa2a456cfb0a))
+
 ## [0.6.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.13...runner-provider-v0.6.0) (2026-10-09)
 
 

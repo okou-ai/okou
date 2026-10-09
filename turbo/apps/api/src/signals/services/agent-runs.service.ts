@@ -6,13 +6,11 @@ import {
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
-import {
-  ALL_RUN_STATUSES,
-  type ConcurrencyMemberUsage,
-  type GetRunResponse,
-  type QueueResponse,
-  type RunStatus,
-  type RunsListResponse,
+import type {
+  ConcurrencyMemberUsage,
+  GetRunResponse,
+  QueueResponse,
+  RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import {
   sandboxReuseResultSchema,
@@ -26,7 +24,7 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { and, asc, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 
 import { db$, type Db } from "../external/db";
 import {
@@ -48,10 +46,6 @@ type RunSourceRow = Pick<
   | "modelProviderId"
   | "modelProviderAccountIdentity"
 >;
-
-type RunListResult =
-  | { readonly kind: "ok"; readonly body: RunsListResponse }
-  | { readonly kind: "bad-request"; readonly message: string };
 
 interface RunningRunRow {
   readonly id: string;
@@ -308,99 +302,6 @@ export function agentRunById(args: {
       startedAt: run.startedAt?.toISOString(),
       completedAt: run.completedAt?.toISOString(),
       source,
-    };
-  });
-}
-
-export function agentRunList(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly status?: string;
-  readonly agent?: string;
-  readonly since?: string;
-  readonly until?: string;
-  readonly limit: number;
-}): Computed<Promise<RunListResult>> {
-  return computed(async (get): Promise<RunListResult> => {
-    const statusValues = args.status
-      ? args.status.split(",").map((status) => {
-          return status.trim();
-        })
-      : ["pending", "running"];
-
-    for (const status of statusValues) {
-      if (!ALL_RUN_STATUSES.includes(status as RunStatus)) {
-        return {
-          kind: "bad-request",
-          message: `Invalid status: ${status}. Valid values: ${ALL_RUN_STATUSES.join(", ")}`,
-        };
-      }
-    }
-
-    const conditions = [
-      eq(agentRuns.userId, args.userId),
-      eq(agentRuns.orgId, args.orgId),
-      inArray(agentRuns.status, statusValues as RunStatus[]),
-    ];
-
-    if (args.agent) {
-      conditions.push(eq(agents.name, args.agent));
-    }
-
-    if (args.since) {
-      const sinceDate = new Date(args.since);
-      if (Number.isNaN(sinceDate.getTime())) {
-        return {
-          kind: "bad-request",
-          message: "Invalid since timestamp format",
-        };
-      }
-      conditions.push(gte(agentRuns.createdAt, sinceDate));
-    }
-
-    if (args.until) {
-      const untilDate = new Date(args.until);
-      if (Number.isNaN(untilDate.getTime())) {
-        return {
-          kind: "bad-request",
-          message: "Invalid until timestamp format",
-        };
-      }
-      conditions.push(lte(agentRuns.createdAt, untilDate));
-    }
-
-    const rows = await get(db$)
-      .select({
-        id: agentRuns.id,
-        status: agentRuns.status,
-        prompt: agentRuns.prompt,
-        appendSystemPrompt: agentRuns.appendSystemPrompt,
-        createdAt: agentRuns.createdAt,
-        startedAt: agentRuns.startedAt,
-        composeName: agents.name,
-      })
-      .from(agentRuns)
-      .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-      .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-      .where(and(...conditions))
-      .orderBy(desc(agentRuns.createdAt))
-      .limit(args.limit);
-
-    return {
-      kind: "ok",
-      body: {
-        runs: rows.map((run) => {
-          return {
-            id: run.id,
-            agentName: run.composeName ?? "unknown",
-            status: run.status as RunStatus,
-            prompt: run.prompt,
-            appendSystemPrompt: run.appendSystemPrompt,
-            createdAt: run.createdAt.toISOString(),
-            startedAt: run.startedAt?.toISOString() ?? null,
-          };
-        }),
-      },
     };
   });
 }

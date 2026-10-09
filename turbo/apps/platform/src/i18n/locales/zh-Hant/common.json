@@ -5322,6 +5322,14 @@
     },
     "clearSearch": "清除搜尋",
     "custom": "自定義",
+    "delete": {
+      "cancel": "取消",
+      "confirm": "刪除範本",
+      "deleting": "正在刪除...",
+      "description": "「{{title}}」將對所有可以看到它的人移除。此操作無法復原。",
+      "failed": "無法刪除範本，請再試一次。",
+      "title": "刪除範本？"
+    },
     "detail": {
       "back": "自定義模板",
       "page": "第{{number}}頁"

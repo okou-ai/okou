@@ -46,7 +46,13 @@ export function createAutomationThreadPrompt(
           }),
         ),
       },
-      systemPromptVariables: {},
+      systemPromptVariables: {
+        integrationContext: [
+          "# Integration Note",
+          "",
+          "- Use integration-specific messaging or file commands only when the task names an explicit delivery target or the current surface provides one.",
+        ].join("\n"),
+      },
       skillVolumes: [],
     };
   });
