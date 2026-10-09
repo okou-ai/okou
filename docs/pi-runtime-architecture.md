@@ -287,13 +287,18 @@ projects/redacts/truncates within its existing bounds, runs
 commits a candidate under its claim fence. Its work unit and usage owner are
 separate from a foreground response and a Phase 2 storage consolidation.
 
-Both stages use GPT-6 Luna and resolve the memory owner's current connected
-Codex subscription before starting an attempt; without an active account that
-does not require reconnect they use the fixed OpenRouter Luna memory binding.
-Source Run credentials are provenance only. An admitted attempt keeps its
-credential/model snapshot and existing errors/retries. Stage 1 requests low
-reasoning and Phase 2 requests medium. Historical maintenance snapshots still
-drain unchanged; see [deployment compatibility](deployment-compatibility.md#pi-memory-luna-routing-2026-10-08).
+Both stages use the platform-managed OpenRouter Chat Completions preset
+`@preset/memory`, recorded under the private `okou-memory` identity. They never
+select a member's Codex account. Cache breakpoints follow Auto's Anthropic-style
+OpenRouter compatibility; `x-session-id` is `MEMORY-${userId}-${orgId}` for both
+stages and all attempts. The preset owns reasoning, output ceilings and sampling:
+only model, messages, tools (Phase 2), stream and stream usage options are sent.
+Stage 1 retains local evidence budgets and JSON output validation without sending
+a response-format override. Private metadata uses Auto's local model budgets;
+the operator must configure a preset that supports those input/tool contracts.
+An admitted attempt keeps its credential snapshot and existing errors/retries;
+historical maintenance snapshots still drain unchanged. See
+[deployment compatibility](deployment-compatibility.md#free-memory-preset-routing-2026-10-09).
 
 The Phase 2 API worker claims a storage revision/base/selection and dispatches a
 private maintenance run. It renews the **real database lease** against the
@@ -320,9 +325,12 @@ reader/producer contract is in deployment compatibility. Memory tools retain
 the frozen epoch and explicit ad-hoc-note request boundary. Local note staging
 is not a durable checkpoint.
 
-Stage 1 retains its own usage writer. Sandbox foreground and
-Phase 2 inference use Runner/proxy accounting; runtime Phase 2 usage in a result
-is evidence, not a second journal. [Phase 2 usage binding](../turbo/apps/api/src/signals/services/pi-memory-phase2-usage.service.ts)
+New preset memory is free: it neither checks nor consumes organization credits,
+allowance windows or personal subscription quotas. Stage 1 retains token/cost
+observations but creates no charge events; new Phase 2 contexts have no billable
+firewalls or model pricing identity. Runtime Phase 2 usage remains evidence.
+Stage 1's legacy usage writer and Runner/proxy accounting remain intact for
+previously captured paid attempts; no historical prices or charges are rewritten. [Phase 2 usage binding](../turbo/apps/api/src/signals/services/pi-memory-phase2-usage.service.ts)
 survives the existing execution/finalization drain for late proxy usage, including
 failed/revoked attempts. The shared [model usage thresholds](../turbo/packages/api-contracts/src/contracts/model-price-tiers.ts)
 and their [Python generation](../turbo/packages/api-contracts/src/python-bindings/generate.ts)

@@ -101,7 +101,11 @@ export const recordPiMemoryStage1Usage$ = command(
     { set },
     args: RecordPiMemoryStage1UsageArgs,
   ): Promise<PiMemoryStage1UsageReceipt> => {
-    // Personal subscription usage is never a model-credit event, including replay/zero usage.
+    // Preset memory is platform-funded. Observe tokens without creating a charge.
+    if (args.billing.mode === "free") {
+      return { disposition: "free", accountingAt: null };
+    }
+    // Retained personal subscription usage is never a model-credit event.
     if (args.billing.mode !== "builtin") {
       return { disposition: "subscription", accountingAt: null };
     }
@@ -219,7 +223,7 @@ export const recordPiMemoryStage1Usage$ = command(
 export interface PiMemoryStage1UsageReceipt {
   readonly accountingAt: string | null;
   readonly disposition:
-    "new" | "replay" | "legacy_replay" | "zero_usage" | "subscription";
+    "new" | "replay" | "legacy_replay" | "zero_usage" | "subscription" | "free";
 }
 
 /** Opaque logical response identity; category delivery/outcome is not identity. */

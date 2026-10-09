@@ -1,5 +1,38 @@
 # Deployment Compatibility
 
+## Free memory preset routing (2026-10-09)
+
+New Stage 1 extraction and Phase 2 consolidation use the platform OpenRouter key
+with `@preset/memory` over Chat Completions. They do not select personal accounts
+or depend on foreground Auto/organization preset overrides. The internal model
+identity is `okou-memory`, not a user-selectable catalog model or a priced route.
+
+Both stages send `x-session-id: MEMORY-${userId}-${orgId}` and Auto-style ephemeral
+cache breakpoints. Client reasoning, service tier, sampling, output ceilings and
+response-format overrides are omitted, including SDK defaults. Model, messages,
+tools, stream and stream usage options remain protocol inputs. Stage 1 retains
+local evidence budgets and validates the returned JSON; the preset must support
+those budgets and the Phase 2 tool contract. Configuring the remote preset is an
+operator prerequisite, not an action performed by this code change.
+
+Preset memory is free. Stage 1 observes token usage without creating charge
+rows. Phase 2 captures an empty billable-firewall list and no pricing provider;
+no credit admission or allowance activation is performed. Feature, source-owner,
+storage/lease, credential, cancellation and publication fences are unchanged.
+Captured older contexts retain their original model, billable firewalls and
+pricing. Historical usage and model identities are not rewritten or removed.
+
+Publish the new commit-addressed CLI with the API rollout before admitting new
+maintenance jobs. The new CLI reads the API-owned `OKOU_MEMORY_SESSION_ID` from
+platform environment and materializes `okou-memory` / `@preset/memory` on Gen5.
+The updated session-construction digest prevents an older installed CLI from
+being selected for new contexts; the guest uses the captured `CLI_PKG_URL` when
+installed parity does not match. Old API contexts keep their Luna/Codex binding
+and captured CLI package. Runner wire schemas and the captured payload
+generations do not change. Rollback
+must keep the new CLI available for already queued preset contexts; old captured
+Luna/Codex contexts remain supported by the new CLI and their original accounting.
+
 ## Automatic OAuth contract hash retirement (migration 1354)
 
 Builtin Automatic OAuth no longer computes, writes, reads or compares a local

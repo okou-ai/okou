@@ -25,12 +25,7 @@ import {
   observePiMemoryStage1Cost$,
   observePiMemoryStage1MissingUsage,
 } from "./pi-memory-stage1-cost.service";
-import {
-  checkPiMemoryQuota$,
-  PiMemoryQuotaError,
-} from "./pi-memory-quota.service";
-import { checkOrgCreditsForRunAdmission$ } from "./run-admission.service";
-import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
+
 import {
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
@@ -44,7 +39,6 @@ import {
   resolvePiMemoryStage1Credential$,
   validatePiMemoryStage1Credential$,
   PiMemoryStage1CredentialError,
-  PiMemoryStage1CredentialRefreshError,
   type PiMemoryStage1CredentialResult,
 } from "./pi-memory-stage1-credential.service";
 import { piMemoryStage1Selections } from "@okouai/db/schema/pi-memory-stage1-schedule";
@@ -693,18 +687,13 @@ function logOutcome(args: {
 
 function isCredentialFailure(
   error: unknown,
-): error is
-  PiMemoryStage1CredentialError | PiMemoryStage1CredentialRefreshError {
-  return (
-    error instanceof PiMemoryStage1CredentialError ||
-    error instanceof PiMemoryStage1CredentialRefreshError
-  );
+): error is PiMemoryStage1CredentialError {
+  return error instanceof PiMemoryStage1CredentialError;
 }
 
 function workErrorClass(error: unknown): string {
   return error instanceof PermanentSourceError ||
     error instanceof RetryableWorkError ||
-    error instanceof PiMemoryQuotaError ||
     isCredentialFailure(error) ||
     error instanceof PiMemoryStage1BudgetError ||
     error instanceof DisabledWorkError
@@ -735,8 +724,7 @@ const failWork$ = command(
           ? { kind: "terminal_failure", errorClass }
           : { kind: "retryable_failure", errorClass },
         {
-          revalidateSelection:
-            isCredentialFailure(error) || error instanceof PiMemoryQuotaError,
+          revalidateSelection: isCredentialFailure(error),
         },
       ),
     );
@@ -821,7 +809,6 @@ const prepareSourceWork$ = command(
     signal.throwIfAborted();
     const credential = await set(
       resolvePiMemoryStage1Credential$,
-      await set(loadModelCatalog$, signal),
       {
         sourceRunId: work.selection.sourceRunId,
         orgId: work.orgId,
@@ -972,35 +959,9 @@ interface ProcessPreparedWorkArgs {
 }
 
 const checkPreparedStage1Request$ = command(
-  async (
-    { set },
-    catalog: ModelCatalog,
-    prepared: RoutedWork,
-    signal: AbortSignal,
-  ) => {
-    const admission = await set(
-      checkOrgCreditsForRunAdmission$,
-      {
-        catalog,
-        ...prepared.credential.billing,
-        modelProviderType: prepared.credential.modelProviderType,
-        selectedModel: prepared.credential.selectedModel,
-      },
-      signal,
-    );
-    if (admission) {
-      throw new RetryableWorkError("source_admission_denied");
-    }
+  async ({ set }, prepared: RoutedWork, signal: AbortSignal) => {
+    // Memory is free: no organization credits or personal quota admission.
     set(writeDb$);
-    await set(
-      checkPiMemoryQuota$,
-      {
-        ...prepared.credential.billing,
-        stage: "stage1",
-        source: prepared.credential.quota,
-      },
-      signal,
-    );
     await set(
       validatePiMemoryStage1Credential$,
       prepared.credential.proof,
@@ -1013,7 +974,6 @@ const checkPreparedStage1Request$ = command(
 const processPreparedWork$ = command(
   async (
     { set },
-    catalogSnapshot: ModelCatalog,
     args: ProcessPreparedWorkArgs,
     signal: AbortSignal,
   ): Promise<WorkOutcome> => {
@@ -1033,7 +993,6 @@ const processPreparedWork$ = command(
             beforeRequest: async (requestSignal) => {
               await set(
                 checkPreparedStage1Request$,
-                catalogSnapshot,
                 args.prepared,
                 requestSignal,
               );
@@ -1293,7 +1252,6 @@ export const executePiMemoryStage1Work$ = command(
         .map(async (item) => {
           return await set(
             processPreparedWork$,
-            await set(loadModelCatalog$, signal),
             {
               prepared: item,
               pricingResolution: get(usagePricingResolution$),

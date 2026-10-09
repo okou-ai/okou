@@ -8,7 +8,10 @@ import { normalizeContext } from "@earendil-works/pi-ai";
 
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
-import { PI_MEMORY_STAGE1_REASONING } from "./memory-background-config";
+import {
+  PI_MEMORY_PRESET,
+  PI_MEMORY_STAGE1_REASONING,
+} from "./memory-background-config";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { MemoryPiSession } from "./session-memory";
 import {
@@ -357,10 +360,11 @@ function stage1ChatPayloadInput(
   if (
     !Array.isArray(messages) ||
     messages.length !== 2 ||
-    normalized.max_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
-    normalized.max_completion_tokens !== undefined ||
-    JSON.stringify(normalized.response_format) !==
-      JSON.stringify(PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT)
+    (normalized.model !== PI_MEMORY_PRESET &&
+      (normalized.max_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
+        normalized.max_completion_tokens !== undefined ||
+        JSON.stringify(normalized.response_format) !==
+          JSON.stringify(PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT)))
   ) {
     throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
   }
@@ -418,8 +422,9 @@ function shapeProviderPayload(
   if (allowance <= 0)
     throw new PiMemoryStage1BudgetError("input_budget_exceeded");
   if (
-    !isRecord(normalized.reasoning) ||
-    normalized.reasoning.effort !== PI_MEMORY_STAGE1_REASONING
+    model.id !== PI_MEMORY_PRESET &&
+    (!isRecord(normalized.reasoning) ||
+      normalized.reasoning.effort !== PI_MEMORY_STAGE1_REASONING)
   ) {
     throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
   }
@@ -485,27 +490,30 @@ export async function runPiMemoryStage1Extraction(
   const message = await consumeAssistantMessage(
     piAgentStreamForConfig(args.model)(model, context, {
       apiKey: args.model.apiKey,
-      reasoning: PI_MEMORY_STAGE1_REASONING,
+      reasoning:
+        model.id === PI_MEMORY_PRESET ? undefined : PI_MEMORY_STAGE1_REASONING,
       samplingParams:
-        model.api === "openai-completions"
-          ? {
-              // Replace the adapter's catalog-ceiling default with the fixed
-              // Stage 1 cap; undefined is dropped from the serialized request.
-              max_completion_tokens: undefined,
-              max_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
-              response_format: PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT,
-            }
-          : {
-              max_output_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
-              text: {
-                format: {
-                  type: "json_schema",
-                  name: "pi_memory_stage1",
-                  strict: true,
-                  schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+        model.id === PI_MEMORY_PRESET
+          ? undefined
+          : model.api === "openai-completions"
+            ? {
+                // Replace the adapter's catalog-ceiling default with the fixed
+                // Stage 1 cap; undefined is dropped from the serialized request.
+                max_completion_tokens: undefined,
+                max_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
+                response_format: PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT,
+              }
+            : {
+                max_output_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
+                text: {
+                  format: {
+                    type: "json_schema",
+                    name: "pi_memory_stage1",
+                    strict: true,
+                    schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+                  },
                 },
               },
-            },
       onObservedResponseStatus: (status) => {
         responseStatus = status;
       },

@@ -22,6 +22,8 @@ import { UnsupportedPiSessionVersionError } from "./errors";
 import {
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
   PI_MEMORY_STAGE1_PERSONAL_MODEL,
+  PI_MEMORY_PRESET,
+  piMemorySessionAffinityKey,
 } from "./memory-background-config";
 import type { PiMemoryStage1Model } from "./memory-background-config";
 import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
@@ -42,6 +44,8 @@ import {
 import { redactPiMemoryStage1Secrets } from "./stage1-secrets";
 export {
   piMemoryPhase2SelectionDigest,
+  PI_MEMORY_PRESET,
+  piMemorySessionAffinityKey,
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
   PI_MEMORY_STAGE1_PERSONAL_MODEL,
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,

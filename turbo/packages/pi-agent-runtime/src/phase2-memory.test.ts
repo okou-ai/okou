@@ -379,6 +379,52 @@ async function startProvider(steps: readonly ProviderStep[]): Promise<{
         response.writeHead(500).end();
         return;
       }
+      if (
+        request.url === "/v1/chat/completions" &&
+        (step.type === "tool" || step.type === "text")
+      ) {
+        const base = {
+          id: `chat_phase2_${index}`,
+          object: "chat.completion.chunk",
+          model: "@preset/memory",
+        };
+        const delta =
+          step.type === "tool"
+            ? {
+                role: "assistant",
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: `call_${index}`,
+                    type: "function",
+                    function: {
+                      name: step.name,
+                      arguments: JSON.stringify(step.arguments),
+                    },
+                  },
+                ],
+              }
+            : { role: "assistant", content: step.text };
+        writeSse(response, [
+          { ...base, choices: [{ index: 0, delta, finish_reason: null }] },
+          {
+            ...base,
+            choices: [
+              {
+                index: 0,
+                delta: {},
+                finish_reason: step.type === "tool" ? "tool_calls" : "stop",
+              },
+            ],
+            usage: {
+              prompt_tokens: 11,
+              completion_tokens: 7,
+              prompt_tokens_details: { cached_tokens: 2 },
+            },
+          },
+        ]);
+        return;
+      }
       switch (step.type) {
         case "tool": {
           toolSse(response, index, step);
@@ -696,6 +742,73 @@ describe("Pi memory Phase 2 consolidation engine", () => {
       }
     },
   );
+
+  it("consolidates with the memory preset, owner affinity and no client tuning", async () => {
+    const provider = await startProvider([
+      {
+        type: "tool",
+        name: "phase2_write",
+        arguments: {
+          path: "memory/MEMORY.md",
+          content: "# Task Group: preset maintenance\n",
+        },
+      },
+      {
+        type: "tool",
+        name: "phase2_write",
+        arguments: {
+          path: "memory/memory_summary.md",
+          content: "v1\n## User Profile\n- preset maintenance\n",
+        },
+      },
+      { type: "text", text: "completed" },
+    ]);
+    const result = await runPiMemoryPhase2LocalConsolidation(
+      args(provider.baseUrl, {
+        model: {
+          provider: "openrouter",
+          baseUrl: provider.baseUrl,
+          apiKey: "preset-key",
+          model: "@preset/memory",
+          catalogModel: "okou-memory",
+          dialect: "openai-completions",
+          transport: "sse",
+          sessionAffinityKey: "MEMORY-user-1-org-1",
+        },
+      }),
+      new AbortController().signal,
+    );
+    expect(result.status).toBe("prepared");
+    expect(result.usage).toMatchObject({ input: 27, output: 21, cacheRead: 6 });
+    expect(provider.requests).toHaveLength(3);
+    for (const request of provider.requests) {
+      expect(request.url).toBe("/v1/chat/completions");
+      expect(request.headers["x-session-id"]).toBe("MEMORY-user-1-org-1");
+      expect(Object.keys(request.body).sort()).toStrictEqual([
+        "messages",
+        "model",
+        "stream",
+        "stream_options",
+        "tools",
+      ]);
+      expect(request.body.model).toBe("@preset/memory");
+      expect(request.body.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.arrayContaining([
+              expect.objectContaining({ cache_control: { type: "ephemeral" } }),
+            ]),
+          }),
+        ]),
+      );
+    }
+    expect(
+      result.files.some((file) => {
+        return file.path === "MEMORY.md";
+      }),
+    ).toBe(true);
+  });
 
   it("uses one restricted official AgentSession and returns exact prepared usage", async () => {
     const credentialDir = await mkdtemp(
