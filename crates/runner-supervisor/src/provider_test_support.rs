@@ -32,7 +32,7 @@ use runner_provider::{
 };
 use runner_types::ids::RunId;
 use runner_types::types::{
-    CompleteRequest, ExecutionContext, HeartbeatState, SandboxReuseResult, WorkspaceReuseResult,
+    CompleteRequest, ExecutionContext, HeartbeatState, HomeReuseResult, SandboxReuseResult,
 };
 use sandbox::SandboxId;
 
@@ -44,7 +44,7 @@ pub struct Completion {
     pub error: Option<String>,
     pub sandbox_id: Option<SandboxId>,
     pub reuse_result: Option<SandboxReuseResult>,
-    pub workspace_reuse_result: Option<WorkspaceReuseResult>,
+    pub workspace_reuse_result: Option<HomeReuseResult>,
 }
 
 /// Channel-driven mock provider.

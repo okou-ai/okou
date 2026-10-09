@@ -37,7 +37,7 @@
 //!
 //! When no direct or published exact resource is available, fallback first retries matching idle
 //! exact reuse, then consumes retiring idle capacity, and finally uses fresh budget capacity. A
-//! fresh fallback still attempts workspace-cache checkout, but skips its transient-contention
+//! fresh fallback still attempts home-cache checkout, but skips its transient-contention
 //! retry when the predecessor state proves that a live or transferred sandbox retains the entry.
 //! Retiring leases are retained while the loop waits for capacity. The wait observes both budget
 //! availability and idle-pool changes: either can make the next exact or fresh-resource attempt
@@ -84,10 +84,10 @@ use crate::finalizing_admission::{
 use crate::finalizing_admission::{
     FinalizingSelectionTestHooks, select_finalizing_resource_with_test_hooks,
 };
+use crate::home_image_cache::HomeImagePrepareLockPolicy;
 use crate::idle_lifecycle::{ReservedIdleActivation, rollback_reserved_idle_for_spawn};
 use crate::resource_budget::BudgetLease;
 use crate::telemetry::JobTelemetry;
-use crate::workspace_image_cache::WorkspaceImagePrepareLockPolicy;
 use runner_provider::ClaimedJob;
 use runner_provider::RunCancellationRegistration;
 use runner_types::types::{CompleteRequest, SandboxReuseResult};
@@ -98,9 +98,10 @@ pub(super) struct FinalizingClaimRequest {
     pub(super) admission: FinalizingAdmission,
     pub(super) claim_returned_at: Instant,
     pub(super) profile_name: String,
+    pub(super) rootfs_hash: String,
     pub(super) vcpu: u32,
     pub(super) memory_mb: u32,
-    pub(super) workspace_disk_mb: u32,
+    pub(super) home_disk_mb: u32,
     pub(super) restore_guest_state: bool,
     pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
     pub(super) factory: SharedFactory,
@@ -150,9 +151,10 @@ async fn run_finalizing_claim(
         mut admission,
         claim_returned_at,
         profile_name,
+        rootfs_hash,
         vcpu,
         memory_mb,
-        workspace_disk_mb,
+        home_disk_mb,
         restore_guest_state,
         device_rate_limits,
         factory,
@@ -324,7 +326,8 @@ async fn run_finalizing_claim(
                     run_id,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
-                    workspace_disk_mb,
+                    home_disk_mb,
+                    rootfs_hash: &rootfs_hash,
                     context: claimed.context(),
                 },
                 &activation_resources(&ctx),
@@ -383,11 +386,12 @@ async fn run_finalizing_claim(
     let mut activation = ClaimedActivationGuard::new(
         ClaimedJobSetup {
             claimed,
+            rootfs_hash,
             cancellation,
             profile_name,
             vcpu,
             memory_mb,
-            workspace_disk_mb,
+            home_disk_mb,
             restore_guest_state,
             device_rate_limits,
             factory,
@@ -426,14 +430,13 @@ async fn run_finalizing_claim(
     };
     drop(activation_transfer_guard);
     if fresh_fallback {
-        let (predecessor_state, lock_policy) =
-            admission.fresh_fallback_workspace_prepare_lock_policy();
-        request.job_profile.workspace_image_prepare_lock_policy = lock_policy;
-        if lock_policy == WorkspaceImagePrepareLockPolicy::ImmediateFallback {
+        let (predecessor_state, lock_policy) = admission.fresh_fallback_home_prepare_lock_policy();
+        request.job_profile.home_image_prepare_lock_policy = lock_policy;
+        if lock_policy == HomeImagePrepareLockPolicy::ImmediateFallback {
             info!(
                 run_id = %run_id,
                 ?predecessor_state,
-                "finalizing fallback will skip workspace cache lock retry"
+                "finalizing fallback will skip home cache lock retry"
             );
         }
     }

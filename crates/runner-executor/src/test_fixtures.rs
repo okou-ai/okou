@@ -17,18 +17,10 @@ pub mod session_history;
 
 pub use runner_network::ReapGate;
 
-pub fn workspace_image_cache_key(reuse_key: &str, working_dir: &str) -> String {
-    runner_host::paths::scoped_workspace_image_cache_key(
-        "",
-        "vm0/default",
-        reuse_key,
-        working_dir,
-        5,
-    )
+pub fn home_image_cache_key(reuse_key: &str, _working_dir: &str) -> String {
+    runner_host::paths::scoped_home_image_cache_key("", "vm0/default", "test-rootfs", reuse_key, 5)
 }
 
-pub fn runner_workspace_image_cache_dir(
-    paths: &runner_host::paths::RunnerPaths,
-) -> std::path::PathBuf {
-    paths.base_dir().join("workspace-image-cache")
+pub fn runner_home_image_cache_dir(paths: &runner_host::paths::RunnerPaths) -> std::path::PathBuf {
+    paths.base_dir().join("home-image-cache")
 }

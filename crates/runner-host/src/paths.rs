@@ -24,7 +24,8 @@ use sha2::{Digest, Sha256};
 use crate::error::HostResult;
 use runner_types::ids::RunId;
 
-const WORKSPACE_IMAGE_CACHE_KEY_DOMAIN: &[u8] = b"workspace-image-cache:v1\0";
+const HOME_IMAGE_CACHE_KEY_DOMAIN: &[u8] = b"home-image-cache:v1";
+pub const HOME_DRIVE_LAYOUT: &str = "home-drive-v1";
 pub(crate) const RUNNER_HOME_ROOT: &str = "/var/lib/vm0-runner";
 
 /// Short hex digests for storage name and version components, used when
@@ -56,30 +57,54 @@ pub fn base_dir_lock_name(base_dir: &Path) -> String {
     format!("base-dir-{hash}.lock")
 }
 
-/// Versioned digest key for host-shared reuse-key workspace image baselines.
-///
-/// The raw reuse key is untrusted and must not be embedded directly in
-/// host paths. The working-dir argument is intentionally ignored: workspace
-/// image cache identity is based on canonical workspace semantics. The key
-/// includes the cache scope, profile, drive layout version, and logical image
-/// size so incompatible workspace images never share a host entry.
-pub fn scoped_workspace_image_cache_key(
+/// Complete identity of a host-shared, whole-home baseline. Cwd is deliberately
+/// absent: execution-path validation is separate from image identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HomeImageCacheKey<'a> {
+    pub cache_scope: &'a str,
+    pub profile_name: &'a str,
+    pub rootfs_hash: &'a str,
+    pub reuse_key: &'a str,
+    pub drive_layout: &'a str,
+    pub image_size_bytes: u64,
+}
+
+impl HomeImageCacheKey<'_> {
+    /// Length framing avoids separator/NUL ambiguities in untrusted fields.
+    pub fn digest(self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(HOME_IMAGE_CACHE_KEY_DOMAIN);
+        for field in [
+            self.cache_scope,
+            self.profile_name,
+            self.rootfs_hash,
+            self.reuse_key,
+            self.drive_layout,
+        ] {
+            hasher.update((field.len() as u64).to_le_bytes());
+            hasher.update(field.as_bytes());
+        }
+        hasher.update(self.image_size_bytes.to_le_bytes());
+        hex::encode(hasher.finalize())
+    }
+}
+
+pub fn scoped_home_image_cache_key(
     cache_scope: &str,
     profile_name: &str,
+    rootfs_hash: &str,
     reuse_key: &str,
-    _working_dir: &str,
     image_size_bytes: u64,
 ) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(WORKSPACE_IMAGE_CACHE_KEY_DOMAIN);
-    hasher.update(cache_scope.as_bytes());
-    hasher.update(b"\0");
-    hasher.update(profile_name.as_bytes());
-    hasher.update(b"\0workspace-drive-v1\0");
-    hasher.update(image_size_bytes.to_le_bytes());
-    hasher.update(b"\0");
-    hasher.update(reuse_key.as_bytes());
-    hex::encode(hasher.finalize())
+    HomeImageCacheKey {
+        cache_scope,
+        profile_name,
+        rootfs_hash,
+        reuse_key,
+        drive_layout: HOME_DRIVE_LAYOUT,
+        image_size_bytes,
+    }
+    .digest()
 }
 
 /// Update a directory's mtime to now, so `runner gc` treats it as recently used.
@@ -143,16 +168,16 @@ impl RunnerPaths {
             .join("builtin-firewall-catalog-cache.json.lock")
     }
 
-    pub fn workspaces_dir(&self) -> PathBuf {
-        self.base_dir.join("workspaces")
+    pub fn homes_dir(&self) -> PathBuf {
+        self.base_dir.join("homes")
     }
 
-    pub fn workspace_dir(&self, sandbox_id: &impl std::fmt::Display) -> PathBuf {
-        self.workspaces_dir().join(sandbox_id.to_string())
+    pub fn home_dir(&self, sandbox_id: &impl std::fmt::Display) -> PathBuf {
+        self.homes_dir().join(sandbox_id.to_string())
     }
 
-    pub fn active_workspace_image(&self, sandbox_id: &impl std::fmt::Display) -> PathBuf {
-        self.workspace_dir(sandbox_id).join("workspace.ext4")
+    pub fn active_home_image(&self, sandbox_id: &impl std::fmt::Display) -> PathBuf {
+        self.home_dir(sandbox_id).join("home.ext4")
     }
 }
 
@@ -198,7 +223,7 @@ shared_home_dirs! {
     /// Layout: `<storages_dir>/<hash(vasStorageName)>/<hash(vasVersionId)>/archive.tar.gz`.
     /// Populated by the cache writer (#10808) and reaped by `gc_storage_cache`.
     pub fn storages_dir => "storages";
-    pub fn workspace_image_cache_dir => "workspace-image-cache";
+    pub fn home_image_cache_dir => "home-image-cache";
 }
 
 impl HomePaths {
@@ -315,16 +340,16 @@ impl HomePaths {
     }
 }
 
-pub fn workspace_image_cache_lock_path(lock_dir: &Path, cache_key: &str) -> PathBuf {
-    lock_dir.join(format!("workspace-image-cache-{cache_key}.lock"))
+pub fn home_image_cache_lock_path(lock_dir: &Path, cache_key: &str) -> PathBuf {
+    lock_dir.join(format!("home-image-cache-{cache_key}.lock"))
 }
 
-pub fn workspace_image_cache_capacity_lock_path(lock_dir: &Path) -> PathBuf {
-    lock_dir.join("workspace-image-cache-capacity.lock")
+pub fn home_image_cache_capacity_lock_path(lock_dir: &Path) -> PathBuf {
+    lock_dir.join("home-image-cache-capacity.lock")
 }
 
-pub fn workspace_image_cache_routine_gc_lock_path(lock_dir: &Path) -> PathBuf {
-    lock_dir.join("workspace-image-cache-routine-gc.lock")
+pub fn home_image_cache_routine_gc_lock_path(lock_dir: &Path) -> PathBuf {
+    lock_dir.join("home-image-cache-routine-gc.lock")
 }
 
 /// Paths for a rootfs build output, keyed by rootfs hash.
@@ -489,6 +514,72 @@ impl LogPaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn home_image_identity_binds_every_partition_without_separator_ambiguity() {
+        let key = HomeImageCacheKey {
+            cache_scope: "group",
+            profile_name: "vm0/default",
+            rootfs_hash: "full-rootfs-hash",
+            reuse_key: "thread",
+            drive_layout: HOME_DRIVE_LAYOUT,
+            image_size_bytes: 24 * 1024 * 1024 * 1024,
+        };
+        let digest = key.digest();
+        for other in [
+            HomeImageCacheKey {
+                cache_scope: "other",
+                ..key
+            },
+            HomeImageCacheKey {
+                profile_name: "other",
+                ..key
+            },
+            HomeImageCacheKey {
+                rootfs_hash: "full-rootfs-hash-tail",
+                ..key
+            },
+            HomeImageCacheKey {
+                reuse_key: "other",
+                ..key
+            },
+            HomeImageCacheKey {
+                drive_layout: "other-layout",
+                ..key
+            },
+            HomeImageCacheKey {
+                image_size_bytes: key.image_size_bytes + 1,
+                ..key
+            },
+        ] {
+            assert_ne!(digest, other.digest());
+        }
+        assert_ne!(
+            HomeImageCacheKey {
+                cache_scope: "a\0b",
+                profile_name: "c",
+                ..key
+            }
+            .digest(),
+            HomeImageCacheKey {
+                cache_scope: "a",
+                profile_name: "b\0c",
+                ..key
+            }
+            .digest()
+        );
+        assert_eq!(digest.len(), 64);
+        assert!(digest.bytes().all(|b| b.is_ascii_hexdigit()));
+        let paths = RunnerPaths::new(PathBuf::from("/runner"));
+        assert_eq!(
+            paths.active_home_image(&"sandbox"),
+            PathBuf::from("/runner/homes/sandbox/home.ext4")
+        );
+        assert_eq!(
+            HomePaths::with_root(PathBuf::from("/host")).home_image_cache_dir(),
+            PathBuf::from("/host/home-image-cache")
+        );
+    }
 
     #[test]
     fn home_paths_structure() {

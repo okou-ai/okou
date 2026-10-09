@@ -1856,7 +1856,10 @@ pub struct CompleteRequest {
     /// Final outcome of the workspace-reuse decision. `None` means the run
     /// failed before the runner reached a reliable final decision.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_reuse_result: Option<WorkspaceReuseResult>,
+    /// Bounded outgoing result envelope during PR2's mixed-reader window. The home-drive
+    /// Runner may report these unchanged outcomes here; this is not an old-image reader
+    /// or a conversion of home evidence into held workspace state. PR5 owns retirement.
+    pub workspace_reuse_result: Option<HomeReuseResult>,
 }
 
 /// Outcome of the sandbox-reuse decision made at job dispatch time. `Reused`
@@ -1888,11 +1891,12 @@ impl SandboxReuseResult {
     }
 }
 
-/// Final outcome of workspace reuse after sandbox preparation has settled.
-/// Wire name: `workspaceReuseResult`.
+/// Final outcome of whole-home reuse after sandbox preparation has settled.
+/// The temporary completion envelope still uses `workspaceReuseResult` until
+/// PR5 retires mixed-reader protocol fields. This type never reads old images.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub enum WorkspaceReuseResult {
+pub enum HomeReuseResult {
     Reused,
     SandboxReused,
     CacheMiss,
@@ -1905,7 +1909,7 @@ pub enum WorkspaceReuseResult {
     SandboxPrepareFallback,
 }
 
-impl WorkspaceReuseResult {
+impl HomeReuseResult {
     /// Wire-format string, kept lockstep with the serde derive in tests.
     pub const fn as_wire(self) -> &'static str {
         match self {
@@ -2380,7 +2384,7 @@ mod tests {
             error: None,
             sandbox_id: Some(sid),
             sandbox_reuse_result: Some(SandboxReuseResult::Reused),
-            workspace_reuse_result: Some(WorkspaceReuseResult::SandboxReused),
+            workspace_reuse_result: Some(HomeReuseResult::SandboxReused),
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["sandboxId"], "11111111-2222-3333-4444-555555555555");
@@ -2430,16 +2434,16 @@ mod tests {
             );
         }
         for variant in [
-            WorkspaceReuseResult::Reused,
-            WorkspaceReuseResult::SandboxReused,
-            WorkspaceReuseResult::CacheMiss,
-            WorkspaceReuseResult::NoReuseKey,
-            WorkspaceReuseResult::InvalidWorkingDir,
-            WorkspaceReuseResult::LockBusy,
-            WorkspaceReuseResult::InvalidMetadata,
-            WorkspaceReuseResult::DiskPressure,
-            WorkspaceReuseResult::NotConfigured,
-            WorkspaceReuseResult::SandboxPrepareFallback,
+            HomeReuseResult::Reused,
+            HomeReuseResult::SandboxReused,
+            HomeReuseResult::CacheMiss,
+            HomeReuseResult::NoReuseKey,
+            HomeReuseResult::InvalidWorkingDir,
+            HomeReuseResult::LockBusy,
+            HomeReuseResult::InvalidMetadata,
+            HomeReuseResult::DiskPressure,
+            HomeReuseResult::NotConfigured,
+            HomeReuseResult::SandboxPrepareFallback,
         ] {
             assert_eq!(
                 serde_json::to_value(variant).unwrap(),

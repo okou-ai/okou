@@ -87,7 +87,7 @@ async fn real_firecracker_guests_receive_weighted_host_cpu_service() -> TestResu
                     memory_mb: 512,
                 },
                 device_rate_limits: None,
-                workspace_drive: None,
+                home_drive: None,
             })
             .await?;
         sandbox.start().await?;

@@ -13,7 +13,7 @@ fn test_snapshot_config(output_dir: PathBuf) -> SnapshotCreateConfig {
         output_dir,
         vcpu_count: 2,
         memory_mb: 1024,
-        workspace_disk_mb: 16,
+        home_disk_mb: 16,
     }
 }
 
@@ -25,7 +25,7 @@ fn test_sandbox_config() -> SandboxConfig {
             memory_mb: 1024,
         },
         device_rate_limits: None,
-        workspace_drive: None,
+        home_drive: None,
     }
 }
 

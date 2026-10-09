@@ -44,11 +44,6 @@ pub(crate) enum SessionHistoryCheckpointSource {
     CodexZstd { encoded: Vec<u8> },
 }
 
-pub(crate) struct PreparedSessionHistorySidecar {
-    pub(crate) digest: SessionHistoryDigest,
-    source: SessionHistoryCheckpointSource,
-}
-
 pub(crate) struct SafeHistoryReplacementTarget {
     #[cfg(target_os = "linux")]
     parent: Dir,
@@ -162,43 +157,84 @@ impl ResolvedSessionHistory {
         DecodedSessionHistoryReader::open(self.path, self.file)
     }
 
+    /// Digest the actual named source only while it remains on the retained home mount.
+    pub(crate) fn digest_retained_home(
+        self,
+        max_bytes: u64,
+    ) -> Result<SessionHistoryDigest, SessionHistoryDigestError> {
+        #[cfg(target_os = "linux")]
+        {
+            use crate::nofollow_fs::file_identity;
+            use std::os::unix::fs::MetadataExt;
+            let home = Dir::open_absolute(Path::new("/home/user"))
+                .map_err(|error| read_history_error(&self.path, error))?;
+            let home_identity = home
+                .identity()
+                .map_err(|error| read_history_error(&self.path, error))?;
+            let identity =
+                file_identity(&self.file).map_err(|error| read_history_error(&self.path, error))?;
+            identity
+                .ensure_same_mount(home_identity)
+                .map_err(|error| read_history_error(&self.path, error))?;
+            self.replacement_target
+                .parent
+                .identity()
+                .and_then(|parent| parent.ensure_same_mount(home_identity))
+                .map_err(|error| read_history_error(&self.path, error))?;
+            let before = self
+                .file
+                .metadata()
+                .map_err(|error| read_history_error(&self.path, error))?;
+            let file = self
+                .file
+                .try_clone()
+                .map_err(|error| read_history_error(&self.path, error))?;
+            let digest =
+                DecodedSessionHistoryReader::open(self.path.clone(), file)?.digest(max_bytes)?;
+            let current_parent = Dir::open_absolute(&self.replacement_target.parent_path)
+                .map_err(|error| read_history_error(&self.path, error))?;
+            let named = current_parent
+                .open_child_file(&self.replacement_target.leaf_name)
+                .map_err(|error| read_history_error(&self.path, error))?;
+            let after = named
+                .metadata()
+                .map_err(|error| read_history_error(&self.path, error))?;
+            if current_parent
+                .identity()
+                .map_err(|error| read_history_error(&self.path, error))?
+                != self
+                    .replacement_target
+                    .parent
+                    .identity()
+                    .map_err(|error| read_history_error(&self.path, error))?
+                || file_identity(&named).map_err(|error| read_history_error(&self.path, error))?
+                    != identity
+                || before.len() != after.len()
+                || before.mtime() != after.mtime()
+                || before.mtime_nsec() != after.mtime_nsec()
+                || before.ctime() != after.ctime()
+                || before.ctime_nsec() != after.ctime_nsec()
+            {
+                return Err(SessionHistoryDigestError::Read(AgentError::Checkpoint(
+                    "retained home history changed during verification".into(),
+                )));
+            }
+            Ok(digest)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = max_bytes;
+            Err(SessionHistoryDigestError::Read(AgentError::Checkpoint(
+                "retained home verification requires descriptor identity".into(),
+            )))
+        }
+    }
+
     pub(crate) fn encoded_len(&self) -> Result<u64, AgentError> {
         self.file
             .metadata()
             .map(|metadata| metadata.len())
             .map_err(|error| read_history_error(&self.path, error))
-    }
-
-    fn into_zstd_bytes(self, max_encoded_bytes: u64) -> Result<Vec<u8>, AgentError> {
-        read_zstd_encoded_session_history(self.file, &self.path, max_encoded_bytes)
-    }
-
-    pub(crate) fn prepare_sidecar(
-        self,
-        max_decoded_bytes: u64,
-        max_encoded_bytes: u64,
-    ) -> Result<PreparedSessionHistorySidecar, SessionHistoryDigestError> {
-        if self.is_zstd {
-            if self.encoded_len()? <= max_encoded_bytes {
-                let encoded = self.into_zstd_bytes(max_encoded_bytes)?;
-                let digest = digest_zstd_session_history_bytes(&encoded, max_decoded_bytes)?;
-                return Ok(PreparedSessionHistorySidecar {
-                    digest,
-                    source: SessionHistoryCheckpointSource::CodexZstd { encoded },
-                });
-            }
-            return self
-                .into_decoded_reader()?
-                .prepare_sidecar(max_decoded_bytes);
-        }
-        self.into_decoded_reader()?
-            .prepare_sidecar(max_decoded_bytes)
-    }
-}
-
-impl PreparedSessionHistorySidecar {
-    pub(crate) fn into_source(self) -> SessionHistoryCheckpointSource {
-        self.source
     }
 }
 
@@ -840,24 +876,6 @@ impl DecodedSessionHistoryReader {
             }
         }
     }
-
-    fn prepare_sidecar(
-        self,
-        max_decoded_bytes: u64,
-    ) -> Result<PreparedSessionHistorySidecar, SessionHistoryDigestError> {
-        match self {
-            Self::Plain { path, reader } => {
-                prepare_session_history_sidecar_reader(reader, max_decoded_bytes, |error| {
-                    read_history_error(&path, error)
-                })
-            }
-            Self::Zstd(reader) => prepare_session_history_sidecar_reader(
-                reader,
-                max_decoded_bytes,
-                zstd_session_history_error,
-            ),
-        }
-    }
 }
 
 fn zstd_session_history_error(source: io::Error) -> AgentError {
@@ -929,55 +947,6 @@ fn digest_history_reader(
     Ok(SessionHistoryDigest {
         size_bytes,
         sha256_hex: hex::encode(hasher.finalize()),
-    })
-}
-
-fn digest_zstd_session_history_bytes(
-    encoded: &[u8],
-    max_bytes: u64,
-) -> Result<SessionHistoryDigest, SessionHistoryDigestError> {
-    let reader = zstd::stream::read::Decoder::new(encoded).map_err(zstd_session_history_error)?;
-    digest_history_reader(reader, max_bytes, zstd_session_history_error)
-}
-
-fn prepare_session_history_sidecar_reader(
-    mut reader: impl Read,
-    max_decoded_bytes: u64,
-    map_error: impl Fn(io::Error) -> AgentError,
-) -> Result<PreparedSessionHistorySidecar, SessionHistoryDigestError> {
-    let mut hasher = Sha256::new();
-    let mut size_bytes = 0u64;
-    let mut raw_bytes = Vec::new();
-    let mut buffer = [0u8; 8192];
-
-    loop {
-        let bytes_read = reader
-            .read(&mut buffer)
-            .map_err(|error| SessionHistoryDigestError::Read(map_error(error)))?;
-        if bytes_read == 0 {
-            break;
-        }
-        size_bytes = size_bytes
-            .checked_add(bytes_read as u64)
-            .ok_or(SessionHistoryDigestError::ExceedsMaxBytes)?;
-        if size_bytes > max_decoded_bytes {
-            return Err(SessionHistoryDigestError::ExceedsMaxBytes);
-        }
-        let chunk = buffer.get(..bytes_read).ok_or_else(|| {
-            SessionHistoryDigestError::Read(map_error(io::Error::other(
-                "session history reader returned more bytes than the provided buffer",
-            )))
-        })?;
-        hasher.update(chunk);
-        raw_bytes.extend_from_slice(chunk);
-    }
-
-    Ok(PreparedSessionHistorySidecar {
-        digest: SessionHistoryDigest {
-            size_bytes,
-            sha256_hex: hex::encode(hasher.finalize()),
-        },
-        source: SessionHistoryCheckpointSource::Decoded(raw_bytes),
     })
 }
 
@@ -1069,25 +1038,6 @@ mod tests {
                 read_history_reader(decoder, Some(max_bytes), zstd_session_history_error)
             }
         }
-    }
-
-    fn prepare_session_history_sidecar_from_payload_bounded(
-        payload: &str,
-        max_decoded_bytes: u64,
-        max_encoded_bytes: u64,
-    ) -> Result<PreparedSessionHistorySidecar, SessionHistoryDigestError> {
-        let resolved = resolve_test_payload(payload)?;
-        if resolved.is_zstd && resolved.encoded_len()? <= max_encoded_bytes {
-            let encoded = resolved.into_zstd_bytes(max_encoded_bytes)?;
-            let digest = digest_zstd_session_history_bytes(&encoded, max_decoded_bytes)?;
-            return Ok(PreparedSessionHistorySidecar {
-                digest,
-                source: SessionHistoryCheckpointSource::CodexZstd { encoded },
-            });
-        }
-        resolved
-            .into_decoded_reader()?
-            .prepare_sidecar(max_decoded_bytes)
     }
 
     fn write_history_file(dir: &tempfile::TempDir, name: &str, bytes: &[u8]) -> PathBuf {
@@ -1340,103 +1290,6 @@ mod tests {
                 panic!("oversized encoded body should fall back to decoded history")
             }
         }
-    }
-
-    #[test]
-    fn sidecar_preparation_enforces_raw_decoded_limit() {
-        let dir = tempfile::tempdir().unwrap();
-        let history = b"abcde";
-        let path = write_history_file(&dir, "history.jsonl", history);
-
-        let prepared = prepare_session_history_sidecar_from_payload_bounded(
-            path.to_str().unwrap(),
-            history.len() as u64,
-            history.len() as u64,
-        )
-        .unwrap();
-        match prepared.into_source() {
-            SessionHistoryCheckpointSource::Decoded(bytes) => assert_eq!(bytes, history),
-            SessionHistoryCheckpointSource::CodexZstd { .. } => {
-                panic!("literal history must use the raw representation")
-            }
-        }
-
-        let result = prepare_session_history_sidecar_from_payload_bounded(
-            path.to_str().unwrap(),
-            (history.len() - 1) as u64,
-            history.len() as u64,
-        );
-        assert!(matches!(
-            result,
-            Err(SessionHistoryDigestError::ExceedsMaxBytes)
-        ));
-    }
-
-    #[test]
-    fn sidecar_preparation_handles_codex_zstd_encoded_limit_and_raw_fallback() {
-        let dir = tempfile::tempdir().unwrap();
-        let sessions_dir = dir.path().join("sessions");
-        let day_dir = sessions_dir.join("2026").join("07").join("02");
-        std::fs::create_dir_all(&day_dir).unwrap();
-        let thread_id = "019e9154-c304-70f0-adde-36efb1be1701";
-        let history = b"a";
-        let compressed = zstd::encode_all(history.as_slice(), 0).unwrap();
-        assert!(compressed.len() > history.len());
-        let path = day_dir.join("rollout-019e9154c30470f0adde36efb1be1701.jsonl.zst");
-        std::fs::write(path, &compressed).unwrap();
-        let source = codex_source(&sessions_dir, thread_id);
-
-        let prepared = resolve_session_history_from_source(&source)
-            .unwrap()
-            .prepare_sidecar(history.len() as u64, compressed.len() as u64)
-            .unwrap();
-        match prepared.into_source() {
-            SessionHistoryCheckpointSource::CodexZstd { encoded } => {
-                assert_eq!(encoded, compressed)
-            }
-            SessionHistoryCheckpointSource::Decoded(_) => {
-                panic!("encoded body at the export limit must retain native zstd")
-            }
-        }
-
-        let prepared = resolve_session_history_from_source(&source)
-            .unwrap()
-            .prepare_sidecar(history.len() as u64, history.len() as u64)
-            .unwrap();
-
-        assert_eq!(prepared.digest.size_bytes, history.len() as u64);
-        assert_eq!(
-            prepared.digest.sha256_hex,
-            hex::encode(Sha256::digest(history))
-        );
-        match prepared.into_source() {
-            SessionHistoryCheckpointSource::Decoded(bytes) => assert_eq!(bytes, history),
-            SessionHistoryCheckpointSource::CodexZstd { .. } => {
-                panic!("encoded body above the export limit must fall back to raw")
-            }
-        }
-    }
-
-    #[test]
-    fn sidecar_preparation_rejects_truncated_retained_codex_zstd() {
-        let dir = tempfile::tempdir().unwrap();
-        let sessions_dir = dir.path().join("sessions");
-        let day_dir = sessions_dir.join("2026").join("07").join("02");
-        std::fs::create_dir_all(&day_dir).unwrap();
-        let thread_id = "019e9154-c304-70f0-adde-36efb1be1701";
-        let history = b"retained zstd history";
-        let mut compressed = zstd::encode_all(history.as_slice(), 0).unwrap();
-        compressed.pop().unwrap();
-        let encoded_limit = compressed.len() as u64;
-        let path = day_dir.join("rollout-019e9154c30470f0adde36efb1be1701.jsonl.zst");
-        std::fs::write(path, compressed).unwrap();
-        let source = codex_source(&sessions_dir, thread_id);
-
-        let result = resolve_session_history_from_source(&source)
-            .unwrap()
-            .prepare_sidecar(history.len() as u64, encoded_limit);
-
-        assert!(matches!(result, Err(SessionHistoryDigestError::Read(_))));
     }
 
     #[test]

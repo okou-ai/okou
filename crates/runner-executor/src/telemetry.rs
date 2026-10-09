@@ -27,14 +27,12 @@ pub(crate) use session_history::{
 mod dns_readiness;
 mod history_transfer;
 mod session_history;
-mod workspace_session_history;
 
 pub(crate) use history_transfer::{
     HistoryCodecDecision, HistoryTransferMeasurements, HistoryTransferSource,
 };
 pub(crate) use runner_storage::ArchiveSizeMismatch;
 pub(crate) use runner_storage::SandboxOpRecord;
-pub(crate) use workspace_session_history::WorkspaceSessionHistoryTelemetry;
 
 /// How long before we auto-flush pending ops (matching TS: 30s).
 const FLUSH_THRESHOLD: Duration = Duration::from_secs(30);
@@ -108,7 +106,7 @@ impl OomEvidenceUploadFailure {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum RunnerStartupPath {
     Sandbox,
-    Workspace,
+    Home,
     Cold,
 }
 
@@ -290,8 +288,6 @@ struct SandboxOp {
     runner_resource_budget_lease_count_bucket: Option<RunnerResourceBudgetLeaseCountBucket>,
     #[serde(flatten)]
     session_history: Option<SessionHistoryTelemetryFields>,
-    #[serde(flatten)]
-    workspace_session_history: Option<WorkspaceSessionHistoryTelemetry>,
     #[serde(flatten)]
     history_transfer: Option<history_transfer::HistoryTransferTelemetry>,
     #[serde(flatten)]
@@ -578,25 +574,6 @@ impl JobTelemetry {
 
     /// Record the existing local restore interval with validated payload
     /// measurements. Only successful restores report completed guest bytes.
-    pub(crate) fn record_workspace_session_history_restore(
-        &mut self,
-        duration: Duration,
-        success: bool,
-        error: Option<&str>,
-        metadata: WorkspaceSessionHistoryTelemetry,
-    ) {
-        let mut op = sandbox_op(
-            "session_history_workspace_cache_guest_restore",
-            duration,
-            success,
-            error,
-            None,
-            None,
-        );
-        op.workspace_session_history = Some(metadata.with_restore_outcome(success));
-        self.push_operation(op);
-    }
-
     pub(crate) fn record_history_transfer(
         &mut self,
         duration: Duration,
@@ -767,15 +744,6 @@ impl JobTelemetry {
         self.pending_ops
             .iter()
             .map(|op| (op.action_type.clone(), op.success, op.error.clone()))
-            .collect()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn pending_workspace_history_restore_payloads(&self) -> Vec<serde_json::Value> {
-        self.pending_ops
-            .iter()
-            .filter(|op| op.workspace_session_history.is_some())
-            .map(|op| serde_json::to_value(op).expect("serialize workspace restore operation"))
             .collect()
     }
 
@@ -1043,7 +1011,6 @@ fn sandbox_op_at(
         runner_resource_budget_memory_utilization_bucket: None,
         runner_resource_budget_lease_count_bucket: None,
         session_history: metadata.map(SessionHistoryTelemetryFields::from),
-        workspace_session_history: None,
         history_transfer: None,
         dns_readiness: None,
         storage_batch: None,
@@ -1185,7 +1152,6 @@ mod tests {
             runner_resource_budget_memory_utilization_bucket: None,
             runner_resource_budget_lease_count_bucket: None,
             session_history: None,
-            workspace_session_history: None,
             history_transfer: None,
             dns_readiness: None,
             storage_batch: None,
@@ -1340,12 +1306,12 @@ mod tests {
         telemetry.start_runner_pre_spawn_attribution(attribution);
         telemetry.record_api_to_spawn(
             Duration::from_millis(125),
-            RunnerStartupPath::Workspace,
+            RunnerStartupPath::Home,
             SandboxReuseResult::PoolMiss,
         );
         telemetry.record_api_to_agent_ready(
             Duration::from_millis(150),
-            RunnerStartupPath::Workspace,
+            RunnerStartupPath::Home,
             SandboxReuseResult::PoolMiss,
         );
 
@@ -1392,7 +1358,7 @@ mod tests {
                 when.method(POST)
                     .path("/api/webhooks/agent/telemetry")
                     .body_includes(r#""action_type":"session_history_transfer""#)
-                    .body_includes(r#""session_history_transfer_source":"workspace_cache""#)
+                    .body_includes(r#""session_history_transfer_source":"downloaded""#)
                     .body_includes(r#""session_history_framework":"codex""#)
                     .body_includes(r#""session_history_wire_codec":"zstd""#)
                     .body_includes(r#""session_history_codec_decision":"above_threshold""#)
@@ -1417,7 +1383,7 @@ mod tests {
         );
         telemetry.record_history_transfer(
             Duration::from_millis(10),
-            HistoryTransferSource::WorkspaceCache,
+            HistoryTransferSource::Downloaded,
             "codex",
             Some(HistoryTransferMeasurements::new(
                 FileCompression::Zstd,
@@ -1540,7 +1506,6 @@ mod tests {
                 runner_resource_budget_memory_utilization_bucket: None,
                 runner_resource_budget_lease_count_bucket: None,
                 session_history: Some(metadata.into()),
-                workspace_session_history: None,
                 history_transfer: None,
                 dns_readiness: None,
                 storage_batch: None,

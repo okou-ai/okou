@@ -2,7 +2,7 @@
 //!
 //! `SandboxCreateTransaction` owns resources acquired while
 //! `FirecrackerFactory::create` builds a sandbox. The normal create path
-//! prepares a stable sandbox workspace, optionally prepares the workspace drive
+//! prepares a stable sandbox workspace, optionally prepares the home drive
 //! image, creates the socket directory, acquires a network namespace, checks
 //! out a prepared NBD COW device, and then commits those stable resources into
 //! `SandboxCreateResources`.

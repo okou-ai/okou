@@ -1,4 +1,4 @@
-//! Active-run handoff, idle sandbox, memory prefetch, and workspace image lifecycle owned below the Runner process.
+//! Active-run handoff, idle sandbox, memory prefetch, and home image lifecycle owned below the Runner process.
 
 // The opt-in test-support build compiles fixture-only branches without the
 // crate's own tests. Default production builds keep the workspace lint policy.
@@ -10,6 +10,9 @@
 pub mod active_runs;
 mod error;
 pub mod guest_timezone;
+pub mod home_image_cache;
+pub mod home_mount;
+pub mod home_promotion;
 pub mod host_memory_policy;
 pub mod idle_pool;
 pub mod idle_reuse_preparation;
@@ -18,9 +21,6 @@ pub mod prefetch;
 pub mod resource_budget;
 pub mod restored_session_identity;
 pub mod status;
-pub mod workspace_image_cache;
-pub mod workspace_mount;
-pub mod workspace_promotion;
 
 pub use error::{LifecycleError, LifecycleResult};
 
@@ -38,19 +38,19 @@ pub mod test_fixtures {
     #[cfg(test)]
     pub use runner_host::test_fixtures::ignored_child;
 
-    pub fn workspace_image_cache_key(reuse_key: &str, working_dir: &str) -> String {
-        runner_host::paths::scoped_workspace_image_cache_key(
+    pub fn home_image_cache_key(reuse_key: &str, _working_dir: &str) -> String {
+        runner_host::paths::scoped_home_image_cache_key(
             "",
             "vm0/default",
+            "test-rootfs",
             reuse_key,
-            working_dir,
             5,
         )
     }
 
-    pub fn runner_workspace_image_cache_dir(
+    pub fn runner_home_image_cache_dir(
         paths: &runner_host::paths::RunnerPaths,
     ) -> std::path::PathBuf {
-        paths.base_dir().join("workspace-image-cache")
+        paths.base_dir().join("home-image-cache")
     }
 }

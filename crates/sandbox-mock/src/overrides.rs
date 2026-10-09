@@ -60,15 +60,15 @@ pub(crate) struct ExecOverrideState {
     pub(crate) storage_manifest_gate: Mutex<Option<MockLifecycleGate>>,
     /// FIFO results for fixed storage-manifest operations.
     pub(crate) storage_manifest_results: Mutex<VecDeque<Result<ExecResult>>>,
-    /// FIFO results for fixed workspace-drive mount operations.
-    pub(crate) workspace_drive_mount_results: Mutex<VecDeque<Result<ExecResult>>>,
-    /// Total fixed workspace-drive mount calls across attached sandboxes.
-    pub(crate) workspace_drive_mount_calls: Mutex<u32>,
-    /// Wakes tests after a fixed workspace-drive mount call is recorded.
-    pub(crate) workspace_drive_mount_call_notify: tokio::sync::Notify,
-    /// Optional gate entered after every fixed workspace-drive mount call is
+    /// FIFO results for fixed home-drive mount operations.
+    pub(crate) home_drive_mount_results: Mutex<VecDeque<Result<ExecResult>>>,
+    /// Total fixed home-drive mount calls across attached sandboxes.
+    pub(crate) home_drive_mount_calls: Mutex<u32>,
+    /// Wakes tests after a fixed home-drive mount call is recorded.
+    pub(crate) home_drive_mount_call_notify: tokio::sync::Notify,
+    /// Optional gate entered after every fixed home-drive mount call is
     /// recorded but before its configured result is selected.
-    pub(crate) workspace_drive_mount_lifecycle_gate: Mutex<Option<MockLifecycleGate>>,
+    pub(crate) home_drive_mount_lifecycle_gate: Mutex<Option<MockLifecycleGate>>,
     /// Recorded fixed live identity verifier calls across attached sandboxes.
     pub(crate) session_history_identity_verify_calls: Mutex<Vec<SessionHistoryIdentityVerifyCall>>,
     /// Recorded fixed requested-session Codex cleanup calls across attached sandboxes.
@@ -492,12 +492,12 @@ impl MockSandboxOverrides {
         *self.exec.lifecycle_gate.lock_ignoring_poison() = Some(gate);
     }
 
-    /// Block every fixed workspace-drive mount call with a durable lifecycle
+    /// Block every fixed home-drive mount call with a durable lifecycle
     /// gate after recording it.
-    pub fn set_workspace_drive_mount_lifecycle_gate(&self, gate: MockLifecycleGate) {
+    pub fn set_home_drive_mount_lifecycle_gate(&self, gate: MockLifecycleGate) {
         *self
             .exec
-            .workspace_drive_mount_lifecycle_gate
+            .home_drive_mount_lifecycle_gate
             .lock_ignoring_poison() = Some(gate);
     }
 
@@ -601,18 +601,18 @@ impl MockSandboxOverrides {
             .push_back(result);
     }
 
-    /// Queue a fixed workspace-drive mount result across attached sandboxes.
-    pub fn push_workspace_drive_mount_result(&self, result: Result<ExecResult>) {
+    /// Queue a fixed home-drive mount result across attached sandboxes.
+    pub fn push_home_drive_mount_result(&self, result: Result<ExecResult>) {
         self.exec
-            .workspace_drive_mount_results
+            .home_drive_mount_results
             .lock_ignoring_poison()
             .push_back(result);
     }
 
-    /// Return the total fixed workspace-drive mount calls across attached
+    /// Return the total fixed home-drive mount calls across attached
     /// sandboxes.
-    pub fn workspace_drive_mount_calls(&self) -> u32 {
-        *self.exec.workspace_drive_mount_calls.lock_ignoring_poison()
+    pub fn home_drive_mount_calls(&self) -> u32 {
+        *self.exec.home_drive_mount_calls.lock_ignoring_poison()
     }
 
     /// Return fixed live session-history identity verifier calls.
@@ -722,20 +722,16 @@ impl MockSandboxOverrides {
         }
     }
 
-    /// Wait until at least `expected` fixed workspace-drive mount calls have
+    /// Wait until at least `expected` fixed home-drive mount calls have
     /// been recorded.
-    pub async fn wait_workspace_drive_mount_call_count(
-        &self,
-        expected: u32,
-        timeout: Duration,
-    ) -> bool {
+    pub async fn wait_home_drive_mount_call_count(&self, expected: u32, timeout: Duration) -> bool {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
-            let notified = self.exec.workspace_drive_mount_call_notify.notified();
+            let notified = self.exec.home_drive_mount_call_notify.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
 
-            if self.workspace_drive_mount_calls() >= expected {
+            if self.home_drive_mount_calls() >= expected {
                 return true;
             }
 

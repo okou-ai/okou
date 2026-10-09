@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 
 use super::super::*;
-use crate::snapshot::cow::{snapshot_attempt_cow_file, snapshot_attempt_workspace_image_file};
+use crate::snapshot::cow::{snapshot_attempt_cow_file, snapshot_attempt_home_image_file};
 
 struct EarlyAttempt {
     _dir: tempfile::TempDir,
@@ -56,14 +56,14 @@ impl EarlyAttempt {
             }),
             cleanup_complete: Some(done_tx),
         };
-        let workspace_image = snapshot_attempt_workspace_image_file(paths.workspace(), "early");
+        let home_image = snapshot_attempt_home_image_file(paths.workspace(), "early");
         let attempt = SnapshotAttempt::new(
             paths,
             SockPaths::new(sock_dir.clone()),
             output,
             DevicePoolHandle::new(nbd_cow::pool::DevicePoolConfig::default()),
             cow,
-            workspace_image,
+            home_image,
             SnapshotAttemptDirGuard::new(attempt_dir),
         );
 

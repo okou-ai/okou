@@ -91,7 +91,7 @@ pub(in crate::executor::tests) async fn create_overridden_sandbox(
                 memory_mb: 2048,
             },
             device_rate_limits: None,
-            workspace_drive: None,
+            home_drive: None,
         })
         .await
         .unwrap()

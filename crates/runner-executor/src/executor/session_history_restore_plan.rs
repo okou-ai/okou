@@ -1,31 +1,9 @@
-//! Session-history restore planning after discovery resolves sandbox reuse.
+//! Owned remote history restoration or advisory retained-image verification.
 //!
-//! Discovery builds a [`SessionHistoryRestorePlan`] after it knows whether an
-//! idle sandbox was reused and which session-history identity, if any, was
-//! parked with it. For a valid hash-backed resume, reuse can either select a
-//! verified skip or start remote materialization early. A confirmed blank also
-//! starts remote work early without acquiring exact-reuse semantics. A fresh
-//! sandbox instead defers remote work so workspace preparation can first probe
-//! a matching cached sidecar.
-//!
-//! Fresh-workspace preparation resolves
-//! [`SessionHistoryRestorePlan::DeferredHashBacked`] into
-//! [`SessionHistoryRestorePlan::LocalSidecar`] on a validated sidecar hit, or
-//! [`SessionHistoryRestorePlan::Prestarted`] otherwise. If sandbox preparation
-//! retries without the cached workspace image, it discards `LocalSidecar` and
-//! replaces it with `Prestarted`.
-//!
-//! The executor consumes the resulting plan immediately before restore.
-//! `Default` and any still-deferred safety path start normal materialization,
-//! `Prestarted` finishes its owned work, and `LocalSidecar` finishes prestarted
-//! local work before falling back to remote materialization. `SkipVerified` still
-//! verifies final metadata inside the live sandbox; failed verification records
-//! the stale-identity fallback and starts remote materialization.
-//!
-//! Fallback metadata travels with deferred, prestarted, and local-sidecar plans
-//! across those transitions. The executor records it when consuming the plan.
-//! The stale-identity fallback is determined only during live verification, so
-//! it is recorded directly instead of being carried by the plan.
+//! Fresh preparation may carry a generation-bound HomeCacheCandidate. Managed
+//! preparation finishes before its live verifier is consumed. A retry without
+//! that image discards the candidate before starting normal remote work.
+//! Exact-resource SkipVerified keeps the retained metadata reader lifetime.
 
 use std::time::Instant;
 
@@ -36,11 +14,11 @@ use super::session_history_cpu::SessionHistoryCpuPool;
 use super::session_history_download::{SessionHistoryMaterializer, SessionHistoryProbe};
 use super::session_restore::restored_session_identity_from_context;
 use super::telemetry::{RunnerPreSpawnPhase, RunnerPreSpawnTiming};
-use super::workspace_session_history_materializer::WorkspaceSessionHistoryMaterializer;
 use crate::idle_pool::IdleSandboxKind;
 use crate::restored_session_identity::{
     RestoredSessionIdentity, RestoredSessionIdentityMismatchReason,
 };
+use guest_contracts::home_cache_history::HomeCacheHistoryProofBinding;
 use runner_provider::http::HttpClient;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
@@ -48,7 +26,7 @@ use runner_types::types::{ExecutionContext, SandboxReuseResult};
 /// history already present in an idle sandbox.
 ///
 /// Planning retains this value while the restore strategy changes. The
-/// executor records it when consuming a deferred, prestarted, or local-sidecar
+/// executor records it when consuming a deferred, prestarted, or home-candidate
 /// plan. [`SessionHistoryRestoreFallback::StaleIdleIdentity`] is the exception:
 /// it is discovered and recorded while consuming a verified-skip plan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -112,9 +90,9 @@ pub enum SessionHistoryRestorePlan {
     #[default]
     Default,
     /// Delay remote materialization until fresh-workspace preparation can probe
-    /// for a matching cached sidecar.
+    /// for a matching cached proof.
     ///
-    /// Workspace preparation replaces this with `LocalSidecar` after a
+    /// Home preparation replaces this with `HomeCacheCandidate` after a
     /// validated hit or `Prestarted` after a miss. The executor also accepts an
     /// unresolved value as a safety path and starts normal materialization.
     DeferredHashBacked {
@@ -134,19 +112,11 @@ pub enum SessionHistoryRestorePlan {
         /// Classification recorded when the executor consumes this plan.
         fallback: Option<SessionHistoryRestoreFallback>,
     },
-    /// Attempt restore from prestarted host work for a sidecar validated
-    /// against the cached workspace and requested session history.
-    ///
-    /// Retrying sandbox preparation without that workspace image invalidates
-    /// the sidecar and replaces this plan with `Prestarted`. During executor
-    /// consumption, a non-cancellation materialization or restore failure also
-    /// falls back to remote materialization. The owned materializer cancels
-    /// unfinished work when this plan is dropped.
-    LocalSidecar {
-        /// Cancellable local materializer owned until executor consumption or
-        /// cached-workspace invalidation.
-        materializer: WorkspaceSessionHistoryMaterializer,
-        /// Classification retained until this strategy reaches the executor.
+    /// Advisory evidence from the locked home image, not a verified hit.
+    HomeCacheCandidate {
+        /// Generation-owned bounded proof from image metadata.
+        binding: HomeCacheHistoryProofBinding,
+        /// Restore attribution retained across a miss.
         fallback: Option<SessionHistoryRestoreFallback>,
     },
     /// Skip restore only if the parked identity still verifies inside the live
@@ -166,7 +136,7 @@ impl SessionHistoryRestorePlan {
                 cancel.cancel();
                 let _ = materializer.finish(&cancel).await;
             }
-            Self::LocalSidecar { materializer, .. } => materializer.cancel().await,
+            Self::HomeCacheCandidate { .. } => {}
             Self::Default | Self::DeferredHashBacked { .. } | Self::SkipVerified(_) => {}
         }
     }
@@ -176,7 +146,7 @@ impl SessionHistoryRestorePlan {
 ///
 /// The caller has already resolved resume validity, sandbox reuse, and any
 /// parked identity. The builder borrows the services and request context needed
-/// to start early materialization, but leaves fresh-workspace sidecar probing
+/// to start early materialization, but leaves fresh-home proof selection
 /// and live sandbox verification to later stages.
 pub struct SessionHistoryRestorePlanInput<'a> {
     pub http: &'a HttpClient,
@@ -197,7 +167,7 @@ pub struct SessionHistoryRestorePlanInput<'a> {
 /// reused sandbox can select `SkipVerified` or start a `Prestarted`
 /// materializer. A confirmed blank also prestarts without changing its non-exact
 /// reuse attribution. Fresh preparation produces `DeferredHashBacked` so a
-/// matching local workspace sidecar gets the first opportunity.
+/// matching local home proof gets the first opportunity.
 pub fn build_session_history_restore_plan(
     input: SessionHistoryRestorePlanInput<'_>,
 ) -> SessionHistoryRestorePlan {

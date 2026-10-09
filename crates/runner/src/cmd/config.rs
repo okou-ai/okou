@@ -125,7 +125,7 @@ async fn run_config_with_home(args: ConfigArgs, paths: HomePaths) -> RunnerResul
                 vcpu: def.vcpu,
                 memory_mb: def.memory_mb,
                 rootfs_disk_mb: def.rootfs_disk_mb,
-                workspace_disk_mb: def.workspace_disk_mb,
+                home_disk_mb: def.home_disk_mb,
             },
         );
     }
@@ -473,7 +473,7 @@ mod tests {
         assert_eq!(profile.rootfs_hash, rootfs_hash);
         assert_eq!(profile.snapshot_hash, snapshot_hash);
         assert_eq!(profile.rootfs_disk_mb, 12288);
-        assert_eq!(profile.workspace_disk_mb, 16384);
+        assert_eq!(profile.home_disk_mb, 24576);
         assert_eq!(runner_config.hostname.as_deref(), Some("prod-1.aws.vm3.ai"));
     }
 

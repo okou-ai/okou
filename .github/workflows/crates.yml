@@ -979,11 +979,11 @@ jobs:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
         run: .github/scripts/runner-behavior-balloon.sh
 
-      - name: Test workspace cache promotion across runner restart
+      - name: Test home cache promotion across runner restart
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-workspace-cache-promotion.sh
+        run: .github/scripts/runner-behavior-home-cache-promotion.sh
 
   runner-behavior-lane-b:
     runs-on: ubuntu-latest

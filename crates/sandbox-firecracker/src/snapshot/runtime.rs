@@ -94,6 +94,12 @@ async fn run_with_firecracker(
 
     info!("guest connected");
 
+    // A snapshot may only capture the paired whole-home layout. The typed
+    // request rejects an older rootfs helper even if its generic ping works.
+    super::super::sandbox::validate_guest_home_drive(&guest)
+        .await
+        .map_err(|error| SnapshotError::Setup(format!("snapshot home drive: {error}")))?;
+
     // 10. Pre-warm caches (PAM/nsswitch, CLI modules) so post-restore calls
     //     are fast. The snapshot captures memory + disk state, so caches
     //     populated here persist across restores.
@@ -114,6 +120,13 @@ async fn run_with_firecracker(
         .map_err(|e| SnapshotError::Setup(format!("pre-warm exec: {e}")))?;
     validate_prewarm_exec_result(prewarm_result)?;
     info!("pre-warm complete");
+
+    // Never snapshot a mounted temporary home superblock/inode cache: restore
+    // substitutes a different image behind /dev/vdb. The prewarm operation's
+    // terminal frame follows process and output cleanup, so all its home
+    // readers are finished before this root-owned detach operation. PID 1 and
+    // Guest control stay rooted at /root, not on the disposable home.
+    detach_snapshot_home(&guest).await?;
 
     // 11. Pause VM.
     client.pause().await?;
@@ -141,6 +154,35 @@ async fn run_with_firecracker(
     info!(output_dir = %config.output_dir.display(), "snapshot creation complete");
 
     Ok(output.snapshot_config(&config.id))
+}
+
+async fn detach_snapshot_home(
+    guest: &guest_control_client::GuestControlClient,
+) -> Result<(), SnapshotError> {
+    let result = guest
+        .exec_operation_capture(guest_control_client::ExecCaptureRequest {
+            command: "/usr/bin/umount -- /home/user",
+            timeout_ms: 30_000,
+            env: &[],
+            sudo: true,
+            label: "snapshot-home-detach",
+            stdout_limit_bytes: PREWARM_EXEC_CAPTURE_LIMIT_BYTES,
+            stderr_limit_bytes: PREWARM_EXEC_CAPTURE_LIMIT_BYTES,
+            expected_exit_codes: &[],
+            stdin_bytes: None,
+            wait_timeout: Duration::from_millis(35_000),
+        })
+        .await
+        .map_err(|error| SnapshotError::Setup(format!("detach snapshot home: {error}")))?;
+    let (termination, stderr, diagnostic) = prewarm_exec_result_parts(result)
+        .map_err(|error| SnapshotError::Setup(format!("detach snapshot home: {error}")))?;
+    if termination != (ExecTermination::Exited { exit_code: 0 }) {
+        return Err(SnapshotError::Setup(format!(
+            "detach snapshot home failed ({termination:?}): {} {diagnostic}",
+            String::from_utf8_lossy(&stderr),
+        )));
+    }
+    Ok(())
 }
 
 fn validate_prewarm_exec_result(
@@ -241,14 +283,14 @@ fn build_snapshot_boot_config(
 ) -> FirecrackerBootConfig {
     // The COW-device bind mounts are established inside `unshare --mount`
     // at spawn time. Firecracker opens these stable paths inside that private
-    // mount namespace, and the workspace drive is mandatory for snapshots.
+    // mount namespace, and the home drive is mandatory for snapshots.
     FirecrackerBootConfig::new(BootConfigInput {
         invariant,
         vcpu_count: config.vcpu_count,
         memory_mb: config.memory_mb,
         kernel_path: config.kernel_path.display().to_string(),
         rootfs_path: paths.cow_device_bind().display().to_string(),
-        workspace_path: Some(paths.workspace_device_bind().display().to_string()),
+        home_path: Some(paths.home_device_bind().display().to_string()),
         vsock_path: sock_paths.vsock().display().to_string(),
     })
 }
@@ -276,7 +318,7 @@ mod tests {
             output_dir,
             vcpu_count: 2,
             memory_mb: 512,
-            workspace_disk_mb: 1024,
+            home_disk_mb: 1024,
         }
     }
 
@@ -433,7 +475,7 @@ mod tests {
             },
             config.kernel_path.display().to_string(),
             paths.cow_device_bind().display().to_string(),
-            Some(paths.workspace_device_bind().display().to_string()),
+            Some(paths.home_device_bind().display().to_string()),
             sock_paths.vsock().display().to_string(),
             None,
         )
@@ -492,7 +534,7 @@ mod tests {
         assert_eq!(requests[0].method, "PUT");
         assert_eq!(requests[0].path, "/drives/rootfs");
         assert_eq!(requests[1].method, "PUT");
-        assert_eq!(requests[1].path, "/drives/workspace");
+        assert_eq!(requests[1].path, "/drives/home");
 
         for request in requests {
             assert_eq!(request.method, "PUT");
@@ -551,6 +593,155 @@ mod tests {
         })
         .await
         .expect("snapshot workflow should start the instance and bind its listener");
+    }
+
+    async fn read_guest_frame(
+        stream: &mut tokio::net::UnixStream,
+    ) -> guest_control_proto::RawMessage {
+        use tokio::io::AsyncReadExt;
+        let mut header = [0_u8; guest_control_proto::HEADER_SIZE];
+        tokio::time::timeout(MOCK_REQUEST_READ_TIMEOUT, stream.read_exact(&mut header))
+            .await
+            .unwrap()
+            .unwrap();
+        let len = u32::from_be_bytes(header) as usize;
+        assert!(
+            (guest_control_proto::MIN_BODY_SIZE..=guest_control_proto::MAX_MESSAGE_SIZE)
+                .contains(&len)
+        );
+        let mut body = vec![0; len];
+        tokio::time::timeout(MOCK_REQUEST_READ_TIMEOUT, stream.read_exact(&mut body))
+            .await
+            .unwrap()
+            .unwrap();
+        guest_control_proto::RawMessage {
+            msg_type: body[0],
+            seq: u32::from_be_bytes(body[1..5].try_into().unwrap()),
+            payload: body[5..].to_vec(),
+        }
+    }
+
+    async fn respond_guest_frame(
+        stream: &mut tokio::net::UnixStream,
+        message_type: u8,
+        seq: u32,
+        payload: &[u8],
+    ) {
+        use tokio::io::AsyncWriteExt;
+        stream
+            .write_all(&guest_control_proto::encode(message_type, seq, payload).unwrap())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn snapshot_mount_and_detach_terminal_results_are_barriers_before_pause() {
+        // Firecracker and the Guest protocol peer are external boundaries here;
+        // this verifies workflow ordering, not a native mount or real KVM Guest.
+        for (mount_exit, detach_exit) in [(64, 0), (0, 64), (0, 0)] {
+            let mut api = MockFirecrackerApi::repeating(MockResponse::no_content());
+            let dir = tempfile::tempdir().unwrap();
+            let (workflow, listener) = spawn_snapshot_runtime(&api, dir.path());
+            wait_for_snapshot_listener(&mut api, &listener).await;
+            let mut peer = tokio::net::UnixStream::connect(&listener).await.unwrap();
+            respond_guest_frame(&mut peer, guest_control_proto::MSG_READY, 0, &[]).await;
+            let ping = read_guest_frame(&mut peer).await;
+            assert_eq!(ping.msg_type, guest_control_proto::MSG_PING);
+            respond_guest_frame(&mut peer, guest_control_proto::MSG_PONG, ping.seq, &[]).await;
+            let mount = read_guest_frame(&mut peer).await;
+            assert_eq!(mount.msg_type, guest_control_proto::MSG_HOME_DRIVE_MOUNT);
+            guest_control_proto::decode_home_drive_mount_request(&mount.payload).unwrap();
+            assert!(
+                !api.drain_requests()
+                    .iter()
+                    .any(|request| request.path == "/vm" || request.path == "/snapshot/create")
+            );
+            let capture = guest_control_proto::ExecCapturedOutput::Captured {
+                bytes: b"",
+                truncated: false,
+            };
+            let result = guest_control_proto::encode_home_drive_mount_result(
+                ExecTermination::Exited {
+                    exit_code: mount_exit,
+                },
+                1,
+                capture,
+                capture,
+                "",
+            )
+            .unwrap();
+            respond_guest_frame(
+                &mut peer,
+                guest_control_proto::MSG_HOME_DRIVE_MOUNT_RESULT,
+                mount.seq,
+                &result,
+            )
+            .await;
+            if mount_exit == 0 {
+                for (command, sudo, exit_code) in [
+                    (InvariantConfig::new().prewarm_script, false, 0),
+                    ("/usr/bin/umount -- /home/user", true, detach_exit),
+                ] {
+                    let start = read_guest_frame(&mut peer).await;
+                    assert_eq!(start.msg_type, guest_control_proto::MSG_EXEC_START);
+                    let decoded = guest_control_proto::decode_exec_start(&start.payload).unwrap();
+                    assert_eq!(decoded.command, command);
+                    assert_eq!(decoded.sudo, sudo);
+                    assert!(decoded.env.is_empty());
+                    assert!(
+                        !api.drain_requests()
+                            .iter()
+                            .any(|request| request.path == "/vm"
+                                || request.path == "/snapshot/create")
+                    );
+                    let started = guest_control_proto::encode_exec_started(1234).unwrap();
+                    respond_guest_frame(
+                        &mut peer,
+                        guest_control_proto::MSG_EXEC_STARTED,
+                        start.seq,
+                        &started,
+                    )
+                    .await;
+                    let result = guest_control_proto::encode_exec_result(
+                        ExecTermination::Exited { exit_code },
+                        1,
+                        capture,
+                        capture,
+                        "",
+                    )
+                    .unwrap();
+                    respond_guest_frame(
+                        &mut peer,
+                        guest_control_proto::MSG_EXEC_RESULT,
+                        start.seq,
+                        &result,
+                    )
+                    .await;
+                }
+            }
+            let result = tokio::time::timeout(MOCK_REQUEST_READ_TIMEOUT, workflow)
+                .await
+                .unwrap()
+                .unwrap();
+            let requests = api.drain_requests();
+            if mount_exit == 0 && detach_exit == 0 {
+                assert!(result.is_ok());
+                assert_eq!(
+                    requests
+                        .iter()
+                        .map(|request| request.path.as_str())
+                        .collect::<Vec<_>>(),
+                    ["/vm", "/snapshot/create"]
+                );
+            } else {
+                assert!(result.is_err());
+                assert!(
+                    !requests
+                        .iter()
+                        .any(|request| request.path == "/vm" || request.path == "/snapshot/create")
+                );
+            }
+        }
     }
 
     #[tokio::test]

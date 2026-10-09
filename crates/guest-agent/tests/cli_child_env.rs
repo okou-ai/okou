@@ -22,7 +22,7 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
         .ok_or("test user HOME path must be UTF-8")?
         .to_string();
     let rejected_config_dir = tmp.path().join("rejected-claude-config");
-    let rejected_npm_cache = tmp.path().join("rejected-npm-cache");
+    let explicit_npm_cache = tmp.path().join("explicit-npm-cache");
 
     unsafe {
         common::setup_env(&mock, tmp.path(), &prompt, 3, 1)?;
@@ -78,8 +78,8 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
             "HOME": user_home_str,
             "CLAUDE_CONFIG_DIR": rejected_config_dir,
             "NODE_EXTRA_CA_CERTS": "/tmp/user-ca.pem",
-            "npm_config_cache": rejected_npm_cache,
-            "NPM_CONFIG_CACHE": "/tmp/rejected-uppercase-npm-cache",
+            "npm_config_cache": explicit_npm_cache,
+            "NPM_CONFIG_CACHE": "/tmp/explicit-uppercase-npm-cache",
         }))?,
     )?;
     unsafe {
@@ -228,9 +228,12 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
     assert!(cli_env.contains_key("PATH"));
     assert_eq!(
         cli_env.get("npm_config_cache").map(String::as_str),
-        Some("/home/user/workspace/.vm0/cache/npm")
+        explicit_npm_cache.to_str()
     );
-    assert!(!cli_env.contains_key("NPM_CONFIG_CACHE"));
+    assert_eq!(
+        cli_env.get("NPM_CONFIG_CACHE").map(String::as_str),
+        Some("/tmp/explicit-uppercase-npm-cache")
+    );
 
     for key in [
         guest_contracts::env::CANONICAL_API_TOKEN_ENV,

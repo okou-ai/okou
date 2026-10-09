@@ -30,9 +30,7 @@ use super::diagnostics::{
 };
 use super::env::PreparedRunPayload;
 use super::session_id::invalid_session_id_diagnostic_preview;
-use super::session_restore::restored_session_identity_from_context;
-use super::telemetry::record_workspace_cache_result;
-use super::workspace_session_history_materializer::WorkspaceSessionHistoryMaterializer;
+use super::telemetry::record_home_cache_result;
 use super::{
     ExecuteOutcome, ExecutionFailure, ExecutorConfig, JobParams, NewSandboxDispatch,
     PROCESS_CANCEL_TIMEOUTS, RunnerError, RunnerResult, SandboxPreparedNotifier,
@@ -41,42 +39,42 @@ use super::{
 };
 use crate::dns::{DnsReadinessLogObservation, inspect_readiness_log_segment};
 use crate::duration::duration_ms;
+use crate::home_image_cache::{
+    HomeCacheCheckoutResult, HomeImageLease, HomeImageLeaseIdentity, HomeImagePrepareLockPolicy,
+    HomeImagePrepareRequest,
+};
+use crate::home_mount::ensure_home_drive_mounted;
 use crate::network_log_manager::NetworkLogSession;
 use crate::proxy;
 use crate::storage_cache::PreparedStorage;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::storage_plan::build_storage_plan;
 use crate::telemetry::JobTelemetry;
-use crate::workspace_image_cache::{
-    WorkspaceCacheCheckoutResult, WorkspaceImageLease, WorkspaceImageLeaseIdentity,
-    WorkspaceImagePrepareLockPolicy, WorkspaceImagePrepareRequest,
-};
-use crate::workspace_mount::ensure_workspace_drive_mounted;
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use runner_provider::ConnectorRuntimeSyncRegistration;
 use runner_types::ids::RunId;
-use runner_types::types::{ExecutionContext, WorkspaceReuseResult};
+use runner_types::types::{ExecutionContext, HomeReuseResult};
 
 const SLOW_PROXY_REGISTER_THRESHOLD: Duration = Duration::from_secs(3);
-const WORKSPACE_DRIVE_MOUNT: &str = "workspace_drive_mount";
-const WORKSPACE_DRIVE_MOUNT_GUEST_EXEC: &str = "workspace_drive_mount_guest_exec";
+const WORKSPACE_DRIVE_MOUNT: &str = "home_drive_mount";
+const WORKSPACE_DRIVE_MOUNT_GUEST_EXEC: &str = "home_drive_mount_guest_exec";
 const WORKSPACE_DRIVE_MOUNT_GUEST_EXEC_UNAVAILABLE: &str =
-    "workspace_drive_mount_guest_exec_unavailable";
-const RUNNER_FRESH_WORKSPACE_IMAGE_PREPARE: &str = "runner_fresh_workspace_image_prepare";
+    "home_drive_mount_guest_exec_unavailable";
+const RUNNER_FRESH_HOME_IMAGE_PREPARE: &str = "runner_fresh_home_image_prepare";
 const RUNNER_FRESH_PRE_SPAWN_ADMISSION_WAIT: &str = "runner_fresh_pre_spawn_admission_wait";
 const RUNNER_FRESH_SANDBOX_FACTORY_CREATE: &str = "runner_fresh_sandbox_factory_create";
 const RUNNER_FRESH_SANDBOX_FACTORY_COW_POOL_ACQUIRE: &str =
     "runner_fresh_sandbox_factory_cow_pool_acquire";
 const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DIR_RENAME: &str =
-    "runner_fresh_sandbox_factory_workspace_dir_rename";
-// `workspace_drive_prepare` contains the seed-copy/fresh-format child stages;
+    "runner_fresh_sandbox_factory_home_dir_rename";
+// `home_drive_prepare` contains the seed-copy/fresh-format child stages;
 // downstream queries should not sum the parent and child durations together.
 const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DRIVE_PREPARE: &str =
-    "runner_fresh_sandbox_factory_workspace_drive_prepare";
+    "runner_fresh_sandbox_factory_home_drive_prepare";
 const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_SEED_SPARSE_COPY: &str =
-    "runner_fresh_sandbox_factory_workspace_seed_sparse_copy";
+    "runner_fresh_sandbox_factory_home_seed_sparse_copy";
 const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_FRESH_FORMAT: &str =
-    "runner_fresh_sandbox_factory_workspace_fresh_format";
+    "runner_fresh_sandbox_factory_home_fresh_format";
 const RUNNER_FRESH_SANDBOX_FACTORY_SOCK_DIR_PREPARE: &str =
     "runner_fresh_sandbox_factory_sock_dir_prepare";
 const RUNNER_FRESH_SANDBOX_FACTORY_NETNS_ACQUIRE: &str =
@@ -137,17 +135,16 @@ const RUNNER_FRESH_SANDBOX_START_GUEST_DNS_READINESS: &str =
     "runner_fresh_sandbox_start_guest_dns_readiness";
 const RUNNER_FRESH_SANDBOX_START_RUNTIME_FINALIZE: &str =
     "runner_fresh_sandbox_start_runtime_finalize";
-const RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_WORKSPACE_IMAGE: &str =
-    "runner_fresh_sandbox_retry_without_workspace_image";
+const RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE: &str =
+    "runner_fresh_sandbox_retry_without_home_image";
 const RUNNER_FRESH_SANDBOX_DNS_READINESS_RETRY: &str = "runner_fresh_sandbox_dns_readiness_retry";
 const RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_CODEX_PREFETCH: &str =
     "runner_fresh_sandbox_retry_without_codex_prefetch";
 
-const WORKSPACE_IMAGE_PREPARE_INVALID_WORKING_DIR: &str =
-    "workspace_image_prepare_invalid_working_dir";
-const WORKSPACE_IMAGE_PREPARE_LOCK_BUSY: &str = "workspace_image_prepare_lock_busy";
-const WORKSPACE_IMAGE_PREPARE_INVALID_METADATA: &str = "workspace_image_prepare_invalid_metadata";
-const WORKSPACE_IMAGE_PREPARE_DISK_PRESSURE: &str = "workspace_image_prepare_disk_pressure";
+const HOME_IMAGE_PREPARE_INVALID_WORKING_DIR: &str = "home_image_prepare_invalid_working_dir";
+const HOME_IMAGE_PREPARE_LOCK_BUSY: &str = "home_image_prepare_lock_busy";
+const HOME_IMAGE_PREPARE_INVALID_METADATA: &str = "home_image_prepare_invalid_metadata";
+const HOME_IMAGE_PREPARE_DISK_PRESSURE: &str = "home_image_prepare_disk_pressure";
 const SANDBOX_FACTORY_CREATE_FAILED: &str = "sandbox_factory_create_failed";
 const SANDBOX_FACTORY_CREATE_STAGE_FAILED: &str = "sandbox_factory_create_stage_failed";
 const SANDBOX_PROXY_REGISTER_FAILED: &str = "sandbox_proxy_register_failed";
@@ -346,15 +343,13 @@ fn fresh_sandbox_factory_stage_action(stage: SandboxCreateStage) -> &'static str
     match stage {
         SandboxCreateStage::CowPoolAcquire => RUNNER_FRESH_SANDBOX_FACTORY_COW_POOL_ACQUIRE,
         SandboxCreateStage::WorkspaceDirRename => RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DIR_RENAME,
-        SandboxCreateStage::WorkspaceDrivePrepare => {
+        SandboxCreateStage::HomeDrivePrepare => {
             RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DRIVE_PREPARE
         }
-        SandboxCreateStage::WorkspaceSeedSparseCopy => {
+        SandboxCreateStage::HomeSeedSparseCopy => {
             RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_SEED_SPARSE_COPY
         }
-        SandboxCreateStage::WorkspaceFreshFormat => {
-            RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_FRESH_FORMAT
-        }
+        SandboxCreateStage::HomeFreshFormat => RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_FRESH_FORMAT,
         SandboxCreateStage::SockDirPrepare => RUNNER_FRESH_SANDBOX_FACTORY_SOCK_DIR_PREPARE,
         SandboxCreateStage::NetnsAcquire => RUNNER_FRESH_SANDBOX_FACTORY_NETNS_ACQUIRE,
         SandboxCreateStage::NbdCowCreate => RUNNER_FRESH_SANDBOX_FACTORY_NBD_COW_CREATE,
@@ -561,21 +556,22 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     };
     controls.pre_spawn_admission_lease = Some(admission_lease);
     let prepare_started = Instant::now();
-    let mut workspace_image = prepare_workspace_image(
+    let mut home_image = prepare_home_image(
         context,
         sandbox_id,
         config,
         &params.profile_name,
-        params.workspace_disk_mb,
-        params.workspace_image_prepare_lock_policy,
+        params.home_disk_mb,
+        &params.rootfs_hash,
+        params.home_image_prepare_lock_policy,
         telemetry,
     )
     .await;
     let prepared_storage = prepare_storage(
         context,
-        workspace_image
+        home_image
             .as_ref()
-            .and_then(WorkspaceImageLease::previous_storage),
+            .and_then(HomeImageLease::previous_storage),
         config,
         &controls.cancel,
         telemetry,
@@ -598,7 +594,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     }
     controls.session_history_restore_plan = resolve_fresh_session_history_restore_plan(
         std::mem::take(&mut controls.session_history_restore_plan),
-        workspace_image.as_ref(),
+        home_image.as_ref(),
         context,
         config,
         controls.cancel.clone(),
@@ -625,7 +621,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             params,
             telemetry,
             StartSandboxOptions {
-                workspace_image: workspace_image.as_ref(),
+                home_image: home_image.as_mut(),
                 sandbox_prepared,
                 reuse_result,
                 cancel: &controls.cancel,
@@ -644,16 +640,16 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             Err(failure) => failure,
         };
 
-        let cache_hit = workspace_image
+        let cache_hit = home_image
             .as_ref()
-            .is_some_and(WorkspaceImageLease::is_cache_hit);
-        if failure.invalidate_consumed_workspace_cache && cache_hit {
-            controls.session_history_restore_plan = cancel_local_sidecar_restore_plan(
+            .is_some_and(HomeImageLease::is_cache_hit);
+        if failure.invalidate_consumed_home_cache && cache_hit {
+            controls.session_history_restore_plan = discard_home_candidate_restore_plan(
                 std::mem::take(&mut controls.session_history_restore_plan),
             )
             .await;
-            invalidate_workspace_cache_hit(
-                workspace_image.as_ref(),
+            invalidate_home_cache_hit(
+                home_image.as_ref(),
                 context.run_id,
                 "sandbox_prepare_failed",
             )
@@ -675,7 +671,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         }
         let retry_guest_dns = failure.retry == SandboxPrepareRetry::GuestDnsReadiness;
         let retry_without_workspace =
-            failure.retry == SandboxPrepareRetry::WithoutWorkspaceImage && cache_hit;
+            failure.retry == SandboxPrepareRetry::WithoutHomeImage && cache_hit;
         let retry_without_codex_prefetch =
             failure.retry == SandboxPrepareRetry::WithoutCodexModelCatalogPrefetch;
         if !failure.cleanup_completed {
@@ -693,7 +689,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 );
             } else if retry_without_workspace {
                 telemetry.record(
-                    RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_WORKSPACE_IMAGE,
+                    RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE,
                     Duration::ZERO,
                     false,
                     Some(SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN),
@@ -773,7 +769,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         if cache_hit {
             used_workspace_fallback = true;
             controls.session_history_restore_plan =
-                replace_local_sidecar_restore_plan_for_workspace_retry(
+                replace_home_candidate_restore_plan_for_home_retry(
                     std::mem::take(&mut controls.session_history_restore_plan),
                     context,
                     config,
@@ -782,8 +778,8 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 )
                 .await;
             cancel_prepared_storage(&mut controls, telemetry).await;
-            invalidate_workspace_cache_hit(
-                workspace_image.as_ref(),
+            invalidate_home_cache_hit(
+                home_image.as_ref(),
                 context.run_id,
                 "sandbox_prepare_failed",
             )
@@ -795,12 +791,12 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 "workspace image cache hit failed during sandbox preparation; retrying with fresh workspace image"
             );
             telemetry.record(
-                RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_WORKSPACE_IMAGE,
+                RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE,
                 Duration::ZERO,
                 true,
                 None,
             );
-            workspace_image = None;
+            home_image = None;
             match prepare_storage(context, None, config, &controls.cancel, telemetry).await {
                 Ok(prepared_storage) => controls.prepared_storage = prepared_storage,
                 Err(error) => {
@@ -829,8 +825,8 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         None,
     );
 
-    let workspace_reuse_result = final_workspace_reuse_result(
-        workspace_image.as_ref().map(WorkspaceImageLease::result),
+    let home_reuse_result = final_home_reuse_result(
+        home_image.as_ref().map(HomeImageLease::result),
         used_workspace_fallback,
     );
 
@@ -841,16 +837,16 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         RunStart {
             restore_guest_state: params.restore_guest_state,
             reuse_result,
-            workspace_reuse_result,
-            prev_storage: workspace_image
+            home_reuse_result,
+            prev_storage: home_image
                 .as_ref()
-                .and_then(WorkspaceImageLease::previous_storage),
+                .and_then(HomeImageLease::previous_storage),
         },
         telemetry,
         PreparedRunInputs::new(controls, prepared_run_payload),
     )
     .await;
-    outcome.workspace_image = workspace_image;
+    outcome.home_image = home_image;
     Ok(outcome)
 }
 
@@ -865,13 +861,13 @@ pub(super) struct SandboxPrepareError {
     error: RunnerError,
     retry: SandboxPrepareRetry,
     cleanup_completed: bool,
-    invalidate_consumed_workspace_cache: bool,
+    invalidate_consumed_home_cache: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SandboxPrepareRetry {
     None,
-    WithoutWorkspaceImage,
+    WithoutHomeImage,
     GuestDnsReadiness,
     WithoutCodexModelCatalogPrefetch,
 }
@@ -891,7 +887,7 @@ pub(super) enum FreshPreparation {
 }
 
 struct StartSandboxOptions<'a> {
-    workspace_image: Option<&'a WorkspaceImageLease>,
+    home_image: Option<&'a mut HomeImageLease>,
     sandbox_prepared: Option<&'a SandboxPreparedNotifier>,
     reuse_result: SandboxReuseResult,
     cancel: &'a CancellationToken,
@@ -899,12 +895,12 @@ struct StartSandboxOptions<'a> {
 }
 
 impl SandboxPrepareError {
-    fn retry_without_workspace_image(error: RunnerError, cleanup_completed: bool) -> Self {
+    fn retry_without_home_image(error: RunnerError, cleanup_completed: bool) -> Self {
         Self {
             error,
-            retry: SandboxPrepareRetry::WithoutWorkspaceImage,
+            retry: SandboxPrepareRetry::WithoutHomeImage,
             cleanup_completed,
-            invalidate_consumed_workspace_cache: false,
+            invalidate_consumed_home_cache: false,
         }
     }
 
@@ -926,7 +922,7 @@ impl SandboxPrepareError {
                 SandboxPrepareRetry::GuestDnsReadiness
             },
             cleanup_completed,
-            invalidate_consumed_workspace_cache: suppress_replacement,
+            invalidate_consumed_home_cache: suppress_replacement,
         }
     }
 
@@ -935,7 +931,7 @@ impl SandboxPrepareError {
             error,
             retry: SandboxPrepareRetry::WithoutCodexModelCatalogPrefetch,
             cleanup_completed,
-            invalidate_consumed_workspace_cache: false,
+            invalidate_consumed_home_cache: false,
         }
     }
 
@@ -944,7 +940,7 @@ impl SandboxPrepareError {
             error,
             retry: SandboxPrepareRetry::None,
             cleanup_completed: false,
-            invalidate_consumed_workspace_cache: false,
+            invalidate_consumed_home_cache: false,
         }
     }
 
@@ -953,54 +949,56 @@ impl SandboxPrepareError {
             error,
             retry: SandboxPrepareRetry::None,
             cleanup_completed,
-            invalidate_consumed_workspace_cache: false,
+            invalidate_consumed_home_cache: false,
         }
     }
 }
 
-pub(super) async fn prepare_workspace_image(
+pub(super) async fn prepare_home_image(
     context: &ExecutionContext,
     sandbox_id: SandboxId,
     config: &ExecutorConfig,
     profile_name: &str,
-    workspace_disk_mb: u32,
-    lock_policy: WorkspaceImagePrepareLockPolicy,
+    home_disk_mb: u32,
+    rootfs_hash: &str,
+    lock_policy: HomeImagePrepareLockPolicy,
     telemetry: &mut JobTelemetry,
-) -> Option<WorkspaceImageLease> {
-    let cache = config.workspace_cache.as_ref()?;
+) -> Option<HomeImageLease> {
+    let cache = config.home_cache.as_ref()?;
     let prepare_started = Instant::now();
     let reuse_key = context.reuse_key();
-    let request = WorkspaceImagePrepareRequest {
-        identity: WorkspaceImageLeaseIdentity {
+    let request = HomeImagePrepareRequest {
+        identity: HomeImageLeaseIdentity {
             run_id: context.run_id,
             sandbox_id,
             profile_name,
+            rootfs_hash,
             reuse_key,
             working_dir: CANONICAL_WORKING_DIR,
-            image_size_bytes: u64::from(workspace_disk_mb) * 1024 * 1024,
+            image_size_bytes: u64::from(home_disk_mb) * 1024 * 1024,
         },
-        workspace_drive_required: true,
+        home_drive_required: true,
     };
     let lease = match lock_policy {
-        WorkspaceImagePrepareLockPolicy::WaitForTransientContention => cache.prepare(request).await,
-        WorkspaceImagePrepareLockPolicy::ImmediateFallback => {
+        HomeImagePrepareLockPolicy::WaitForTransientContention => cache.prepare(request).await,
+        HomeImagePrepareLockPolicy::ImmediateFallback => {
             cache.prepare_with_lock_policy(request, lock_policy).await
         }
     };
-    let prepare_error = workspace_image_prepare_error(lease.result());
+    let prepare_error = home_image_prepare_error(lease.result());
     telemetry.record(
-        RUNNER_FRESH_WORKSPACE_IMAGE_PREPARE,
+        RUNNER_FRESH_HOME_IMAGE_PREPARE,
         prepare_started.elapsed(),
         prepare_error.is_none(),
         prepare_error,
     );
-    record_workspace_cache_result(telemetry, &lease);
+    record_home_cache_result(telemetry, &lease);
     Some(lease)
 }
 
 async fn resolve_fresh_session_history_restore_plan(
     plan: SessionHistoryRestorePlan,
-    workspace_image: Option<&WorkspaceImageLease>,
+    home_image: Option<&HomeImageLease>,
     context: &ExecutionContext,
     config: &ExecutorConfig,
     cancel: CancellationToken,
@@ -1010,86 +1008,37 @@ async fn resolve_fresh_session_history_restore_plan(
         SessionHistoryRestorePlan::DeferredHashBacked { fallback } => fallback,
         other => return other,
     };
-    let Some(workspace_image) = workspace_image else {
+    let Some(home_image) = home_image else {
         return start_fresh_session_history_materializer(
             context, config, cancel, telemetry, fallback,
         );
     };
-    if !workspace_image.is_cache_hit() {
+    if !home_image.is_cache_hit() {
         return start_fresh_session_history_materializer(
             context, config, cancel, telemetry, fallback,
         );
     }
-    let Some(expected) = restored_session_identity_from_context(context) else {
-        telemetry.record(
-            "session_history_workspace_cache_miss",
-            Duration::ZERO,
-            true,
-            Some("identity_mismatch"),
-        );
-        return start_fresh_session_history_materializer(
-            context, config, cancel, telemetry, fallback,
-        );
-    };
-    let probe_started = Instant::now();
-    telemetry.record(
-        "session_history_workspace_cache_probe",
-        Duration::ZERO,
-        true,
-        None,
-    );
-    match workspace_image
-        .probe_session_history_sidecar(&expected)
-        .await
-    {
-        Ok(sidecar) => {
-            telemetry.record(
-                "session_history_workspace_cache_hit",
-                probe_started.elapsed(),
-                true,
-                None,
-            );
-            let materializer = WorkspaceSessionHistoryMaterializer::start(
-                sidecar,
-                context.resume_session.as_ref(),
-                effective_cli_framework(&context.cli_agent_type),
-                &config.session_history_cpu,
-                cancel,
-            )
-            .await;
-            SessionHistoryRestorePlan::LocalSidecar {
-                materializer,
-                fallback,
-            }
-        }
-        Err(reason) => {
-            telemetry.record(
-                "session_history_workspace_cache_miss",
-                probe_started.elapsed(),
-                true,
-                Some(reason.as_str()),
-            );
-            start_fresh_session_history_materializer(context, config, cancel, telemetry, fallback)
-        }
+    if let Some(binding) = home_image.history_proof_binding() {
+        return SessionHistoryRestorePlan::HomeCacheCandidate {
+            binding: binding.clone(),
+            fallback,
+        };
     }
+    start_fresh_session_history_materializer(context, config, cancel, telemetry, fallback)
 }
 
-async fn cancel_local_sidecar_restore_plan(
+async fn discard_home_candidate_restore_plan(
     plan: SessionHistoryRestorePlan,
 ) -> SessionHistoryRestorePlan {
     match plan {
-        SessionHistoryRestorePlan::LocalSidecar {
-            materializer,
-            fallback,
-        } => {
-            materializer.cancel().await;
+        SessionHistoryRestorePlan::HomeCacheCandidate { fallback, .. } => {
             SessionHistoryRestorePlan::DeferredHashBacked { fallback }
         }
         other => other,
     }
 }
 
-async fn replace_local_sidecar_restore_plan_for_workspace_retry(
+async fn replace_home_candidate_restore_plan_for_home_retry(
     plan: SessionHistoryRestorePlan,
     context: &ExecutionContext,
     config: &ExecutorConfig,
@@ -1097,21 +1046,15 @@ async fn replace_local_sidecar_restore_plan_for_workspace_retry(
     telemetry: &mut JobTelemetry,
 ) -> SessionHistoryRestorePlan {
     let fallback = match plan {
-        SessionHistoryRestorePlan::LocalSidecar {
-            materializer,
-            fallback,
-        } => {
-            materializer.cancel().await;
-            fallback
-        }
-        SessionHistoryRestorePlan::DeferredHashBacked { fallback } => fallback,
+        SessionHistoryRestorePlan::HomeCacheCandidate { fallback, .. }
+        | SessionHistoryRestorePlan::DeferredHashBacked { fallback } => fallback,
         other => return other,
     };
     telemetry.record(
-        "session_history_workspace_cache_miss",
+        "session_history_home_cache_miss",
         Duration::ZERO,
         true,
-        Some("sandbox_retry_without_workspace_image"),
+        Some("sandbox_retry_without_home_image"),
     );
     start_fresh_session_history_materializer(context, config, cancel, telemetry, fallback)
 }
@@ -1144,42 +1087,34 @@ fn start_fresh_session_history_materializer(
     }
 }
 
-fn workspace_image_prepare_error(result: WorkspaceCacheCheckoutResult) -> Option<&'static str> {
+fn home_image_prepare_error(result: HomeCacheCheckoutResult) -> Option<&'static str> {
     match result {
-        WorkspaceCacheCheckoutResult::Hit
-        | WorkspaceCacheCheckoutResult::Miss
-        | WorkspaceCacheCheckoutResult::NoReuseKey => None,
-        WorkspaceCacheCheckoutResult::InvalidWorkingDir => {
-            Some(WORKSPACE_IMAGE_PREPARE_INVALID_WORKING_DIR)
-        }
-        WorkspaceCacheCheckoutResult::LockBusy => Some(WORKSPACE_IMAGE_PREPARE_LOCK_BUSY),
-        WorkspaceCacheCheckoutResult::InvalidMetadata => {
-            Some(WORKSPACE_IMAGE_PREPARE_INVALID_METADATA)
-        }
-        WorkspaceCacheCheckoutResult::DiskPressure => Some(WORKSPACE_IMAGE_PREPARE_DISK_PRESSURE),
+        HomeCacheCheckoutResult::Hit
+        | HomeCacheCheckoutResult::Miss
+        | HomeCacheCheckoutResult::NoReuseKey => None,
+        HomeCacheCheckoutResult::InvalidWorkingDir => Some(HOME_IMAGE_PREPARE_INVALID_WORKING_DIR),
+        HomeCacheCheckoutResult::LockBusy => Some(HOME_IMAGE_PREPARE_LOCK_BUSY),
+        HomeCacheCheckoutResult::InvalidMetadata => Some(HOME_IMAGE_PREPARE_INVALID_METADATA),
+        HomeCacheCheckoutResult::DiskPressure => Some(HOME_IMAGE_PREPARE_DISK_PRESSURE),
     }
 }
 
-fn final_workspace_reuse_result(
-    checkout_result: Option<WorkspaceCacheCheckoutResult>,
+fn final_home_reuse_result(
+    checkout_result: Option<HomeCacheCheckoutResult>,
     used_workspace_fallback: bool,
-) -> WorkspaceReuseResult {
+) -> HomeReuseResult {
     if used_workspace_fallback {
-        return WorkspaceReuseResult::SandboxPrepareFallback;
+        return HomeReuseResult::SandboxPrepareFallback;
     }
     match checkout_result {
-        Some(WorkspaceCacheCheckoutResult::Hit) => WorkspaceReuseResult::Reused,
-        Some(WorkspaceCacheCheckoutResult::Miss) => WorkspaceReuseResult::CacheMiss,
-        Some(WorkspaceCacheCheckoutResult::NoReuseKey) => WorkspaceReuseResult::NoReuseKey,
-        Some(WorkspaceCacheCheckoutResult::InvalidWorkingDir) => {
-            WorkspaceReuseResult::InvalidWorkingDir
-        }
-        Some(WorkspaceCacheCheckoutResult::LockBusy) => WorkspaceReuseResult::LockBusy,
-        Some(WorkspaceCacheCheckoutResult::InvalidMetadata) => {
-            WorkspaceReuseResult::InvalidMetadata
-        }
-        Some(WorkspaceCacheCheckoutResult::DiskPressure) => WorkspaceReuseResult::DiskPressure,
-        None => WorkspaceReuseResult::NotConfigured,
+        Some(HomeCacheCheckoutResult::Hit) => HomeReuseResult::Reused,
+        Some(HomeCacheCheckoutResult::Miss) => HomeReuseResult::CacheMiss,
+        Some(HomeCacheCheckoutResult::NoReuseKey) => HomeReuseResult::NoReuseKey,
+        Some(HomeCacheCheckoutResult::InvalidWorkingDir) => HomeReuseResult::InvalidWorkingDir,
+        Some(HomeCacheCheckoutResult::LockBusy) => HomeReuseResult::LockBusy,
+        Some(HomeCacheCheckoutResult::InvalidMetadata) => HomeReuseResult::InvalidMetadata,
+        Some(HomeCacheCheckoutResult::DiskPressure) => HomeReuseResult::DiskPressure,
+        None => HomeReuseResult::NotConfigured,
     }
 }
 
@@ -1193,7 +1128,7 @@ async fn create_started_sandbox(
     options: StartSandboxOptions<'_>,
 ) -> Result<PreparedSandboxRun, SandboxPrepareError> {
     let StartSandboxOptions {
-        workspace_image,
+        home_image,
         sandbox_prepared,
         reuse_result,
         cancel,
@@ -1206,14 +1141,14 @@ async fn create_started_sandbox(
             memory_mb: params.memory_mb,
         },
         device_rate_limits: params.device_rate_limits.clone(),
-        workspace_drive: workspace_image.map_or_else(
+        home_drive: home_image.map_or_else(
             || {
-                Some(sandbox::WorkspaceDriveConfig {
-                    size_mb: params.workspace_disk_mb,
+                Some(sandbox::HomeDriveConfig {
+                    size_mb: params.home_disk_mb,
                     seed_image: None,
                 })
             },
-            WorkspaceImageLease::workspace_drive_config,
+            HomeImageLease::home_drive_config,
         ),
     };
 
@@ -1244,7 +1179,7 @@ async fn create_started_sandbox(
                 Some(SANDBOX_FACTORY_CREATE_FAILED),
             );
             telemetry.record("sandbox_create", t.elapsed(), false, Some(&e.to_string()));
-            return Err(SandboxPrepareError::retry_without_workspace_image(
+            return Err(SandboxPrepareError::retry_without_home_image(
                 e.into(),
                 true,
             ));
@@ -1378,7 +1313,7 @@ async fn create_started_sandbox(
             Some(reason) => {
                 SandboxPrepareError::guest_dns_readiness(error, cleanup_completed, reason)
             }
-            None => SandboxPrepareError::retry_without_workspace_image(error, cleanup_completed),
+            None => SandboxPrepareError::retry_without_home_image(error, cleanup_completed),
         });
     }
     telemetry.record(
@@ -1445,7 +1380,7 @@ async fn create_started_sandbox(
     };
 
     let mount_started = Instant::now();
-    let mount_result = ensure_workspace_drive_mounted(sandbox.as_ref(), context.run_id).await;
+    let mount_result = ensure_home_drive_mounted(sandbox.as_ref(), context.run_id).await;
     let mount_duration = mount_started.elapsed();
     let guest_duration = match mount_result {
         Ok(guest_duration) => guest_duration,
@@ -1456,7 +1391,7 @@ async fn create_started_sandbox(
                 false,
                 Some(&e.error.to_string()),
             );
-            record_workspace_drive_mount_guest_exec(telemetry, e.guest_duration, false);
+            record_home_drive_mount_guest_exec(telemetry, e.guest_duration, false);
             if let Some(prepared_guest_runtime) = prepared_guest_runtime.take() {
                 prepared_guest_runtime
                     .finish(sandbox.as_ref(), telemetry)
@@ -1480,14 +1415,14 @@ async fn create_started_sandbox(
             let destroy_completed = destroy_sandbox_panic_safe(factory, sandbox)
                 .await
                 .is_completed();
-            return Err(SandboxPrepareError::retry_without_workspace_image(
+            return Err(SandboxPrepareError::retry_without_home_image(
                 e.error.into(),
                 unregister_completed && destroy_completed,
             ));
         }
     };
     telemetry.record(WORKSPACE_DRIVE_MOUNT, mount_duration, true, None);
-    record_workspace_drive_mount_guest_exec(telemetry, guest_duration, true);
+    record_home_drive_mount_guest_exec(telemetry, guest_duration, true);
     if let Some(notifier) = sandbox_prepared
         && let Err(error) = notifier.notify(context.run_id, sandbox_id).await
     {
@@ -1533,7 +1468,7 @@ async fn create_started_sandbox(
     })
 }
 
-fn record_workspace_drive_mount_guest_exec(
+fn record_home_drive_mount_guest_exec(
     telemetry: &mut JobTelemetry,
     guest_duration: Option<Duration>,
     success: bool,
@@ -1551,18 +1486,18 @@ fn record_workspace_drive_mount_guest_exec(
     }
 }
 
-pub(super) async fn invalidate_workspace_cache_hit(
-    workspace_image: Option<&WorkspaceImageLease>,
+pub(super) async fn invalidate_home_cache_hit(
+    home_image: Option<&HomeImageLease>,
     run_id: RunId,
     reason: &str,
 ) {
-    let Some(workspace_image) = workspace_image else {
+    let Some(home_image) = home_image else {
         return;
     };
-    if !workspace_image.is_cache_hit() {
+    if !home_image.is_cache_hit() {
         return;
     }
-    if let Err(e) = workspace_image.invalidate(run_id, reason).await {
+    if let Err(e) = home_image.invalidate(run_id, reason).await {
         warn!(
             run_id = %run_id,
             reason,
@@ -1645,7 +1580,7 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
             .guest_duplex
             .register(context.run_id, sandbox.as_ref(), &cleanup_cancel);
     let reuse_result = start.reuse_result;
-    let workspace_reuse_result = start.workspace_reuse_result;
+    let home_reuse_result = start.home_reuse_result;
 
     let mut inputs = inputs;
     inputs.controls.prepared_guest_runtime = prepared_guest_runtime;
@@ -1742,8 +1677,8 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         sandbox: Some(sandbox),
         source_ip,
         network_log_session: Some(network_log_session),
-        workspace_image: None,
-        workspace_reuse_result: Some(workspace_reuse_result),
+        home_image: None,
+        home_reuse_result: Some(home_reuse_result),
         discovered_cli_agent_session_id,
         restored_session_identity,
     }

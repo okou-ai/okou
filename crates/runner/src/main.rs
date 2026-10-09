@@ -24,8 +24,8 @@ mod status_file;
 use runner_executor::test_fixtures;
 #[cfg(test)]
 mod test_fixtures_http_body;
-use runner_lifecycle::workspace_image_cache;
-use runner_lifecycle::workspace_mount;
+use runner_lifecycle::home_image_cache;
+use runner_lifecycle::home_mount;
 
 use runner_network::{
     ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
@@ -130,8 +130,8 @@ enum Command {
     Kill(cmd::KillArgs),
     /// Clean up unused runner resources, artifacts, logs, and caches
     Gc(cmd::GcArgs),
-    /// Inspect and clean up workspace image cache entries
-    WorkspaceImageCache(cmd::WorkspaceImageCacheArgs),
+    /// Inspect and clean up home image cache entries
+    HomeImageCache(cmd::HomeImageCacheArgs),
     /// Runtime health diagnostics for all runners on the host
     Doctor(cmd::DoctorArgs),
     /// Local file-queue provider commands
@@ -305,7 +305,7 @@ async fn main() -> ExitCode {
         }
         Command::Service(args) => cmd::run_service(args).await.map(|()| ExitCode::SUCCESS),
         Command::Gc(args) => cmd::run_gc(args).await.map(|()| ExitCode::SUCCESS),
-        Command::WorkspaceImageCache(args) => cmd::run_workspace_image_cache(args)
+        Command::HomeImageCache(args) => cmd::run_home_image_cache(args)
             .await
             .map(|()| ExitCode::SUCCESS),
         Command::Doctor(args) => cmd::run_doctor(args).await,
@@ -692,27 +692,27 @@ mod tests {
     }
 
     #[test]
-    fn workspace_image_cache_command_is_registered() {
+    fn home_image_cache_command_is_registered_without_workspace_alias() {
         assert!(
-            Cli::try_parse_from(["runner", "workspace-image-cache", "info"]).is_ok(),
-            "workspace-image-cache info should be registered"
+            Cli::try_parse_from(["runner", "home-image-cache", "info"]).is_ok(),
+            "home-image-cache info should be registered"
         );
         assert!(
-            Cli::try_parse_from(["runner", "workspace-image-cache", "list", "--limit", "1"])
-                .is_ok(),
-            "workspace-image-cache list should be registered"
+            Cli::try_parse_from(["runner", "home-image-cache", "list", "--limit", "1"]).is_ok(),
+            "home-image-cache list should be registered"
         );
         assert!(
-            Cli::try_parse_from(["runner", "workspace-image-cache", "gc", "--dry-run"]).is_ok(),
-            "workspace-image-cache gc should be registered"
+            Cli::try_parse_from(["runner", "home-image-cache", "gc", "--dry-run"]).is_ok(),
+            "home-image-cache gc should be registered"
         );
+        assert!(Cli::try_parse_from(["runner", "workspace-image-cache", "info"]).is_err());
     }
 
     #[test]
-    fn workspace_image_cache_help_documents_locked_entry_semantics() {
-        let info_error = Cli::try_parse_from(["runner", "workspace-image-cache", "info", "--help"])
+    fn home_image_cache_help_documents_locked_entry_semantics() {
+        let info_error = Cli::try_parse_from(["runner", "home-image-cache", "info", "--help"])
             .err()
-            .expect("workspace-image-cache info --help should exit through clap");
+            .expect("home-image-cache info --help should exit through clap");
         assert_eq!(info_error.kind(), clap::error::ErrorKind::DisplayHelp);
         let info_help = info_error
             .to_string()
@@ -727,9 +727,9 @@ mod tests {
             info_help.contains("status-category, temporary-path, and size values are lower bounds")
         );
 
-        let list_error = Cli::try_parse_from(["runner", "workspace-image-cache", "list", "--help"])
+        let list_error = Cli::try_parse_from(["runner", "home-image-cache", "list", "--help"])
             .err()
-            .expect("workspace-image-cache list --help should exit through clap");
+            .expect("home-image-cache list --help should exit through clap");
         assert_eq!(list_error.kind(), clap::error::ErrorKind::DisplayHelp);
         let list_help = list_error
             .to_string()
@@ -746,10 +746,10 @@ mod tests {
     }
 
     #[test]
-    fn workspace_image_cache_help_documents_gc_eviction_policy() {
-        let error = Cli::try_parse_from(["runner", "workspace-image-cache", "gc", "--help"])
+    fn home_image_cache_help_documents_gc_eviction_policy() {
+        let error = Cli::try_parse_from(["runner", "home-image-cache", "gc", "--help"])
             .err()
-            .expect("workspace-image-cache gc --help should exit through clap");
+            .expect("home-image-cache gc --help should exit through clap");
         assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
         let help = error
             .to_string()

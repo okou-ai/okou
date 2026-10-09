@@ -1220,7 +1220,7 @@ profiles:
     vcpu: 2
     memory_mb: 4096
     rootfs_disk_mb: 8192
-    workspace_disk_mb: 16384
+    home_disk_mb: 16384
 "#,
                 base_dir = base_dir.display(),
                 ca_dir = ca_dir.display(),

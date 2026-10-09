@@ -850,7 +850,6 @@ async fn prepare_for_cache_removes_completed_private_state_and_preserves_user_hi
             "claude-append-system-prompt",
             "final-session-history-identity.json",
             "failure-diagnostic.json",
-            "session-history-sidecar",
         ] {
             let path = runtime.join(name);
             std::fs::create_dir_all(path.parent().unwrap())?;
@@ -880,8 +879,10 @@ async fn prepare_for_cache_removes_completed_private_state_and_preserves_user_hi
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: ReusePreparationReport = serde_json::from_slice(&output.stdout)?;
-    assert_eq!(report.removed_entries, 3);
+    let report: guest_contracts::home_cache_history::TerminalHomeCachePreparationReport =
+        serde_json::from_slice(&output.stdout)?;
+    assert_eq!(report.cleanup.removed_entries, 3);
+    assert!(report.history_proof.is_none());
     assert_eq!(std::fs::read_dir(&runs)?.count(), 0);
     assert!(!codex_home.join("auth.json").exists());
     assert_eq!(
@@ -889,6 +890,130 @@ async fn prepare_for_cache_removes_completed_private_state_and_preserves_user_hi
         b"history"
     );
     assert_eq!(std::fs::read(&outside)?, b"user file");
+    Ok(())
+}
+
+#[tokio::test]
+async fn terminal_history_proof_survives_real_cleanup_and_verifies_only_current_live_bytes()
+-> TestResult {
+    use guest_contracts::home_cache_history::{
+        HomeCacheHistoryVerifyReport, HomeCacheHistoryVerifyRequest,
+        TerminalHomeCachePreparationReport,
+    };
+    use guest_contracts::session_history_identity::{
+        SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryIdentityExpectation,
+        SessionHistoryRefKind, SessionHistorySourceRef,
+    };
+    use sha2::{Digest, Sha256};
+    let home = tempfile::tempdir_in("/home/user")?;
+    let runs = guest_contracts::runtime_paths::runtime_parent_for_home(home.path());
+    let current = runs.join("current");
+    let config_dir = home.path().join("claude");
+    let history_path = config_dir.join("projects/-home-user-workspace/session-proof.jsonl");
+    std::fs::create_dir_all(history_path.parent().unwrap())?;
+    std::fs::write(&history_path, b"actual history")?;
+    let identity = SessionHistoryIdentity::new(
+        SessionHistoryFramework::ClaudeCode,
+        hex::encode(Sha256::digest(b"session-proof")),
+        SessionHistoryRefKind::Blob,
+        hex::encode(Sha256::digest(b"actual history")),
+        14,
+        SessionHistorySourceRef::ClaudeCode {
+            config_dir: path_string(&config_dir),
+            working_dir: "/home/user/workspace".into(),
+            session_id: "session-proof".into(),
+        },
+    )?;
+    guest_contracts::runtime_paths::write_private(
+        guest_contracts::runtime_paths::final_session_history_identity_file(&current),
+        identity.to_json_vec()?,
+    )?;
+    std::fs::write(current.join("prompt-private"), b"private input")?;
+    let codex_home = home.path().join("codex");
+    std::fs::create_dir_all(&codex_home)?;
+    std::fs::write(codex_home.join("auth.json"), b"managed synthetic auth")?;
+    let user_file = home.path().join("workspace/user-file");
+    std::fs::create_dir_all(user_file.parent().unwrap())?;
+    std::fs::write(&user_file, b"ordinary user bytes")?;
+    let output = run_cache_helper(
+        &ReusePreparationRequest {
+            current_runtime_dir: path_string(&current),
+            retained_runtime_dir: None,
+        },
+        &runs,
+        &codex_home,
+        None,
+    )
+    .await?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: TerminalHomeCachePreparationReport = serde_json::from_slice(&output.stdout)?;
+    let binding = report.history_proof.ok_or("eligible proof missing")?;
+    assert!(!current.exists());
+    assert!(!codex_home.join("auth.json").exists());
+    assert_eq!(std::fs::read(&user_file)?, b"ordinary user bytes");
+    let proof_path = runs
+        .parent()
+        .unwrap()
+        .join("home-cache/session-history-proof.json");
+    let mut request = HomeCacheHistoryVerifyRequest {
+        binding,
+        expected: SessionHistoryIdentityExpectation::new(
+            identity.framework,
+            identity.session_id_hash,
+            identity.history_ref_kind,
+            identity.history_hash,
+            identity.history_size_bytes,
+        )?,
+        source: identity.history_source,
+    };
+    async fn verify(
+        request: &HomeCacheHistoryVerifyRequest,
+        proof_path: &Path,
+    ) -> TestResult<bool> {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_guest-agent"));
+        command
+            .env_clear()
+            .env("OKOU_TEST_HOME_CACHE_HISTORY_PROOF_PATH", proof_path)
+            .arg("verify-home-cache-history");
+        let output = common::command_output_with_stdin_timeout(
+            &mut command,
+            &serde_json::to_vec(request)?,
+            REUSE_PREPARATION_HELPER_TIMEOUT,
+            "home proof verifier exceeded test budget",
+        )
+        .await?;
+        assert!(output.status.success());
+        assert!(output.stdout.len() < 128);
+        Ok(serde_json::from_slice::<HomeCacheHistoryVerifyReport>(&output.stdout)?.verified)
+    }
+    assert!(verify(&request, &proof_path).await?);
+    let original = request.clone();
+    request.binding.proof.generation = uuid::Uuid::new_v4().to_string();
+    assert!(!verify(&request, &proof_path).await?);
+    request = original.clone();
+    request.binding.sha256 = "f".repeat(64);
+    assert!(!verify(&request, &proof_path).await?);
+    request = original.clone();
+    request.expected.history_size_bytes += 1;
+    assert!(!verify(&request, &proof_path).await?);
+    request = original.clone();
+    if let SessionHistorySourceRef::ClaudeCode { config_dir, .. } = &mut request.source {
+        *config_dir = path_string(&home.path().join("other-config"));
+    }
+    assert!(!verify(&request, &proof_path).await?);
+    request = original;
+    std::fs::write(&history_path, b"changed history")?;
+    assert!(!verify(&request, &proof_path).await?);
+    std::fs::write(&history_path, b"actual history")?;
+    assert!(verify(&request, &proof_path).await?);
+    std::fs::write(&proof_path, b"corrupt")?;
+    assert!(!verify(&request, &proof_path).await?);
+    std::fs::remove_file(&proof_path)?;
+    assert!(!verify(&request, &proof_path).await?);
     Ok(())
 }
 
@@ -983,10 +1108,23 @@ async fn run_cache_helper(
         )
         .env("OKOU_TEST_CODEX_HOME_DIR", codex_home)
         .env("OKOU_TEST_CACHE_RUNTIME_PARENT", runtime_parent)
+        .env(
+            "OKOU_TEST_HOME_CACHE_HISTORY_PROOF_PATH",
+            runtime_parent
+                .parent()
+                .unwrap()
+                .join("home-cache/session-history-proof.json"),
+        )
         .arg("prepare-for-cache");
     Ok(common::command_output_with_stdin_timeout(
         &mut command,
-        &serde_json::to_vec(request)?,
+        &serde_json::to_vec(
+            &guest_contracts::home_cache_history::TerminalHomeCachePreparationRequest {
+                current_runtime_dir: request.current_runtime_dir.clone(),
+                retained_runtime_dir: request.retained_runtime_dir.clone(),
+                generation: "74b68da0-6e0a-4adc-a68e-65a04c4885c4".into(),
+            },
+        )?,
         REUSE_PREPARATION_HELPER_TIMEOUT,
         "terminal cache helper exceeded its test budget",
     )

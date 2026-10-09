@@ -39,15 +39,15 @@ use super::support::{
     CapturedEvent, CapturedEvents, DestroyPanicFactory, api_artifact, api_storage,
     assert_proxy_registry_empty, create_overridden_sandbox, default_params,
     make_reusable_idle_sandbox, minimal_context, run_new_sandbox_outcome, run_new_sandbox_status,
-    sandbox_create_error, sandbox_exec_error, sandbox_write_file_error, seed_workspace_image_cache,
-    seed_workspace_image_cache_with_fingerprints, seed_workspace_image_cache_with_sidecar,
-    test_budget_lease, test_device_rate_limits, test_executor_config, test_telemetry,
+    sandbox_create_error, sandbox_exec_error, sandbox_write_file_error, seed_home_image_cache,
+    seed_home_image_cache_with_fingerprints, test_budget_lease, test_device_rate_limits,
+    test_executor_config, test_telemetry,
 };
-use crate::workspace_image_cache::{
-    WorkspaceCacheCheckoutResult, WorkspaceCacheTerminalStatus, WorkspaceImageCache,
-    WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
+use crate::home_image_cache::{
+    HomeCacheCheckoutResult, HomeCacheTerminalStatus, HomeImageCache, HomeImageLeaseIdentity,
+    HomeImagePrepareRequest,
 };
-use runner_host::paths::{RunnerPaths, scoped_workspace_image_cache_key};
+use runner_host::paths::{RunnerPaths, scoped_home_image_cache_key};
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::StorageManifest;
 use runner_types::types::{
@@ -59,12 +59,12 @@ use tracing_subscriber::prelude::*;
 mod blank_prefetch;
 mod execution_diagnostics;
 mod fresh_sandbox;
+mod home_cache;
 mod idle_pool;
 mod proxy_registry;
 mod registry_observation;
 mod reuse;
 mod ssh;
-mod workspace_cache;
 
 fn storage_archive(content: &[u8]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());

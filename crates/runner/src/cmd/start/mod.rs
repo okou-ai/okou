@@ -49,6 +49,7 @@ use crate::config::RootfsSnapshotPathsExt;
 use crate::config::{self, ProfileConfig};
 use crate::error::{RunnerError, RunnerResult};
 use crate::executor::{ExecutorConfig, SessionHistoryCpuPool, SessionHistoryProbe};
+use crate::home_image_cache::HomeImageCache;
 use crate::http::{HttpClient, HttpClientConfig};
 use crate::idle_pool::{IdlePool, IdlePoolConfig, ParkingGate};
 use crate::lifecycle::RunnerMode;
@@ -57,7 +58,6 @@ use crate::network_log_manager::NetworkLogManager;
 use crate::pre_spawn_admission::PreSpawnAdmission;
 use crate::resource_budget::ResourceBudget;
 use crate::status::{StatusTracker, remove_stale_status_file};
-use crate::workspace_image_cache::WorkspaceImageCache;
 use crate::{deps, dns, kmsg_log, prefetch, proxy};
 use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
 use runner_host::runner_process_identity::load_runner_process_identity;
@@ -738,8 +738,8 @@ async fn run_start_observed(
         background_fill,
         pre_spawn_admission,
         home: home.clone(),
-        workspace_cache: Some(
-            WorkspaceImageCache::shared(paths.clone(), &home, &group_name)
+        home_cache: Some(
+            HomeImageCache::shared(paths.clone(), &home, &group_name)
                 .with_promotion_host_cpus(host_cpus),
         ),
     });
@@ -853,7 +853,9 @@ fn runtime_profiles(
                 RuntimeProfile {
                     vcpu: profile.vcpu,
                     memory_mb: profile.memory_mb,
-                    workspace_disk_mb: profile.workspace_disk_mb,
+                    rootfs_hash: profile.rootfs_hash.clone(),
+                    rootfs_disk_mb: profile.rootfs_disk_mb,
+                    home_disk_mb: profile.home_disk_mb,
                     factory_config: config::RunnerConfig::build_factory_config(
                         firecracker,
                         base_dir,

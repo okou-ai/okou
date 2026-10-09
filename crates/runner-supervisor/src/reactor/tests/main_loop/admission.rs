@@ -2,23 +2,22 @@ use super::super::super::*;
 use super::super::support::{
     SpeculativeIdleSeedSpec, TEST_HEARTBEAT_GENERATION, TEST_RUNNER_ID, assert_run_exits_within,
     context_with_session, minimal_context, mock_run_config, mock_run_config_with_overrides,
-    push_job, seed_idle_pool, seed_idle_pool_with_history_generation,
-    seed_idle_pool_with_overrides, seed_idle_pool_with_speculative_timezone,
-    seed_workspace_cache_state, shutdown, status_idle_reuse_keys_and_active_runs, test_profiles,
-    two_profiles, wait_budget_count, wait_cancel_handle, wait_cancel_token,
-    wait_cancel_token_removed, wait_discover_entered, wait_idle_pool_len,
-    wait_status_idle_reuse_keys_and_active_runs,
+    push_job, seed_home_cache_state, seed_idle_pool, seed_idle_pool_with_history_generation,
+    seed_idle_pool_with_overrides, seed_idle_pool_with_speculative_timezone, shutdown,
+    status_idle_reuse_keys_and_active_runs, test_profiles, two_profiles, wait_budget_count,
+    wait_cancel_handle, wait_cancel_token, wait_cancel_token_removed, wait_discover_entered,
+    wait_idle_pool_len, wait_status_idle_reuse_keys_and_active_runs,
 };
 use std::sync::Arc;
 
-use crate::workspace_image_cache::{WorkspaceImageCache, WorkspaceImagePrepareLockTestGate};
+use crate::home_image_cache::{HomeImageCache, HomeImagePrepareLockTestGate};
 use runner_host::paths::RunnerPaths;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::{
     ActiveRunnerPreference, RunnerPreference, RunnerPreferenceClaimState, RunnerPreferenceTier,
 };
+use runner_types::types::HomeReuseResult;
 use runner_types::types::SandboxReuseResult;
-use runner_types::types::WorkspaceReuseResult;
 
 const NON_SELECTED_RUNNER_ID: u128 = 1;
 const FINALIZING_TEST_PREFERENCE_LIFETIME: Duration = Duration::from_secs(30);
@@ -448,10 +447,10 @@ async fn matching_preference_reservation_is_restored_after_claim_conflict() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn unselected_reusable_sandbox_preempts_workspace_preference() {
+async fn unselected_reusable_sandbox_preempts_home_preference() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let budget = Arc::clone(&config.capacity.budget);
-    let reuse_key = "thread:reusable-preempts-workspace";
+    let reuse_key = "thread:reusable-preempts-home";
     seed_idle_pool(&env.idle_pool, &budget, reuse_key, "vm0/default", 2, 4096).await;
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(2)).await;
@@ -464,7 +463,7 @@ async fn unselected_reusable_sandbox_preempts_workspace_preference() {
         .send(ranked_candidate(
             run_id,
             Some(reuse_key),
-            RunnerPreferenceTier::WorkspaceCache,
+            RunnerPreferenceTier::HomeCache,
             &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
             1,
         ))
@@ -474,7 +473,7 @@ async fn unselected_reusable_sandbox_preempts_workspace_preference() {
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("strictly better reusable sandbox should preempt workspace preference");
+        .expect("strictly better reusable sandbox should preempt home preference");
     assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     assert!(env.handle.deferred_poll_deadlines().is_empty());
 
@@ -2071,34 +2070,30 @@ async fn selected_ranked_finalizing_candidate_falls_back_at_deadline() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn pending_finalizing_fallback_skips_workspace_cache_lock_retry() {
+async fn pending_finalizing_fallback_skips_home_cache_lock_retry() {
     let reuse_key = "thread:pending-finalizing-workspace-lock";
     let image_size_bytes = 1024 * 1024;
     let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 1;
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let (mut config, env) = mock_run_config(profiles, 2, 4096, 1);
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
-    let prepare_lock_gate = WorkspaceImagePrepareLockTestGate::default();
-    let workspace_cache =
-        WorkspaceImageCache::shared(runner_paths, &config.paths.home, &config.runner.group)
-            .with_prepare_lock_test_gate(prepare_lock_gate);
-    let cache_key = runner_host::paths::scoped_workspace_image_cache_key(
+    let prepare_lock_gate = HomeImagePrepareLockTestGate::default();
+    let home_cache = HomeImageCache::shared(runner_paths, &config.paths.home, &config.runner.group)
+        .with_prepare_lock_test_gate(prepare_lock_gate);
+    let cache_key = runner_host::paths::scoped_home_image_cache_key(
         &config.runner.group,
         "vm0/default",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         reuse_key,
-        api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,
         image_size_bytes,
     );
-    let held_lock =
-        runner_host::lock::acquire(runner_host::paths::workspace_image_cache_lock_path(
-            &config.paths.home.locks_dir(),
-            &cache_key,
-        ))
-        .await
-        .unwrap();
-    Arc::get_mut(&mut config.exec_config)
-        .unwrap()
-        .workspace_cache = Some(workspace_cache);
+    let held_lock = runner_host::lock::acquire(runner_host::paths::home_image_cache_lock_path(
+        &config.paths.home.locks_dir(),
+        &cache_key,
+    ))
+    .await
+    .unwrap();
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache);
 
     let history_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
@@ -2137,10 +2132,10 @@ async fn pending_finalizing_fallback_skips_workspace_cache_lock_retry() {
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("known long-lived workspace lock should not enter bounded retry");
+        .expect("known long-lived home lock should not enter bounded retry");
     assert_eq!(
         completion.workspace_reuse_result,
-        Some(WorkspaceReuseResult::LockBusy),
+        Some(HomeReuseResult::LockBusy),
     );
 
     drop(held_lock);
@@ -3379,30 +3374,28 @@ async fn expired_generation_protection_preserves_local_session_claim() {
 }
 
 #[tokio::test]
-async fn selected_reusable_defers_for_cache_then_selected_workspace_claims_it() {
+async fn selected_reusable_defers_for_cache_then_selected_home_claims_it() {
     let reuse_key = "thread:cache-local";
     let provider_session_id = "provider-session-cache-local";
     let image_size_bytes = 1024 * 1024;
     let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 1;
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let (mut config, env) = mock_run_config(profiles, 8, 32768, 4);
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
-    let workspace_cache = WorkspaceImageCache::shared(
+    let home_cache = HomeImageCache::shared(
         runner_paths.clone(),
         &config.paths.home,
         &config.runner.group,
     );
-    seed_workspace_cache_state(
-        &workspace_cache,
+    seed_home_cache_state(
+        &home_cache,
         &runner_paths,
         reuse_key,
         "vm0/default",
         image_size_bytes,
     )
     .await;
-    Arc::get_mut(&mut config.exec_config)
-        .unwrap()
-        .workspace_cache = Some(workspace_cache);
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache);
     let run_handle = tokio::spawn(run(config));
 
     wait_discover_entered(&env, Duration::from_secs(2)).await;
@@ -3425,21 +3418,20 @@ async fn selected_reusable_defers_for_cache_then_selected_workspace_claims_it() 
     wait_discover_entered(&env, Duration::from_secs(5)).await;
     assert!(
         env.handle.claim_candidates().is_empty(),
-        "workspace-cache state must not satisfy a selected reusable preference"
+        "home-cache state must not satisfy a selected reusable preference"
     );
     assert_eq!(env.handle.deferred_poll_deadlines().len(), 1);
 
     let run_id = RunId::new_v4();
-    let mut workspace_context = context_with_session(run_id, provider_session_id);
-    workspace_context.reuse_key = Some(reuse_key.into());
-    env.provider
-        .set_claim_result(run_id, Some(workspace_context));
+    let mut home_context = context_with_session(run_id, provider_session_id);
+    home_context.reuse_key = Some(reuse_key.into());
+    env.provider.set_claim_result(run_id, Some(home_context));
     env.handle
         .discover_tx
         .send(ranked_candidate(
             run_id,
             Some(reuse_key),
-            RunnerPreferenceTier::WorkspaceCache,
+            RunnerPreferenceTier::HomeCache,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3451,13 +3443,13 @@ async fn selected_reusable_defers_for_cache_then_selected_workspace_claims_it() 
         .await;
     assert!(
         completion.is_some(),
-        "runner should claim from the startup workspace-cache snapshot even if a later scan would miss"
+        "runner should claim from the startup home-cache snapshot even if a later scan would miss"
     );
 
     assert_eq!(
         env.handle.deferred_poll_deadlines().len(),
         1,
-        "the workspace-selected candidate should not add another deferral"
+        "the home-selected candidate should not add another deferral"
     );
 
     shutdown(&env, run_handle).await;
@@ -3469,25 +3461,23 @@ async fn saturated_cache_only_holder_defers_before_reclaiming_unrelated_idle() {
     let provider_session_id = "provider-session-cache-saturated";
     let image_size_bytes = 1024 * 1024;
     let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 1;
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let (mut config, env) = mock_run_config(profiles, 2, 4096, 1);
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
-    let workspace_cache = WorkspaceImageCache::shared(
+    let home_cache = HomeImageCache::shared(
         runner_paths.clone(),
         &config.paths.home,
         &config.runner.group,
     );
-    seed_workspace_cache_state(
-        &workspace_cache,
+    seed_home_cache_state(
+        &home_cache,
         &runner_paths,
         reuse_key,
         "vm0/default",
         image_size_bytes,
     )
     .await;
-    Arc::get_mut(&mut config.exec_config)
-        .unwrap()
-        .workspace_cache = Some(workspace_cache);
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache);
 
     let budget = Arc::clone(&config.capacity.budget);
     let idle_pool = Arc::clone(&config.shared.idle_pool);
@@ -3512,7 +3502,7 @@ async fn saturated_cache_only_holder_defers_before_reclaiming_unrelated_idle() {
         .send(ranked_candidate(
             run_id,
             Some(reuse_key),
-            RunnerPreferenceTier::WorkspaceCache,
+            RunnerPreferenceTier::HomeCache,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3526,7 +3516,7 @@ async fn saturated_cache_only_holder_defers_before_reclaiming_unrelated_idle() {
     assert_eq!(
         env.handle.deferred_poll_deadlines().len(),
         1,
-        "workspace-selected work should defer when fresh budget is unavailable"
+        "home-selected work should defer when fresh budget is unavailable"
     );
     assert_eq!(
         idle_pool.lock().await.held_reuse_keys(),

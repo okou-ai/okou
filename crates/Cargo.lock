@@ -1874,11 +1874,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "guest-home-mount"
+version = "0.1.2"
+dependencies = [
+ "guest-contracts",
+ "libc",
+ "linux-mountinfo",
+ "nix",
+ "rustix",
+ "tempfile",
+]
+
+[[package]]
 name = "guest-init"
 version = "0.17.15"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
+ "guest-home-mount",
  "libc",
  "nix",
  "tempfile",
@@ -1933,16 +1946,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
-]
-
-[[package]]
-name = "guest-workspace-mount"
-version = "0.1.2"
-dependencies = [
- "libc",
- "linux-mountinfo",
- "nix",
- "rustix",
 ]
 
 [[package]]
@@ -3588,11 +3591,11 @@ dependencies = [
  "guest-agent",
  "guest-contracts",
  "guest-control-client",
+ "guest-home-mount",
  "guest-init",
  "guest-state-restore",
  "guest-storage-apply",
  "guest-tool-exec",
- "guest-workspace-mount",
  "guest-write-file",
  "hex",
  "http-body",

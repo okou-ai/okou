@@ -47,7 +47,7 @@ use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
 use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, ActiveRuns};
-use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
+use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_provider::{ClaimedJob, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_types::ids::RunId;
@@ -56,14 +56,14 @@ use runner_types::types::{ExecutionContext, SandboxReuseResult};
 /// Per-job profile parameters resolved from the profile config.
 pub(super) struct JobProfile {
     pub(super) profile_name: String,
+    pub(super) rootfs_hash: String,
     pub(super) vcpu: u32,
     pub(super) memory_mb: u32,
-    pub(super) workspace_disk_mb: u32,
+    pub(super) home_disk_mb: u32,
     pub(super) budget_lease: BudgetLease,
     pub(super) restore_guest_state: bool,
     pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
-    pub(super) workspace_image_prepare_lock_policy:
-        crate::workspace_image_cache::WorkspaceImagePrepareLockPolicy,
+    pub(super) home_image_prepare_lock_policy: crate::home_image_cache::HomeImagePrepareLockPolicy,
     pub(super) factory: SharedFactory,
     pub(super) cancellation: RunCancellationRegistration,
 }
@@ -86,7 +86,7 @@ pub(super) struct SpawnContext {
     /// Notifies the main loop to send an immediate heartbeat after reusable
     /// state changes. This eliminates the up-to-10s blind spot where
     /// the server does not know which runner holds a reusable sandbox or
-    /// workspace image cache.
+    /// home image cache.
     pub(super) reuse_state_notify: Arc<tokio::sync::Notify>,
     /// Best-effort signal for the main loop to ask mitmproxy to flush usage.
     pub(super) usage_flush_tx: mpsc::Sender<()>,
@@ -94,7 +94,7 @@ pub(super) struct SpawnContext {
     pub(super) pre_spawn_concurrency: RunnerPreSpawnConcurrency,
     pub(super) blank_pool_diagnostics: BlankPoolDiagnostics,
     pub(super) budget: Arc<ResourceBudget>,
-    pub(super) workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
+    pub(super) home_cache_snapshot: HomeCacheStateSnapshot,
     pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
     #[cfg(test)]
     pub(super) outer_job_panic: Option<OuterJobPanicPoint>,
@@ -241,8 +241,8 @@ impl ExecutorInvocation {
                         sandbox: None,
                         source_ip: String::new(),
                         network_log_session: None,
-                        workspace_image: None,
-                        workspace_reuse_result: None,
+                        home_image: None,
+                        home_reuse_result: None,
                         discovered_cli_agent_session_id: None,
                         restored_session_identity: None,
                     },
@@ -261,8 +261,9 @@ struct FinalizationPhase {
     runner_id: String,
     active_lease: BudgetLease,
     reuse_result: SandboxReuseResult,
-    workspace_disk_mb: u32,
+    home_disk_mb: u32,
     profile_name: String,
+    rootfs_hash: String,
     reuse_key: Option<String>,
     cli_agent_session_id: Option<String>,
     storage_fingerprints: StorageFingerprints,
@@ -272,7 +273,7 @@ struct FinalizationPhase {
     idle_pool: SharedIdlePool,
     status: Arc<StatusTracker>,
     reuse_state_notify: Arc<tokio::sync::Notify>,
-    workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
+    home_cache_snapshot: HomeCacheStateSnapshot,
     parking_gate: ParkingGate,
     network_log_drain: NetworkLogDrainCoordinator,
     cancel: RunCancellationHandle,
@@ -292,8 +293,9 @@ impl FinalizationPhase {
             runner_id,
             active_lease,
             reuse_result,
-            workspace_disk_mb,
+            home_disk_mb,
             profile_name,
+            rootfs_hash,
             reuse_key,
             cli_agent_session_id,
             storage_fingerprints,
@@ -303,7 +305,7 @@ impl FinalizationPhase {
             idle_pool,
             status,
             reuse_state_notify,
-            workspace_cache_snapshot,
+            home_cache_snapshot,
             parking_gate,
             network_log_drain,
             cancel,
@@ -326,8 +328,8 @@ impl FinalizationPhase {
             sandbox,
             source_ip,
             network_log_session,
-            workspace_image,
-            workspace_reuse_result: _,
+            home_image,
+            home_reuse_result: _,
             discovered_cli_agent_session_id,
             restored_session_identity,
         } = outcome;
@@ -339,14 +341,15 @@ impl FinalizationPhase {
             runner_id,
             reuse_result,
             profile_name,
+            rootfs_hash,
             reuse_key,
             cli_agent_session_id,
             discovered_cli_agent_session_id,
             restored_session_identity,
             source_ip,
             network_log_session,
-            workspace_image,
-            workspace_image_size_bytes: u64::from(workspace_disk_mb) * 1024 * 1024,
+            home_image,
+            home_image_size_bytes: u64::from(home_disk_mb) * 1024 * 1024,
             storage_fingerprints,
             device_rate_limits,
             guest_timezone_intent,
@@ -355,7 +358,7 @@ impl FinalizationPhase {
             status,
             reuse_state_notify,
             active_run_reuse,
-            workspace_cache_snapshot,
+            home_cache_snapshot,
             parking_gate,
             network_log_drain,
             exit_code,
@@ -496,21 +499,23 @@ pub(super) async fn run_job(
     let guest_timezone_intent = GuestTimezoneIntent::from_context(&context);
     let vcpu = job_profile.vcpu;
     let memory_mb = job_profile.memory_mb;
-    let workspace_disk_mb = job_profile.workspace_disk_mb;
-    let workspace_image_prepare_lock_policy = job_profile.workspace_image_prepare_lock_policy;
+    let home_disk_mb = job_profile.home_disk_mb;
+    let home_image_prepare_lock_policy = job_profile.home_image_prepare_lock_policy;
     let active_lease = job_profile.budget_lease;
     let profile_name = job_profile.profile_name;
     let factory = job_profile.factory;
     let cancellation = job_profile.cancellation;
     let job_cancel = cancellation.handle();
+    let rootfs_hash = job_profile.rootfs_hash;
     let params = executor::JobParams {
         profile_name: profile_name.clone(),
+        rootfs_hash: rootfs_hash.clone(),
         vcpu,
         memory_mb,
-        workspace_disk_mb,
+        home_disk_mb,
         restore_guest_state: job_profile.restore_guest_state,
         device_rate_limits: job_profile.device_rate_limits.clone(),
-        workspace_image_prepare_lock_policy,
+        home_image_prepare_lock_policy,
     };
     let job_device_rate_limits = params.device_rate_limits.clone();
 
@@ -526,7 +531,7 @@ pub(super) async fn run_job(
     let status = Arc::clone(&ctx.status);
     let idle_pool = Arc::clone(&ctx.idle_pool);
     let reuse_state_notify = Arc::clone(&ctx.reuse_state_notify);
-    let workspace_cache_snapshot = ctx.workspace_cache_snapshot.clone();
+    let home_cache_snapshot = ctx.home_cache_snapshot.clone();
     let usage_flush_tx = ctx.usage_flush_tx.clone();
     let parking_gate = ctx.parking_gate.clone();
     let cleanup_state = RunCleanupState::new();
@@ -592,8 +597,9 @@ pub(super) async fn run_job(
         runner_id,
         active_lease,
         reuse_result,
-        workspace_disk_mb,
+        home_disk_mb,
         profile_name,
+        rootfs_hash,
         reuse_key,
         cli_agent_session_id,
         storage_fingerprints,
@@ -603,7 +609,7 @@ pub(super) async fn run_job(
         idle_pool: Arc::clone(&idle_pool),
         status: Arc::clone(&status),
         reuse_state_notify: Arc::clone(&reuse_state_notify),
-        workspace_cache_snapshot,
+        home_cache_snapshot,
         parking_gate,
         network_log_drain: exec_config.network_log_drain.clone(),
         cancel: job_cancel.clone(),
@@ -657,7 +663,7 @@ pub(super) async fn run_job(
             reuse_result,
             completion_auth,
         )
-        .with_workspace_reuse_result(executor_result.outcome.workspace_reuse_result);
+        .with_home_reuse_result(executor_result.outcome.home_reuse_result);
         // Structural guarantee: claim (in provider) is always paired with complete.
         signal_usage_flush(run_id, &usage_flush_tx);
         let telemetry = completion_payload
@@ -877,8 +883,9 @@ mod tests {
                 runner_id: "runner-test".into(),
                 active_lease,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_disk_mb: 0,
+                home_disk_mb: 0,
                 profile_name: "vm0/default".into(),
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 reuse_key: Some(session_id.into()),
                 cli_agent_session_id: Some(session_id.into()),
                 storage_fingerprints: StorageFingerprints::default(),
@@ -888,7 +895,7 @@ mod tests {
                 idle_pool: Arc::clone(&self.idle_pool),
                 status: Arc::clone(&self.status),
                 reuse_state_notify: Arc::clone(&self.reuse_state_notify),
-                workspace_cache_snapshot: WorkspaceCacheStateSnapshot::new(),
+                home_cache_snapshot: HomeCacheStateSnapshot::new(),
                 parking_gate: self.parking_gate.clone(),
                 network_log_drain: NetworkLogDrainCoordinator::noop(),
                 cancel: RunCancellationHandle::new(),
@@ -926,8 +933,8 @@ mod tests {
                 sandbox: Some(sandbox),
                 source_ip: "10.0.0.1".into(),
                 network_log_session: None,
-                workspace_image: None,
-                workspace_reuse_result: None,
+                home_image: None,
+                home_reuse_result: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity,
             },
@@ -945,8 +952,8 @@ mod tests {
                 sandbox: None,
                 source_ip: String::new(),
                 network_log_session: None,
-                workspace_image: None,
-                workspace_reuse_result: None,
+                home_image: None,
+                home_reuse_result: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },

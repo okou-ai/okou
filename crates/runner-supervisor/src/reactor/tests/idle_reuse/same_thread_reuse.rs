@@ -5,7 +5,7 @@ use super::super::support::{
     wait_idle_pool_reuse_keys,
 };
 
-use runner_types::types::{SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{HomeReuseResult, SandboxReuseResult};
 
 // -----------------------------------------------------------------------
 // Test 13: Same-thread work reuses an idle sandbox
@@ -47,7 +47,7 @@ async fn same_thread_reuses_idle_sandbox() {
     );
     assert_eq!(
         completion.workspace_reuse_result,
-        Some(WorkspaceReuseResult::SandboxReused),
+        Some(HomeReuseResult::SandboxReused),
     );
     assert_eq!(
         completion.sandbox_id,

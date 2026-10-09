@@ -1,6 +1,7 @@
 use std::net::Ipv4Addr;
 use std::path::Path;
 
+use guest_contracts::home_mount::HOME_DRIVE_LAYOUT;
 use sandbox_firecracker::DNS_PROBE_RESOLVER_IPV4;
 use sha2::{Digest, Sha256};
 
@@ -80,7 +81,7 @@ fn update_rootfs_hash_field(hasher: &mut Sha256, label: &[u8], value: &[u8]) -> 
 ///
 /// The canonical encoding is a sequence of fields, each encoded as its fixed ASCII
 /// label, the value's byte length as a big-endian `u64`, then the value bytes. The
-/// fields are ordered as version, template hash, customization script, rootfs disk
+/// fields are ordered as version, paired home layout, template hash, customization script, rootfs disk
 /// size, CA fingerprint, DNS resolver, then one destination/content pair per guest
 /// binary in inventory order, then, only when an Okou CLI artifact is installed,
 /// its verified package SHA-256. Packed identity determines the installed manifest;
@@ -104,6 +105,7 @@ async fn compute_rootfs_hash(
         b"rootfs_version:",
         &ROOTFS_CACHE_VERSION.to_be_bytes(),
     )?;
+    update_rootfs_hash_field(&mut hasher, b"home_layout:", HOME_DRIVE_LAYOUT.as_bytes())?;
     update_rootfs_hash_field(&mut hasher, b"template:", template_hash.as_bytes())?;
     update_rootfs_hash_field(
         &mut hasher,
@@ -173,15 +175,16 @@ pub(super) async fn compute_ca_cert_fingerprint(paths: &HomePaths) -> RunnerResu
 ///
 /// This hash is local-only (R2 stores only the shared template). It covers:
 ///   - `SNAPSHOT_CACHE_VERSION` — manual bump counter
+///   - `HOME_DRIVE_LAYOUT` — paired Guest/Runner mount and image interpretation
 ///   - `rootfs_hash` — the rootfs this snapshot is built from
-///   - `vcpu`, `memory_mb`, `workspace_disk_mb` — VM resource config
+///   - `vcpu`, `memory_mb`, `home_disk_mb` — VM resource config
 ///   - `fc_version`, `kernel_version` — Firecracker and guest kernel versions
 ///   - `provider_config_hash` — sandbox-firecracker internal config (boot args, prewarm, etc.)
 pub(super) fn compute_snapshot_hash(
     rootfs_hash: &str,
     vcpu: u32,
     memory_mb: u32,
-    workspace_disk_mb: u32,
+    home_disk_mb: u32,
     fc_version: &str,
     kernel_version: &str,
     provider_config_hash: &str,
@@ -190,14 +193,16 @@ pub(super) fn compute_snapshot_hash(
 
     hasher.update(b"snapshot_version:");
     hasher.update(SNAPSHOT_CACHE_VERSION.to_le_bytes());
+    hasher.update(b"home_layout:");
+    hasher.update(HOME_DRIVE_LAYOUT.as_bytes());
     hasher.update(b"rootfs:");
     hasher.update(rootfs_hash.as_bytes());
     hasher.update(b"vcpu:");
     hasher.update(vcpu.to_le_bytes());
     hasher.update(b"memory_mb:");
     hasher.update(memory_mb.to_le_bytes());
-    hasher.update(b"workspace_disk_mb:");
-    hasher.update(workspace_disk_mb.to_le_bytes());
+    hasher.update(b"home_disk_mb:");
+    hasher.update(home_disk_mb.to_le_bytes());
     hasher.update(b"fc_version:");
     hasher.update(fc_version.as_bytes());
     hasher.update(b"kernel_version:");
@@ -236,6 +241,35 @@ mod tests {
             compute_template_hash(32768),
             "template hash must change when the ext4 disk size changes"
         );
+    }
+
+    #[tokio::test]
+    async fn rootfs_identity_frames_paired_home_layout_independently_of_guest_bytes() {
+        let actual =
+            compute_rootfs_hash("template", &[], "ca", DNS_PROBE_RESOLVER_IPV4, 12288, None)
+                .await
+                .unwrap();
+        let mut expected = Sha256::new();
+        for (label, bytes) in [
+            (
+                b"rootfs_version:".as_slice(),
+                ROOTFS_CACHE_VERSION.to_be_bytes().to_vec(),
+            ),
+            (b"home_layout:", HOME_DRIVE_LAYOUT.as_bytes().to_vec()),
+            (b"template:", b"template".to_vec()),
+            (b"customize_script:", CUSTOMIZE_SCRIPT.as_bytes().to_vec()),
+            (b"rootfs_disk_mb:", 12288_u32.to_be_bytes().to_vec()),
+            (b"ca_fingerprint:", b"ca".to_vec()),
+            (
+                b"dns_nameserver:",
+                DNS_PROBE_RESOLVER_IPV4.octets().to_vec(),
+            ),
+        ] {
+            expected.update(label);
+            expected.update(u64::try_from(bytes.len()).unwrap().to_be_bytes());
+            expected.update(bytes);
+        }
+        assert_eq!(actual, hex::encode(expected.finalize()));
     }
 
     #[tokio::test]
@@ -545,6 +579,35 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_identity_binds_paired_layout_and_default_two_disk_shape() {
+        let actual = compute_snapshot_hash("rootfs", 2, 4096, 24576, "fc", "kernel", "provider");
+        let mut paired = Sha256::new();
+        paired.update(b"snapshot_version:");
+        paired.update(SNAPSHOT_CACHE_VERSION.to_le_bytes());
+        paired.update(b"home_layout:");
+        paired.update(HOME_DRIVE_LAYOUT.as_bytes());
+        paired.update(b"rootfs:rootfs");
+        paired.update(b"vcpu:");
+        paired.update(2_u32.to_le_bytes());
+        paired.update(b"memory_mb:");
+        paired.update(4096_u32.to_le_bytes());
+        paired.update(b"home_disk_mb:");
+        paired.update(24576_u32.to_le_bytes());
+        paired.update(b"fc_version:fc");
+        paired.update(b"kernel_version:kernel");
+        paired.update(b"provider_config:provider");
+        assert_eq!(actual, hex::encode(paired.finalize()));
+        assert_ne!(
+            actual,
+            compute_snapshot_hash("other-rootfs", 2, 4096, 24576, "fc", "kernel", "provider")
+        );
+        assert_ne!(
+            actual,
+            compute_snapshot_hash("rootfs", 2, 4096, 16384, "fc", "kernel", "provider")
+        );
+    }
+
+    #[test]
     fn compute_snapshot_hash_deterministic() {
         let h1 = compute_snapshot_hash(
             "rootfs_aaa",
@@ -591,7 +654,7 @@ mod tests {
         assert_ne!(
             base,
             compute_snapshot_hash("rootfs_aaa", 2, 4096, 32_768, "v1.14.1", "6.1.155", "cfg"),
-            "must change with workspace_disk_mb"
+            "must change with home_disk_mb"
         );
         assert_ne!(
             base,

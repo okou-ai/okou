@@ -31,6 +31,7 @@ use super::support::{
     test_budget_lease, test_executor_config,
 };
 use crate::guest_timezone::GuestTimezoneAssumption;
+use crate::home_mount::ensure_home_drive_mounted;
 use crate::idle_pool::{
     IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult, ParkedIdleCandidate,
 };
@@ -40,12 +41,11 @@ use crate::telemetry::{
     RunnerResourceBudgetLeaseCountBucket, RunnerResourceBudgetOccupancy,
     RunnerResourceBudgetUtilizationBucket, RunnerStartupPath,
 };
-use crate::workspace_mount::ensure_workspace_drive_mounted;
 use runner_provider::RunCancellationSignals;
 use runner_provider::http::{HttpClient, HttpClientConfig};
 use runner_provider::{ApiClaimTiming, ClaimResponseAttribution};
 use runner_types::ids::RunId;
-use runner_types::types::{SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{HomeReuseResult, SandboxReuseResult};
 
 #[test]
 fn elapsed_since_api_start_ms_returns_elapsed_duration() {
@@ -159,20 +159,20 @@ fn blank_pool_selection_reason_vocabulary_is_stable() {
 
 #[test]
 fn api_startup_boundaries_record_the_effective_path_and_exact_reuse_result() {
-    for (reuse_result, workspace_reuse_result, expected_path) in [
+    for (reuse_result, home_reuse_result, expected_path) in [
         (
             SandboxReuseResult::Reused,
-            WorkspaceReuseResult::SandboxReused,
+            HomeReuseResult::SandboxReused,
             RunnerStartupPath::Sandbox,
         ),
         (
             SandboxReuseResult::NoReuseKey,
-            WorkspaceReuseResult::Reused,
-            RunnerStartupPath::Workspace,
+            HomeReuseResult::Reused,
+            RunnerStartupPath::Home,
         ),
         (
             SandboxReuseResult::PoolMiss,
-            WorkspaceReuseResult::CacheMiss,
+            HomeReuseResult::CacheMiss,
             RunnerStartupPath::Cold,
         ),
     ] {
@@ -192,7 +192,7 @@ fn api_startup_boundaries_record_the_effective_path_and_exact_reuse_result() {
             &context,
             &mut telemetry,
             reuse_result,
-            workspace_reuse_result,
+            home_reuse_result,
             shell_started_at,
             agent_ready_at,
         );
@@ -465,8 +465,8 @@ impl Sandbox for ObservedStartSandbox {
         self.inner.apply_storage_manifest(request).await
     }
 
-    async fn mount_workspace_drive(&self) -> sandbox::Result<ExecResult> {
-        let mut result = self.inner.mount_workspace_drive().await?;
+    async fn mount_home_drive(&self) -> sandbox::Result<ExecResult> {
+        let mut result = self.inner.mount_home_drive().await?;
         result.guest_duration_ms = Some(23);
         Ok(result)
     }
@@ -715,10 +715,10 @@ impl SandboxFactory for ObservedMockSandboxFactory {
 
 const FRESH_SANDBOX_FACTORY_STAGE_ACTIONS: &[&str] = &[
     "runner_fresh_sandbox_factory_cow_pool_acquire",
-    "runner_fresh_sandbox_factory_workspace_dir_rename",
-    "runner_fresh_sandbox_factory_workspace_drive_prepare",
-    "runner_fresh_sandbox_factory_workspace_seed_sparse_copy",
-    "runner_fresh_sandbox_factory_workspace_fresh_format",
+    "runner_fresh_sandbox_factory_home_dir_rename",
+    "runner_fresh_sandbox_factory_home_drive_prepare",
+    "runner_fresh_sandbox_factory_home_seed_sparse_copy",
+    "runner_fresh_sandbox_factory_home_fresh_format",
     "runner_fresh_sandbox_factory_sock_dir_prepare",
     "runner_fresh_sandbox_factory_netns_acquire",
     "runner_fresh_sandbox_factory_nbd_cow_create",
@@ -794,13 +794,13 @@ const RUNNER_PRE_SPAWN_PHASE_CASES: &[(RunnerPreSpawnPhase, &str, u64)] = &[
         5,
     ),
     (
-        RunnerPreSpawnPhase::WorkspaceCacheStateLookup,
-        "runner_claim_workspace_cache_state_lookup",
+        RunnerPreSpawnPhase::HomeCacheStateLookup,
+        "runner_claim_home_cache_state_lookup",
         6,
     ),
     (
-        RunnerPreSpawnPhase::WorkspacePromotionValidation,
-        "runner_claim_workspace_promotion_validation",
+        RunnerPreSpawnPhase::HomePromotionValidation,
+        "runner_claim_home_promotion_validation",
         7,
     ),
     (
@@ -983,12 +983,8 @@ async fn execute_job_records_sandbox_reuse_miss_in_telemetry() {
     assert_lacks_action(&telemetry, "runner_claim_resume_session_validation");
     assert_lacks_action(&telemetry, "runner_claim_task_schedule_wait");
     assert_action_success(&telemetry, "runner_fresh_sandbox_start", true);
-    assert_action_success(
-        &telemetry,
-        "workspace_drive_mount_guest_exec_unavailable",
-        true,
-    );
-    assert_lacks_action(&telemetry, "workspace_drive_mount_guest_exec");
+    assert_action_success(&telemetry, "home_drive_mount_guest_exec_unavailable", true);
+    assert_lacks_action(&telemetry, "home_drive_mount_guest_exec");
     for action in FRESH_SANDBOX_START_STAGE_ACTIONS {
         assert_lacks_action(&telemetry, action);
     }
@@ -1095,8 +1091,8 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         "api_to_sandbox_start",
         "sandbox_reuse_miss",
         "sandbox_create",
-        "workspace_drive_mount",
-        "workspace_drive_mount_guest_exec",
+        "home_drive_mount",
+        "home_drive_mount_guest_exec",
         "agent_execute",
     ] {
         assert_has_action(&telemetry, action);
@@ -1120,8 +1116,8 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         vec![(Some("4_16_kib"), Some("absent"))]
     );
     assert_action_once_with_duration(&telemetry, "runner_claim_response_decode", 3);
-    assert_action_duration(&telemetry, "workspace_drive_mount_guest_exec", 23);
-    assert_lacks_action(&telemetry, "workspace_drive_mount_guest_exec_unavailable");
+    assert_action_duration(&telemetry, "home_drive_mount_guest_exec", 23);
+    assert_lacks_action(&telemetry, "home_drive_mount_guest_exec_unavailable");
     assert!(
         telemetry
             .pending_ops_with_outcome_snapshot()
@@ -1168,7 +1164,7 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
     }
     assert_pre_spawn_phase_actions_succeeded(&telemetry);
     assert_lacks_action(&telemetry, "runner_reused_sandbox_prepare");
-    assert_lacks_action(&telemetry, "runner_fresh_workspace_image_prepare");
+    assert_lacks_action(&telemetry, "runner_fresh_home_image_prepare");
     assert_lacks_action(&telemetry, "runner_guest_state_restore");
 }
 
@@ -1733,9 +1729,9 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_proxy_register");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start");
     assert_lacks_action(&telemetry, "runner_guest_timezone_sync");
-    assert_lacks_action(&telemetry, "workspace_drive_mount");
-    assert_lacks_action(&telemetry, "workspace_drive_mount_guest_exec");
-    assert_lacks_action(&telemetry, "workspace_drive_mount_guest_exec_unavailable");
+    assert_lacks_action(&telemetry, "home_drive_mount");
+    assert_lacks_action(&telemetry, "home_drive_mount_guest_exec");
+    assert_lacks_action(&telemetry, "home_drive_mount_guest_exec_unavailable");
 }
 
 #[tokio::test]
@@ -1753,15 +1749,15 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
                 memory_mb: 2048,
             },
             device_rate_limits: None,
-            workspace_drive: Some(sandbox::WorkspaceDriveConfig {
-                size_mb: params.workspace_disk_mb,
+            home_drive: Some(sandbox::HomeDriveConfig {
+                size_mb: params.home_disk_mb,
                 seed_image: None,
             }),
         })
         .await
         .unwrap();
     sandbox.start().await.unwrap();
-    ensure_workspace_drive_mounted(sandbox.as_ref(), sandbox_id)
+    ensure_home_drive_mounted(sandbox.as_ref(), sandbox_id)
         .await
         .unwrap();
     assert_eq!(
@@ -1776,6 +1772,7 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
         test_budget_lease(),
         sandbox_id,
         "vm0/default".into(),
+        "test-rootfs".into(),
         None,
     );
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
@@ -1816,8 +1813,8 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
 
     assert!(outcome.failure.is_none());
     assert_eq!(
-        outcome.workspace_reuse_result,
-        Some(WorkspaceReuseResult::NotConfigured)
+        outcome.home_reuse_result,
+        Some(HomeReuseResult::NotConfigured)
     );
     assert_has_action(&telemetry, "sandbox_reuse_miss");
     assert_has_action(&telemetry, "sandbox_blank_pool_hit");

@@ -357,7 +357,7 @@ fn entry_chunk_budget_error() -> io::Error {
 }
 
 #[cfg(target_os = "linux")]
-fn file_identity(file: &File) -> io::Result<FileIdentity> {
+pub(crate) fn file_identity(file: &File) -> io::Result<FileIdentity> {
     let mask = StatxFlags::INO | StatxFlags::MNT_ID;
     let stat = rustix::fs::statx(file, c"", AtFlags::EMPTY_PATH, mask)?;
     if !StatxFlags::from_bits_retain(stat.stx_mask).contains(mask) {

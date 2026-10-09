@@ -19,9 +19,6 @@ pub const STATE_RESTORE_PATH: &str = "/sbin/guest-state-restore";
 /// Production path of the privileged guest file-writer executable.
 pub const WRITE_FILE_PATH: &str = "/sbin/guest-write-file";
 
-/// Production path of the fixed privileged workspace mount helper.
-pub const WORKSPACE_MOUNT_PATH: &str = "/sbin/guest-workspace-mount";
-
 /// Production path of the managed guest tool executor.
 pub const TOOL_EXEC_PATH: &str = "/usr/local/bin/guest-tool-exec";
 

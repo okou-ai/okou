@@ -119,6 +119,9 @@ owning surface.
   process ownership, reuse, and operation lifetime.
 - [Runner host configuration](runner/runner-host-configuration.md): validated
   host-local capacity and configuration ownership.
+- [Home history restore telemetry](runner/home-history-restore-telemetry.md):
+  current-input reconciliation, consumption-time proof verification, fallback,
+  cancellation, and transfer measurement semantics.
 - [Guest memory policy](runner/runner-memory-policy.md): workload sharing and
   reclaim protection.
 - [Runner architectures](runner/runner-multi-architecture.md): artifact pairing,

@@ -115,31 +115,20 @@ fn helper_exit_code_from_args() -> Option<i32> {
                 },
             )
         }
-        "export-session-history-sidecar" => {
-            let Some(metadata_path) = args.next() else {
-                return Some(SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS);
-            };
-            let Some(export_path) = args.next() else {
-                return Some(SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS);
-            };
+        "verify-home-cache-history" => {
             if args.next().is_some() {
                 return Some(SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS);
             }
-            Some(
-                match session_history_identity::export_final_session_history_sidecar_file(
-                    metadata_path,
-                    export_path,
-                ) {
-                    Ok(metadata) => match serde_json::to_string(&metadata) {
-                        Ok(json) => {
-                            println!("{json}");
-                            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS
-                        }
-                        Err(_) => SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE,
-                    },
-                    Err(error) => session_history_sidecar_export_helper_exit_code(&error),
+            Some(match guest_agent::home_cache_history::verify_from_stdin() {
+                Ok(report) => match serde_json::to_string(&report) {
+                    Ok(json) => {
+                        println!("{json}");
+                        0
+                    }
+                    Err(_) => 1,
                 },
-            )
+                Err(_) => SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS,
+            })
         }
         "prepare-for-reuse" | "prepare-for-cache" => {
             if args.next().is_some() {
@@ -148,20 +137,27 @@ fn helper_exit_code_from_args() -> Option<i32> {
                 );
             }
             let result = if command == "prepare-for-cache" {
-                reuse_preparation::prepare_for_cache_from_stdin()
+                reuse_preparation::prepare_for_cache_from_stdin().and_then(|report| {
+                    serde_json::to_string(&report).map_err(|error| {
+                        reuse_preparation::ReusePreparationError::Inspection(std::io::Error::other(
+                            error,
+                        ))
+                    })
+                })
             } else {
-                reuse_preparation::prepare_from_stdin()
+                reuse_preparation::prepare_from_stdin().and_then(|report| {
+                    serde_json::to_string(&report).map_err(|error| {
+                        reuse_preparation::ReusePreparationError::Inspection(std::io::Error::other(
+                            error,
+                        ))
+                    })
+                })
             };
             Some(match result {
-                Ok(report) => match serde_json::to_string(&report) {
-                    Ok(json) => {
-                        println!("{json}");
-                        guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_SUCCESS
-                    }
-                    Err(_) => {
-                        guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_INSPECTION_FAILED
-                    }
-                },
+                Ok(json) => {
+                    println!("{json}");
+                    guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_SUCCESS
+                }
                 Err(error) => {
                     eprintln!("{error}");
                     error.exit_code()
@@ -204,22 +200,6 @@ fn session_history_identity_helper_exit_code(
         SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE
     } else {
         exit_code
-    }
-}
-
-fn session_history_sidecar_export_helper_exit_code(
-    error: &session_history_identity::SessionHistorySidecarExportError,
-) -> i32 {
-    let exit_code = error.helper_exit_code();
-    let Some(failure) = error.output_failure() else {
-        return exit_code;
-    };
-    match serde_json::to_string(&failure) {
-        Ok(json) => {
-            println!("{json}");
-            exit_code
-        }
-        Err(_) => SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE,
     }
 }
 

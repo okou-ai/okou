@@ -107,13 +107,13 @@ pub struct BuildArgs {
     guest_write_file: Option<PathBuf>,
     #[cfg_attr(
         bundled_guests,
-        arg(long, help = "Path to guest-workspace-mount binary [default: bundled]")
+        arg(long, help = "Path to guest-home-mount binary [default: bundled]")
     )]
     #[cfg_attr(
         not(bundled_guests),
-        arg(long, help = "Path to guest-workspace-mount binary (required)")
+        arg(long, help = "Path to guest-home-mount binary (required)")
     )]
-    guest_workspace_mount: Option<PathBuf>,
+    guest_home_mount: Option<PathBuf>,
     #[cfg_attr(
         bundled_guests,
         arg(long, help = "Path to guest-tool-exec binary [default: bundled]")
@@ -153,7 +153,7 @@ impl BuildArgs {
             "codex-mock" => self.codex_mock.take(),
             "guest-state-restore" => self.guest_state_restore.take(),
             "guest-write-file" => self.guest_write_file.take(),
-            "guest-workspace-mount" => self.guest_workspace_mount.take(),
+            "guest-home-mount" => self.guest_home_mount.take(),
             "guest-tool-exec" => self.guest_tool_exec.take(),
             "runner-rpc-client" => self.runner_rpc_client.take(),
             _ => None,
@@ -463,7 +463,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
                 &rootfs_hashes.rootfs_hash,
                 def.vcpu,
                 def.memory_mb,
-                def.workspace_disk_mb,
+                def.home_disk_mb,
                 FIRECRACKER_VERSION,
                 KERNEL_VERSION,
                 &provider.config_hash(),

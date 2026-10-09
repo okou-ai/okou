@@ -42,6 +42,7 @@ mod guest_duplex;
 mod guest_endpoint_operations;
 mod guest_operations;
 mod guest_rpc;
+mod home_drive_image;
 mod host_cpu_cgroup;
 mod leaked_resources;
 mod network;
@@ -55,7 +56,6 @@ mod runtime_dirs;
 mod sandbox;
 mod snapshot;
 mod snapshot_mount_namespace;
-mod workspace_drive_image;
 
 pub use api::{ApiClient, ApiError, BalloonStatistics};
 pub use config::{

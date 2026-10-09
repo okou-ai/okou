@@ -1,14 +1,13 @@
 use super::super::super::*;
 
 use crate::guest_timezone::GuestTimezoneIntent;
+use crate::home_image_cache::{
+    HomeCacheTerminalStatus, HomeImageCache, HomeImageLeaseIdentity, HomeImagePrepareRequest,
+    HomeImagePromotionRequest,
+};
 use crate::idle_pool::{ParkResult, test_support::ParkedIdleCandidateBuilder};
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use crate::storage_fingerprints::StorageFingerprints;
-use crate::workspace_image_cache::{
-    WorkspaceCacheTerminalStatus, WorkspaceImageCache, WorkspaceImageLeaseIdentity,
-    WorkspaceImagePrepareRequest, WorkspaceImagePromotionRequest,
-};
-use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 use sandbox::SandboxId;
@@ -157,7 +156,7 @@ async fn seed_idle_pool_with_overrides_and_generation(
     overrides: &Arc<sandbox_mock::MockSandboxOverrides>,
     spec: IdlePoolSeedSpec<'_>,
 ) -> SandboxId {
-    runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+    runner_lifecycle::home_promotion::test_support::add_healthy_cache_preparation_matcher(
         overrides,
     );
     let IdlePoolSeedSpec {
@@ -191,7 +190,7 @@ async fn seed_idle_pool_with_overrides_and_generation(
                 memory_mb,
             },
             device_rate_limits: None,
-            workspace_drive: None,
+            home_drive: None,
         })
         .await
         .expect("create sandbox");
@@ -218,7 +217,7 @@ async fn seed_idle_pool_with_overrides_and_generation(
     sandbox_id
 }
 
-pub(in super::super) struct WorkspacePromotionSeedSpec<'a> {
+pub(in super::super) struct HomePromotionSeedSpec<'a> {
     pub(in super::super) reuse_key: &'a str,
     pub(in super::super) profile_name: &'a str,
     pub(in super::super) vcpu: u32,
@@ -226,29 +225,31 @@ pub(in super::super) struct WorkspacePromotionSeedSpec<'a> {
     pub(in super::super) image_size_bytes: u64,
 }
 
-pub(in super::super) async fn seed_idle_pool_with_workspace_promotion(
+pub(in super::super) async fn seed_idle_pool_with_home_promotion(
     pool: &SharedIdlePool,
     budget: &Arc<ResourceBudget>,
-    cache: &WorkspaceImageCache,
+    cache: &HomeImageCache,
     paths: &RunnerPaths,
-    spec: WorkspacePromotionSeedSpec<'_>,
+    spec: HomePromotionSeedSpec<'_>,
 ) -> SandboxId {
     let run_id = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
     let lease = cache
-        .prepare(WorkspaceImagePrepareRequest {
-            identity: WorkspaceImageLeaseIdentity {
+        .prepare(HomeImagePrepareRequest {
+            identity: HomeImageLeaseIdentity {
                 run_id,
                 sandbox_id,
                 profile_name: spec.profile_name,
                 reuse_key: Some(spec.reuse_key),
-                working_dir: CANONICAL_WORKING_DIR,
+                working_dir:
+                    api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 image_size_bytes: spec.image_size_bytes,
             },
-            workspace_drive_required: true,
+            home_drive_required: true,
         })
         .await;
-    let active_image = paths.active_workspace_image(&sandbox_id);
+    let active_image = paths.active_home_image(&sandbox_id);
     tokio::fs::create_dir_all(active_image.parent().unwrap())
         .await
         .unwrap();
@@ -256,22 +257,22 @@ pub(in super::super) async fn seed_idle_pool_with_workspace_promotion(
     file.set_len(spec.image_size_bytes).await.unwrap();
     drop(file);
     let promotion = lease
-        .into_promotion_context(WorkspaceImagePromotionRequest {
+        .into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
             restored_session_identity: None,
-            terminal_status: WorkspaceCacheTerminalStatus::Success,
+            terminal_status: HomeCacheTerminalStatus::Success,
             completed_at: TEST_LAST_COMPLETED_AT.into(),
             storage_fingerprints: StorageFingerprints::default(),
         })
-        .expect("workspace image should be promotable");
+        .expect("home image should be promotable");
     let budget_lease = ResourceBudget::try_reserve_lease(budget, spec.vcpu, spec.memory_mb)
         .expect("reserve budget");
     let candidate = ParkedIdleCandidateBuilder::new(spec.reuse_key, budget_lease)
-        .with_mock_sandbox_name("idle-workspace-promotion-test")
+        .with_mock_sandbox_name("idle-home-promotion-test")
         .with_sandbox_id(sandbox_id)
         .with_profile_name(spec.profile_name)
-        .with_workspace_promotion(promotion)
+        .with_home_promotion(promotion)
         .with_last_completed_at(TEST_LAST_COMPLETED_AT)
         .build();
     let mut guard = pool.lock().await;
@@ -280,8 +281,8 @@ pub(in super::super) async fn seed_idle_pool_with_workspace_promotion(
     sandbox_id
 }
 
-pub(in super::super) async fn seed_workspace_cache_state(
-    cache: &WorkspaceImageCache,
+pub(in super::super) async fn seed_home_cache_state(
+    cache: &HomeImageCache,
     paths: &RunnerPaths,
     reuse_key: &str,
     profile_name: &str,
@@ -290,19 +291,21 @@ pub(in super::super) async fn seed_workspace_cache_state(
     let run_id = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
     let lease = cache
-        .prepare(WorkspaceImagePrepareRequest {
-            identity: WorkspaceImageLeaseIdentity {
+        .prepare(HomeImagePrepareRequest {
+            identity: HomeImageLeaseIdentity {
                 run_id,
                 sandbox_id,
                 profile_name,
                 reuse_key: Some(reuse_key),
-                working_dir: CANONICAL_WORKING_DIR,
+                working_dir:
+                    api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 image_size_bytes,
             },
-            workspace_drive_required: true,
+            home_drive_required: true,
         })
         .await;
-    let active_image = paths.active_workspace_image(&sandbox_id);
+    let active_image = paths.active_home_image(&sandbox_id);
     tokio::fs::create_dir_all(active_image.parent().unwrap())
         .await
         .unwrap();
@@ -313,7 +316,7 @@ pub(in super::super) async fn seed_workspace_cache_state(
         lease
             .promote(
                 run_id,
-                WorkspaceCacheTerminalStatus::Success,
+                HomeCacheTerminalStatus::Success,
                 TEST_LAST_COMPLETED_AT.into(),
                 &StorageFingerprints::default(),
             )

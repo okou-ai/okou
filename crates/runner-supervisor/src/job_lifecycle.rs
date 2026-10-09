@@ -15,7 +15,7 @@ use runner_lifecycle::resource_budget::BudgetLease;
 use runner_lifecycle::status::StatusTracker;
 use runner_provider::{CompletionAuth, CompletionReportTiming, JobProvider};
 use runner_types::ids::RunId;
-use runner_types::types::{CompleteRequest, SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{CompleteRequest, HomeReuseResult, SandboxReuseResult};
 
 use crate::idle_lifecycle::SharedIdlePool;
 use crate::orphan_reap::OrphanedActiveRuns;
@@ -188,7 +188,7 @@ pub struct CompletionPayload {
     error: Option<String>,
     sandbox_id: SandboxId,
     reuse_result: SandboxReuseResult,
-    workspace_reuse_result: Option<WorkspaceReuseResult>,
+    home_reuse_result: Option<HomeReuseResult>,
     completion_auth: CompletionAuth,
 }
 
@@ -235,16 +235,16 @@ impl CompletionPayload {
             error,
             sandbox_id,
             reuse_result,
-            workspace_reuse_result: None,
+            home_reuse_result: None,
             completion_auth,
         }
     }
 
-    pub fn with_workspace_reuse_result(
+    pub fn with_home_reuse_result(
         mut self,
-        workspace_reuse_result: Option<WorkspaceReuseResult>,
+        home_reuse_result: Option<HomeReuseResult>,
     ) -> Self {
-        self.workspace_reuse_result = workspace_reuse_result;
+        self.home_reuse_result = home_reuse_result;
         self
     }
 
@@ -305,7 +305,7 @@ impl CompletionPayload {
             error,
             sandbox_id,
             reuse_result,
-            workspace_reuse_result,
+            home_reuse_result,
             completion_auth,
         } = self;
         let provider_completion_started = Instant::now();
@@ -318,7 +318,8 @@ impl CompletionPayload {
                     error,
                     sandbox_id: Some(sandbox_id),
                     sandbox_reuse_result: Some(reuse_result),
-                    workspace_reuse_result,
+                    // Prepared outgoing wire contract until PR5 reader retirement.
+                    workspace_reuse_result: home_reuse_result,
                 },
                 completion_auth,
             )

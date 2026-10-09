@@ -19,6 +19,7 @@ pub(in super::super) fn test_runner_identity() -> RunnerProcessIdentity {
 }
 
 const TEST_PROFILE_HOME: &str = "fixture-home";
+const TEST_ROOTFS_HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn test_profile(
     name: &str,
@@ -26,14 +27,16 @@ fn test_profile(
     snapshot_hash: &str,
     vcpu: u32,
     memory_mb: u32,
-    workspace_disk_mb: u32,
+    home_disk_mb: u32,
 ) -> RuntimeProfile {
     let home = HomePaths::with_root(PathBuf::from(TEST_PROFILE_HOME));
     let rootfs = runner_host::paths::RootfsPaths::new(&home, rootfs_hash);
     RuntimeProfile {
         vcpu,
         memory_mb,
-        workspace_disk_mb,
+        rootfs_hash: rootfs_hash.into(),
+        rootfs_disk_mb: 12288,
+        home_disk_mb,
         factory_config: sandbox::FactoryConfig {
             profile: name.into(),
             binary_path: PathBuf::new(),
@@ -51,7 +54,7 @@ fn test_profile(
 pub(in super::super) fn test_profiles() -> BTreeMap<String, RuntimeProfile> {
     BTreeMap::from([(
         "vm0/default".into(),
-        test_profile("vm0/default", "hash", "snap", 2, 4096, 10240),
+        test_profile("vm0/default", TEST_ROOTFS_HASH, "snap", 2, 4096, 24576),
     )])
 }
 
@@ -183,7 +186,7 @@ pub(in super::super) fn mock_run_config_with_api_url(
 fn healthy_mock_sandbox_runtime() -> Box<dyn sandbox::SandboxRuntime> {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
-    runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+    runner_lifecycle::home_promotion::test_support::add_healthy_cache_preparation_matcher(
         &overrides,
     );
     Box::new(MockSandboxRuntime::with_overrides(overrides))
@@ -315,7 +318,7 @@ fn build_mock_run_config_with_runtime(
                 .unwrap(),
             pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission::new(2).unwrap(),
             home,
-            workspace_cache: None,
+            home_cache: None,
         }),
         shutdown: ShutdownHandles {
             kmsg_handle: kmsg_log::KmsgHandle::noop(),
@@ -338,10 +341,10 @@ fn build_mock_run_config_with_runtime(
         test_hooks: RunTestHooks {
             outer_job_panic: None,
             test_observer: start_observer.clone(),
-            before_initial_workspace_cache_scan: None,
-            after_initial_workspace_cache_scan: None,
+            before_initial_home_cache_scan: None,
+            after_initial_home_cache_scan: None,
             manual_routine_heartbeat_rx: None,
-            manual_workspace_cache_gc_rx: None,
+            manual_home_cache_gc_rx: None,
         },
     };
 
@@ -373,7 +376,7 @@ pub(in super::super) fn two_profiles() -> BTreeMap<String, RuntimeProfile> {
     BTreeMap::from([
         (
             "vm0/default".into(),
-            test_profile("vm0/default", "hash", "snap", 2, 4096, 10240),
+            test_profile("vm0/default", TEST_ROOTFS_HASH, "snap", 2, 4096, 24576),
         ),
         (
             "vm0/large".into(),
@@ -408,7 +411,7 @@ pub(in super::super) fn mock_run_config_with_overrides_and_api_url(
     api_url: &str,
 ) -> (RunConfig, MockRunEnv) {
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
-    runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+    runner_lifecycle::home_promotion::test_support::add_healthy_cache_preparation_matcher(
         &overrides,
     );
     build_mock_run_config_with_runtime(

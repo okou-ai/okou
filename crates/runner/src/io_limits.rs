@@ -345,7 +345,7 @@ mod tests {
                         vcpu: *vcpu,
                         memory_mb: *memory_mb,
                         rootfs_disk_mb: 8192,
-                        workspace_disk_mb: 16_384,
+                        home_disk_mb: 16_384,
                     },
                 )
             })

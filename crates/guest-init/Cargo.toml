@@ -6,6 +6,7 @@ description = "Guest init process for Firecracker - filesystem setup, PID 1, and
 
 [dependencies]
 guest-contracts.workspace = true
+guest-home-mount.workspace = true
 libc = { workspace = true, features = ["std"] }
 nix = { workspace = true, features = ["mount", "signal"] }
 guest-control-server.workspace = true

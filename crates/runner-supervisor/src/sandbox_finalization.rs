@@ -29,6 +29,11 @@ use runner_executor::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
 use runner_executor::telemetry::JobTelemetry;
 use runner_lifecycle::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRunReusePublisher};
 use runner_lifecycle::guest_timezone::GuestTimezoneIntent;
+use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
+use runner_lifecycle::home_image_cache::{
+    HomeCacheTerminalStatus, HomeImageLease, HomeImagePromotionContext, HomeImagePromotionRequest,
+};
+use runner_lifecycle::home_promotion::prepare_home_image_from_active_sandbox;
 use runner_lifecycle::idle_pool::{
     DestroyOutcome, IdleDestroyPayload, IdleParkActiveParts, IdleParkCandidate,
     IdleParkFailureParts, IdleParkRequest, IdleParkRequestParts, ParkResult, ParkedIdleCandidate,
@@ -37,12 +42,6 @@ use runner_lifecycle::idle_pool::{
 use runner_lifecycle::resource_budget::BudgetLease;
 use runner_lifecycle::restored_session_identity::RestoredSessionIdentity;
 use runner_lifecycle::status::StatusTracker;
-use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
-use runner_lifecycle::workspace_image_cache::{
-    WorkspaceCacheTerminalStatus, WorkspaceImageLease, WorkspaceImagePromotionContext,
-    WorkspaceImagePromotionRequest,
-};
-use runner_lifecycle::workspace_promotion::prepare_workspace_image_from_active_sandbox;
 use runner_network::network_log_drain::NetworkLogDrainCoordinator;
 use runner_network::network_log_manager::NetworkLogSession;
 use runner_provider::RunCancellationHandle;
@@ -50,7 +49,7 @@ use runner_storage::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
 use runner_types::types::reuse_key_kind;
 use runner_types::types::{
-    HeldWorkspaceState, SandboxReuseResult, WORKSPACE_AFFINITY_VERSION, WorkspaceCacheCapability,
+    HOME_AFFINITY_VERSION, HeldHomeState, HomeCacheCapability, SandboxReuseResult,
 };
 
 struct FinalizationTelemetry<'a> {
@@ -236,20 +235,20 @@ fn mark_reuse_state_refresh(
     }
 }
 
-fn mark_workspace_cache_snapshot_promoted(
-    snapshot: &WorkspaceCacheStateSnapshot,
+fn mark_home_cache_snapshot_promoted(
+    snapshot: &HomeCacheStateSnapshot,
     reuse_key: Option<&str>,
     profile_name: &str,
     completed_at: &str,
     promoted: bool,
 ) -> bool {
     if promoted && let Some(reuse_key) = reuse_key {
-        snapshot.upsert_workspace_cache_state(HeldWorkspaceState {
+        snapshot.upsert_home_cache_state(HeldHomeState {
             reuse_key: reuse_key.to_owned(),
             last_completed_at: completed_at.to_owned(),
-            workspace_caches: vec![WorkspaceCacheCapability {
+            home_caches: vec![HomeCacheCapability {
                 profile: profile_name.to_owned(),
-                workspace_affinity_version: WORKSPACE_AFFINITY_VERSION,
+                home_affinity_version: HOME_AFFINITY_VERSION,
             }],
         });
     }
@@ -262,14 +261,15 @@ pub struct FinalizeContext {
     pub runner_id: String,
     pub reuse_result: SandboxReuseResult,
     pub profile_name: String,
+    pub rootfs_hash: String,
     pub reuse_key: Option<String>,
     pub cli_agent_session_id: Option<String>,
     pub discovered_cli_agent_session_id: Option<String>,
     pub restored_session_identity: Option<RestoredSessionIdentity>,
     pub source_ip: String,
     pub network_log_session: Option<NetworkLogSession>,
-    pub workspace_image: Option<WorkspaceImageLease>,
-    pub workspace_image_size_bytes: u64,
+    pub home_image: Option<HomeImageLease>,
+    pub home_image_size_bytes: u64,
     pub storage_fingerprints: StorageFingerprints,
     pub device_rate_limits: Option<sandbox::DeviceRateLimits>,
     pub guest_timezone_intent: GuestTimezoneIntent,
@@ -278,7 +278,7 @@ pub struct FinalizeContext {
     pub status: Arc<StatusTracker>,
     pub reuse_state_notify: Arc<tokio::sync::Notify>,
     pub active_run_reuse: ActiveRunReusePublisher,
-    pub workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
+    pub home_cache_snapshot: HomeCacheStateSnapshot,
     pub parking_gate: ParkingGate,
     pub network_log_drain: NetworkLogDrainCoordinator,
     pub exit_code: i32,
@@ -394,7 +394,7 @@ async fn finalize_claimed_run_inner(
         RunCleanupDisposition::IdlePoolOwned | RunCleanupDisposition::HandoffOwned => {
             ("runner_host_finalization_reusable_sandbox", true, None)
         }
-        _ if reuse_state_changed => ("runner_host_finalization_workspace_cache", true, None),
+        _ if reuse_state_changed => ("runner_host_finalization_home_cache", true, None),
         RunCleanupDisposition::DestroyCompleted | RunCleanupDisposition::StatusRemoved => {
             ("runner_host_finalization_no_resource", true, None)
         }
@@ -513,14 +513,15 @@ async fn finalize_sandbox_for_completion_inner(
         runner_id,
         reuse_result,
         profile_name,
+        rootfs_hash,
         reuse_key,
         cli_agent_session_id,
         discovered_cli_agent_session_id,
         restored_session_identity,
         source_ip,
         mut network_log_session,
-        workspace_image,
-        workspace_image_size_bytes,
+        home_image,
+        home_image_size_bytes,
         storage_fingerprints,
         device_rate_limits,
         guest_timezone_intent,
@@ -529,7 +530,7 @@ async fn finalize_sandbox_for_completion_inner(
         status,
         reuse_state_notify,
         active_run_reuse,
-        workspace_cache_snapshot,
+        home_cache_snapshot,
         parking_gate,
         network_log_drain,
         exit_code,
@@ -550,7 +551,7 @@ async fn finalize_sandbox_for_completion_inner(
     if hard_cancelled {
         telemetry.record_outcome("runner_host_finalization_cancelled", "cancelled");
     }
-    let terminal_status = workspace_terminal_status(exit_code, cancelled);
+    let terminal_status = home_terminal_status(exit_code, cancelled);
     let completed_at = local_completed_at();
     let resolved_cli_agent_session_id = cli_agent_session_id
         .as_deref()
@@ -566,8 +567,8 @@ async fn finalize_sandbox_for_completion_inner(
         } else {
             None
         };
-    let workspace_promotion = workspace_image.and_then(|workspace_image| {
-        workspace_image.into_promotion_context(WorkspaceImagePromotionRequest {
+    let home_promotion = home_image.and_then(|home_image| {
+        home_image.into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
             restored_session_identity: restored_session_identity.as_ref(),
@@ -576,7 +577,7 @@ async fn finalize_sandbox_for_completion_inner(
             storage_fingerprints: storage_fingerprints.clone(),
         })
     });
-    let workspace_promotion_reuse_key = workspace_promotion
+    let home_promotion_reuse_key = home_promotion
         .as_ref()
         .map(|promotion| promotion.reuse_key().to_owned());
 
@@ -604,6 +605,7 @@ async fn finalize_sandbox_for_completion_inner(
             reuse_key: reuse_key.clone(),
             sandbox_id,
             profile_name: profile_name.clone(),
+            rootfs_hash: rootfs_hash.clone(),
             device_rate_limits: device_rate_limits.clone(),
             budget_lease: active_lease.into_idle_park_lease(),
             source_ip,
@@ -611,8 +613,8 @@ async fn finalize_sandbox_for_completion_inner(
             restored_session_identity,
             history_generation_run_id,
             guest_timezone_intent,
-            workspace_image_size_bytes,
-            workspace_promotion,
+            home_image_size_bytes,
+            home_promotion,
             handoff: publishes_exact_sandbox.then(|| active_run_reuse.handoff_signal()),
         });
         let park_outcome = match park_request
@@ -631,7 +633,7 @@ async fn finalize_sandbox_for_completion_inner(
                         sandbox,
                         factory: failure_factory,
                         budget_lease,
-                        workspace_promotion,
+                        home_promotion,
                     } = active;
                     warn!(
                         run_id = %run_id,
@@ -644,7 +646,7 @@ async fn finalize_sandbox_for_completion_inner(
                     let destroy_result = stop_and_destroy_sandbox(
                         sandbox,
                         &**failure_factory,
-                        workspace_promotion,
+                        home_promotion,
                         ActiveCleanupContext {
                             run_id,
                             sandbox_id,
@@ -656,19 +658,19 @@ async fn finalize_sandbox_for_completion_inner(
                         },
                     )
                     .await;
-                    let workspace_cache_promoted = mark_workspace_cache_snapshot_promoted(
-                        &workspace_cache_snapshot,
+                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                        &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
-                        destroy_result.workspace_cache_promoted,
+                        destroy_result.home_cache_promoted,
                     );
                     record_destroy_result(destroy_result.outcome, destroy_bookkeeping);
                     return mark_reuse_state_refresh(
                         FinalizationReady::new(BudgetOwnership::active(
                             ActiveBudgetLease::from_idle_park_lease(budget_lease),
                         )),
-                        workspace_cache_promoted,
+                        home_cache_promoted,
                     );
                 }
                 IdleParkFailureParts::Parked {
@@ -711,16 +713,16 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let workspace_cache_promoted = mark_workspace_cache_snapshot_promoted(
-                        &workspace_cache_snapshot,
+                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                        &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
-                        destroy_result.workspace_cache_promoted,
+                        destroy_result.home_cache_promoted,
                     );
                     return mark_reuse_state_refresh(
                         FinalizationReady::new(destroy_result.budget),
-                        workspace_cache_promoted,
+                        home_cache_promoted,
                     );
                 }
                 IdleParkFailureParts::RunningHandoff {
@@ -774,12 +776,12 @@ async fn finalize_sandbox_for_completion_inner(
                 destroy_bookkeeping,
             )
             .await;
-            reuse_state_changed |= mark_workspace_cache_snapshot_promoted(
-                &workspace_cache_snapshot,
+            reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                &home_cache_snapshot,
                 Some(&reuse_key),
                 &profile_name,
                 &completed_at,
-                destroy_result.workspace_cache_promoted,
+                destroy_result.home_cache_promoted,
             );
             destroy_result.budget
         } else if let Some(non_reusable) = non_reusable {
@@ -871,12 +873,12 @@ async fn finalize_sandbox_for_completion_inner(
                 destroy_bookkeeping,
             )
             .await;
-            reuse_state_changed |= mark_workspace_cache_snapshot_promoted(
-                &workspace_cache_snapshot,
+            reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                &home_cache_snapshot,
                 Some(&reuse_key),
                 &profile_name,
                 &completed_at,
-                destroy_result.workspace_cache_promoted,
+                destroy_result.home_cache_promoted,
             );
             destroy_result.budget
         } else {
@@ -896,16 +898,16 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let workspace_cache_promoted = mark_workspace_cache_snapshot_promoted(
-                        &workspace_cache_snapshot,
+                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                        &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
-                        destroy_result.workspace_cache_promoted,
+                        destroy_result.home_cache_promoted,
                     );
                     return mark_reuse_state_refresh(
                         FinalizationReady::new(destroy_result.budget),
-                        workspace_cache_promoted,
+                        home_cache_promoted,
                     );
                 }
                 match deliver_exact_handoff(&active_run_reuse, candidate, run_id) {
@@ -981,16 +983,16 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let workspace_cache_promoted = mark_workspace_cache_snapshot_promoted(
-                        &workspace_cache_snapshot,
+                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                        &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
-                        destroy_result.workspace_cache_promoted,
+                        destroy_result.home_cache_promoted,
                     );
                     return mark_reuse_state_refresh(
                         FinalizationReady::new(destroy_result.budget),
-                        workspace_cache_promoted,
+                        home_cache_promoted,
                     );
                 }
             };
@@ -1023,16 +1025,16 @@ async fn finalize_sandbox_for_completion_inner(
                             destroy_bookkeeping,
                         )
                         .await;
-                        let workspace_cache_promoted = mark_workspace_cache_snapshot_promoted(
-                            &workspace_cache_snapshot,
+                        let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                            &home_cache_snapshot,
                             Some(&reuse_key),
                             &profile_name,
                             &completed_at,
-                            destroy_result.workspace_cache_promoted,
+                            destroy_result.home_cache_promoted,
                         );
                         return mark_reuse_state_refresh(
                             FinalizationReady::new(destroy_result.budget),
-                            workspace_cache_promoted,
+                            home_cache_promoted,
                         );
                     }
                     drop(transfer_guard);
@@ -1057,16 +1059,16 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let workspace_cache_promoted = mark_workspace_cache_snapshot_promoted(
-                        &workspace_cache_snapshot,
+                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                        &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
-                        destroy_result.workspace_cache_promoted,
+                        destroy_result.home_cache_promoted,
                     );
                     return mark_reuse_state_refresh(
                         FinalizationReady::new(destroy_result.budget),
-                        workspace_cache_promoted,
+                        home_cache_promoted,
                     );
                 }
                 break match pool.park(candidate) {
@@ -1160,12 +1162,12 @@ async fn finalize_sandbox_for_completion_inner(
                             destroy_bookkeeping,
                         )
                         .await;
-                        reuse_state_changed |= mark_workspace_cache_snapshot_promoted(
-                            &workspace_cache_snapshot,
+                        reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                            &home_cache_snapshot,
                             Some(&reuse_key),
                             &profile_name,
                             &completed_at,
-                            destroy_result.workspace_cache_promoted,
+                            destroy_result.home_cache_promoted,
                         );
                         destroy_result.budget
                     }
@@ -1182,7 +1184,7 @@ async fn finalize_sandbox_for_completion_inner(
         let destroy_result = stop_and_destroy_sandbox(
             sandbox,
             &**factory,
-            workspace_promotion,
+            home_promotion,
             ActiveCleanupContext {
                 run_id,
                 sandbox_id,
@@ -1194,12 +1196,12 @@ async fn finalize_sandbox_for_completion_inner(
             },
         )
         .await;
-        reuse_state_changed |= mark_workspace_cache_snapshot_promoted(
-            &workspace_cache_snapshot,
-            workspace_promotion_reuse_key.as_deref(),
+        reuse_state_changed |= mark_home_cache_snapshot_promoted(
+            &home_cache_snapshot,
+            home_promotion_reuse_key.as_deref(),
             &profile_name,
             &completed_at,
-            destroy_result.workspace_cache_promoted,
+            destroy_result.home_cache_promoted,
         );
         record_destroy_result(destroy_result.outcome, destroy_bookkeeping);
         BudgetOwnership::active(active_lease)
@@ -1219,12 +1221,12 @@ struct DestroyBookkeepingContext<'a> {
 
 struct ActiveOwnedIdleDestroyResult {
     budget: BudgetOwnership,
-    workspace_cache_promoted: bool,
+    home_cache_promoted: bool,
 }
 
 struct ActiveDestroyResult {
     outcome: DestroyOutcome,
-    workspace_cache_promoted: bool,
+    home_cache_promoted: bool,
 }
 
 fn record_destroy_result(outcome: DestroyOutcome, context: DestroyBookkeepingContext<'_>) {
@@ -1249,7 +1251,7 @@ async fn destroy_active_owned_idle_payload(
     record_destroy_result(destroy_result.outcome, bookkeeping);
     ActiveOwnedIdleDestroyResult {
         budget: BudgetOwnership::active(ActiveBudgetLease::from_idle_park_lease(budget_lease)),
-        workspace_cache_promoted: destroy_result.workspace_cache_promoted,
+        home_cache_promoted: destroy_result.home_cache_promoted,
     }
 }
 
@@ -1282,13 +1284,13 @@ fn active_cleanup_reason(
     }
 }
 
-fn workspace_terminal_status(exit_code: i32, cancelled: bool) -> WorkspaceCacheTerminalStatus {
+fn home_terminal_status(exit_code: i32, cancelled: bool) -> HomeCacheTerminalStatus {
     if cancelled {
-        WorkspaceCacheTerminalStatus::Cancelled
+        HomeCacheTerminalStatus::Cancelled
     } else if exit_code == 0 {
-        WorkspaceCacheTerminalStatus::Success
+        HomeCacheTerminalStatus::Success
     } else {
-        WorkspaceCacheTerminalStatus::NonzeroExit
+        HomeCacheTerminalStatus::NonzeroExit
     }
 }
 
@@ -1306,15 +1308,12 @@ struct ActiveCleanupContext<'a> {
 async fn stop_and_destroy_sandbox(
     mut sandbox: Box<dyn Sandbox>,
     factory: &dyn SandboxFactory,
-    workspace_promotion: Option<WorkspaceImagePromotionContext>,
+    home_promotion: Option<HomeImagePromotionContext>,
     mut context: ActiveCleanupContext<'_>,
 ) -> ActiveDestroyResult {
-    let prepared_promotion = prepare_workspace_image_from_active_sandbox(
-        sandbox.as_ref(),
-        workspace_promotion,
-        context.reason,
-    )
-    .await;
+    let prepared_promotion =
+        prepare_home_image_from_active_sandbox(sandbox.as_ref(), home_promotion, context.reason)
+            .await;
     let mut uncertain = false;
     let session_id = context.cli_agent_session_id;
     let stopped = match AssertUnwindSafe(sandbox.stop()).catch_unwind().await {
@@ -1344,7 +1343,7 @@ async fn stop_and_destroy_sandbox(
             false
         }
     };
-    let workspace_cache_promoted = match (prepared_promotion, stopped) {
+    let home_cache_promoted = match (prepared_promotion, stopped) {
         (Some(promotion), true) => promotion.publish().await,
         (Some(promotion), false) => {
             promotion.abandon("active_sandbox_stop_failed").await;
@@ -1380,7 +1379,7 @@ async fn stop_and_destroy_sandbox(
     };
     ActiveDestroyResult {
         outcome,
-        workspace_cache_promoted,
+        home_cache_promoted,
     }
 }
 
@@ -1396,7 +1395,7 @@ mod tests {
     use guest_contracts::reuse_preparation::{ReusePreparationReport, RootFilesystemCapacity};
     use guest_contracts::session_history_identity::{
         SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind,
-        SessionHistorySidecarExportMetadata, SessionHistorySourceRef,
+        SessionHistorySourceRef,
     };
     use sandbox::{ExecResult, SandboxFactory, SandboxId};
     use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandboxOverrides};
@@ -1409,6 +1408,14 @@ mod tests {
     use crate::job_lifecycle::{ActiveBudgetLease, RunCleanupDisposition, RunCleanupState};
     use runner_host::paths::RunnerPaths;
     use runner_lifecycle::active_runs::ActiveRuns;
+    use runner_lifecycle::home_image_cache::{
+        HomeImageCache, HomeImageLeaseIdentity, HomeImagePrepareRequest, HomeImagePromotionContext,
+        HomeImagePromotionIdentityRequest, HomeImagePromotionRequest,
+    };
+    use runner_lifecycle::home_promotion::test_support::{
+        add_healthy_cache_preparation_matcher,
+        mock_sandbox_ready_for_cache_preparation as cache_sandbox,
+    };
     use runner_lifecycle::idle_pool::{
         IdleParkRequest, IdleParkRequestParts, IdlePool, IdlePoolConfig, ParkResult, ParkingGate,
         RestoreReservedIdleResult, test_support::ParkedIdleCandidateBuilder,
@@ -1419,16 +1426,6 @@ mod tests {
     use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
     use runner_lifecycle::restored_session_identity::RestoredSessionIdentity;
     use runner_lifecycle::status::StatusTracker;
-    use runner_lifecycle::workspace_image_cache::{
-        WorkspaceImageCache, WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
-        WorkspaceImagePromotionContext, WorkspaceImagePromotionIdentityRequest,
-        WorkspaceImagePromotionOutcome, WorkspaceImagePromotionRequest,
-        WorkspaceSessionHistorySidecarRepresentation,
-    };
-    use runner_lifecycle::workspace_promotion::test_support::{
-        add_healthy_cache_preparation_matcher,
-        mock_sandbox_ready_for_cache_preparation as cache_sandbox,
-    };
     use runner_network::network_log_drain::NetworkLogDrainCoordinator;
     use runner_network::network_log_manager::NetworkLogManager;
     use runner_storage::storage_fingerprints::StorageFingerprint;
@@ -1475,13 +1472,13 @@ mod tests {
         ActiveRuns::new(Arc::new(tokio::sync::Notify::new()))
     }
 
-    async fn prepare_and_publish_workspace_image(
+    async fn prepare_and_publish_home_image(
         sandbox: &dyn Sandbox,
-        promotion: WorkspaceImagePromotionContext,
+        promotion: HomeImagePromotionContext,
     ) -> bool {
-        prepare_workspace_image_from_active_sandbox(sandbox, Some(promotion), "test")
+        prepare_home_image_from_active_sandbox(sandbox, Some(promotion), "test")
             .await
-            .expect("workspace promotion should prepare")
+            .expect("home promotion should prepare")
             .publish()
             .await
     }
@@ -1629,14 +1626,15 @@ mod tests {
                 runner_id: "runner-test".into(),
                 reuse_result: SandboxReuseResult::PoolMiss,
                 profile_name: "vm0/default".into(),
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 reuse_key: Some(session_id.into()),
                 cli_agent_session_id: Some(session_id.into()),
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
                 source_ip: "10.0.0.1".into(),
                 network_log_session: Some(network_log_session),
-                workspace_image: None,
-                workspace_image_size_bytes: 0,
+                home_image: None,
+                home_image_size_bytes: 0,
                 storage_fingerprints:
                     runner_storage::storage_fingerprints::StorageFingerprints::default(),
                 device_rate_limits: None,
@@ -1646,7 +1644,7 @@ mod tests {
                 status: Arc::clone(&self.status),
                 reuse_state_notify: Arc::new(tokio::sync::Notify::new()),
                 active_run_reuse: ActiveRunReusePublisher::detached(),
-                workspace_cache_snapshot: WorkspaceCacheStateSnapshot::new(),
+                home_cache_snapshot: HomeCacheStateSnapshot::new(),
                 parking_gate: self.parking_gate.clone(),
                 network_log_drain: NetworkLogDrainCoordinator::noop(),
                 exit_code: 0,
@@ -1659,47 +1657,33 @@ mod tests {
         }
     }
 
-    async fn prepare_test_workspace_image_lease(
+    async fn prepare_test_home_image_lease(
         paths: &RunnerPaths,
-        cache: &WorkspaceImageCache,
+        cache: &HomeImageCache,
         run_id: RunId,
         sandbox_id: SandboxId,
         reuse_key: &str,
-    ) -> WorkspaceImageLease {
+    ) -> HomeImageLease {
         let lease = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some(reuse_key),
-                    working_dir: CANONICAL_WORKING_DIR,
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     image_size_bytes: b"image".len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_workspace_image(&sandbox_id), b"image")
+        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
             .await
             .unwrap();
         lease
-    }
-
-    fn test_restored_session_identity(
-        framework: SessionHistoryFramework,
-        session_id: &str,
-        history: &[u8],
-    ) -> RestoredSessionIdentity {
-        RestoredSessionIdentity::new(
-            framework,
-            session_id,
-            SessionHistoryRefKind::Blob,
-            hex::encode(Sha256::digest(history)),
-            Some(history.len() as u64),
-        )
     }
 
     fn test_verified_restored_session_identity(
@@ -1742,82 +1726,63 @@ mod tests {
         .unwrap()
     }
 
-    async fn seed_workspace_cache_with_sidecar(
+    fn home_seed_path(lease: &HomeImageLease) -> std::path::PathBuf {
+        let drive = lease.home_drive_config().expect("home drive configured");
+        match drive.seed_image.expect("cache hit has a pinned seed") {
+            sandbox::HomeDriveSeedImage::Move(path) | sandbox::HomeDriveSeedImage::Copy(path) => {
+                path
+            }
+        }
+    }
+
+    async fn seed_home_cache_image(
         paths: &RunnerPaths,
-        cache: &WorkspaceImageCache,
+        cache: &HomeImageCache,
         reuse_key: &str,
-        session_id: &str,
-        history: &[u8],
-    ) -> RestoredSessionIdentity {
+        image: &[u8],
+    ) {
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
-        let restored_session_identity = test_restored_session_identity(
-            SessionHistoryFramework::ClaudeCode,
-            session_id,
-            history,
-        );
         let lease = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     reuse_key: Some(reuse_key),
-                    working_dir: CANONICAL_WORKING_DIR,
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: image.len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
+        let active_image = paths.active_home_image(&sandbox_id);
+        tokio::fs::create_dir_all(active_image.parent().unwrap())
             .await
             .unwrap();
-        tokio::fs::write(paths.active_workspace_image(&sandbox_id), b"image")
-            .await
-            .unwrap();
-        let promotion = lease
-            .into_promotion_context(WorkspaceImagePromotionRequest {
-                run_id,
-                sandbox_id,
-                restored_session_identity: Some(&restored_session_identity),
-                terminal_status: WorkspaceCacheTerminalStatus::Success,
-                completed_at: "2026-07-31T00:00:00.000Z".into(),
-                storage_fingerprints: StorageFingerprints::default(),
-            })
-            .unwrap();
-        let guard = promotion
-            .try_acquire_session_history_sidecar_entry_guard()
-            .await
-            .unwrap();
-        let tmp_path = guard.session_history_sidecar_tmp_path();
-        tokio::fs::create_dir_all(tmp_path.parent().unwrap())
-            .await
-            .unwrap();
-        tokio::fs::write(&tmp_path, history).await.unwrap();
-        let source = guard.session_history_sidecar_source(
-            tmp_path,
-            WorkspaceSessionHistorySidecarRepresentation::Raw,
-            history.len() as u64,
-        );
-        assert_eq!(
-            guard
-                .promote_with_session_history_sidecar(&promotion, &source)
+        tokio::fs::write(active_image, image).await.unwrap();
+        assert!(
+            lease
+                .promote(
+                    run_id,
+                    HomeCacheTerminalStatus::Success,
+                    "2026-07-31T00:00:00.000Z".into(),
+                    &StorageFingerprints::default(),
+                )
                 .await
-                .unwrap(),
-            WorkspaceImagePromotionOutcome::Promoted
+                .unwrap()
         );
-        restored_session_identity
     }
 
     fn test_promotion_context(
-        lease: WorkspaceImageLease,
+        lease: HomeImageLease,
         run_id: RunId,
         sandbox_id: SandboxId,
-        terminal_status: WorkspaceCacheTerminalStatus,
+        terminal_status: HomeCacheTerminalStatus,
         storage_fingerprints: runner_storage::storage_fingerprints::StorageFingerprints,
-    ) -> WorkspaceImagePromotionContext {
+    ) -> HomeImagePromotionContext {
         lease
-            .into_promotion_context(WorkspaceImagePromotionRequest {
+            .into_promotion_context(HomeImagePromotionRequest {
                 run_id,
                 sandbox_id,
                 restored_session_identity: None,
@@ -1825,7 +1790,7 @@ mod tests {
                 completed_at: local_completed_at(),
                 storage_fingerprints,
             })
-            .expect("test workspace image should be promotable")
+            .expect("test home image should be promotable")
     }
 
     async fn sandbox_with_overrides(
@@ -1843,7 +1808,7 @@ mod tests {
                     memory_mb: 4096,
                 },
                 device_rate_limits: None,
-                workspace_drive: None,
+                home_drive: None,
             })
             .await
             .expect("create sandbox with overrides");
@@ -2041,8 +2006,8 @@ mod tests {
         let workspace_dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(workspace_dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
-        let workspace_image = prepare_test_workspace_image_lease(
+        let cache = HomeImageCache::new(paths.clone());
+        let home_image = prepare_test_home_image_lease(
             &paths,
             &cache,
             run_id,
@@ -2078,8 +2043,8 @@ mod tests {
         );
         context.factory = factory;
         context.cleanup_state = cleanup_state.clone();
-        context.workspace_image = Some(workspace_image);
-        context.workspace_image_size_bytes = b"image".len() as u64;
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = b"image".len() as u64;
 
         let (_finalization_ready, events) = capture_async_log_events(
             finalize_sandbox_for_completion(Some(sandbox), ActiveBudgetLease::new(lease), context),
@@ -2090,7 +2055,7 @@ mod tests {
         assert_eq!(overrides.unpark_call_count(), 1);
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(fixture.idle_pool.lock().await.len(), 0);
-        let cache_states = cache.held_workspace_states().await;
+        let cache_states = cache.held_home_states().await;
         assert_eq!(cache_states.len(), 1);
         assert_eq!(cache_states[0].reuse_key, "thread:reuse-rejected");
         assert_eq!(
@@ -2194,29 +2159,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn workspace_promotion_freezes_and_promotes_cache_entry() {
+    async fn home_promotion_freezes_and_promotes_cache_entry() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let lease =
-            prepare_test_workspace_image_lease(&paths, &cache, run_id, sandbox_id, "sess-promote")
-                .await;
-        let sandbox = cache_sandbox("workspace-promotion");
+            prepare_test_home_image_lease(&paths, &cache, run_id, sandbox_id, "sess-promote").await;
+        let sandbox = cache_sandbox("home-promotion");
         let promotion = test_promotion_context(
             lease,
             run_id,
             sandbox_id,
-            WorkspaceCacheTerminalStatus::Success,
+            HomeCacheTerminalStatus::Success,
             runner_storage::storage_fingerprints::StorageFingerprints::default(),
         );
 
-        let promoted = prepare_and_publish_workspace_image(&sandbox, promotion).await;
+        let promoted = prepare_and_publish_home_image(&sandbox, promotion).await;
 
         assert!(promoted);
-        let states = cache.held_workspace_states().await;
+        let states = cache.held_home_states().await;
         assert_eq!(states.len(), 1);
         assert_eq!(states[0].reuse_key, "sess-promote");
         let exec_calls = sandbox.exec_calls();
@@ -2226,26 +2190,28 @@ mod tests {
         assert!(
             exec_calls[1]
                 .cmd
-                .contains("\"$workspace_fsfreeze_path\" --freeze")
+                .contains("\"$home_fsfreeze_path\" --freeze")
         );
     }
 
     #[tokio::test]
-    async fn non_success_workspace_promotion_preserves_affected_paths_across_cache_sources() {
+    async fn non_success_home_promotion_preserves_affected_paths_across_cache_sources() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
 
         for (terminal_name, terminal_status) in [
-            ("nonzero", WorkspaceCacheTerminalStatus::NonzeroExit),
-            ("cancelled", WorkspaceCacheTerminalStatus::Cancelled),
+            ("nonzero", HomeCacheTerminalStatus::NonzeroExit),
+            ("cancelled", HomeCacheTerminalStatus::Cancelled),
         ] {
             for (source_name, publish_seed) in [("cache-hit", true), ("idle-reuse", false)] {
                 let session_id = format!("sess-{terminal_name}-{source_name}");
-                let removed_storage_path = format!("{CANONICAL_WORKING_DIR}/removed-storage");
+                // Persisted input scope is fixed home, not cwd: both previous and current
+                // storage mounts here deliberately live outside /home/user/workspace.
+                let removed_storage_path = "/home/user/.npm/removed-storage".to_owned();
                 let removed_artifact_path = format!("{CANONICAL_WORKING_DIR}/removed-artifact");
-                let current_storage_path = format!("{CANONICAL_WORKING_DIR}/current-storage");
+                let current_storage_path = "/home/user/current-storage".to_owned();
                 let current_artifact_path = format!("{CANONICAL_WORKING_DIR}/current-artifact");
                 let previous_storage = StorageFingerprints {
                     storages: HashMap::from([(
@@ -2260,7 +2226,7 @@ mod tests {
 
                 let seed_run_id = RunId::new_v4();
                 let seed_sandbox_id = SandboxId::new_v4();
-                let seed_lease = prepare_test_workspace_image_lease(
+                let seed_lease = prepare_test_home_image_lease(
                     &paths,
                     &cache,
                     seed_run_id,
@@ -2272,21 +2238,21 @@ mod tests {
                     seed_lease,
                     seed_run_id,
                     seed_sandbox_id,
-                    WorkspaceCacheTerminalStatus::Success,
+                    HomeCacheTerminalStatus::Success,
                     previous_storage.clone(),
                 );
 
                 let run_id = RunId::new_v4();
                 let (sandbox_id, lease) = if publish_seed {
                     assert!(
-                        prepare_and_publish_workspace_image(
-                            &cache_sandbox(format!("workspace-seed-{session_id}")),
+                        prepare_and_publish_home_image(
+                            &cache_sandbox(format!("home-seed-{session_id}")),
                             seed_promotion,
                         )
                         .await
                     );
                     let sandbox_id = SandboxId::new_v4();
-                    let lease = prepare_test_workspace_image_lease(
+                    let lease = prepare_test_home_image_lease(
                         &paths,
                         &cache,
                         run_id,
@@ -2298,11 +2264,11 @@ mod tests {
                     (sandbox_id, lease)
                 } else {
                     let expected = cache
-                        .expected_promotion_identity(WorkspaceImagePromotionIdentityRequest {
+                        .expected_promotion_identity(HomeImagePromotionIdentityRequest {
                             sandbox_id: seed_sandbox_id,
                             profile_name: "vm0/default",
                             reuse_key: &session_id,
-                            working_dir: CANONICAL_WORKING_DIR,
+                            rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                             image_size_bytes: b"image".len() as u64,
                         })
                         .expect("idle reuse promotion identity should be valid");
@@ -2313,7 +2279,7 @@ mod tests {
                 };
                 assert_eq!(lease.previous_storage(), Some(&previous_storage));
 
-                let sandbox = cache_sandbox(format!("workspace-promotion-{session_id}"));
+                let sandbox = cache_sandbox(format!("home-promotion-{session_id}"));
                 let current_manifest = StorageManifest {
                     storages: vec![StorageEntry {
                         name: "current-storage".into(),
@@ -2343,7 +2309,7 @@ mod tests {
                     StorageFingerprints::from_manifest(&current_manifest),
                 );
 
-                let promoted = prepare_and_publish_workspace_image(&sandbox, promotion).await;
+                let promoted = prepare_and_publish_home_image(&sandbox, promotion).await;
 
                 assert!(promoted);
                 let exec_calls = sandbox.exec_calls();
@@ -2352,20 +2318,19 @@ mod tests {
                 assert!(
                     exec_calls[1]
                         .cmd
-                        .contains("\"$workspace_fsfreeze_path\" --freeze")
+                        .contains("\"$home_fsfreeze_path\" --freeze")
                 );
-                assert!(!exec_calls[0].cmd.contains("export-session-history-sidecar"));
                 let checkout = cache
-                    .prepare(WorkspaceImagePrepareRequest {
-                        identity: WorkspaceImageLeaseIdentity {
+                    .prepare(HomeImagePrepareRequest {
+                        identity: HomeImageLeaseIdentity {
                             run_id: RunId::new_v4(),
                             sandbox_id: SandboxId::new_v4(),
                             profile_name: "vm0/default",
                             reuse_key: Some(&session_id),
-                            working_dir: CANONICAL_WORKING_DIR,
+                            rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                             image_size_bytes: b"image".len() as u64,
                         },
-                        workspace_drive_required: true,
+                        home_drive_required: true,
                     })
                     .await;
 
@@ -2415,65 +2380,64 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn workspace_promotion_skips_cache_when_guest_freeze_fails() {
+    async fn home_promotion_skips_cache_when_guest_freeze_fails() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let lease =
-            prepare_test_workspace_image_lease(&paths, &cache, run_id, sandbox_id, "sess-failed")
-                .await;
-        let sandbox = cache_sandbox("workspace-promotion-fail");
+            prepare_test_home_image_lease(&paths, &cache, run_id, sandbox_id, "sess-failed").await;
+        let sandbox = cache_sandbox("home-promotion-fail");
         sandbox.push_exec_result(Ok(ExecResult::new(64, Vec::new(), b"not mounted".to_vec())));
         let promotion = test_promotion_context(
             lease,
             run_id,
             sandbox_id,
-            WorkspaceCacheTerminalStatus::Success,
+            HomeCacheTerminalStatus::Success,
             runner_storage::storage_fingerprints::StorageFingerprints::default(),
         );
 
         let prepared =
-            prepare_workspace_image_from_active_sandbox(&sandbox, Some(promotion), "test").await;
+            prepare_home_image_from_active_sandbox(&sandbox, Some(promotion), "test").await;
 
         assert!(prepared.is_none());
         assert!(
-            cache.held_workspace_states().await.is_empty(),
-            "freeze failure must not advertise an inconsistent workspace image"
+            cache.held_home_states().await.is_empty(),
+            "freeze failure must not advertise an inconsistent home image"
         );
         assert_eq!(sandbox.exec_calls().len(), 2);
     }
 
     #[tokio::test]
-    async fn finalizer_parks_workspace_cache_promotion_without_publishing_cache() {
+    async fn finalizer_parks_home_cache_promotion_without_publishing_cache() {
         let (_budget, lease) = test_budget_lease();
         let fixture = FinalizeTestFixture::new().await;
         let network_log_session = fixture.network_log_session().await;
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
-        let workspace_image = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+        let home_image = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some("unused-context-session"),
-                    working_dir: CANONICAL_WORKING_DIR,
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     image_size_bytes: b"image".len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_workspace_image(&sandbox_id), b"image")
+        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
             .await
             .unwrap();
         let mut context = fixture.finalize_context(
@@ -2485,8 +2449,8 @@ mod tests {
         );
         context.cli_agent_session_id = None;
         context.discovered_cli_agent_session_id = Some("sess-guest".into());
-        context.workspace_image = Some(workspace_image);
-        context.workspace_image_size_bytes = b"image".len() as u64;
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = b"image".len() as u64;
 
         let _finalization_ready = finalize_sandbox_for_completion(
             Some(Box::new(mock_sandbox_ready_for_idle_reuse(
@@ -2500,41 +2464,41 @@ mod tests {
         let idle_states = fixture.idle_pool.lock().await.held_sandbox_states();
         assert_eq!(idle_states.len(), 1);
         assert_eq!(idle_states[0].reuse_key, "unused-context-session");
-        let cache_states = cache.held_workspace_states().await;
+        let cache_states = cache.held_home_states().await;
         assert!(
             cache_states.is_empty(),
-            "parked sandboxes keep the live workspace mounted and must not publish a separate cache image"
+            "parked sandboxes keep the live home mounted and must not publish a separate cache image"
         );
     }
 
     #[tokio::test]
-    async fn finalizer_rejects_mismatched_workspace_promotion_before_parking() {
+    async fn finalizer_rejects_mismatched_home_promotion_before_parking() {
         let (_budget, lease) = test_budget_lease();
         let fixture = FinalizeTestFixture::new().await;
         let network_log_session = fixture.network_log_session().await;
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
-        let workspace_image = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+        let home_image = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some("sess-mismatch"),
-                    working_dir: CANONICAL_WORKING_DIR,
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     image_size_bytes: b"image".len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_workspace_image(&sandbox_id), b"image")
+        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
             .await
             .unwrap();
         let overrides = Arc::new(MockSandboxOverrides::new());
@@ -2547,8 +2511,8 @@ mod tests {
             RunCancellationHandle::new(),
         );
         context.factory = factory;
-        context.workspace_image = Some(workspace_image);
-        context.workspace_image_size_bytes = b"image".len() as u64 + 1;
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = b"image".len() as u64 + 1;
 
         let _finalization_ready =
             finalize_sandbox_for_completion(Some(sandbox), ActiveBudgetLease::new(lease), context)
@@ -2562,98 +2526,59 @@ mod tests {
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(fixture.idle_pool.lock().await.len(), 0);
         assert!(
-            cache.held_workspace_states().await.is_empty(),
-            "mismatched park-time promotion must not publish workspace cache"
+            cache.held_home_states().await.is_empty(),
+            "mismatched park-time promotion must not publish home cache"
         );
     }
 
     #[tokio::test]
-    async fn finalizer_republishes_failed_sessionless_cache_hit_and_preserves_sidecar() {
-        assert_finalizer_republishes_sessionless_cache_hit_and_preserves_sidecar(false).await;
+    async fn finalizer_republishes_failed_sessionless_home_hit_without_inventing_history_proof() {
+        assert_finalizer_republishes_sessionless_home_hit(false).await;
     }
 
     #[tokio::test]
-    async fn finalizer_republishes_cancelled_sessionless_cache_hit_and_preserves_sidecar() {
-        assert_finalizer_republishes_sessionless_cache_hit_and_preserves_sidecar(true).await;
+    async fn finalizer_republishes_hard_cancelled_sessionless_home_hit_without_inventing_history_proof()
+     {
+        assert_finalizer_republishes_sessionless_home_hit(true).await;
     }
 
-    async fn assert_finalizer_republishes_sessionless_cache_hit_and_preserves_sidecar(
-        cancelled: bool,
-    ) {
+    async fn assert_finalizer_republishes_sessionless_home_hit(cancelled: bool) {
         let (_budget, lease) = test_budget_lease();
         let fixture = FinalizeTestFixture::new().await;
         let network_log_session = fixture.network_log_session().await;
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
         let reuse_key = "thread:rotating-provider";
-        let previous_session_id = "claude-session-a";
-        let previous_history = br#"{"type":"message","content":"claude-a"}"#;
-        let previous_identity = seed_workspace_cache_with_sidecar(
-            &paths,
-            &cache,
-            reuse_key,
-            previous_session_id,
-            previous_history,
-        )
-        .await;
-        let seeded_entry = cache.inspect().await.unwrap().entries.remove(0);
-        let sidecar_metadata_path = cache
-            .entry_paths(&seeded_entry.cache_key)
-            .session_history_sidecar_metadata()
-            .to_path_buf();
-
+        // Opaque image bytes model ordinary home + cwd state, not a second history body slot.
+        let home_bytes =
+            b"workspace/cache-marker\nhome-marker\n.npm/cache-marker\nclaude-session-a\n";
+        seed_home_cache_image(&paths, &cache, reuse_key, home_bytes).await;
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
-        let workspace_image = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+        let home_image = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     reuse_key: Some(reuse_key),
-                    working_dir: CANONICAL_WORKING_DIR,
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: home_bytes.len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        assert_eq!(
-            workspace_image.result(),
-            runner_lifecycle::workspace_image_cache::WorkspaceCacheCheckoutResult::Hit
-        );
-        let sidecar_body_path = workspace_image
-            .probe_session_history_sidecar(&previous_identity)
-            .await
-            .unwrap()
-            .path;
-        let previous_sidecar_body = tokio::fs::read(&sidecar_body_path).await.unwrap();
-        let previous_sidecar_metadata = tokio::fs::read(&sidecar_metadata_path).await.unwrap();
-        let codex_identity = test_restored_session_identity(
-            SessionHistoryFramework::Codex,
-            "codex-session-b",
-            previous_history,
-        );
-        assert!(
-            workspace_image
-                .probe_session_history_sidecar(&codex_identity)
-                .await
-                .is_err(),
-            "a Codex rotation must not consume the Claude sidecar"
-        );
-        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
+        assert!(home_image.is_cache_hit());
+        assert!(home_image.history_proof_binding().is_none());
+        let seed = home_seed_path(&home_image);
+        assert_eq!(tokio::fs::read(&seed).await.unwrap(), home_bytes);
+        let active_image = paths.active_home_image(&sandbox_id);
+        tokio::fs::create_dir_all(active_image.parent().unwrap())
             .await
             .unwrap();
-        tokio::fs::rename(
-            cache
-                .entry_paths(&seeded_entry.cache_key)
-                .current_image()
-                .to_path_buf(),
-            paths.active_workspace_image(&sandbox_id),
-        )
-        .await
-        .unwrap();
+        tokio::fs::rename(seed, &active_image).await.unwrap();
         let overrides = Arc::new(MockSandboxOverrides::new());
         let (factory, sandbox) = sandbox_with_overrides(sandbox_id, Arc::clone(&overrides)).await;
         let cancel = RunCancellationHandle::new();
@@ -2681,138 +2606,88 @@ mod tests {
         if !cancelled {
             assert!(context.parking_gate.soft_drain());
         }
-        context.workspace_image = Some(workspace_image);
-        context.workspace_image_size_bytes = b"image".len() as u64;
-
-        let _finalization_ready =
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = home_bytes.len() as u64;
+        let _ready =
             finalize_sandbox_for_completion(Some(sandbox), ActiveBudgetLease::new(lease), context)
                 .await;
-
         assert_eq!(overrides.park_call_count(), 0);
+        assert_eq!(overrides.stop_call_count(), 1);
         assert_eq!(overrides.destroy_call_count(), 1);
-        let states = cache.held_workspace_states().await;
-        assert_eq!(states.len(), 1);
-        assert_eq!(states[0].reuse_key, reuse_key);
-        let workspace_metadata: serde_json::Value = serde_json::from_slice(
-            &tokio::fs::read(
-                cache
-                    .entry_paths(&seeded_entry.cache_key)
-                    .metadata()
-                    .to_path_buf(),
-            )
-            .await
-            .unwrap(),
-        )
-        .unwrap();
-        assert!(workspace_metadata.get("cliAgentSessionId").is_none());
-        assert_eq!(
-            tokio::fs::read(&sidecar_body_path).await.unwrap(),
-            previous_sidecar_body
-        );
-        assert_eq!(
-            tokio::fs::read(&sidecar_metadata_path).await.unwrap(),
-            previous_sidecar_metadata
-        );
-
-        let exact_checkout = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+        assert_eq!(cache.held_home_states().await[0].reuse_key, reuse_key);
+        let checkout = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id: RunId::new_v4(),
                     sandbox_id: SandboxId::new_v4(),
                     profile_name: "vm0/default",
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     reuse_key: Some(reuse_key),
-                    working_dir: CANONICAL_WORKING_DIR,
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: home_bytes.len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        let sidecar = exact_checkout
-            .probe_session_history_sidecar(&previous_identity)
-            .await
-            .unwrap();
+        assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(sidecar.path).await.unwrap(),
-            previous_history
+            tokio::fs::read(home_seed_path(&checkout)).await.unwrap(),
+            home_bytes
         );
+        // Image reuse and history authority are distinct: no finalized eligible proof means
+        // the restore-plan owner must use the authoritative remote history path.
+        assert!(checkout.history_proof_binding().is_none());
     }
 
     #[tokio::test]
-    async fn finalizer_replaces_previous_sidecar_after_verified_session_rotation() {
+    async fn finalizer_rotating_source_preserves_current_image_without_inheriting_history_authority()
+     {
         let (_budget, lease) = test_budget_lease();
         let fixture = FinalizeTestFixture::new().await;
         let network_log_session = fixture.network_log_session().await;
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
-        let reuse_key = "thread:verified-provider-rotation";
-        let previous_history = br#"{"type":"message","content":"claude-a"}"#;
-        let previous_identity = seed_workspace_cache_with_sidecar(
-            &paths,
-            &cache,
-            reuse_key,
-            "claude-session-a",
-            previous_history,
-        )
-        .await;
-        let seeded_entry = cache.inspect().await.unwrap().entries.remove(0);
+        let cache = HomeImageCache::new(paths.clone());
+        let reuse_key = "thread:provider-rotation";
+        let previous_home = b"ordinary-home-state\nclaude-a\n";
+        let next_home = b"ordinary-home-state\ncodex--b\n";
+        assert_eq!(previous_home.len(), next_home.len());
+        seed_home_cache_image(&paths, &cache, reuse_key, previous_home).await;
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
-        let workspace_image = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+        let home_image = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     reuse_key: Some(reuse_key),
-                    working_dir: CANONICAL_WORKING_DIR,
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: previous_home.len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
+        assert!(home_image.is_cache_hit());
         assert_eq!(
-            workspace_image.result(),
-            runner_lifecycle::workspace_image_cache::WorkspaceCacheCheckoutResult::Hit
+            tokio::fs::read(home_seed_path(&home_image)).await.unwrap(),
+            previous_home
         );
-        let previous_body_path = workspace_image
-            .probe_session_history_sidecar(&previous_identity)
-            .await
-            .unwrap()
-            .path;
-        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
+        let active_image = paths.active_home_image(&sandbox_id);
+        tokio::fs::create_dir_all(active_image.parent().unwrap())
             .await
             .unwrap();
-        tokio::fs::rename(
-            cache
-                .entry_paths(&seeded_entry.cache_key)
-                .current_image()
-                .to_path_buf(),
-            paths.active_workspace_image(&sandbox_id),
-        )
-        .await
-        .unwrap();
-
+        tokio::fs::rename(home_seed_path(&home_image), &active_image)
+            .await
+            .unwrap();
+        tokio::fs::write(&active_image, next_home).await.unwrap();
         let next_session_id = "019e9154-c304-70f0-adde-36efb1be1701";
-        let next_history = br#"{"type":"message","content":"codex-b"}"#;
         let next_identity = test_verified_restored_session_identity(
             SessionHistoryFramework::Codex,
             next_session_id,
-            next_history,
+            b"codex-b",
         );
         let sandbox = cache_sandbox(sandbox_id.to_string());
-        sandbox.push_exec_result(Ok(ExecResult::new(
-            0,
-            serde_json::to_vec(&SessionHistorySidecarExportMetadata {
-                timings: Default::default(),
-                representation: WorkspaceSessionHistorySidecarRepresentation::Raw,
-                encoded_size: next_history.len() as u64,
-            })
-            .unwrap(),
-            Vec::new(),
-        )));
-        sandbox.push_copy_file_result(Ok(next_history.to_vec()));
         let mut context = fixture.finalize_context(
             run_id,
             sandbox_id,
@@ -2823,79 +2698,68 @@ mod tests {
         context.reuse_key = Some(reuse_key.into());
         context.cli_agent_session_id = None;
         context.discovered_cli_agent_session_id = Some(next_session_id.into());
-        context.restored_session_identity = Some(next_identity.clone());
-        context.exit_code = 0;
-        context.workspace_image = Some(workspace_image);
-        context.workspace_image_size_bytes = b"image".len() as u64;
+        context.restored_session_identity = Some(next_identity);
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = next_home.len() as u64;
         context.parking_gate.close();
-
-        let _finalization_ready = finalize_sandbox_for_completion(
+        let _ready = finalize_sandbox_for_completion(
             Some(Box::new(sandbox)),
             ActiveBudgetLease::new(lease),
             context,
         )
         .await;
-
         let checkout = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id: RunId::new_v4(),
                     sandbox_id: SandboxId::new_v4(),
                     profile_name: "vm0/default",
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     reuse_key: Some(reuse_key),
-                    working_dir: CANONICAL_WORKING_DIR,
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: next_home.len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        assert!(
-            checkout
-                .probe_session_history_sidecar(&previous_identity)
-                .await
-                .is_err(),
-            "the verified replacement must not retain the previous identity"
-        );
-        let next_sidecar = checkout
-            .probe_session_history_sidecar(&next_identity)
-            .await
-            .unwrap();
+        assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(next_sidecar.path).await.unwrap(),
-            next_history
+            tokio::fs::read(home_seed_path(&checkout)).await.unwrap(),
+            next_home
         );
-        assert!(!previous_body_path.exists());
+        // Final identity alone is not a terminal source/live-byte proof. The fixture returns
+        // cleanup-only evidence; it cannot authorize skipping remote restoration.
+        assert!(checkout.history_proof_binding().is_none());
     }
 
     #[tokio::test]
-    async fn finalizer_promotes_workspace_cache_from_reuse_key_without_resolved_session() {
+    async fn finalizer_promotes_home_cache_from_reuse_key_without_resolved_session() {
         let (_budget, lease) = test_budget_lease();
         let fixture = FinalizeTestFixture::new().await;
         let network_log_session = fixture.network_log_session().await;
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let reuse_key = "thread:lease-only";
-        let workspace_image = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+        let home_image = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some(reuse_key),
-                    working_dir: CANONICAL_WORKING_DIR,
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     image_size_bytes: b"image".len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_workspace_image(&sandbox_id), b"image")
+        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
             .await
             .unwrap();
         let mut context = fixture.finalize_context(
@@ -2911,9 +2775,9 @@ mod tests {
         context.sandbox_reuse_disposition =
             SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit);
         assert!(context.parking_gate.soft_drain());
-        context.workspace_image = Some(workspace_image);
-        context.workspace_image_size_bytes = b"image".len() as u64;
-        let workspace_cache_snapshot = context.workspace_cache_snapshot.clone();
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = b"image".len() as u64;
+        let home_cache_snapshot = context.home_cache_snapshot.clone();
 
         let _finalization_ready = finalize_sandbox_for_completion(
             Some(Box::new(cache_sandbox("reuse-key-promotion"))),
@@ -2923,54 +2787,50 @@ mod tests {
         .await;
 
         assert_eq!(fixture.idle_pool.lock().await.len(), 0);
-        let cache_states = cache.held_workspace_states().await;
+        let cache_states = cache.held_home_states().await;
         assert_eq!(cache_states.len(), 1);
         assert_eq!(cache_states[0].reuse_key, reuse_key);
         let active_runs = test_active_runs();
-        let snapshot_states =
-            workspace_cache_snapshot.current_held_workspace_states(&active_runs, None);
+        let snapshot_states = home_cache_snapshot.current_held_home_states(&active_runs, None);
         assert_eq!(snapshot_states.len(), 1);
         assert_eq!(snapshot_states[0].reuse_key, reuse_key);
-        assert_eq!(snapshot_states[0].workspace_caches.len(), 1);
-        assert_eq!(
-            snapshot_states[0].workspace_caches[0].profile,
-            "vm0/default"
-        );
+        assert_eq!(snapshot_states[0].home_caches.len(), 1);
+        assert_eq!(snapshot_states[0].home_caches[0].profile, "vm0/default");
     }
 
     #[tokio::test]
-    async fn finalizer_promotes_failed_first_run_workspace_without_session() {
+    async fn finalizer_promotes_failed_first_run_home_without_session() {
         let (_budget, lease) = test_budget_lease();
         let fixture = FinalizeTestFixture::new().await;
         let network_log_session = fixture.network_log_session().await;
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let reuse_key = "thread:first-run-failure";
-        let workspace_image = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+        let home_image = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some(reuse_key),
-                    working_dir: CANONICAL_WORKING_DIR,
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     image_size_bytes: b"image".len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
         assert_eq!(
-            workspace_image.result(),
-            runner_lifecycle::workspace_image_cache::WorkspaceCacheCheckoutResult::Miss
+            home_image.result(),
+            runner_lifecycle::home_image_cache::HomeCacheCheckoutResult::Miss
         );
-        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_workspace_image(&sandbox_id), b"image")
+        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
             .await
             .unwrap();
         let overrides = Arc::new(MockSandboxOverrides::new());
@@ -2990,9 +2850,9 @@ mod tests {
         context.sandbox_reuse_disposition =
             SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit);
         assert!(context.parking_gate.soft_drain());
-        context.workspace_image = Some(workspace_image);
-        context.workspace_image_size_bytes = b"image".len() as u64;
-        let workspace_cache_snapshot = context.workspace_cache_snapshot.clone();
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = b"image".len() as u64;
+        let home_cache_snapshot = context.home_cache_snapshot.clone();
 
         let _finalization_ready =
             finalize_sandbox_for_completion(Some(sandbox), ActiveBudgetLease::new(lease), context)
@@ -3001,50 +2861,151 @@ mod tests {
         assert_eq!(overrides.park_call_count(), 0);
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(fixture.idle_pool.lock().await.len(), 0);
-        let cache_states = cache.held_workspace_states().await;
+        let cache_states = cache.held_home_states().await;
         assert_eq!(cache_states.len(), 1);
         assert_eq!(cache_states[0].reuse_key, reuse_key);
         let inspection = cache.inspect().await.unwrap();
         assert_eq!(inspection.entries.len(), 1);
         assert_eq!(
             inspection.entries[0].last_terminal_status,
-            Some(WorkspaceCacheTerminalStatus::NonzeroExit)
+            Some(HomeCacheTerminalStatus::NonzeroExit)
         );
-        let metadata: serde_json::Value = serde_json::from_slice(
-            &tokio::fs::read(
-                cache
-                    .entry_paths(&inspection.entries[0].cache_key)
-                    .metadata()
-                    .to_path_buf(),
-            )
-            .await
-            .unwrap(),
-        )
-        .unwrap();
-        assert!(metadata.get("cliAgentSessionId").is_none());
+        let checkout = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
+                    run_id: RunId::new_v4(),
+                    sandbox_id: SandboxId::new_v4(),
+                    profile_name: "vm0/default",
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    reuse_key: Some(reuse_key),
+                    image_size_bytes: b"image".len() as u64,
+                },
+                home_drive_required: true,
+            })
+            .await;
+        assert!(checkout.is_cache_hit());
+        assert_eq!(
+            tokio::fs::read(home_seed_path(&checkout)).await.unwrap(),
+            b"image"
+        );
+        assert!(
+            checkout.history_proof_binding().is_none(),
+            "sessionless failure cannot invent history authority"
+        );
         let active_runs = test_active_runs();
-        let snapshot_states =
-            workspace_cache_snapshot.current_held_workspace_states(&active_runs, None);
+        let snapshot_states = home_cache_snapshot.current_held_home_states(&active_runs, None);
         assert_eq!(snapshot_states.len(), 1);
         assert_eq!(snapshot_states[0].reuse_key, reuse_key);
-        assert_eq!(snapshot_states[0].workspace_caches.len(), 1);
+        assert_eq!(snapshot_states[0].home_caches.len(), 1);
     }
 
     #[tokio::test]
-    async fn finalizer_stop_error_abandons_frozen_workspace_cache_before_destroy() {
+    async fn finalizer_waits_for_successful_stop_before_home_generation_publication() {
+        let (budget, lease) = test_budget_lease();
+        let fixture = FinalizeTestFixture::new().await;
+        let network_log_session = fixture.network_log_session().await;
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunnerPaths::new(dir.path().join("runner"));
+        tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
+        let cache = HomeImageCache::new(paths.clone());
+        let run_id = RunId::new_v4();
+        let sandbox_id = SandboxId::new_v4();
+        let reuse_key = "thread:stop-before-commit";
+        let home_image =
+            prepare_test_home_image_lease(&paths, &cache, run_id, sandbox_id, reuse_key).await;
+        let stop_gate = MockLifecycleGate::new();
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        overrides.set_stop_lifecycle_gate(stop_gate.clone());
+        let (factory, sandbox) = sandbox_with_overrides(sandbox_id, Arc::clone(&overrides)).await;
+        let mut context = fixture.finalize_context(
+            run_id,
+            sandbox_id,
+            reuse_key,
+            network_log_session,
+            RunCancellationHandle::new(),
+        );
+        context.factory = factory;
+        context.parking_gate.close();
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = b"image".len() as u64;
+        let snapshot = context.home_cache_snapshot.clone();
+        let finalization = tokio::spawn(finalize_sandbox_for_completion(
+            Some(sandbox),
+            ActiveBudgetLease::new(lease),
+            context,
+        ));
+        stop_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .unwrap();
+        let calls = overrides.exec_calls();
+        assert_eq!(calls.len(), 2);
+        assert!(calls[0].cmd.contains("prepare-for-cache"));
+        assert!(calls[1].cmd.contains("\"$home_fsfreeze_path\" --freeze"));
+        assert_eq!(overrides.destroy_call_count(), 0);
+        assert_eq!(overrides.park_call_count(), 0);
+        assert_eq!(
+            budget.allocated().2,
+            1,
+            "termination retains active ownership"
+        );
+        assert_eq!(
+            tokio::fs::read(paths.active_home_image(&sandbox_id))
+                .await
+                .unwrap(),
+            b"image"
+        );
+        assert!(
+            cache.held_home_states().await.is_empty(),
+            "freeze alone is not publication"
+        );
+        assert!(
+            snapshot
+                .current_held_home_states(&test_active_runs(), None)
+                .is_empty()
+        );
+        stop_gate.release_one();
+        let ready = finalization.await.unwrap();
+        assert_eq!(overrides.stop_call_count(), 1);
+        assert_eq!(overrides.destroy_call_count(), 1);
+        assert_eq!(cache.held_home_states().await[0].reuse_key, reuse_key);
+        let checkout = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
+                    run_id: RunId::new_v4(),
+                    sandbox_id: SandboxId::new_v4(),
+                    profile_name: "vm0/default",
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    reuse_key: Some(reuse_key),
+                    image_size_bytes: b"image".len() as u64,
+                },
+                home_drive_required: true,
+            })
+            .await;
+        assert!(checkout.is_cache_hit());
+        assert_eq!(
+            tokio::fs::read(home_seed_path(&checkout)).await.unwrap(),
+            b"image"
+        );
+        assert!(checkout.history_proof_binding().is_none());
+        drop(ready);
+        assert_eq!(budget.allocated().2, 0);
+    }
+
+    #[tokio::test]
+    async fn finalizer_stop_error_abandons_frozen_home_cache_before_destroy() {
         let (_budget, lease) = test_budget_lease();
         let fixture = FinalizeTestFixture::new().await;
         let network_log_session = fixture.network_log_session().await;
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let session_id = "sess-active-stop-error";
-        let workspace_image =
-            prepare_test_workspace_image_lease(&paths, &cache, run_id, sandbox_id, session_id)
-                .await;
+        let home_image =
+            prepare_test_home_image_lease(&paths, &cache, run_id, sandbox_id, session_id).await;
         let overrides = Arc::new(MockSandboxOverrides::new());
         overrides.push_stop_result(Err(sandbox::SandboxError::Start {
             message: "simulated active stop failure".into(),
@@ -3062,9 +3023,9 @@ mod tests {
         context.sandbox_reuse_disposition =
             SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit);
         assert!(context.parking_gate.soft_drain());
-        context.workspace_image = Some(workspace_image);
-        context.workspace_image_size_bytes = b"image".len() as u64;
-        let workspace_cache_snapshot = context.workspace_cache_snapshot.clone();
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = b"image".len() as u64;
+        let home_cache_snapshot = context.home_cache_snapshot.clone();
 
         let _finalization_ready =
             finalize_sandbox_for_completion(Some(sandbox), ActiveBudgetLease::new(lease), context)
@@ -3076,22 +3037,22 @@ mod tests {
         assert!(
             exec_calls[1]
                 .cmd
-                .contains("\"$workspace_fsfreeze_path\" --freeze")
+                .contains("\"$home_fsfreeze_path\" --freeze")
         );
         assert_eq!(overrides.destroy_call_count(), 1);
-        assert!(cache.held_workspace_states().await.is_empty());
+        assert!(cache.held_home_states().await.is_empty());
         assert_eq!(fixture.idle_pool.lock().await.len(), 0);
         let active_runs = test_active_runs();
         assert!(
-            workspace_cache_snapshot
-                .current_held_workspace_states(&active_runs, None)
+            home_cache_snapshot
+                .current_held_home_states(&active_runs, None)
                 .is_empty(),
             "failed post-freeze stop must not advertise reusable state"
         );
     }
 
     #[tokio::test]
-    async fn finalizer_promotes_workspace_cache_when_parked_candidate_is_rejected() {
+    async fn finalizer_promotes_home_cache_when_parked_candidate_is_rejected() {
         let fixture = FinalizeTestFixture::new_with_max_idle(1).await;
         let (_existing_budget, existing_lease) = test_budget_lease();
         let existing = ParkedIdleCandidateBuilder::new("sess-existing", existing_lease)
@@ -3108,26 +3069,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
-        let workspace_image = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+        let home_image = cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some("sess-new"),
-                    working_dir: CANONICAL_WORKING_DIR,
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     image_size_bytes: b"image".len() as u64,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_workspace_image(&sandbox_id), b"image")
+        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
             .await
             .unwrap();
         let mut context = fixture.finalize_context(
@@ -3137,15 +3098,15 @@ mod tests {
             network_log_session,
             RunCancellationHandle::new(),
         );
-        context.workspace_image = Some(workspace_image);
-        context.workspace_image_size_bytes = b"image".len() as u64;
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = b"image".len() as u64;
 
         let _finalization_ready = finalize_sandbox_for_completion(
             Some(Box::new({
                 let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
                 add_healthy_reuse_preparation_matcher(&overrides);
                 add_healthy_cache_preparation_matcher(&overrides);
-                MockSandbox::with_overrides("rejected-workspace-promotion", overrides)
+                MockSandbox::with_overrides("rejected-home-promotion", overrides)
             })),
             ActiveBudgetLease::new(lease),
             context,
@@ -3155,7 +3116,7 @@ mod tests {
         let idle_states = fixture.idle_pool.lock().await.held_sandbox_states();
         assert_eq!(idle_states.len(), 1);
         assert_eq!(idle_states[0].reuse_key, "sess-existing");
-        let cache_states = cache.held_workspace_states().await;
+        let cache_states = cache.held_home_states().await;
         assert_eq!(cache_states.len(), 1);
         assert_eq!(cache_states[0].reuse_key, "sess-new");
     }
@@ -3167,23 +3128,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
+        let cache = HomeImageCache::new(paths.clone());
 
         let old_run_id = RunId::new_v4();
         let old_sandbox_id = SandboxId::new_v4();
-        let old_workspace_image = prepare_test_workspace_image_lease(
-            &paths,
-            &cache,
-            old_run_id,
-            old_sandbox_id,
-            session_id,
-        )
-        .await;
+        let old_home_image =
+            prepare_test_home_image_lease(&paths, &cache, old_run_id, old_sandbox_id, session_id)
+                .await;
         let old_promotion = test_promotion_context(
-            old_workspace_image,
+            old_home_image,
             old_run_id,
             old_sandbox_id,
-            WorkspaceCacheTerminalStatus::Success,
+            HomeCacheTerminalStatus::Success,
             runner_storage::storage_fingerprints::StorageFingerprints::default(),
         );
         let destroy_gate = MockLifecycleGate::new();
@@ -3203,7 +3159,7 @@ mod tests {
                     memory_mb: 4096,
                 },
                 device_rate_limits: None,
-                workspace_drive: None,
+                home_drive: None,
             })
             .await
             .expect("create existing sandbox");
@@ -3223,8 +3179,8 @@ mod tests {
             restored_session_identity: None,
             history_generation_run_id: None,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
-            workspace_image_size_bytes: b"image".len() as u64,
-            workspace_promotion: Some(old_promotion),
+            home_image_size_bytes: b"image".len() as u64,
+            home_promotion: Some(old_promotion),
             handoff: None,
         })
         .park_for_idle()
@@ -3275,15 +3231,15 @@ mod tests {
         let _finalization_ready = finalize_task.await.expect("finalizer task should join");
         assert!(
             reuse_state_notify.notified().now_or_never().is_some(),
-            "replaced idle workspace cache promotion should notify after destroy"
+            "replaced idle home cache promotion should notify after destroy"
         );
         assert!(
             cache
-                .held_workspace_states()
+                .held_home_states()
                 .await
                 .iter()
                 .any(|state| state.reuse_key == session_id),
-            "replaced idle workspace cache should be visible after destroy completion"
+            "replaced idle home cache should be visible after destroy completion"
         );
     }
 

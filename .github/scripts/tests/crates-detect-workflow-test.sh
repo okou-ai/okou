@@ -99,7 +99,7 @@ jq -e '
     all(.[]; .needs == ["runner-test-prepare"])) and
   behavior_commands($lane_a) == [
     ".github/scripts/runner-behavior-balloon.sh",
-    ".github/scripts/runner-behavior-workspace-cache-promotion.sh"
+    ".github/scripts/runner-behavior-home-cache-promotion.sh"
   ] and
   behavior_commands($lane_b) == [
     ".github/scripts/runner-behavior-exec.sh",

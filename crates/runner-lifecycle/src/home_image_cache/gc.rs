@@ -1,0 +1,677 @@
+use std::fs::File;
+use std::io::Write;
+use std::os::unix::fs::MetadataExt;
+use std::time::{Duration, Instant, SystemTime};
+
+use nix::fcntl::Flock;
+use tokio::fs;
+use tracing::{info, warn};
+
+use crate::error::{LifecycleError, LifecycleResult};
+use runner_types::types::MAX_HELD_HOME_STATES;
+
+use super::entry::{CacheEntryPaths, is_cache_key_name};
+use super::fs::{
+    cache_entry_dir_is_dir, entry_file_type_is_dir, fs_stats_with_additional_available,
+    is_home_tmp_path_name, remove_home_cache_path_if_exists,
+};
+use super::metadata::{
+    HomeCacheMetadata, HomeCacheState, HomeTrust, validate_current_image_identity,
+};
+use super::path_safety::is_safe_guest_working_dir;
+use super::types::{CacheBudget, FsStats};
+use super::{CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeImageCache};
+
+pub(super) struct GcCandidate {
+    pub(super) cache_key: String,
+    pub(super) allocated_bytes: u64,
+    file_dev: u64,
+    file_ino: u64,
+    pub(super) last_used_at: String,
+}
+
+struct GcCacheEntry {
+    cache_key: String,
+    paths: CacheEntryPaths,
+}
+
+#[derive(Default)]
+struct GcInventory {
+    pre_cleanup_freed_bytes: u64,
+    candidates: Vec<GcCandidate>,
+}
+
+#[derive(Default)]
+struct GcEntryInventory {
+    pre_cleanup_freed_bytes: u64,
+    candidate: Option<GcCandidate>,
+}
+
+enum GcWholeEntryReason {
+    Stale,
+    Unusable(String),
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+pub(super) struct GcInventoryTestGate {
+    after_entries: usize,
+    armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    entered: std::sync::Arc<tokio::sync::Notify>,
+    release: std::sync::Arc<tokio::sync::Semaphore>,
+}
+
+fn routine_gc_is_due(capacity_lock: &File, minimum_interval: Duration) -> std::io::Result<bool> {
+    // Preserve the capacity-file completion marker used by older runners.
+    let marker = capacity_lock.metadata()?;
+    Ok(marker.len() == 0
+        || SystemTime::now()
+            .duration_since(marker.modified()?)
+            .unwrap_or_default()
+            >= minimum_interval)
+}
+
+impl GcCandidate {
+    pub(super) fn same_current_image(&self, other: &Self) -> bool {
+        self.file_dev == other.file_dev
+            && self.file_ino == other.file_ino
+            && self.last_used_at == other.last_used_at
+    }
+}
+
+pub(super) fn gc_budget_satisfied(
+    needs_budget_gc: bool,
+    total_cache_bytes: u64,
+    entry_count: usize,
+    stats_after_pre_cleanup: FsStats,
+    budget: CacheBudget,
+    candidate_freed_bytes: u64,
+) -> bool {
+    if entry_count > MAX_HELD_HOME_STATES {
+        return false;
+    }
+    !needs_budget_gc
+        || (total_cache_bytes <= budget.target_after_gc_bytes
+            && stats_after_pre_cleanup
+                .available_bytes
+                .saturating_add(candidate_freed_bytes)
+                >= budget.min_free_bytes)
+}
+
+impl HomeImageCache {
+    pub(super) async fn total_cache_allocated_bytes(&self) -> LifecycleResult<u64> {
+        super::fs::measured_entry_bytes(self.home_image_cache_dir()).await
+    }
+
+    pub async fn gc(&self, dry_run: bool) -> LifecycleResult<u64> {
+        let _capacity_lock = runner_host::lock::acquire(self.capacity_lock_path()).await?;
+        self.gc_locked(dry_run).await
+    }
+
+    pub async fn try_routine_gc(&self, minimum_interval: Duration) -> LifecycleResult<Option<u64>> {
+        let _routine_lock =
+            match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(None),
+            };
+        let capacity_lock =
+            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(None),
+            };
+        let capacity_started = Instant::now();
+        if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
+            return Ok(None);
+        }
+        let initial_capacity_duration = capacity_started.elapsed();
+        drop(capacity_lock);
+
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some((entered, release)) = &self.routine_gc_test_gate {
+            entered.notify_one();
+            release
+                .acquire()
+                .await
+                .expect("routine GC gate closed")
+                .forget();
+        }
+        // Entry-local cleanup shares the publication entry lock and only frees
+        // disk space. The routine lock, not capacity, owns this potentially slow
+        // inventory so finalizers can publish while unrelated entries scan.
+        let inventory_started = Instant::now();
+        let inventory = self.gc_inventory(false).await?;
+        let inventory_duration = inventory_started.elapsed();
+        let entry_count = inventory.candidates.len();
+        let mut freed_bytes = inventory.pre_cleanup_freed_bytes;
+        drop(inventory);
+
+        // No entry lock survives inventory. Never wait for capacity here, and
+        // never evict from an unlocked observation that promotion can replace.
+        let mut capacity_lock =
+            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => {
+                    info!(
+                        entry_count,
+                        inventory_us = inventory_duration.as_micros() as u64,
+                        capacity_lock_held_us = initial_capacity_duration.as_micros() as u64,
+                        "home image cache routine GC deferred: capacity lock busy after inventory"
+                    );
+                    return Ok(None);
+                }
+            };
+        let capacity_started = Instant::now();
+        if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
+            return Ok(None);
+        }
+        let stats = self.fs_stats().await?;
+        let budget = CacheBudget::from_fs_stats(stats);
+        let budget_gc = entry_count > MAX_HELD_HOME_STATES
+            || self.total_cache_allocated_bytes().await? > budget.max_cache_bytes
+            || stats.available_bytes < budget.min_free_bytes;
+        if budget_gc {
+            // Promotions may have added/replaced entries during inventory.
+            // Rebuild all accounting under capacity before budget collection.
+            freed_bytes = freed_bytes.saturating_add(self.gc_locked(false).await?);
+        }
+        capacity_lock.write_all(b"\0")?;
+        let capacity_duration = initial_capacity_duration + capacity_started.elapsed();
+        drop(capacity_lock);
+        info!(
+            entry_count,
+            inventory_us = inventory_duration.as_micros() as u64,
+            capacity_lock_held_us = capacity_duration.as_micros() as u64,
+            budget_gc,
+            freed_bytes,
+            "home image cache routine GC completed"
+        );
+        Ok(Some(freed_bytes))
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_gc_inventory_test_gate(
+        mut self,
+        after_entries: usize,
+        entered: std::sync::Arc<tokio::sync::Notify>,
+        release: std::sync::Arc<tokio::sync::Semaphore>,
+    ) -> Self {
+        self.gc_inventory_test_gate = Some(GcInventoryTestGate {
+            after_entries,
+            armed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            entered,
+            release,
+        });
+        self
+    }
+
+    pub(super) async fn gc_locked(&self, dry_run: bool) -> LifecycleResult<u64> {
+        let inventory = self.gc_inventory(dry_run).await?;
+        let stats = self.fs_stats().await?;
+        let pre_cleanup_freed = inventory.pre_cleanup_freed_bytes;
+        let stats_after_pre_cleanup = if dry_run {
+            fs_stats_with_additional_available(stats, pre_cleanup_freed)
+        } else {
+            stats
+        };
+        let budget = CacheBudget::from_fs_stats(stats_after_pre_cleanup);
+        let mut candidates = inventory.candidates;
+        let mut entry_count = candidates.len();
+        let mut total = self.total_cache_allocated_bytes().await?;
+        let needs_budget_gc = total > budget.max_cache_bytes
+            || stats_after_pre_cleanup.available_bytes < budget.min_free_bytes;
+        if !needs_budget_gc && entry_count <= MAX_HELD_HOME_STATES {
+            return Ok(pre_cleanup_freed);
+        }
+        candidates.sort_by(|left, right| {
+            left.last_used_at
+                .cmp(&right.last_used_at)
+                .then_with(|| left.cache_key.cmp(&right.cache_key))
+        });
+        let mut freed = pre_cleanup_freed;
+        let mut candidate_freed: u64 = 0;
+        for candidate in candidates {
+            if gc_budget_satisfied(
+                needs_budget_gc,
+                total,
+                entry_count,
+                stats_after_pre_cleanup,
+                budget,
+                candidate_freed,
+            ) {
+                break;
+            }
+            let Ok(lock) =
+                runner_host::lock::try_acquire(self.entry_lock_path(&candidate.cache_key)).await
+            else {
+                continue;
+            };
+            let Some(refreshed) = self.gc_candidate(candidate.cache_key.clone()).await else {
+                drop(lock);
+                continue;
+            };
+            if !refreshed.same_current_image(&candidate) {
+                drop(lock);
+                continue;
+            }
+            if dry_run {
+                info!(
+                    cache_key = candidate.cache_key,
+                    allocated_bytes = refreshed.allocated_bytes,
+                    "[dry-run] would delete home image cache entry"
+                );
+            } else if let Err(e) =
+                fs::remove_dir_all(self.home_image_cache_entry_dir(&candidate.cache_key)).await
+            {
+                warn!(
+                    cache_key = candidate.cache_key,
+                    error = %e,
+                    "failed to delete home image cache entry"
+                );
+                drop(lock);
+                continue;
+            } else {
+                info!(
+                    cache_key = candidate.cache_key,
+                    allocated_bytes = refreshed.allocated_bytes,
+                    "deleted home image cache entry"
+                );
+            }
+            total = total.saturating_sub(refreshed.allocated_bytes);
+            entry_count = entry_count.saturating_sub(1);
+            freed = freed.saturating_add(refreshed.allocated_bytes);
+            candidate_freed = candidate_freed.saturating_add(refreshed.allocated_bytes);
+            drop(lock);
+        }
+        Ok(freed)
+    }
+
+    async fn gc_inventory(&self, dry_run: bool) -> LifecycleResult<GcInventory> {
+        let Some(mut entries) = self.gc_cache_entry_reader().await? else {
+            return Ok(GcInventory::default());
+        };
+        let mut inventory = GcInventory::default();
+        #[cfg(test)]
+        let mut entries_seen = 0;
+        while let Some(entry) = Self::next_gc_cache_entry(&mut entries).await? {
+            let entry_inventory = match self.try_lock_gc_cache_entry(&entry).await? {
+                Some(lock) => {
+                    let result = self.gc_locked_cache_entry(&entry, dry_run).await;
+                    drop(lock);
+                    result?
+                }
+                None => GcEntryInventory {
+                    candidate: self.gc_candidate_for_entry(&entry).await,
+                    ..GcEntryInventory::default()
+                },
+            };
+            inventory.pre_cleanup_freed_bytes = inventory
+                .pre_cleanup_freed_bytes
+                .saturating_add(entry_inventory.pre_cleanup_freed_bytes);
+            if let Some(candidate) = entry_inventory.candidate {
+                inventory.candidates.push(candidate);
+            }
+            #[cfg(test)]
+            if let Some(gate) = &self.gc_inventory_test_gate {
+                entries_seen += 1;
+                if entries_seen == gate.after_entries
+                    && gate.armed.swap(false, std::sync::atomic::Ordering::Relaxed)
+                {
+                    gate.entered.notify_one();
+                    gate.release
+                        .acquire()
+                        .await
+                        .expect("GC inventory gate closed")
+                        .forget();
+                }
+            }
+        }
+        Ok(inventory)
+    }
+
+    async fn gc_locked_cache_entry(
+        &self,
+        entry: &GcCacheEntry,
+        dry_run: bool,
+    ) -> LifecycleResult<GcEntryInventory> {
+        let metadata = match self.read_metadata_file(&entry.paths.metadata()).await {
+            Ok(metadata) => metadata,
+            Err(LifecycleError::Internal(error)) => {
+                return self
+                    .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Unusable(error))
+                    .await;
+            }
+            Err(LifecycleError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                return self
+                    .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Stale)
+                    .await;
+            }
+            Err(error) => return Err(error),
+        };
+        let Some(current) = entry.paths.image(&metadata.image_generation) else {
+            return self
+                .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Stale)
+                .await;
+        };
+        let current_metadata = match fs::symlink_metadata(&current).await {
+            Ok(metadata) => metadata,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return self
+                    .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Stale)
+                    .await;
+            }
+            Err(e) => return Err(e.into()),
+        };
+        if let Some(reason) =
+            self.unusable_current_entry_reason(&entry.cache_key, &metadata, &current_metadata)
+        {
+            return self
+                .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Unusable(reason.into()))
+                .await;
+        }
+
+        let pre_cleanup_freed_bytes = self.gc_temporary_paths(entry, dry_run).await?;
+        let candidate = self
+            .gc_candidate_from_observation(
+                entry.cache_key.clone(),
+                &entry.paths,
+                current_metadata,
+                metadata.last_used_at,
+            )
+            .await;
+        Ok(GcEntryInventory {
+            pre_cleanup_freed_bytes,
+            candidate,
+        })
+    }
+
+    async fn gc_whole_cache_entry(
+        &self,
+        entry: &GcCacheEntry,
+        dry_run: bool,
+        reason: GcWholeEntryReason,
+    ) -> LifecycleResult<GcEntryInventory> {
+        let allocated = super::fs::measured_entry_bytes(entry.paths.entry_dir()).await?;
+        if dry_run {
+            match &reason {
+                GcWholeEntryReason::Stale => info!(
+                    cache_key = entry.cache_key,
+                    allocated_bytes = allocated,
+                    "[dry-run] would delete stale home image cache entry"
+                ),
+                GcWholeEntryReason::Unusable(reason) => info!(
+                    cache_key = entry.cache_key,
+                    reason,
+                    allocated_bytes = allocated,
+                    "[dry-run] would delete unusable home image cache entry"
+                ),
+            }
+            return Ok(GcEntryInventory {
+                pre_cleanup_freed_bytes: allocated,
+                candidate: None,
+            });
+        }
+
+        match fs::remove_dir_all(entry.paths.entry_dir()).await {
+            Ok(()) => {
+                match &reason {
+                    GcWholeEntryReason::Stale => info!(
+                        cache_key = entry.cache_key,
+                        allocated_bytes = allocated,
+                        "deleted stale home image cache entry"
+                    ),
+                    GcWholeEntryReason::Unusable(reason) => info!(
+                        cache_key = entry.cache_key,
+                        reason,
+                        allocated_bytes = allocated,
+                        "deleted unusable home image cache entry"
+                    ),
+                }
+                return Ok(GcEntryInventory {
+                    pre_cleanup_freed_bytes: allocated,
+                    candidate: None,
+                });
+            }
+            Err(e) => match &reason {
+                GcWholeEntryReason::Stale => warn!(
+                    cache_key = entry.cache_key,
+                    path = %entry.paths.entry_dir().display(),
+                    error = %e,
+                    "failed to delete stale home image cache entry"
+                ),
+                GcWholeEntryReason::Unusable(reason) => warn!(
+                    cache_key = entry.cache_key,
+                    reason,
+                    path = %entry.paths.entry_dir().display(),
+                    error = %e,
+                    "failed to delete unusable home image cache entry"
+                ),
+            },
+        }
+
+        let pre_cleanup_freed_bytes = self.gc_temporary_paths(entry, false).await?;
+        let candidate = self.gc_candidate_for_entry(entry).await;
+        Ok(GcEntryInventory {
+            pre_cleanup_freed_bytes,
+            candidate,
+        })
+    }
+
+    async fn gc_cache_entry_reader(&self) -> LifecycleResult<Option<fs::ReadDir>> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.inner
+            .gc_root_scan_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = self.home_image_cache_dir().to_path_buf();
+        match fs::read_dir(&root).await {
+            Ok(entries) => Ok(Some(entries)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn reset_gc_root_scan_count(&self) {
+        self.inner
+            .gc_root_scan_count
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn gc_root_scan_count(&self) -> usize {
+        self.inner
+            .gc_root_scan_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    async fn next_gc_cache_entry(
+        entries: &mut fs::ReadDir,
+    ) -> LifecycleResult<Option<GcCacheEntry>> {
+        while let Some(entry) = entries.next_entry().await? {
+            if !entry_file_type_is_dir(&entry).await? {
+                continue;
+            }
+            let Some(cache_key) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if !is_cache_key_name(&cache_key) {
+                continue;
+            }
+            return Ok(Some(GcCacheEntry {
+                cache_key,
+                paths: CacheEntryPaths::from_entry_dir(entry.path()),
+            }));
+        }
+        Ok(None)
+    }
+
+    async fn try_lock_gc_cache_entry(
+        &self,
+        entry: &GcCacheEntry,
+    ) -> LifecycleResult<Option<Flock<File>>> {
+        let Ok(lock) = runner_host::lock::try_acquire(self.entry_lock_path(&entry.cache_key)).await
+        else {
+            return Ok(None);
+        };
+        if !cache_entry_dir_is_dir(entry.paths.entry_dir()).await? {
+            return Ok(None);
+        }
+        Ok(Some(lock))
+    }
+
+    pub(super) fn unusable_current_entry_reason(
+        &self,
+        cache_key: &str,
+        metadata: &HomeCacheMetadata,
+        current_metadata: &std::fs::Metadata,
+    ) -> Option<&'static str> {
+        if metadata.format_version != CACHE_FORMAT_VERSION {
+            return Some("metadata format version mismatch");
+        }
+        if metadata.drive_layout != HOME_DRIVE_LAYOUT {
+            return Some("drive layout mismatch");
+        }
+        if metadata.state != HomeCacheState::Current || metadata.home_trust != HomeTrust::Clean {
+            return Some("metadata is not reusable");
+        }
+        if !is_safe_guest_working_dir(&metadata.working_dir) {
+            return Some("unsafe working dir");
+        }
+        if !current_metadata.is_file() {
+            return Some("current image is not a file");
+        }
+        if !self.metadata_matches_cache_key(cache_key, metadata) {
+            return Some("cache key mismatch");
+        }
+        if validate_current_image_identity(metadata, current_metadata).is_err() {
+            return Some("current image identity mismatch");
+        }
+        None
+    }
+
+    async fn gc_temporary_paths(
+        &self,
+        entry: &GcCacheEntry,
+        dry_run: bool,
+    ) -> LifecycleResult<u64> {
+        let mut freed: u64 = 0;
+        let mut files = match fs::read_dir(entry.paths.entry_dir()).await {
+            Ok(files) => files,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(e.into()),
+        };
+        while let Some(file) = files.next_entry().await? {
+            let file_name = file.file_name();
+            let Some(file_name) = file_name.to_str() else {
+                continue;
+            };
+            let committed = self
+                .read_metadata_file(&entry.paths.metadata())
+                .await
+                .ok()
+                .map(|m| m.image_generation);
+            let orphan = super::entry::image_generation(file_name)
+                .is_some_and(|g| committed.as_deref() != Some(g));
+            if !is_home_tmp_path_name(file_name) && !orphan {
+                continue;
+            }
+            let path = file.path();
+            let allocated = super::fs::measured_entry_bytes(&path).await?;
+            if dry_run {
+                info!(
+                    cache_key = entry.cache_key,
+                    path = %path.display(),
+                    allocated_bytes = allocated,
+                    "[dry-run] would delete temporary home image cache path"
+                );
+            } else {
+                match remove_home_cache_path_if_exists(&path).await {
+                    Ok(true) => info!(
+                        cache_key = entry.cache_key,
+                        path = %path.display(),
+                        allocated_bytes = allocated,
+                        "deleted temporary home image cache path"
+                    ),
+                    Ok(false) => continue,
+                    Err(e) => {
+                        warn!(
+                            cache_key = entry.cache_key,
+                            path = %path.display(),
+                            error = %e,
+                            "failed to delete temporary home image cache path"
+                        );
+                        continue;
+                    }
+                }
+            }
+            freed = freed.saturating_add(allocated);
+        }
+        Ok(freed)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) async fn gc_candidates(&self) -> LifecycleResult<Vec<GcCandidate>> {
+        let Some(mut entries) = self.gc_cache_entry_reader().await? else {
+            return Ok(Vec::new());
+        };
+        let mut candidates = Vec::new();
+        while let Some(entry) = Self::next_gc_cache_entry(&mut entries).await? {
+            let Some(candidate) = self.gc_candidate_for_entry(&entry).await else {
+                continue;
+            };
+            candidates.push(candidate);
+        }
+        Ok(candidates)
+    }
+
+    async fn gc_candidate_from_observation(
+        &self,
+        cache_key: String,
+        paths: &CacheEntryPaths,
+        file_metadata: std::fs::Metadata,
+        last_used_at: String,
+    ) -> Option<GcCandidate> {
+        let total = super::fs::measured_entry_bytes(paths.entry_dir())
+            .await
+            .ok()?;
+        Some(GcCandidate {
+            cache_key,
+            allocated_bytes: total,
+            file_dev: file_metadata.dev(),
+            file_ino: file_metadata.ino(),
+            last_used_at,
+        })
+    }
+
+    async fn gc_candidate_for_entry(&self, entry: &GcCacheEntry) -> Option<GcCandidate> {
+        if !cache_entry_dir_is_dir(entry.paths.entry_dir()).await.ok()? {
+            return None;
+        }
+        let metadata = self
+            .read_metadata_file(&entry.paths.metadata())
+            .await
+            .ok()?;
+        let image = entry.paths.image(&metadata.image_generation)?;
+        let file_metadata = fs::symlink_metadata(&image).await.ok()?;
+        if self
+            .unusable_current_entry_reason(&entry.cache_key, &metadata, &file_metadata)
+            .is_some()
+        {
+            return None;
+        }
+        self.gc_candidate_from_observation(
+            entry.cache_key.clone(),
+            &entry.paths,
+            file_metadata,
+            metadata.last_used_at,
+        )
+        .await
+    }
+
+    pub(super) async fn gc_candidate(&self, cache_key: String) -> Option<GcCandidate> {
+        let entry = GcCacheEntry {
+            paths: self.entry_paths(&cache_key),
+            cache_key,
+        };
+        self.gc_candidate_for_entry(&entry).await
+    }
+}

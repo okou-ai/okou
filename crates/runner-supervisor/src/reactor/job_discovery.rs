@@ -18,7 +18,7 @@
 //!
 //! 1. **Prepare the candidate.** Resolve the profile, factory, resource requirements, and runner
 //!    preference. Preference preparation may select a compatible idle sandbox, an exact
-//!    history-generation sandbox, a workspace-cache opportunity, or a finalizing predecessor. If
+//!    history-generation sandbox, a home-cache opportunity, or a finalizing predecessor. If
 //!    a required preference resource is not available, the candidate is deferred or retained for a
 //!    later poll rather than claimed.
 //! 2. **Reserve local admission.** Before ordinary claim, hold either a budget lease or a reserved
@@ -69,7 +69,7 @@
 //!   idle sandbox's active lease replaces this speculative fresh lease.
 //! - **`Reusable(ReservedIdleActivation)`:** the reservation owns an exact or blank idle-pool entry
 //!   removed from the pool. Before claim loss it is restored to the pool. After a claim, activation
-//!   preserves exact and workspace-cache priority over blank inventory, validates the applicable
+//!   preserves exact and home-cache priority over blank inventory, validates the applicable
 //!   identity and configuration, persists `preparing`, and then unparks. A status or unpark failure
 //!   completes the claim without a sandbox and either restores or destroys the entry before any
 //!   fresh fallback; the reservation is not silently dropped.
@@ -199,8 +199,8 @@ pub(super) fn activation_resources(ctx: &SpawnContext) -> ActivationResources<'_
         orphaned_active_runs: &ctx.orphaned_active_runs,
         reuse_state_notify: &ctx.reuse_state_notify,
         budget: &ctx.budget,
-        workspace_cache: ctx.exec_config.workspace_cache.as_ref(),
-        workspace_cache_snapshot: &ctx.workspace_cache_snapshot,
+        home_cache: ctx.exec_config.home_cache.as_ref(),
+        home_cache_snapshot: &ctx.home_cache_snapshot,
         blank_pool_diagnostics: &ctx.blank_pool_diagnostics,
         on_preparing_committed,
     }
@@ -216,8 +216,8 @@ fn pre_claim_resources<'a>(ctx: &'a DiscoveredJobContext<'_>) -> PreClaimResourc
         provider: ctx.spawn_ctx.provider.as_ref(),
         budget: ctx.budget,
         active_runs: &ctx.spawn_ctx.active_runs,
-        workspace_cache_snapshot: &ctx.spawn_ctx.workspace_cache_snapshot,
-        has_workspace_cache: ctx.spawn_ctx.exec_config.workspace_cache.is_some(),
+        home_cache_snapshot: &ctx.spawn_ctx.home_cache_snapshot,
+        has_home_cache: ctx.spawn_ctx.exec_config.home_cache.is_some(),
         idle_destroy_tracker: &ctx.spawn_ctx.idle_destroy_tracker,
         reuse_state_notify: ctx.spawn_ctx.reuse_state_notify.as_ref(),
         blank_pool_diagnostics: &ctx.spawn_ctx.blank_pool_diagnostics,
@@ -239,7 +239,8 @@ pub(super) async fn handle_discovered_job(
     };
     let job_vcpu = profile_config.vcpu;
     let job_memory = profile_config.memory_mb;
-    let job_workspace_disk_mb = profile_config.workspace_disk_mb;
+    let job_rootfs_hash = profile_config.rootfs_hash.clone();
+    let job_home_disk_mb = profile_config.home_disk_mb;
     let device_rate_limits = ctx.spawn_ctx.device_rate_limits.clone();
     let Some((factory, restore_guest_state)) = ctx.factories.get(&profile_name) else {
         warn!(run_id = %run_id, profile = %profile_name, "no factory for profile, skipping");
@@ -253,7 +254,7 @@ pub(super) async fn handle_discovered_job(
             profile_name: &profile_name,
             job_vcpu,
             job_memory,
-            workspace_disk_mb: job_workspace_disk_mb,
+            home_disk_mb: job_home_disk_mb,
             device_rate_limits: &device_rate_limits,
         },
         &resources,
@@ -280,9 +281,10 @@ pub(super) async fn handle_discovered_job(
                     admission,
                     claim_returned_at,
                     profile_name,
+                    rootfs_hash: job_rootfs_hash,
                     vcpu: job_vcpu,
                     memory_mb: job_memory,
-                    workspace_disk_mb: job_workspace_disk_mb,
+                    home_disk_mb: job_home_disk_mb,
                     restore_guest_state: *restore_guest_state,
                     device_rate_limits,
                     factory: Arc::clone(factory),
@@ -305,7 +307,7 @@ pub(super) async fn handle_discovered_job(
             claimed,
             cancellation,
             resource,
-            job_workspace_disk_mb,
+            job_home_disk_mb,
             ClaimedFailureDiagnostics::without_timing(None),
             crate::executor::ExecutionFailure::cancelled(),
             &mut ctx,
@@ -333,7 +335,7 @@ pub(super) async fn handle_discovered_job(
             claimed,
             cancellation,
             resource,
-            job_workspace_disk_mb,
+            job_home_disk_mb,
             ClaimedFailureDiagnostics::from_timing(None, &pre_spawn_timing),
             crate::executor::ExecutionFailure::from_error(error),
             &mut ctx,
@@ -347,7 +349,7 @@ pub(super) async fn handle_discovered_job(
 
     // Hide the claimed reuse key from heartbeats before unpark or fallback
     // cleanup can yield. Otherwise a concurrent heartbeat could briefly
-    // advertise stale workspace-cache state for an active run.
+    // advertise stale home-cache state for an active run.
     let active_run_guard = ctx.spawn_ctx.active_runs.register(
         run_id,
         claimed.context().reuse_key().map(str::to_owned),
@@ -376,7 +378,8 @@ pub(super) async fn handle_discovered_job(
                 ReuseAdmissionRequest {
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
-                    workspace_disk_mb: job_workspace_disk_mb,
+                    home_disk_mb: job_home_disk_mb,
+                    rootfs_hash: &job_rootfs_hash,
                     context: claimed.context(),
                     job_lease,
                 },
@@ -422,7 +425,7 @@ pub(super) async fn handle_discovered_job(
                     claimed,
                     cancellation,
                     SandboxAdmittedResource::Reusable(reservation),
-                    job_workspace_disk_mb,
+                    job_home_disk_mb,
                     ClaimedFailureDiagnostics::from_timing(None, &pre_spawn_timing),
                     crate::executor::ExecutionFailure::cancelled(),
                     &mut ctx,
@@ -436,7 +439,8 @@ pub(super) async fn handle_discovered_job(
                     run_id,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
-                    workspace_disk_mb: job_workspace_disk_mb,
+                    home_disk_mb: job_home_disk_mb,
+                    rootfs_hash: &job_rootfs_hash,
                     context: claimed.context(),
                 },
                 &activation_resources(ctx.spawn_ctx),
@@ -469,7 +473,7 @@ pub(super) async fn handle_discovered_job(
                             claimed,
                             cancellation,
                             SandboxAdmittedResource::Fresh(budget_lease),
-                            job_workspace_disk_mb,
+                            job_home_disk_mb,
                             ClaimedFailureDiagnostics::from_timing(
                                 Some(reuse_result),
                                 &pre_spawn_timing,
@@ -503,7 +507,8 @@ pub(super) async fn handle_discovered_job(
                     run_id,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
-                    workspace_disk_mb: job_workspace_disk_mb,
+                    home_disk_mb: job_home_disk_mb,
+                    rootfs_hash: &job_rootfs_hash,
                     context: claimed.context(),
                 },
                 &activation_resources(ctx.spawn_ctx),
@@ -540,7 +545,7 @@ pub(super) async fn handle_discovered_job(
                     .await;
                     let run_id = completion.run_id;
                     resource
-                        .rollback(run_id, job_workspace_disk_mb, &pre_claim_resources(&ctx))
+                        .rollback(run_id, job_home_disk_mb, &pre_claim_resources(&ctx))
                         .await;
                     completion.flush_telemetry().await;
                     return DiscoveredJobResult::completed(true);
@@ -554,7 +559,7 @@ pub(super) async fn handle_discovered_job(
                         claimed,
                         cancellation,
                         SandboxAdmittedResource::Fresh(budget_lease),
-                        job_workspace_disk_mb,
+                        job_home_disk_mb,
                         ClaimedFailureDiagnostics::from_timing(
                             Some(reuse_result),
                             &pre_spawn_timing,
@@ -572,11 +577,12 @@ pub(super) async fn handle_discovered_job(
     let mut activation = ClaimedActivationGuard::new(
         ClaimedJobSetup {
             claimed,
+            rootfs_hash: job_rootfs_hash,
             cancellation,
             profile_name,
             vcpu: job_vcpu,
             memory_mb: job_memory,
-            workspace_disk_mb: job_workspace_disk_mb,
+            home_disk_mb: job_home_disk_mb,
             restore_guest_state: *restore_guest_state,
             device_rate_limits,
             factory: Arc::clone(factory),
@@ -679,11 +685,12 @@ pub(super) async fn build_spawn_job_request(
 
     let ClaimedJobSetup {
         claimed,
+        rootfs_hash,
         cancellation,
         profile_name,
         vcpu,
         memory_mb,
-        workspace_disk_mb,
+        home_disk_mb,
         restore_guest_state,
         device_rate_limits,
         factory,
@@ -704,13 +711,14 @@ pub(super) async fn build_spawn_job_request(
         sandbox_id,
         job_profile: JobProfile {
             profile_name,
+            rootfs_hash,
             vcpu,
             memory_mb,
-            workspace_disk_mb,
+            home_disk_mb,
             budget_lease: active_lease,
             restore_guest_state,
             device_rate_limits,
-            workspace_image_prepare_lock_policy: Default::default(),
+            home_image_prepare_lock_policy: Default::default(),
             factory,
             cancellation,
         },
@@ -726,7 +734,7 @@ async fn complete_claimed_without_sandbox(
     claimed: ClaimedJob,
     cancellation: RunCancellationRegistration,
     resource: SandboxAdmittedResource,
-    workspace_disk_mb: u32,
+    home_disk_mb: u32,
     diagnostics: ClaimedFailureDiagnostics,
     failure: crate::executor::ExecutionFailure,
     ctx: &mut DiscoveredJobContext<'_>,
@@ -736,7 +744,7 @@ async fn complete_claimed_without_sandbox(
     rollback_sandbox_admitted_resource(
         resource,
         completion.run_id,
-        workspace_disk_mb,
+        home_disk_mb,
         &pre_claim_resources(ctx),
     )
     .await;
