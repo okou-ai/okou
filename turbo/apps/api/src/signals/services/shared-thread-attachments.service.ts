@@ -12,7 +12,7 @@ import {
   buildFileUrlFromKey,
   sanitizeArtifactFilename,
 } from "../../lib/file-url";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
+import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import { copyPublicArtifactObject$ } from "../external/s3";
 
 export interface SharedThreadAttachmentCopy {
@@ -25,7 +25,7 @@ export interface SharedThreadAttachmentCopy {
 
 const prepareSharedThreadAttachment$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly userId: string;
       readonly orgId: string;
@@ -35,12 +35,14 @@ const prepareSharedThreadAttachment$ = command(
     signal: AbortSignal,
   ): Promise<SharedThreadAttachmentCopy> => {
     const fileId = args.part.annotatedFileId ?? args.part.fileId;
-    const object = await get(
-      uploadedArtifactObject({
+    const object = await set(
+      uploadedArtifactObject$,
+      {
         id: fileId,
         userId: args.userId,
         orgId: args.orgId,
-      }),
+      },
+      signal,
     );
     signal.throwIfAborted();
     if (!object) {

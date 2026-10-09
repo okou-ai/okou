@@ -712,10 +712,7 @@ function officialCatalogDetail(
 function officialSalesResearch(
   lifecycle: "active" | "retired" | "unavailable" = "active",
   reconciliationStatus:
-    | "current"
-    | "reconciling"
-    | "needs_reconfiguration"
-    | "failed" = "current",
+    "current" | "reconciling" | "needs_reconfiguration" | "failed" = "current",
 ): WorkflowDetailResponse {
   const ordinary = salesResearch();
   const [automation] = ordinary.automations;

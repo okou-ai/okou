@@ -132,13 +132,14 @@ function deductionSource(updates: readonly ConditionalDeduction[]) {
   )}::bigint[]) AS deduction(id, amount)`;
 }
 
-/** Apply the prepared split atomically; concurrent overdraft is accepted. */
+/** The locked grant balance covers this deduction; reject any violated invariant. */
 export function memberGrantDeductionsSql(
   updates: readonly ConditionalDeduction[],
 ) {
   return sql`UPDATE ${usagePackCreditGrants} SET remaining_amount = remaining_amount - deduction.amount
     FROM ${deductionSource(updates)}
-    WHERE ${usagePackCreditGrants.id} = deduction.id`;
+    WHERE ${usagePackCreditGrants.id} = deduction.id
+      AND ${usagePackCreditGrants.remainingAmount} >= deduction.amount`;
 }
 
 export function planExpiryLotDeductions(
@@ -173,7 +174,7 @@ export function planExpiryLotDeductions(
   return { updates, expired, expiredRows, expiryRows };
 }
 
-/** Same atomic decrement and accepted overdraft as member grants. */
+/** Apply the organization expiry-lot split; only the wallet can carry debt. */
 export function expiryLotDeductionsSql(
   updates: readonly ConditionalDeduction[],
 ) {

@@ -48,6 +48,7 @@ import {
   forwardChatThreadReadCursorUpdated$,
   openConnection$,
   recordConnectionHeartbeat$,
+  recordTabVisibility$,
   registerConnection$,
   reportWorkerUnavailableForConnections$,
   requestTokenFromLatestConnection$,
@@ -233,6 +234,10 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     this.workerStore.set(refreshWorkerComputed$, computedKey);
   }
 
+  setTabVisibility(visibility: DocumentVisibilityState): void {
+    this.workerStore.set(recordTabVisibility$, this.connectionId, visibility);
+  }
+
   registerTab(signal: AbortSignal): Promise<void> {
     if (this.connectionSignal) {
       throw new Error("Shared database tab is already registered");
@@ -246,7 +251,8 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     this.connectionSignal = this.workerStore.set(
       registerConnection$,
       this.connectionId,
-      { getToken: this.getToken, port: directWorkerPort(this.emit) },
+      directWorkerPort(this.emit),
+      this.getToken,
       connectionSignal,
     );
     this.workerStore.set(recordConnectionHeartbeat$, this.connectionId);
@@ -358,6 +364,10 @@ class TestSharedDatabaseBridge implements SharedDatabaseBridge {
   async registerTab(signal: AbortSignal): Promise<void> {
     await this.bridge.registerTab(signal);
     await this.afterRegistration?.();
+  }
+
+  setTabVisibility(visibility: DocumentVisibilityState): void {
+    this.bridge.setTabVisibility(visibility);
   }
 
   subscribeRealtime(

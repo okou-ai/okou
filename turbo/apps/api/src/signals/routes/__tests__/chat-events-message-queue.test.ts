@@ -9,7 +9,6 @@ import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
-import { steerRunTimeBudgetFixture } from "./helpers/runtime-state";
 
 const context = testContext();
 const {
@@ -25,22 +24,6 @@ const {
   completeChatRunOk,
   cancelChatRun,
 } = createChatEventsFixture(context);
-
-const RUN_TIME_BUDGET_STEER_AT_MS = 115 * 60 * 1000;
-
-const RUN_TIME_BUDGET_MESSAGE = `This runner has a hard maximum runtime of 2 hours. The current run has been active for 115 minutes, leaving approximately 5 minutes before it is terminated.
-
-A normal completion provides a reliable handoff for the next run. The handoff includes completed work, current state, verification performed, remaining work, and blockers.
-
-Use the remaining time to leave the task in a resumable state and finish this turn normally.`;
-
-/** Steer one owned run without scanning rows owned by other test files. */
-async function steerOwnedRunAtElapsedTime(
-  runId: string,
-  elapsedMs: number,
-): Promise<{ readonly scanned: number; readonly steered: number }> {
-  return await steerRunTimeBudgetFixture(context, runId, elapsedMs);
-}
 
 describe("CHAT-02: queueing and recalling messages", () => {
   it("steers rich inputs one at a time and settles concurrent declarations once", async () => {
@@ -275,7 +258,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     ).toHaveLength(0);
   }, 90_000);
 
-  it("releases prompts and expires budget input before draining in FIFO order", async () => {
+  it("releases unconfirmed prompts before draining in FIFO order", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -295,7 +278,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
       },
       [201],
     );
-    await steerOwnedRunAtElapsedTime(active.runId, RUN_TIME_BUDGET_STEER_AT_MS);
     // Read but never declared steered: completion leaves it queued.
     await expect(
       api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
@@ -340,15 +322,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (!promoted?.runId) {
       throw new Error("Expected the released queue head to be promoted");
     }
-    expect(
-      messages.events.filter((event) => {
-        return (
-          event.eventType === "control.revoke" &&
-          event.runId === active.runId &&
-          event.revokesEventId !== releasedEventId
-        );
-      }),
-    ).toHaveLength(1);
     expect(
       userMessages(messages.events).filter((message) => {
         return message.revokesEventId === laterEventId;
@@ -457,49 +430,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
       },
       [201],
     );
-    await cancelChatRun(actor, active.runId);
-  }, 90_000);
-
-  it("steers a run once when it reaches its time budget", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const active = await sendChatRun(actor, {
-      agentId,
-      prompt: "run until the time budget warning",
-    });
-    await claimChatRun(runnerGroup, active.runId);
-
-    await expect(
-      steerOwnedRunAtElapsedTime(
-        active.runId,
-        RUN_TIME_BUDGET_STEER_AT_MS - 60_000,
-      ),
-    ).resolves.toStrictEqual({ scanned: 0, steered: 0 });
-
-    await expect(
-      steerOwnedRunAtElapsedTime(active.runId, RUN_TIME_BUDGET_STEER_AT_MS),
-    ).resolves.toStrictEqual({ scanned: 1, steered: 1 });
-    const publicEvents = await chat.listThreadEvents(actor, active.threadId);
-    const budgetEvent = publicEvents.events.find((event) => {
-      return (
-        event.eventType === "input.budget" &&
-        chatEventDisplayText(event) === RUN_TIME_BUDGET_MESSAGE
-      );
-    });
-    if (!budgetEvent || budgetEvent.eventType !== "input.budget") {
-      throw new Error("Expected the run time budget input to be appended");
-    }
-    expect(
-      budgetEvent.userMessage.parts.some((part) => {
-        return part.type === "model";
-      }),
-    ).toBeFalsy();
-
-    await expect(
-      steerOwnedRunAtElapsedTime(active.runId, RUN_TIME_BUDGET_STEER_AT_MS),
-    ).resolves.toStrictEqual({ scanned: 1, steered: 0 });
-
     await cancelChatRun(actor, active.runId);
   }, 90_000);
 

@@ -650,10 +650,20 @@ signing and assembly. Cache writes occur after pending commit. Compare cache
 read/write cost with direct in-memory signing before claiming this cache improves
 latency. Nested spans must not be added to their enclosing duration.
 
-Storage cache tests distinguish production from cache consumption. Chat tests
-use enqueue/pick and Runner claim to verify cache creation and reuse. A scoped
-PostgreSQL fault rejects only the selected cache write after a pending run and
-job exist; the run must still be claimable with a complete URL. Deferred external
+Workflow and readonly cache tests create workflows or custom connectors through
+normal APIs, then compare URLs delivered by authenticated Runner claims. They
+retain two-day URL issuance and exact reuse with an external signer that returns
+a different URL for every signing call. The mixed case now retains 51 normally
+created workflow/connector mounts and complete repeated manifests; its former
+synthetic system mount and 52-mount/three-scope proof were removed by
+[#37440 batch 007](implementation/issue-37440-batches/batch-007.md). Private
+expiry injection, cache-row readbacks and the internal cache benchmark were
+removed without claiming equivalent public coverage.
+[#37440 batch 006](implementation/issue-37440-batches/batch-006.md) retires the
+scoped PostgreSQL fault case and its trigger helper. Its exact proof that a
+cache write fails after pending Run/job creation while a claim still returns a
+complete fresh URL has no public replacement. Production post-commit ordering
+and cache failure handling remain unchanged. Deferred external
 KMS and signing observations verify that both start before either completes,
 while the input remains unconsumed and no runner job is available until KMS
 finishes. An Official automation test holds the real Gmail label lookup during
@@ -661,10 +671,10 @@ reconciliation: the accepted workflow archive signing and runtime KMS still
 start, with no run, job or callback rows committed. After release, completing the
 run verifies the result-email callback from the updated automation configuration.
 Internal callbacks do not have HTTP secrets and need no KMS encryption.
-Synthetic non-chat mounts have no equivalent chat input, so their
-existing fixture tests explicitly seed cache entries and retain exact URL reuse,
-52-mount completeness, hard-expiry and owned/primary selection assertions. They
-no longer expect resource preparation to persist a new cache entry.
+Other System cache cases still seed synthetic storage/cache entries and assert
+private reuse, hard-expiry, pruning and owned/primary selection. Those cases and
+their test-state API remain unprocessed under #37440; their public final Runner
+response does not certify their private construction or observation.
 
 Route coverage includes FIFO and multi-thread traversal, rejection followed by
 another thread, token/lease recovery, unchanged model pins, stable application

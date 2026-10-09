@@ -313,7 +313,8 @@ describe("AUTH-03 user model preference", () => {
       updatedAt: null,
     });
 
-    // Auto is only the null selection; its internal run model is not selectable.
+    // Nullable and explicit Auto are request intents; the legacy capture ID is
+    // readable history metadata, not a selectable public model.
     const rejected = await cfg.requestUpdateModelPreference(
       admin,
       { selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL, serviceTier: null },

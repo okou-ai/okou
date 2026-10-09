@@ -19,7 +19,7 @@ import {
 import {
   ensureGoogleFormsWatchForUser$,
   reconcileGoogleFormsWatchesForUser$,
-} from "./google-forms-automation-event.service";
+} from "./google-forms-automation-watch.service";
 import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
@@ -29,7 +29,7 @@ import {
   type OfficialAutomationPatch,
   type OfficialAutomationRow,
 } from "./official-workflow-installation.service";
-import type { OfficialWorkflowReconciliationResult } from "./official-workflow-reconciliation-dispatch.service";
+import type { OfficialWorkflowReconciliationResult } from "./official-workflow-reconciliation.types";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 
 interface FormsReconfiguration {

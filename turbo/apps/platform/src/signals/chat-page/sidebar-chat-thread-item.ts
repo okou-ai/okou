@@ -24,10 +24,7 @@ import { sidebarDraftThreadIds$ } from "./sidebar-draft-threads.ts";
 import { sidebarUnreadThreadIds$ } from "./sidebar-unread-threads.ts";
 
 export type SidebarChatThreadIndicatorState =
-  | "running"
-  | "muted"
-  | "unread"
-  | "draft";
+  "running" | "muted" | "unread" | "draft";
 
 export type SidebarChatThreadPaneIndicator = "main" | "sidebar";
 export type SidebarChatThreadTargetPane = "main" | "sidebar";

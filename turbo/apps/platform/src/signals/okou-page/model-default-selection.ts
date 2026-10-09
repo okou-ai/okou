@@ -4,6 +4,10 @@ import type {
   AvailableRunModelsResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  isAutoSelectedModel,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import type { ModelCatalog } from "../external/model-catalog.ts";
@@ -26,7 +30,7 @@ function createModelFirstSelection(
   catalog: ModelCatalog | null | undefined,
   modelSettings: ModelSettings = {},
 ): ModelProviderSelection | null {
-  if (selectedModel === null) {
+  if (selectedModel === null || isAutoSelectedModel(selectedModel)) {
     return { selectedModel: null, modelSettings };
   }
   const resolvedModel = catalog?.resolve(selectedModel);
@@ -46,7 +50,7 @@ export function isServiceTierAvailableForSelection(params: {
   readonly tier: "priority";
 }): boolean {
   const runModel = params.models?.models.find((candidate) => {
-    return candidate.model === params.selectedModel;
+    return sameSelectedModel(candidate.model, params.selectedModel);
   });
   // Availability can change without changing this model's Fast capability.
   // Preserve the saved choice through reconnect and plan restrictions; send
@@ -61,6 +65,7 @@ export function isRunModelFastModeAvailable(
   return (
     !!runModel &&
     runModel.model !== null &&
+    !isAutoSelectedModel(runModel.model) &&
     isMemberRunModelConfigurable(runModel) &&
     runModel.subscriptionOptions?.serviceTier === "priority"
   );
@@ -79,7 +84,7 @@ function hasUsableModelRoute(
 ): boolean {
   // Before models load there is no route evidence to reject the preference.
   // Auto is always offered.
-  if (!models || model === null) {
+  if (!models || model === null || isAutoSelectedModel(model)) {
     return true;
   }
   // A plan-restricted route stays selected so the composer can offer the
@@ -161,7 +166,7 @@ export const resolveExplicitModelSelection$ = command(
     signal.throwIfAborted();
     const selectedModel = params.selection?.selectedModel;
     const selectedRunModel = models.models.find((runModel) => {
-      return runModel.model === selectedModel;
+      return sameSelectedModel(runModel.model, selectedModel);
     });
     if (
       selectedRunModel !== undefined &&

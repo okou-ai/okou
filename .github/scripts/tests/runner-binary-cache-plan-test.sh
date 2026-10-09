@@ -184,8 +184,11 @@ assert_contains "$all_hit" 'hit-count=2'
 assert_contains "$all_hit" 'miss-count=0'
 assert_contains "$all_hit" 'resolution-json=['
 plan_output_keys=$(cut -d= -f1 "$plan_output" | LC_ALL=C sort -u | paste -sd, -)
-[ "$plan_output_keys" = "compile-matrix,hit-count,hit-references,hit-targets,miss-count" ] ||
+[ "$plan_output_keys" = "compile-matrix,hit-count,hit-matrix,hit-references,hit-targets,miss-count" ] ||
   fail "unexpected plan output keys: ${plan_output_keys}"
+hit_matrix=$(sed -n 's/^hit-matrix=//p' "$plan_output")
+jq -e --argjson matrix "$matrix" '. == $matrix' <<<"$hit_matrix" >/dev/null ||
+  fail "all-hit plan must preserve both architecture entries for cache prewarming"
 grep -qF '### Runner binary cache plan' "$plan_summary" || fail "expected plan summary"
 grep -qF "\`${arm_target}\`" "$plan_summary" || fail "expected arm target in plan summary"
 grep -qF "\`${x86_target}\`" "$plan_summary" || fail "expected x86 target in plan summary"
@@ -200,12 +203,16 @@ assert_contains "$mixed" 'hit-count=1'
 assert_contains "$mixed" 'miss-count=1'
 mixed_matrix=$(sed -n 's/^compile-matrix=//p' <<<"$mixed")
 [ "$(jq -r '.[0].target' <<<"$mixed_matrix")" = "$x86_target" ] || fail "mixed plan must compile x86 only"
+mixed_hits=$(sed -n 's/^hit-matrix=//p' <<<"$mixed")
+jq -e --argjson matrix "$matrix" '. == [$matrix[0]]' <<<"$mixed_hits" >/dev/null ||
+  fail "mixed plan must prewarm only the arm binary hit, never the x86 compiler miss"
 [ -f "${TMPDIR}/mixed/${arm_target}/reference.json" ] || fail "mixed plan must resolve the arm hit"
 [ ! -e "${TMPDIR}/mixed/${x86_target}" ] || fail "mixed plan must not stage a missed target"
 
 all_miss=$(run_plan all-miss "${TMPDIR}/all-miss")
 assert_contains "$all_miss" 'hit-count=0'
 assert_contains "$all_miss" 'miss-count=2'
+assert_contains "$all_miss" 'hit-matrix=[]'
 all_miss_matrix=$(sed -n 's/^compile-matrix=//p' <<<"$all_miss")
 [ "$(jq 'length' <<<"$all_miss_matrix")" -eq 2 ] || fail "all-miss plan must compile both targets"
 
@@ -213,6 +220,7 @@ all_miss_matrix=$(sed -n 's/^compile-matrix=//p' <<<"$all_miss")
 forced=$(RUNNER_BINARY_CACHE_FORCE_MISS=true run_plan all-hit "${TMPDIR}/forced")
 assert_contains "$forced" 'hit-count=0'
 assert_contains "$forced" 'miss-count=2'
+assert_contains "$forced" 'hit-matrix=[]'
 assert_contains "$forced" '"reason":"force-miss"'
 [ ! -s "${TMPDIR}/gh.log" ] || fail "force-miss plan must not query GitHub"
 

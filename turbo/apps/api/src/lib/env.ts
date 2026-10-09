@@ -2,6 +2,7 @@ import { createEnv } from "@t3-oss/env-core";
 import { z, type ZodType } from "zod";
 
 import { testOverride } from "./singleton";
+import { desktopVersionIsSupported } from "./desktop-version";
 
 const priceIdsSchema = z
   .string()
@@ -21,6 +22,14 @@ const SCHEMA = {
   DATABASE_URL: z.string().min(1),
   CLERK_SECRET_KEY: z.string().min(1),
   CLERK_PUBLISHABLE_KEY: z.string().min(1),
+  // Global compatibility admission; unset keeps legacy Desktop clients supported.
+  OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+$/u)
+    .refine((value) => {
+      return desktopVersionIsSupported(value, "0.51.0");
+    }, "The Desktop floor must be at least 0.51.0")
+    .optional(),
   MCP_RESOURCE_URL: z.url().optional(),
   MCP_OAUTH_ISSUER: z.url().optional(),
   SECRETS_ENCRYPTION_KEY: z.string().length(64),

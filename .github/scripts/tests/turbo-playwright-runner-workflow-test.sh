@@ -148,8 +148,6 @@ if browser_run["continue-on-error"] || browser["continue-on-error"]
   raise "browser E2E failures must remain blocking"
 end
 assert_canonical_api_backend_url.call(browser_run, "browser E2E")
-pnpm_setup_action =
-  "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
 pnpm_version = "10.33.4"
 {
   "runner E2E preparation" => account_prepare,
@@ -158,7 +156,7 @@ pnpm_version = "10.33.4"
 }.each do |job_name, job|
   steps = job.fetch("steps")
   pnpm_setup_index = steps.index do |step|
-    step["uses"] == pnpm_setup_action
+    step.fetch("uses", "").start_with?("pnpm/action-setup@")
   end
   node_setup_index = steps.index do |step|
     step.fetch("uses", "").start_with?("actions/setup-node@")
@@ -644,7 +642,7 @@ unless retain_step &&
 end
 
 cleanup_pnpm_setup_step = cleanup_steps.find do |step|
-  step["uses"] == pnpm_setup_action
+  step.fetch("uses", "").start_with?("pnpm/action-setup@")
 end
 cleanup_node_setup_step = cleanup_steps.find do |step|
   step.fetch("uses", "").start_with?("actions/setup-node@")

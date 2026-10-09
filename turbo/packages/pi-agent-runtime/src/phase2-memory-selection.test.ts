@@ -20,6 +20,14 @@ describe("Pi memory Phase 2 selection encoding", () => {
         "24a9bc5c377eb5bfc66e9976218eb1c99ecb6461e2593788b2c752f4437288b2",
     },
     {
+      selected: [
+        { piSessionId: "a", sourceHistoryHash: "1".repeat(64) },
+        { piSessionId: "b", sourceHistoryHash: "2".repeat(64) },
+      ],
+      digest:
+        "fa8384918a4cc1c202520f720d75e61fcebac6c0124eff016b9d4462fede1ea3",
+    },
+    {
       selected: [unicode, ascii],
       digest:
         "fff7703ac79540a658abc4e86f142eb613ed032e3b6d4e5213e785a609c0a49e",

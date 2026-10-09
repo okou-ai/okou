@@ -1,10 +1,10 @@
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { and, eq, gt, isNotNull, isNull, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { storedConnectorAccountMutationSelection } from "./connector-account-mutation.service";
 
 const storedOAuthStateSelection = Object.freeze({
@@ -317,19 +317,27 @@ export const claimBuiltinConnectorOAuthState$ = command(
   },
 );
 
-export async function readCustomConnectorOAuthState(
-  db: ReadonlyDb,
-  args: {
-    readonly state: string;
-  },
-  signal: AbortSignal,
-): Promise<CustomConnectorOAuthStateReadResult> {
-  const [storedState] = await db
-    .select(storedOAuthStateSelection)
-    .from(connectorOauthStates)
-    .where(eq(connectorOauthStates.state, args.state))
-    .limit(1);
-  signal.throwIfAborted();
+export function customConnectorOAuthStateByState(
+  state$: Computed<string | undefined>,
+): Computed<Promise<StoredOAuthStateRow | undefined>> {
+  return computed(async (get) => {
+    const state = get(state$);
+    if (!state) {
+      return undefined;
+    }
+    const db = get(db$);
+    const [storedState] = await db
+      .select(storedOAuthStateSelection)
+      .from(connectorOauthStates)
+      .where(eq(connectorOauthStates.state, state))
+      .limit(1);
+    return storedState;
+  });
+}
+
+export function customConnectorOAuthStatePreview(
+  storedState: StoredOAuthStateRow | undefined,
+): CustomConnectorOAuthStateReadResult {
   if (!storedState) {
     return { kind: "missing" };
   }

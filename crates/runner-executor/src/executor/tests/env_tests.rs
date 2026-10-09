@@ -1116,6 +1116,30 @@ fn pi_execution_context_preserves_additive_fields_in_run_payload() {
 }
 
 #[test]
+fn pi_auto_runtime_payload_preserves_captured_identity() {
+    for catalog_model in [Some("okou-1.0"), Some("auto"), None] {
+        let mut ctx = pi_context_for_test();
+        let config = ctx.pi_model_config.as_mut().unwrap();
+        config["model"] = json!("@preset/okou-experimental");
+        if let Some(selected) = catalog_model {
+            config["catalogModel"] = json!(selected);
+        } else {
+            config.as_object_mut().unwrap().remove("catalogModel");
+        }
+        assert!(validate_context_for_test(&ctx).is_ok());
+        let payload = build_run_payload_for_run(&ctx).unwrap();
+        let model: serde_json::Value = serde_json::from_str(&payload.pi_model_config).unwrap();
+        assert_eq!(model["model"], "@preset/okou-experimental");
+        assert_eq!(
+            model
+                .get("catalogModel")
+                .and_then(serde_json::Value::as_str),
+            catalog_model
+        );
+    }
+}
+
+#[test]
 fn pi_maintenance_candidates_use_only_the_private_run_payload() {
     let mut context = pi_context_for_test();
     let candidate_secret = "PRIVATE_MAINTENANCE_CANDIDATE_31891";

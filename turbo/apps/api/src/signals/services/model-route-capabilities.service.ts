@@ -1,3 +1,7 @@
+import {
+  AUTO_RUN_MODEL,
+  isAutoSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { getCatalogRunModelRouteAccess } from "@okouai/api-contracts/contracts/model-providers";
 import {
   reasoningEffortSchema,
@@ -149,6 +153,9 @@ export function catalogModelForSelectedId(
   selectedId: string,
 ): string | null {
   const id = selectedId.trim();
+  if (isAutoSelectedModel(id)) {
+    return AUTO_RUN_MODEL;
+  }
   if (catalog.byModel.has(id)) {
     return id;
   }

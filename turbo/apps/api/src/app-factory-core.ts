@@ -39,7 +39,6 @@ import {
 } from "./signals/external/axiom";
 import type { RouteEntry } from "./signals/route-entry";
 import { configureChatRunFinishedEventDispatcher$ } from "./signals/services/chat-run-finished-event-registration.service";
-import { configureOfficialWorkflowReconciliationDispatcher$ } from "./signals/services/official-workflow-reconciliation-registration.service";
 import type { UsagePricingResolution } from "./signals/context/usage-pricing-resolution";
 import type { SystemSkillStorageResolution } from "./signals/context/system-skill-storage-resolution";
 import {
@@ -53,7 +52,6 @@ const L = logger("App");
 
 const initializeApiServices$ = command(({ set }): void => {
   set(configureChatRunFinishedEventDispatcher$);
-  set(configureOfficialWorkflowReconciliationDispatcher$);
 });
 
 const AUTH_PATHS = ["/sign-in", "/sign-up"] as const;

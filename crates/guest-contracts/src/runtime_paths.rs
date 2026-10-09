@@ -86,6 +86,12 @@ pub fn validate_run_id(run_id: &str) -> Result<(), RuntimePathError> {
     Ok(())
 }
 
+/// Return the parent reserved for runner-owned per-Run runtime state.
+#[must_use]
+pub fn runtime_parent_for_home(guest_home: impl AsRef<Path>) -> PathBuf {
+    guest_home.as_ref().join(DEFAULT_RUNTIME_PARENT)
+}
+
 /// Build the default runtime directory for a guest home and run id.
 ///
 /// The returned path is `<guest_home>/.vm0/guest-agent/runs/<run_id>`.
@@ -95,10 +101,7 @@ pub fn run_dir_for_home(
     run_id: &str,
 ) -> Result<PathBuf, RuntimePathError> {
     validate_run_id(run_id)?;
-    Ok(guest_home
-        .as_ref()
-        .join(DEFAULT_RUNTIME_PARENT)
-        .join(run_id))
+    Ok(runtime_parent_for_home(guest_home).join(run_id))
 }
 
 fn canonical_guest_runtime_dir(

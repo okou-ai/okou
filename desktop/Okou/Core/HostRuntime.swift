@@ -16,6 +16,8 @@ public struct RuntimeState: Sendable {
   public var lastHeartbeat: Date?
   public var lastCommand: Date?
   public var lastError: String?
+  public var updateRequired = false
+  public var minimumSupportedVersion: String?
   public var recoveryAttempt = 0
   public var retryAt: Date?
   public var commands: [CommandLog] = []
@@ -113,6 +115,8 @@ public actor HostRuntime {
     acceptingCommands = true
     state.status = "connecting"
     state.lastError = nil
+    state.updateRequired = false
+    state.minimumSupportedVersion = nil
     await publish()
     var attempt = 0
     while running && current == generation {
@@ -146,6 +150,7 @@ public actor HostRuntime {
       return
     }
     guard (200..<300).contains(response.status) else {
+      if response.status == 426 { recordUpgradeRequirement(response) }
       if [401, 403, 404, 409, 426].contains(response.status) {
         running = false
         state.status = response.status == 403 ? "disabled" : "error"
@@ -154,11 +159,11 @@ public actor HostRuntime {
           ? "Computer Use is already active in another Desktop session."
           : response.status == 404
             ? "Computer Use is temporarily unavailable until the service is updated."
-          : response.status == 426
-            ? "This version of Okou must be updated."
-            : response.status == 401
-              ? "Sign in and select a workspace before going online."
-              : "Computer Use is disabled for this account."
+            : response.status == 426
+              ? "This version of Okou must be updated."
+              : response.status == 401
+                ? "Sign in and select a workspace before going online."
+                : "Computer Use is disabled for this account."
         await publish()
         return
       }
@@ -286,6 +291,13 @@ public actor HostRuntime {
   }
   private func rejectAuthority(_ response: APIResponse) async -> Bool {
     guard [401, 403, 409, 426].contains(response.status) else { return false }
+    if response.status == 426 {
+      // Close admission without invalidating completion reports for claimed work.
+      acceptingCommands = false
+      recordUpgradeRequirement(response)
+      await publish()
+      return true
+    }
     running = false
     state.status = "error"
     state.lastError =
@@ -294,6 +306,11 @@ public actor HostRuntime {
       : "Computer Use authority is no longer valid. Go offline and reconnect."
     await publish()
     return true
+  }
+  private func recordUpgradeRequirement(_ response: APIResponse) {
+    state.updateRequired = true
+    state.minimumSupportedVersion = response.body["minimumSupportedVersion"].string
+    state.lastError = "This version of Okou must be updated."
   }
   private func commandLoop(generation current: Int, connection: Connection) async {
     var attempt = 0

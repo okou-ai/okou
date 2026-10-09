@@ -97,8 +97,11 @@ never a production release and are not a supported historical deployment.
 The generated final schema preserves separate proof hashes, phase checks and the
 RESTRICT identity owner FK; its data-only ownership backfill remains fail-closed.
 The earlier revision-specific receipts below remain historical, not evidence for
-the consolidated migration. Final migration consistency and public OAuth cases
-must be verified again against the consolidated schema before merge.
+the consolidated migration. On 2026-10-09, main's migration frontier advanced to
+1355, so the same unreleased schema was regenerated again as
+`1356_discord_oauth_onboarding`, retaining all main history through 1355 and the
+same fail-closed data-only backfill. This is the current migration; the earlier
+1346 Discord receipt is historical.
 
 ## Final export-boundary correction
 
@@ -111,8 +114,39 @@ Without that operator drive, the real POST's bounded initial work leaves the
 job `running`; the completed archive cannot be observed through this test's
 user-accessible chain. No worker call, private driver, enlarged product work
 budget, or endpoint added only for testing replaces it. The original archive
-coverage loss above remains genuine, including the unverified new OAuth-attempt
-projection; four unrelated durable-export cleanup passes do not resolve it.
+coverage loss above remains genuine. Four unrelated durable-export cleanup
+passes do not resolve it.
+
+### Independently public source-content verification (2026-10-09)
+
+The new case `stages only the requesting owner's OAuth export content without
+capabilities through the normal export request` constructs both owners through
+real OAuth/install/connect/status, starts independent pending authorizations,
+and calls only the normal authenticated export POST/GET. The POST's ordinary
+initial `waitUntil` batch produces export-content JSON sent to external S3.
+The centralized S3 provider mock captures these emitted bytes, not application
+policy, job/checkpoint rows, or private service outputs. No worker or cron is
+called, no input is recovered from a private write, and no product budget or
+endpoint changes.
+
+Its strict exported-document schema requires exactly the eight intended
+OAuth-attempt fields. It verifies the requesting owner's guild/org/user, peer
+exclusion, and absence of issued state/completion capabilities and their hashes.
+This is meaningful execution coverage for the new source projection: it fails
+if selection crosses ownership or serialization exposes extra capability fields.
+It is **not** a completed ZIP/download test, and does not restore the historical
+ingress/context/notice archive coverage. ZIP assembly/download code is unchanged
+by this PR. The external-storage assertion follows the provider-boundary rules
+in `docs/testing/api-testing.md` and `docs/testing/testing-external-behavior.md`;
+it does not create an operator-interface exception.
+
+After integration with main and regenerated migration 1356, the 16 targeted API
+files passed **281/281**, including the new source-content case. An initial local
+run failed because the newly created PostgreSQL cluster defaulted to
+Asia/Shanghai while timestamp-without-time-zone expiry compares against database
+`now()`. Configuring the disposable cluster to UTC, matching CI, resolved those
+failures without changes to product code or weakened assertions. No diagnostic
+Run-read edits remain.
 
 ## Retained suites and boundaries
 

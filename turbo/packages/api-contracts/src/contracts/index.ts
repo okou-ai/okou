@@ -206,6 +206,7 @@ export {
   webhookCompleteContract,
   webhookCheckpointsContract,
   webhookCheckpointsPrepareHistoryContract,
+  webhookSessionHistoryPrepareContract,
   webhookHeartbeatContract,
   webhookTelemetryContract,
   // Direct upload contracts (Webhook endpoints for sandbox)
@@ -262,17 +263,6 @@ export {
   type BuiltinConnectorsSlugCallbackContract,
 } from "./connectors-slug-callback";
 export {
-  testComputerUseStateContract,
-  testComputerUseStateDeleteResponseSchema,
-  testComputerUseStateGetResponseSchema,
-  testComputerUseStatePostBodySchema,
-  testComputerUseStatePostResponseSchema,
-  type TestComputerUseStateContract,
-  type TestComputerUseStateDeleteResponse,
-  type TestComputerUseStateGetResponse,
-  type TestComputerUseStatePostResponse,
-} from "./test-computer-use-state";
-export {
   testRuntimeStateActionBodySchema,
   testRuntimeStateActionResponseSchema,
   testRuntimeStateContract,
@@ -280,16 +270,6 @@ export {
   type TestRuntimeStateActionResponse,
   type TestRuntimeStateContract,
 } from "./test-runtime-state";
-export {
-  testEmailOutboxStateActionBodySchema,
-  testEmailOutboxStateActionResponseSchema,
-  testEmailOutboxStateContract,
-  testEmailOutboxStateItemSchema,
-  type TestEmailOutboxStateActionBody,
-  type TestEmailOutboxStateActionResponse,
-  type TestEmailOutboxStateContract,
-  type TestEmailOutboxStateItem,
-} from "./test-email-outbox-state";
 export {
   testUsageStateActionBodySchema,
   testUsageStateActionResponseSchema,
@@ -300,12 +280,6 @@ export {
   type TestUsageStateContract,
   type TestUsageStateFixture,
 } from "./test-usage-state";
-export {
-  testUsageSettlementContract,
-  testUsageSettlementResponseSchema,
-  type TestUsageSettlementContract,
-  type TestUsageSettlementResponse,
-} from "./test-usage-settlement";
 export {
   testCronCleanupSandboxesStateActionBodySchema,
   testCronCleanupSandboxesStateActionResponseSchema,
@@ -1639,19 +1613,23 @@ export {
 } from "./built-in-generation";
 export {
   voiceIoPolishContract,
+  voiceIoPolishSegmentsContract,
   voiceIoPolishRequestSchema,
+  voiceIoPolishSegmentsRequestSchema,
   voiceIoPolishResponseSchema,
   VOICE_IO_POLISH_MAX_TEXT_CHARS,
   type VoiceIoPolishContract,
   type VoiceIoPolishRequest,
+  type VoiceIoPolishSegmentsRequest,
+  type VoiceIoPolishSegmentsContract,
   type VoiceIoPolishResponse,
 } from "./voice-io-polish";
 export {
   voiceIoTranscribeContract,
-  voiceIoTranscribeResponseSchema,
+  voiceIoTranscribeSegmentResponseSchema,
   VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS,
   type VoiceIoTranscribeContract,
-  type VoiceIoTranscribeResponse,
+  type VoiceIoTranscribeSegmentResponse,
 } from "./voice-io-transcribe";
 export {
   voiceIoQuotaContract,

@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.220.22"
+version = "0.221.1"
 edition.workspace = true
 
 [dependencies]
@@ -50,12 +50,21 @@ runner-supervisor.workspace = true
 runner-types.workspace = true
 
 [build-dependencies]
+flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
+guest-contracts.workspace = true
 hex = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 sha2 = { workspace = true }
+tar = { workspace = true, features = ["xattr"] }
+
+# Exercise the build-only native module without sharing it with Runner runtime.
+[[test]]
+name = "cli_package_build"
+path = "cli_package.rs"
 
 [dev-dependencies]
+runner-host = { workspace = true, features = ["test-support"] }
 runner-executor = { workspace = true, features = ["test-support"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-network = { workspace = true, features = ["test-support"] }

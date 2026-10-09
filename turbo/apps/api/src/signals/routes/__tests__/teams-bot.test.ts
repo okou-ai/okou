@@ -2511,18 +2511,13 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect(switchedModelClaim.appendSystemPrompt).toContain(
         "Your name is Okou.",
       );
-      expect(switchedModelClaim.appendSystemPrompt).toContain(
+      // The stale card keeps the model and runtime unchanged. A missing
+      // native checkpoint does not rotate the session or replay prior turns.
+      expect(switchedModelClaim.appendSystemPrompt).not.toContain(
         "# Microsoft Teams Run Context",
       );
-      expect(switchedModelClaim.appendSystemPrompt).toContain(
-        `- AGENT_SESSION_COMMAND: okou search "${initialRunId}" --source agent-session`,
-      );
-      expect(switchedModelClaim.appendSystemPrompt).toContain(
-        "Use the AGENT_SESSION_COMMAND for a run",
-      );
-      expect(switchedModelClaim.appendSystemPrompt).not.toContain(
-        "LOG_COMMAND",
-      );
+      expect(switchedModelClaim.cliAgentType).toBe(initialClaim.cliAgentType);
+      expect(switchedModelClaim.resumeSession).toBeNull();
       expect(switchedModelClaim.modelUsageProvider).toBe("claude-fable-5-1");
       await runsApi.requestCancelRun(actor, switchedModelRunId, [200]);
     });
@@ -2632,6 +2627,20 @@ describe("POST /api/webhooks/teams/bot", () => {
     await runsApi.heartbeatRunner(runnerGroup);
     const switchedClaim = await runsApi.claimRunnerJob(switchedRunId);
     expect(switchedClaim.modelUsageProvider).toBe("gpt-6-astra");
+    expect(switchedClaim.resumeSession).toBeNull();
+    expect(switchedClaim.appendSystemPrompt).toContain(
+      "# Microsoft Teams Run Context",
+    );
+    expect(switchedClaim.appendSystemPrompt).toContain(
+      "User: run before the DM model switch",
+    );
+    expect(switchedClaim.appendSystemPrompt).toContain(
+      `- AGENT_SESSION_COMMAND: okou search "${initialRunId}" --source agent-session`,
+    );
+    expect(switchedClaim.appendSystemPrompt).toContain(
+      "Use the AGENT_SESSION_COMMAND for a run",
+    );
+    expect(switchedClaim.appendSystemPrompt).not.toContain("LOG_COMMAND");
     await runsApi.requestCancelRun(actor, switchedRunId, [200]);
   });
 

@@ -71,17 +71,13 @@ type OrdinaryRecord = z.output<typeof pendingAdmissionRecordSchema>;
 interface OfficialStatement {
   readonly kind: "statement";
   readonly phase:
-    | "catalog-lock"
-    | "credit-plan"
-    | "installation"
-    | "automation";
+    "catalog-lock" | "credit-plan" | "installation" | "automation";
   readonly sql: SQL;
   readonly catalog: AcceptedOfficialWorkflowCatalog | null;
   readonly accepted: readonly OfficialWorkflowAcceptedDefinition[];
 }
 type PendingLaunchAdmissionProgress =
-  | PendingAdmissionProgress
-  | OfficialStatement;
+  PendingAdmissionProgress | OfficialStatement;
 type Statement = Extract<
   PendingLaunchAdmissionProgress,
   { readonly kind: "statement" }

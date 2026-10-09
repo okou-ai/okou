@@ -31,7 +31,7 @@ import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import {
-  privateArtifactCreationEnabled,
+  privateArtifactCreationEnabled$,
   privateArtifactsBucket,
 } from "./private-artifact-storage.service";
 import {
@@ -423,7 +423,7 @@ export const removeSharedThreadArtifactCopies$ = command(
 
 export const deleteSharedThread$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly id: string;
       readonly userId: string;
@@ -447,7 +447,12 @@ export const deleteSharedThread$ = command(
     }
     if (
       !row.hasArtifactSnapshot &&
-      !(await get(privateArtifactCreationEnabled(args.orgId, args.userId)))
+      !(await set(
+        privateArtifactCreationEnabled$,
+        args.orgId,
+        args.userId,
+        signal,
+      ))
     ) {
       return false;
     }

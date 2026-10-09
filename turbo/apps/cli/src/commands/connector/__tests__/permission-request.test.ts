@@ -195,8 +195,7 @@ describe("okou connector permission-request command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
     let diagnosticRequest:
-      | ReturnType<typeof connectorCheckRequestSchema.parse>
-      | undefined;
+      ReturnType<typeof connectorCheckRequestSchema.parse> | undefined;
     stubDiagnostic(
       resolvedUrlDiagnostic(),
       "https://app.okou.ai",
@@ -242,8 +241,7 @@ describe("okou connector permission-request command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
     let diagnosticRequest:
-      | ReturnType<typeof connectorCheckRequestSchema.parse>
-      | undefined;
+      ReturnType<typeof connectorCheckRequestSchema.parse> | undefined;
     stubDiagnostic(
       resolvedUrlDiagnostic({
         connectorSlug: "aws",

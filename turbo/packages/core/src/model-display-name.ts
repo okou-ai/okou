@@ -1,6 +1,6 @@
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { AUTO_RUN_MODEL } from "./auto-run-model";
+import { isAutoSelectedModel } from "./auto-run-model";
 import { IMAGE_MODEL_CONFIGS, resolveImageModel } from "./image-model-catalog";
 
 /**
@@ -10,6 +10,7 @@ import { IMAGE_MODEL_CONFIGS, resolveImageModel } from "./image-model-catalog";
 const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   // Okou built-in aliases
   "okou-1.0": "Auto",
+  auto: "Auto",
   // Anthropic direct (claude-code-oauth-token, built-in)
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
@@ -88,7 +89,7 @@ export function getRunModelDisplayName(
   model: string,
   codexServiceTier: CodexServiceTier | null | undefined,
 ): string | undefined {
-  if (model === AUTO_RUN_MODEL) {
+  if (isAutoSelectedModel(model)) {
     return undefined;
   }
   const modelName = getModelDisplayName(model);

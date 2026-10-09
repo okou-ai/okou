@@ -2,6 +2,7 @@ import {
   pgTable,
   uuid,
   varchar,
+  text,
   bigint,
   timestamp,
   uniqueIndex,
@@ -38,7 +39,7 @@ export const usagePricing = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     kind: varchar("kind", { length: 30 }).notNull(),
-    provider: varchar("provider", { length: 100 }).notNull(),
+    provider: text("provider").notNull(),
     category: varchar("category", { length: 100 }).notNull(),
     unitPrice: bigint("unit_price", { mode: "number" }).notNull(),
     unitSize: bigint("unit_size", { mode: "number" }).notNull(),

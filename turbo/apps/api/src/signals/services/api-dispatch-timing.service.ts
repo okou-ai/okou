@@ -15,22 +15,12 @@ export type ApiDispatchTimingDimensions = Readonly<Record<string, string>>;
 // Bounded string dimensions and numeric observation metrics share the ingest fields.
 type ApiDispatchTimingFields = Readonly<Record<string, string | number>>;
 export type ApiDispatchTimingDimensionsInput =
-  | ApiDispatchTimingFields
-  | (() => ApiDispatchTimingFields | undefined);
+  ApiDispatchTimingFields | (() => ApiDispatchTimingFields | undefined);
 
 type ApiProcessAgeBucket =
-  | "0_1s"
-  | "1_10s"
-  | "10_60s"
-  | "1_5m"
-  | "5_15m"
-  | "15m_plus";
+  "0_1s" | "1_10s" | "10_60s" | "1_5m" | "5_15m" | "15m_plus";
 type ApiProcessDispatchOrdinalBucket =
-  | "first"
-  | "2_4"
-  | "5_16"
-  | "17_64"
-  | "65_plus";
+  "first" | "2_4" | "5_16" | "17_64" | "65_plus";
 
 interface ApiProcessDispatchState {
   ordinal: number;
@@ -359,8 +349,7 @@ export class ApiDispatchTimingCollector {
   private readonly records: ApiDispatchTimingRecord[] = [];
   private readonly processAgeBucket = apiProcessAgeBucket(performance.now());
   private processDispatchOrdinalBucket:
-    | ApiProcessDispatchOrdinalBucket
-    | undefined;
+    ApiProcessDispatchOrdinalBucket | undefined;
 
   recordDuration(
     actionType: ApiDispatchTimingActionType,

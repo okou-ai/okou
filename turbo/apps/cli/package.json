@@ -1,6 +1,6 @@
 {
   "name": "@okouai/cli",
-  "version": "9.378.24",
+  "version": "9.380.1",
   "private": true,
   "description": "Okou command-line interface",
   "repository": {
@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "build": "tsup",
-    "postbuild": "cp package.json dist/ && pnpm json -I -f dist/package.json -e 'this.name=\"@okouai/cli\"; delete this.scripts; delete this.devDependencies; this.bin={okou:\"okou.js\"}; this.files=[\"*.js\",\"*.js.map\",\"*.wasm\",\"migrations/*.sql\"]'",
+    "postbuild": "cp package.json dist/ && pnpm json -I -f dist/package.json -e 'this.name=\"@okouai/cli\"; delete this.scripts; delete this.devDependencies; this.bin={okou:\"okou.js\"}; this.files=[\"*.js\",\"*.js.map\",\"*.wasm\",\"migrations/*.sql\"]' && node scripts/write-dist-package.mjs",
     "dev": "tsup --watch",
     "bench:startup": "pnpm build && OKOU_STARTUP_BENCH=1 vitest run src/__tests__/okou-startup.bench.test.ts",
     "test": "vitest run",
@@ -61,7 +61,7 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "undici": "^8.10.2",
-    "vitest": "^5.0.1",
+    "vitest": "^5.0.3",
     "yaml": "^2.9.0",
     "zod": "^4.3.6"
   }

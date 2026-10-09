@@ -117,19 +117,16 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
             .all(|request| request.body.len() <= MAX_REQUEST_BYTES)
     );
 
-    let delivered = requests
-        .iter()
-        .map(|request| serde_json::from_str::<Value>(&request.body))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flat_map(|payload| {
+    let mut delivered = Vec::new();
+    for request in &requests {
+        let mut payload: Value = serde_json::from_str(&request.body)?;
+        delivered.append(
             payload
-                .get("events")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default()
-        })
-        .collect::<Vec<_>>();
+                .get_mut("events")
+                .and_then(Value::as_array_mut)
+                .ok_or("event request omitted events array")?,
+        );
+    }
     assert_eq!(delivered.len(), 20);
     assert_eq!(
         delivered
@@ -316,7 +313,11 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         .collect::<Vec<_>>();
     assert_eq!(inputs.len(), 1);
     assert_eq!(inputs[0]["text"], runtime.config.prompt);
-    assert!(!serde_json::to_string(&history)?.contains("for delivery"));
+    assert!(
+        !history
+            .iter()
+            .any(|event| common::contains_json_text(event, "for delivery"))
+    );
     let local_events = read_jsonl(runtime.paths.agent_log_file())?;
     for original in &collaboration_items {
         let item_id = original["id"]
@@ -377,7 +378,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         .find(|event| event["type"] == "turn.plan.updated")
         .ok_or("local oversized plan update was not recorded")?;
     assert_eq!(local_plan["plan"].as_array().map(Vec::len), Some(75_000));
-    assert!(!serde_json::to_string(local_plan)?.contains(FALLBACK_MARKER));
+    assert!(!common::contains_json_text(local_plan, FALLBACK_MARKER));
     let local_multi_change = delivered_item(&local_events, "oversized-multi-change")?;
     assert_eq!(
         local_multi_change["item"]["changes"]

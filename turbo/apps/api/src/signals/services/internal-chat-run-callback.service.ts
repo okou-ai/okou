@@ -27,11 +27,9 @@ import { command } from "ccstate";
 import { and, asc, desc, eq, isNotNull, lte, max, not, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
-import { logTemplateUsage } from "../../lib/template-usage-log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
@@ -406,13 +404,6 @@ export interface CreateQueuedChatRunInput {
    * queued message selected and its sender may still access.
    */
   readonly presentationTemplateVolumes: readonly PresentationTemplateVolume[];
-  /**
-   * The selections behind that guidance, reported once the run is created.
-   * Building this input does not commit to a run: admission is re-checked
-   * afterwards and can leave the message queued for a later attempt, which
-   * would report the same message twice.
-   */
-  readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
   readonly threadId: string;
   readonly connectorSourceId?: string;
   readonly queuedMessage: QueuedUserMessage;
@@ -443,20 +434,6 @@ export interface CreateQueuedChatRunInput {
   readonly telegramDelivery?: TelegramDeliveryTarget;
   readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
   readonly autonomyBudget: number;
-  readonly userInfoExtras?: {
-    readonly slackDisplayName?: string;
-    readonly slackUserId?: string;
-    readonly feishuDisplayName?: string;
-    readonly feishuOpenId?: string;
-    readonly teamsUserDisplayName?: string;
-    readonly teamsUserPrincipalName?: string;
-    readonly teamsUserId?: string;
-    readonly telegramDisplayName?: string;
-    readonly telegramUsername?: string;
-    readonly telegramUserId?: string;
-    readonly telegramLanguage?: string;
-    readonly agentphoneHandle?: string;
-  };
 }
 
 interface SlackQueuedMessageAdmissionFailure {
@@ -679,7 +656,6 @@ export function buildQueuedRunCommand(
     triggerSource: input.triggerSource,
     agentRunPreCreateSource: "chat_callback_auto_send" as const,
     appendSystemPrompt: input.appendSystemPrompt,
-    userInfoExtras: input.userInfoExtras,
     queueFirstAssociation: {
       threadId: input.threadId,
       eventId: input.queuedMessage.id,
@@ -1983,16 +1959,20 @@ const runCompletedChatCallbackSideEffects$ = command(
       }
 
       signal.throwIfAborted();
-      await sendUserPushNotifications({
-        db: args.db,
-        userId: args.chatThread.userId,
-        threadId: args.chatThread.chatThreadId,
-        notification: {
-          title: args.run.prompt.slice(0, 60),
-          body: summary ?? "Your task is complete",
-          url: `/chats/${args.chatThread.chatThreadId}`,
+      await sendUserPushNotifications(
+        {
+          db: args.db,
+          userId: args.chatThread.userId,
+          orgId: args.chatThread.orgId,
+          threadId: args.chatThread.chatThreadId,
+          notification: {
+            title: args.run.prompt.slice(0, 60),
+            body: summary ?? "Your task is complete",
+            url: `/chats/${args.chatThread.chatThreadId}`,
+          },
         },
-      });
+        signal,
+      );
     })();
 
     const results = await Promise.allSettled([
@@ -2075,26 +2055,33 @@ const handleFailedChatCallback$ = command(
   },
 );
 
-async function runFailedChatCallbackSideEffects(args: {
-  readonly db: Db;
-  readonly run: ChatRunInfo;
-  readonly chatThread: ChatThreadForRunRow;
-  readonly displayErrorMessage: string;
-  readonly sendWebPush: boolean;
-}): Promise<void> {
+async function runFailedChatCallbackSideEffects(
+  args: {
+    readonly db: Db;
+    readonly run: ChatRunInfo;
+    readonly chatThread: ChatThreadForRunRow;
+    readonly displayErrorMessage: string;
+    readonly sendWebPush: boolean;
+  },
+  signal: AbortSignal,
+): Promise<void> {
   if (!args.sendWebPush) {
     return;
   }
-  await sendUserPushNotifications({
-    db: args.db,
-    userId: args.chatThread.userId,
-    threadId: args.chatThread.chatThreadId,
-    notification: {
-      title: args.run.prompt.slice(0, 60),
-      body: `Task failed: ${args.displayErrorMessage.slice(0, 80)}`,
-      url: `/chats/${args.chatThread.chatThreadId}`,
+  await sendUserPushNotifications(
+    {
+      db: args.db,
+      userId: args.chatThread.userId,
+      orgId: args.chatThread.orgId,
+      threadId: args.chatThread.chatThreadId,
+      notification: {
+        title: args.run.prompt.slice(0, 60),
+        body: `Task failed: ${args.displayErrorMessage.slice(0, 80)}`,
+        url: `/chats/${args.chatThread.chatThreadId}`,
+      },
     },
-  });
+    signal,
+  );
 }
 
 async function runTerminalChatCallbackSideEffects(args: {
@@ -2111,29 +2098,7 @@ async function runTerminalChatCallbackSideEffects(args: {
   });
 }
 
-export function buildAppendSystemPrompt(
-  integrationPrompt: string,
-  incompleteContext: string,
-  priorContext: string,
-  generationTemplatePrompt: string,
-  computerUseHostDisplayName: string | null,
-): string {
-  return [
-    integrationPrompt,
-    priorContext,
-    incompleteContext,
-    generationTemplatePrompt,
-    computerUseHostDisplayName
-      ? buildComputerUseSystemPrompt(computerUseHostDisplayName)
-      : "",
-  ]
-    .filter((part) => {
-      return part.length > 0;
-    })
-    .join("\n\n");
-}
-
-function buildComputerUseSystemPrompt(displayName: string): string {
+export function buildComputerUseSystemPrompt(displayName: string): string {
   return [
     "# Computer Use",
     `Computer Use is enabled for this run on ${displayName}.`,
@@ -2331,11 +2296,8 @@ type QueuedIntegrationDeliveries = Pick<
 
 export interface QueuedLaunchMaterial {
   readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly prompt: string;
-  readonly appendSystemPrompt: string;
   readonly connectorSourceId?: string;
   readonly delivery: QueuedIntegrationDeliveries;
-  readonly userInfoExtras?: CreateQueuedChatRunInput["userInfoExtras"];
 }
 
 function queuedIntegrationDeliveries(
@@ -2508,19 +2470,6 @@ function channelQueuedMessageAdmissionFailure(
   }
 }
 
-export function queuedUserMessageProjection(
-  message: QueuedUserMessage["userMessage"],
-): ReturnType<typeof projectUserMessage> {
-  const queuedUserMessage = requiredUserMessageForEvent(
-    "input.prompt",
-    message,
-  );
-  if (!queuedUserMessage) {
-    throw new Error("Queued input event is missing userMessage");
-  }
-  return projectUserMessage(queuedUserMessage);
-}
-
 export function queuedIntegrationLaunchFields(
   launchMaterial: QueuedLaunchMaterial,
   agentId: string,
@@ -2534,7 +2483,6 @@ export function queuedIntegrationLaunchFields(
     ...(delivery.agentphoneDelivery
       ? { agentphoneDelivery: { ...delivery.agentphoneDelivery, agentId } }
       : {}),
-    userInfoExtras: launchMaterial.userInfoExtras,
     ...(launchMaterial.connectorSourceId
       ? { connectorSourceId: launchMaterial.connectorSourceId }
       : {}),
@@ -2740,15 +2688,10 @@ function unreachableQueuedAdmissionFailure(failure: never): never {
   throw new Error(`Unsupported queued admission failure: ${String(failure)}`);
 }
 
-/** The committed run's title, usage and typing observations need no read plan. */
+/** The committed run's title and typing observations need no read plan. */
 export type QueuedPromptLaunchInput = Pick<
   CreateQueuedChatRunInput,
-  | "orgId"
-  | "threadId"
-  | "prompt"
-  | "generationTemplateIdentities"
-  | "discordDelivery"
-  | "triggerSource"
+  "orgId" | "threadId" | "prompt" | "discordDelivery" | "triggerSource"
 >;
 
 export interface QueuedPromptLaunchContext {
@@ -2768,16 +2711,6 @@ export const recordQueuedPromptRunLaunch$ = command(
     const db = set(writeDb$);
     const { userId, runInput } = args;
     const threadId = runInput.threadId;
-    // Only a launched run counts as template use; an unclaimed head may retry.
-    logTemplateUsage(
-      {
-        dispatchPath: "queued-claim",
-        orgId: runInput.orgId,
-        userId,
-        chatThreadId: threadId,
-      },
-      runInput.generationTemplateIdentities,
-    );
     waitUntil(
       set(
         generateAndPersistChatThreadTitle$,
@@ -3376,13 +3309,17 @@ const finishTerminalChatCallbackAfterProjection$ = command(
                   },
                   backgroundSignal,
                 )
-              : runFailedChatCallbackSideEffects({
-                  db: args.callback.db,
-                  run: deferredSideEffects.run,
-                  chatThread: args.chatThread,
-                  displayErrorMessage: deferredSideEffects.displayErrorMessage,
-                  sendWebPush,
-                }),
+              : runFailedChatCallbackSideEffects(
+                  {
+                    db: args.callback.db,
+                    run: deferredSideEffects.run,
+                    chatThread: args.chatThread,
+                    displayErrorMessage:
+                      deferredSideEffects.displayErrorMessage,
+                    sendWebPush,
+                  },
+                  backgroundSignal,
+                ),
         }),
       );
     }

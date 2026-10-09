@@ -248,16 +248,12 @@ async function recheckOrphanedQueueEvents(
   return confirmedEvents;
 }
 
-async function monitorChatEventQueue(
-  db: Db,
-  signal: AbortSignal,
-  eventIds?: readonly string[],
-) {
+async function monitorChatEventQueue(db: Db, signal: AbortSignal) {
   const window = recentStaleChatQueueWindow(nowDate().getTime());
   const suspectedEvents = await findOrphanedQueueEvents(
     db,
     window,
-    eventIds,
+    undefined,
     signal,
   );
   signal.throwIfAborted();
@@ -294,11 +290,5 @@ async function monitorChatEventQueue(
 export const monitorChatEventQueue$ = command(
   async ({ set }, signal: AbortSignal) => {
     return await monitorChatEventQueue(set(writeDb$), signal);
-  },
-);
-
-export const monitorChatEventQueueForEvents$ = command(
-  async ({ set }, eventIds: readonly string[], signal: AbortSignal) => {
-    return await monitorChatEventQueue(set(writeDb$), signal, eventIds);
   },
 );

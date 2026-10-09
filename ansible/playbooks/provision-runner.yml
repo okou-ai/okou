@@ -1,8 +1,8 @@
 # Provision Runner Host Dependencies
 #
 # Idempotent playbook that installs all system-level dependencies required by
-# the Okou runner on runner hosts. Safe to run repeatedly — all tasks use
-# idempotent operations (apt state=present, group append, file metadata convergence).
+# the Okou runner on runner hosts. Safe to run repeatedly; ordinary dependencies
+# converge, while the protected WSS namespace rejects conflicting existing state.
 #
 # Usage:
 #   ansible-playbook -i "host1,host2," playbooks/provision-runner.yml \
@@ -12,6 +12,93 @@
   hosts: all
 
   tasks:
+    # Host preparation only: no Caddy installation or Runner service policy.
+    - name: Prepare protected Runner WSS socket namespace
+      become: true
+      tags: runner_wss_host
+      block:
+        - name: Create dedicated Runner WSS system group without user memberships
+          ansible.builtin.group:
+            name: okou-wss-caddy
+            system: true
+            state: present
+
+        - name: Create or validate Runner WSS namespace without repairing existing state
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - -c
+              - |
+                import fcntl
+                import grp
+                import os
+                import stat
+                import sys
+                from contextlib import ExitStack
+
+                flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+
+                def open_directory(stack, name, parent=None):
+                    descriptor = os.open(name, flags, dir_fd=parent)
+                    stack.callback(os.close, descriptor)
+                    return descriptor
+
+                def validate_parent(descriptor, path):
+                    metadata = os.fstat(descriptor)
+                    if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & 0o022:
+                        raise RuntimeError(f"{path} must be root-owned and not group/world-writable")
+                    if "system.posix_acl_default" in os.listxattr(descriptor):
+                        raise RuntimeError(f"{path} must not pass default ACLs to the WSS namespace")
+
+                def prepare():
+                    if os.geteuid() != 0:
+                        raise RuntimeError("preparation requires root")
+                    group_id = grp.getgrnam("okou-wss-caddy").gr_gid
+                    if group_id == 0:
+                        raise RuntimeError("okou-wss-caddy must be distinct from the root group")
+                    with ExitStack() as stack:
+                        root = open_directory(stack, "/")
+                        validate_parent(root, "/")
+                        runtime = open_directory(stack, "run", root)
+                        validate_parent(runtime, "/run")
+                        # Serialize cooperating preparers without touching child sockets.
+                        fcntl.flock(runtime, fcntl.LOCK_EX)
+                        created = False
+                        try:
+                            namespace = open_directory(stack, "okou-ws", runtime)
+                        except FileNotFoundError:
+                            try:
+                                os.mkdir("okou-ws", 0o700, dir_fd=runtime)
+                                created = True
+                            except FileExistsError:
+                                pass
+                            namespace = open_directory(stack, "okou-ws", runtime)
+                        if created:
+                            os.fchown(namespace, 0, group_id)
+                            # Directory contract: root writes; the dedicated group only traverses.
+                            os.fchmod(namespace, 0o710)
+                        if {"system.posix_acl_access", "system.posix_acl_default"}.intersection(os.listxattr(namespace)):
+                            raise RuntimeError("/run/okou-ws must not have POSIX ACLs")
+                        metadata = os.fstat(namespace)
+                        pathname = os.stat("okou-ws", dir_fd=runtime, follow_symlinks=False)
+                        if (
+                            metadata.st_uid != 0
+                            or metadata.st_gid != group_id
+                            or stat.S_IMODE(metadata.st_mode) != 0o710
+                            or (metadata.st_dev, metadata.st_ino) != (pathname.st_dev, pathname.st_ino)
+                        ):
+                            raise RuntimeError("/run/okou-ws must remain root:okou-wss-caddy 0710")
+                        return created
+
+                try:
+                    if prepare():
+                        print("created")
+                except (KeyError, OSError, RuntimeError) as error:
+                    print(f"Runner WSS host preparation failed: {error}", file=sys.stderr)
+                    sys.exit(1)
+          register: runner_wss_namespace_prepare
+          changed_when: runner_wss_namespace_prepare.stdout == 'created'
+
     - name: Wait for apt lock to be released
       shell: |
         while fuser \
@@ -55,7 +142,7 @@
           # Managed by ansible/playbooks/provision-runner.yml - do not edit.
           fs.inotify.max_user_instances = 8192
           fs.inotify.max_user_watches = 1048576
-        mode: '0644'
+        mode: "0644"
       become: true
 
     - name: Apply runner sysctl limits
@@ -92,7 +179,7 @@
       file:
         path: /etc/needrestart/conf.d
         state: directory
-        mode: '0755'
+        mode: "0755"
       become: true
 
     - name: Exempt vm0-runner services from needrestart auto-restart
@@ -108,7 +195,7 @@
           # needrestart that drops one layer still leaves the other intact.
           $nrconf{override_rc}->{qr(^vm0-runner-)} = 0;
           push(@{$nrconf{blacklist_rc}}, qr(^vm0-runner-));
-        mode: '0644'
+        mode: "0644"
       become: true
 
     - name: Add user to kvm group
@@ -125,7 +212,7 @@
         path: /dev/kvm
         owner: root
         group: kvm
-        mode: '0660'
+        mode: "0660"
       become: true
 
     # Write options BEFORE enabling auto-load so that a reboot between
@@ -134,14 +221,14 @@
       copy:
         dest: /etc/modprobe.d/nbd.conf
         content: "options nbd nbds_max=4096\n"
-        mode: '0644'
+        mode: "0644"
       become: true
 
     - name: Persist nbd module across reboots
       copy:
         dest: /etc/modules-load.d/nbd.conf
         content: "nbd\n"
-        mode: '0644'
+        mode: "0644"
       become: true
 
     - name: Load nbd kernel module with correct nbds_max

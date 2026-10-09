@@ -74,7 +74,7 @@ import {
 import {
   connectorCatalog,
   connectorCatalogEntries,
-} from "@okouai/db/schema/connector-catalog";
+} from "@okouai/db/runtime/connector-catalog";
 import {
   connectorCatalogCurrentWhere,
   connectorCatalogSlugJoin,

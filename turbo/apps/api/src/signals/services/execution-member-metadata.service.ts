@@ -1,7 +1,7 @@
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -41,10 +41,11 @@ const kindDecoder = zodEnumDriverValueDecoder(
 const nullableTextDecoder = nullableDriverValueDecoder(pgTextDecoder);
 
 /** Read both independently optional records in one round trip. */
-export function createExecutionMemberMetadata(
-  owner: ExecutionMemberIdentity,
-): Computed<Promise<ExecutionMemberMetadata>> {
-  return computed(async (get) => {
+export const readExecutionMemberMetadata$ = command(
+  async (
+    { get },
+    owner: ExecutionMemberIdentity,
+  ): Promise<ExecutionMemberMetadata> => {
     const db = get(db$);
     const profileQuery = db
       .select({
@@ -121,5 +122,5 @@ export function createExecutionMemberMetadata(
       profile: profile ? { name: profile.name, email: profile.email } : null,
       preferences: capturedPreferences,
     };
-  });
-}
+  },
+);

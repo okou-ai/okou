@@ -754,9 +754,15 @@ describe("ORG-03 onboarding status mapping", () => {
 
     const bootstrappedBilling = await runsApi.readBillingStatus(admin);
     expect(bootstrappedBilling).toMatchObject({
-      credits: 1000,
+      credits: 0,
+      creditGrants: [],
       tier: "limited-free-1",
       onboardingPaymentPending: false,
+    });
+    await expect(runsApi.readUsagePackCredits(admin)).resolves.toMatchObject({
+      totalCredits: 1000,
+      purchasedCredits: 0,
+      bonusCredits: 1000,
     });
 
     // A member's completion is their own and leaves the workspace's setup to

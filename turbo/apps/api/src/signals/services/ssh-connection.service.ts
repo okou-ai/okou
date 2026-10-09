@@ -504,8 +504,7 @@ interface PreparedSshConnectionUpdate extends UpdateSshConnectionArgs {
   readonly accessId: string | null;
   readonly preparedAccess: Awaited<ReturnType<typeof prepareAccessCreation>>;
   readonly preparedCredential:
-    | Awaited<ReturnType<typeof prepareSshCredentialSelection>>
-    | undefined;
+    Awaited<ReturnType<typeof prepareSshCredentialSelection>> | undefined;
 }
 
 const commitSshConnectionUpdate$ = command(

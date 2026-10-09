@@ -135,9 +135,7 @@ export interface ComposerSubmission {
 export type ComposerSubmissionAction = "send" | "queue";
 
 export type ComposerPrimaryAction =
-  | ComposerSubmissionAction
-  | "stop"
-  | "disabled";
+  ComposerSubmissionAction | "stop" | "disabled";
 
 export interface ComposerPendingEvent {
   readonly kind: "message" | "automation";
@@ -156,10 +154,10 @@ interface ComposerDraftSignals {
   readonly removeAttachment$: Command<void, [ChatAttachment]>;
   readonly dragOver$: Computed<boolean>;
   readonly setDragOver$: Command<void, [boolean]>;
-  readonly composerFileInput$: Computed<HTMLElement | null>;
+  readonly composerFileInput$: Computed<HTMLInputElement | null>;
   readonly setComposerFileInput$: Command<
     (() => void) | undefined,
-    [HTMLElement | null]
+    [HTMLInputElement | null]
   >;
   readonly save$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -304,12 +302,12 @@ function forwardFeedbackPlaceholder(): string {
 }
 
 function createComposerFileInputSignals() {
-  const internal$ = state<HTMLElement | null>(null);
+  const internal$ = state<HTMLInputElement | null>(null);
   const composerFileInput$ = computed((get) => {
     return get(internal$);
   });
   const setComposerFileInput$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+    command(({ set }, element: HTMLInputElement, signal: AbortSignal) => {
       signal.addEventListener("abort", () => {
         set(internal$, null);
       });

@@ -11,7 +11,10 @@ func resolveThreadModelSelection(
   catalog: ModelCatalog
 ) -> ThreadModelSelection {
   // A saved selection of a retired model resolves to its active replacement.
-  let savedModel = preference.selectedModel.flatMap { catalog.resolve($0) }
+  let savedModel = preference.selectedModel.flatMap { selected in
+    // PR1 sends nullable Auto to both API versions, even when reading PR2 preferences.
+    selected == "auto" || selected == "okou-1.0" ? nil : catalog.resolve(selected)
+  }
   // Without a usable saved selection, the thread uses Auto (a nil model).
   let model = savedModel.flatMap { model in
     availableModels.models.contains { $0.model == model && $0.hasUsableRoute() }

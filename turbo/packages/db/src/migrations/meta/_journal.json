@@ -1881,8 +1881,78 @@
     {
       "idx": 1346,
       "version": "7",
-      "when": 1791456671110,
-      "tag": "1346_discord_oauth_onboarding",
+      "when": 1791456048950,
+      "tag": "1346_usage_pack_overdraft_transfers",
+      "breakpoints": true
+    },
+    {
+      "idx": 1347,
+      "version": "7",
+      "when": 1791460307995,
+      "tag": "1347_pi_memory_luna_route",
+      "breakpoints": true
+    },
+    {
+      "idx": 1348,
+      "version": "7",
+      "when": 1791464547115,
+      "tag": "1348_connector_catalog_payload_independent_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 1349,
+      "version": "7",
+      "when": 1791466652113,
+      "tag": "1349_retire_connector_permission_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1350,
+      "version": "7",
+      "when": 1791469279706,
+      "tag": "1350_acoustic_adam_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 1351,
+      "version": "7",
+      "when": 1791473200258,
+      "tag": "1351_drop_connector_catalog_payload",
+      "breakpoints": true
+    },
+    {
+      "idx": 1352,
+      "version": "7",
+      "when": 1791475819219,
+      "tag": "1352_detach_memory_history_from_run_checkpoints",
+      "breakpoints": true
+    },
+    {
+      "idx": 1353,
+      "version": "7",
+      "when": 1791477992014,
+      "tag": "1353_retire_deepseek_memory_route",
+      "breakpoints": true
+    },
+    {
+      "idx": 1354,
+      "version": "7",
+      "when": 1791479786306,
+      "tag": "1354_retire_oauth_contract_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 1355,
+      "version": "7",
+      "when": 1791503441636,
+      "tag": "1355_expand_runtime_billing_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1356,
+      "version": "7",
+      "when": 1791512301780,
+      "tag": "1356_discord_oauth_onboarding",
       "breakpoints": true
     }
   ]

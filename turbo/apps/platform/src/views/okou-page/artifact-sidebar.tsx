@@ -1,3 +1,4 @@
+import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import type { ReactNode } from "react";
 import {
   ArrowLeft,
@@ -35,7 +36,7 @@ import {
   publicAttachmentUrl,
 } from "./attachment-url.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
-import { MarkdownEventBody } from "../components/markdown.tsx";
+import { ArtifactMarkdownDocument } from "../components/artifact-markdown-document.tsx";
 import { jsonParseOr } from "../../signals/utils.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
@@ -153,25 +154,28 @@ export function ArtifactSidebar({
   };
 
   return (
-    <ArtifactSidebarContent
-      agentId={agentId}
-      artifactRef={artifactRef}
-      fullscreenState={fullscreenState}
-      imageCanvasSignals={thread.sidebar.imageCanvas}
-      imageNavigation={{
-        onNext: imageNavigationAction(imageNavigation.next),
-        onPrevious: imageNavigationAction(imageNavigation.previous),
-      }}
-      item={item}
-      markdownTree$={markdownTree$}
-      onBack={onBack}
-      onClose={onClose}
-      onSyncSuccess={() => {
-        reloadArtifacts();
-      }}
-      text$={text$}
-      threadId={thread.threadId}
-    />
+    <>
+      <ArtifactSidebarContent
+        agentId={agentId}
+        artifactRef={artifactRef}
+        fullscreenState={fullscreenState}
+        imageCanvasSignals={thread.sidebar.imageCanvas}
+        imageNavigation={{
+          onNext: imageNavigationAction(imageNavigation.next),
+          onPrevious: imageNavigationAction(imageNavigation.previous),
+        }}
+        item={item}
+        markdownTree$={markdownTree$}
+        onBack={onBack}
+        onClose={onClose}
+        onSyncSuccess={() => {
+          reloadArtifacts();
+        }}
+        text$={text$}
+        threadId={thread.threadId}
+      />
+      <ArtifactDiagramLightbox signals={thread.sidebar.diagram} />
+    </>
   );
 }
 
@@ -917,9 +921,7 @@ function ArtifactMarkdownBody({
   return (
     <ArtifactStageShell>
       <ArtifactStageCard>
-        <div className="h-full overflow-auto p-6">
-          <MarkdownEventBody tree={loadable.data} mediaPreview={false} />
-        </div>
+        <ArtifactMarkdownDocument tree={loadable.data} />
       </ArtifactStageCard>
     </ArtifactStageShell>
   );

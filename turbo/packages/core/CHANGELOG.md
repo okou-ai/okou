@@ -1,5 +1,81 @@
 # Changelog
 
+## [8.737.1](https://github.com/okou-ai/okou/compare/core-v8.737.0...core-v8.737.1) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.1
+
+## [8.737.0](https://github.com/okou-ai/okou/compare/core-v8.736.0...core-v8.737.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Refactoring
+
+* retire deepseek memory execution route ([#38193](https://github.com/okou-ai/okou/issues/38193)) ([dd70bd4](https://github.com/okou-ai/okou/commit/dd70bd4b01bd2ee0dbfbe748940544e5e072bf5a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.0
+
+## [8.736.0](https://github.com/okou-ai/okou/compare/core-v8.735.2...core-v8.736.0) (2026-10-08)
+
+
+### Features
+
+* **notify:** add agent-controlled mail notifications ([#38093](https://github.com/okou-ai/okou/issues/38093)) ([702c270](https://github.com/okou-ai/okou/commit/702c270169c8de738aa9f47ed5480ed377edcfda))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.541.0
+
+## [8.735.2](https://github.com/okou-ai/okou/compare/core-v8.735.1...core-v8.735.2) (2026-10-08)
+
+
+### Refactoring
+
+* **api:** encapsulate continuation and template preparation ([#38155](https://github.com/okou-ai/okou/issues/38155)) ([207088f](https://github.com/okou-ai/okou/commit/207088f19c5df05553c233d8a0ccbaf195fb0314))
+* remove pi openrouter chat completions feature switch ([#38096](https://github.com/okou-ai/okou/issues/38096)) ([a635ec3](https://github.com/okou-ai/okou/commit/a635ec3afa20cdb5df9c8125afe6cec24ef53e16))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.540.0
+
+## [8.735.1](https://github.com/okou-ai/okou/compare/core-v8.735.0...core-v8.735.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **core:** limit presentation conversion rollout to bingjie ([#38044](https://github.com/okou-ai/okou/issues/38044)) ([9894737](https://github.com/okou-ai/okou/commit/98947373070ad1d5b14595d716c217dca0fd28ac))
+
+
+### Refactoring
+
+* remove agent responsibility setup feature switch ([#38069](https://github.com/okou-ai/okou/issues/38069)) ([bbb313e](https://github.com/okou-ai/okou/commit/bbb313e561cf6904565d5b91e7e227e2016557ee))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.539.1
+
 ## [8.735.0](https://github.com/okou-ai/okou/compare/core-v8.734.9...core-v8.735.0) (2026-10-08)
 
 

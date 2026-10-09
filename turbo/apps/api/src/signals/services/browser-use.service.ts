@@ -527,10 +527,7 @@ function browserUseCdpSignal(signal: AbortSignal): AbortSignal {
 }
 
 type BrowserUseCdpPreflightPhase =
-  | "discovery"
-  | "connection"
-  | "target"
-  | "controls";
+  "discovery" | "connection" | "target" | "controls";
 type BrowserUseCdpTimeoutObserver = (
   phase: BrowserUseCdpPreflightPhase,
   durationMs: number,
@@ -1271,8 +1268,7 @@ async function readBrowserUseRadioMembers(
 ): Promise<{
   readonly name: string | null;
   readonly options:
-    | readonly z.infer<typeof browserUseRadioOptionSchema>[]
-    | null;
+    readonly z.infer<typeof browserUseRadioOptionSchema>[] | null;
   readonly memberNodeIds: readonly number[];
   readonly commandId: number;
 }> {

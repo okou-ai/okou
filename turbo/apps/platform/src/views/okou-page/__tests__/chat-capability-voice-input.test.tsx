@@ -65,7 +65,7 @@ async function activeVoiceDraftStopButton(): Promise<HTMLElement> {
   expect(
     screen.getByText(/^\d{2}:\d{2}$/u, { selector: "time" }),
   ).toBeVisible();
-  expect(queryButton("Attach")).toBeNull();
+  expect(screen.queryByLabelText("Attach")).toBeNull();
   return stop;
 }
 
@@ -97,12 +97,15 @@ async function setupShortcutTranscription() {
   const response = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+    return HttpResponse.json({ text: "Shortcut voice note" });
+  });
   context.mocks.http.post("*/api/voice-io/transcribe/segment", async () => {
     requested.resolve();
     await response.promise;
     return HttpResponse.json({
       transcript: "um shortcut voice note",
-      polishedText: "Shortcut voice note",
+
       language: "en-US",
     });
   });
@@ -165,6 +168,9 @@ test("Transcribe a voice draft using the latest assistant reference", async () =
   const transcriptionReady = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+    return HttpResponse.json({ text: "Send the launch update tomorrow." });
+  });
   context.mocks.http.post(
     "*/api/voice-io/transcribe/segment",
     async ({ request }) => {
@@ -184,7 +190,7 @@ test("Transcribe a voice draft using the latest assistant reference", async () =
       await transcriptionReady.promise;
       return HttpResponse.json({
         transcript: "um send the launch update tomorrow",
-        polishedText: "Send the launch update tomorrow.",
+
         language: "en-US",
       });
     },
@@ -261,7 +267,7 @@ test("Show microphone startup before the voice-draft waveform", async () => {
   expect(starting).toBeDisabled();
   expect(starting).toHaveAttribute("aria-busy", "true");
   expect(queryButton("Stop recording")).toBeNull();
-  expect(queryButton("Attach")).toBeVisible();
+  expect(screen.queryByLabelText("Attach")).toBeVisible();
   expect(document.querySelector("[data-voice-level-waveform]")).toBeNull();
 
   microphoneReady.resolve(undefined);
@@ -287,10 +293,13 @@ test("Keep a silent voice draft recording until the user stops it", async () => 
     },
   });
   installAvailableVoiceQuota();
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+    return HttpResponse.json({ text: "Extended voice draft." });
+  });
   context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
     return HttpResponse.json({
       transcript: "Extended voice draft",
-      polishedText: "Extended voice draft.",
+
       language: "en-US",
     });
   });
@@ -377,7 +386,7 @@ test("Finish a provider no-speech response and preserve the input", async () => 
 
   await findEnabledButton("Voice input");
   expect(normalizedComposerText()).toBe(initialText);
-  expect(queryButton("Attach")).toBeVisible();
+  expect(screen.queryByLabelText("Attach")).toBeVisible();
   expect(queryButton("Send")).toBeEnabled();
   expect(consoleErrors).toStrictEqual([]);
   expect(

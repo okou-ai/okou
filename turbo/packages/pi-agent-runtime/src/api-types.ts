@@ -11,10 +11,7 @@ export type PiPreheatedResourceSnapshot = PiResourceSnapshot;
 export type PiMemoryRecallOutcomeStatus = "hit" | "miss" | "invalid" | "stale";
 
 export type PiMemoryRecallParity =
-  | "frozen-match"
-  | "frozen-no-content"
-  | "mismatch"
-  | "not-applicable";
+  "frozen-match" | "frozen-no-content" | "mismatch" | "not-applicable";
 
 export interface PiMemoryRecallOutcome {
   readonly mode: "preheated" | "sandbox";

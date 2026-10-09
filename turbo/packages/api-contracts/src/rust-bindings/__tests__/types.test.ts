@@ -117,16 +117,6 @@ const expectedBindings = [
     direction: "response",
   },
   {
-    rustModulePath: ["runners", "runs", "model_provider_failures"],
-    rustTypeName: "Request",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["runners", "runs", "model_provider_failures"],
-    rustTypeName: "RequestConnectionSource",
-    direction: "request",
-  },
-  {
     rustModulePath: ["runners", "storage"],
     rustTypeName: "ArtifactEntryMissingRootPolicy",
     direction: "response",
@@ -163,6 +153,21 @@ const expectedBindings = [
   },
   {
     rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
+    rustTypeName: "SessionHistoryEncoding",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
+    rustTypeName: "Request",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
+    rustTypeName: "Response",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
     rustTypeName: "SessionHistoryEncoding",
     direction: "request",
   },

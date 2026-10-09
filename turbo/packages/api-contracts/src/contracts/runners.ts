@@ -5,7 +5,6 @@ import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
   firewallApiSchema,
-  firewallPolicyValueSchema,
   firewallSchema,
   networkPolicySchema,
   networkPoliciesSchema,
@@ -188,19 +187,6 @@ export const runnerInstalledVersionsSchema = z
   })
   .strict()
   .readonly();
-
-export const builtInModelProviderConnectionSourceSchema = z.enum([
-  "provider_response",
-  "upstream_transport",
-]);
-
-const BUILT_IN_MODEL_PROVIDER_RETRY_AFTER_MAX_SECONDS = 300;
-const builtInModelProviderRetryAfterSecondsSchema = z
-  .number()
-  .int()
-  .positive()
-  .max(BUILT_IN_MODEL_PROVIDER_RETRY_AFTER_MAX_SECONDS)
-  .optional();
 
 /**
  * Atomic advisory decision for cross-runner reuse coordination. A preferred
@@ -438,90 +424,6 @@ export const connectorRuntimeSyncResultSchema = z.union([
   connectorRuntimeCustomUnresolvedResultSchema,
   connectorRuntimeCustomAbsentResultSchema,
 ]);
-const connectorPermissionNameListSchema = z
-  .array(z.string().min(1))
-  .superRefine((names, context) => {
-    if (new Set(names).size !== names.length) {
-      context.addIssue({
-        code: "custom",
-        message: "Connector permission names must be unique",
-      });
-    }
-  });
-const connectorPermissionDefaultOverridesSchema = z
-  .object({
-    allow: connectorPermissionNameListSchema.optional(),
-    deny: connectorPermissionNameListSchema.optional(),
-    ask: connectorPermissionNameListSchema.optional(),
-  })
-  .strict();
-const connectorPermissionBaselineEntrySchema = z
-  .object({
-    permissionNames: connectorPermissionNameListSchema,
-    defaultPolicy: z
-      .object({
-        permissionDefault: firewallPolicyValueSchema,
-        permissionOverrides:
-          connectorPermissionDefaultOverridesSchema.optional(),
-        unknownPolicy: firewallPolicyValueSchema,
-      })
-      .strict(),
-  })
-  .strict()
-  .superRefine((entry, context) => {
-    const permissionNames = new Set(entry.permissionNames);
-    const overrideNames = Object.values(
-      entry.defaultPolicy.permissionOverrides ?? {},
-    ).flat();
-    if (new Set(overrideNames).size !== overrideNames.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["defaultPolicy", "permissionOverrides"],
-        message: "Connector permission overrides must not overlap",
-      });
-    }
-    for (const permissionName of overrideNames) {
-      if (!permissionNames.has(permissionName)) {
-        context.addIssue({
-          code: "custom",
-          path: ["defaultPolicy", "permissionOverrides"],
-          message: "Connector permission override must name a permission",
-        });
-      }
-    }
-  });
-const connectorCatalogDigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
-const connectorCatalogBackendVersionSchema = z
-  .string()
-  .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u);
-const connectorCatalogBuildCommitShaSchema = z
-  .string()
-  .regex(/^[a-f0-9]{40}$/u);
-
-export const storedConnectorPermissionBaselineSchema = z
-  .object({
-    version: z.literal(1),
-    catalogIdentity: z
-      .object({
-        sourceId: z.string().min(1),
-        schemaVersion: z.number().int().positive(),
-        catalogVersion: z.string().min(1),
-        catalogDigest: connectorCatalogDigestSchema,
-        capabilityDigest: connectorCatalogDigestSchema,
-      })
-      .strict(),
-    validationAuthority: z
-      .object({
-        backendVersion: connectorCatalogBackendVersionSchema,
-        buildCommitSha: connectorCatalogBuildCommitShaSchema.nullable(),
-      })
-      .strict(),
-    connectors: z.record(
-      connectorSlugSchema,
-      connectorPermissionBaselineEntrySchema,
-    ),
-  })
-  .strict();
 const runnerBuiltinFirewallNameSchema = z
   .string()
   .min(1)
@@ -1313,9 +1215,6 @@ const storedExecutionContextObjectSchema = z.object({
   // Stable connector targets pinned for this run. The runner owns this list
   // after claim independently of whether each target is currently available.
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
-  // API-only catalog-derived permission defaults for claim-time grant refresh.
-  connectorPermissionBaseline:
-    storedConnectorPermissionBaselineSchema.optional(),
   // Tools to disable in Claude CLI (passed as --disallowed-tools)
   disallowedTools: z.array(z.string()).optional(),
   // Tools to make available in Claude CLI (passed as --tools)
@@ -1353,21 +1252,9 @@ const storedExecutionContextObjectSchema = z.object({
   piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
+/** Reads persisted execution contexts while stripping unknown writer metadata. */
 export const storedExecutionContextSchema =
   storedExecutionContextObjectSchema.superRefine(requireCompletePiFields);
-
-/**
- * Tolerant reader for execution contexts already persisted in a database or
- * encrypted queue payload. The optional baseline is derived performance data,
- * so malformed or future versions must remain an independent cache miss rather
- * than invalidating the complete queued execution context.
- */
-export const compatibleStoredExecutionContextSchema =
-  storedExecutionContextObjectSchema
-    .extend({
-      connectorPermissionBaseline: z.unknown().optional(),
-    })
-    .superRefine(requireCompletePiFields);
 
 /**
  * Claim-time reader that inspects Pi generation support before decoding the
@@ -1376,7 +1263,6 @@ export const compatibleStoredExecutionContextSchema =
 export const claimCompatibleStoredExecutionContextSchema =
   storedExecutionContextObjectSchema
     .extend({
-      connectorPermissionBaseline: z.unknown().optional(),
       piModelConfig: z.unknown().optional(),
     })
     .superRefine(requireCompletePiFields);
@@ -1587,68 +1473,6 @@ export const runnersCancellationContract = c.router({
   },
 });
 
-export const runnersModelProviderFailuresContract = c.router({
-  report: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/model-provider-failures",
-    headers: authHeadersSchema,
-    pathParams: z.object({
-      runId: z.uuid(),
-    }),
-    body: z.discriminatedUnion("failureKind", [
-      z
-        .object({
-          failureKind: z.literal("authentication"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("billing"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("rate_limit"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("provider_unavailable"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("timeout"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("connection"),
-          connectionSource: builtInModelProviderConnectionSourceSchema,
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-    ]),
-    responses: {
-      200: z
-        .object({
-          outcome: z.enum(["recorded", "observed", "ignored"]),
-        })
-        .strict(),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Report a built-in model provider failure for a run",
-  },
-});
-
 export const STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE =
   "INPUT_ALREADY_CONSUMED";
 export const STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE = "RUN_NOT_RUNNING";
@@ -1828,8 +1652,6 @@ export const runnersHeartbeatContract = c.router({
 
 export type RunnersPollContract = typeof runnersPollContract;
 export type RunnersJobClaimContract = typeof runnersJobClaimContract;
-export type RunnersModelProviderFailuresContract =
-  typeof runnersModelProviderFailuresContract;
 export type RunnersSteerContract = typeof runnersSteerContract;
 export type RunnersConnectorRuntimeSyncContract =
   typeof runnersConnectorRuntimeSyncContract;
@@ -1874,14 +1696,8 @@ export type PiInstalledCliRequirement = z.infer<
 >;
 export type PiResourceSnapshot = z.infer<typeof piResourceSnapshotSchema>;
 export type PiLaunchPayload = z.infer<typeof piLaunchPayloadSchema>;
-export type CompatibleStoredExecutionContext = z.infer<
-  typeof compatibleStoredExecutionContextSchema
->;
 export type ClaimCompatibleStoredExecutionContext = z.infer<
   typeof claimCompatibleStoredExecutionContextSchema
->;
-export type StoredConnectorPermissionBaseline = z.infer<
-  typeof storedConnectorPermissionBaselineSchema
 >;
 export type NetworkPolicyRefresh = z.infer<typeof networkPolicyRefreshSchema>;
 export type ConnectorRuntimeTarget = z.infer<

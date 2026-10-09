@@ -9,10 +9,10 @@ import {
 } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import {
-  artifactReferenceRecord,
+  artifactReferenceRecord$,
   type SharedThreadArtifactReference,
 } from "./artifact-reference.service";
-import { privateArtifactRecord } from "./private-artifact-storage.service";
+import { privateArtifactRecord$ } from "./private-artifact-storage.service";
 import { resolveArtifactShareDownload$ } from "./artifact-shares.service";
 import { getHostedSiteFiles$ } from "./host.service";
 import {
@@ -111,7 +111,7 @@ export const resolveArtifactDownload$ = command(
     let id = parsed.id;
     let kind: "file" | "html" | undefined;
     if (id === null) {
-      const record = await get(artifactReferenceRecord(parsed.hash, signal));
+      const record = await set(artifactReferenceRecord$, parsed.hash, signal);
       signal.throwIfAborted();
       if (!record) {
         return null;
@@ -142,7 +142,7 @@ export const resolveArtifactDownload$ = command(
       return null;
     }
     if (kind !== "html" && args.expectedKind !== "html") {
-      const file = await get(privateArtifactRecord(id));
+      const file = await set(privateArtifactRecord$, id, signal);
       signal.throwIfAborted();
       if (file) {
         if (file.userId !== args.userId || file.orgId !== args.orgId) {

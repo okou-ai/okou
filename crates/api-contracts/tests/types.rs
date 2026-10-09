@@ -5,7 +5,7 @@ use api_contracts::generated::types::{
         runs::{
             CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigMemoryRecall, PiModelConfig,
             PiModelConfigApiKeyEnv, PiModelConfigProvider, PiModelConfigServiceTier,
-            PiModelConfigV2, PiModelConfigV3, cancellation, model_provider_failures,
+            PiModelConfigV2, PiModelConfigV3, cancellation,
         },
         storage as runner_storage,
     },
@@ -101,28 +101,6 @@ fn generated_completion_failure_reason_tokens_preserve_the_wire_contract() {
     });
     let future_request: complete::Request = serde_json::from_value(future.clone()).unwrap();
     assert_eq!(serde_json::to_value(future_request).unwrap(), future);
-}
-
-#[test]
-fn generated_model_provider_failure_request_requires_connection_source() {
-    let request = model_provider_failures::Request::Connection {
-        connection_source: model_provider_failures::RequestConnectionSource::UpstreamTransport,
-        retry_after_seconds: None,
-    };
-
-    assert_eq!(
-        serde_json::to_value(request).unwrap(),
-        json!({
-            "failureKind": "connection",
-            "connectionSource": "upstream_transport",
-        })
-    );
-    assert!(
-        serde_json::from_value::<model_provider_failures::Request>(json!({
-            "failureKind": "connection",
-        }))
-        .is_err()
-    );
 }
 
 #[test]

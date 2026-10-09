@@ -11,10 +11,6 @@ import { accept, testContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
-import {
-  seedOrgMetadata,
-  setOnboardingPaymentPendingFixture,
-} from "../../../../test-fixtures/system-config-seeds";
 import { signSandboxJwtForTests } from "../../../auth/tokens";
 import { billingCheckoutRoutes } from "../../billing-checkout";
 import { billingStatusRoutes } from "../../billing-status";
@@ -25,7 +21,6 @@ import {
   type TestUsagePackSubscriptionStateResponse,
 } from "../../test-usage-pack-subscription-state";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
-import { createBddApi } from "./api-bdd";
 import { seedOrgMembership$ } from "./org-membership";
 import { createPublicBillingZeroFixture } from "./public-billing-zero-fixture";
 import { createRouteMocks } from "./route-test";
@@ -336,27 +331,6 @@ export function createBillingCheckoutFixture() {
       [200],
     );
     return response.body;
-  }
-
-  async function createOnboardingPaymentPendingOrg(): Promise<BillingOrgFixture> {
-    const fixture = createOrgFixture();
-    const actor = {
-      ...fixture,
-      orgRole: "org:admin" as const,
-      email: `${fixture.userId}@example.test`,
-    };
-    const completed = await createBddApi(context).completeOnboarding(actor);
-    expect(completed.status).toBe(200);
-    await seedOrgMetadata({
-      orgId: fixture.orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
-    await setOnboardingPaymentPendingFixture({
-      orgId: fixture.orgId,
-      onboardingPaymentPending: true,
-    });
-    return fixture;
   }
 
   async function createStripeCustomerOrgForFixture(
@@ -973,7 +947,6 @@ export function createBillingCheckoutFixture() {
     authenticateOrg,
     mockClerkOrganization,
     readBillingStatus,
-    createOnboardingPaymentPendingOrg,
     createStripeCustomerOrgForFixture,
     prepareUsagePackCheckoutOrg,
     createSubscriptionOrg,

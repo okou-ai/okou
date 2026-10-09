@@ -5,6 +5,11 @@ It covers the identities in `PI_RUNTIME_RESOLVABLE_MODELS` plus the internal
 DeepSeek V4.1 Flash memory binding. It does not admit new models or reinterpret
 opaque deployment names as provider identities.
 
+The DeepSeek V4.1 entry below is historical: its memory execution binding and
+limit override are retired after the
+[production drain gate](../../../../docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
+The Codex correction and installed-CLI parity checks remain active.
+
 ## Meaning of the numbers
 
 Pi's `contextWindow` drives conversation compaction and remaining-context output

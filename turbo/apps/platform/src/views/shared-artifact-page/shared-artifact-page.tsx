@@ -1,4 +1,5 @@
 import {
+  PreserveScrollAnchor,
   Button,
   Card,
   IconButton,
@@ -34,7 +35,7 @@ import {
 } from "../../signals/shared-artifact-page.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
-import { PublicArtifactLightbox } from "../components/public-artifact-lightbox.tsx";
+import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import { ArtifactPreviewBody } from "../okou-page/attachment-chips.tsx";
 import {
   ArtifactActionSeparator,
@@ -331,8 +332,10 @@ export function SharedArtifactPage({
 }) {
   const { t } = useTranslation();
   const mountRef = useSet(shellDocumentAttributesRef$);
-  const fullscreen = useGet(viewer.fullscreen.fullscreen$);
+  const mode = useGet(viewer.fullscreen.mode$);
+  const fullscreen = mode !== "windowed";
   const containerRef = useSet(viewer.fullscreen.containerRef$);
+  const container = useGet(viewer.fullscreen.container$);
   const exitButtonRef = useSet(viewer.fullscreen.exitButtonRef$);
   const exitFullscreen = useSet(viewer.fullscreen.exit$);
   const pageSignal = useGet(pageSignal$);
@@ -345,96 +348,111 @@ export function SharedArtifactPage({
       return $.artifacts.title;
     });
   return (
-    <div
-      ref={mountRef}
-      className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground"
+    <PreserveScrollAnchor
+      layoutKey={fullscreen}
+      anchor={
+        artifact?.preview.kind === "markdown"
+          ? {
+              viewportSelector: '[data-testid="artifact-dialog-stage"]',
+              anchorSelector: "h1, h2, h3, h4, h5, h6, p, pre, li, tr",
+            }
+          : undefined
+      }
     >
-      <header
-        hidden={fullscreen}
-        className={cn(
-          "relative z-10 h-14 shrink-0 items-center gap-3 border-b border-border/70 bg-background px-3 sm:gap-4 sm:px-6",
-          fullscreen ? "hidden" : "flex",
-        )}
+      <div
+        ref={mountRef}
+        className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground"
       >
-        <a
-          href="/"
-          aria-label={BRAND_NAME}
-          className="shrink-0 text-foreground hover:opacity-70"
-        >
-          <ProductBrandMark size="small" />
-        </a>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-medium" title={title}>
-            {title}
-          </h1>
-          {artifact !== null && (
-            <p className="truncate text-xs text-muted-foreground">
-              {artifactFallbackSubtitle(
-                artifact.preview.kind,
-                artifact.filename,
-              )}
-              <ArtifactVisibilityLabel artifact={artifact} />
-            </p>
+        <header
+          hidden={fullscreen}
+          className={cn(
+            "relative z-10 h-14 shrink-0 items-center gap-3 border-b border-border/70 bg-background px-3 sm:gap-4 sm:px-6",
+            fullscreen ? "hidden" : "flex",
           )}
-        </div>
-        {artifact !== null ? (
-          <ArtifactViewerActions artifact={artifact} viewer={viewer} />
-        ) : (
+        >
           <a
             href="/"
-            className={buttonVariants({ variant: "quiet", size: "sm" })}
+            aria-label={BRAND_NAME}
+            className="shrink-0 text-foreground hover:opacity-70"
           >
-            <ArrowLeft aria-hidden />
-            {t(
-              ($) => {
-                return $.artifacts.access.backToBrand;
-              },
-              { brandName: BRAND_NAME },
-            )}
+            <ProductBrandMark size="small" />
           </a>
-        )}
-      </header>
-      <main
-        ref={containerRef}
-        // This element is the one handed to requestFullscreen, so it paints
-        // over the browser's black backdrop with nothing behind it. A
-        // translucent surface would let that backdrop through as an
-        // undefined grey, so fullscreen takes the opaque surface instead.
-        className={cn(
-          "relative min-h-0 flex-1",
-          fullscreen ? "bg-muted" : "bg-muted/30",
-          artifact === null ? "overflow-y-auto" : "overflow-hidden",
-        )}
-      >
-        {artifact !== null ? (
-          <ArtifactPreviewBody
-            artifact={undefined}
-            // Escape leaves fullscreen through a document listener, which a
-            // cross-origin frame would swallow, so the frame keeps the focus
-            // it took on mount instead of claiming it again on the switch.
-            focusHtmlOnMount={!fullscreen}
-            fullscreen={fullscreen}
-            imageCanvasSignals={viewer.imageCanvas}
-            preview={artifact.preview}
-          />
-        ) : (
-          <ArtifactAccessPage />
-        )}
-        {artifact !== null && fullscreen && (
-          <IconButton
-            ref={exitButtonRef}
-            aria-label={exitLabel}
-            aria-keyshortcuts="Escape"
-            className="absolute right-6 top-6 z-20 size-11 border border-border/70 bg-background/90 text-foreground opacity-40 backdrop-blur-sm transition-none hover:opacity-100 focus-visible:opacity-100 active:opacity-100 motion-safe:transition-opacity motion-safe:duration-200 motion-safe:ease-out sm:size-9"
-            onClick={() => {
-              detach(exitFullscreen(pageSignal), Reason.DomCallback);
-            }}
-          >
-            <Minimize2 size={18} aria-hidden />
-          </IconButton>
-        )}
-      </main>
-      <PublicArtifactLightbox signals={viewer.diagram} />
-    </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-medium" title={title}>
+              {title}
+            </h1>
+            {artifact !== null && (
+              <p className="truncate text-xs text-muted-foreground">
+                {artifactFallbackSubtitle(
+                  artifact.preview.kind,
+                  artifact.filename,
+                )}
+                <ArtifactVisibilityLabel artifact={artifact} />
+              </p>
+            )}
+          </div>
+          {artifact !== null ? (
+            <ArtifactViewerActions artifact={artifact} viewer={viewer} />
+          ) : (
+            <a
+              href="/"
+              className={buttonVariants({ variant: "quiet", size: "sm" })}
+            >
+              <ArrowLeft aria-hidden />
+              {t(
+                ($) => {
+                  return $.artifacts.access.backToBrand;
+                },
+                { brandName: BRAND_NAME },
+              )}
+            </a>
+          )}
+        </header>
+        <main
+          ref={containerRef}
+          // This element is the one handed to requestFullscreen, so it paints
+          // over the browser's black backdrop with nothing behind it. A
+          // translucent surface would let that backdrop through as an
+          // undefined grey, so fullscreen takes the opaque surface instead.
+          className={cn(
+            "relative min-h-0 flex-1",
+            fullscreen ? "bg-muted" : "bg-muted/30",
+            artifact === null ? "overflow-y-auto" : "overflow-hidden",
+          )}
+        >
+          {artifact !== null ? (
+            <ArtifactPreviewBody
+              artifact={undefined}
+              // Escape leaves fullscreen through a document listener, which a
+              // cross-origin frame would swallow, so the frame keeps the focus
+              // it took on mount instead of claiming it again on the switch.
+              focusHtmlOnMount={!fullscreen}
+              fullscreen={fullscreen}
+              imageCanvasSignals={viewer.imageCanvas}
+              preview={artifact.preview}
+            />
+          ) : (
+            <ArtifactAccessPage />
+          )}
+          {artifact !== null && fullscreen && (
+            <IconButton
+              ref={exitButtonRef}
+              aria-label={exitLabel}
+              aria-keyshortcuts="Escape"
+              className="absolute right-6 top-6 z-20 size-11 border border-border/70 bg-background/90 text-foreground opacity-40 backdrop-blur-sm transition-none hover:opacity-100 focus-visible:opacity-100 active:opacity-100 motion-safe:transition-opacity motion-safe:duration-200 motion-safe:ease-out sm:size-9"
+              onClick={() => {
+                detach(exitFullscreen(pageSignal), Reason.DomCallback);
+              }}
+            >
+              <Minimize2 size={18} aria-hidden />
+            </IconButton>
+          )}
+        </main>
+        <ArtifactDiagramLightbox
+          signals={viewer.diagram}
+          portalContainer={container}
+        />
+      </div>
+    </PreserveScrollAnchor>
   );
 }

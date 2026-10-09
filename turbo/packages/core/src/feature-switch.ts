@@ -31,10 +31,7 @@ export interface FeatureSwitchMetadata {
 }
 
 export type FeatureSwitchRolloutStage =
-  | "released"
-  | "beta"
-  | "alpha"
-  | "internal";
+  "released" | "beta" | "alpha" | "internal";
 
 export interface FeatureSwitchContext {
   readonly userId?: string;
@@ -47,6 +44,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.NotifyMail]: {
+    maintainer: "lancy@okou.ai",
+    description: "Allow agents to send Okou email notifications to their user",
+    enabled: false,
+  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -310,12 +312,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.PiOpenRouterChatCompletions]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Launch Pi OpenRouter routes with the generation 5 Chat Completions model config. Enable only after every Runner advertises generation 5.",
-    enabled: false,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",

@@ -179,9 +179,7 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
       channel: DiscordChannel,
     ) => Response | undefined | Promise<Response | undefined>;
     beforeMessageCreate?: () =>
-      | Response
-      | undefined
-      | Promise<Response | undefined>;
+      Response | undefined | Promise<Response | undefined>;
     /** Runs for every accepted send, including enforced-nonce replays. */
     afterMessageCreated?: (
       message: DiscordMessage,
@@ -190,9 +188,7 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
       channelId: string,
     ) => Response | undefined | Promise<Response | undefined>;
     historyResponse?: () =>
-      | Response
-      | undefined
-      | Promise<Response | undefined>;
+      Response | undefined | Promise<Response | undefined>;
     typingResponse?: (
       channelId: string,
     ) => Response | undefined | Promise<Response | undefined>;

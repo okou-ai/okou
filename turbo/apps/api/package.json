@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.714.0",
+  "version": "1.717.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -29,9 +29,9 @@
     "check-types:chat-event-acceptance": "tsc -p scripts/chat-event-acceptance/tsconfig.json --checkers $(node ../../scripts/tsc-checkers.mjs)"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1136.0",
-    "@aws-sdk/client-s3": "^3.1136.0",
-    "@aws-sdk/s3-request-presigner": "^3.1136.0",
+    "@aws-sdk/client-kms": "^3.1144.0",
+    "@aws-sdk/client-s3": "^3.1144.0",
+    "@aws-sdk/s3-request-presigner": "^3.1144.0",
     "@axiomhq/js": "^1.5.0",
     "@axiomhq/logging": "^0.1.6",
     "@clerk/backend": "^3.13.1",
@@ -65,7 +65,7 @@
     "html-to-text": "^10.0.1",
     "jose": "^6.2.3",
     "markdown-it": "14.3.1",
-    "music-metadata": "^11.13.0",
+    "music-metadata": "^11.16.0",
     "pg": "^8.23.0",
     "resend": "^6.12.4",
     "signal-timers": "^1.0.4",
@@ -101,6 +101,6 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "^8.0.16",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   }
 }

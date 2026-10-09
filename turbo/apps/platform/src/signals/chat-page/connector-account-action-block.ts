@@ -63,9 +63,7 @@ export type ConnectorAccountActionStatus =
     };
 
 export type ConnectorAccountActionConfirmationState =
-  | "idle"
-  | "loading"
-  | "error";
+  "idle" | "loading" | "error";
 
 export interface ConnectorAccountActionSignals extends ConnectorAccountActionDescriptor {
   readonly status$: Computed<Promise<ConnectorAccountActionStatus>>;

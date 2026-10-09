@@ -1,30 +1,9 @@
 import type { MountedUserTemplate } from "../signals/services/user-template-data.service";
 import {
-  generationTemplateIdentity,
-  type GenerationTemplateIdentity,
-} from "@okouai/core/generation-template-identity";
-import {
   buildGenerationTemplatePrompt,
   buildGenerationTemplatesPrompt,
   type LiveGenerationTemplate,
 } from "./generation-template-prompt";
-
-/**
- * The prompt for a chat run, plus the selections that actually reached it.
- *
- * `identities` is what usage reporting counts. It is empty whenever the prompt
- * is empty: a selection the builder rejected — a switch that is off, a private
- * package this run does not mount — never becomes guidance the agent can act
- * on, so reporting it as used would overstate the template's reach.
- */
-interface ResolvedThreadGenerationTemplates {
-  readonly prompt: string;
-  readonly identities: readonly GenerationTemplateIdentity[];
-}
-
-function noGenerationTemplates(): ResolvedThreadGenerationTemplates {
-  return { prompt: "", identities: [] };
-}
 
 /**
  * Resolve the generation-template system prompt for a chat run.
@@ -46,7 +25,7 @@ export function resolveThreadGenerationTemplatePrompt(args: {
    * says it is. Required for the same reason as the ids above.
    */
   readonly mountedUserTemplates: readonly MountedUserTemplate[];
-}): ResolvedThreadGenerationTemplates {
+}): string {
   const options = {
     mountedUserPresentationTemplateIds: args.mountedUserPresentationTemplateIds,
     mountedUserTemplates: args.mountedUserTemplates,
@@ -58,22 +37,12 @@ export function resolveThreadGenerationTemplatePrompt(args: {
     );
     // The batch builder rejects the whole message when any one selection is
     // invalid, so the templates are either all guidance or none of them are.
-    return built.status === "resolved"
-      ? {
-          prompt: built.prompt,
-          identities: args.explicitTemplates.map(generationTemplateIdentity),
-        }
-      : noGenerationTemplates();
+    return built.status === "resolved" ? built.prompt : "";
   }
   if (!args.explicit) {
-    return noGenerationTemplates();
+    return "";
   }
   const explicit = args.explicit;
   const built = buildGenerationTemplatePrompt(explicit, options);
-  return built.status === "resolved"
-    ? {
-        prompt: built.prompt,
-        identities: [generationTemplateIdentity(explicit)],
-      }
-    : noGenerationTemplates();
+  return built.status === "resolved" ? built.prompt : "";
 }

@@ -19,7 +19,7 @@ import {
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
@@ -32,13 +32,9 @@ import {
   repairMissingStripeInvoicePaidAutomationProjection,
   validateStripeInvoicePaidAutomationBinding,
 } from "./stripe-invoice-paid-workflow-automation.service";
-import { workflowAutomationCanFire } from "./workflow-automation-access.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { storedWorkflowAutomationContext } from "./workflow-automation-context.service";
-import type {
-  AutomationRow,
-  RunWorkflowAutomationNowArgs,
-  RunWorkflowAutomationResult,
-} from "./workflow-automation-enqueue.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import {
   StripeDeliveryClaimChangedError,
@@ -505,32 +501,6 @@ function eventMode(event: unknown): "live" | "test" | "unknown" {
   return parsed.data.livemode ? "live" : "test";
 }
 
-async function markStripeConnectorsDeauthorized(
-  args: {
-    readonly tx: StripeWorkflowTransaction;
-    readonly accountId: string;
-  },
-  signal: AbortSignal,
-): Promise<number> {
-  const updated = await args.tx
-    .update(connectors)
-    .set({
-      needsReconnect: true,
-      reconnectReason: "authorization_expired_or_revoked",
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(connectors.connectorSlug, "stripe"),
-        eq(connectors.authMethod, "oauth"),
-        eq(connectors.externalId, args.accountId),
-      ),
-    )
-    .returning({ id: connectors.id });
-  signal.throwIfAborted();
-  return updated.length;
-}
-
 async function insertStripeWorkflowDelivery(
   args: {
     readonly tx: StripeWorkflowTransaction;
@@ -808,60 +778,74 @@ async function recordInvoiceFanout(
   };
 }
 
-async function dispatchStripeDeauthorization(
-  db: Db,
-  event: unknown,
-  signal: AbortSignal,
-): Promise<DispatchStripeAutomationEventResult> {
-  const supported = stripeDeauthorizedEventBaseSchema.safeParse(event);
-  if (!supported.success) {
-    log.debug("Processed Stripe workflow ingress", {
-      eventType: "account.application.deauthorized",
-      mode: eventMode(event),
-      outcome: "malformed",
+const dispatchStripeDeauthorization$ = command(
+  async (
+    { set },
+    event: unknown,
+    signal: AbortSignal,
+  ): Promise<DispatchStripeAutomationEventResult> => {
+    const db = set(writeDb$);
+    const supported = stripeDeauthorizedEventBaseSchema.safeParse(event);
+    if (!supported.success) {
+      log.debug("Processed Stripe workflow ingress", {
+        eventType: "account.application.deauthorized",
+        mode: eventMode(event),
+        outcome: "malformed",
+      });
+      return { kind: "bad_request" };
+    }
+    if (!supported.data.livemode) {
+      log.debug("Processed Stripe workflow ingress", {
+        eventType: "account.application.deauthorized",
+        mode: "test",
+        outcome: "dropped",
+      });
+      return { kind: "ok", eventKind: "test", queued: 0, duplicates: 0 };
+    }
+    const parsed = stripeDeauthorizedEventSchema.safeParse(event);
+    if (!parsed.success) {
+      log.debug("Processed Stripe workflow ingress", {
+        eventType: "account.application.deauthorized",
+        mode: "live",
+        outcome: "malformed",
+      });
+      return { kind: "bad_request" };
+    }
+    // Keep rollback when cancellation arrives during the UPDATE, before commit.
+    const updated = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(connectors)
+        .set({
+          needsReconnect: true,
+          reconnectReason: "authorization_expired_or_revoked",
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(connectors.connectorSlug, "stripe"),
+            eq(connectors.authMethod, "oauth"),
+            eq(connectors.externalId, parsed.data.account),
+          ),
+        )
+        .returning({ id: connectors.id });
+      signal.throwIfAborted();
+      return rows.length;
     });
-    return { kind: "bad_request" };
-  }
-  if (!supported.data.livemode) {
-    log.debug("Processed Stripe workflow ingress", {
-      eventType: "account.application.deauthorized",
-      mode: "test",
-      outcome: "dropped",
-    });
-    return { kind: "ok", eventKind: "test", queued: 0, duplicates: 0 };
-  }
-  const parsed = stripeDeauthorizedEventSchema.safeParse(event);
-  if (!parsed.success) {
+    signal.throwIfAborted();
     log.debug("Processed Stripe workflow ingress", {
       eventType: "account.application.deauthorized",
       mode: "live",
-      outcome: "malformed",
+      outcome: "deauthorized",
+      deauthorizedConnectors: updated,
     });
-    return { kind: "bad_request" };
-  }
-  const updated = await db.transaction(async (tx) => {
-    return await markStripeConnectorsDeauthorized(
-      {
-        tx,
-        accountId: parsed.data.account,
-      },
-      signal,
-    );
-  });
-  signal.throwIfAborted();
-  log.debug("Processed Stripe workflow ingress", {
-    eventType: "account.application.deauthorized",
-    mode: "live",
-    outcome: "deauthorized",
-    deauthorizedConnectors: updated,
-  });
-  return {
-    kind: "ok",
-    eventKind: "deauthorized",
-    queued: 0,
-    duplicates: 0,
-  };
-}
+    return {
+      kind: "ok",
+      eventKind: "deauthorized",
+      queued: 0,
+      duplicates: 0,
+    };
+  },
+);
 
 async function dispatchStripeInvoice(
   db: Db,
@@ -947,10 +931,10 @@ export const dispatchStripeAutomationEvent$ = command(
       };
     }
 
-    const db = set(writeDb$);
     if (eventType.data.type === "account.application.deauthorized") {
-      return await dispatchStripeDeauthorization(db, event, signal);
+      return await set(dispatchStripeDeauthorization$, event, signal);
     }
+    const db = set(writeDb$);
     return await dispatchStripeInvoice(db, event, signal);
   },
 );
@@ -963,55 +947,66 @@ function deliveryClaimCondition(delivery: StripeWorkflowDeliveryRow) {
   );
 }
 
-async function claimDueDelivery(
-  args: {
-    readonly db: Db;
-  },
-  signal: AbortSignal,
-): Promise<StripeWorkflowDeliveryRow | null> {
-  const claimed = await args.db.transaction(async (tx) => {
-    const currentTime = nowDate();
-    const [due] = await tx
-      .select()
-      .from(stripeWorkflowDeliveries)
-      .where(
-        and(
-          eq(stripeWorkflowDeliveries.status, "pending"),
-          lte(stripeWorkflowDeliveries.nextAttemptAt, currentTime),
-          or(
-            isNull(stripeWorkflowDeliveries.claimExpiresAt),
-            lte(stripeWorkflowDeliveries.claimExpiresAt, currentTime),
-          ),
-        ),
-      )
-      .orderBy(
-        asc(stripeWorkflowDeliveries.nextAttemptAt),
-        asc(stripeWorkflowDeliveries.id),
-      )
-      .limit(1)
-      .for("update", { skipLocked: true });
+const claimDueDelivery$ = command(
+  async (
+    { set },
+    signal: AbortSignal,
+  ): Promise<StripeWorkflowDeliveryRow | null> => {
     signal.throwIfAborted();
-    if (!due) {
-      return null;
-    }
-    const [updatedClaim] = await tx
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    // Scalar candidate reads keep the update on one primary key, while the CTE
+    // preserves the ordered SKIP LOCKED pick and revision fence.
+    const due = db.$with("due_stripe_delivery").as(
+      db
+        .select({
+          id: stripeWorkflowDeliveries.id,
+          revision: stripeWorkflowDeliveries.revision,
+        })
+        .from(stripeWorkflowDeliveries)
+        .where(
+          and(
+            eq(stripeWorkflowDeliveries.status, "pending"),
+            lte(stripeWorkflowDeliveries.nextAttemptAt, currentTime),
+            or(
+              isNull(stripeWorkflowDeliveries.claimExpiresAt),
+              lte(stripeWorkflowDeliveries.claimExpiresAt, currentTime),
+            ),
+          ),
+        )
+        .orderBy(
+          asc(stripeWorkflowDeliveries.nextAttemptAt),
+          asc(stripeWorkflowDeliveries.id),
+        )
+        .limit(1)
+        .for("update", { skipLocked: true }),
+    );
+    const [claimed] = await db
+      .with(due)
       .update(stripeWorkflowDeliveries)
       .set({
-        attempts: due.attempts + 1,
-        revision: due.revision + 1,
+        attempts: sql`${stripeWorkflowDeliveries.attempts} + 1`,
+        revision: sql`${stripeWorkflowDeliveries.revision} + 1`,
         claimExpiresAt: new Date(
           currentTime.getTime() + STRIPE_DELIVERY_CLAIM_MS,
         ),
         updatedAt: currentTime,
       })
-      .where(deliveryClaimCondition(due))
+      .where(
+        and(
+          eq(stripeWorkflowDeliveries.id, db.select({ id: due.id }).from(due)),
+          eq(stripeWorkflowDeliveries.status, "pending"),
+          eq(
+            stripeWorkflowDeliveries.revision,
+            db.select({ revision: due.revision }).from(due),
+          ),
+        ),
+      )
       .returning();
     signal.throwIfAborted();
-    return updatedClaim ?? null;
-  });
-  signal.throwIfAborted();
-  return claimed;
-}
+    return claimed ?? null;
+  },
+);
 
 async function loadDeliveryTarget(
   db: ReadonlyDb,
@@ -1102,17 +1097,6 @@ async function loadDeliveryTarget(
   if (binding.kind !== "ok") {
     return { kind: "skip", reason: "connector_unavailable" };
   }
-  const canFire = await workflowAutomationCanFire(
-    db,
-    {
-      automation: row.automation,
-      agentId: row.agentId,
-    },
-    signal,
-  );
-  if (!canFire) {
-    return { kind: "skip", reason: "automation_access_revoked" };
-  }
   return {
     kind: "ok",
     target: {
@@ -1161,70 +1145,63 @@ async function repairMissingStripeDeliveryProjection(
   signal.throwIfAborted();
 }
 
-async function updateLatestHealth(args: {
-  readonly tx: StripeWorkflowTransaction;
-  readonly delivery: StripeWorkflowDeliveryRow;
-  readonly status: "delivered" | "skipped" | "failed";
-  readonly statusAt: Date;
-}): Promise<void> {
-  await args.tx
-    .update(stripeWorkflowAutomationHealth)
-    .set({
-      latestDeliveryStatus: args.status,
-      latestDeliveryStatusAt: args.statusAt,
-      updatedAt: args.statusAt,
-    })
-    .where(
-      and(
-        eq(
-          stripeWorkflowAutomationHealth.automationId,
-          args.delivery.automationId,
-        ),
-        eq(stripeWorkflowAutomationHealth.latestDeliveryId, args.delivery.id),
-      ),
-    );
-}
-
-async function finishDelivery(
-  args: {
-    readonly db: Db;
-    readonly delivery: StripeWorkflowDeliveryRow;
-    readonly status: "skipped" | "failed";
-    readonly reason: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const finished = await args.db.transaction(async (tx) => {
-    const currentTime = nowDate();
-    const [updated] = await tx
-      .update(stripeWorkflowDeliveries)
-      .set({
-        status: args.status,
-        claimExpiresAt: null,
-        lastError: args.status === "failed" ? args.reason : null,
-        skipReason: args.status === "skipped" ? args.reason : null,
-        skippedAt: args.status === "skipped" ? currentTime : null,
-        failedAt: args.status === "failed" ? currentTime : null,
-        updatedAt: currentTime,
-      })
-      .where(deliveryClaimCondition(args.delivery))
-      .returning({ id: stripeWorkflowDeliveries.id });
+const finishDelivery$ = command(
+  async (
+    { set },
+    args: {
+      readonly delivery: StripeWorkflowDeliveryRow;
+      readonly status: "skipped" | "failed";
+      readonly reason: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
     signal.throwIfAborted();
-    if (!updated) {
-      return false;
-    }
-    await updateLatestHealth({
-      tx,
-      delivery: args.delivery,
-      status: args.status,
-      statusAt: currentTime,
+    // Fence the terminal outcome and commit its health together, delivery first.
+    const finished = await set(writeDb$).transaction(async (tx) => {
+      const currentTime = nowDate();
+      const [updated] = await tx
+        .update(stripeWorkflowDeliveries)
+        .set({
+          status: args.status,
+          claimExpiresAt: null,
+          lastError: args.status === "failed" ? args.reason : null,
+          skipReason: args.status === "skipped" ? args.reason : null,
+          skippedAt: args.status === "skipped" ? currentTime : null,
+          failedAt: args.status === "failed" ? currentTime : null,
+          updatedAt: currentTime,
+        })
+        .where(deliveryClaimCondition(args.delivery))
+        .returning({ id: stripeWorkflowDeliveries.id });
+      signal.throwIfAborted();
+      if (!updated) {
+        return false;
+      }
+      await tx
+        .update(stripeWorkflowAutomationHealth)
+        .set({
+          latestDeliveryStatus: args.status,
+          latestDeliveryStatusAt: currentTime,
+          updatedAt: currentTime,
+        })
+        .where(
+          and(
+            eq(
+              stripeWorkflowAutomationHealth.automationId,
+              args.delivery.automationId,
+            ),
+            eq(
+              stripeWorkflowAutomationHealth.latestDeliveryId,
+              args.delivery.id,
+            ),
+          ),
+        );
+      signal.throwIfAborted();
+      return true;
     });
     signal.throwIfAborted();
-    return true;
-  });
-  signal.throwIfAborted();
-  return finished;
-}
+    return finished;
+  },
+);
 
 function retryDelayMs(attempts: number): number {
   return Math.min(
@@ -1247,61 +1224,62 @@ function logDeliveryOutcome(args: {
   });
 }
 
-async function retryDelivery(
-  args: {
-    readonly db: Db;
-    readonly delivery: StripeWorkflowDeliveryRow;
-  },
-  signal: AbortSignal,
-): Promise<"retried" | "failed" | "lost"> {
-  const currentTime = nowDate();
-  if (
-    currentTime.getTime() - args.delivery.receivedAt.getTime() >=
-    STRIPE_DELIVERY_RETRY_CUTOFF_MS
-  ) {
-    const failed = await finishDelivery(
-      {
-        db: args.db,
-        delivery: args.delivery,
-        status: "failed",
-        reason: "retry_window_exhausted",
-      },
-      signal,
-    );
-    if (failed) {
-      logDeliveryOutcome({
-        delivery: args.delivery,
-        status: "failed",
-        reasonCategory: "retry_window_exhausted",
-      });
-      return "failed";
+const retryDelivery$ = command(
+  async (
+    { set },
+    delivery: StripeWorkflowDeliveryRow,
+    signal: AbortSignal,
+  ): Promise<"retried" | "failed" | "lost"> => {
+    signal.throwIfAborted();
+    const currentTime = nowDate();
+    if (
+      currentTime.getTime() - delivery.receivedAt.getTime() >=
+      STRIPE_DELIVERY_RETRY_CUTOFF_MS
+    ) {
+      const failed = await set(
+        finishDelivery$,
+        {
+          delivery,
+          status: "failed",
+          reason: "retry_window_exhausted",
+        },
+        signal,
+      );
+      if (failed) {
+        logDeliveryOutcome({
+          delivery,
+          status: "failed",
+          reasonCategory: "retry_window_exhausted",
+        });
+        return "failed";
+      }
+      return "lost";
     }
-    return "lost";
-  }
-  const [updated] = await args.db
-    .update(stripeWorkflowDeliveries)
-    .set({
-      claimExpiresAt: null,
-      nextAttemptAt: new Date(
-        currentTime.getTime() + retryDelayMs(args.delivery.attempts),
-      ),
-      lastError: "transient_delivery_error",
-      revision: args.delivery.revision + 1,
-      updatedAt: currentTime,
-    })
-    .where(deliveryClaimCondition(args.delivery))
-    .returning({ id: stripeWorkflowDeliveries.id });
-  signal.throwIfAborted();
-  if (!updated) {
-    return "lost";
-  }
-  logDeliveryOutcome({
-    delivery: args.delivery,
-    status: "pending",
-    reasonCategory: "transient_delivery_error",
-  });
-  return "retried";
-}
+    const [updated] = await set(writeDb$)
+      .update(stripeWorkflowDeliveries)
+      .set({
+        claimExpiresAt: null,
+        nextAttemptAt: new Date(
+          currentTime.getTime() + retryDelayMs(delivery.attempts),
+        ),
+        lastError: "transient_delivery_error",
+        revision: delivery.revision + 1,
+        updatedAt: currentTime,
+      })
+      .where(deliveryClaimCondition(delivery))
+      .returning({ id: stripeWorkflowDeliveries.id });
+    signal.throwIfAborted();
+    if (!updated) {
+      return "lost";
+    }
+    logDeliveryOutcome({
+      delivery,
+      status: "pending",
+      reasonCategory: "transient_delivery_error",
+    });
+    return "retried";
+  },
+);
 
 function deliveryContext(args: {
   readonly delivery: StripeWorkflowDeliveryRow;
@@ -1318,192 +1296,168 @@ function deliveryContext(args: {
   });
 }
 
-async function processClaimedDelivery(
-  args: {
-    readonly db: Db;
-    readonly delivery: StripeWorkflowDeliveryRow;
-    readonly startRun: (
-      input: RunWorkflowAutomationNowArgs,
-      signal: AbortSignal,
-    ) => Promise<RunWorkflowAutomationResult>;
-  },
-  signal: AbortSignal,
-): Promise<"executed" | "skipped" | "failed" | "retried" | "lost"> {
-  await repairMissingStripeDeliveryProjection(args.db, args.delivery, signal);
-  const validation = await loadDeliveryTarget(args.db, args.delivery, signal);
-  if (validation.kind === "skip") {
-    const skipped = await finishDelivery(
-      {
-        db: args.db,
-        delivery: args.delivery,
-        status: "skipped",
-        reason: validation.reason,
-      },
-      signal,
-    );
-    if (skipped) {
-      logDeliveryOutcome({
-        delivery: args.delivery,
-        status: "skipped",
-        reasonCategory: validation.reason,
-      });
-      return "skipped";
-    }
-    return "lost";
-  }
-  const target = validation.target;
-  const snapshot = await loadConnectorRuntimeSlugSelection(args.db, {
-    connectorSlugs: ["stripe"],
-  });
-  signal.throwIfAborted();
-  const started = await settle(
-    args.startRun(
-      {
-        due: {
-          automation: target.automation,
-          agentId: target.agentId,
-          chatThreadId: target.chatThreadId,
-        },
-        automationContext: deliveryContext({
-          delivery: args.delivery,
-          target,
-        }),
-        connectorSourceId: args.delivery.connectorId,
-        apiStartTime: now(),
-        triggerSource: "automation-event",
-        triggerBrief: `Stripe invoice paid: ${args.delivery.snapshot.invoice.id}`,
-        replacePendingScheduleTick: false,
-        sourcePlan: {
-          kind: "stripe",
-          source: {
-            id: args.delivery.id,
-            revision: args.delivery.revision,
-            automationId: args.delivery.automationId,
-            connectorId: args.delivery.connectorId,
-            stripeAccountId: args.delivery.stripeAccountId,
-            livemode: args.delivery.livemode,
-            billingReason: args.delivery.billingReason,
-            orgId: target.automation.orgId,
-            userId: target.automation.ownerUserId,
-          },
-          snapshot,
-        },
-      },
-      signal,
-    ),
-    signal,
-  );
-  if (started.ok) {
-    // A conflict or immediate run error is observed only after durable queue
-    // admission, where the queue command already marked this delivery.
-    logDeliveryOutcome({
-      delivery: args.delivery,
-      status: "delivered",
-      reasonCategory: "queue_admitted",
-    });
-    return "executed";
-  }
-  if (started.error instanceof StripeDeliveryClaimChangedError) {
-    return "lost";
-  }
-  if (started.error instanceof StripeDeliveryTargetChangedError) {
-    const skipped = await finishDelivery(
-      {
-        db: args.db,
-        delivery: args.delivery,
-        status: "skipped",
-        reason: started.error.reason,
-      },
-      signal,
-    );
-    if (skipped) {
-      logDeliveryOutcome({
-        delivery: args.delivery,
-        status: "skipped",
-        reasonCategory: started.error.reason,
-      });
-      return "skipped";
-    }
-    return "lost";
-  }
-  return await retryDelivery(args, signal);
-}
-
-async function executeDueStripeAutomationEvents(
-  args: {
-    readonly db: Db;
-    readonly startRun: (
-      input: RunWorkflowAutomationNowArgs,
-      signal: AbortSignal,
-    ) => Promise<RunWorkflowAutomationResult>;
-  },
-  signal: AbortSignal,
-): Promise<ExecuteDueStripeAutomationEventsResult> {
-  const result = {
-    executed: 0,
-    skipped: 0,
-    failed: 0,
-    retried: 0,
-  };
-  for (let index = 0; index < STRIPE_DELIVERY_BATCH_SIZE; index += 1) {
-    const delivery = await claimDueDelivery(args, signal);
-    signal.throwIfAborted();
-    if (!delivery) {
-      break;
-    }
-    const processed = await settle(
-      processClaimedDelivery(
+const processClaimedDelivery$ = command(
+  async (
+    { set },
+    args: { readonly delivery: StripeWorkflowDeliveryRow },
+    signal: AbortSignal,
+  ): Promise<"executed" | "skipped" | "failed" | "retried" | "lost"> => {
+    const db = set(writeDb$);
+    await repairMissingStripeDeliveryProjection(db, args.delivery, signal);
+    const prepared = await loadDeliveryTarget(db, args.delivery, signal);
+    const validation: StripeDeliveryValidation =
+      prepared.kind === "ok" &&
+      !(await set(
+        workflowAutomationCanFire$,
         {
-          db: args.db,
-          delivery,
-          startRun: args.startRun,
+          automation: prepared.target.automation,
+          agentId: prepared.target.agentId,
+        },
+        signal,
+      ))
+        ? { kind: "skip", reason: "automation_access_revoked" }
+        : prepared;
+    if (validation.kind === "skip") {
+      const skipped = await set(
+        finishDelivery$,
+        {
+          delivery: args.delivery,
+          status: "skipped",
+          reason: validation.reason,
+        },
+        signal,
+      );
+      if (skipped) {
+        logDeliveryOutcome({
+          delivery: args.delivery,
+          status: "skipped",
+          reasonCategory: validation.reason,
+        });
+        return "skipped";
+      }
+      return "lost";
+    }
+    const target = validation.target;
+    const snapshot = await loadConnectorRuntimeSlugSelection(db, {
+      connectorSlugs: ["stripe"],
+    });
+    signal.throwIfAborted();
+    const started = await settle(
+      set(
+        runWorkflowAutomationNow$,
+        {
+          due: {
+            automation: target.automation,
+            agentId: target.agentId,
+            chatThreadId: target.chatThreadId,
+          },
+          automationContext: deliveryContext({
+            delivery: args.delivery,
+            target,
+          }),
+          connectorSourceId: args.delivery.connectorId,
+          apiStartTime: now(),
+          triggerSource: "automation-event",
+          triggerBrief: `Stripe invoice paid: ${args.delivery.snapshot.invoice.id}`,
+          replacePendingScheduleTick: false,
+          sourcePlan: {
+            kind: "stripe",
+            source: {
+              id: args.delivery.id,
+              revision: args.delivery.revision,
+              automationId: args.delivery.automationId,
+              connectorId: args.delivery.connectorId,
+              stripeAccountId: args.delivery.stripeAccountId,
+              livemode: args.delivery.livemode,
+              billingReason: args.delivery.billingReason,
+              orgId: target.automation.orgId,
+              userId: target.automation.ownerUserId,
+            },
+            snapshot,
+          },
         },
         signal,
       ),
       signal,
     );
-    if (!processed.ok) {
-      log.error("Stripe workflow delivery processing failed", {
-        deliveryId: delivery.id,
-        automationId: delivery.automationId,
-        attempt: delivery.attempts,
-        category: "unexpected",
+    if (started.ok) {
+      // A conflict or immediate run error is observed only after durable queue
+      // admission, where the queue command already marked this delivery.
+      logDeliveryOutcome({
+        delivery: args.delivery,
+        status: "delivered",
+        reasonCategory: "queue_admitted",
       });
-      const retry = await retryDelivery(
+      return "executed";
+    }
+    if (started.error instanceof StripeDeliveryClaimChangedError) {
+      return "lost";
+    }
+    if (started.error instanceof StripeDeliveryTargetChangedError) {
+      const skipped = await set(
+        finishDelivery$,
         {
-          db: args.db,
-          delivery,
+          delivery: args.delivery,
+          status: "skipped",
+          reason: started.error.reason,
         },
         signal,
       );
-      if (retry === "retried") {
-        result.retried += 1;
-      } else if (retry === "failed") {
-        result.failed += 1;
+      if (skipped) {
+        logDeliveryOutcome({
+          delivery: args.delivery,
+          status: "skipped",
+          reasonCategory: started.error.reason,
+        });
+        return "skipped";
       }
-      continue;
+      return "lost";
     }
-    if (processed.value !== "lost") {
-      result[processed.value] += 1;
-    }
-  }
-  log.debug("Executed due Stripe workflow deliveries", result);
-  return result;
-}
+    return await set(retryDelivery$, args.delivery, signal);
+  },
+);
 
 export const executeDueStripeAutomationEvents$ = command(
   async (
     { set },
     signal: AbortSignal,
   ): Promise<ExecuteDueStripeAutomationEventsResult> => {
-    return await executeDueStripeAutomationEvents(
-      {
-        db: set(writeDb$),
-        startRun: (input, childSignal) => {
-          return set(runWorkflowAutomationNow$, input, childSignal);
-        },
-      },
-      signal,
-    );
+    const result = {
+      executed: 0,
+      skipped: 0,
+      failed: 0,
+      retried: 0,
+    };
+    for (let index = 0; index < STRIPE_DELIVERY_BATCH_SIZE; index += 1) {
+      const delivery = await set(claimDueDelivery$, signal);
+      signal.throwIfAborted();
+      if (!delivery) {
+        break;
+      }
+      const processed = await settle(
+        set(processClaimedDelivery$, { delivery }, signal),
+        signal,
+      );
+      if (!processed.ok) {
+        log.error("Stripe workflow delivery processing failed", {
+          deliveryId: delivery.id,
+          automationId: delivery.automationId,
+          attempt: delivery.attempts,
+          category: "unexpected",
+        });
+        const retry = await set(retryDelivery$, delivery, signal);
+        if (retry === "retried") {
+          result.retried += 1;
+        } else if (retry === "failed") {
+          result.failed += 1;
+        }
+        continue;
+      }
+      if (processed.value !== "lost") {
+        result[processed.value] += 1;
+      }
+    }
+    log.debug("Executed due Stripe workflow deliveries", result);
+    return result;
   },
 );

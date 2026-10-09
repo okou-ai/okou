@@ -19,7 +19,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
-import { insertOutputEventWithConflictingLegacyPayloadFixture } from "../../../test-fixtures/chat-events";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
@@ -1084,59 +1083,63 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
   });
 
-  it("selects Auto as a null thread selection for limited-free-1 workspaces", async () => {
-    const fixture = createPublicFirewallFixture(context);
-    await fixture.run(async () => {
-      api.configureRunnerGroup();
-      chatCallbacks.acceptChatObjectStorage();
-      api.acceptStorageDownloads();
-      api.acceptTelemetryIngest();
-      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-      chatCallbacks.disableVapid();
-      const actor = fixture.actor;
-      const subscription = await fixture.fund();
-      await api.ensurePersonalSubscriptionModel(actor);
-      await selectNativeClaudeModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Limited free model pin agent",
-        visibility: "private",
-      });
-      fixture.registerAgent(agent.agentId);
-      const agentId = agent.agentId;
-      const billingStatus = await api.readBillingStatus(actor);
-      await createWebhookCallbackApi(context).postStripeEvent(
-        {
-          type: "customer.subscription.deleted",
-          data: {
-            object: {
-              id: subscription.subscriptionId,
-              customer: subscription.customerId,
-              status: "canceled",
-              metadata: {},
-              items: { data: [{ price: { id: "price_bdd_pro" } }] },
+  it.each([null, "auto"])(
+    "stores Auto intent %s as a null thread selection for limited-free-1 workspaces",
+    async (model) => {
+      const fixture = createPublicFirewallFixture(context);
+      await fixture.run(async () => {
+        api.configureRunnerGroup();
+        chatCallbacks.acceptChatObjectStorage();
+        api.acceptStorageDownloads();
+        api.acceptTelemetryIngest();
+        mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+        chatCallbacks.disableVapid();
+        const actor = fixture.actor;
+        const subscription = await fixture.fund();
+        await api.ensurePersonalSubscriptionModel(actor);
+        await selectNativeClaudeModel(actor);
+        const agent = await bdd.createAgent(actor, {
+          displayName: "Limited free model pin agent",
+          visibility: "private",
+        });
+        fixture.registerAgent(agent.agentId);
+        const agentId = agent.agentId;
+        const billingStatus = await api.readBillingStatus(actor);
+        await createWebhookCallbackApi(context).postStripeEvent(
+          {
+            type: "customer.subscription.deleted",
+            data: {
+              object: {
+                id: subscription.subscriptionId,
+                customer: subscription.customerId,
+                status: "canceled",
+                metadata: {},
+                items: { data: [{ price: { id: "price_bdd_pro" } }] },
+              },
             },
           },
-        },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
-        tier: "limited-free-1",
-        status: "active",
-        credits: billingStatus.credits,
+          [200],
+        );
+        await flushWaitUntilForTest();
+        await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
+          tier: "limited-free-1",
+          status: "active",
+          credits: billingStatus.credits,
+        });
+        const thread = await chat.createThread(actor, {
+          agentId,
+          model,
+          title: "limited free model pin",
+        });
+        expect(thread.title).toBe("limited free model pin");
+        await chat.updateThreadModelSelection(actor, thread.id, model);
+        await expect(
+          chat.readThreadMetadata(actor, thread.id),
+        ).resolves.toMatchObject({ selectedModel: null });
       });
-      const thread = await chat.createThread(actor, {
-        agentId,
-        model: null,
-        title: "limited free model pin",
-      });
-      expect(thread.title).toBe("limited free model pin");
-      await chat.updateThreadModelSelection(actor, thread.id, null);
-      await expect(
-        chat.readThreadMetadata(actor, thread.id),
-      ).resolves.toMatchObject({ selectedModel: null });
-    });
-  }, 90_000);
+    },
+    90_000,
+  );
 
   it("updates the Computer Use host binding on a chat thread", async () => {
     const actor = bdd.user();
@@ -1299,44 +1302,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 });
 
 describe("CHAT-01 chat thread read state", () => {
-  it("uses event type rather than legacy lifecycle payload for read cursors", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
-      "Read cursor event type agent",
-    );
-    const run = await completeChatRunInThread(actor, runnerGroup, {
-      agentId,
-      prompt: "read cursor event type",
-    });
-    const firstRead = await chat.markThreadRead(actor, run.threadId);
-    if (!firstRead.lastReadAt) {
-      throw new Error("Expected the completed run to establish a read cursor");
-    }
-
-    const conflicting =
-      await insertOutputEventWithConflictingLegacyPayloadFixture({
-        threadId: run.threadId,
-        content: "explicit output event with stale lifecycle payload",
-        createdAt: new Date(new Date(firstRead.lastReadAt).getTime() + 1000),
-        legacyPayload: "run.completed",
-      });
-    const page = await chat.listThreadEvents(actor, run.threadId);
-    expect(page.events).toContainEqual(
-      expect.objectContaining({
-        id: conflicting.id,
-        eventType: "output.message",
-      }),
-    );
-
-    await expect(chat.listThreadUnreads(actor, agentId)).resolves.toStrictEqual(
-      [],
-    );
-    await expect(
-      chat.markThreadRead(actor, run.threadId),
-    ).resolves.toMatchObject({
-      lastReadAt: firstRead.lastReadAt,
-    });
-  }, 120_000);
-
   it("lists unread agent and thread indicators", async () => {
     const {
       actor: owner,

@@ -196,6 +196,8 @@ const onlineHostExists$ = command(
   ): Promise<boolean> => {
     const [host] = await get(db$)
       .select({
+        appVersion: computerUseHosts.appVersion,
+        tokenHash: computerUseHosts.tokenHash,
         lastSeenAt: computerUseHosts.lastSeenAt,
         revokedAt: computerUseHosts.revokedAt,
         status: computerUseHosts.status,

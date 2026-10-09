@@ -41,7 +41,7 @@ sandbox-token endpoints remain:
   returns `409` with `INPUT_ALREADY_CONSUMED`, or `RUN_NOT_RUNNING` when the run
   has left `running`; the Runner ignores both. An event that is missing, in
   another thread, or neither a prompt nor a budget targeting this run returns
-  `404`. Template usage for prompts is logged here.
+  `404`.
 
 The Runner reads the next input when the run starts, after an `active-input`
 notification for that run, and once for every active run after Ably reconnects.

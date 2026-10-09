@@ -21,6 +21,7 @@ import {
   deferAblySubscribeOnChannel,
   deferNextAblySubscribe,
   getAuthTokenHistory,
+  getAblyPresenceCount,
   hasChannelSubscription,
   hasChannelSubscriptionOnChannel,
   hasSharedDatabaseSubscription,
@@ -623,8 +624,7 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
       imageDimensions: (
         results:
-          | ImageDimensionsMockResult
-          | readonly ImageDimensionsMockResult[],
+          ImageDimensionsMockResult | readonly ImageDimensionsMockResult[],
       ): ImageDimensionsMock => {
         return mockImageDimensions(getSignal(), results);
       },
@@ -697,6 +697,7 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       hasSubscription,
       hasSubscriptionOnChannel,
       getAuthTokenHistory,
+      getPresenceCount: getAblyPresenceCount,
     },
     deferred: <T>() => {
       return createDeferredPromise<T>(getSignal());
@@ -1161,8 +1162,7 @@ function mockAudioContext(signal: AbortSignal): void {
 interface VoiceInputMockOptions {
   readonly vadModelReady?: () => Promise<void>;
   readonly vadProbability?:
-    | number
-    | ((frame: Float32Array) => number | Promise<number>);
+    number | ((frame: Float32Array) => number | Promise<number>);
   readonly onVadRelease?: () => void;
   readonly onPcmCapture?: (emit: (samples: Float32Array) => void) => void;
   readonly onPcmPortClose?: () => void;

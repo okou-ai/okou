@@ -1,5 +1,7 @@
 use super::test_support::{
-    TEST_WORKSPACE_IMAGE_SIZE_BYTES, WorkspacePromotionFixture, test_restored_session_identity,
+    TEST_WORKSPACE_IMAGE_SIZE_BYTES, WorkspacePromotionFixture,
+    add_healthy_cache_preparation_matcher,
+    mock_sandbox_ready_for_cache_preparation as cache_sandbox, test_restored_session_identity,
 };
 use super::*;
 
@@ -46,6 +48,7 @@ async fn mock_sandbox_with_overrides(
     sandbox_id: SandboxId,
     overrides: Arc<MockSandboxOverrides>,
 ) -> Box<dyn Sandbox> {
+    add_healthy_cache_preparation_matcher(&overrides);
     let factory = MockSandboxFactory::with_overrides(overrides);
     factory
         .create(sandbox::SandboxConfig {
@@ -80,7 +83,7 @@ struct PostCopyGateSandbox {
 impl PostCopyGateSandbox {
     fn new(id: impl Into<String>) -> Self {
         Self {
-            inner: MockSandbox::new(id),
+            inner: cache_sandbox(id),
             copy_completed: Arc::new(tokio::sync::Barrier::new(2)),
             copy_release: Arc::new(tokio::sync::Notify::new()),
         }
@@ -329,9 +332,11 @@ async fn parked_workspace_promotion_unparks_and_freezes_before_publish() {
     assert_eq!(overrides.unpark_call_count(), 1);
     assert_eq!(overrides.terminal_unpark_call_count(), 1);
     let exec_calls = overrides.exec_calls();
-    assert_eq!(exec_calls.len(), 1);
+    assert_eq!(exec_calls.len(), 2);
+    assert!(exec_calls[0].cmd.contains("prepare-for-cache"));
     assert!(exec_calls[0].sudo);
-    let freeze_command = &exec_calls[0].cmd;
+    assert!(exec_calls[1].sudo);
+    let freeze_command = &exec_calls[1].cmd;
     assert!(freeze_command.contains("workspace_dir='/home/user/workspace'"));
     assert!(freeze_command.contains("workspace_device='/dev/vdb'"));
     assert!(freeze_command.contains("refuse_workspace_symlink_path"));
@@ -361,6 +366,73 @@ async fn parked_workspace_promotion_unparks_and_freezes_before_publish() {
 }
 
 #[tokio::test]
+async fn workspace_promotion_rejects_invalid_cleanup_reports_before_freeze() {
+    for (name, result) in [
+        (
+            "unsupported",
+            ExecResult::new(2, Vec::new(), b"unsupported helper".to_vec()),
+        ),
+        (
+            "malformed",
+            ExecResult::new(0, b"not JSON".to_vec(), Vec::new()),
+        ),
+        ("truncated", {
+            let mut result = ExecResult::new(
+                0,
+                serde_json::to_vec(
+                    &crate::idle_reuse_preparation::healthy_reuse_preparation_report(),
+                )
+                .unwrap(),
+                Vec::new(),
+            );
+            result.stdout_truncated = true;
+            result
+        }),
+    ] {
+        let fixture = WorkspacePromotionFixture::new(&format!("thread:cleanup-{name}")).await;
+        let cache = fixture.cache.clone();
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        overrides.add_exec_result_matcher("prepare-for-cache", result);
+        let sandbox =
+            MockSandbox::with_overrides(fixture.sandbox_id.to_string(), overrides.clone());
+        assert!(
+            !prepare_and_publish_workspace_image(&sandbox, fixture.promotion).await,
+            "{name}"
+        );
+        assert!(cache.held_workspace_states().await.is_empty(), "{name}");
+        let calls = overrides.exec_calls();
+        assert_eq!(calls.len(), 1, "{name}");
+        assert!(calls[0].cmd.contains("prepare-for-cache"));
+        assert!(calls[0].sudo);
+        assert!(calls[0].env_keys.is_empty());
+        let request: guest_contracts::reuse_preparation::ReusePreparationRequest =
+            serde_json::from_slice(calls[0].stdin_bytes.as_ref().unwrap()).unwrap();
+        assert!(
+            request
+                .current_runtime_dir
+                .starts_with("/home/user/.vm0/guest-agent/runs/")
+        );
+    }
+}
+
+#[tokio::test]
+async fn terminal_cleanup_is_not_an_idle_rootfs_reserve_gate() {
+    let fixture = WorkspacePromotionFixture::new("thread:cleanup-full-rootfs").await;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let mut report = crate::idle_reuse_preparation::healthy_reuse_preparation_report();
+    report.before.available_bytes = 0;
+    report.after.available_bytes = 0;
+    report.before.available_inodes = 0;
+    report.after.available_inodes = 0;
+    overrides.add_exec_result_matcher(
+        "prepare-for-cache",
+        ExecResult::new(0, serde_json::to_vec(&report).unwrap(), Vec::new()),
+    );
+    let sandbox = MockSandbox::with_overrides(fixture.sandbox_id.to_string(), overrides);
+    assert!(prepare_and_publish_workspace_image(&sandbox, fixture.promotion).await);
+}
+
+#[tokio::test]
 async fn active_workspace_promotion_exports_session_history_sidecar() {
     let reuse_key = "thread:active-sidecar-promote";
     let session_id = "sess-active-sidecar-promote";
@@ -372,7 +444,7 @@ async fn active_workspace_promotion_exports_session_history_sidecar() {
     )
     .await;
     assert!(fixture.promotion.restored_session_identity().is_some());
-    let sandbox = sandbox_mock::MockSandbox::new(fixture.sandbox_id.to_string());
+    let sandbox = cache_sandbox(fixture.sandbox_id.to_string());
     let export_metadata = SessionHistorySidecarExportMetadata {
         timings: SessionHistorySidecarExportTimings {
             metadata_us: 101,
@@ -478,7 +550,9 @@ async fn active_workspace_promotion_exports_session_history_sidecar() {
             .unwrap_or_else(|error| panic!("invalid {field}: {error}; event={promotion_event:#?}"));
     }
     let exec_calls = sandbox.exec_calls();
-    assert_eq!(exec_calls.len(), 2);
+    assert_eq!(exec_calls.len(), 3);
+    assert!(exec_calls[1].cmd.contains("prepare-for-cache"));
+    assert!(exec_calls[2].sudo);
     assert!(exec_calls[0].cmd.contains("export-session-history-sidecar"));
     assert_eq!(exec_calls[0].timeout, Duration::from_secs(30));
     assert_eq!(
@@ -541,7 +615,7 @@ async fn successful_slow_sidecar_export_reports_timings_at_warn() {
             Some(&restored_identity),
         )
         .await;
-        let sandbox = MockSandbox::new(fixture.sandbox_id.to_string());
+        let sandbox = cache_sandbox(fixture.sandbox_id.to_string());
         let metadata = SessionHistorySidecarExportMetadata {
             representation: SessionHistorySidecarRepresentation::Raw,
             encoded_size: history.len() as u64,
@@ -633,6 +707,7 @@ async fn session_history_sidecar_export_admission_queues_before_guest_exec() {
     let gate = MockLifecycleGate::new();
     let first_overrides = Arc::new(MockSandboxOverrides::new());
     first_overrides.set_exec_lifecycle_gate(gate.clone());
+    add_healthy_cache_preparation_matcher(&first_overrides);
     let first_sandbox = Arc::new(MockSandbox::with_overrides(
         first_fixture.sandbox_id.to_string(),
         first_overrides,
@@ -644,7 +719,7 @@ async fn session_history_sidecar_export_admission_queues_before_guest_exec() {
     )));
     first_sandbox.push_copy_file_result(Ok(history.to_vec()));
 
-    let second_sandbox = MockSandbox::new(second_fixture.sandbox_id.to_string());
+    let second_sandbox = cache_sandbox(second_fixture.sandbox_id.to_string());
     second_sandbox.push_exec_result(Ok(ExecResult::new(
         0,
         serde_json::to_vec(&export_metadata).unwrap(),
@@ -727,7 +802,7 @@ async fn session_history_sidecar_export_admission_releases_before_host_copy() {
     first_sandbox
         .inner
         .push_copy_file_result(Ok(history.to_vec()));
-    let second_sandbox = Arc::new(MockSandbox::new(second_fixture.sandbox_id.to_string()));
+    let second_sandbox = Arc::new(cache_sandbox(second_fixture.sandbox_id.to_string()));
     second_sandbox.push_exec_result(Ok(ExecResult::new(
         0,
         serde_json::to_vec(&export_metadata).unwrap(),
@@ -814,7 +889,7 @@ async fn session_history_sidecar_export_admission_releases_after_panic() {
     .await;
     assert!(first_prepared.is_none());
 
-    let second_sandbox = MockSandbox::new(second_fixture.sandbox_id.to_string());
+    let second_sandbox = cache_sandbox(second_fixture.sandbox_id.to_string());
     let export_metadata = SessionHistorySidecarExportMetadata {
         timings: Default::default(),
         representation: SessionHistorySidecarRepresentation::Raw,
@@ -874,7 +949,7 @@ async fn active_workspace_promotion_rejects_invalid_sidecar_metadata() {
         )
         .await;
         let cache = fixture.cache.clone();
-        let sandbox = MockSandbox::new(fixture.sandbox_id.to_string());
+        let sandbox = cache_sandbox(fixture.sandbox_id.to_string());
         sandbox.push_exec_result(Ok(ExecResult::new(0, stdout, Vec::new())));
 
         let (promoted, events) = capture_promotion_events(prepare_and_publish_workspace_image(
@@ -886,7 +961,8 @@ async fn active_workspace_promotion_rejects_invalid_sidecar_metadata() {
         assert!(promoted, "{name}");
         assert!(sandbox.copy_file_calls().is_empty(), "{name}");
         let exec_calls = sandbox.exec_calls();
-        assert_eq!(exec_calls.len(), 2, "{name}");
+        assert_eq!(exec_calls.len(), 3, "{name}");
+        assert!(exec_calls[1].cmd.contains("prepare-for-cache"), "{name}");
         assert!(
             exec_calls[0].cmd.contains("export-session-history-sidecar"),
             "{name}"
@@ -925,7 +1001,7 @@ async fn active_workspace_promotion_discards_sidecar_source_on_copy_error() {
     )
     .await;
     let cache = fixture.cache.clone();
-    let sandbox = MockSandbox::new(fixture.sandbox_id.to_string());
+    let sandbox = cache_sandbox(fixture.sandbox_id.to_string());
     let export_metadata = SessionHistorySidecarExportMetadata {
         timings: Default::default(),
         representation: SessionHistorySidecarRepresentation::Raw,
@@ -976,7 +1052,7 @@ async fn cancelled_workspace_promotion_preserves_session_history_sidecar() {
         WorkspaceCacheTerminalStatus::Cancelled,
     )
     .await;
-    let sandbox = MockSandbox::new(fixture.sandbox_id.to_string());
+    let sandbox = cache_sandbox(fixture.sandbox_id.to_string());
     sandbox.push_exec_result(Ok(ExecResult::new(
         0,
         serde_json::to_vec(&SessionHistorySidecarExportMetadata {
@@ -1051,7 +1127,7 @@ async fn workspace_promotion_classifies_cancelled_sidecar_admission_rejections()
             terminal_status,
         )
         .await;
-        let sandbox = MockSandbox::new(fixture.sandbox_id.to_string());
+        let sandbox = cache_sandbox(fixture.sandbox_id.to_string());
         let error = if host_io_failure {
             SandboxError::Io(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
@@ -1105,7 +1181,7 @@ async fn workspace_promotion_classifies_cancelled_sidecar_admission_rejections()
             assert_eq!(
                 captured_event(
                     &events,
-                    "workspace image cache promotion skipped because guest freeze failed"
+                    "workspace image cache promotion skipped because guest preparation failed"
                 )
                 .level,
                 expected_level
@@ -1130,7 +1206,7 @@ async fn active_workspace_promotion_discards_sidecar_source_on_copy_size_mismatc
     )
     .await;
     let cache = fixture.cache.clone();
-    let sandbox = MockSandbox::new(fixture.sandbox_id.to_string());
+    let sandbox = cache_sandbox(fixture.sandbox_id.to_string());
     let export_metadata = SessionHistorySidecarExportMetadata {
         timings: Default::default(),
         representation: SessionHistorySidecarRepresentation::Raw,
@@ -1234,7 +1310,7 @@ async fn active_workspace_permission_failure_skips_cache_publication() {
         .unwrap();
     let cache = fixture.cache.clone();
     let reuse_key = fixture.reuse_key.clone();
-    let sandbox = MockSandbox::new(fixture.sandbox_id.to_string());
+    let sandbox = cache_sandbox(fixture.sandbox_id.to_string());
 
     let (promoted, events) = capture_promotion_events(prepare_and_publish_workspace_image(
         &sandbox,
@@ -1295,7 +1371,7 @@ async fn active_workspace_promotion_classifies_sidecar_export_failures() {
             Some(&restored_identity),
         )
         .await;
-        let sandbox = MockSandbox::new(fixture.sandbox_id.to_string());
+        let sandbox = cache_sandbox(fixture.sandbox_id.to_string());
         sandbox.push_exec_result(Ok(ExecResult::new(exit_code, stdout, Vec::new())));
 
         let (promoted, events) = capture_promotion_events(prepare_and_publish_workspace_image(
@@ -1341,7 +1417,7 @@ async fn active_workspace_promotion_classifies_sidecar_export_failures() {
             "{name}: {event:#?}"
         );
         let exec_calls = sandbox.exec_calls();
-        assert_eq!(exec_calls.len(), 2, "{name}");
+        assert_eq!(exec_calls.len(), 3, "{name}");
         assert!(exec_calls[0].expected_exit_codes.is_empty(), "{name}");
     }
 }
@@ -1680,11 +1756,11 @@ async fn parked_workspace_promotion_guest_freeze_failure_skips_cache() {
     assert!(prepared.is_none());
     assert_eq!(overrides.unpark_call_count(), 1);
     assert_eq!(overrides.terminal_unpark_call_count(), 1);
-    assert_eq!(overrides.exec_calls().len(), 1);
+    assert_eq!(overrides.exec_calls().len(), 2);
     assert!(fixture.cache.held_workspace_states().await.is_empty());
     let event = captured_event(
         &events,
-        "workspace image cache promotion skipped because guest freeze failed",
+        "workspace image cache promotion skipped because guest preparation failed",
     );
     assert!(
         event

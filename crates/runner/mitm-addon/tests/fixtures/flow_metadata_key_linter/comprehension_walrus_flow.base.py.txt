@@ -1,0 +1,223 @@
+def optional_list_rows(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := {}) for _ in rows]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def optional_set_rows(flow, rows, condition):
+    meta = flow.metadata
+    {((meta := {}), 0)[1] for _ in rows}
+    meta["sandbox_run_id"] = "run-1"
+
+
+def optional_dict_rows(flow, rows, condition):
+    meta = flow.metadata
+    {0: (meta := {}) for _ in rows}
+    meta["sandbox_run_id"] = "run-1"
+
+
+def optional_dict_key(flow, rows, condition):
+    meta = flow.metadata
+    {((meta := {}), 0)[1]: None for _ in rows}
+    meta["sandbox_run_id"] = "run-1"
+
+
+def filtered_list(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := {}) for _ in [1] if condition]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def filtered_set(flow, rows, condition):
+    meta = flow.metadata
+    {((meta := {}), 0)[1] for _ in [1] if condition}
+    meta["sandbox_run_id"] = "run-1"
+
+
+def filtered_dict(flow, rows, condition):
+    meta = flow.metadata
+    {0: (meta := {}) for _ in [1] if condition}
+    meta["sandbox_run_id"] = "run-1"
+
+
+def filter_creates_alias_before_rejection(flow, rows, condition):
+    meta = {}
+    [(meta := {}) for _ in [1] if (meta := flow.metadata)]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def filter_kills_alias_before_rejection(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := flow.metadata) for _ in [1] if (meta := {})]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def later_filter_creates_alias(flow, rows, condition):
+    meta = {}
+    [(meta := {}) for _ in [1] if condition if (meta := flow.metadata)]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def optional_first_generator(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := {}) for _ in rows for _ in [1]]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def optional_later_generator(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := {}) for _ in [1] for _ in rows]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def empty_later_generator_retains_filter_effect(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := flow.metadata) for _ in [1] if (meta := {}) or True for _ in []]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def nested_optional_rebind(flow, rows, condition):
+    meta = flow.metadata
+    [[(meta := {}) for _ in rows] for _ in [1]]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def nested_guaranteed_rebind(flow, rows, condition):
+    meta = flow.metadata
+    [[(meta := {}) for _ in [1]] for _ in [1]]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def nested_deferred_rebind(flow, rows, condition):
+    meta = flow.metadata
+    [((meta := {}) for _ in [1]) for _ in [1]]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def deferred_nested_eager_rebind(flow, rows, condition):
+    meta = flow.metadata
+    values = ([(meta := {}) for _ in [1]] for _ in [1])
+    meta["sandbox_run_id"] = "run-1"
+    return values
+
+
+def unconsumed_generator(flow, rows, condition):
+    meta = flow.metadata
+    values = ((meta := {}) for _ in [1])
+    meta["sandbox_run_id"] = "run-1"
+    return values
+
+
+def deferred_filter_rebind(flow, rows, condition):
+    meta = flow.metadata
+    values = (None for _ in [1] if (meta := {}))
+    meta["sandbox_run_id"] = "run-1"
+    return values
+
+
+def deferred_later_iterable_access(flow, rows, condition):
+    meta = flow.metadata
+    values = ((meta := {}) for _ in [1] for _ in meta.get("sandbox_run_id") or [1])
+    meta["sandbox_run_id"] = "run-1"
+    return values
+
+
+def consumed_generator_addition(flow, rows, condition):
+    meta = {}
+    values = ((meta := flow.metadata) for _ in [1])
+    list(values)
+    meta["sandbox_run_id"] = "run-1"
+
+
+def deferred_body_diagnostics_are_retained(flow, rows, condition):
+    meta = flow.metadata
+    values = ((meta.get("sandbox_run_id"), (meta := {})) for _ in [1])
+    meta["sandbox_run_id"] = "run-1"
+    return values
+
+
+def generator_first_iterable_is_evaluated(flow, rows, condition):
+    meta = flow.metadata
+    values = ((meta := {}) for _ in meta.get("sandbox_run_id") or [1])
+    meta["sandbox_run_id"] = "run-1"
+    return values
+
+
+def ordinary_dictionary(flow, rows, condition):
+    meta = {}
+    [(meta := {}) for _ in rows]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def guaranteed_list_rebind(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := {}) for _ in [1] if True]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def guaranteed_set_rebind(flow, rows, condition):
+    meta = flow.metadata
+    {((meta := {}), 0)[1] for _ in {1}}
+    meta["sandbox_run_id"] = "run-1"
+
+
+def guaranteed_dict_rebind(flow, rows, condition):
+    meta = flow.metadata
+    {0: (meta := {}) for _ in {1: None}}
+    meta["sandbox_run_id"] = "run-1"
+
+
+def later_statement_rebinds(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := {}) for _ in rows]
+    meta = {}
+    meta["sandbox_run_id"] = "run-1"
+
+
+def statically_empty_body(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := {}) for _ in []]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def comprehension_target_stays_local(flow, rows, condition):
+    meta = flow.metadata
+    [meta.get("sandbox_run_id") for meta in ({},)]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def lambda_target_stays_local(flow, rows, condition):
+    meta = flow.metadata
+    [(lambda: (meta := {}))() for _ in [1]]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def optional_addition_is_retained(flow, rows, condition):
+    meta = {}
+    [(meta := flow.metadata) for _ in rows]
+    meta["sandbox_run_id"] = "run-1"
+
+
+async def empty_async_rows(rows):
+    for row in rows:
+        yield row
+
+
+async def optional_async_rows(flow, rows, condition):
+    meta = flow.metadata
+    [(meta := {}) async for _ in empty_async_rows(rows)]
+    meta["sandbox_run_id"] = "run-1"
+
+
+def directly_iterated_generator_addition(flow, rows, condition):
+    meta = {}
+    for _ in ((meta := flow.metadata) for _ in [1]):
+        pass
+    meta["sandbox_run_id"] = "run-1"
+
+
+def consumed_generator_filter_alias(flow, rows, condition):
+    meta = {}
+    values = ((meta := {}) for _ in [1] if (meta := flow.metadata))
+    list(values)
+    meta["sandbox_run_id"] = "run-1"

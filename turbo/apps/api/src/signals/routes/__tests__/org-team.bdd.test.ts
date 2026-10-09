@@ -1,4 +1,3 @@
-import { seedLegacyMissingDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
@@ -1098,8 +1097,8 @@ describe("ORG-02: member cleanup detaches Slack connections", () => {
   });
 });
 
-describe("ORG-01/AGENT-02: agent listing and default-agent recovery", () => {
-  it("lists org-visible agents only and restores a deleted default agent [TEAM-E]", async () => {
+describe("ORG-01/AGENT-02: agent listing", () => {
+  it("lists org-visible agents only [TEAM-E]", async () => {
     const unauthenticated = await api.requestListAgents(null, [401]);
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
@@ -1163,13 +1162,6 @@ describe("ORG-01/AGENT-02: agent listing and default-agent recovery", () => {
     expect(peerAgentIds).toContain(peerPrivate.agentId);
     expect(peerAgentIds).not.toContain(ownPrivate.agentId);
     await expect(api.listAgents(crossOrgAdmin)).resolves.toStrictEqual([]);
-
-    // Deleting the default agent clears the FK, then onboarding status lazily
-    // restores a usable org default for admins.
-    await seedLegacyMissingDefaultAgentFixture(defaultAgentId);
-    const restored = await api.readOnboardingStatus(admin);
-    expect(restored.defaultAgentId).toBeTruthy();
-    expect(restored.defaultAgentId).not.toBe(defaultAgentId);
   });
 });
 

@@ -3,7 +3,7 @@ import { CAPABILITIES, CAPABILITY_META } from "../capabilities";
 
 describe("CAPABILITIES", () => {
   it("should have exactly 54 capabilities", () => {
-    expect(CAPABILITIES).toHaveLength(53);
+    expect(CAPABILITIES).toHaveLength(54);
   });
 
   it("should follow {resource}:{action} naming pattern", () => {

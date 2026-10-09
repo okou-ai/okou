@@ -32,7 +32,7 @@ export interface MermaidDiagramSignals {
 /** Opens one rendered diagram, owned by the caller's page lifetime. */
 export type MermaidDiagramPreviewCommand = Command<
   void,
-  [file: File, signal: AbortSignal]
+  [file: File, trigger: HTMLElement, signal: AbortSignal]
 >;
 
 // Declared here rather than in the parse pipeline: the pipeline emits only

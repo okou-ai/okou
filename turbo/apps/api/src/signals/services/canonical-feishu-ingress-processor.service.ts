@@ -15,10 +15,7 @@ import { logger } from "../../lib/log";
 import { inferMimetype } from "../../lib/mimetype";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import {
-  downloadFeishuMessageResource,
-  replyWithFeishuMessage,
-} from "../external/feishu-client";
+import { replyWithFeishuMessage } from "../external/feishu-client";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -336,7 +333,6 @@ function feishuInboundUserMessage(
 }
 
 function feishuInputFiles(
-  db: Db,
   message: CanonicalFeishuInboundMessage,
   platform: FeishuPlatform,
 ): readonly IntegrationInputFile[] {
@@ -351,17 +347,12 @@ function feishuInputFiles(
         messageId: message.messageId,
         externalFileId: `${file.type}:${file.fileKey}`,
       },
-      download: (downloadSignal: AbortSignal) => {
-        return downloadFeishuMessageResource(
-          {
-            db: db,
-            installationId: message.installationId,
-            messageId: file.messageId,
-            fileKey: file.fileKey,
-            resourceType: file.type,
-          },
-          downloadSignal,
-        );
+      resource: {
+        provider: platform,
+        installationId: message.installationId,
+        messageId: file.messageId,
+        fileKey: file.fileKey,
+        resourceType: file.type,
       },
     };
   });
@@ -371,7 +362,6 @@ const persistCanonicalFeishuIngress$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly ingress: NonNullable<
         Awaited<ReturnType<typeof loadClaimedIngress>>
       >;
@@ -415,7 +405,7 @@ const persistCanonicalFeishuIngress$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        files: feishuInputFiles(args.db, args.message, args.ingress.platform),
+        files: feishuInputFiles(args.message, args.ingress.platform),
       },
       signal,
     );
@@ -679,7 +669,6 @@ const processClaimedIngress$ = command(
     );
     signal.throwIfAborted();
     const persistInput = {
-      db: args.db,
       ingress,
       installation,
       connection,

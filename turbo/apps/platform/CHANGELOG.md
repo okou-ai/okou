@@ -12,6 +12,106 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1004.1](https://github.com/okou-ai/okou/compare/app-v0.1004.0...app-v0.1004.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **platform:** keep completed followups opaque on thread entry ([#38231](https://github.com/okou-ai/okou/issues/38231)) ([d1cf638](https://github.com/okou-ai/okou/commit/d1cf638f579bc85348057ceadd8701b08b80c12c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.1
+    * @okouai/core bumped to 8.737.1
+
+## [0.1004.0](https://github.com/okou-ai/okou/compare/app-v0.1003.3...app-v0.1004.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.0
+    * @okouai/core bumped to 8.737.0
+
+## [0.1003.3](https://github.com/okou-ai/okou/compare/app-v0.1003.2...app-v0.1003.3) (2026-10-08)
+
+
+### Bug Fixes
+
+* **app:** keep the three-column chat list expanded ([#38182](https://github.com/okou-ai/okou/issues/38182)) ([f90c17d](https://github.com/okou-ai/okou/commit/f90c17d71c094490f5ac2992db542aec68e4e350))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.541.0
+    * @okouai/core bumped to 8.736.0
+
+## [0.1003.2](https://github.com/okou-ai/okou/compare/app-v0.1003.1...app-v0.1003.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **app:** preserve artifact reading state when expanding diagrams ([#38118](https://github.com/okou-ai/okou/issues/38118)) ([d2ce547](https://github.com/okou-ai/okou/commit/d2ce5471a31c238e2f45b4fc9f08246543114b0e))
+* **billing:** keep member usage packs nonnegative ([#38071](https://github.com/okou-ai/okou/issues/38071)) ([532c7f8](https://github.com/okou-ai/okou/commit/532c7f813cc2e824ff4fa487f251786848b8d752))
+* suppress pwa push while the user is foreground in the same org ([#38091](https://github.com/okou-ai/okou/issues/38091)) ([22f89a5](https://github.com/okou-ai/okou/commit/22f89a5c8b69990bb3834c7678acb25f00d1c823))
+* **voice:** separate segment transcription from final polish ([#38082](https://github.com/okou-ai/okou/issues/38082)) ([1c7cb86](https://github.com/okou-ai/okou/commit/1c7cb86855d50504a57a6fcb86b9357a5965e3de))
+
+
+### Refactoring
+
+* **api:** use client-only platform realtime token exchange ([#38105](https://github.com/okou-ai/okou/issues/38105)) ([0fdfb57](https://github.com/okou-ai/okou/commit/0fdfb57b88d655219e84f18050a88362071cdd41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.540.0
+    * @okouai/core bumped to 8.735.2
+    * @okouai/ui bumped to 1.12.5
+
+## [0.1003.1](https://github.com/okou-ai/okou/compare/app-v0.1003.0...app-v0.1003.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **app:** add native network log disclosure controls ([#38027](https://github.com/okou-ai/okou/issues/38027)) ([90be135](https://github.com/okou-ai/okou/commit/90be1356d1f97459f064e34d4b06ea550f8baf05))
+* **app:** expose workflow filter selection state ([#38024](https://github.com/okou-ai/okou/issues/38024)) ([31a2ad7](https://github.com/okou-ai/okou/commit/31a2ad7fc108be956ae6c9c80a2753e709835401))
+* **app:** manage mobile sidebar focus with sheet ([#38034](https://github.com/okou-ai/okou/issues/38034)) ([c44c598](https://github.com/okou-ai/okou/commit/c44c598b9b9fbe549e2f088e0342d6527a391a41))
+* **app:** preserve modified feishu icon download clicks ([#38026](https://github.com/okou-ai/okou/issues/38026)) ([d4f2a1f](https://github.com/okou-ai/okou/commit/d4f2a1f50c5135721d9eaedb34ccc79abfffb4ce))
+* **app:** preserve safari ime confirmation in imported template titles ([#38022](https://github.com/okou-ai/okou/issues/38022)) ([2f87226](https://github.com/okou-ai/okou/commit/2f87226be63d2e54097ae75b5aa6f5060103ae5a))
+* **app:** remove ppt template detail loading bar ([#38075](https://github.com/okou-ai/okou/issues/38075)) ([27cc202](https://github.com/okou-ai/okou/commit/27cc2027c516cac91ca57eb9bd893710a045699a))
+* **app:** use native links for ideation cards ([#38025](https://github.com/okou-ai/okou/issues/38025)) ([18c50ea](https://github.com/okou-ai/okou/commit/18c50eaf2c6edc265498331bc6b804bb845734fd))
+* **app:** use native links for static navigation entries ([#38031](https://github.com/okou-ai/okou/issues/38031)) ([5a6ef9f](https://github.com/okou-ai/okou/commit/5a6ef9f8e3db3c2100dc83e0a8c8d41fa24769f0))
+* **platform:** expose current workflow file as a menu radio selection ([#38029](https://github.com/okou-ai/okou/issues/38029)) ([2d7237a](https://github.com/okou-ai/okou/commit/2d7237a299393b10674f8638b686c4ff42373e80))
+* **platform:** preserve skill import on modified workflow link clicks ([#38017](https://github.com/okou-ai/okou/issues/38017)) ([5a4befc](https://github.com/okou-ai/okou/commit/5a4befc8551e7c16c3aa92f89a1c5283f63c8273))
+* **platform:** submit feishu and lark wizard steps natively ([#38018](https://github.com/okou-ai/okou/issues/38018)) ([770ca24](https://github.com/okou-ai/okou/commit/770ca24ead6cd475bef8c1846d16f54d9859e1e2))
+
+
+### Refactoring
+
+* remove agent responsibility setup feature switch ([#38069](https://github.com/okou-ai/okou/issues/38069)) ([bbb313e](https://github.com/okou-ai/okou/commit/bbb313e561cf6904565d5b91e7e227e2016557ee))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.539.1
+    * @okouai/core bumped to 8.735.1
+    * @okouai/ui bumped to 1.12.4
+
 ## [0.1003.0](https://github.com/okou-ai/okou/compare/app-v0.1002.2...app-v0.1003.0) (2026-10-08)
 
 

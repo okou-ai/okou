@@ -3,8 +3,9 @@ import { createHmac, randomUUID } from "node:crypto";
 import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
 import {
   webhookBuiltInGenerationFalContract,
-  webhookCheckpointsContract,
+  runCompletionMetadataSchema,
   webhookCheckpointsPrepareHistoryContract,
+  webhookSessionHistoryPrepareContract,
   webhookClerkContract,
   webhookCompleteContract,
   webhookEventsContract,
@@ -29,7 +30,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { registerKnownSessionHistoryBlob } from "./api-bdd-session-history";
-import { webhooksAgentCheckpointsRoutes } from "../../webhooks-agent-checkpoints";
+import { webhooksAgentSessionHistoryRoutes } from "../../webhooks-agent-session-history";
 import { webhooksAgentCompleteRoutes } from "../../webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "../../webhooks-agent-events";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../webhooks-agent-health-usage-telemetry";
@@ -41,7 +42,7 @@ import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { emailInboundRoutes } from "../../email-inbound";
 
 const TEST_APP_ROUTES = Object.freeze([
-  ...webhooksAgentCheckpointsRoutes,
+  ...webhooksAgentSessionHistoryRoutes,
   ...webhooksAgentCompleteRoutes,
   ...webhooksAgentEventsRoutes,
   ...webhooksAgentHealthUsageTelemetryRoutes,
@@ -57,9 +58,9 @@ type AgentEventsBody = z.infer<(typeof webhookEventsContract.send)["body"]>;
 type AgentCompleteBody = z.infer<
   (typeof webhookCompleteContract.complete)["body"]
 >;
-type AgentCheckpointBody = z.infer<
-  (typeof webhookCheckpointsContract.create)["body"]
->;
+type AgentRunOutputsBody = z.infer<typeof runCompletionMetadataSchema> & {
+  readonly runId: string;
+};
 type AgentCheckpointPrepareHistoryBody = z.infer<
   (typeof webhookCheckpointsPrepareHistoryContract.prepare)["body"]
 >;
@@ -480,7 +481,8 @@ export function createWebhookCallbackApi(context: TestContext) {
       signal?: AbortSignal,
       usagePricingResolution?: UsagePricingResolution,
     ) {
-      const historyHash = body.checkpoint?.cliAgentSessionHistoryHash;
+      const historyHash = (body.completion ?? body.checkpoint)
+        ?.cliAgentSessionHistoryHash;
       if (historyHash !== undefined) {
         const sessionHistoryBlob = registerKnownSessionHistoryBlob(
           context,
@@ -489,8 +491,10 @@ export function createWebhookCallbackApi(context: TestContext) {
         );
         if (sessionHistoryBlob && statuses.includes(200)) {
           await accept(
-            setupApp({ context, routes: webhooksAgentCheckpointsRoutes })(
-              webhookCheckpointsPrepareHistoryContract,
+            setupApp({ context, routes: webhooksAgentSessionHistoryRoutes })(
+              body.completion
+                ? webhookSessionHistoryPrepareContract
+                : webhookCheckpointsPrepareHistoryContract,
             ).prepare({
               headers,
               body: {
@@ -538,59 +542,29 @@ export function createWebhookCallbackApi(context: TestContext) {
       );
     },
 
-    async requestAgentCheckpoint(
-      body: AgentCheckpointBody,
+    async requestAgentRunOutputs(
+      body: AgentRunOutputsBody,
       headers: SandboxWebhookHeaders,
       statuses: readonly (200 | 400 | 401 | 404 | 500)[],
     ) {
-      const historyHash = body.cliAgentSessionHistoryHash;
-      if (historyHash !== undefined) {
-        const sessionHistoryBlob = registerKnownSessionHistoryBlob(
-          context,
-          body.runId,
-          historyHash,
-        );
-        if (sessionHistoryBlob && statuses.includes(200)) {
-          await accept(
-            setupApp({ context, routes: webhooksAgentCheckpointsRoutes })(
-              webhookCheckpointsPrepareHistoryContract,
-            ).prepare({
-              headers,
-              body: {
-                runId: body.runId,
-                hash: historyHash,
-                rawSize: sessionHistoryBlob.byteLength,
-                encodedSize: sessionHistoryBlob.byteLength,
-                encoding: "identity",
-              },
-            }),
-            [200],
-          );
-        }
-      }
-      return await accept(
-        setupApp({ context, routes: webhooksAgentCheckpointsRoutes })(
-          webhookCheckpointsContract,
-        ).create({
-          headers,
-          body,
-        }),
+      const { runId, ...completion } = body;
+      return await this.requestAgentComplete(
+        { runId, exitCode: 0, completion },
+        headers,
         statuses,
       );
     },
 
-    async requestAgentCheckpointUnchecked(
+    async requestAgentRunOutputsUnchecked(
       body: unknown,
       headers: SandboxWebhookHeaders,
       statuses: readonly (400 | 401 | 404 | 500)[],
     ) {
-      return await accept(
-        setupApp({ context, routes: webhooksAgentCheckpointsRoutes })(
-          webhookCheckpointsContract,
-        ).create({
-          headers,
-          body: body as AgentCheckpointBody,
-        }),
+      const parsed = body as AgentRunOutputsBody;
+      const { runId, ...completion } = parsed;
+      return await this.requestAgentCompleteUnchecked(
+        { runId, exitCode: 0, completion },
+        headers,
         statuses,
       );
     },
@@ -601,7 +575,7 @@ export function createWebhookCallbackApi(context: TestContext) {
       statuses: readonly (200 | 400 | 401 | 404 | 500)[],
     ) {
       return await accept(
-        setupApp({ context, routes: webhooksAgentCheckpointsRoutes })(
+        setupApp({ context, routes: webhooksAgentSessionHistoryRoutes })(
           webhookCheckpointsPrepareHistoryContract,
         ).prepare({
           headers,
@@ -617,7 +591,7 @@ export function createWebhookCallbackApi(context: TestContext) {
       statuses: readonly (400 | 401 | 404 | 500)[],
     ) {
       return await accept(
-        setupApp({ context, routes: webhooksAgentCheckpointsRoutes })(
+        setupApp({ context, routes: webhooksAgentSessionHistoryRoutes })(
           webhookCheckpointsPrepareHistoryContract,
         ).prepare({
           headers,

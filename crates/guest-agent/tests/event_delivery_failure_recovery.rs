@@ -108,7 +108,7 @@ async fn run_event_failure_case(
     });
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .path("/api/webhooks/agent/session-history/prepare")
             .json_body_includes(format!(r#"{{"runId":"{run_id}"}}"#));
         then.status(200)
             .header("Content-Type", "application/json")
@@ -127,7 +127,7 @@ async fn run_event_failure_case(
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(format!(
-                r#"{{"exitCode":1,"checkpoint":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#
+                r#"{{"exitCode":1,"completion":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#
             ));
         then.status(200)
             .header("Content-Type", "application/json")

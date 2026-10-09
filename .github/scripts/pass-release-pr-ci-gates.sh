@@ -23,6 +23,7 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
   exit 2
 }
 CHECK_COVERAGE="${REPO_ROOT}/.github/scripts/check-release-please-workspace-coverage.sh"
+CHECK_ACTION_PINS="${REPO_ROOT}/.github/scripts/tests/action-pins-test.py"
 
 PR_JSON=$(gh pr view release-please--branches--main --repo "$GITHUB_REPOSITORY" --json number,headRefOid,headRefName 2>/dev/null || echo "")
 if [ -z "$PR_JSON" ]; then
@@ -78,17 +79,18 @@ RELEASE_WORKTREE_ADDED=true
 
 RELEASE_VALIDATION_OUTPUT=""
 if ! RELEASE_VALIDATION_OUTPUT=$(
-  cd "$RELEASE_WORKTREE"
-  "$CHECK_COVERAGE" 2>&1
+  cd "$RELEASE_WORKTREE" &&
+    "$CHECK_COVERAGE" 2>&1 &&
+    python3 "$CHECK_ACTION_PINS" "$RELEASE_WORKTREE" 2>&1
 ); then
   create_gate_check ci-gate-turbo success "Release PR — CI skipped" "Release-please PRs only contain version bumps and changelogs."
   create_gate_check ci-gate-crates success "Release PR — CI skipped" "Release-please PRs only contain version bumps and changelogs."
   create_gate_check \
     ci-gate-security \
     failure \
-    "Release Please workspace coverage failed" \
+    "Release PR validation failed" \
     "$RELEASE_VALIDATION_OUTPUT"
-  echo "::error::Release Please workspace coverage failed for exact head $PR_HEAD"
+  echo "::error::Release PR validation failed for exact head $PR_HEAD"
   printf '%s\n' "$RELEASE_VALIDATION_OUTPUT" >&2
   exit 1
 fi
@@ -111,7 +113,7 @@ if [ "$db_release_in_pr" = "true" ] && [ "$api_release_in_pr" != "true" ]; then
     "DB release requires API release" \
     "Release PRs that bump turbo/packages/db must also bump turbo/apps/api because production migrations are owned by the API release lifecycle."
   create_gate_check ci-gate-crates success "Release PR — CI skipped" "Release-please PRs only contain version bumps and changelogs."
-  create_gate_check ci-gate-security success "Release PR validation passed" "Release Please workspace coverage passed for exact head $PR_HEAD."
+  create_gate_check ci-gate-security success "Release PR validation passed" "Release Please workspace coverage and action pins passed for exact head $PR_HEAD."
   echo "::error::turbo/packages/db release PR changes must ship with turbo/apps/api."
   exit 1
 fi
@@ -119,4 +121,4 @@ fi
 for gate in ci-gate-turbo ci-gate-crates; do
   create_gate_check "$gate" success "Release PR — CI skipped" "Release-please PRs only contain version bumps and changelogs."
 done
-create_gate_check ci-gate-security success "Release PR validation passed" "Release Please workspace coverage passed for exact head $PR_HEAD."
+create_gate_check ci-gate-security success "Release PR validation passed" "Release Please workspace coverage and action pins passed for exact head $PR_HEAD."

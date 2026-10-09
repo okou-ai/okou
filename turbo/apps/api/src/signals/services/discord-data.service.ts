@@ -2,6 +2,9 @@ import { command, computed, type Computed } from "ccstate";
 import { and, asc, eq, or, type SQL } from "drizzle-orm";
 import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { agents } from "@okouai/db/schema/agent";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
@@ -25,6 +28,11 @@ import {
   getDiscordAppConfig,
   type DiscordAppConfig,
 } from "./discord-config";
+
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
 
 export interface DiscordVerifiedBinding {
   readonly connectionId: string;
@@ -99,16 +107,63 @@ export function discordMemberRole(args: {
 function verifiedBindings(
   where: SQL,
 ): Computed<Promise<DiscordVerifiedBinding[]>> {
+  const where$ = computed(() => {
+    return Promise.resolve(where);
+  });
+  return createVerifiedBindings(where$);
+}
+
+function createVerifiedBindings(
+  where$: Computed<Promise<SQL | null>>,
+): Computed<Promise<DiscordVerifiedBinding[]>> {
   return computed(async (get) => {
-    if (!getDiscordAppConfig()) {
+    const where = await get(where$);
+    if (!where || !getDiscordAppConfig()) {
       return [];
     }
-    const rows = await get(bindingRows(where));
+    const db = get(db$);
+    const rows = await db
+      .select(bindingColumns)
+      .from(discordOrgConnections)
+      .innerJoin(
+        discordOrgInstallations,
+        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+      )
+      .where(where);
     const result: DiscordVerifiedBinding[] = [];
     for (const row of rows) {
+      const switches = await db
+        .select({
+          userId: userFeatureSwitches.userId,
+          switches: userFeatureSwitches.switches,
+        })
+        .from(userFeatureSwitches)
+        .where(userFeatureSwitchRowCondition(row.orgId, row.userId));
       if (
-        (await get(discordIntegrationEnabledForOwner(row.orgId, row.userId))) &&
-        (await get(discordMembership(row)))
+        !isFeatureEnabled(
+          FeatureSwitchKey.DiscordIntegration,
+          featureSwitchContextFromRows(row.orgId, row.userId, switches),
+        )
+      ) {
+        continue;
+      }
+      const membership = await settle(
+        get(clerk$).organizations.getOrganizationMembershipList({
+          organizationId: row.orgId,
+          userId: [row.userId],
+          limit: 1,
+        }),
+      );
+      if (!membership.ok) {
+        if (isClerkResourceNotFound(membership.error)) {
+          continue;
+        }
+        throw membership.error;
+      }
+      if (
+        membership.value.data.some((member) => {
+          return member.publicUserData?.userId === row.userId;
+        })
       ) {
         result.push(row);
       }
@@ -121,20 +176,52 @@ export function discordUserBinding(args: {
   readonly orgId: string;
   readonly userId: string;
 }): Computed<Promise<DiscordVerifiedBinding | null>> {
-  return computed(async (get) => {
-    const [row] = await get(
-      bindingRows(
-        and(
-          eq(discordOrgInstallations.orgId, args.orgId),
-          eq(discordOrgConnections.userId, args.userId),
-        )!,
-      ),
-    );
-    if (!row) {
+  const identity$ = computed(() => {
+    return Promise.resolve(args);
+  });
+  return createDiscordUserBinding(identity$);
+}
+
+/** A binding read connected before the owning graph is evaluated. */
+export function createDiscordUserBinding(
+  identity$: Computed<
+    Promise<{ readonly orgId: string; readonly userId: string } | null>
+  >,
+): Computed<Promise<DiscordVerifiedBinding | null>> {
+  const guildUserWhere$ = computed(async (get) => {
+    const identity = await get(identity$);
+    if (!identity) {
       return null;
     }
-    const binding = await get(discordGuildUserBinding(row));
-    return binding?.userId === args.userId && binding.orgId === args.orgId
+    const [row] = await get(db$)
+      .select(bindingColumns)
+      .from(discordOrgConnections)
+      .innerJoin(
+        discordOrgInstallations,
+        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+      )
+      .where(
+        and(
+          eq(discordOrgInstallations.orgId, identity.orgId),
+          eq(discordOrgConnections.userId, identity.userId),
+        ),
+      );
+    return row
+      ? and(
+          eq(discordOrgConnections.guildId, row.guildId),
+          eq(discordOrgConnections.discordUserId, row.discordUserId),
+        )!
+      : null;
+  });
+  const bindings$ = createVerifiedBindings(guildUserWhere$);
+  return computed(async (get) => {
+    const identity = await get(identity$);
+    if (!identity) {
+      return null;
+    }
+    const [binding] = await get(bindings$);
+    return binding?.userId === identity.userId &&
+      binding.orgId === identity.orgId
       ? binding
       : null;
   });

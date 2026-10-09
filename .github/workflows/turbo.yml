@@ -152,10 +152,33 @@ env:
   npm_config_audit: "false"
 
 jobs:
+  ci-admission:
+    name: Check PR CI limits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Check PR CI limits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          CI_MAX_OPEN_PRS: ${{ vars.CI_MAX_OPEN_PRS }}
+          CI_MAX_OPEN_PRS_PER_AUTHOR: ${{ vars.CI_MAX_OPEN_PRS_PER_AUTHOR }}
+          CI_PR_ADMISSION_BYPASS_LIST: ${{ vars.CI_PR_ADMISSION_BYPASS_LIST }}
+        run: bash .github/scripts/check-pr-ci-capacity.sh
+
   # Detect release-please context across all event types (PR, push, merge queue).
   # github.head_ref is empty in merge_group events, so we extract the PR number
   # from the merge queue head_ref and check via GitHub API.
   detect-release:
+    needs: [ci-admission]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -213,7 +236,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -260,7 +283,7 @@ jobs:
       turbo-ts-checks-needed: ${{ steps.detect.outputs.turbo-ts-checks-needed }}
       ios-only: ${{ steps.detect.outputs.ios-only }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
@@ -300,7 +323,7 @@ jobs:
       playwright-runner-consumer-needed: ${{ steps.playwright-runner.outputs.playwright-runner-consumer-needed }}
       base-ref: ${{ steps.detect.outputs.base-ref }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
@@ -480,7 +503,7 @@ jobs:
     # Code checks are already required on the merge-group SHA before main.
     if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true'
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
@@ -522,7 +545,7 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
       - uses: ./.github/actions/toolchain-init
@@ -565,7 +588,7 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
       # The two heavy app type-checks (api, @okouai/app ≈ 57% of the former
       # serial total) run in separate jobs below. Here we check everything
@@ -702,7 +725,7 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
       - name: Prettier
         working-directory: turbo
@@ -716,7 +739,7 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
       - name: Knip
         working-directory: turbo
@@ -743,7 +766,7 @@ jobs:
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
       - uses: ./.github/actions/toolchain-init
@@ -838,7 +861,7 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
       - name: Test CLI
         working-directory: turbo
@@ -874,7 +897,7 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
       - name: Test App
         working-directory: turbo
@@ -924,7 +947,7 @@ jobs:
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
       - name: Run Database Migrations
         working-directory: turbo
@@ -1003,7 +1026,7 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
       - name: Test Other Packages
         working-directory: turbo
@@ -1071,7 +1094,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Native model contexts must pin the CLI built from this API source.
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1079,7 +1102,7 @@ jobs:
 
       - name: Fetch development Doppler OAuth config
         id: doppler-oauth
-        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
         with:
           auth-method: oidc
           doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
@@ -1313,7 +1336,7 @@ jobs:
 
       - name: Post API preview URL
         if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         with:
           header: api-preview
           message: |
@@ -1358,7 +1381,7 @@ jobs:
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
 
@@ -1714,7 +1737,7 @@ jobs:
         needs.prepare.outputs.playwright-runner-consumer-needed == 'true'
       )
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Ansible
         run: pip3 install ansible-core
@@ -1801,7 +1824,7 @@ jobs:
       needs.deploy-api.result == 'success' &&
       needs.deploy-app.result == 'success'
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # E2E sources follow the API/CLI revision, not the PR merge commit.
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1992,10 +2015,10 @@ jobs:
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10.33.4
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -2176,7 +2199,7 @@ jobs:
             "$cdn_dir/package.tgz"
 
       - name: Upload CLI artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cli-package
           path: /tmp/okou-cli-artifact/package.tgz
@@ -2201,7 +2224,7 @@ jobs:
       )
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
@@ -2209,7 +2232,7 @@ jobs:
         with:
           node-version: 22
       - name: Download CLI artifact
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: cli-package
           path: /tmp/cli-package
@@ -2256,7 +2279,7 @@ jobs:
       - name: Upload JUnit XML artifact
         if: ${{ !cancelled() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-serial-junit-xml
           path: e2e/results/
@@ -2288,7 +2311,7 @@ jobs:
       rootfs-hash-map: ${{ steps.manifest.outputs.rootfs-hash-map }}
       snapshot-hash-map: ${{ steps.manifest.outputs.snapshot-hash-map }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
@@ -2340,7 +2363,7 @@ jobs:
         needs.prepare.outputs.playwright-runner-consumer-needed == 'true'
       )
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
@@ -2417,7 +2440,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10.33.4
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -2593,7 +2616,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10.33.4
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -2747,7 +2770,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
         with:
           version: 10.33.4
@@ -2876,6 +2899,7 @@ jobs:
     timeout-minutes: 5
     # Runner cleanup is handled by cleanup.yml (pull_request_target:closed).
     needs:
+      - ci-admission
       - detect-release
       - validate-release-presence
       - detect-turbo-ts-checks
@@ -2912,12 +2936,18 @@ jobs:
     steps:
       - name: Validate CI results
         env:
+          CI_ADMISSION_RESULT: ${{ needs.ci-admission.result }}
           EVENT_NAME: ${{ github.event_name }}
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           RELEASE_PRESENCE_RESULT: ${{ needs.validate-release-presence.result }}
           RELEASE_DEPLOY_APP_RESULT: ${{ needs.deploy-app.result }}
           RELEASE_DEPLOY_CLI_RESULT: ${{ needs.deploy-cli.result }}
         run: |
+          if [[ "$CI_ADMISSION_RESULT" != "success" ]]; then
+            echo "::error::CI admission did not pass ($CI_ADMISSION_RESULT). See the Check PR CI limits job and workflow summary for the reason and retry instructions."
+            exit 1
+          fi
+
           # Auto-pass for release-please PRs, commits, and merge queue entries
           if [[ "$IS_RELEASE" == "true" ]]; then
             if [[ "$EVENT_NAME" == "merge_group" && "$RELEASE_PRESENCE_RESULT" != "success" ]]; then

@@ -1,13 +1,11 @@
 import { z } from "zod";
 import {
   artifactMissingRootPolicySchema,
-  builtInModelProviderConnectionSourceSchema,
   piLaunchConfigSchema,
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
   piModelConfigV5Schema,
-  runnersModelProviderFailuresContract,
   runnerCancellationResponseSchema,
   runnerNextSteerableInputResponseSchema,
   runnerSteeredInputResponseSchema,
@@ -22,6 +20,7 @@ import { fileEntryWithHashSchema } from "../contracts/storages";
 import {
   webhookCheckpointsContract,
   webhookCheckpointsPrepareHistoryContract,
+  webhookSessionHistoryPrepareContract,
   webhookCompleteContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
@@ -102,10 +101,6 @@ export const rustTypeModuleDocs = [
     rustDoc: ["DTOs for declaring a prompt or run-targeted budget steered."],
   },
   {
-    rustModulePath: ["runners", "runs", "model_provider_failures"],
-    rustDoc: ["DTOs for reporting bounded built-in model provider failures."],
-  },
-  {
     rustModulePath: ["webhooks"],
     rustDoc: ["Webhook DTOs generated from TypeScript API contracts."],
   },
@@ -120,6 +115,14 @@ export const rustTypeModuleDocs = [
   {
     rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
     rustDoc: ["DTOs for preparing direct session-history uploads."],
+  },
+  {
+    rustModulePath: ["webhooks", "agent", "session_history"],
+    rustDoc: ["Native CLI history upload DTOs."],
+  },
+  {
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
+    rustDoc: ["Prepare a native CLI history upload."],
   },
   {
     rustModulePath: ["webhooks", "agent", "complete"],
@@ -639,57 +642,6 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema: builtInModelProviderConnectionSourceSchema,
-    rustModulePath: ["runners", "runs", "model_provider_failures"],
-    rustTypeName: "RequestConnectionSource",
-    direction: "request",
-    declarations: [
-      {
-        rustTypeName: "RequestConnectionSource",
-        rustDoc: ["Source of an eligible connection failure."],
-        variants: {
-          provider_response: ["The provider returned a connection failure."],
-          upstream_transport: [
-            "The runner observed an upstream transport failure.",
-          ],
-        },
-      },
-    ],
-  },
-  {
-    schema: runnersModelProviderFailuresContract.report.body,
-    rustModulePath: ["runners", "runs", "model_provider_failures"],
-    rustTypeName: "Request",
-    direction: "request",
-    fieldTypeOverrides: {
-      connectionSource: "RequestConnectionSource",
-    },
-    declarations: [
-      {
-        rustTypeName: "Request",
-        rustDoc: [
-          "Request body for reporting a built-in model provider failure.",
-        ],
-        variants: {
-          authentication: ["Provider authentication failed."],
-          billing: ["Provider billing rejected the request."],
-          rate_limit: ["Provider rate limiting rejected the request."],
-          provider_unavailable: [
-            "The provider route was unavailable or overloaded.",
-          ],
-          timeout: ["The provider inference request timed out."],
-          connection: ["The provider connection failed."],
-        },
-        fields: {
-          connectionSource: ["Required source of the connection failure."],
-          retryAfterSeconds: [
-            "Optional bounded provider retry delay in seconds.",
-          ],
-        },
-      },
-    ],
-  },
-  {
     schema: artifactMissingRootPolicySchema,
     rustModulePath: ["runners", "storage"],
     rustTypeName: "ArtifactEntryMissingRootPolicy",
@@ -1004,6 +956,71 @@ export const rustTypeBindings = [
         },
       },
       {
+        rustTypeName: "RequestCompletion",
+        rustDoc: ["Final Run output metadata included with completion."],
+        fields: {
+          cliAgentType: ["CLI agent implementation that produced the session."],
+          cliAgentSessionId: [
+            "Native CLI session identifier retained for continuation.",
+          ],
+          cliAgentSessionHistoryHash: [
+            "Optional SHA-256 hash of uploaded CLI agent session history.",
+          ],
+          cliAgentSessionHistoryDisposition: [
+            "Optional reason resumable session history was omitted.",
+          ],
+          artifactSnapshots: [
+            "Optional artifact versions captured by the Run output.",
+          ],
+          volumeVersionsSnapshot: [
+            "Optional volume versions captured by the Run output.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "RequestCompletionCliAgentSessionHistoryDisposition",
+        rustDoc: [
+          "Reason a final Run output intentionally omits resumable CLI agent session history.",
+        ],
+        variants: {
+          discarded_oversized: [
+            "The native history exceeded the bounded Run output limit.",
+          ],
+          unavailable: ["The native history was unavailable or unusable."],
+        },
+      },
+      {
+        rustTypeName: "RequestCompletionArtifactSnapshot",
+        rustDoc: ["Artifact version captured by a final Run output."],
+        fields: {
+          name: ["User-facing artifact name referenced by the run."],
+          version: ["Artifact version selected for the Run output."],
+          mountPath: ["Guest filesystem path where the artifact is mounted."],
+          missingRootPolicy: [
+            "Optional policy retained when the artifact mount root is missing.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "RequestCompletionArtifactSnapshotMissingRootPolicy",
+        rustDoc: [
+          "Policy used when a final Run output artifact root is missing.",
+        ],
+        variants: {
+          fail: ["Treat a missing artifact root as an error."],
+          preserveParentVersion: [
+            "Preserve the parent artifact version when the root is missing.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "RequestCompletionVolumeVersionsSnapshot",
+        rustDoc: ["Volume versions captured by a final Run output."],
+        fields: {
+          versions: ["Volume names mapped to their captured versions."],
+        },
+      },
+      {
         rustTypeName: "Request",
         rustDoc: ["Request body for completing an agent run."],
         fields: {
@@ -1023,8 +1040,11 @@ export const rustTypeBindings = [
           workspaceReuseResult: [
             "Optional outcome of the workspace reuse decision.",
           ],
+          completion: [
+            "Native history and published file outputs saved with completion.",
+          ],
           checkpoint: [
-            "Optional final checkpoint persisted atomically with completion.",
+            "Legacy Guest metadata adapter; remove after deployed Guests drain.",
           ],
         },
       },
@@ -1074,6 +1094,67 @@ export const rustTypeBindings = [
   {
     schema: webhookCheckpointsPrepareHistoryContract.prepare.responses[200],
     rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
+    rustTypeName: "Response",
+    direction: "response",
+    fieldTypeOverrides: {
+      encoding: "SessionHistoryEncoding",
+    },
+    declarations: [
+      {
+        rustTypeName: "Response",
+        rustDoc: ["Response body returned when preparing session history."],
+        fields: {
+          presignedUrl: ["Optional presigned URL for uploading new content."],
+          existing: ["Whether the requested session history already exists."],
+          encoding: ["Optional encoding of the persisted session history."],
+        },
+      },
+    ],
+  },
+  {
+    schema: sessionHistoryEncodingSchema,
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
+    rustTypeName: "SessionHistoryEncoding",
+    direction: "request",
+    declarations: [
+      {
+        rustTypeName: "SessionHistoryEncoding",
+        rustDoc: ["Encoding used for persisted CLI agent session history."],
+        variants: {
+          identity: ["Uncompressed session history bytes."],
+          gzip: ["Gzip-compressed session history bytes."],
+          zstd: ["Zstandard-compressed session history bytes."],
+        },
+      },
+    ],
+  },
+  {
+    schema: webhookSessionHistoryPrepareContract.prepare.body,
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
+    rustTypeName: "Request",
+    direction: "request",
+    fieldTypeOverrides: {
+      rawSize: "u64",
+      encodedSize: "u64",
+      encoding: "SessionHistoryEncoding",
+    },
+    declarations: [
+      {
+        rustTypeName: "Request",
+        rustDoc: ["Request body for preparing a session-history upload."],
+        fields: {
+          runId: ["Agent run identifier bound to the sandbox token."],
+          hash: ["SHA-256 hash of the uncompressed session history."],
+          rawSize: ["Uncompressed session-history size in bytes."],
+          encodedSize: ["Encoded session-history size in bytes."],
+          encoding: ["Optional encoding used for the uploaded bytes."],
+        },
+      },
+    ],
+  },
+  {
+    schema: webhookSessionHistoryPrepareContract.prepare.responses[200],
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
     rustTypeName: "Response",
     direction: "response",
     fieldTypeOverrides: {

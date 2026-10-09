@@ -179,8 +179,7 @@ function threadSourceStep<T extends { readonly id: string }>(
   thread: T,
   draftValues: {
     readonly draftUserMessage:
-      | typeof chatThreadDrafts.$inferSelect.draftUserMessage
-      | null;
+      typeof chatThreadDrafts.$inferSelect.draftUserMessage | null;
     readonly draftAttachments: typeof chatThreadDrafts.$inferSelect.draftAttachments;
   },
   head: SnapshotHead | undefined,

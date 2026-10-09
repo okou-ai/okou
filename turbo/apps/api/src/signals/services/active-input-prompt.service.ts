@@ -9,7 +9,6 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
-import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { loadAgentPhoneQueuedLaunchMaterial } from "./agentphone-queued-launch-context.service";
 import { loadFeishuQueuedLaunchMaterial } from "./feishu-queued-launch-context.service";
 import { loadSlackQueuedLaunchMaterial } from "./slack-queued-launch-context.service";
@@ -34,12 +33,7 @@ type ChatEventContextType = NonNullable<
 >;
 
 type ContextBackedContextType =
-  | "slack"
-  | "feishu"
-  | "teams"
-  | "discord"
-  | "telegram"
-  | "agentphone";
+  "slack" | "feishu" | "teams" | "discord" | "telegram" | "agentphone";
 
 interface ActiveInputPromptEvent {
   readonly id: string;
@@ -113,11 +107,7 @@ export type ActiveInputSourceRow = Awaited<
   ReturnType<typeof activeInputRowsByIds>
 >[number];
 
-/**
- * Render one pending active input for steering. Reads may repeat for the same
- * source, so template usage is reported when it is declared steered
- * through `activeInputTemplateIdentities`, not here.
- */
+/** Render one pending active input for steering. */
 export const materializeActiveInputSource$ = command(
   async (
     { set },
@@ -167,7 +157,7 @@ function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
   const projection = projectUserMessage(userMessage);
   return {
     projection,
-    templates: resolveThreadGenerationTemplatePrompt({
+    templatePrompt: resolveThreadGenerationTemplatePrompt({
       explicit: projection.primaryTemplate,
       explicitTemplates: projection.templates,
       // Steered into a run that is already executing, whose volumes were fixed
@@ -179,13 +169,6 @@ function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
       mountedUserTemplates: [],
     }),
   };
-}
-
-/** Template identities a prompt carried, reported once when declared steered. */
-export function activeInputTemplateIdentities(
-  userMessage: ChatEventUserMessage,
-): readonly GenerationTemplateIdentity[] {
-  return activeInputGenerationTemplates(userMessage).templates.identities;
 }
 
 function isContextBackedContextType(
@@ -290,12 +273,12 @@ const materializeActiveInputPrompt$ = command(
         `${args.event.contextType} active input is missing launch material`,
       );
     }
-    const { projection, templates } =
+    const { projection, templatePrompt } =
       activeInputGenerationTemplates(userMessage);
     const prompt = integration?.prompt ?? projection.agentPrompt;
     const parts = [
       integration?.appendSystemPrompt ?? "",
-      templates.prompt,
+      templatePrompt,
       prompt,
     ].filter((part) => {
       return part.length > 0;

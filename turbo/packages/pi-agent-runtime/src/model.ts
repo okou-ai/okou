@@ -1,4 +1,9 @@
 import {
+  AUTO_RUN_MODEL,
+  isAutoSelectedModel,
+  isAutoRunPreset,
+} from "@okouai/core/auto-run-model";
+import {
   isOkouRunModel,
   type OkouRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -165,29 +170,6 @@ function catalogSourceModel(
       },
     };
   }
-  // pi-ai 0.85.1 predates V4.1. This exact identity uses the provider
-  // metadata recorded in deepseek-v41-catalog.md, never the V4 text-only model.
-  if (provider === "openrouter" && model === "deepseek/deepseek-v4.1-flash") {
-    return {
-      id: model,
-      name: "DeepSeek V4.1 Flash",
-      provider,
-      api: "openai-responses",
-      baseUrl: "https://openrouter.ai/api/v1",
-      reasoning: true,
-      thinkingLevelMap: {
-        minimal: null,
-        low: "low",
-        medium: null,
-        high: "high",
-        max: "max",
-      },
-      input: ["text", "image"],
-      contextWindow: 1_048_576,
-      maxTokens: 384_000,
-      cost: { input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0 },
-    };
-  }
   return providerModels(provider).find((candidate) => {
     return candidate.id === model;
   });
@@ -349,6 +331,19 @@ export function piAgentStreamForConfig(
   };
 }
 
+function capturedAutoCatalogIdentity(config: PiAgentModelConfig): string {
+  const identity = config.catalogModel ?? config.model;
+  // Auto's capability class is platform-owned, not a second route.
+  // The request still sends the immutable runtime model below.
+  const autoRuntime =
+    config.provider === "openrouter" &&
+    (config.dialect === "openai-responses" ||
+      config.dialect === "openai-completions") &&
+    isAutoRunPreset(config.model) &&
+    (isAutoSelectedModel(identity) || isAutoRunPreset(identity));
+  return autoRuntime ? AUTO_RUN_MODEL : identity;
+}
+
 /** Resolve model metadata from Pi's provider catalog. */
 export function resolvePiAgentModel(
   config: PiAgentModelConfig,
@@ -366,7 +361,7 @@ export function resolvePiAgentModel(
   }
   const source = sourceModel(
     config.provider,
-    config.catalogModel ?? config.model,
+    capturedAutoCatalogIdentity(config),
   );
   if (!source) {
     return null;

@@ -1,11 +1,12 @@
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { HttpResponse } from "msw";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
@@ -31,9 +32,9 @@ describe("builtin Automatic firewall credential destinations", () => {
       200,
     ],
     [
-      "requires reconnect for a different verified principal",
+      "updates a different verified principal without requiring reconnect",
       "builtin-other-user",
-      502,
+      200,
     ],
   ] as const)("%s", async (_title, refreshedSubject, expectedStatus) => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
@@ -53,6 +54,16 @@ describe("builtin Automatic firewall credential destinations", () => {
         userInfoUsername: "builtin-after-refresh",
       },
     });
+    // This provider exposes metadata only at the URL in its current challenge.
+    server.use(
+      http.get(
+        new URL("/.well-known/oauth-protected-resource", provider.endpoint)
+          .href,
+        () => {
+          return new HttpResponse(null, { status: 404 });
+        },
+      ),
+    );
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const firewall = createFirewallApi(context);
@@ -153,23 +164,9 @@ describe("builtin Automatic firewall credential destinations", () => {
       [200, 502],
     );
     expect(refreshed.status).toBe(expectedStatus);
-    if (expectedStatus === 200) {
-      expect(refreshed.body).toMatchObject({
-        headers: {
-          Authorization: "Bearer automatic-refreshed-access-token",
-        },
-      });
-    } else {
-      expect(refreshed.body).toMatchObject({
-        error: {
-          code: "TOKEN_REFRESH_FAILED",
-          failureReason: "reconnect_required",
-        },
-      });
-      expect(JSON.stringify(refreshed.body)).not.toContain(
-        "automatic-refreshed-access-token",
-      );
-    }
+    expect(refreshed.body).toMatchObject({
+      headers: { Authorization: "Bearer automatic-refreshed-access-token" },
+    });
     const account = await accept(
       accounts.connection({
         headers,
@@ -179,16 +176,11 @@ describe("builtin Automatic firewall credential destinations", () => {
       [200],
     );
     expect(account.body).toMatchObject({
-      externalId: "builtin-refresh-user",
-      externalUsername:
-        expectedStatus === 200
-          ? "builtin-after-refresh"
-          : "builtin-before-refresh",
+      externalId: refreshedSubject,
+      externalUsername: "builtin-after-refresh",
       externalEmail: "builtin-preserved@example.test",
-      connectionStatus:
-        expectedStatus === 200 ? "connected" : "reconnect-required",
-      reconnectReason:
-        expectedStatus === 200 ? null : "authorization_expired_or_revoked",
+      connectionStatus: "connected",
+      reconnectReason: null,
     });
 
     await runs.requestCancelRun(actor, run.runId, [200]);
