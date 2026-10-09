@@ -1707,18 +1707,31 @@ describe("MCP ordinary discovery", () => {
     expect(ids).not.toContain(hidden.agentId);
     expect(ids).not.toContain(foreign.agentId);
     expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toStrictEqual([...ids].sort());
+    expect(
+      agents.find((agent) => {
+        return agent.agentId === f.agent.agentId;
+      }),
+    ).toMatchObject({ description: null, descriptionTruncated: false });
     expect(
       agents.find((agent) => {
         return agent.agentId === shared.agentId;
       }),
-    ).toMatchObject({ name: "Shared Agent", descriptionTruncated: true });
+    ).toMatchObject({
+      name: "Shared Agent",
+      description: "Public description ".repeat(500).slice(0, 500),
+      descriptionTruncated: true,
+      isDefault: false,
+    });
     expect(JSON.stringify(agents)).not.toContain("CANARY");
     const tampered = `${firstCursor.startsWith("A") ? "B" : "A"}${firstCursor.slice(1)}`;
     for (const args of [
       { limit: 1, cursor: tampered },
       { limit: 2, cursor: firstCursor },
     ]) {
-      expect((await callTool(token, "list_agents", args)).isError).toBeTruthy();
+      expect(
+        structuredToolError(await callTool(token, "list_agents", args)).code,
+      ).toBe("invalid_cursor");
     }
     expect(
       (
@@ -1728,6 +1741,28 @@ describe("MCP ordinary discovery", () => {
         })
       ).isError,
     ).toBeTruthy();
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [f.auth.orgId, otherOrg.orgId].map((orgId) => {
+        return {
+          id: randomUUID(),
+          role: "org:member",
+          organization: { id: orgId },
+        };
+      }),
+      totalCount: 2,
+    });
+    expect(
+      structuredToolError(
+        await callTool(
+          f.auth.token({ org_id: otherOrg.orgId }),
+          "list_agents",
+          {
+            limit: 1,
+            cursor: firstCursor,
+          },
+        ),
+      ).code,
+    ).toBe("invalid_cursor");
     const longToken = f.auth.token({
       exp: Math.floor((now() + 2 * 24 * 60 * 60 * 1000) / 1000),
     });
@@ -1742,6 +1777,87 @@ describe("MCP ordinary discovery", () => {
       ).toBeTruthy();
       expect((await listAgents(longToken)).agents.length).toBeGreaterThan(0);
     });
+  });
+
+  it("preserves nullable Agent metadata and presents the onboarding default", async () => {
+    const f = await threadFixture();
+    const unnamed = await f.bdd.createAgent(f.actor, { visibility: "private" });
+    expect(unnamed.displayName).toBeNull();
+    const before = await listAgents(f.auth.token());
+    expect(before.agents).toContainEqual({
+      agentId: unnamed.agentId,
+      name: expect.any(String),
+      description: null,
+      descriptionTruncated: false,
+      isDefault: false,
+    });
+    expect(
+      before.agents.every((agent) => {
+        return !agent.isDefault;
+      }),
+    ).toBeTruthy();
+
+    const onboarding = await f.bdd.readOnboardingStatus(f.actor);
+    expect(onboarding.defaultAgentId).not.toBeNull();
+    const after = await listAgents(f.auth.token());
+    expect(after.agents).toContainEqual(
+      expect.objectContaining({
+        agentId: onboarding.defaultAgentId,
+        name: "Okou",
+        isDefault: true,
+      }),
+    );
+    expect(
+      after.agents.filter((agent) => {
+        return agent.isDefault;
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("continues byte-limited pages without losing multibyte Agent descriptions", async () => {
+    const f = await threadFixture();
+    const createdIds = [f.agent.agentId];
+    for (let index = 0; index < 6; index++) {
+      const agent = await f.bdd.createAgent(f.actor, {
+        displayName: `${"名".repeat(200)}${index.toString()}`,
+        description: "😀".repeat(501),
+      });
+      createdIds.push(agent.agentId);
+    }
+    const token = f.auth.token();
+    let result = await callTool(token, "list_agents", { limit: 50 });
+    expect(result.isError).not.toBeTruthy();
+    let page = mcpListAgentsOutputSchema.parse(result.structuredContent);
+    expect(page.agents.length).toBeLessThan(createdIds.length);
+    expect(page.nextCursor).not.toBeNull();
+    const listed = [...page.agents];
+    while (page.nextCursor !== null) {
+      expect(
+        Buffer.byteLength(JSON.stringify(result), "utf8"),
+      ).toBeLessThanOrEqual(16 * 1024);
+      expect(listed.length).toBeLessThan(createdIds.length);
+      result = await callTool(token, "list_agents", {
+        limit: 50,
+        cursor: page.nextCursor,
+      });
+      expect(result.isError).not.toBeTruthy();
+      page = mcpListAgentsOutputSchema.parse(result.structuredContent);
+      listed.push(...page.agents);
+    }
+    expect(
+      Buffer.byteLength(JSON.stringify(result), "utf8"),
+    ).toBeLessThanOrEqual(16 * 1024);
+    expect(
+      listed.map((agent) => {
+        return agent.agentId;
+      }),
+    ).toStrictEqual(createdIds.sort());
+    for (const agent of listed.filter((agent) => {
+      return agent.agentId !== f.agent.agentId;
+    })) {
+      expect(agent.description).toBe("😀".repeat(500));
+      expect(agent.descriptionTruncated).toBeTruthy();
+    }
   });
 
   it("discovers canonical Auto without a member preference", async () => {
