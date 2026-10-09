@@ -138,6 +138,36 @@ os._exit(3)
             any(wait["pid"] == child for wait in report["adopted_child_waits"])
         )
 
+    def test_opaque_process_name_preserves_identity_residency_and_owned_signal(self):
+        # /proc/<pid>/stat comm is an opaque kernel byte string, not ASCII.
+        program = (
+            "import ctypes,os,sys; libc=ctypes.CDLL(None); "
+            "name=ctypes.c_char_p(b'fixture-'+bytes([255])+b')'); "
+            "assert libc.prctl(15,name,0,0,0)==0; "
+            "print(os.getpid(),flush=True); sys.stdin.read(1)"
+        )
+        with subprocess.Popen(
+            [sys.executable, "-c", program],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        ) as child:
+            try:
+                self.assertEqual(int(child.stdout.readline()), child.pid)
+                generation, state, parent = MODULE.process_identity(child.pid)
+                self.assertGreater(generation, 0)
+                self.assertNotEqual(state, "Z")
+                self.assertEqual(parent, os.getpid())
+                measurement = MODULE.residency(child.pid, generation)
+                self.assertIsNotNone(measurement)
+                self.assertGreater(measurement["rss_bytes"], 0)
+                MODULE.signal_owned({child.pid: generation}, signal.SIGTERM)
+                self.assertEqual(child.wait(timeout=5), -signal.SIGTERM)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=5)
+
     def test_fixture_does_not_inherit_provider_credentials(self):
         with unittest.mock.patch.dict(
             os.environ, {"SYNTHETIC_ONLY_TEST_SECRET": "fixture-placeholder"}

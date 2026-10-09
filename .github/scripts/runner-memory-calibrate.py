@@ -59,11 +59,12 @@ def available_bytes(content):
 
 def process_identity(pid):
     try:
-        content = bounded_read(f"/proc/{pid}/stat", 4096).decode("ascii")
+        content = bounded_read(f"/proc/{pid}/stat", 4096)
     except FileNotFoundError:
         return None
-    fields = content.rsplit(")", 1)[1].split()
-    return int(fields[19]), fields[0], int(fields[1])
+    # comm is opaque bytes and may contain non-ASCII or closing parentheses.
+    fields = content.rsplit(b")", 1)[1].split()
+    return int(fields[19]), fields[0].decode("ascii"), int(fields[1])
 
 
 def child_pids(pid):

@@ -58,7 +58,9 @@ process start ticks before and after reading; missing/raced samples are explicit
 null residency with an incomplete-sample count, not zero resident bytes. Child
 discovery covers all bounded worker threads, including Tokio-spawned VMs, and
 checks each current PPID against its captured parent generation before recording
-ownership. A recycled PID from a stale children list is not adopted for cleanup.
+ownership. Process names in procfs are opaque bytes; only the identity fields are
+decoded, so valid non-ASCII names do not disable sampling or owned signals. A
+recycled PID from a stale children list is not adopted for cleanup.
 Fixture cancellation, timeout, low headroom, nonzero exit and cleanup uncertainty
 remain visible failures. Cancellation first signals only
 the driver, giving it its saving/export grace. Descendant signal escalation is
