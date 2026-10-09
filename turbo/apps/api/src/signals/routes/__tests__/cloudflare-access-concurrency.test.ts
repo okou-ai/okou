@@ -1146,6 +1146,205 @@ test("serializes configuration rotation with independent-login deletion without 
   );
 });
 
+test.each(["delete", "demote"] as const)(
+  "rejects a binding after selected Access %s during KMS without creating a login",
+  async (operation) => {
+    const admin = await actor();
+    const shared = await sharedConfig(admin);
+    const member = await actor(admin.orgId, "member");
+    const direct = (await accept(createHost(member), [201])).body;
+    const before = (
+      await accept(credentials().list({ headers: member.headers }), [200])
+    ).body;
+    const preview = (
+      await accept(
+        configs().impactPreview({
+          headers: admin.headers,
+          params: { configId: shared.id },
+          query: { operation: "convert" },
+        }),
+        [200],
+      )
+    ).body;
+    useSecretKmsProbe(async (request, callNumber) => {
+      if (callNumber === 1) {
+        if (operation === "delete") {
+          await accept(
+            configs().delete({
+              headers: admin.headers,
+              params: { configId: shared.id },
+              body: { expectedRevision: shared.revision },
+            }),
+            [204],
+          );
+        } else {
+          await accept(
+            configs().convertToPersonal({
+              headers: admin.headers,
+              params: { configId: shared.id },
+              body: {
+                expectedRevision: preview.expectedRevision,
+                impactSnapshot: preview.impactSnapshot,
+              },
+            }),
+            [200],
+          );
+        }
+      }
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.alloc(32, 7),
+        encryptedDataKey: Buffer.from(`encrypted:${request.keyId}`, "utf8"),
+      };
+    });
+    const rejected = await accept(
+      hosts().update({
+        headers: member.headers,
+        params: { connectionId: direct.id },
+        body: {
+          expectedGeneration: direct.generation,
+          port: 443,
+          credential: { create: login },
+          transport: { type: "cloudflare_access", configId: shared.id },
+        },
+      }),
+      [404],
+    );
+    expect(rejected.body.error.code).toBe("CLOUDFLARE_ACCESS_NOT_FOUND");
+    expect(
+      (await accept(credentials().list({ headers: member.headers }), [200]))
+        .body,
+    ).toStrictEqual(before);
+    expect(
+      (await accept(hosts().list({ headers: member.headers }), [200])).body
+        .connections,
+    ).toStrictEqual([direct]);
+    expect(
+      (await accept(configs().list({ headers: member.headers, query }), [200]))
+        .body.configs,
+    ).toStrictEqual([]);
+  },
+);
+
+test("creates neither inline resource when its owned host is deleted during KMS", async () => {
+  const owner = await actor();
+  const direct = (await accept(createHost(owner), [201])).body;
+  const beforeLogins = (
+    await accept(credentials().list({ headers: owner.headers }), [200])
+  ).body.credentials;
+  useSecretKmsProbe(async (request, callNumber) => {
+    if (callNumber === 1) {
+      await accept(
+        hosts().delete({
+          headers: owner.headers,
+          params: { connectionId: direct.id },
+        }),
+        [204],
+      );
+    }
+    return {
+      keyId: request.keyId,
+      plaintext: Buffer.alloc(32, 7),
+      encryptedDataKey: Buffer.from(`encrypted:${request.keyId}`, "utf8"),
+    };
+  });
+  const rejected = await accept(
+    hosts().update({
+      headers: owner.headers,
+      params: { connectionId: direct.id },
+      body: {
+        expectedGeneration: direct.generation,
+        port: 443,
+        credential: { create: login },
+        transport: {
+          type: "cloudflare_access",
+          create: {
+            name: "Rejected gateway",
+            credentials: {
+              clientId: "rejected-id",
+              clientSecret: "rejected-secret",
+            },
+          },
+        },
+      },
+    }),
+    [404],
+  );
+  expect(rejected.body.error.code).toBe("SSH_CONNECTION_NOT_FOUND");
+  expect(
+    (await accept(hosts().list({ headers: owner.headers }), [200])).body
+      .connections,
+  ).toStrictEqual([]);
+  expect(
+    (await accept(configs().list({ headers: owner.headers, query }), [200]))
+      .body.configs,
+  ).toStrictEqual([]);
+  expect(
+    (await accept(credentials().list({ headers: owner.headers }), [200])).body
+      .credentials,
+  ).toStrictEqual(
+    beforeLogins.map((credential) => {
+      return { ...credential, hosts: [] };
+    }),
+  );
+});
+
+test("rejects an inline login on a host needing rebind until a transport is explicitly selected", async () => {
+  const admin = await actor();
+  const shared = await sharedConfig(admin);
+  const member = await actor(admin.orgId, "member");
+  const bound = (await accept(createHost(member, shared.id), [201])).body;
+  const preview = (
+    await accept(
+      configs().impactPreview({
+        headers: admin.headers,
+        params: { configId: shared.id },
+        query: { operation: "convert" },
+      }),
+      [200],
+    )
+  ).body;
+  await accept(
+    configs().convertToPersonal({
+      headers: admin.headers,
+      params: { configId: shared.id },
+      body: {
+        expectedRevision: preview.expectedRevision,
+        impactSnapshot: preview.impactSnapshot,
+      },
+    }),
+    [200],
+  );
+  const beforeHosts = (
+    await accept(hosts().list({ headers: member.headers }), [200])
+  ).body;
+  const beforeLogins = (
+    await accept(credentials().list({ headers: member.headers }), [200])
+  ).body;
+  const rejected = await accept(
+    hosts().update({
+      headers: member.headers,
+      params: { connectionId: bound.id },
+      body: {
+        expectedGeneration: bound.generation + 1,
+        credential: { create: login },
+      },
+    }),
+    [400],
+  );
+  expect(rejected.body.error.code).toBe("SSH_INVALID_INPUT");
+  expect(
+    (await accept(hosts().list({ headers: member.headers }), [200])).body,
+  ).toStrictEqual(beforeHosts);
+  expect(
+    (await accept(credentials().list({ headers: member.headers }), [200])).body,
+  ).toStrictEqual(beforeLogins);
+  expect(
+    (await accept(configs().list({ headers: member.headers, query }), [200]))
+      .body.configs,
+  ).toStrictEqual([]);
+});
+
 describe("protected host writes with authorized Runner authority", () => {
   afterEach(ordinary.cleanup);
 
@@ -1280,6 +1479,9 @@ describe("protected host writes with authorized Runner authority", () => {
     const beforeLogins = (
       await accept(credentials().list({ headers: owner.headers }), [200])
     ).body;
+    const beforeConfigs = (
+      await accept(configs().list({ headers: owner.headers, query }), [200])
+    ).body;
     useSecretKmsProbe(async (kmsRequest, callNumber) => {
       if (callNumber === 1) {
         expect(
@@ -1322,12 +1524,25 @@ describe("protected host writes with authorized Runner authority", () => {
               },
             },
           },
-          transport: { type: "cloudflare_access", configId: shared.id },
+          transport: {
+            type: "cloudflare_access",
+            create: {
+              name: "Never committed gateway",
+              credentials: {
+                clientId: "never-committed-id",
+                clientSecret: "never-committed-secret",
+              },
+            },
+          },
         },
       }),
       [409],
     );
     expect(edited.body.error.code).toBe("SSH_GENERATION_CONFLICT");
+    expect(
+      (await accept(configs().list({ headers: owner.headers, query }), [200]))
+        .body,
+    ).toStrictEqual(beforeConfigs);
     expect(
       (await accept(credentials().list({ headers: owner.headers }), [200]))
         .body,
