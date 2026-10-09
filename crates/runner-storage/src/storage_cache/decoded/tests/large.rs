@@ -315,6 +315,57 @@ async fn large_ready_read_ahead_skips_a_body_that_does_not_fit_but_keeps_small_h
 }
 
 #[tokio::test]
+async fn retained_large_hits_exhaust_optional_budget_without_leaking_permits() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    let cancel = CancellationToken::new();
+    let files = fixture_files(16, storage_files::MAX_FILE_BYTES, false);
+    disk::publish(
+        &home,
+        "large",
+        "v1",
+        MAX_COMPRESSED_BYTES,
+        Some(&files),
+        &cancel,
+    )
+    .unwrap();
+    disk::publish(
+        &home,
+        "tiny",
+        "v1",
+        1024,
+        Some(&fixture_files(1, 64, false)),
+        &cancel,
+    )
+    .unwrap();
+    let cache = DecodedCache::new(home);
+    let mut held = Vec::new();
+    for _ in 0..=CAPACITY / storage_files::MAX_STORAGE_BYTES {
+        let Some(ready) = cache.get_ready("large", "v1").await.unwrap() else {
+            break;
+        };
+        assert_eq!(ready.files, files);
+        held.push(ready);
+    }
+    assert!(!held.is_empty());
+    assert!(cache.0.memory.available_permits() < FILL_RESERVATION as usize);
+    assert!(cache.get_ready("large", "v1").await.unwrap().is_none());
+    // Uniform reservation deliberately makes even a valid tiny entry optional
+    // under pressure; budget exhaustion must not corrupt it or queue work.
+    assert!(cache.get_ready("tiny", "v1").await.unwrap().is_none());
+    drop(held);
+    assert_eq!(cache.0.memory.available_permits(), CAPACITY);
+    let ready = cache.get_ready("large", "v1").await.unwrap().unwrap();
+    assert_eq!(ready.files, files);
+    drop(ready);
+    let tiny = cache.get_ready("tiny", "v1").await.unwrap().unwrap();
+    assert_eq!(tiny.files[0].content.len(), 64);
+    drop(tiny);
+    cache.shutdown().await;
+    assert_eq!(cache.0.memory.available_permits(), CAPACITY);
+}
+
+#[tokio::test]
 async fn compressed_source_limit_refuses_fill_without_creating_a_positive_entry() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());

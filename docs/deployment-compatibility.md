@@ -90,8 +90,10 @@ storage, with a separate 2 MiB gzip-source gate. The 256 KiB file cap and 4x
 content expansion remain. Aggregate relative-path bytes stay within the original
 128 KiB envelope; the serialized index is bounded to 256 KiB while writing, not
 only after allocation. Whole-input file count retains the original 32,768-file
-allocation envelope. Sorted borrowed paths preserve duplicate/ancestor rejection
-without changing materialization order. Only bounded GNU longname records are
+allocation envelope. Guest decoding checks each group's cumulative content and
+path-byte budgets before copying wire bytes, as well as before filesystem cleanup.
+Sorted borrowed paths preserve duplicate/ancestor rejection without changing
+materialization order. Only bounded GNU longname records are
 newly admitted; links, directories, PAX and other extension records still miss
 this optional cache. The locked flate2 decoder retains its existing 65,535-byte
 per-field bounds for gzip extra/name/comment metadata; no overlapping header
@@ -127,7 +129,7 @@ Synthetic end-to-end correctness is not production startup, tail, CPU, RSS or
 concurrency evidence. The original retention gate (at least 25 ms affected-boundary
 p90 or two percentage points more startups within one second) and correctness,
 failure/cancellation and resource checks remain required before shipping. No
-performance gain, production deployment or cache cleanup is established here.
+production startup gain, deployment or cache cleanup is established here.
 
 ## Platform realtime token exchange (#37143)
 
