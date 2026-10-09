@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1004.0](https://github.com/okou-ai/okou/compare/app-v0.1003.3...app-v0.1004.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.0
+    * @okouai/core bumped to 8.737.0
+
 ## [0.1003.3](https://github.com/okou-ai/okou/compare/app-v0.1003.2...app-v0.1003.3) (2026-10-08)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.7...runner-executor-v0.6.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
 ## [0.5.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.6...runner-executor-v0.5.7) (2026-10-08)
 
 ## [0.5.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.5...runner-executor-v0.5.6) (2026-10-08)

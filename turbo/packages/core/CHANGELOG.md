@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.737.0](https://github.com/okou-ai/okou/compare/core-v8.736.0...core-v8.737.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Refactoring
+
+* retire deepseek memory execution route ([#38193](https://github.com/okou-ai/okou/issues/38193)) ([dd70bd4](https://github.com/okou-ai/okou/commit/dd70bd4b01bd2ee0dbfbe748940544e5e072bf5a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.0
+
 ## [8.736.0](https://github.com/okou-ai/okou/compare/core-v8.735.2...core-v8.736.0) (2026-10-08)
 
 

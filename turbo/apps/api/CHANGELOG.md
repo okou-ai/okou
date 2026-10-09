@@ -9,6 +9,57 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.717.0](https://github.com/okou-ai/okou/compare/api-v1.716.0...api-v1.717.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Bug Fixes
+
+* **host:** prepare canonical deployment delivery authority ([#38212](https://github.com/okou-ai/okou/issues/38212)) ([bd8b130](https://github.com/okou-ai/okou/commit/bd8b13065d6b8ce406c3c7659f6634528f794913))
+
+
+### Refactoring
+
+* **api:** finish storage worker and timestamp ownership ([#38194](https://github.com/okou-ai/okou/issues/38194)) ([4729e51](https://github.com/okou-ai/okou/commit/4729e51f8cc5261e1badcd7cd96b14b82b1918d7))
+* **api:** own atomic pi memory stage1 result commits ([#38202](https://github.com/okou-ai/okou/issues/38202)) ([bf452e6](https://github.com/okou-ai/okou/commit/bf452e611c290a8284fb44dcbfcb8f213529df8d))
+* **api:** own automation watch source queries ([#38203](https://github.com/okou-ai/okou/issues/38203)) ([5a9c95d](https://github.com/okou-ai/okou/commit/5a9c95daa2ae539adb63ba12f2213e40fd2023f7))
+* **api:** own hosted-site reads and allocation queries ([#38218](https://github.com/okou-ai/okou/issues/38218)) ([2c1f7e7](https://github.com/okou-ai/okou/commit/2c1f7e7477a5ad5a72e2346bc78df2153c499d1c))
+* **api:** own morning brief preference reads ([#38211](https://github.com/okou-ai/okou/issues/38211)) ([e421739](https://github.com/okou-ai/okou/commit/e42173971274448bcc8afb541cc4b7208bfe80e2))
+* **api:** own official catalog execution reads ([#38195](https://github.com/okou-ai/okou/issues/38195)) ([7fad614](https://github.com/okou-ai/okou/commit/7fad61491780e3eb0d1be79353e6ec1ef056160f))
+* **api:** own official result email callback sources ([#38220](https://github.com/okou-ai/okou/issues/38220)) ([21abaa2](https://github.com/okou-ai/okou/commit/21abaa2843c193c4928ce7e907f16feb529d2db2))
+* **api:** own parallel agent connector scope reads ([#38117](https://github.com/okou-ai/okou/issues/38117)) ([7fe8278](https://github.com/okou-ai/okou/commit/7fe8278fb7dc3581f50bf8d77d7cd19fbb9db8e0))
+* **api:** own pi maintenance preparation snapshots ([#38205](https://github.com/okou-ai/okou/issues/38205)) ([eb2214d](https://github.com/okou-ai/okou/commit/eb2214d14903c83b68e06518debf70dabad82b3b))
+* **api:** own pi memory maintenance admission transactions ([#38214](https://github.com/okou-ai/okou/issues/38214)) ([aa2cbc3](https://github.com/okou-ai/okou/commit/aa2cbc3700fbad19a43f3eef1492bca094e7523a))
+* **api:** own pi memory phase2 claim transaction ([#38055](https://github.com/okou-ai/okou/issues/38055)) ([b917942](https://github.com/okou-ai/okou/commit/b91794262fa14780372d3cc5bb5c1b1fddbf18b7))
+* **api:** own pi memory stage 1 preflight queries ([#38226](https://github.com/okou-ai/okou/issues/38226)) ([1cd9eff](https://github.com/okou-ai/okou/commit/1cd9eff56f912f5c177c6fe63e6ab19f2ee3693a))
+* **api:** own pi memory stage1 credential commands ([#38210](https://github.com/okou-ai/okou/issues/38210)) ([9ee013b](https://github.com/okou-ai/okou/commit/9ee013bab9e2f3a53e2d063816955b84c6d66fb5))
+* **api:** own remaining hosted-site transaction queries ([#38225](https://github.com/okou-ai/okou/issues/38225)) ([7982faf](https://github.com/okou-ai/okou/commit/7982faf50f4936909ccc6d0c107d371e74c613d4))
+* **api:** own runner notification preference reads ([#38222](https://github.com/okou-ai/okou/issues/38222)) ([8048b62](https://github.com/okou-ai/okou/commit/8048b6290029e27a1f1fd36a0dd04d24e8e5eb85))
+* **api:** own workflow automation enable and stripe commits ([#38191](https://github.com/okou-ai/okou/issues/38191)) ([b07bc3a](https://github.com/okou-ai/okou/commit/b07bc3a54c75efe9205afc7614d3c8f936a32d67))
+* **api:** own workflow catalog list and deletion queries ([#38216](https://github.com/okou-ai/okou/issues/38216)) ([774706e](https://github.com/okou-ai/okou/commit/774706e3d0b05ff5358c06ed6bc41df2824185c6))
+* **api:** own workflow copy publication ([#38223](https://github.com/okou-ai/okou/issues/38223)) ([b4c06fd](https://github.com/okou-ai/okou/commit/b4c06fde2d6d95b129f63b83661e488e49dd71f2))
+* **api:** remove oauth contract hash bindings ([#38190](https://github.com/okou-ai/okou/issues/38190)) ([3e0f689](https://github.com/okou-ai/okou/commit/3e0f689475709a63a8ed534d11f34e583e8ac3f6))
+* **api:** separate automation lifecycle from event dispatch ([#38199](https://github.com/okou-ai/okou/issues/38199)) ([d0e80d5](https://github.com/okou-ai/okou/commit/d0e80d56313dbbfb5a1c11d72c1e44eb3b0a357b))
+* **api:** statically own official workflow reconciliation ([#38208](https://github.com/okou-ai/okou/issues/38208)) ([628d2e8](https://github.com/okou-ai/okou/commit/628d2e83be3dcf21b7806bb482c75bcb73f904e3))
+* **api:** use static bounded reads for memory summaries ([#38204](https://github.com/okou-ai/okou/issues/38204)) ([13d9bc2](https://github.com/okou-ai/okou/commit/13d9bc248c60f520893f145c9e5ed38617f89e56))
+* remove expired deployment compatibility ([#38219](https://github.com/okou-ai/okou/issues/38219)) ([303f42b](https://github.com/okou-ai/okou/commit/303f42bafd0d70928c477dc87a5f25fdc00db6d7))
+* retire deepseek memory execution route ([#38193](https://github.com/okou-ai/okou/issues/38193)) ([dd70bd4](https://github.com/okou-ai/okou/commit/dd70bd4b01bd2ee0dbfbe748940544e5e072bf5a))
+* retire generic run checkpoints from completion ([#38147](https://github.com/okou-ai/okou/issues/38147)) ([e8002cf](https://github.com/okou-ai/okou/commit/e8002cfcc9995e2b245947dbf25a9f9dd73f1ca0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.0
+    * @okouai/core bumped to 8.737.0
+    * @okouai/db bumped to 1.326.0
+    * @okouai/pi-agent-runtime bumped to 1.47.0
+
 ## [1.716.0](https://github.com/okou-ai/okou/compare/api-v1.715.0...api-v1.716.0) (2026-10-08)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.15](https://github.com/okou-ai/okou/compare/runner-host-v0.2.14...runner-host-v0.2.15) (2026-10-09)
+
+
+### Refactoring
+
+* **runner:** move systemd primitives into runner-host ([#38150](https://github.com/okou-ai/okou/issues/38150)) ([25c7696](https://github.com/okou-ai/okou/commit/25c769652370465956b95c3fd98f94911557823c))
+
 ## [0.2.14](https://github.com/okou-ai/okou/compare/runner-host-v0.2.13...runner-host-v0.2.14) (2026-10-08)
 
 

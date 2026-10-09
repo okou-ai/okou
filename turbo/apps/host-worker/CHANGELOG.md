@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.125](https://github.com/okou-ai/okou/compare/host-worker-v1.5.124...host-worker-v1.5.125) (2026-10-09)
+
+
+### Bug Fixes
+
+* **host:** prepare canonical deployment delivery authority ([#38212](https://github.com/okou-ai/okou/issues/38212)) ([bd8b130](https://github.com/okou-ai/okou/commit/bd8b13065d6b8ce406c3c7659f6634528f794913))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.0
+
 ## [1.5.124](https://github.com/okou-ai/okou/compare/host-worker-v1.5.123...host-worker-v1.5.124) (2026-10-08)
 
 

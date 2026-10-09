@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.221.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.25...runner-rs-v0.221.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Refactoring
+
+* **runner:** bind cli identity to package bytes for rootfs hashing ([#37967](https://github.com/okou-ai/okou/issues/37967)) ([3698acc](https://github.com/okou-ai/okou/commit/3698acc28545e383a9357ea354ac1db8c51523dc))
+* **runner:** move systemd primitives into runner-host ([#38150](https://github.com/okou-ai/okou/issues/38150)) ([25c7696](https://github.com/okou-ai/okou/commit/25c769652370465956b95c3fd98f94911557823c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.220.25](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.24...runner-rs-v0.220.25) (2026-10-08)
 
 ### Release Dependencies

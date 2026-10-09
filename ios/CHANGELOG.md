@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/ios-v0.6.8...ios-v0.7.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
 ## [0.6.8](https://github.com/okou-ai/okou/compare/ios-v0.6.7...ios-v0.6.8) (2026-10-08)
 
 

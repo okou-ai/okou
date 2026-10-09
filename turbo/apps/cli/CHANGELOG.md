@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.380.0](https://github.com/okou-ai/okou/compare/cli-v9.379.0...cli-v9.380.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Refactoring
+
+* **runner:** bind cli identity to package bytes for rootfs hashing ([#37967](https://github.com/okou-ai/okou/issues/37967)) ([3698acc](https://github.com/okou-ai/okou/commit/3698acc28545e383a9357ea354ac1db8c51523dc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.542.0
+    * @okouai/core bumped to 8.737.0
+    * @okouai/pi-agent-runtime bumped to 1.47.0
+
 ## [9.379.0](https://github.com/okou-ai/okou/compare/cli-v9.378.26...cli-v9.379.0) (2026-10-08)
 
 
