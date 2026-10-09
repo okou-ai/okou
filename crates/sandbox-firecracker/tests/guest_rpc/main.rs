@@ -15,7 +15,6 @@ use serde_json::{Value, json, value::RawValue};
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
-#[path = "guest_rpc/duplex.rs"]
 mod duplex;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
