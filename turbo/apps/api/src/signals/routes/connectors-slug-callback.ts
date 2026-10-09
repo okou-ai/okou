@@ -29,7 +29,7 @@ import {
   type StoredBuiltinOAuthState,
 } from "../services/connector-oauth-state.service";
 import { authorizeConnectedConnector$ } from "../services/connected-connector-authorization.service";
-import { recordConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
+import { recordConnectorOAuthCompletion$ } from "../services/connector-oauth-completion.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "../services/connector-client-invalidation.service";
 import {
   connectorActionResolverForSnapshot,
@@ -639,12 +639,13 @@ const completeOAuthCallback$ = command(
     );
     signal.throwIfAborted();
 
-    await recordConnectorOAuthCompletion(
-      set(writeDb$),
+    await set(
+      recordConnectorOAuthCompletion$,
       {
         attemptId: args.oauthAttemptId,
         connectionId: result.connector.id,
-        ...args.identity,
+        orgId: args.identity.orgId,
+        userId: args.identity.userId,
       },
       signal,
     );
@@ -731,12 +732,13 @@ const completeOpenIdCallback$ = command(
       }
     }
 
-    await recordConnectorOAuthCompletion(
-      set(writeDb$),
+    await set(
+      recordConnectorOAuthCompletion$,
       {
         attemptId: args.oauthAttemptId,
         connectionId: result.connector.id,
-        ...args.identity,
+        orgId: args.identity.orgId,
+        userId: args.identity.userId,
       },
       signal,
     );
