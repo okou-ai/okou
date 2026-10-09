@@ -173,9 +173,10 @@ const startDiscordOauth$ = command(
     const state = secret();
     const completionToken = secret();
     const redirectUri = `${getOAuthApiOrigin(get(request$).raw)}${CALLBACK}`;
-    await db.transaction(async (tx) => {
-      // Normal starts clean only this owner's expired attempts, never other users.
-      await tx
+    // A data-modifying CTE and the new attempt commit as one SQL statement.
+    // Cleanup remains limited to this owner's expired attempts.
+    const expiredAttempts = db.$with("expired_discord_oauth_attempts").as(
+      db
         .delete(discordOauthStates)
         .where(
           and(
@@ -183,9 +184,13 @@ const startDiscordOauth$ = command(
             eq(discordOauthStates.orgId, auth.orgId),
             lte(discordOauthStates.expiresAt, nowDate()),
           ),
-        );
-      signal.throwIfAborted();
-      await tx.insert(discordOauthStates).values({
+        )
+        .returning({ id: discordOauthStates.id }),
+    );
+    await db
+      .with(expiredAttempts)
+      .insert(discordOauthStates)
+      .values({
         stateHash: hash(state),
         completionTokenHash: hash(completionToken),
         userId: auth.userId,
@@ -196,8 +201,6 @@ const startDiscordOauth$ = command(
         createdAt: nowDate(),
         expiresAt: new Date(now() + TTL_SECONDS * 1000),
       });
-      signal.throwIfAborted();
-    });
     signal.throwIfAborted();
     set(setResHeader$, "Cache-Control", "no-store");
     const url = new URL("https://discord.com/oauth2/authorize");
