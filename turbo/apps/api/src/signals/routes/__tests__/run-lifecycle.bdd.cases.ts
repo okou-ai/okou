@@ -4978,13 +4978,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           purchasedCredits: 0,
           bonusCredits: 1000,
         });
-        // A new organization starts in Auto, the null selection.
+        // A new organization discovers Auto as the sole canonical route.
         const runModels = await misc.listRunModels(actor);
         expect(
           runModels.models.map((runModel) => {
             return runModel.model;
           }),
-        ).toStrictEqual([null]);
+        ).toStrictEqual(["auto"]);
 
         await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
         // The fixed default is Pi-eligible, so the limited-free default chat run

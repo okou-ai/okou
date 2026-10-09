@@ -118,6 +118,8 @@ describe("chatEvents schema", () => {
       "chat_events_input_context_type_check",
       "chat_events_input_payload_content_check",
       "chat_events_input_user_message_payload_check",
+      "chat_events_model_annotation_check",
+      "chat_events_model_selection_check",
       "chat_events_official_workflow_queue_claim_check",
     ]);
     const officialWorkflowQueueClaimCheck = config.checks.find((check) => {

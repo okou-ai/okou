@@ -25,6 +25,14 @@ export const chatThreads = pgTable(
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),
+      check(
+        "chat_threads_selected_model_check",
+        sql`char_length(${table.selectedModel}) > 0`,
+      ),
+      check(
+        "chat_threads_explicit_model_settings_check",
+        sql`jsonb_typeof(${table.modelSettings}) = 'object' AND NOT jsonb_path_exists(${table.modelSettings}, '$.keyvalue() ? (@.key == "auto" || @.key == "okou-1.0" || @.key == "okou-1.0-pro" || @.key == "okou-1.0-max" || @.key starts with "@preset/")')`,
+      ),
       uniqueIndex("chat_threads_agent_session_unique").on(table.agentSessionId),
       check(
         "chk_chat_threads_codex_service_tier",

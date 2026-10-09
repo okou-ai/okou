@@ -93,7 +93,7 @@ interface CurrentModelState {
 }
 
 interface ModelColumns {
-  readonly selectedModel: string | null;
+  readonly selectedModel: string;
   readonly modelSettings: ModelSettings;
   readonly modelSettingsPatch: ModelSettingsPatch | undefined;
   readonly codexServiceTier: CodexServiceTier | null;

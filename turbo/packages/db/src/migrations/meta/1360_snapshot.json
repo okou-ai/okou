@@ -1,6 +1,6 @@
 {
-  "id": "9151c9da-01df-46be-aa84-8cd4f3ef74a0",
-  "prevId": "1d02fb36-ce31-490d-9f3f-e9d3a9165b67",
+  "id": "f367f116-f341-4797-8772-19a1027500d4",
+  "prevId": "9151c9da-01df-46be-aa84-8cd4f3ef74a0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8525,12 +8525,6 @@
           "notNull": true,
           "default": "now()"
         },
-        "provenance": {
-          "name": "provenance",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -8544,6 +8538,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "provenance": {
+          "name": "provenance",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -8697,102 +8697,6 @@
           "value": "NOT (\"chat_threads\".\"cloud_browser_enabled\" AND \"chat_threads\".\"computer_use_host_id\" IS NOT NULL)"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.checkpoints": {
-      "name": "checkpoints",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "conversation_id": {
-          "name": "conversation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "storage_mounts": {
-          "name": "storage_mounts",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_checkpoints_conversation": {
-          "name": "idx_checkpoints_conversation",
-          "columns": [
-            {
-              "expression": "conversation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "checkpoints_run_id_agent_runs_id_fk": {
-          "name": "checkpoints_run_id_agent_runs_id_fk",
-          "tableFrom": "checkpoints",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "checkpoints_conversation_id_conversations_id_fk": {
-          "name": "checkpoints_conversation_id_conversations_id_fk",
-          "tableFrom": "checkpoints",
-          "tableTo": "conversations",
-          "columnsFrom": [
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "checkpoints_run_id_unique": {
-          "name": "checkpoints_run_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "run_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.cli_tokens": {
@@ -21646,12 +21550,6 @@
         "last_maintenance_selection_digest": {
           "name": "last_maintenance_selection_digest",
           "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_maintenance_checkpoint_id": {
-          "name": "last_maintenance_checkpoint_id",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },

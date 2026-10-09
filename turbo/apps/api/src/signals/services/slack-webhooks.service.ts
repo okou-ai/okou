@@ -1,4 +1,5 @@
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -869,7 +870,7 @@ const slackModelPickerState$ = command(
         return {
           model: runModel.model,
           label: runModel.modelLabel,
-          isDefault: runModel.model === null,
+          isDefault: runModel.model === AUTO_SELECTED_MODEL,
         };
       }),
       currentSelectedModel,

@@ -231,9 +231,9 @@ describe("GET /api/model-catalog", () => {
       ).get({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
     );
-    expect(response.body.systemDefaultModel).toBe("okou-1.0");
+    expect(response.body.systemDefaultModel).toBe("auto");
     expect(response.body.models).toContainEqual(
-      expect.objectContaining({ model: "okou-1.0", displayName: "Auto" }),
+      expect.objectContaining({ model: "auto", displayName: "Auto" }),
     );
     expect(
       response.body.routes.filter((route) => {
@@ -241,7 +241,7 @@ describe("GET /api/model-catalog", () => {
       }),
     ).toStrictEqual([
       expect.objectContaining({
-        model: "okou-1.0",
+        model: "auto",
         providerType: "built-in",
         concreteProviderType: "openrouter-codex",
         upstreamModel: "@preset/okou-1-0",

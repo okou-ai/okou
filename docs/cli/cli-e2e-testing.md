@@ -112,7 +112,7 @@ should describe behavior without repeating the file identifier.
 
 The workflow uses five isolated identities.
 Platform identities use `runner-auto-bootstrap.bash`, verify the read-only
-`/api/run-models` response (Auto is the first entry, with `model: null`) and
+`/api/run-models` response (Auto is the first entry, with `model: "auto"`) and
 select Auto by saving a `null` model preference. Their real/mock runtime flags
 remain isolated. The mock-Claude identity also hosts a personal Codex
 subscription: shell-driven BATS select it with

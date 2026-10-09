@@ -58,7 +58,7 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
         modelSettings: sql`COALESCE((
           SELECT jsonb_object_agg(key, value)
           FROM jsonb_each(${orgMembersMetadata.modelSettings})
-          WHERE key NOT IN ('auto', 'okou-1.0') AND key NOT LIKE '@preset/%'
+          WHERE key NOT IN ('auto', 'okou-1.0', 'okou-1.0-pro', 'okou-1.0-max') AND key NOT LIKE '@preset/%'
         ), '{}'::jsonb)`
           .mapWith(orgMembersMetadata.modelSettings)
           .as("model_settings"),
