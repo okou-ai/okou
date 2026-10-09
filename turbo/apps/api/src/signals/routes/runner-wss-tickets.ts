@@ -112,7 +112,11 @@ const check$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const authorized = await set(checkRunnerWssAuthorizations$, body.data);
+  const authorized = await set(
+    checkRunnerWssAuthorizations$,
+    body.data,
+    signal,
+  );
   signal.throwIfAborted();
   return { status: 200 as const, body: { authorized } };
 });

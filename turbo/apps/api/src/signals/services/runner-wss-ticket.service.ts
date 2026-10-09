@@ -8,7 +8,7 @@ import { command } from "ccstate";
 import { and, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   buildRunnerWssTargetQuery,
   buildRunnerWssAuthorizationQuery,
@@ -241,10 +241,10 @@ export const consumeRunnerWssTicket$ = command(
   },
 );
 
-/** One bounded current-state read; no historical ticket polling or new attachment. */
+/** A one-off current-state read owned by the caller's cancellation. */
 export const checkRunnerWssAuthorizations$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly runnerId: string;
       readonly origin: string;
@@ -253,16 +253,19 @@ export const checkRunnerWssAuthorizations$ = command(
         readonly authorizationEpoch: string;
       }[];
     },
+    signal: AbortSignal,
   ) => {
+    signal.throwIfAborted();
     const query = buildRunnerWssAuthorizationQuery({ ...args, now: nowDate() });
-    // Read the writer, not a potentially stale replica: an old epoch must not
-    // renew after a committed revoke. Initial consume is still required locally.
-    const rows = await set(writeDb$)
+    // db$ is a readonly handle to the DATABASE_URL writer, not a replica.
+    // Initial consume is still required locally; this cannot attach a Guest.
+    const rows = await get(db$)
       .select(query.selection)
       .from(agentRuns)
       .innerJoin(activeAgentRuns, query.activeRunJoin)
       .innerJoin(runnerState, query.runnerStateJoin)
       .where(query.where);
+    signal.throwIfAborted();
     return rows.flatMap((row) => {
       const target = runnerWssTargetFromRow(row);
       return target?.publicOrigin === args.origin
