@@ -4,7 +4,6 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BLANK_SANDBOX_STATUS_READER_COMMIT=febec8a3399be74b0f14a89cb9f42e39dd5ce69f
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
-readonly DECODED_STORAGE_LARGE_READER_PATH=.github/rollback-floors/decoded-storage-large-reader
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -468,18 +467,6 @@ if ! git merge-base --is-ancestor "$BLANK_SANDBOX_STATUS_READER_COMMIT" "$runner
 fi
 if ! git merge-base --is-ancestor "$PROVIDER_BALANCE_FAILURE_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates structured provider balance failures: ${PROVIDER_BALANCE_FAILURE_COMMIT}."
-fi
-
-# Enlarged v1 positives survive writer rollback in the same cache home. Resolve
-# the preparatory reader's merged main commit, never its feature-branch SHA, and
-# check the independently retained Runner tag rather than just the API target.
-decoded_storage_large_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- "$DECODED_STORAGE_LARGE_READER_PATH" | sed -n '1p')
-if [[ ! "$decoded_storage_large_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged decoded-storage large reader on main."
-fi
-if ! git merge-base --is-ancestor "$decoded_storage_large_reader_commit" "$runner_tag_commit"; then
-  fail "Runner release ${runner_tag} predates the decoded-storage large reader: ${decoded_storage_large_reader_commit}."
 fi
 
 runner_matrix=$("${script_dir}/runner-host-architecture-groups.sh" target-matrix)

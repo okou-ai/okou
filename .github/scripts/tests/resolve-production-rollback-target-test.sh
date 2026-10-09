@@ -92,10 +92,6 @@ case "${1:-}" in
       [ "${MOCK_CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4141414141414141414141414141414141414141" ]; then
       [ "${MOCK_USAGE_ALLOWANCE_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "4242424242424242424242424242424242424242" ]; then
-      # A compatible API commit can retain an incompatible older Runner tag.
-      if [ "${4:-}" = "$TARGET_COMMIT" ]; then exit 0; fi
-      [ "${MOCK_DECODED_RUNNER_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -139,8 +135,6 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_COMMIT-4040404040404040404040404040404040404040}"
     elif [[ "$*" == *1356_drop_organization_usage_allowance.sql* ]]; then
       printf '%s\n' "${MOCK_USAGE_ALLOWANCE_COMMIT-4141414141414141414141414141414141414141}"
-    elif [[ "$*" == *decoded-storage-large-reader* ]]; then
-      printf '%s\n' "${MOCK_DECODED_READER_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -278,33 +272,12 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 3838383838383838383838383838383838383838 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi stable-context retirement floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql" "${tmp_dir}/boundaries.log" || fail "Usage Allowance floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 4141414141414141414141414141414141414141 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
-grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/decoded-storage-large-reader" "${tmp_dir}/boundaries.log" || fail "decoded reader floor must resolve the merged preparation on main"
-grep -Fxq "git merge-base --is-ancestor 4242424242424242424242424242424242424242 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "${tmp_dir}/boundaries.log" || fail "decoded reader floor must check the selected Runner tag, not only the API target"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Runner release runner-rs-v1.2.3 predates the decoded-storage large reader" \
-  run_resolver "${tmp_dir}/decoded-runner-floor.output" MOCK_DECODED_RUNNER_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/decoded-runner-floor.output" ] || fail "incompatible retained Runner must not publish rollback outputs"
-grep -Fq '4242424242424242424242424242424242424242' "${tmp_dir}/failure.err" || fail "decoded rejection must identify the prepared reader commit"
-if grep -Eq '^ssh |^curl .*api.github.com' "${tmp_dir}/boundaries.log"; then
-  fail "incompatible decoded Runner must fail before host or release-asset access"
-fi
-
-for floor in '' branch-only-sha; do
-  : >"${tmp_dir}/boundaries.log"
-  assert_failure "Cannot resolve the merged decoded-storage large reader on main" \
-    run_resolver "${tmp_dir}/decoded-reader-resolution.output" "MOCK_DECODED_READER_COMMIT=$floor"
-  [ ! -s "${tmp_dir}/decoded-reader-resolution.output" ] || fail "unresolved decoded reader floor must not publish rollback outputs"
-  if grep -Eq '^ssh |^curl .*api.github.com' "${tmp_dir}/boundaries.log"; then
-    fail "unresolved decoded reader floor must fail before host or release-asset access"
-  fi
-done
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates Pi memory Luna routing" \
