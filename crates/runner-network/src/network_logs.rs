@@ -1351,14 +1351,23 @@ mod tests {
     }
 
     fn one_entry_per_batch_log(sequence: usize) -> serde_json::Value {
-        json!({
-            "sequence": sequence,
-            "body": "x".repeat(NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES / 2),
-        })
+        serde_json::Value::Object(serde_json::Map::from_iter([
+            ("sequence".into(), json!(sequence)),
+            (
+                "body".into(),
+                serde_json::Value::String("x".repeat(NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES / 2)),
+            ),
+        ]))
     }
 
     fn one_entry_per_batch_logs(count: usize) -> Vec<serde_json::Value> {
-        (0..count).map(one_entry_per_batch_log).collect()
+        let mut log = one_entry_per_batch_log(0);
+        (0..count)
+            .map(|sequence| {
+                *log.get_mut("sequence").unwrap() = json!(sequence);
+                log.clone()
+            })
+            .collect()
     }
 
     fn one_entry_per_batch_log_content(count: usize) -> String {
@@ -1386,6 +1395,11 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
                 + "\n";
+            assert_eq!(
+                network_log_content(&one_entry_per_batch_logs(count)),
+                expected,
+                "{count} independent original entries"
+            );
             assert_eq!(
                 one_entry_per_batch_log_content(count),
                 expected,
