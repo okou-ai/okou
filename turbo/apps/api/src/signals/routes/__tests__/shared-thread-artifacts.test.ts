@@ -738,6 +738,25 @@ test.each(["missing", "unavailable"] as const)(
     );
     expect(published.body).not.toHaveProperty("preview");
     const og = api()(artifactOgContract);
+    const disabledQuery = { kind: "reference" as const, id: reference };
+    expect(
+      (await accept(og.metadata({ query: disabledQuery }), [200])).body,
+    ).toStrictEqual({ available: false });
+    const disabledImage = await accept(
+      og.image({ query: { ...disabledQuery, version: "published" } }),
+      [200],
+    );
+    const generic = await accept(og.defaultImage(), [200]);
+    expect(Buffer.from(await disabledImage.body.arrayBuffer())).toStrictEqual(
+      Buffer.from(await generic.body.arrayBuffer()),
+    );
+    await accept(
+      api()(featureSwitchesContract).update({
+        headers: headers(f.actor),
+        body: { switches: { [FeatureSwitchKey.ArtifactPreviews]: true } },
+      }),
+      [200],
+    );
     const ogStatus = failure === "missing" ? 200 : 500;
     const metadata = await accept(
       og.metadata({ query: { kind: "reference", id: reference } }),

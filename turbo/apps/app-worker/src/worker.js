@@ -1,10 +1,6 @@
 import { createClerkClient } from "@clerk/backend";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
-import {
-  artifactOgHtml,
-  GENERIC_ARTIFACT_TITLE,
-  GENERIC_ARTIFACT_DESCRIPTION,
-} from "@okouai/core/artifact-og";
+import { artifactOgHtml } from "@okouai/core/artifact-og";
 import { artifactOgMetadataSchema } from "@okouai/api-contracts/contracts/artifact-og-metadata";
 
 import posthogClientMetadata from "../assets/posthog-metadata.json" with { type: "json" };
@@ -835,12 +831,6 @@ async function artifactPageResponse(
   embeddedShell,
   apiFetcher,
 ) {
-  const shell = await fetchShellAsset(
-    new Request(new URL("/index.html", requestUrl)),
-    embeddedShell,
-  );
-  if (!shell.ok) return shell;
-  const origin = apiOrigin(requestUrl);
   const reference =
     /^\/artifacts\/((?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?)$/u.exec(
       requestUrl.pathname,
@@ -848,43 +838,48 @@ async function artifactPageResponse(
     /^\/share\/artifacts\/([a-f0-9-]{36})$/u
       .exec(requestUrl.pathname)?.[1]
       ?.replaceAll("-", "");
-  let metadata = {
-    title: GENERIC_ARTIFACT_TITLE,
-    description: GENERIC_ARTIFACT_DESCRIPTION,
-    imageUrl: new URL("/api/artifact-og/default.png", origin).href,
-    url: new URL(requestUrl.pathname, requestUrl.origin).href,
-  };
-  if (reference) {
-    const url = new URL("/api/artifact-og/metadata", origin);
-    url.search = new globalThis.URLSearchParams({
-      kind: "reference",
-      id: reference,
-    }).toString();
-    try {
-      // OG always represents anonymous visibility, regardless of the visitor's session.
-      const result = await apiFetcher(url, {
-        headers: metaRequestHeaders(requestUrl, origin),
-        cache: "no-store",
-        redirect: "error",
-        signal: globalThis.AbortSignal.any([
-          request.signal,
-          globalThis.AbortSignal.timeout(3000),
-        ]),
-      });
-      if (result.ok) {
-        const parsed = artifactOgMetadataSchema.parse(await result.json());
-        if (parsed.available) metadata = { ...parsed, url: metadata.url };
-      } else {
-        globalThis.console.error(
-          "Artifact OG metadata unavailable",
-          result.status,
-        );
-      }
-    } catch (error) {
-      if (request.signal.aborted) throw error;
-      globalThis.console.error("Artifact OG metadata unavailable", error);
+  if (!reference) return null;
+  const origin = apiOrigin(requestUrl);
+  const url = new URL("/api/artifact-og/metadata", origin);
+  url.search = new globalThis.URLSearchParams({
+    kind: "reference",
+    id: reference,
+  }).toString();
+  let metadata;
+  try {
+    // OG always represents anonymous visibility, regardless of the visitor's session.
+    const result = await apiFetcher(url, {
+      headers: metaRequestHeaders(requestUrl, origin),
+      cache: "no-store",
+      redirect: "error",
+      signal: globalThis.AbortSignal.any([
+        request.signal,
+        globalThis.AbortSignal.timeout(3000),
+      ]),
+    });
+    if (!result.ok) {
+      globalThis.console.error(
+        "Artifact OG metadata unavailable",
+        result.status,
+      );
+      return null;
     }
+    const parsed = artifactOgMetadataSchema.parse(await result.json());
+    if (!parsed.available) return null;
+    metadata = {
+      ...parsed,
+      url: new URL(requestUrl.pathname, requestUrl.origin).href,
+    };
+  } catch (error) {
+    if (request.signal.aborted) throw error;
+    globalThis.console.error("Artifact OG metadata unavailable", error);
+    return null;
   }
+  const shell = await fetchShellAsset(
+    new Request(new URL("/index.html", requestUrl)),
+    embeddedShell,
+  );
+  if (!shell.ok) return shell;
   const html = previewAppAssetHtml(await shell.text(), requestUrl);
   return htmlResponse(
     artifactOgHtml(html, metadata, true),
@@ -907,7 +902,13 @@ async function handleRequest(
     (requestUrl.pathname.startsWith("/artifacts/") ||
       requestUrl.pathname.startsWith("/share/artifacts/"))
   ) {
-    return artifactPageResponse(request, requestUrl, embeddedShell, apiFetcher);
+    const artifactResponse = await artifactPageResponse(
+      request,
+      requestUrl,
+      embeddedShell,
+      apiFetcher,
+    );
+    if (artifactResponse) return artifactResponse;
   }
   if (
     (request.method === "GET" || request.method === "HEAD") &&

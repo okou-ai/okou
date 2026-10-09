@@ -1546,7 +1546,13 @@ for (const path of [
   assert.doesNotMatch(await artifactHandoff.text(), /<iframe/iu);
 }
 
-for (const state of ["public", "private", "missing", "unavailable"]) {
+for (const state of [
+  "public",
+  "disabled",
+  "private",
+  "missing",
+  "unavailable",
+]) {
   const artifactWorker = workerModule.createWorker(
     embeddedShell,
     undefined,
@@ -1588,21 +1594,31 @@ for (const state of ["public", "private", "missing", "unavailable"]) {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Cache-Control"), "private, no-store");
   assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
-  assert.doesNotMatch(
-    html,
-    /okou-og-image|AI Teammate for Real Work|tracking=private/u,
-  );
+  assert.doesNotMatch(html, /tracking=private/u);
   assert.ok(html.indexOf('property="og:image"') < html.indexOf("</head>"));
   assert.ok(html.includes('type="module"'));
   assert.equal(
     metaContent(html, "property", "og:title"),
     state === "public"
       ? "Published &lt;report&gt; &amp; &quot;review&quot;"
-      : "Shared artifact",
+      : okouTitle,
   );
   assert.equal(
     metaContent(html, "property", "og:url"),
-    "https://app.okou.ai/artifacts/abc123abcd.html",
+    state === "public"
+      ? "https://app.okou.ai/artifacts/abc123abcd.html"
+      : "https://app.okou.ai/",
   );
+  if (state !== "public") {
+    assert.equal(
+      metaContent(html, "property", "og:image"),
+      "https://static.okou.io/web/okou-og-image-373c892e.png",
+    );
+    assert.equal(
+      metaContent(html, "property", "og:description"),
+      okouDescription,
+    );
+    assert.doesNotMatch(html, /artifact-og\/image|Shared artifact/u);
+  }
 }
 console.log("okou app worker tests passed");

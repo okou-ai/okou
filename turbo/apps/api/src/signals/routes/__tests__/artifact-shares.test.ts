@@ -2067,6 +2067,36 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
   const generic = Buffer.from(
     await (await accept(og.defaultImage(), [200])).body.arrayBuffer(),
   );
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers,
+      body: { switches: { artifactPreviews: false } },
+    }),
+    [200],
+  );
+  const workingStorage = context.mocks.s3.send.getMockImplementation()!;
+  context.mocks.s3.send.mockImplementation((cmd, ...args) => {
+    if (
+      cmd instanceof GetObjectCommand &&
+      cmd.input.Key?.startsWith("artifact-shares/")
+    ) {
+      return Promise.reject(new Error("Publication policy unavailable"));
+    }
+    return workingStorage(cmd, ...args);
+  });
+  expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
+    available: false,
+  });
+  const disabled = await accept(og.image({ query: imageQuery }), [200]);
+  expect(Buffer.from(await disabled.body.arrayBuffer())).toStrictEqual(generic);
+  context.mocks.s3.send.mockImplementation(workingStorage);
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers,
+      body: { switches: { artifactPreviews: true } },
+    }),
+    [200],
+  );
   for (const audience of ["organization", "private"] as const) {
     await accept(
       api()(artifactSharesContract).update({

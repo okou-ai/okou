@@ -140,12 +140,17 @@ The Host Worker adds missing Open Graph and Twitter tags to public hosted HTML
 and authorized HTML shares. It preserves valid author-provided social metadata,
 does not modify stored HTML, and strips query parameters from generated canonical
 URLs. The App Worker replaces the app shell's marketing metadata on
-`/artifacts/<reference>` and `/share/artifacts/<id>` before returning the HTML;
-the existing authenticated artifact viewer still opens normally.
+`/artifacts/<reference>` and `/share/artifacts/<id>` only when public OG metadata
+is available. Otherwise it continues through the existing App rendering path
+with generic Okou metadata; the authenticated artifact viewer opens normally.
 
 Workers call `GET /api/artifact-og/metadata` without visitor credentials.
-The API reuses the current hosted-delivery or published-share authority and
-checks the owner's `artifactPreviews` switch. Anonymous readers receive real
+The API resolves the minimal owner identity, including an immutable short-link
+mapping when needed, and checks the owner's `artifactPreviews` switch before
+reading publication policies, cover records or HTML/image bytes. Disabled
+metadata requests return unavailable immediately; image requests use the generic
+cover. Enabled requests then reuse the current hosted-delivery or published-share
+authority. Anonymous readers receive real
 titles and descriptions only for currently public content. Private,
 organization-only, revoked, deleted, disabled and unknown references receive
 neutral metadata. A logged-in owner's session cannot change the anonymous OG

@@ -12,6 +12,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
+import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { env } from "../../lib/env";
 import { apiBackendUrl } from "../../lib/api-backend-url";
@@ -27,7 +28,10 @@ import {
   artifactReferenceRecord$,
   type SharedThreadArtifactReference,
 } from "./artifact-reference.service";
-import { resolvePublicArtifactSource$ } from "./artifact-shares.service";
+import {
+  publicArtifactShareIdentity$,
+  resolvePublicArtifactSource$,
+} from "./artifact-shares.service";
 import { sharedThreadArtifactSnapshot$ } from "./shared-thread-artifact-reference.service";
 import {
   privateArtifactRecord$,
@@ -41,14 +45,24 @@ interface ImageSource {
   readonly key: string;
 }
 interface OgSource {
-  readonly ownerId: string;
-  readonly orgId: string;
   readonly version: string;
   readonly title: string;
   readonly url: string;
   readonly html?: ImageSource;
   readonly image?: ImageSource;
 }
+
+const artifactPreviewsEnabled$ = command(
+  async ({ set }, orgId: string, ownerId: string, signal: AbortSignal) => {
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      orgId,
+      ownerId,
+      signal,
+    );
+    return isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, context);
+  },
+);
 
 function hostedBucket(): string {
   const bucket = env("R2_HOSTED_SITES_BUCKET_NAME");
@@ -116,6 +130,9 @@ const hostedOgSource$ = command(
       return null;
     }
     const d = row.deployment;
+    if (!(await set(artifactPreviewsEnabled$, d.orgId, d.userId, signal))) {
+      return null;
+    }
     const allowed = await set(
       authorizeHostedSiteDelivery$,
       {
@@ -133,8 +150,6 @@ const hostedOgSource$ = command(
       return null;
     }
     return {
-      ownerId: d.userId,
-      orgId: d.orgId,
       version: `${d.id}:${d.manifest.preview?.sha256 ?? "none"}`,
       title: d.manifest.site ?? d.manifest.publicSlug,
       url: d.url,
@@ -150,19 +165,43 @@ const hostedOgSource$ = command(
 
 const snapshotOgSource$ = command(
   async (
-    { set },
+    { get, set },
     record: SharedThreadArtifactReference,
     url: string,
     signal: AbortSignal,
   ): Promise<OgSource | null> => {
+    const [owner] = await get(db$)
+      .select({ userId: sharedThreads.userId, orgId: sharedThreads.orgId })
+      .from(sharedThreads)
+      .where(
+        and(
+          eq(sharedThreads.id, record.threadId),
+          eq(sharedThreads.linkLayoutSegment, record.publicBrand),
+          eq(sharedThreads.hasArtifactSnapshot, true),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!owner) {
+      return null;
+    }
+    if (owner.orgId === null) {
+      throw new Error("Shared artifact snapshot has no owner organization");
+    }
+    if (
+      !(await set(artifactPreviewsEnabled$, owner.orgId, owner.userId, signal))
+    ) {
+      return null;
+    }
     const snapshot = await set(sharedThreadArtifactSnapshot$, record, signal);
     if (!snapshot) {
       return null;
     }
+    if (snapshot.ownerId !== owner.userId || snapshot.orgId !== owner.orgId) {
+      throw new Error("Shared artifact snapshot does not match its owner");
+    }
     const { target, previewTarget } = snapshot;
     return {
-      ownerId: snapshot.ownerId,
-      orgId: snapshot.orgId,
       version: createHash("sha256")
         .update(JSON.stringify([record, target, previewTarget]))
         .digest("hex"),
@@ -215,15 +254,25 @@ const referenceOgSource$ = command(
     if (!target) {
       return null;
     }
-    const published = await set(resolvePublicArtifactSource$, target, signal);
+    const owner = await set(publicArtifactShareIdentity$, target, signal);
+    if (
+      !owner ||
+      !(await set(artifactPreviewsEnabled$, owner.orgId, owner.userId, signal))
+    ) {
+      return null;
+    }
+    const published = await set(
+      resolvePublicArtifactSource$,
+      target,
+      owner,
+      signal,
+    );
     if (!published) {
       return null;
     }
     const { policy, candidate } = published;
     const shared = policy.target;
     return {
-      ownerId: policy.ownerId,
-      orgId: policy.orgId,
       version: policy.revision,
       title:
         shared.kind === "file" ? shared.filename : shared.manifest.publicSlug,
@@ -253,38 +302,25 @@ const referenceOgSource$ = command(
   },
 );
 
-/** Resolve authority afresh on every metadata and image request; never cache grants. */
+/** Each resolver gates its owner's switch before loading OG policy or content. */
 const authorizedOgSource$ = command(
   async ({ set }, target: ArtifactOgTarget, signal: AbortSignal) => {
-    const source =
-      target.kind === "host"
-        ? await set(hostedOgSource$, target.id, signal)
-        : target.kind === "reference"
-          ? await set(referenceOgSource$, target.id, signal)
-          : await set(
-              snapshotOgSource$,
-              {
-                version: 3,
-                threadId: target.id,
-                target: { kind: "html", id: target.targetId },
-                publicToken: target.token,
-                publicBrand: target.publicBrand,
-              },
-              env("APP_URL"),
-              signal,
-            );
-    if (!source) {
-      return null;
-    }
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      source.orgId,
-      source.ownerId,
-      signal,
-    );
-    return isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, context)
-      ? source
-      : null;
+    return target.kind === "host"
+      ? await set(hostedOgSource$, target.id, signal)
+      : target.kind === "reference"
+        ? await set(referenceOgSource$, target.id, signal)
+        : await set(
+            snapshotOgSource$,
+            {
+              version: 3,
+              threadId: target.id,
+              target: { kind: "html", id: target.targetId },
+              publicToken: target.token,
+              publicBrand: target.publicBrand,
+            },
+            env("APP_URL"),
+            signal,
+          );
   },
 );
 
