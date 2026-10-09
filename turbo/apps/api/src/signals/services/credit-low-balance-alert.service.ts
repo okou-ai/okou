@@ -59,63 +59,6 @@ function membershipUserId(
   return membership.publicUserData?.userId;
 }
 
-async function refreshOrgMemberCache(
-  db: Db,
-  orgId: string,
-  memberships: readonly OrganizationMembership[],
-): Promise<void> {
-  const cachedAt = nowDate();
-  const rowsByUserId = new Map<string, OrgMemberCacheRow>();
-  for (const membership of memberships) {
-    const userId = membershipUserId(membership);
-    if (!userId) {
-      continue;
-    }
-    const role = membership.role === "org:admin" ? "admin" : "member";
-    const existing = rowsByUserId.get(userId);
-    if (existing?.role === "admin") {
-      continue;
-    }
-    rowsByUserId.set(userId, {
-      orgId,
-      userId,
-      role,
-      cachedAt,
-    });
-  }
-  const rows = [...rowsByUserId.values()];
-
-  await db.transaction(async (tx) => {
-    if (rows.length > 0) {
-      await tx
-        .insert(orgMembersCache)
-        .values(rows)
-        .onConflictDoUpdate({
-          target: [orgMembersCache.orgId, orgMembersCache.userId],
-          set: {
-            role: sql`excluded.role`,
-            cachedAt: sql`excluded.cached_at`,
-          },
-        });
-
-      await tx.delete(orgMembersCache).where(
-        and(
-          eq(orgMembersCache.orgId, orgId),
-          notInArray(
-            orgMembersCache.userId,
-            rows.map((row) => {
-              return row.userId;
-            }),
-          ),
-        ),
-      );
-      return;
-    }
-
-    await tx.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
-  });
-}
-
 function adminUserIds(
   memberships: readonly OrganizationMembership[],
 ): string[] {
@@ -243,7 +186,60 @@ export const enqueueCreditLowBalanceAlert$ = command(
       createClerkReadContext(),
       signal,
     );
-    await refreshOrgMemberCache(db, args.orgId, memberships);
+    const cacheOrgId = args.orgId;
+    const cacheMemberships = memberships;
+    const cachedAt = nowDate();
+    const rowsByUserId = new Map<string, OrgMemberCacheRow>();
+    for (const membership of cacheMemberships) {
+      const userId = membershipUserId(membership);
+      if (!userId) {
+        continue;
+      }
+      const role = membership.role === "org:admin" ? "admin" : "member";
+      const existing = rowsByUserId.get(userId);
+      if (existing?.role === "admin") {
+        continue;
+      }
+      rowsByUserId.set(userId, {
+        orgId: cacheOrgId,
+        userId,
+        role,
+        cachedAt,
+      });
+    }
+    const rows = [...rowsByUserId.values()];
+
+    await db.transaction(async (tx) => {
+      if (rows.length > 0) {
+        await tx
+          .insert(orgMembersCache)
+          .values(rows)
+          .onConflictDoUpdate({
+            target: [orgMembersCache.orgId, orgMembersCache.userId],
+            set: {
+              role: sql`excluded.role`,
+              cachedAt: sql`excluded.cached_at`,
+            },
+          });
+
+        await tx.delete(orgMembersCache).where(
+          and(
+            eq(orgMembersCache.orgId, cacheOrgId),
+            notInArray(
+              orgMembersCache.userId,
+              rows.map((row) => {
+                return row.userId;
+              }),
+            ),
+          ),
+        );
+        return;
+      }
+
+      await tx
+        .delete(orgMembersCache)
+        .where(eq(orgMembersCache.orgId, cacheOrgId));
+    });
     signal.throwIfAborted();
 
     const userIds = adminUserIds(memberships);
