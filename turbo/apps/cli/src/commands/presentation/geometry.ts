@@ -85,10 +85,12 @@ function pack(entries: ReadonlyMap<string, Buffer>): Buffer {
 }
 
 function attribute(xml: string, name: string): number {
-  const match = new RegExp(`\\b${name}="([^"]+)"`, "u").exec(xml);
-  if (match === null)
+  const match = [...xml.matchAll(/\b(x|y|cx|cy)="([^"]+)"/gu)].find((entry) => {
+    return entry[1] === name;
+  });
+  if (match === undefined)
     throw new Error(`Missing PPTX geometry attribute ${name}`);
-  const value = Number(match[1]);
+  const value = Number(match[2]);
   if (!Number.isFinite(value))
     throw new Error(`Invalid PPTX geometry attribute ${name}`);
   return value;
