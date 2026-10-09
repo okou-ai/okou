@@ -2,6 +2,7 @@
 
 mod archive_connection_attempt;
 mod archive_size_mismatch;
+pub mod cache_gc;
 mod error;
 mod object_download_policy;
 pub mod r2_cache;

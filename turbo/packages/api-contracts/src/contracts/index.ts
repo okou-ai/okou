@@ -408,6 +408,7 @@ export {
   type ArtifactDetail,
   type ArtifactSummary,
 } from "./artifact-catalog";
+export { artifactGoogleDriveContract } from "./artifact-google-drive";
 export {
   chatThreadsContract,
   chatThreadByIdContract,

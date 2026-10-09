@@ -592,6 +592,10 @@ jobs:
       needs.detect.outputs.any-changed == 'true' ||
       needs.detect.outputs.mitm-addon-test-inputs-changed == 'true' ||
       needs.detect.outputs.mitm-addon-pricing-seed-changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/2", "2/2"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -619,7 +623,7 @@ jobs:
 
       - name: Run mitm-addon tests
         working-directory: crates/runner/mitm-addon
-        run: uv run --no-sync python -m pytest tests/ -q --durations=30 --durations-min=0.1
+        run: uv run --no-sync python -m pytest tests/ -q --durations=30 --durations-min=0.1 --test-shard=${{ matrix.shard }}
 
   mitm-addon-packaged-control:
     runs-on: ${{ matrix.os }}

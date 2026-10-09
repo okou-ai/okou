@@ -21,6 +21,7 @@ const nonblank = (limit: number) => {
 export const notifyMailBodySchema = z
   .object({
     to: z.literal("me").default("me"),
+    kind: z.enum(["notification", "morning-brief"]).default("notification"),
     subject: nonblank(180).refine(
       (value) => {
         return !/[\r\n]/u.test(value);

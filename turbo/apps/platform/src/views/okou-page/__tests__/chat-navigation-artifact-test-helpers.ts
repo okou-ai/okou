@@ -120,6 +120,8 @@ export function hostedSiteArtifactDetail(
 }
 
 export function artifactRun(options: {
+  readonly artifactId?: string;
+  readonly googleDriveConnectionId?: string;
   readonly contentType: string;
   readonly fileId: string;
   readonly filename: string;
@@ -131,6 +133,10 @@ export function artifactRun(options: {
     files: [
       {
         id: options.fileId,
+        ...(options.artifactId ? { artifactId: options.artifactId } : {}),
+        ...(options.googleDriveConnectionId
+          ? { googleDriveConnectionId: options.googleDriveConnectionId }
+          : {}),
         filename: options.filename,
         contentType: options.contentType,
         size: 128,

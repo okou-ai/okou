@@ -3,8 +3,8 @@ use std::time::{Duration, SystemTime};
 
 use tracing::{info, warn};
 
-use crate::byte_size::human_bytes;
 use crate::error::RunnerResult;
+use runner_host::byte_size::human_bytes;
 use runner_host::paths::{HomePaths, LogPaths};
 
 use super::filesystem::{next_entry_warn_or_stop, read_dir_or_missing};

@@ -74,10 +74,34 @@ describe("okou notify", () => {
     await run(...args, "--text", "## Today\nUseful update.");
     expect(captured).toStrictEqual({
       to: "me",
+      kind: "notification",
       subject: "Your brief",
       text: "## Today\nUseful update.",
       idempotencyKey: "brief:2026-10-08",
     });
+    expect(log).toHaveBeenCalledExactlyOnceWith(JSON.stringify(receipt));
+  });
+
+  it("sends the explicit Morning Brief purpose without client-supplied presentation links", async () => {
+    server.use(
+      http.post(`${url}/mail`, async ({ request }) => {
+        expect(await request.json()).toStrictEqual({
+          to: "me",
+          kind: "morning-brief",
+          subject: "Your brief",
+          text: "## Today\nUseful update.",
+          idempotencyKey: "brief:2026-10-08",
+        });
+        return HttpResponse.json(receipt);
+      }),
+    );
+    await run(
+      ...args,
+      "--kind",
+      "morning-brief",
+      "--text",
+      "## Today\nUseful update.",
+    );
     expect(log).toHaveBeenCalledExactlyOnceWith(JSON.stringify(receipt));
   });
 
@@ -112,6 +136,7 @@ describe("okou notify", () => {
 
   it.each([
     ["recipient", ["--to", "someone@example.com", "--text", "hello"]],
+    ["unknown kind", ["--kind", "custom-template", "--text", "hello"]],
     ["empty body", ["--text", " "]],
     [
       "subject newline",

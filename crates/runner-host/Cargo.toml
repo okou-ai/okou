@@ -28,6 +28,8 @@ uuid = { workspace = true, features = ["serde", "std", "v4"] }
 futures-util = { workspace = true, features = ["async-await"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["net", "signal", "test-util"] }
+tracing-subscriber = { workspace = true, features = ["registry"] }
+tracing-test-support.workspace = true
 
 [lints]
 workspace = true

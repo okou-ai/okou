@@ -403,7 +403,23 @@ test("conversion and concurrent host binding retain a valid admin-owned referenc
     createHost(shared.id),
   ]);
   if (converted.status === 409) {
-    expect(converted.body.error.code).toBe("CLOUDFLARE_ACCESS_IMPACT_CONFLICT");
+    expect([
+      "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+      "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
+    ]).toContain(converted.body.error.code);
+    expect(
+      (await accept(configs().list({ headers, query }), [200])).body.configs,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: shared.id,
+        scope: "organization",
+        revision: shared.revision,
+        generation: shared.generation,
+      }),
+    );
+    expect(
+      (await accept(hosts().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([host]);
     const latest = (
       await accept(
         configs().impactPreview({
@@ -429,13 +445,19 @@ test("conversion and concurrent host binding retain a valid admin-owned referenc
   expect(
     (await accept(configs().list({ headers, query }), [200])).body.configs,
   ).toContainEqual(
-    expect.objectContaining({ id: shared.id, scope: "personal" }),
+    expect.objectContaining({
+      id: shared.id,
+      scope: "personal",
+      revision: shared.revision + 1,
+      generation: shared.generation + 1,
+    }),
   );
   expect(
     (await accept(hosts().list({ headers }), [200])).body.connections,
   ).toContainEqual(
     expect.objectContaining({
       id: host.id,
+      generation: host.generation + (converted.status === 409 ? 1 : 0),
       transport: { type: "cloudflare_access", configId: shared.id },
     }),
   );

@@ -1,6 +1,7 @@
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
+  type UserFeatureSwitchOverrideRow,
 } from "./feature-switch-scope";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { computed } from "ccstate";
@@ -11,22 +12,45 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import type { ReadonlyDb } from "../external/db";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 
+interface StripeInvoiceFeatureOwner {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+export function stripeInvoicePaidFeatureReadPlan(
+  owner: StripeInvoiceFeatureOwner,
+) {
+  return {
+    columns: {
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    },
+    condition: userFeatureSwitchRowCondition(owner.orgId, owner.userId),
+  };
+}
+
+export function stripeInvoicePaidFeatureEnabledFromRows(
+  owner: StripeInvoiceFeatureOwner,
+  rows: readonly UserFeatureSwitchOverrideRow[],
+): boolean {
+  return isFeatureEnabled(
+    FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations,
+    featureSwitchContextFromRows(owner.orgId, owner.userId, rows),
+  );
+}
+
 export async function stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb(
   db: ReadonlyDb,
   orgId: string,
   userId: string,
 ): Promise<boolean> {
-  const featureSwitchContextRows0 = await db
-    .select({
-      userId: userFeatureSwitches.userId,
-      switches: userFeatureSwitches.switches,
-    })
+  const owner = { orgId, userId };
+  const plan = stripeInvoicePaidFeatureReadPlan(owner);
+  const rows = await db
+    .select(plan.columns)
     .from(userFeatureSwitches)
-    .where(userFeatureSwitchRowCondition(orgId, userId));
-  return isFeatureEnabled(
-    FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations,
-    featureSwitchContextFromRows(orgId, userId, featureSwitchContextRows0),
-  );
+    .where(plan.condition);
+  return stripeInvoicePaidFeatureEnabledFromRows(owner, rows);
 }
 
 export function stripeInvoicePaidWorkflowAutomationEnabledForOwner(
