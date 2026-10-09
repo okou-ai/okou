@@ -124,6 +124,35 @@ fn borrowed_pi_image_fixture_preserves_canonical_bytes() {
     }
 }
 
+fn tool_call_content(id: &str, arguments: Value) -> Value {
+    Value::Array(vec![Value::Object(serde_json::Map::from_iter([
+        ("type".into(), "toolCall".into()),
+        ("id".into(), id.into()),
+        ("name".into(), "read".into()),
+        ("arguments".into(), arguments),
+    ]))])
+}
+
+#[test]
+fn owned_pi_tool_call_fixture_preserves_canonical_bytes() {
+    for arguments in [
+        Value::Null,
+        json!({}),
+        json!({"path":"你好\"\\\n\0", "values":[0, "", null]}),
+        json!({"z-field":"last", "a-field":{"nested":[true, 7]}}),
+    ] {
+        for id in ["", "tool-input-id", "你好\"\\\n\0"] {
+            let expected = json!([{
+                "type":"toolCall", "id":id, "name":"read", "arguments":arguments
+            }]);
+            assert_eq!(
+                tool_call_content(id, arguments.clone()).to_string(),
+                expected.to_string()
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -161,18 +190,30 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         ),
         assistant(
             "tool-input",
-            json!([{"type":"toolCall","id":"tool-input-id","name":"read","arguments":{"path":input}}]),
+            tool_call_content("tool-input-id", json!({"path":input})),
             false,
         ),
         assistant(
             "aggregate",
-            json!([{"type":"toolCall","id":"aggregate-id","name":"read","arguments":
-            (0..32).map(|i| (format!("field-{i:02}"), json!("a".repeat(140_000)))).collect::<serde_json::Map<_,_>>() }]),
+            tool_call_content(
+                "aggregate-id",
+                Value::Object(
+                    (0..32)
+                        .map(|i| (format!("field-{i:02}"), Value::String("a".repeat(140_000))))
+                        .collect(),
+                ),
+            ),
             false,
         ),
         assistant(
             "structure",
-            json!([{"type":"toolCall","id":"structure-id","name":"read","arguments":{"values":structure_values}}]),
+            tool_call_content(
+                "structure-id",
+                Value::Object(serde_json::Map::from_iter([(
+                    "values".into(),
+                    Value::Array(structure_values),
+                )])),
+            ),
             false,
         ),
         tool_result("tool-input-id", json!([{"type":"text","text":text}]), true),
@@ -534,7 +575,11 @@ impl serde::Serialize for SessionRecord<'_> {
     }
 }
 
-fn session_record_json(index: usize, message: &Value) -> serde_json::Result<String> {
+fn write_session_record(
+    output: &mut Vec<u8>,
+    index: usize,
+    message: &Value,
+) -> serde_json::Result<()> {
     let mut fields = serde_json::Map::new();
     fields.insert("type".into(), json!("message"));
     fields.insert("id".into(), json!(format!("message-{index}")));
@@ -544,10 +589,13 @@ fn session_record_json(index: usize, message: &Value) -> serde_json::Result<Stri
     );
     fields.insert("timestamp".into(), json!("2026-09-11T00:00:00Z"));
     fields.insert("message".into(), Value::Null);
-    serde_json::to_string(&SessionRecord {
-        fields: &fields,
-        message,
-    })
+    serde_json::to_writer(
+        output,
+        &SessionRecord {
+            fields: &fields,
+            message,
+        },
+    )
 }
 
 #[test]
@@ -555,7 +603,33 @@ fn borrowed_session_record_preserves_canonical_bytes() -> Result<(), serde_json:
     let message = json!({"role":"assistant", "content":[{"text":"你好\"\\\n"}]});
     for index in [0, 1] {
         let original = json!({"type":"message","id":format!("message-{index}"),"parentId":if index == 0 {None} else {Some(format!("message-{}",index-1))},"timestamp":"2026-09-11T00:00:00Z","message":message});
-        assert_eq!(session_record_json(index, &message)?, original.to_string());
+        let mut actual = Vec::new();
+        write_session_record(&mut actual, index, &message)?;
+        assert_eq!(actual, original.to_string().as_bytes());
+    }
+    Ok(())
+}
+
+#[test]
+fn streamed_session_records_preserve_every_canonical_line() -> Result<(), serde_json::Error> {
+    for messages in [
+        vec![],
+        vec![Value::Null],
+        vec![
+            json!({}),
+            json!({"role":"assistant", "content":[{"text":"你好\"\\\n\0"}]}),
+        ],
+    ] {
+        let mut actual = b"existing-header\n".to_vec();
+        let mut expected = String::from("existing-header\n");
+        for (index, message) in messages.iter().enumerate() {
+            write_session_record(&mut actual, index, message)?;
+            actual.push(b'\n');
+            let original = json!({"type":"message","id":format!("message-{index}"),"parentId":if index == 0 {None} else {Some(format!("message-{}",index-1))},"timestamp":"2026-09-11T00:00:00Z","message":message});
+            expected.push_str(&original.to_string());
+            expected.push('\n');
+        }
+        assert_eq!(actual, expected.as_bytes());
     }
     Ok(())
 }
@@ -593,14 +667,15 @@ async fn deliver_pi_rpc(
         |line| line.len() < guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES
     ));
     std::fs::write(&events_path, &original)?;
-    let mut session = format!(
-        "{}\n",
-        json!({"type":"session","version":3,"id":session_id,"timestamp":"2026-09-11T00:00:00Z","cwd":"/home/user/workspace"})
-    );
+    let mut session = serde_json::to_vec(
+        &json!({"type":"session","version":3,"id":session_id,"timestamp":"2026-09-11T00:00:00Z","cwd":"/home/user/workspace"}),
+    )?;
+    session.push(b'\n');
     for (index, event) in messages.iter().enumerate() {
-        session.push_str(&session_record_json(index, &event["message"])?);
-        session.push('\n');
+        write_session_record(&mut session, index, &event["message"])?;
+        session.push(b'\n');
     }
+    let session = String::from_utf8(session)?;
     std::fs::write(session_path, &session)?;
     let commands_path = tmp.path().join("commands.jsonl");
     let npx = bin.join("npx");
