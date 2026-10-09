@@ -8448,69 +8448,34 @@ describe("usage pack allocation management", () => {
     mockNow(new Date("2035-01-16T00:00:00.000Z"));
     const actor = createOrgFixture();
     const sourceUserId = actor.userId;
-    authenticateOrg(actor);
-    mockClerkOrganization(actor);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      {
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: { userId: sourceUserId },
-            createdAt: now(),
-          },
-        ],
-      },
+    const fixture = await purchaseManagedUsagePack(
+      [{ userId: sourceUserId, usagePackUsd: 20 }],
+      "pro",
+      actor,
     );
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
-      { data: [] },
-    );
-    const customerId = `cus_${randomUUID()}`;
-    const subscriptionId = `sub_${randomUUID()}`;
-    const checkoutSessionId = `cs_${randomUUID()}`;
-    context.mocks.stripe.customers.create.mockResolvedValueOnce({
-      id: customerId,
-    });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValueOnce({
-      id: checkoutSessionId,
-      url: `https://checkout.stripe.test/${checkoutSessionId}`,
-    });
-    await accept(
-      setupApp({ context, routes: billingCheckoutRoutes })(
-        billingUsagePackCheckoutContract,
-      ).create({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { ...usagePackCheckoutBody(sourceUserId), tier: "pro" },
-      }),
-      [200],
-    );
-    const metadata = stripeInputMetadata(
-      context.mocks.stripe.checkout.sessions.create.mock.calls.at(-1)?.[0],
-    );
-    if (!metadata.usagePackSubscriptionId) {
-      throw new Error("Checkout did not identify its usage pack subscription");
+    async function readCreditSnapshot() {
+      const credits = await readDeferredReplayCredits(fixture);
+      // Equal-timestamp grant ordering is not part of the API contract.
+      return {
+        ...credits,
+        creditGrants: [...credits.creditGrants].sort((a, b) => {
+          return a.id.localeCompare(b.id);
+        }),
+        ...(credits.memberCredits
+          ? {
+              memberCredits: credits.memberCredits.map((member) => {
+                return {
+                  ...member,
+                  creditGrants: [...member.creditGrants].sort((a, b) => {
+                    return a.id.localeCompare(b.id);
+                  }),
+                };
+              }),
+            }
+          : {}),
+      };
     }
-    const fixture: ManagedUsagePackFixture = {
-      ...actor,
-      customerId,
-      subscriptionId,
-      usagePackSubscriptionId: metadata.usagePackSubscriptionId,
-      tier: "pro",
-      billingPeriod: {
-        start: currentSecond() - 15 * 86_400,
-        end: currentSecond() + 15 * 86_400,
-      },
-    };
     const oldQuantities = new Map([[TEST_PRICE_USAGE_PACK_20, 1]]);
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      managedUsagePackSubscription(fixture, oldQuantities),
-    );
-    await postManagedUsagePackEvent(
-      "invoice.paid",
-      managedUsagePackInvoice(fixture, {
-        invoiceId: `in_${randomUUID()}`,
-        quantities: oldQuantities,
-      }),
-    );
     const newQuantities = new Map([[TEST_PRICE_USAGE_PACK_50, 1]]);
     const oldSubscription = managedUsagePackSubscription(
       fixture,
@@ -8628,7 +8593,7 @@ describe("usage pack allocation management", () => {
         pendingChange: null,
       }),
     ]);
-    const credits = await readDeferredReplayCredits(fixture);
+    const credits = await readCreditSnapshot();
     expect(credits).toMatchObject({
       purchasedCredits: 35_000,
       bonusCredits: 1500,
@@ -8646,9 +8611,7 @@ describe("usage pack allocation management", () => {
     await expect(readManagedUsagePacks(fixture)).resolves.toStrictEqual(
       upgraded,
     );
-    await expect(readDeferredReplayCredits(fixture)).resolves.toStrictEqual(
-      credits,
-    );
+    await expect(readCreditSnapshot()).resolves.toStrictEqual(credits);
   });
 
   async function confirmPendingUsagePackUpgrade() {
