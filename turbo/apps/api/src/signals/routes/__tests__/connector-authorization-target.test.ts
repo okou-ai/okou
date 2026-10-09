@@ -61,9 +61,14 @@ describe("Connector authorization-target validation", () => {
         member,
         "slack",
         "oauth",
-        { statuses: [404], agentId, authorizeAgent: true },
+        { statuses: [400], agentId, authorizeAgent: true },
       );
-      expect(oauth.body).toStrictEqual(agentNotFoundBody(agentId));
+      expect(oauth.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: `Agent not found: ${agentId}`,
+        },
+      });
     }
 
     await expect(
