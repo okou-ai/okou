@@ -408,42 +408,79 @@ async fn handle(
     // channels of MAX_QUEUE_FRAMES at most; a slow receiver backpressures both
     // directions rather than allocating while a peer stalls.
     let mut run_check = tokio::time::interval(Duration::from_millis(250));
-    'connection: loop {
+    let peer_closed = 'connection: loop {
         tokio::select! {
             changed = live.changed() => {
-                if changed.is_err() || *live.borrow() == ActiveRunReuseState::Released { break }
+                if changed.is_err() || *live.borrow() == ActiveRunReuseState::Released { break false }
             }
             _ = run_check.tick() => {
-                if ctx.status.running_sandbox(run_id).await != Some(sandbox_id) { break }
+                if ctx.status.running_sandbox(run_id).await != Some(sandbox_id) { break false }
             }
             inbound = ws.next() => match inbound {
                 Some(Ok(Message::Binary(bytes))) if bytes.len() <= MAX_FRAME => {
-                    // Cancel a blocked channel send if the run is released.
-                    // A state change while blocked closes rather than losing or
-                    // reordering a frame mid-send.
-                    tokio::select! {
-                        result = guest.incoming.send(bytes.to_vec()) => if result.is_err() { break 'connection },
-                        _ = live.changed() => break 'connection,
-                        _ = tokio::time::sleep(Duration::from_secs(15)) => break 'connection,
+                    if !forward_while_live(guest.incoming.send(bytes.to_vec()), &ctx,
+                        run_id, sandbox_id, &mut live, &mut run_check).await {
+                        break 'connection false;
                     }
                 }
                 Some(Ok(Message::Ping(_) | Message::Pong(_))) => {},
-                Some(Ok(Message::Close(_))) | None => break,
-                _ => break,
+                Some(Ok(Message::Close(_))) => break true,
+                None | Some(_) => break false,
             },
             outbound = guest.outgoing.recv() => match outbound {
                 Some(bytes) if bytes.len() <= MAX_FRAME => {
-                    tokio::select! {
-                        result = ws.send(Message::Binary(bytes.into())) => if result.is_err() { break 'connection },
-                        _ = live.changed() => break 'connection,
-                        _ = tokio::time::sleep(Duration::from_secs(15)) => break 'connection,
+                    if !forward_while_live(ws.send(Message::Binary(bytes.into())), &ctx,
+                        run_id, sandbox_id, &mut live, &mut run_check).await {
+                        break 'connection false;
                     }
                 }
-                _ => break,
+                _ => break false,
             }
         }
+    };
+    // Only a normal peer close gets a graceful acknowledgement. An interrupted
+    // sink send can leave application bytes buffered; dropping the transport
+    // at a liveness/deadline fence must not flush those bytes afterward.
+    if peer_closed {
+        // Tungstenite already queued the peer's close reply. Sending another
+        // Close is rejected in this state; flush only that queued control reply.
+        let _ = tokio::time::timeout(Duration::from_secs(1), ws.flush()).await;
     }
-    let _ = tokio::time::timeout(Duration::from_secs(1), ws.close(None)).await;
+    drop(ws);
+}
+
+async fn forward_while_live<F, E>(
+    forward: F,
+    ctx: &ConnectionContext,
+    run_id: RunId,
+    sandbox_id: SandboxId,
+    live: &mut tokio::sync::watch::Receiver<ActiveRunReuseState>,
+    run_check: &mut tokio::time::Interval,
+) -> bool
+where
+    F: std::future::Future<Output = Result<(), E>>,
+{
+    if *live.borrow() == ActiveRunReuseState::Released {
+        return false;
+    }
+    // Keep the same IO future and deadline across status ticks: recreating
+    // either would lose a queued frame or extend the stalled-write deadline.
+    tokio::pin!(forward);
+    let deadline = tokio::time::sleep(Duration::from_secs(15));
+    tokio::pin!(deadline);
+    loop {
+        tokio::select! {
+            biased;
+            _ = live.changed() => return false,
+            _ = &mut deadline => return false,
+            _ = run_check.tick() => {
+                if ctx.status.running_sandbox(run_id).await != Some(sandbox_id) {
+                    return false;
+                }
+            }
+            result = &mut forward => return result.is_ok(),
+        }
+    }
 }
 
 #[cfg(test)]

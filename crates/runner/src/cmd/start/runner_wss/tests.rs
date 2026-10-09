@@ -210,6 +210,27 @@ async fn admission_echo_replay_cross_run_and_local_run_end() {
 }
 
 #[tokio::test]
+async fn authenticated_peer_close_receives_a_graceful_ack() {
+    let fixture = Fixture::new().await;
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &"A".repeat(43))).await.unwrap();
+    assert_eq!(
+        ws.next().await.unwrap().unwrap().into_text().unwrap(),
+        r#"{"type":"auth.ok"}"#
+    );
+    ws.close(None).await.unwrap();
+    let response = tokio::time::timeout(Duration::from_secs(2), ws.next())
+        .await
+        .expect("normal peer close must receive its acknowledgement");
+    assert!(
+        matches!(response, Some(Ok(Message::Close(_)))),
+        "normal close must be acknowledged: {response:?}"
+    );
+    task.await.unwrap();
+}
+
+#[tokio::test]
 async fn run_release_during_ticket_consume_denies_auth() {
     let mut fixture = Fixture::new().await;
     let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
@@ -486,6 +507,100 @@ async fn same_id_replacement_never_accepts_previous_process_run() {
             )
             .await
     );
+}
+
+#[tokio::test]
+async fn blocked_forward_observes_status_removal_without_run_guard_release() {
+    let fixture = Fixture::new().await;
+    let run = fixture.run;
+    let sandbox = fixture.sandbox;
+    let status = Arc::clone(&fixture.ctx.status);
+    let mut live = fixture.ctx.active_runs.watch_live_run(run).unwrap();
+    let ctx = fixture.ctx;
+    let (sender, _held_receiver) = mpsc::channel(1);
+    sender.send(vec![0]).await.unwrap();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let mut task = tokio::spawn(async move {
+        let mut run_check = tokio::time::interval(Duration::from_millis(250));
+        forward_while_live(
+            async {
+                started_tx.send(()).unwrap();
+                sender.send(vec![1]).await
+            },
+            &ctx,
+            run,
+            sandbox,
+            &mut live,
+            &mut run_check,
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), started_rx)
+        .await
+        .expect("forwarding must enter the full channel send")
+        .unwrap();
+    // Keep the process-local guard alive; only the authoritative running
+    // assignment disappears, as it can before job cleanup releases the guard.
+    assert!(status.remove_run_if_matching(run, sandbox).await.unwrap());
+    let result = tokio::time::timeout(Duration::from_secs(2), &mut task).await;
+    if result.is_err() {
+        task.abort();
+        let _ = task.await;
+    }
+    assert!(
+        !result
+            .expect("status loss must cancel a blocked send without waiting 15 seconds")
+            .unwrap()
+    );
+    drop(fixture.guard);
+}
+
+#[tokio::test]
+async fn blocked_forward_keeps_its_frame_across_live_status_checks() {
+    let fixture = Fixture::new().await;
+    let run = fixture.run;
+    let sandbox = fixture.sandbox;
+    let mut live = fixture.ctx.active_runs.watch_live_run(run).unwrap();
+    let ctx = fixture.ctx;
+    let (sender, mut receiver) = mpsc::channel(1);
+    sender.send(vec![0u8]).await.unwrap();
+    let (checked_tx, checked_rx) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        let mut send = Box::pin(sender.send(vec![1u8]));
+        let mut pending_polls = 0;
+        let mut checked_tx = Some(checked_tx);
+        let forward = std::future::poll_fn(|cx| {
+            let result = std::future::Future::poll(send.as_mut(), cx);
+            if result.is_pending() {
+                pending_polls += 1;
+                if pending_polls == 2 {
+                    checked_tx.take().unwrap().send(()).unwrap();
+                }
+            }
+            result
+        });
+        let mut run_check = tokio::time::interval(Duration::from_millis(250));
+        forward_while_live(forward, &ctx, run, sandbox, &mut live, &mut run_check).await
+    });
+    // No channel capacity or Run-watch event can wake this blocked send. Its
+    // second poll follows the periodic status check; do not add an active sleep.
+    let checked = tokio::time::timeout(Duration::from_secs(2), checked_rx).await;
+    if checked.is_err() {
+        task.abort();
+        let _ = task.await;
+        panic!("blocked IO must keep progressing through live status checks");
+    }
+    checked.unwrap().unwrap();
+    assert_eq!(receiver.recv().await, Some(vec![0]));
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("the original queued send must resume after capacity is available")
+            .unwrap()
+    );
+    assert_eq!(receiver.recv().await, Some(vec![1]));
+    assert_eq!(receiver.recv().await, None);
+    drop(fixture.guard);
 }
 
 #[tokio::test]
