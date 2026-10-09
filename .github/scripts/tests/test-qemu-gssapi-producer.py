@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import signal
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -1513,6 +1514,132 @@ print('actual partial copy refused; descriptors closed; completion record absent
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('actual partial copy refused', result.stdout)
             self.assertEqual(original.read_bytes(), data)
+
+    def test_source_decoder_uses_hashed_original_after_real_path_replacement(self):
+        original = ROOT / 'crates/target/qemu-full-fixture-source/qemu-9.2.0.tar.xz'
+        self.assertTrue(original.is_file() and not original.is_symlink(), 'verified source prerequisite required')
+        decoder_open = self.producer.lzma.open
+        with decoder_open(original, 'rb') as decoded:
+            expected_header = decoded.read(512)
+        self.assertEqual(expected_header[:11], b'qemu-9.2.0/')
+        for interruption in ('borrower-error', 'sigint'):
+            with self.subTest(interruption=interruption), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                archive = base / original.name
+                shutil.copyfile(original, archive)
+                before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+                borrowed = []
+                replacement = self.producer.lzma.compress(b'unauthenticated named replacement')
+
+                def replace_then_decode(file, mode):
+                    # This is the real decoder boundary, AFTER the production
+                    # digest. No digest, source identity or decoded byte is faked.
+                    archive.rename(base / 'held-original.tar.xz')
+                    archive.write_bytes(replacement)
+                    if hasattr(file, 'fileno'):
+                        borrowed.append(file.fileno())
+                    with decoder_open(file, mode) as decoded:
+                        self.assertEqual(decoded.read(512), expected_header,
+                                         'decoder consumed the unhashed named replacement')
+                    if interruption == 'sigint':
+                        signal.raise_signal(signal.SIGINT)
+                    raise RuntimeError('inert source decoder borrower stopped')
+
+                error = KeyboardInterrupt if interruption == 'sigint' else RuntimeError
+                with mock.patch.object(self.producer.lzma, 'open', side_effect=replace_then_decode):
+                    with self.assertRaises(error):
+                        self.producer.extract_source(archive, base / 'qemu-9.2.0')
+                self.assertEqual(len(borrowed), 1, 'decoder must borrow the held original descriptor')
+                with self.assertRaises(OSError) as closed:
+                    os.fstat(borrowed[0])
+                self.assertEqual(closed.exception.errno, errno.EBADF)
+                self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), before)
+                self.assertEqual(archive.read_bytes(), replacement)
+                self.assertEqual(self.producer.sha(base / 'held-original.tar.xz'), self.producer.QEMU_SHA256)
+                self.assertFalse((base / 'qemu-9.2.0').exists())
+
+    def test_source_fifo_refuses_without_waiting_for_a_writer_or_starting_decoder(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = base / 'qemu-9.2.0.tar.xz'
+            os.mkfifo(archive, mode=0o600)  # No writer exists at any point.
+            script = '''
+import importlib.util, os, pathlib, sys
+spec = importlib.util.spec_from_file_location('actual_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+archive = pathlib.Path(sys.argv[2])
+before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+try:
+    producer.extract_source(archive, archive.parent / 'qemu-9.2.0')
+except ValueError as error:
+    assert str(error) == 'source-pinned QEMU archive input refused'
+else:
+    raise AssertionError('source FIFO admitted')
+assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == before
+assert pathlib.Path('/proc/self/task/' + str(os.getpid()) + '/children').read_text().strip() == ''
+assert not (archive.parent / 'qemu-9.2.0').exists()
+print('source FIFO refused; no descriptor or decoder child remains')
+'''
+            child = subprocess.Popen([sys.executable, '-I', '-S', '-B', '-c', script,
+                                      str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(archive)],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                     env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+            try:
+                output, error = child.communicate(timeout=3)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=3)
+                child.stdout.close()
+                child.stderr.close()
+            self.assertEqual(child.returncode, 0, error)
+            self.assertIn('source FIFO refused', output)
+            self.assertFalse(pathlib.Path('/proc/' + str(child.pid)).exists())
+            self.assertEqual(set(path.name for path in base.iterdir()), {archive.name})
+
+    def test_source_original_exact_bytes_digest_and_actual_writer_drift_are_checked(self):
+        original = ROOT / 'crates/target/qemu-full-fixture-source/qemu-9.2.0.tar.xz'
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = base / original.name
+            before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            archive.write_bytes(b'public wrong-size input')
+            with self.assertRaisesRegex(ValueError, 'QEMU archive input refused'):
+                with self.producer.opened_qemu_archive(archive):
+                    self.fail('wrong-sized source admitted')
+            with archive.open('wb') as output:
+                output.truncate(135188800)  # Real sparse file, not a decoder result.
+            with self.assertRaisesRegex(ValueError, 'QEMU archive digest refused'):
+                with self.producer.opened_qemu_archive(archive):
+                    self.fail('wrong-digest exact-sized source admitted')
+            shutil.copyfile(original, archive)
+            with self.assertRaisesRegex(ValueError, 'QEMU archive changed'):
+                with self.producer.opened_qemu_archive(archive) as held:
+                    descriptor = held.fileno()
+                    with self.producer.lzma.open(held, 'rb') as decoded:
+                        self.assertEqual(decoded.read(11), b'qemu-9.2.0/')
+                    with archive.open('r+b') as writer:
+                        writer.write(b'changed original')
+            with self.assertRaises(OSError) as closed:
+                os.fstat(descriptor)
+            self.assertEqual(closed.exception.errno, errno.EBADF)
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), before)
+            self.assertEqual(self.producer.sha(original), self.producer.QEMU_SHA256)
+            self.assertFalse((base / 'qemu-9.2.0').exists())
+
+    def test_source_buffered_borrower_cannot_release_the_owned_original_fd(self):
+        original = ROOT / 'crates/target/qemu-full-fixture-source/qemu-9.2.0.tar.xz'
+        before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+        with self.producer.opened_qemu_archive(original) as held:
+            descriptor = held.fileno()
+            self.assertEqual(os.fstat(descriptor).st_size, 135188800)
+            held.close()
+            self.assertEqual(os.fstat(descriptor).st_size, 135188800)
+        with self.assertRaises(OSError) as closed:
+            os.fstat(descriptor)
+        self.assertEqual(closed.exception.errno, errno.EBADF)
+        self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), before)
 
     def test_actual_pinned_release_is_admitted_without_execution(self):
         archive = ROOT / "crates/target/qemu-full-fixture-source/qemu-9.2.0.tar.xz"

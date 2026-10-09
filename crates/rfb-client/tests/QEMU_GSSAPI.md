@@ -189,12 +189,24 @@ inputs or host fallbacks. The exact usrmerge alias map is input-bound: x86 requi
 its contained `usr/lib64` target; ARM creates no `lib64` alias when the signed
 inputs supply no target. Existing wrong/escaping aliases are refused, not ignored.
 
-QEMU9.2 source and VNC hashes are unchanged. Exact source admission requires
-81,379 logical members, 647,679,574 declared bytes and epoch 1733874468, still below
-the one-GiB ceiling. Incremental admission and the bounded parser precede the
-complete member list; the separate source physical-header ceiling is 325,517.
-The exact pinned release remains a mandatory real extraction test, without source
-execution. This does not attest the XZ decoder's complete dependency/IO boundary.
+QEMU9.2 source and VNC hashes are unchanged. The 135,188,800-byte compressed
+original is acquired once with nonblocking/no-follow flags and must be an
+ordinary-owner regular file of that exact size. Incremental held-FD hashing and
+maintained XZ decoding borrow the same original inode, rather than reopening its
+pathname after the digest. Observed held-inode drift before or after decoding
+refuses; the owner closes its descriptor on success, borrower failure or SIGINT.
+Real path-replacement tests read the original XZ bytes after swapping the named
+file, and a real FIFO with no writer refuses without blocking or creating a
+child. Exact-size wrong-digest, actual-writer and buffered-borrower cases cover
+separate refusal/FD-ownership outcomes. These are input-custody regressions, not
+an atomic acquisition-registration guarantee or an external-writer/source seal.
+The maintained in-parent XZ decoder's dictionary, decoded physical-byte, EOF,
+CPU/time and complete dependency/IO bounds remain independently unadmitted.
+Exact source admission also requires 81,379 logical members, 647,679,574 declared
+bytes and epoch 1733874468, still below the one-GiB logical ceiling. Incremental
+admission and the bounded parser precede the complete member list; the separate
+source physical-header ceiling is 325,517. The exact pinned release remains a
+mandatory real extraction test, without source execution.
 The archive-covered EDK2 macOS development alias
 `roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack` → `/opt/X11/include` is explicitly
 excluded as a nonbuild input; it is never extracted, followed or rewritten to a

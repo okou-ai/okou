@@ -30,6 +30,7 @@ SNAPSHOT = "20260521T000000Z"
 # Packages indexes. Use the explicit frozen URI, not ports' unsupported APT
 # snapshot auto-negotiation or an unversioned/latest bootstrap repository.
 SNAPSHOT_ORIGIN = "https://snapshot.ubuntu.com/ubuntu/" + SNAPSHOT
+QEMU_ARCHIVE_BYTES = 135188800
 QEMU_MEMBER_COUNT = 81379
 QEMU_MEMBER_BYTES = 647679574
 QEMU_SOURCE_EPOCH = 1733874468
@@ -1020,10 +1021,45 @@ def provision(base, arch, multiarch, origin):
                                  if p.is_file() and not p.is_symlink() and (p.name.endswith("InRelease") or "_Packages" in p.name)}}
 
 
+@contextlib.contextmanager
+def opened_qemu_archive(archive):
+    # One original inode owns both the exact digest and maintained XZ reads.
+    # Stat drift detection is NOT an external-writer barrier or a source seal.
+    fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+              "st_size", "st_mtime_ns", "st_ctime_ns")
+    with contextlib.ExitStack() as owned:
+        try:
+            descriptor = os.open(archive, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
+        except OSError as error:
+            raise ValueError("source-pinned QEMU archive input refused") from error
+        owned.callback(os.close, descriptor)
+        metadata = os.fstat(descriptor)
+        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
+                or metadata.st_size != QEMU_ARCHIVE_BYTES):
+            raise ValueError("source-pinned QEMU archive input refused")
+        identity = tuple(getattr(metadata, field) for field in fields)
+        digest, offset = hashlib.sha256(), 0
+        while offset < QEMU_ARCHIVE_BYTES:
+            data = os.pread(descriptor, min(1024 * 1024, QEMU_ARCHIVE_BYTES - offset), offset)
+            if not data:
+                raise ValueError("source-pinned QEMU archive changed")
+            digest.update(data)
+            offset += len(data)
+        if (os.pread(descriptor, 1, QEMU_ARCHIVE_BYTES)
+                or tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity):
+            raise ValueError("source-pinned QEMU archive changed")
+        if digest.hexdigest() != QEMU_SHA256:
+            raise ValueError("source-pinned QEMU archive digest refused")
+        # The buffered reader borrows the owned FD; closing the decoder or its
+        # borrower cannot release the original descriptor before this owner.
+        original = owned.enter_context(os.fdopen(descriptor, "rb", closefd=False))
+        yield original
+        if tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity:
+            raise ValueError("source-pinned QEMU archive changed")
+
+
 def extract_source(archive, source):
-    if archive.is_symlink() or sha(archive) != QEMU_SHA256:
-        raise ValueError("source-pinned QEMU archive digest refused")
-    with lzma.open(archive, "rb") as decoded, bounded_archive(
+    with opened_qemu_archive(archive) as original, lzma.open(original, "rb") as decoded, bounded_archive(
             decoded, headers=QEMU_MEMBER_COUNT * 4 + 1, member_bytes=QEMU_MEMBER_BYTES,
             entry_error="source-pinned QEMU archive header budget refused") as stream:
         members = []
